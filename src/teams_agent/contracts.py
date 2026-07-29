@@ -78,7 +78,7 @@ class AgentRequest:
 @dataclass(frozen=True)
 class Citation:
     title: str
-    url: str
+    url: str | None = None
     chunkId: str | None = None
 
 
@@ -114,7 +114,9 @@ class AgentResponse:
                 title = item.get("title")
                 url = item.get("url")
                 chunk_id = item.get("chunkId")
-                if isinstance(title, str) and isinstance(url, str):
+                if isinstance(title, str) and (
+                    isinstance(url, str) or url is None
+                ):
                     citations.append(
                         Citation(
                             title=title,
@@ -131,6 +133,9 @@ def format_agent_response(response: AgentResponse) -> str:
         return response.answer
 
     sources = "\n".join(
-        f"- [{citation.title}]({citation.url})" for citation in response.citations
+        f"- [{citation.title}]({citation.url})"
+        if citation.url
+        else f"- {citation.title}"
+        for citation in response.citations
     )
     return f"{response.answer}\n\n**來源**\n{sources}"

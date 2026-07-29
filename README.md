@@ -21,7 +21,8 @@ Bot：收到：hello
 
 - Milestone 1「Azure Bot 與本機後端打通」已完成。
 - Milestone 2 的 Teams app package 已成功上傳公司 Teams。
-- 下一個驗收點是在測試 Team 頻道完成 `@Bot hello` Echo。
+- 下一個驗收點是讓 Teams Adapter 切換為 API 模式，完成
+  `@Bot <內部問題>` 的 LangGraph RAG 端到端測試。
 
 目前已驗證的完整路徑：
 
@@ -61,7 +62,13 @@ Teams 與後續里程碑狀態：
 - [x] 加入 manifest v1.25 必要的 `supportsChannelFeatures`
 - [x] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
 - [ ] 在 Teams 頻道以 `@Bot` 完成 Echo 測試
-- [ ] 串接真正的 AI Agent API、RAG 與內部 API
+- [x] 建立獨立 LangGraph Agentic RAG Gateway
+- [x] 將 `data/sources` 內部文件建立為中文檢索索引
+- [x] 完成 route、retrieve、relevance、rewrite、grounded answer graph
+- [x] 完成來源引用、文件 ACL、service token 與 tenant allowlist
+- [ ] 選定並設定正式 LLM／embedding model
+- [ ] 由 Teams 頻道完成 Agent API 模式端到端驗收
+- [ ] 串接唯讀內部 API 工具
 - [ ] 部署到可長期運作的雲端環境
 
 ## 1. 必要條件
@@ -202,7 +209,7 @@ hello → 收到：hello
 
 ### API 模式
 
-獨立 Agent Gateway 完成後設定：
+本專案已在 `agent_service/` 建立 LangGraph Agent Gateway。啟動後設定：
 
 ```dotenv
 AGENT_MODE=api
@@ -337,7 +344,7 @@ Teams
 → Teams
 ```
 
-Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實作：
+Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 
 - request ID 與 trace ID
 - Teams tenant、team、channel、conversation 與使用者識別
@@ -345,7 +352,7 @@ Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實
 - 結構化答案、來源引用及錯誤狀態
 - timeout、重試與友善降級訊息
 
-實作前需要先確定：
+正式部署前仍需確定：
 
 - Agent Gateway 的實際 HTTPS URL
 - 服務間驗證方式
@@ -355,11 +362,18 @@ Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實
 
 ### Milestone 4：RAG 知識問答
 
-1. 建立文件 ingestion、切塊與版本管理。
-2. 導入 hybrid retrieval、reranker 與無答案門檻。
-3. 在 retrieval 階段套用部門／群組 ACL。
-4. 回覆附上文件標題、URL 與 chunk trace。
-5. 建立 FAQ 測試集，評估正確率、引用率與無答案率。
+- [x] 建立 Markdown ingestion、清理、切塊與穩定 chunk ID
+- [x] 建立中文 BM25，並預留 embedding hybrid retrieval
+- [x] 建立相關性門檻與無答案回覆
+- [x] 在 retrieval 階段套用文件群組 ACL
+- [x] 回覆附上文件標題與 chunk trace
+- [x] 建立 LangGraph route、retrieve、grade、rewrite、generate 流程
+- [ ] 選定正式 LLM 與 embedding model
+- [ ] 將正式文件 URL 映射至 citation
+- [ ] 建立 FAQ 評估集，量測正確率、引用率與無答案率
+
+完整啟動、設定與 API 範例請見
+[`agent_service/README.md`](agent_service/README.md)。
 
 ### Milestone 5：內部 API 與工具
 
@@ -386,10 +400,10 @@ Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實
 ```text
 Web Chat Echo ✅
 → Teams App 上傳 ✅
-→ Teams Channel Echo（目前）
-→ Adapter 開發環境雲端部署
-→ 實際 Agent API
-→ RAG + 引用
+→ LangGraph Agent Gateway ✅
+→ data/ 文件索引與 RAG API ✅
+→ Teams Channel Agent API 模式（目前）
+→ 選定 LLM／embedding 並建立評估集
 → 唯讀內部工具
 → 身分與 ACL
 → 正式環境部署與監控
@@ -403,4 +417,7 @@ Web Chat Echo ✅
 - [ ] 本機收到 `msteams` activity 並留下 request ID
 - [ ] 未 `@mention` Bot 時不觸發
 - [ ] Personal scope Echo 成功
-- [ ] 記錄第一次 Teams 端到端測試結果
+- [ ] 啟動 `agent_service` 並將 Adapter 切為 `AGENT_MODE=api`
+- [ ] 頻道提問可收到知識庫回答與來源
+- [ ] 無關問題回覆「沒有足夠資訊」
+- [ ] 記錄第一次 Teams + LangGraph RAG 端到端測試結果

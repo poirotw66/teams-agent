@@ -1,0 +1,9 @@
+{
+  "sources/VPN常見Q&A問答.md": {
+    "classification": "internal",
+    "allowedGroups": [
+      "IT-Employees",
+      "AI-Platform-Users"
+    ]
+  }
+}
