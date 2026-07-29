@@ -110,6 +110,21 @@ AGENT_MODE=echo
 uv run teams-agent
 ```
 
+也可以從專案根目錄一次啟動 Agent Service、Teams Adapter 與 Dev Tunnel：
+
+```bash
+./start.sh
+```
+
+若 Dev Tunnel 已由其他 Terminal 執行：
+
+```bash
+START_TUNNEL=false ./start.sh
+```
+
+`Ctrl+C` 會停止由腳本啟動的所有子程序。若 `3978` 或 `8000` 已被舊程序占用，
+腳本會先停止並提示需要手動關閉哪個服務。
+
 確認 health 與 readiness endpoints：
 
 ```bash
