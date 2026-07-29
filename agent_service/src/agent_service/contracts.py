@@ -38,10 +38,18 @@ class Citation(StrictModel):
     chunkId: str | None = None
 
 
+class AgentImage(StrictModel):
+    path: str
+    title: str
+    altText: str
+    sourceChunkId: str
+
+
 class AgentResponse(StrictModel):
     answer: str
     traceId: str
     citations: list[Citation] = Field(default_factory=list)
+    images: list[AgentImage] = Field(default_factory=list)
 
 
 class SearchRequest(StrictModel):
@@ -61,4 +69,3 @@ class SearchHit(StrictModel):
 
 class SearchResponse(StrictModel):
     hits: list[SearchHit]
-

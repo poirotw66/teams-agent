@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from os import environ
+from pathlib import Path
 from urllib.parse import urlparse
 
 
@@ -13,12 +14,22 @@ class AgentSettings:
     api_url: str | None = None
     api_token: str | None = None
     api_timeout_seconds: float = 10.0
+    asset_dir: Path | None = None
+    public_base_url: str | None = None
+    asset_signing_key: str | None = None
+    asset_url_ttl_seconds: int = 3600
+    asset_max_dimension: int = 1024
+    asset_max_bytes: int = 1_000_000
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
         mode = environ.get("AGENT_MODE", "echo").strip().lower()
         api_url = environ.get("AGENT_API_URL", "").strip() or None
         api_token = environ.get("AGENT_API_TOKEN", "").strip() or None
+        project_dir = Path(__file__).resolve().parents[2]
+        asset_dir = Path(
+            environ.get("RAG_ASSET_DIR", project_dir / "data" / "assets")
+        )
 
         try:
             timeout = float(environ.get("AGENT_API_TIMEOUT_SECONDS", "10"))
@@ -30,6 +41,23 @@ class AgentSettings:
             api_url=api_url,
             api_token=api_token,
             api_timeout_seconds=timeout,
+            asset_dir=asset_dir.expanduser().resolve(),
+            public_base_url=(
+                environ.get("BOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
+                or None
+            ),
+            asset_signing_key=(
+                environ.get("RAG_ASSET_SIGNING_KEY", "").strip() or None
+            ),
+            asset_url_ttl_seconds=int(
+                environ.get("RAG_ASSET_URL_TTL_SECONDS", "3600")
+            ),
+            asset_max_dimension=int(
+                environ.get("RAG_ASSET_MAX_DIMENSION", "1024")
+            ),
+            asset_max_bytes=int(
+                environ.get("RAG_ASSET_MAX_BYTES", "1000000")
+            ),
         )
         settings.validate()
         return settings
@@ -39,6 +67,27 @@ class AgentSettings:
             raise SettingsError("AGENT_MODE must be either 'echo' or 'api'.")
         if self.api_timeout_seconds <= 0:
             raise SettingsError("AGENT_API_TIMEOUT_SECONDS must be greater than zero.")
+        if self.asset_url_ttl_seconds < 60 or self.asset_url_ttl_seconds > 86400:
+            raise SettingsError(
+                "RAG_ASSET_URL_TTL_SECONDS must be between 60 and 86400."
+            )
+        if self.asset_max_dimension < 128 or self.asset_max_dimension > 1024:
+            raise SettingsError(
+                "RAG_ASSET_MAX_DIMENSION must be between 128 and 1024."
+            )
+        if self.asset_max_bytes < 100_000 or self.asset_max_bytes > 1_000_000:
+            raise SettingsError(
+                "RAG_ASSET_MAX_BYTES must be between 100000 and 1000000."
+            )
+        if self.public_base_url:
+            parsed_public_url = urlparse(self.public_base_url)
+            if parsed_public_url.scheme != "https" or not parsed_public_url.netloc:
+                raise SettingsError("BOT_PUBLIC_BASE_URL must be an absolute HTTPS URL.")
+            if not self.asset_signing_key or len(self.asset_signing_key) < 16:
+                raise SettingsError(
+                    "RAG_ASSET_SIGNING_KEY must contain at least 16 characters "
+                    "when BOT_PUBLIC_BASE_URL is configured."
+                )
         if self.mode != "api":
             return
         if not self.api_url:
@@ -58,3 +107,11 @@ class AgentSettings:
     def ready(self) -> bool:
         return self.mode == "echo" or bool(self.api_url)
 
+    @property
+    def images_ready(self) -> bool:
+        return bool(
+            self.asset_dir
+            and self.asset_dir.is_dir()
+            and self.public_base_url
+            and self.asset_signing_key
+        )

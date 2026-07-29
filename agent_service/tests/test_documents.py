@@ -44,3 +44,35 @@ def test_chunk_markdown_preserves_source_metadata(tmp_path: Path) -> None:
     assert chunks[0].source_path == "sources/vpn.md"
     assert chunks[0].allowed_groups == ["IT"]
 
+
+def test_chunk_markdown_keeps_related_local_image(tmp_path: Path) -> None:
+    sources = tmp_path / "sources"
+    assets = tmp_path / "assets" / "大州"
+    sources.mkdir()
+    assets.mkdir(parents=True)
+    (assets / "p01.png").write_bytes(b"image")
+    source = sources / "大州.md"
+    source.write_text(
+        """# 大州
+
+## 操作步驟
+
+請調整安全性。
+
+### Visual Evidence
+
+![IE 安全性設定](../assets/大州/p01.png)
+""",
+        encoding="utf-8",
+    )
+
+    chunks = chunk_markdown(
+        source,
+        "sources/大州.md",
+        chunk_size=300,
+        overlap=30,
+    )
+
+    assert chunks[0].images
+    assert chunks[0].images[0].path == "大州/p01.png"
+    assert chunks[0].images[0].alt_text == "IE 安全性設定"

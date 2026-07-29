@@ -54,6 +54,14 @@ def test_agent_response_formats_citations() -> None:
                     "chunkId": "chunk-8",
                 }
             ],
+            "images": [
+                {
+                    "path": "大州/p01.png",
+                    "title": "大州操作畫面",
+                    "altText": "IE 安全性設定",
+                    "sourceChunkId": "chunk-8",
+                }
+            ],
         },
         fallback_trace_id="request-1",
     )
@@ -61,8 +69,28 @@ def test_agent_response_formats_citations() -> None:
     formatted = format_agent_response(response)
 
     assert response.traceId == "trace-1"
+    assert response.images[0].path == "大州/p01.png"
     assert "**來源**" in formatted
     assert "[API Key 申請流程](https://internal.example/docs/api-key)" in formatted
+
+
+def test_agent_response_rejects_unsafe_image_path() -> None:
+    response = AgentResponse.from_payload(
+        {
+            "answer": "ok",
+            "images": [
+                {
+                    "path": "../secret.png",
+                    "title": "unsafe",
+                    "altText": "unsafe",
+                    "sourceChunkId": "chunk-1",
+                }
+            ],
+        },
+        fallback_trace_id="request-1",
+    )
+
+    assert response.images == []
 
 
 def test_agent_response_uses_request_id_when_trace_id_is_missing() -> None:
@@ -72,4 +100,3 @@ def test_agent_response_uses_request_id_when_trace_id_is_missing() -> None:
     )
 
     assert response.traceId == "request-1"
-

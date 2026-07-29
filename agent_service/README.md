@@ -22,6 +22,7 @@ Teams Adapter
 - 可選的 embedding hybrid search
 - 文件層 `allowedGroups` ACL，在 retrieval 前過濾
 - LangGraph routing、relevance grading、query rewrite、grounded generation
+- 保存 Markdown 圖片與父章節關聯，回答可回傳受 ACL 保護來源的圖片 metadata
 - 沒有 LLM 金鑰也能運作的 extractive local mode
 - `/agent/chat` Teams contract、`/retrieval/search` 除錯端點
 - Service token、tenant allowlist、health/readiness endpoints
@@ -112,6 +113,7 @@ GOOGLE_API_KEY=<secret>
 
 ```dotenv
 RAG_EMBEDDING_MODEL=google_genai:gemini-embedding-2
+RAG_MAX_IMAGES=2
 ```
 
 更改 chunk 或 embedding 設定後需重建索引：
@@ -162,6 +164,24 @@ Terminal 3：devtunnel host -p 3978 --allow-anonymous
 
 Dev Tunnel 只需要暴露 Teams Adapter 的 `3978`；Agent Gateway 的 `8000` 可留在
 本機，不必公開。
+
+當命中的 Markdown 章節包含 `../assets/...` 圖片時，`/agent/chat` 會額外回傳：
+
+```json
+{
+  "images": [
+    {
+      "path": "大州系統_功能無法點選/p01.png",
+      "title": "大州無法點選 — IE 安全性調整",
+      "altText": "大州無法點選 — IE 安全性調整",
+      "sourceChunkId": "816cb874325a3f5d8be5"
+    }
+  ]
+}
+```
+
+Agent Service 不提供公開圖片檔案；Teams Adapter 會驗證相對路徑、簽名並透過
+自己的 HTTPS domain 提供縮圖。如此 `8000` 仍可保持內部服務。
 
 ## API
 

@@ -6,6 +6,21 @@ from pathlib import Path
 from typing import Any
 
 
+@dataclass(frozen=True)
+class DocumentImage:
+    path: str
+    title: str
+    alt_text: str
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "DocumentImage":
+        return cls(
+            path=str(value["path"]),
+            title=str(value["title"]),
+            alt_text=str(value["alt_text"]),
+        )
+
+
 @dataclass
 class DocumentChunk:
     chunk_id: str
@@ -14,6 +29,7 @@ class DocumentChunk:
     content: str
     classification: str = "internal"
     allowed_groups: list[str] | None = None
+    images: list[DocumentImage] | None = None
     vector: list[float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -21,21 +37,69 @@ class DocumentChunk:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "DocumentChunk":
-        return cls(**value)
+        normalized = dict(value)
+        normalized["images"] = [
+            DocumentImage.from_dict(item)
+            for item in normalized.get("images") or []
+            if isinstance(item, dict)
+        ]
+        return cls(**normalized)
 
 
-def clean_markdown(raw_text: str) -> str:
+def _strip_excluded_markdown(raw_text: str) -> str:
     text = re.sub(
         r"(?ms)^## Archive metadata.*?^---\s*$",
         "",
         raw_text,
         count=1,
     )
-    text = re.split(r"(?m)^## Limitations / Gaps\s*$", text, maxsplit=1)[0]
+    return re.split(
+        r"(?m)^## Limitations / Gaps\s*$",
+        text,
+        maxsplit=1,
+    )[0]
+
+
+def clean_markdown(raw_text: str) -> str:
+    text = _strip_excluded_markdown(raw_text)
     text = re.sub(r"«/?span[^»]*»", "", text)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def extract_images(
+    markdown: str,
+    source_path: Path,
+) -> list[DocumentImage]:
+    assets_dir = (source_path.parent.parent / "assets").resolve()
+    images: list[DocumentImage] = []
+    seen: set[str] = set()
+    for alt_text, target in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):
+        target_path = target.strip().split(maxsplit=1)[0].strip("<>")
+        if "://" in target_path or target_path.startswith("data:"):
+            continue
+        resolved = (source_path.parent / target_path).resolve()
+        try:
+            relative_path = resolved.relative_to(assets_dir).as_posix()
+        except ValueError:
+            continue
+        if (
+            relative_path in seen
+            or not resolved.is_file()
+            or resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif"}
+        ):
+            continue
+        seen.add(relative_path)
+        label = alt_text.strip() or resolved.stem
+        images.append(
+            DocumentImage(
+                path=relative_path,
+                title=label,
+                alt_text=label,
+            )
+        )
+    return images
 
 
 def _split_long_text(text: str, chunk_size: int, overlap: int) -> list[str]:
@@ -71,26 +135,41 @@ def chunk_markdown(
     metadata: dict[str, Any] | None = None,
 ) -> list[DocumentChunk]:
     raw_text = source_path.read_text(encoding="utf-8")
-    text = clean_markdown(raw_text)
+    canonical_markdown = _strip_excluded_markdown(raw_text)
+    text = clean_markdown(canonical_markdown)
     title_match = re.search(r"(?m)^#\s+(.+)$", text)
     title = title_match.group(1).strip() if title_match else source_path.stem
     metadata = metadata or {}
 
-    sections = re.split(r"(?m)(?=^#{1,3}\s+)", text)
-    content_parts: list[str] = []
-    for section in sections:
-        section = section.strip()
+    # Keep level-three headings with their parent page/section so screenshots and
+    # the instructions they illustrate remain in the same retrieval chunk.
+    sections = re.split(r"(?m)(?=^#{1,2}\s+)", canonical_markdown)
+    content_parts: list[tuple[str, list[DocumentImage]]] = []
+    for raw_section in sections:
+        raw_section = raw_section.strip()
+        section = clean_markdown(raw_section)
         if not section or section == f"# {title}":
             continue
-        content_parts.extend(_split_long_text(section, chunk_size, overlap))
+        images = extract_images(raw_section, source_path)
+        content_parts.extend(
+            (part, images)
+            for part in _split_long_text(section, chunk_size, overlap)
+        )
 
     if not content_parts:
-        content_parts = _split_long_text(text, chunk_size, overlap)
+        images = extract_images(canonical_markdown, source_path)
+        content_parts = [
+            (part, images)
+            for part in _split_long_text(text, chunk_size, overlap)
+        ]
 
     chunks: list[DocumentChunk] = []
-    for index, content in enumerate(content_parts):
+    for index, (content, images) in enumerate(content_parts):
         digest = hashlib.sha256(
-            f"{relative_path}:{index}:{content}".encode()
+            (
+                f"{relative_path}:{index}:{content}:"
+                + ",".join(image.path for image in images)
+            ).encode()
         ).hexdigest()[:20]
         chunks.append(
             DocumentChunk(
@@ -100,6 +179,7 @@ def chunk_markdown(
                 content=content,
                 classification=str(metadata.get("classification", "internal")),
                 allowed_groups=list(metadata.get("allowedGroups", [])),
+                images=images,
             )
         )
     return chunks

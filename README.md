@@ -66,6 +66,8 @@ Teams 與後續里程碑狀態：
 - [x] 將 `data/sources` 內部文件建立為中文檢索索引
 - [x] 完成 route、retrieve、relevance、rewrite、grounded answer graph
 - [x] 完成來源引用、文件 ACL、service token 與 tenant allowlist
+- [x] RAG 回答可攜帶來源圖片並以 Teams Adaptive Card 顯示
+- [x] 圖片使用短效 HMAC 簽名 URL、路徑防護與 Teams 尺寸最佳化
 - [ ] 選定並設定正式 LLM／embedding model
 - [ ] 由 Teams 頻道完成 Agent API 模式端到端驗收
 - [ ] 串接唯讀內部 API 工具
@@ -257,12 +259,52 @@ Agent Gateway 最小 response：
       "url": "https://internal.example/docs/api-key",
       "chunkId": "chunk-8"
     }
+  ],
+  "images": [
+    {
+      "path": "大州系統_功能無法點選/p01.png",
+      "title": "大州無法點選 — IE 安全性調整",
+      "altText": "IE 安全性設定畫面",
+      "sourceChunkId": "chunk-8"
+    }
   ]
 }
 ```
 
 若 Agent API timeout、連線失敗或回傳格式錯誤，Teams 會收到友善降級訊息與
 request trace ID。
+
+### RAG 圖片 Adaptive Card
+
+來源 Markdown 使用相對圖片語法：
+
+```markdown
+![大州無法點選 — IE 安全性調整](../assets/大州系統_功能無法點選/p01.png)
+```
+
+Agent Gateway 只回傳經驗證的相對圖片路徑；Teams Adapter 會產生一小時有效的
+HMAC signed URL、將圖片縮到最長邊 1024 pixels、限制在 1 MB，再放入
+Adaptive Card。根目錄 `.env` 需要：
+
+```dotenv
+BOT_PUBLIC_BASE_URL=https://<目前的-3978-dev-tunnel-domain>
+RAG_ASSET_DIR=./data/assets
+RAG_ASSET_SIGNING_KEY=<至少 16 字元的隨機值>
+RAG_ASSET_URL_TTL_SECONDS=3600
+RAG_ASSET_MAX_DIMENSION=1024
+RAG_ASSET_MAX_BYTES=1000000
+```
+
+產生開發用 signing key：
+
+```bash
+openssl rand -hex 32
+```
+
+`BOT_PUBLIC_BASE_URL` 只填 domain，不加 `/api/messages`。Dev Tunnel URL
+改變時必須同步更新並重新啟動 Teams Adapter。`GET /readyz` 的
+`ragImages` 應為 `ready`。圖片 signed URL 到期後不可再次讀取；正式環境請將
+signing key 放入 Secret Manager 或 Key Vault。
 
 ## 5. Docker
 

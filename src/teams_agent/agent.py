@@ -15,7 +15,8 @@ from microsoft_agents.hosting.core import (
 )
 
 from .agent_gateway import AgentGateway, AgentGatewayError
-from .contracts import AgentRequest, format_agent_response
+from .cards import build_agent_activity
+from .contracts import AgentRequest
 from .settings import AgentSettings
 from .text import clean_message_text
 
@@ -79,7 +80,7 @@ async def on_message(context: TurnContext, _state: TurnState) -> None:
         )
         return
 
-    await context.send_activity(format_agent_response(response))
+    await context.send_activity(build_agent_activity(response, agent_settings))
 
 
 @agent_app.error

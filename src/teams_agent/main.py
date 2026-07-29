@@ -20,7 +20,9 @@ def main() -> None:
         readiness={
             "status": "ready" if agent_settings.ready else "not_ready",
             "agentMode": agent_settings.mode,
+            "ragImages": "ready" if agent_settings.images_ready else "disabled",
         },
+        settings=agent_settings,
     )
 
 

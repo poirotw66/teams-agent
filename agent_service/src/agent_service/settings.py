@@ -35,6 +35,7 @@ class RagSettings:
     allowed_tenants: frozenset[str] = frozenset()
     source_base_url: str | None = None
     service_token: str | None = None
+    max_images: int = 2
 
     @classmethod
     def from_env(cls) -> "RagSettings":
@@ -58,6 +59,7 @@ class RagSettings:
             allowed_tenants=_csv_env("RAG_ALLOWED_TENANTS"),
             source_base_url=environ.get("RAG_SOURCE_BASE_URL", "").strip() or None,
             service_token=environ.get("AGENT_SERVICE_TOKEN", "").strip() or None,
+            max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
         )
         settings.validate()
         return settings
@@ -73,4 +75,5 @@ class RagSettings:
             raise ValueError("RAG_CHUNK_SIZE must be at least 200.")
         if self.chunk_overlap < 0 or self.chunk_overlap >= self.chunk_size:
             raise ValueError("RAG_CHUNK_OVERLAP must be smaller than RAG_CHUNK_SIZE.")
-
+        if self.max_images < 0 or self.max_images > 4:
+            raise ValueError("RAG_MAX_IMAGES must be between 0 and 4.")

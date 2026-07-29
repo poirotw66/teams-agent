@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -83,10 +84,19 @@ class Citation:
 
 
 @dataclass(frozen=True)
+class AgentImage:
+    path: str
+    title: str
+    altText: str
+    sourceChunkId: str
+
+
+@dataclass(frozen=True)
 class AgentResponse:
     answer: str
     traceId: str
     citations: list[Citation] = field(default_factory=list)
+    images: list[AgentImage] = field(default_factory=list)
 
     @classmethod
     def from_payload(
@@ -125,7 +135,39 @@ class AgentResponse:
                         )
                     )
 
-        return cls(answer=answer.strip(), traceId=trace_id, citations=citations)
+        images: list[AgentImage] = []
+        raw_images = payload.get("images", [])
+        if isinstance(raw_images, list):
+            for item in raw_images:
+                if not isinstance(item, dict):
+                    continue
+                path = item.get("path")
+                title = item.get("title")
+                alt_text = item.get("altText")
+                source_chunk_id = item.get("sourceChunkId")
+                if not all(
+                    isinstance(value, str) and value.strip()
+                    for value in (path, title, alt_text, source_chunk_id)
+                ):
+                    continue
+                pure_path = PurePosixPath(path)
+                if pure_path.is_absolute() or ".." in pure_path.parts:
+                    continue
+                images.append(
+                    AgentImage(
+                        path=pure_path.as_posix(),
+                        title=title.strip(),
+                        altText=alt_text.strip(),
+                        sourceChunkId=source_chunk_id.strip(),
+                    )
+                )
+
+        return cls(
+            answer=answer.strip(),
+            traceId=trace_id,
+            citations=citations,
+            images=images,
+        )
 
 
 def format_agent_response(response: AgentResponse) -> str:

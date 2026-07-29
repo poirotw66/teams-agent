@@ -9,7 +9,7 @@ from agent_service.contracts import (
     MessageContent,
     UserIdentity,
 )
-from agent_service.documents import DocumentChunk
+from agent_service.documents import DocumentChunk, DocumentImage
 from agent_service.graph import RagAgent, message_text
 from agent_service.retrieval import HybridIndex
 from agent_service.settings import RagSettings
@@ -53,6 +53,13 @@ async def test_offline_agent_returns_grounded_result(tmp_path: Path) -> None:
                 title="VPN 常見問題",
                 source_path="sources/vpn.md",
                 content="VPN 密碼被鎖時，請聯繫資訊小幫手協助解鎖。",
+                images=[
+                    DocumentImage(
+                        path="vpn/p01.png",
+                        title="VPN 設定畫面",
+                        alt_text="VPN 設定畫面",
+                    )
+                ],
             )
         ]
     )
@@ -62,6 +69,8 @@ async def test_offline_agent_returns_grounded_result(tmp_path: Path) -> None:
 
     assert "VPN 密碼被鎖" in response.answer
     assert response.citations[0].title == "VPN 常見問題"
+    assert response.images[0].path == "vpn/p01.png"
+    assert response.images[0].sourceChunkId == "vpn"
     assert response.traceId
 
 
