@@ -51,9 +51,9 @@
     "identity"
   ],
   "validDomains": [],
+  "supportsChannelFeatures": "tier1",
   "defaultInstallScope": "team",
   "defaultGroupCapability": {
     "team": "bot"
   }
 }
-

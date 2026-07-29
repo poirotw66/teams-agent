@@ -17,7 +17,11 @@ Bot：收到：hello
 
 ## 專案狀態
 
-截至 2026-07-29，Milestone 1「Azure Bot 與本機後端打通」已完成。
+截至 2026-07-29：
+
+- Milestone 1「Azure Bot 與本機後端打通」已完成。
+- Milestone 2 的 Teams app package 已成功上傳公司 Teams。
+- 下一個驗收點是在測試 Team 頻道完成 `@Bot hello` Echo。
 
 目前已驗證的完整路徑：
 
@@ -50,11 +54,12 @@ Azure Bot Test in Web Chat
 - [x] 加入 Dockerfile、環境變數範例、單元測試與 Ruff
 - [x] 確認錯誤 App ID 會被 JWT audience validation 阻擋
 
-目前尚未完成：
+Teams 與後續里程碑狀態：
 
 - [x] 啟用 Microsoft Teams channel，Azure 狀態為 `Healthy`
 - [x] 建立通過 v1.25 schema 驗證的 Teams app package
-- [ ] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
+- [x] 加入 manifest v1.25 必要的 `supportsChannelFeatures`
+- [x] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
 - [ ] 在 Teams 頻道以 `@Bot` 完成 Echo 測試
 - [ ] 串接真正的 AI Agent API、RAG 與內部 API
 - [ ] 部署到可長期運作的雲端環境
@@ -112,6 +117,30 @@ curl http://localhost:3978/readyz
 
 `POST /api/messages` 會驗證 Azure Bot 傳入的 Bearer token，因此不能用普通 `curl`
 模擬完整 Bot Activity。
+
+### 本機 Log
+
+只要 `uv run teams-agent` 保持執行，Teams／Web Chat 的請求會顯示在 Terminal：
+
+```text
+INFO teams_agent.agent Message received:
+request_id=<uuid> channel=msteams conversation=<conversation-id>
+
+POST /api/messages HTTP/1.1 200
+```
+
+目前 log 刻意不記錄使用者完整問題、Bot 回答、Client Secret 或 API Token。
+每次請求會保留 request ID、channel 與 conversation ID 供問題追蹤。
+
+Log level 可在 `.env` 設定：
+
+```dotenv
+LOG_LEVEL=INFO
+```
+
+需要更詳細的本機除錯資訊時可暫時改為 `DEBUG`，修改後必須重新啟動 Bot。
+Dev Tunnel 的 inspect URL 可用來查看 HTTP 流量，但不得分享其中的
+Authorization header。
 
 ## 3. 讓 Azure Bot 連到本機
 
@@ -268,21 +297,18 @@ uv run ruff check .
 - [x] 建立符合規格的 192×192 彩色 icon
 - [x] 建立具有透明背景的 32×32 白色 outline icon
 - [x] 建立 app package 打包腳本
+- [x] 加入 manifest v1.25 `supportsChannelFeatures: tier1`
+- [x] App package 成功上傳公司 Teams
 
 接下來操作：
+
 1. 保持本機 Bot 與 Dev Tunnel 執行。
-2. 在 Azure Bot resource 開啟 `Channels`。
-3. 選擇並啟用 `Microsoft Teams` channel；一般商業 tenant 選擇標準商業環境。
-4. 執行以下指令產生 app package：
-
-   ```bash
-   ./scripts/build-teams-package.sh
-   ```
-
-5. 在 Teams 開啟 `Apps` → `Manage your apps` → `Upload an app` →
-   `Upload a custom app`。
-6. 上傳 `appPackage/dist/teams-ai-agent.zip`。
-7. 選擇測試 Team 安裝，在頻道輸入 `@Teams AI Agent hello`。
+2. 確認 Azure Bot Messaging endpoint 仍指向目前的 Dev Tunnel `/api/messages`。
+3. 將已上傳的 App 安裝到指定測試 Team。
+4. 在一般頻道輸入 `@Teams AI Agent hello`。
+5. 確認 Teams 收到 `收到：hello`。
+6. 確認本機 log 出現 `channel=msteams` 與 HTTP `200`。
+7. 再於 personal scope 傳送 `hello`，確認私人聊天也能回覆。
 
 如果沒有 `Upload a custom app` 選項，需要 Teams 管理員在 app setup policy
 開啟 custom app upload，或由管理員在 Teams admin center 上傳 package。
@@ -319,6 +345,14 @@ Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實
 - 結構化答案、來源引用及錯誤狀態
 - timeout、重試與友善降級訊息
 
+實作前需要先確定：
+
+- Agent Gateway 的實際 HTTPS URL
+- 服務間驗證方式
+- request／response contract 是否沿用本專案格式
+- timeout、無答案與錯誤回覆規則
+- 哪些使用者識別欄位允許傳入 Agent Gateway
+
 ### Milestone 4：RAG 知識問答
 
 1. 建立文件 ingestion、切塊與版本管理。
@@ -350,12 +384,23 @@ Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實
 ## 建議執行順序
 
 ```text
-目前：Web Chat Echo ✅
-→ Teams Channel Echo
-→ Agent API
+Web Chat Echo ✅
+→ Teams App 上傳 ✅
+→ Teams Channel Echo（目前）
+→ Adapter 開發環境雲端部署
+→ 實際 Agent API
 → RAG + 引用
 → 唯讀內部工具
 → 身分與 ACL
-→ 正式雲端部署
+→ 正式環境部署與監控
 → 寫入型工具與審批
 ```
+
+## 下一步驗收清單
+
+- [ ] 測試 Team 成功安裝 App
+- [ ] 頻道 `@Bot hello` 回覆成功
+- [ ] 本機收到 `msteams` activity 並留下 request ID
+- [ ] 未 `@mention` Bot 時不觸發
+- [ ] Personal scope Echo 成功
+- [ ] 記錄第一次 Teams 端到端測試結果
