@@ -11,7 +11,7 @@ from microsoft_agents.hosting.core import AgentApplication, AgentAuthConfigurati
 
 @middleware
 async def authentication_middleware(request: Request, handler):
-    if request.path == "/healthz":
+    if request.path in {"/healthz", "/readyz"}:
         return await handler(request)
     return await jwt_authorization_middleware(request, handler)
 
@@ -19,6 +19,7 @@ async def authentication_middleware(request: Request, handler):
 def create_web_app(
     agent_application: AgentApplication,
     auth_configuration: AgentAuthConfiguration,
+    readiness: dict[str, object] | None = None,
 ) -> Application:
     async def messages(request: Request) -> Response:
         agent: AgentApplication = request.app["agent_app"]
@@ -28,9 +29,15 @@ def create_web_app(
     async def health(_request: Request) -> Response:
         return json_response({"status": "ok"})
 
+    async def ready(_request: Request) -> Response:
+        payload = readiness or {"status": "ready"}
+        status = 200 if payload.get("status") == "ready" else 503
+        return json_response(payload, status=status)
+
     app = Application(middlewares=[authentication_middleware])
     app.router.add_post("/api/messages", messages)
     app.router.add_get("/healthz", health)
+    app.router.add_get("/readyz", ready)
     app["agent_configuration"] = auth_configuration
     app["agent_app"] = agent_application
     app["adapter"] = agent_application.adapter
@@ -40,8 +47,9 @@ def create_web_app(
 def start_server(
     agent_application: AgentApplication,
     auth_configuration: AgentAuthConfiguration,
+    readiness: dict[str, object] | None = None,
 ) -> None:
-    app = create_web_app(agent_application, auth_configuration)
+    app = create_web_app(agent_application, auth_configuration, readiness)
     run_app(
         app,
         host=environ.get("HOST", "0.0.0.0"),

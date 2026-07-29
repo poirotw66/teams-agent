@@ -1,0 +1,59 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.25/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.25",
+  "version": "1.0.0",
+  "id": "72e13e43-bed4-490e-add4-40eea4ba508d",
+  "developer": {
+    "name": "Internal AI Platform Team",
+    "websiteUrl": "https://example.com",
+    "privacyUrl": "https://example.com/privacy",
+    "termsOfUseUrl": "https://example.com/terms"
+  },
+  "name": {
+    "short": "Teams AI Agent",
+    "full": "Internal Teams AI Agent"
+  },
+  "description": {
+    "short": "Internal AI assistant for Teams channels.",
+    "full": "An internal Microsoft Teams AI assistant. The current milestone provides an Echo Bot for validating channel messaging before connecting the Agent API, RAG knowledge base, and approved internal tools."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#2420A6",
+  "bots": [
+    {
+      "botId": "b2a918a4-eb72-40a3-8524-52856a428d23",
+      "scopes": [
+        "personal",
+        "team"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "personal",
+            "team"
+          ],
+          "commands": [
+            {
+              "title": "help",
+              "description": "顯示目前可用的指令"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity"
+  ],
+  "validDomains": [],
+  "defaultInstallScope": "team",
+  "defaultGroupCapability": {
+    "team": "bot"
+  }
+}
+

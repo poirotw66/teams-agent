@@ -1,7 +1,7 @@
 import logging
 from os import environ
 
-from .agent import agent_app, connection_manager
+from .agent import agent_app, agent_settings, connection_manager
 from .server import start_server
 
 
@@ -17,9 +17,12 @@ def main() -> None:
     start_server(
         agent_application=agent_app,
         auth_configuration=connection_manager.get_default_connection_configuration(),
+        readiness={
+            "status": "ready" if agent_settings.ready else "not_ready",
+            "agentMode": agent_settings.mode,
+        },
     )
 
 
 if __name__ == "__main__":
     main()
-

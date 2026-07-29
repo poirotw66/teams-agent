@@ -1,7 +1,8 @@
 # Teams Agent Backend
 
-這是一個最小可用的 Microsoft Teams Bot 後端，使用 Python 與 Microsoft 365
-Agents SDK。第一階段只提供 Echo 功能：
+這是一個可擴充的 Microsoft Teams Bot 後端，使用 Python 與 Microsoft 365
+Agents SDK。目前預設以 Echo 模式驗證通訊，也已具備切換至獨立 Agent API
+的標準 contract：
 
 ```text
 使用者：hello
@@ -12,6 +13,7 @@ Bot：收到：hello
 
 - `POST /api/messages`：Azure Bot Service 的 Messaging endpoint
 - `GET /healthz`：部署平台的健康檢查
+- `GET /readyz`：Bot 與 Agent 模式的就緒檢查
 
 ## 專案狀態
 
@@ -38,6 +40,11 @@ Azure Bot Test in Web Chat
 - [x] 建立公開的 `GET /healthz`
 - [x] 支援歡迎訊息、`/help` 與 Echo 回覆
 - [x] 清除 Teams 訊息中的 Bot `@mention`
+- [x] 擷取 tenant、team、channel、conversation 與 Entra user metadata
+- [x] 建立 Echo／Agent API 雙模式
+- [x] 建立 Agent Gateway request／response contract
+- [x] 支援 Agent timeout、錯誤降級、trace ID 與來源引用
+- [x] 建立 `/readyz` readiness endpoint
 - [x] 使用 Dev Tunnels 暴露本機 HTTPS endpoint
 - [x] Azure Bot `Test in Web Chat` 端到端測試成功
 - [x] 加入 Dockerfile、環境變數範例、單元測試與 Ruff
@@ -45,8 +52,9 @@ Azure Bot Test in Web Chat
 
 目前尚未完成：
 
-- [ ] 啟用 Microsoft Teams channel
-- [ ] 建立與上傳 Teams app package
+- [x] 啟用 Microsoft Teams channel，Azure 狀態為 `Healthy`
+- [x] 建立通過 v1.25 schema 驗證的 Teams app package
+- [ ] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
 - [ ] 在 Teams 頻道以 `@Bot` 完成 Echo 測試
 - [ ] 串接真正的 AI Agent API、RAG 與內部 API
 - [ ] 部署到可長期運作的雲端環境
@@ -79,6 +87,7 @@ CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=<Client secret Value>
 CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=<Tenant ID>
 PORT=3978
 HOST=0.0.0.0
+AGENT_MODE=echo
 ```
 
 啟動：
@@ -87,16 +96,18 @@ HOST=0.0.0.0
 uv run teams-agent
 ```
 
-確認 health endpoint：
+確認 health 與 readiness endpoints：
 
 ```bash
 curl http://localhost:3978/healthz
+curl http://localhost:3978/readyz
 ```
 
 預期結果：
 
 ```json
 {"status": "ok"}
+{"status": "ready", "agentMode": "echo"}
 ```
 
 `POST /api/messages` 會驗證 Azure Bot 傳入的 Bearer token，因此不能用普通 `curl`
@@ -144,7 +155,80 @@ Terminal 2：devtunnel host -p 3978 --allow-anonymous
 `Authorization header not found` 是正常行為。瀏覽器只能直接檢查 `/healthz`；
 `/api/messages` 必須由 Azure Bot Service 使用 `POST` 並攜帶 Connector JWT。
 
-## 4. Docker
+## 4. Agent 模式
+
+### Echo 模式
+
+開發與 Teams 通訊驗證階段使用：
+
+```dotenv
+AGENT_MODE=echo
+```
+
+這個模式不會呼叫外部 AI：
+
+```text
+hello → 收到：hello
+```
+
+### API 模式
+
+獨立 Agent Gateway 完成後設定：
+
+```dotenv
+AGENT_MODE=api
+AGENT_API_URL=https://<agent-gateway-domain>/agent/chat
+AGENT_API_TOKEN=<internal-service-token>
+AGENT_API_TIMEOUT_SECONDS=10
+```
+
+非 localhost 的 `AGENT_API_URL` 強制使用 HTTPS。Token 只能放在 `.env`、
+Secret Manager 或 Key Vault，不可寫入程式碼與 Git。
+
+Teams Adapter 送出的 request：
+
+```json
+{
+  "requestId": "uuid",
+  "channel": "msteams",
+  "conversation": {
+    "tenantId": "tenant-id",
+    "teamId": "team-id",
+    "channelId": "channel-id",
+    "conversationId": "conversation-id"
+  },
+  "user": {
+    "teamsUserId": "teams-user-id",
+    "entraObjectId": "entra-object-id",
+    "displayName": "Justin"
+  },
+  "message": {
+    "text": "如何申請 API Key？",
+    "locale": "zh-TW"
+  }
+}
+```
+
+Agent Gateway 最小 response：
+
+```json
+{
+  "answer": "請至內部平台提出申請。",
+  "traceId": "trace-uuid",
+  "citations": [
+    {
+      "title": "API Key 申請流程",
+      "url": "https://internal.example/docs/api-key",
+      "chunkId": "chunk-8"
+    }
+  ]
+}
+```
+
+若 Agent API timeout、連線失敗或回傳格式錯誤，Teams 會收到友善降級訊息與
+request trace ID。
+
+## 5. Docker
 
 ```bash
 docker build -t teams-agent-backend .
@@ -162,7 +246,7 @@ https://<public-service-domain>/api/messages
 服務必須允許 Azure Bot Service 經由公網 HTTPS 呼叫；應用程式本身仍會驗證
 Connector JWT。
 
-## 5. 測試與程式碼檢查
+## 6. 測試與程式碼檢查
 
 ```bash
 uv run pytest
@@ -175,11 +259,38 @@ uv run ruff check .
 
 目標是讓 Team 頻道中的使用者可以透過 `@Bot hello` 觸發現有 Echo handler。
 
-1. 在 Azure Bot 啟用 Microsoft Teams channel。
-2. 建立 Teams app manifest 與 app package。
-3. Bot scope 第一版加入 `team`，建議同時保留 `personal`。
-4. 將 app package 上傳或交由 Microsoft 365 管理員發布。
-5. 安裝到測試 Team，驗證頻道 `@mention`、使用者、Team 與 Channel 資訊。
+目前已完成：
+
+- [x] Azure Bot 的 Microsoft Teams channel 已啟用且為 `Healthy`
+- [x] 建立 Teams app manifest
+- [x] Bot scopes 設為 `team` 與 `personal`
+- [x] 預設安裝範圍設為 `team`
+- [x] 建立符合規格的 192×192 彩色 icon
+- [x] 建立具有透明背景的 32×32 白色 outline icon
+- [x] 建立 app package 打包腳本
+
+接下來操作：
+1. 保持本機 Bot 與 Dev Tunnel 執行。
+2. 在 Azure Bot resource 開啟 `Channels`。
+3. 選擇並啟用 `Microsoft Teams` channel；一般商業 tenant 選擇標準商業環境。
+4. 執行以下指令產生 app package：
+
+   ```bash
+   ./scripts/build-teams-package.sh
+   ```
+
+5. 在 Teams 開啟 `Apps` → `Manage your apps` → `Upload an app` →
+   `Upload a custom app`。
+6. 上傳 `appPackage/dist/teams-ai-agent.zip`。
+7. 選擇測試 Team 安裝，在頻道輸入 `@Teams AI Agent hello`。
+
+如果沒有 `Upload a custom app` 選項，需要 Teams 管理員在 app setup policy
+開啟 custom app upload，或由管理員在 Teams admin center 上傳 package。
+Microsoft Teams 免費／個人版不提供此企業自訂 app 上傳流程；請使用具有 Teams
+授權的 Microsoft 365 公司或學校帳號。
+
+`manifest.json` 中的 developer URLs 目前是 PoC placeholder。內部正式發布前，
+必須替換成公司的網站、隱私權政策與使用條款 URL。
 
 完成標準：
 
@@ -200,7 +311,7 @@ Teams
 → Teams
 ```
 
-第一版 Agent API 應支援：
+Adapter 端 contract 與 client 已完成。下一步由實際 Agent Gateway 實作：
 
 - request ID 與 trace ID
 - Teams tenant、team、channel、conversation 與使用者識別

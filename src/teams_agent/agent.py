@@ -14,12 +14,17 @@ from microsoft_agents.hosting.core import (
     TurnState,
 )
 
+from .agent_gateway import AgentGateway, AgentGatewayError
+from .contracts import AgentRequest, format_agent_response
+from .settings import AgentSettings
 from .text import clean_message_text
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 agents_sdk_config = load_configuration_from_env(environ)
+agent_settings = AgentSettings.from_env()
+agent_gateway = AgentGateway(agent_settings)
 
 storage = MemoryStorage()
 connection_manager = MsalConnectionManager(**agents_sdk_config)
@@ -44,7 +49,7 @@ async def on_members_added(context: TurnContext, _state: TurnState) -> bool:
 @agent_app.message(re.compile(r"^/help$", re.IGNORECASE))
 async def on_help(context: TurnContext, _state: TurnState) -> None:
     await context.send_activity(
-        "目前是 Echo 測試模式。傳送任意文字後，我會回覆「收到：你的訊息」。"
+        f"目前模式：`{agent_settings.mode}`。傳送任意文字即可開始測試。"
     )
 
 
@@ -56,12 +61,25 @@ async def on_message(context: TurnContext, _state: TurnState) -> None:
         await context.send_activity("我收到訊息了，但其中沒有可處理的文字。")
         return
 
+    request = AgentRequest.from_activity(context.activity, message)
     logger.info(
-        "Message received: channel=%s conversation=%s",
-        context.activity.channel_id,
-        context.activity.conversation.id if context.activity.conversation else "unknown",
+        "Message received: request_id=%s channel=%s conversation=%s",
+        request.requestId,
+        request.channel,
+        request.conversation.conversationId or "unknown",
     )
-    await context.send_activity(f"收到：{message}")
+
+    try:
+        response = await agent_gateway.answer(request)
+    except AgentGatewayError:
+        logger.exception("Agent Gateway failed: request_id=%s", request.requestId)
+        await context.send_activity(
+            "AI Agent 暫時無法回應，請稍後再試。"
+            f"\n\n追蹤編號：`{request.requestId}`"
+        )
+        return
+
+    await context.send_activity(format_agent_response(response))
 
 
 @agent_app.error
