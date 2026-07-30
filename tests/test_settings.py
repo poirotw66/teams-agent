@@ -32,3 +32,14 @@ def test_api_mode_allows_local_http_for_development() -> None:
 
     assert settings.ready is True
 
+
+def test_google_identity_token_uses_cloud_run_origin_as_audience() -> None:
+    settings = AgentSettings(
+        mode="api",
+        api_url="https://rag-agent.example.run.app/agent/chat",
+        api_auth_mode="google_id_token",
+    )
+
+    settings.validate()
+
+    assert settings.resolved_api_audience == "https://rag-agent.example.run.app"

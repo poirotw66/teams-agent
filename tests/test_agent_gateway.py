@@ -53,6 +53,7 @@ async def test_api_mode_sends_contract_and_bearer_token() -> None:
             mode="api",
             api_url="https://agent.example/chat",
             api_token="internal-token",
+            api_auth_mode="service_token",
             api_timeout_seconds=5,
         ),
         transport=fake_transport,
@@ -65,6 +66,33 @@ async def test_api_mode_sends_contract_and_bearer_token() -> None:
     assert captured["headers"]["Authorization"] == "Bearer internal-token"
     assert captured["timeout"] == 5
     assert response.answer == "Agent answer"
+
+
+@pytest.mark.asyncio
+async def test_api_mode_sends_google_identity_token() -> None:
+    captured = {}
+
+    async def fake_transport(url, payload, headers, timeout):
+        captured.update(headers=headers)
+        return {"answer": "Agent answer", "traceId": "trace-1"}
+
+    async def fake_identity_token_provider(audience: str) -> str:
+        assert audience == "https://agent.example"
+        return "google-identity-token"
+
+    gateway = AgentGateway(
+        AgentSettings(
+            mode="api",
+            api_url="https://agent.example/agent/chat",
+            api_auth_mode="google_id_token",
+        ),
+        transport=fake_transport,
+        identity_token_provider=fake_identity_token_provider,
+    )
+
+    await gateway.answer(make_request())
+
+    assert captured["headers"]["Authorization"] == "Bearer google-identity-token"
 
 
 @pytest.mark.asyncio

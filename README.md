@@ -1,8 +1,8 @@
 # Teams Agent Backend
 
-這是一個可擴充的 Microsoft Teams Bot 後端，使用 Python 與 Microsoft 365
-Agents SDK。目前預設以 Echo 模式驗證通訊，也已具備切換至獨立 Agent API
-的標準 contract：
+這是一個可擴充的 Microsoft Teams AI Agent，使用 Python、Microsoft 365
+Agents SDK 與 LangGraph。Teams Adapter、Agentic RAG、Gemini hybrid retrieval、
+來源圖片 Adaptive Card 與 GCP Cloud Run 部署均已完成。
 
 ```text
 使用者：hello
@@ -21,10 +21,20 @@ Bot：收到：hello
 
 - Milestone 1「Azure Bot 與本機後端打通」已完成。
 - Milestone 2 的 Teams app package 已成功上傳公司 Teams。
-- 下一個驗收點是讓 Teams Adapter 切換為 API 模式，完成
-  `@Bot <內部問題>` 的 LangGraph RAG 端到端測試。
+- Teams 頻道的 LangGraph RAG 端到端測試已成功。
+- 下一個驗收點是將 Azure Bot Messaging endpoint 從 Dev Tunnel 切換至
+  Cloud Run Adapter。
 
-目前已驗證的完整路徑：
+截至 2026-07-30，GCP Cloud Run 部署已完成：
+
+- Teams Adapter：`https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app`
+- Private RAG Agent：`https://teams-rag-agent-jt7pjdeeoa-de.a.run.app`
+- Region：`asia-east1`
+- Project：`itr-aimasteryhub-lab`
+- Adapter → Agent 使用 Cloud Run IAM identity token
+- API Key、Bot client secret 與圖片 signing key 使用 Secret Manager
+
+本機開發路徑已驗證：
 
 ```text
 Azure Bot Test in Web Chat
@@ -34,6 +44,18 @@ Azure Bot Test in Web Chat
 → Echo handler
 → Azure Bot
 → Web Chat 顯示「收到：hello」
+```
+
+雲端正式路徑已驗證至 Cloud Run Adapter／Agent：
+
+```text
+Teams／Azure Bot
+→ Public Cloud Run Teams Adapter
+→ Cloud Run IAM identity token
+→ Private Cloud Run LangGraph Agent
+→ Gemini 3.5 Flash-Lite
+→ Gemini Embedding 2 hybrid retrieval
+→ Answer + citation + signed source image
 ```
 
 已完成項目：
@@ -68,10 +90,12 @@ Teams 與後續里程碑狀態：
 - [x] 完成來源引用、文件 ACL、service token 與 tenant allowlist
 - [x] RAG 回答可攜帶來源圖片並以 Teams Adaptive Card 顯示
 - [x] 圖片使用短效 HMAC 簽名 URL、路徑防護與 Teams 尺寸最佳化
-- [ ] 選定並設定正式 LLM／embedding model
-- [ ] 由 Teams 頻道完成 Agent API 模式端到端驗收
+- [x] 選定 Gemini 3.5 Flash-Lite 與 Gemini Embedding 2
+- [x] 由 Teams 頻道完成 Agent API 模式端到端驗收
 - [ ] 串接唯讀內部 API 工具
-- [ ] 部署到可長期運作的雲端環境
+- [x] 部署 Teams Adapter 與 LangGraph Agent 至 GCP Cloud Run
+- [x] 設定 private service-to-service IAM 與 Secret Manager
+- [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run Adapter
 
 ## 1. 必要條件
 
@@ -364,15 +388,15 @@ uv run ruff check .
 - [x] 加入 manifest v1.25 `supportsChannelFeatures: tier1`
 - [x] App package 成功上傳公司 Teams
 
-接下來操作：
+Teams App 已完成安裝並通過頻道測試。目前需在 Azure Bot Configuration 將
+Messaging endpoint 切換為：
 
-1. 保持本機 Bot 與 Dev Tunnel 執行。
-2. 確認 Azure Bot Messaging endpoint 仍指向目前的 Dev Tunnel `/api/messages`。
-3. 將已上傳的 App 安裝到指定測試 Team。
-4. 在一般頻道輸入 `@Teams AI Agent hello`。
-5. 確認 Teams 收到 `收到：hello`。
-6. 確認本機 log 出現 `channel=msteams` 與 HTTP `200`。
-7. 再於 personal scope 傳送 `hello`，確認私人聊天也能回覆。
+```text
+https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
+```
+
+切換成功後，本機 Bot、Agent Service 與 Dev Tunnel 不需要保持執行。開發除錯
+時仍可使用 `./start.sh` 啟動完整本機環境。
 
 如果沒有 `Upload a custom app` 選項，需要 Teams 管理員在 app setup policy
 開啟 custom app upload，或由管理員在 Teams admin center 上傳 package。
@@ -409,13 +433,13 @@ Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 - 結構化答案、來源引用及錯誤狀態
 - timeout、重試與友善降級訊息
 
-正式部署前仍需確定：
+正式部署決策：
 
-- Agent Gateway 的實際 HTTPS URL
-- 服務間驗證方式
-- request／response contract 是否沿用本專案格式
-- timeout、無答案與錯誤回覆規則
-- 哪些使用者識別欄位允許傳入 Agent Gateway
+- Agent Gateway：private Cloud Run service
+- 服務間驗證：Cloud Run IAM identity token
+- Contract：沿用 `/agent/chat` 結構化 request／response
+- Secrets：Google API Key、Bot client secret、image signing key 存於 Secret Manager
+- Timeout、無答案與錯誤：由 Adapter 與 Agent Gateway 分層處理
 
 ### Milestone 4：RAG 知識問答
 
@@ -425,7 +449,7 @@ Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 - [x] 在 retrieval 階段套用文件群組 ACL
 - [x] 回覆附上文件標題與 chunk trace
 - [x] 建立 LangGraph route、retrieve、grade、rewrite、generate 流程
-- [ ] 選定正式 LLM 與 embedding model
+- [x] 選定 Gemini 3.5 Flash-Lite 與 Gemini Embedding 2
 - [ ] 將正式文件 URL 映射至 citation
 - [ ] 建立 FAQ 評估集，量測正確率、引用率與無答案率
 
@@ -444,13 +468,20 @@ Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 
 ### Milestone 6：正式部署與治理
 
-- 部署至 GCP Cloud Run、Azure Container Apps 或公司既有容器平台
-- Secret 改由 Secret Manager／Key Vault 管理
+- [x] 部署至 GCP Cloud Run `asia-east1`
+- [x] Secret 改由 Secret Manager 管理
+- [x] Adapter／Agent 使用獨立 Service Account
+- [x] Agent 設為 private，僅允許 Adapter `roles/run.invoker`
+- [x] 設定 Cloud Run scale-to-zero 與最大 3 instances
+- [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run
 - 對話狀態由 MemoryStorage 遷移到 Redis、PostgreSQL 或受管儲存
 - 加入 OpenTelemetry、集中式 log、錯誤率與 P95 latency 監控
 - 加入 prompt injection 防護、PII 遮蔽、內容安全與工具權限政策
 - 建立 dev、test、prod 環境與獨立 App Registration
-- 正式環境移除對 Dev Tunnel 的依賴
+- 正式通路切換後移除對 Dev Tunnel 的依賴
+
+部署腳本與重新部署方式請見
+[`deploy/README.md`](deploy/README.md)。
 
 ## 建議執行順序
 
@@ -459,22 +490,29 @@ Web Chat Echo ✅
 → Teams App 上傳 ✅
 → LangGraph Agent Gateway ✅
 → data/ 文件索引與 RAG API ✅
-→ Teams Channel Agent API 模式（目前）
-→ 選定 LLM／embedding 並建立評估集
+→ Teams Channel Agent API 模式 ✅
+→ Gemini LLM／embedding ✅
+→ GCP Cloud Run + IAM + Secret Manager ✅
+→ Azure Bot endpoint 切換（目前）
+→ 建立 FAQ 評估集
 → 唯讀內部工具
-→ 身分與 ACL
-→ 正式環境部署與監控
+→ Entra 群組與文件 ACL
+→ 正式監控與告警
 → 寫入型工具與審批
 ```
 
 ## 下一步驗收清單
 
-- [ ] 測試 Team 成功安裝 App
-- [ ] 頻道 `@Bot hello` 回覆成功
-- [ ] 本機收到 `msteams` activity 並留下 request ID
+- [x] 測試 Team 成功安裝 App
+- [x] 頻道 `@Bot hello` 回覆成功
+- [x] 本機收到 `msteams` activity 並留下 request ID
 - [ ] 未 `@mention` Bot 時不觸發
 - [ ] Personal scope Echo 成功
-- [ ] 啟動 `agent_service` 並將 Adapter 切為 `AGENT_MODE=api`
-- [ ] 頻道提問可收到知識庫回答與來源
-- [ ] 無關問題回覆「沒有足夠資訊」
-- [ ] 記錄第一次 Teams + LangGraph RAG 端到端測試結果
+- [x] 啟動 `agent_service` 並將 Adapter 切為 `AGENT_MODE=api`
+- [x] 頻道提問可收到知識庫回答與來源
+- [x] 來源圖片可透過 Adaptive Card 顯示
+- [x] 無關問題回覆「沒有足夠資訊」
+- [x] 記錄第一次 Teams + LangGraph RAG 端到端測試結果
+- [x] Cloud Run Agent 未授權請求回覆 403
+- [x] Cloud Run RAG、citation 與 signed image smoke test
+- [ ] Azure Bot endpoint 切換後完成 Teams 雲端驗收

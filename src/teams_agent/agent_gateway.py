@@ -3,6 +3,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
+from google.auth import exceptions as google_auth_exceptions
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.id_token import fetch_id_token
 
 from .contracts import AgentRequest, AgentResponse
 from .settings import AgentSettings
@@ -11,10 +14,19 @@ Transport = Callable[
     [str, dict[str, Any], dict[str, str], float],
     Awaitable[object],
 ]
+IdentityTokenProvider = Callable[[str], Awaitable[str]]
 
 
 class AgentGatewayError(RuntimeError):
     """Raised when the configured Agent Gateway cannot provide an answer."""
+
+
+async def google_identity_token_provider(audience: str) -> str:
+    return await asyncio.to_thread(
+        fetch_id_token,
+        GoogleAuthRequest(),
+        audience,
+    )
 
 
 async def aiohttp_transport(
@@ -41,9 +53,11 @@ class AgentGateway:
         self,
         settings: AgentSettings,
         transport: Transport = aiohttp_transport,
+        identity_token_provider: IdentityTokenProvider = google_identity_token_provider,
     ) -> None:
         self.settings = settings
         self.transport = transport
+        self.identity_token_provider = identity_token_provider
 
     async def answer(self, request: AgentRequest) -> AgentResponse:
         if self.settings.mode == "echo":
@@ -53,7 +67,18 @@ class AgentGateway:
             )
 
         headers = {"Content-Type": "application/json"}
-        if self.settings.api_token:
+        if self.settings.api_auth_mode == "google_id_token":
+            audience = self.settings.resolved_api_audience
+            if not audience:
+                raise AgentGatewayError("Agent API audience is not configured.")
+            try:
+                identity_token = await self.identity_token_provider(audience)
+            except google_auth_exceptions.GoogleAuthError as error:
+                raise AgentGatewayError(
+                    "Unable to obtain a Google identity token."
+                ) from error
+            headers["Authorization"] = f"Bearer {identity_token}"
+        elif self.settings.api_auth_mode == "service_token":
             headers["Authorization"] = f"Bearer {self.settings.api_token}"
 
         try:

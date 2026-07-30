@@ -13,6 +13,8 @@ class AgentSettings:
     mode: str = "echo"
     api_url: str | None = None
     api_token: str | None = None
+    api_auth_mode: str = "none"
+    api_audience: str | None = None
     api_timeout_seconds: float = 10.0
     asset_dir: Path | None = None
     public_base_url: str | None = None
@@ -26,6 +28,10 @@ class AgentSettings:
         mode = environ.get("AGENT_MODE", "echo").strip().lower()
         api_url = environ.get("AGENT_API_URL", "").strip() or None
         api_token = environ.get("AGENT_API_TOKEN", "").strip() or None
+        api_auth_mode = environ.get(
+            "AGENT_API_AUTH_MODE",
+            "service_token" if api_token else "none",
+        ).strip().lower()
         project_dir = Path(__file__).resolve().parents[2]
         asset_dir = Path(
             environ.get("RAG_ASSET_DIR", project_dir / "data" / "assets")
@@ -40,6 +46,8 @@ class AgentSettings:
             mode=mode,
             api_url=api_url,
             api_token=api_token,
+            api_auth_mode=api_auth_mode,
+            api_audience=environ.get("AGENT_API_AUDIENCE", "").strip() or None,
             api_timeout_seconds=timeout,
             asset_dir=asset_dir.expanduser().resolve(),
             public_base_url=(
@@ -65,6 +73,14 @@ class AgentSettings:
     def validate(self) -> None:
         if self.mode not in {"echo", "api"}:
             raise SettingsError("AGENT_MODE must be either 'echo' or 'api'.")
+        if self.api_auth_mode not in {"none", "service_token", "google_id_token"}:
+            raise SettingsError(
+                "AGENT_API_AUTH_MODE must be none, service_token, or google_id_token."
+            )
+        if self.api_auth_mode == "service_token" and not self.api_token:
+            raise SettingsError(
+                "AGENT_API_TOKEN is required when AGENT_API_AUTH_MODE=service_token."
+            )
         if self.api_timeout_seconds <= 0:
             raise SettingsError("AGENT_API_TIMEOUT_SECONDS must be greater than zero.")
         if self.asset_url_ttl_seconds < 60 or self.asset_url_ttl_seconds > 86400:
@@ -102,6 +118,21 @@ class AgentSettings:
             raise SettingsError(
                 "AGENT_API_URL must use HTTPS, except for localhost development."
             )
+        if self.api_auth_mode == "google_id_token":
+            audience = self.api_audience or f"{parsed_url.scheme}://{parsed_url.netloc}"
+            if not audience.startswith("https://"):
+                raise SettingsError(
+                    "AGENT_API_AUDIENCE must be an HTTPS Cloud Run service URL."
+                )
+
+    @property
+    def resolved_api_audience(self) -> str | None:
+        if self.api_audience:
+            return self.api_audience
+        if not self.api_url:
+            return None
+        parsed_url = urlparse(self.api_url)
+        return f"{parsed_url.scheme}://{parsed_url.netloc}"
 
     @property
     def ready(self) -> bool:
