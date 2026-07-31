@@ -102,7 +102,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             payload.conversation.conversationId or "unknown",
         )
         try:
-            response = await agent.respond(payload)
+            result = await agent.run(payload)
         except Exception as error:
             logger.exception(
                 "Agent request failed: request_id=%s",
@@ -112,13 +112,27 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 status_code=503,
                 detail=f"Agent execution failed. Request ID: {payload.requestId}",
             ) from error
+        usage = result.usage.log_fields()
         logger.info(
-            "Agent request completed: request_id=%s trace_id=%s citations=%s",
+            "Agent request completed: request_id=%s trace_id=%s citations=%s "
+            "input_tokens=%s output_tokens=%s total_tokens=%s embedding_tokens=%s "
+            "estimated_cost_usd=%s usage=%s",
             payload.requestId,
-            response.traceId,
-            len(response.citations),
+            result.trace_id,
+            len(result.citations),
+            usage["input_tokens"],
+            usage["output_tokens"],
+            usage["total_tokens"],
+            usage["embedding_tokens"],
+            usage["estimated_cost_usd"],
+            usage,
         )
-        return response
+        return AgentResponse(
+            answer=result.answer,
+            traceId=result.trace_id,
+            citations=result.citations,
+            images=result.images,
+        )
 
     @app.post(
         "/retrieval/search",

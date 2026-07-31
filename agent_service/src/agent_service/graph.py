@@ -6,6 +6,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from langchain.chat_models import init_chat_model
+from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 from .contracts import AgentImage, AgentRequest, AgentResponse, Citation
 from .retrieval import HybridIndex, SearchResult
 from .settings import RagSettings
+from .usage import UsageReport, build_usage_report, estimate_text_tokens
 
 
 class RouteDecision(BaseModel):
@@ -40,6 +42,7 @@ class RagState(TypedDict):
     answer: str
     citations: list[Citation]
     images: list[AgentImage]
+    embedding_tokens: int
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class RagRunResult:
     trace_id: str
     citations: list[Citation]
     images: list[AgentImage]
+    usage: UsageReport
 
 
 ROUTE_PROMPT = """\
@@ -186,7 +190,12 @@ class RagAgent:
             self.settings.top_k,
             groups,
         )
-        return {"results": results}
+        embedding_tokens = state.get("embedding_tokens", 0)
+        if self.index.embedding_client and any(
+            chunk.vector for chunk in self.index.chunks
+        ):
+            embedding_tokens += estimate_text_tokens(state["query"])
+        return {"results": results, "embedding_tokens": embedding_tokens}
 
     async def _documents_are_relevant(self, state: RagState) -> bool:
         results = state["results"]
@@ -345,24 +354,32 @@ class RagAgent:
 
     async def run(self, request: AgentRequest) -> RagRunResult:
         trace_id = str(uuid4())
-        result = await self.graph.ainvoke(
-            {
-                "request": request,
-                "trace_id": trace_id,
-                "query": request.message.text,
-                "route": "retrieve",
-                "results": [],
-                "attempt": 0,
-                "answer": "",
-                "citations": [],
-                "images": [],
-            }
+        with get_usage_metadata_callback() as usage_callback:
+            result = await self.graph.ainvoke(
+                {
+                    "request": request,
+                    "trace_id": trace_id,
+                    "query": request.message.text,
+                    "route": "retrieve",
+                    "results": [],
+                    "attempt": 0,
+                    "answer": "",
+                    "citations": [],
+                    "images": [],
+                    "embedding_tokens": 0,
+                }
+            )
+        usage = build_usage_report(
+            usage_callback.usage_metadata,
+            embedding_tokens=int(result.get("embedding_tokens") or 0),
+            embedding_model=self.settings.embedding_model,
         )
         return RagRunResult(
             answer=result["answer"],
             trace_id=trace_id,
             citations=result["citations"],
             images=result["images"],
+            usage=usage,
         )
 
     async def respond(self, request: AgentRequest) -> AgentResponse:

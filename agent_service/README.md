@@ -27,6 +27,7 @@ Teams Adapter
 - `/agent/chat` Teams contract、`/retrieval/search` 除錯端點
 - Service token、tenant allowlist、health/readiness endpoints
 - Dockerfile 與單元／API 測試
+- 每次 `/agent/chat` 會在後端 log 記錄 LLM／embedding token 用量與 USD 價格估算
 
 ## 本機啟動
 
@@ -189,6 +190,15 @@ Agent Service 不提供公開圖片檔案；Teams Adapter 會驗證相對路徑�
 - `GET /readyz`：索引已載入及目前模型／檢索模式
 - `POST /retrieval/search`：檢索除錯
 - `POST /agent/chat`：Teams Adapter 使用的正式入口
+
+每次 `/agent/chat` 完成時，後端會輸出 structured log，包含：
+
+```text
+input_tokens / output_tokens / total_tokens / embedding_tokens / estimated_cost_usd
+```
+
+LLM token 來自 provider 回傳的 usage metadata；embedding token 為查詢文字的粗估。
+價格依內建 Standard paid-tier 費率表估算（USD），未知模型只記 token、不估價。
 
 Swagger UI：`http://localhost:8000/docs`
 
