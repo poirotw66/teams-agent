@@ -97,6 +97,18 @@ Teams 與後續里程碑狀態：
 - [x] 設定 private service-to-service IAM 與 Secret Manager
 - [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run Adapter
 
+## 架構
+
+目前實作為雙服務分離：公開的 Teams Adapter 負責 Bot 通訊與圖片簽章，
+私有的 LangGraph Agent 負責檢索與 grounded 回答。
+
+![Teams Agent 專案架構圖](./team-agent-arc.png)
+
+本機開發時，Adapter 跑在 `:3978`、Agent 跑在 `:8000`，Azure Bot Messaging
+endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
+回答可帶 citation 與來源圖片 metadata；Adapter 再把相對路徑簽成短效 URL，
+並把圖片縮放到 Teams 可用尺寸後放入 Adaptive Card。
+
 ## 1. 必要條件
 
 - Python 3.10–3.14（建議 3.11）
