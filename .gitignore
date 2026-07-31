@@ -8,3 +8,4 @@ __pycache__/
 data/index/
 agent_service/.venv/
 data/
+outputs/
