@@ -7,7 +7,7 @@ from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.id_token import fetch_id_token
 
-from .contracts import AgentRequest, AgentResponse
+from .contracts import AgentRequest, AgentResponse, FeedbackRequest
 from .settings import AgentSettings
 
 Transport = Callable[
@@ -59,13 +59,7 @@ class AgentGateway:
         self.transport = transport
         self.identity_token_provider = identity_token_provider
 
-    async def answer(self, request: AgentRequest) -> AgentResponse:
-        if self.settings.mode == "echo":
-            return AgentResponse(
-                answer=f"收到：{request.message.text}",
-                traceId=request.requestId,
-            )
-
+    async def _auth_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.settings.api_auth_mode == "google_id_token":
             audience = self.settings.resolved_api_audience
@@ -80,6 +74,17 @@ class AgentGateway:
             headers["Authorization"] = f"Bearer {identity_token}"
         elif self.settings.api_auth_mode == "service_token":
             headers["Authorization"] = f"Bearer {self.settings.api_token}"
+        return headers
+
+    async def answer(self, request: AgentRequest) -> AgentResponse:
+        if self.settings.mode == "echo":
+            return AgentResponse(
+                answer=f"收到：{request.message.text}",
+                traceId=request.requestId,
+                correlationId=request.correlationId,
+            )
+
+        headers = await self._auth_headers()
 
         try:
             payload = await self.transport(
@@ -93,3 +98,33 @@ class AgentGateway:
             raise
         except (asyncio.TimeoutError, ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Agent API request failed.") from error
+
+    async def send_feedback(self, feedback: FeedbackRequest) -> None:
+        """POST /feedback on the Agent Service (spec §14).
+
+        Guarded by the same bearer/ID-token auth as `/agent/chat`. Raises
+        `AgentGatewayError` on failure; the caller (teams_agent.agent) is
+        responsible for logging and degrading silently for the user per
+        spec §17 -- this method does not swallow errors itself so callers
+        can still distinguish "not configured" from "sent".
+        """
+        if self.settings.mode == "echo":
+            return
+
+        feedback_url = self.settings.resolved_feedback_url
+        if not feedback_url:
+            raise AgentGatewayError("Agent API URL is not configured for feedback.")
+
+        headers = await self._auth_headers()
+
+        try:
+            await self.transport(
+                feedback_url,
+                feedback.to_payload(),
+                headers,
+                self.settings.api_timeout_seconds,
+            )
+        except AgentGatewayError:
+            raise
+        except (asyncio.TimeoutError, ClientError, TypeError, ValueError) as error:
+            raise AgentGatewayError("Feedback submission failed.") from error

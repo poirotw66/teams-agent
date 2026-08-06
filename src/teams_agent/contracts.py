@@ -29,6 +29,8 @@ class UserIdentity:
     teamsUserId: str | None = None
     entraObjectId: str | None = None
     displayName: str | None = None
+    email: str | None = None
+    groups: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -44,9 +46,23 @@ class AgentRequest:
     conversation: ConversationIdentity
     user: UserIdentity
     message: MessageContent
+    # Spec §15.1: one Correlation ID per Teams activity, threaded through every
+    # downstream node without being regenerated. The adapter deliberately uses
+    # the same value for `requestId` (the adapter's own request identifier,
+    # used historically as the user-facing tracking id) and `correlationId`
+    # (the wire field the Agent Service and its downstream nodes propagate) —
+    # see docstring in `teams_agent.agent` for the full rationale.
+    correlationId: str | None = None
 
     @classmethod
-    def from_activity(cls, activity: Activity, text: str) -> "AgentRequest":
+    def from_activity(
+        cls,
+        activity: Activity,
+        text: str,
+        correlation_id: str | None = None,
+        email: str | None = None,
+        groups: list[str] | None = None,
+    ) -> "AgentRequest":
         channel_data = activity.channel_data
         sender = activity.from_property
         conversation = activity.conversation
@@ -55,8 +71,16 @@ class AgentRequest:
         if not tenant_id and sender:
             tenant_id = sender.tenant_id
 
+        # Generate a correlation id only if the caller didn't already mint one
+        # for this activity. Callers (teams_agent.agent) should always pass
+        # one explicitly so the id is stable across the whole turn, including
+        # retries; the fallback here exists only to keep this a self-contained
+        # constructor for direct/test usage.
+        resolved_correlation_id = correlation_id or str(uuid4())
+
         return cls(
-            requestId=str(uuid4()),
+            requestId=resolved_correlation_id,
+            correlationId=resolved_correlation_id,
             channel=activity.channel_id or "unknown",
             conversation=ConversationIdentity(
                 tenantId=tenant_id,
@@ -68,9 +92,25 @@ class AgentRequest:
                 teamsUserId=sender.id if sender else None,
                 entraObjectId=sender.aad_object_id if sender else None,
                 displayName=sender.name if sender else None,
+                email=email,
+                groups=list(groups) if groups else [],
             ),
             message=MessageContent(text=text, locale=activity.locale),
         )
+
+    def to_payload(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FeedbackRequest:
+    """Spec §14: thumbs up/down feedback tied to one issue in one response."""
+
+    correlationId: str
+    conversationId: str
+    issueId: int
+    rating: str  # "UP" | "DOWN"
+    userId: str
 
     def to_payload(self) -> dict[str, Any]:
         return asdict(self)
@@ -91,12 +131,34 @@ class AgentImage:
     sourceChunkId: str
 
 
+# Result types where the Agent Service considers the issue "answered" and
+# feedback is meaningful (spec §4.3, §14). Kept adapter-local and minimal:
+# the adapter only needs this to decide which issues get a feedback prompt,
+# not to reproduce the full Issue/IssueResult domain model owned by the
+# Agent Service.
+_FEEDBACK_ELIGIBLE_RESULT_TYPES = {"FAQ_ANSWERED", "KNOWLEDGE_ANSWERED"}
+
+
+@dataclass(frozen=True)
+class IssueResult:
+    issueId: int
+    resultType: str
+    answer: str = ""
+
+    @property
+    def feedback_eligible(self) -> bool:
+        return self.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES
+
+
 @dataclass(frozen=True)
 class AgentResponse:
     answer: str
     traceId: str
     citations: list[Citation] = field(default_factory=list)
     images: list[AgentImage] = field(default_factory=list)
+    correlationId: str | None = None
+    issueResults: list[IssueResult] = field(default_factory=list)
+    feedbackEnabled: bool = False
 
     @classmethod
     def from_payload(
@@ -162,11 +224,49 @@ class AgentResponse:
                     )
                 )
 
+        # correlationId (spec §15.1): degrade to the same fallback used for
+        # traceId rather than raising, so a malformed/missing field never
+        # breaks the turn. By convention (see AgentRequest.from_activity) the
+        # adapter's requestId and correlationId are minted as the same value,
+        # so this fallback still yields the correct id when the Agent Service
+        # simply echoes nothing back.
+        correlation_id = payload.get("correlationId")
+        if not isinstance(correlation_id, str) or not correlation_id:
+            correlation_id = fallback_trace_id
+
+        feedback_enabled = payload.get("feedbackEnabled")
+        if not isinstance(feedback_enabled, bool):
+            feedback_enabled = False
+
+        issue_results: list[IssueResult] = []
+        raw_issue_results = payload.get("issueResults", [])
+        if isinstance(raw_issue_results, list):
+            for item in raw_issue_results:
+                if not isinstance(item, dict):
+                    continue
+                issue_id = item.get("issueId")
+                result_type = item.get("resultType")
+                if not isinstance(issue_id, int) or isinstance(issue_id, bool):
+                    continue
+                if not isinstance(result_type, str) or not result_type:
+                    continue
+                answer_text = item.get("answer", "")
+                issue_results.append(
+                    IssueResult(
+                        issueId=issue_id,
+                        resultType=result_type,
+                        answer=answer_text if isinstance(answer_text, str) else "",
+                    )
+                )
+
         return cls(
             answer=answer.strip(),
             traceId=trace_id,
             citations=citations,
             images=images,
+            correlationId=correlation_id,
+            issueResults=issue_results,
+            feedbackEnabled=feedback_enabled,
         )
 
 
