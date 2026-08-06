@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import statistics
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -293,13 +294,53 @@ def _install_stub_model(app: Any) -> None:
         agent.model = stub
 
 
+def _remote_auth_header(args: argparse.Namespace) -> dict[str, str]:
+    """Build the Authorization header for a remote target.
+
+    Two auth modes are supported, matching how the Teams Adapter reaches the
+    Agent Service (see AGENT_API_AUTH_MODE in the adapter settings):
+
+    - ``service-token``: a shared bearer token in ``AGENT_SERVICE_TOKEN``.
+    - ``google-id-token``: a Cloud Run IAM identity token. A private Cloud
+      Run service (``--no-allow-unauthenticated``) rejects a service token
+      with 403 — it wants an identity token whose audience is the service
+      URL, so this is the mode that actually works against a deployed
+      Agent Service.
+
+    ``auto`` (the default) prefers AGENT_SERVICE_TOKEN when it is set and
+    otherwise mints an identity token via gcloud.
+    """
+    mode = args.auth
+    token = os.environ.get("AGENT_SERVICE_TOKEN", "").strip()
+
+    if mode == "service-token" or (mode == "auto" and token):
+        if not token:
+            raise SystemExit("--auth service-token requires AGENT_SERVICE_TOKEN to be set.")
+        return {"Authorization": f"Bearer {token}"}
+
+    if mode == "none":
+        return {}
+
+    identity_token = subprocess.run(
+        ["gcloud", "auth", "print-identity-token"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if identity_token.returncode != 0 or not identity_token.stdout.strip():
+        raise SystemExit(
+            "could not obtain a Google identity token via "
+            "`gcloud auth print-identity-token`. Authenticate with gcloud, or "
+            "pass --auth service-token with AGENT_SERVICE_TOKEN set, or "
+            "--auth none for an unauthenticated target."
+        )
+    return {"Authorization": f"Bearer {identity_token.stdout.strip()}"}
+
+
 async def _remote_run(args: argparse.Namespace) -> LoadReport:
     import httpx
 
-    headers: dict[str, str] = {}
-    token = os.environ.get("AGENT_SERVICE_TOKEN", "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    headers = _remote_auth_header(args)
 
     timeout = httpx.Timeout(args.timeout)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -325,6 +366,13 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=8)
     parser.add_argument("--requests", type=int, default=40)
     parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument(
+        "--auth",
+        choices=["auto", "google-id-token", "service-token", "none"],
+        default="auto",
+        help="How to authenticate to --target. A private Cloud Run service needs "
+        "google-id-token; auto uses AGENT_SERVICE_TOKEN when set, else gcloud.",
+    )
     parser.add_argument("--output-dir", default="../outputs")
     args = parser.parse_args()
 

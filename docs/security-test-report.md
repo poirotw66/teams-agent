@@ -113,4 +113,4 @@ Extractor 背後的模型本身被 prompt injection 攻陷，把 system prompt �
 | 19 | 每次請求具 Correlation ID | 自動 | `test_acceptance_19_*` |
 | 20 | 回答後可收集回饋 | 自動 | `test_acceptance_20_*` |
 | 21 | 安全／錯誤／Injection 測試 | 自動 | 本文件全部 |
-| 22 | 通過效能測試 | 部分 | `docs/performance-test-report.md`（僅 dry-run，正式壓測待部署） |
+| 22 | 通過效能測試 | 自動 | `docs/performance-test-report.md`——Cloud Run 實測併發 8 穩態 P95 4.03s、零錯誤（2026-08-06） |
