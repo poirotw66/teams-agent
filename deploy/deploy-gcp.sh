@@ -161,8 +161,18 @@ gcloud run deploy "${AGENT_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2" \
+  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=MEMORY,FEEDBACK_ENABLED=true" \
   --set-secrets="GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
+  # KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
+  # FEEDBACK_ENABLED above are set explicitly even though they match the
+  # RagSettings code defaults (spec §16), so this deploy is self-documenting
+  # about which mode is running in production. To enable the ticket
+  # integration, add TICKET_SERVICE_MODE=HTTP, TICKET_SERVICE_BASE_URL=...
+  # to --set-env-vars and TICKET_SERVICE_TOKEN=<secret>:latest to
+  # --set-secrets (spec §17: it is a credential, never a plain env var).
+  # See deploy/README.md for the full list of tunable Agent Service env
+  # vars and which Cloud Run knobs (concurrency/CPU/memory/timeout) are
+  # worth adjusting once load-test data (spec §16) justifies it.
 
 AGENT_URL="$(gcloud run services describe "${AGENT_SERVICE}" \
   --region="${REGION}" \

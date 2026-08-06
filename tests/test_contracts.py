@@ -100,3 +100,96 @@ def test_agent_response_uses_request_id_when_trace_id_is_missing() -> None:
     )
 
     assert response.traceId == "request-1"
+
+
+def test_agent_request_generates_stable_correlation_id_matching_request_id() -> None:
+    activity = Activity(
+        type="message",
+        channel_id="msteams",
+        from_property=ChannelAccount(id="teams-user-1"),
+        conversation=ConversationAccount(id="conversation-1"),
+    )
+
+    request = AgentRequest.from_activity(
+        activity, "hello", correlation_id="fixed-correlation-id"
+    )
+
+    assert request.requestId == "fixed-correlation-id"
+    assert request.correlationId == "fixed-correlation-id"
+    assert request.to_payload()["correlationId"] == "fixed-correlation-id"
+
+
+def test_agent_request_includes_email_and_groups() -> None:
+    activity = Activity(
+        type="message",
+        channel_id="msteams",
+        from_property=ChannelAccount(id="teams-user-1", aad_object_id="entra-1"),
+        conversation=ConversationAccount(id="conversation-1"),
+    )
+
+    request = AgentRequest.from_activity(
+        activity,
+        "hello",
+        correlation_id="c-1",
+        email="justin@example.com",
+        groups=["it-support"],
+    )
+    payload = request.to_payload()
+
+    assert payload["user"]["email"] == "justin@example.com"
+    assert payload["user"]["groups"] == ["it-support"]
+
+
+def test_agent_response_parses_correlation_id_feedback_and_issue_results() -> None:
+    response = AgentResponse.from_payload(
+        {
+            "answer": "ok",
+            "traceId": "trace-1",
+            "correlationId": "corr-1",
+            "feedbackEnabled": True,
+            "issueResults": [
+                {"issueId": 1, "resultType": "FAQ_ANSWERED", "answer": "a"},
+                {"issueId": 2, "resultType": "NEED_MORE_INFO"},
+            ],
+        },
+        fallback_trace_id="request-1",
+    )
+
+    assert response.correlationId == "corr-1"
+    assert response.feedbackEnabled is True
+    assert [r.issueId for r in response.issueResults] == [1, 2]
+    assert response.issueResults[0].feedback_eligible is True
+    assert response.issueResults[1].feedback_eligible is False
+
+
+def test_agent_response_defaults_when_new_fields_are_missing_or_malformed() -> None:
+    response = AgentResponse.from_payload(
+        {
+            "answer": "ok",
+            "correlationId": 12345,  # wrong type
+            "feedbackEnabled": "yes",  # wrong type
+            "issueResults": [
+                "not-a-dict",
+                {"issueId": "not-an-int", "resultType": "FAQ_ANSWERED"},
+                {"issueId": 1},  # missing resultType
+                {"issueId": 3, "resultType": "FAQ_ANSWERED"},
+            ],
+        },
+        fallback_trace_id="request-1",
+    )
+
+    assert response.correlationId == "request-1"
+    assert response.feedbackEnabled is False
+    assert [r.issueId for r in response.issueResults] == [3]
+
+
+def test_agent_response_from_payload_never_raises_on_garbage_top_level_fields() -> None:
+    # Non-dict payload should still raise TypeError (documented contract),
+    # but any dict shape -- even a totally malformed one -- must not raise
+    # for the new optional fields.
+    response = AgentResponse.from_payload(
+        {"answer": "ok", "issueResults": "not-a-list"},
+        fallback_trace_id="request-1",
+    )
+
+    assert response.issueResults == []

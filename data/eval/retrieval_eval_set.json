@@ -1,0 +1,321 @@
+{
+  "$schema": "internal://retrieval-ab-eval-set/v1",
+  "description": "Retrieval A/B evaluation set for spec §18.7. Every case is grounded in the real corpus at data/sources/*.md (verified by reading the actual document text on 2026-08-06, not invented). Consumed by scripts/retrieval_ab_test.py.",
+  "corpus_snapshot": {
+    "sourceDir": "data/sources",
+    "fileCount": 19,
+    "verifiedAt": "2026-08-06"
+  },
+  "categoryNotes": {
+    "answerable": "The corpus contains a real, verifiable answer.",
+    "error_code": "Query names a real error code/message that literally appears in a source document.",
+    "no_answer": "The topic is genuinely absent from the corpus (verified by grep across data/sources/*.md before adding); a correct system must say so, not fabricate.",
+    "acl": "Exercises the ACL / allowed_groups path. NOTE: the shipped corpus (data/metadata.json is not present, only metadata.example.json) has no document with a real allowed_groups restriction, so every 'acl' case here only proves the documented default ('empty allowed_groups = visible to all groups') holds for two different group sets. A true allow/deny contrast case is a known gap - see docs/retrieval-ab-test-report.md.",
+    "image": "The cited document has a real image under data/assets/ that chunk_markdown()/extract_images() actually attaches to the matching chunk."
+  },
+  "cases": [
+    {
+      "id": "vpn-455",
+      "categories": ["answerable", "error_code"],
+      "query": "VPN連線出現 Permission denied (-455) 這個錯誤要怎麼處理？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN常見Q&A問答"],
+      "expectedKeywords": ["密碼"],
+      "groups": [],
+      "notes": "VPN常見Q&A問答.md lists 'Permission denied (-455)' with 網路訊號不穩/密碼問題 causes."
+    },
+    {
+      "id": "vpn-14",
+      "categories": ["answerable", "error_code"],
+      "query": "VPN出現 Unable to establish the VPN connection, the VPN server may be unreachable (-14)，該怎麼辦？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN常見Q&A問答"],
+      "expectedKeywords": ["FortiClient"],
+      "groups": [],
+      "notes": "Same doc lists this exact message with a FortiClient-version fix."
+    },
+    {
+      "id": "vpn-8",
+      "categories": ["answerable", "error_code"],
+      "query": "VPN連線出現 Permission denied (-8)，是什麼原因？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN常見Q&A問答"],
+      "expectedKeywords": ["網路"],
+      "groups": [],
+      "notes": "Doc: 'Permission denied (-8) | 網路狀態不穩，請User換一個網路'."
+    },
+    {
+      "id": "vpn-license",
+      "categories": ["answerable", "error_code"],
+      "query": "VPN連線時出現 please contact your administrator or connect to EMS for license activation，這是什麼問題？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN常見Q&A問答"],
+      "expectedKeywords": ["授權"],
+      "groups": [],
+      "notes": "Doc: VPN連線授權數不足，須向端末組與網路組同仁確認授權數."
+    },
+    {
+      "id": "vpn-token-otp",
+      "categories": ["answerable"],
+      "query": "同仁說沒有收到 FortiToken OTP 的信件，要怎麼處理？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN常見Q&A問答"],
+      "expectedKeywords": ["123"],
+      "groups": [],
+      "notes": "Doc: 沒有收到 FortiToken OTP 的信件 -> 聯繫123資訊小幫手."
+    },
+    {
+      "id": "aiyang-200",
+      "categories": ["answerable", "error_code"],
+      "query": "國泰期貨(艾揚)登入出現-200，第一步該怎麼處理？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["國泰期貨艾揚登入出現-200"],
+      "expectedKeywords": ["AP"],
+      "groups": [],
+      "notes": "Doc body is sparse: '第一步驟如下 若後續不能排除再轉寄給AP'. Deliberately thin-content case: tests the system does not pad a short doc with fabricated steps."
+    },
+    {
+      "id": "shujingling-12029",
+      "categories": ["answerable", "error_code"],
+      "query": "樹精靈AP登入時出現網路錯誤12029，該怎麼排除？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["樹精靈AP無法登入"],
+      "expectedKeywords": ["TLS"],
+      "groups": [],
+      "notes": "Doc: 網路錯誤12029 -> 調整TLS安全協定(取消SSL3.0/TLS1.0/1.1, 勾選TLS1.2/1.3)、停用Proxy."
+    },
+    {
+      "id": "xq-issue",
+      "categories": ["answerable"],
+      "query": "客戶反映 XQ 報價系統下單有問題，我該怎麼判斷？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["XQ問題"],
+      "expectedKeywords": ["樹精靈"],
+      "groups": [],
+      "notes": "Doc: 先請客戶登入國泰新樹精靈AP測試是否也異常，再排除是否為XQ廠商(嘉實)端問題。"
+    },
+    {
+      "id": "chaoyinshu-crash",
+      "categories": ["answerable"],
+      "query": "超音樹輸入帳密按登入後沒有畫面，要怎麼處理？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["超音樹-程式閃退問題"],
+      "expectedKeywords": ["簽章元件"],
+      "groups": [],
+      "notes": "Doc: 輸入帳密後按登入無畫面 -> 請至國泰期貨官網安裝新版簽章元件。"
+    },
+    {
+      "id": "gitlab-unlock",
+      "categories": ["answerable"],
+      "query": "Gitlab帳號被鎖定了，要找誰協助解鎖？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["Gitlab帳號解鎖跟重置"],
+      "expectedKeywords": ["資訊架構部"],
+      "groups": [],
+      "notes": "Doc: 系統負責單位 :資訊管理處 / 資訊架構部, 目前負責人 : 陳禹安。"
+    },
+    {
+      "id": "portal-password",
+      "categories": ["answerable"],
+      "query": "金控入口網的密碼要怎麼變更？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["金控入口網密碼變更方式"],
+      "expectedKeywords": ["齒輪"],
+      "groups": [],
+      "notes": "Doc: 於金控入口網畫面UI選單點選 齒輪 > 設定我的連結 > 網站管理 > 勾選 密碼變更..."
+    },
+    {
+      "id": "mail-garbled",
+      "categories": ["answerable"],
+      "query": "收到的電子郵件內容顯示亂碼，要怎麼排除？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["郵件為亂碼"],
+      "expectedKeywords": ["Big 5"],
+      "groups": [],
+      "notes": "Doc: 在動作欄按步驟選取繁體中文(Big 5)，如已是Big5則改試Unicode(UTF-8)。"
+    },
+    {
+      "id": "seat-move",
+      "categories": ["answerable"],
+      "query": "我想申請座位搬遷，要怎麼提出申請？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["座位搬遷需求"],
+      "expectedKeywords": ["電腦聯繫單"],
+      "groups": [],
+      "notes": "Doc: 座位搬遷之申請方式已調整，請填寫電腦聯繫單。"
+    },
+    {
+      "id": "report-format",
+      "categories": ["answerable"],
+      "query": "跟客服回報IT問題時，信件主旨要怎麼寫？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["資訊問題的通報格式"],
+      "expectedKeywords": ["主旨"],
+      "groups": [],
+      "notes": "Doc: 主旨格式:[有問題的平台名稱]+功能名稱+異常說明。"
+    },
+    {
+      "id": "webex-borrow",
+      "categories": ["answerable"],
+      "query": "我想借用可以錄影的Webex會議室，該怎麼申請？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["Webex會議借用-可錄影"],
+      "expectedKeywords": ["123@cathaysec.com.tw"],
+      "groups": [],
+      "notes": "Doc: 完成資料填寫並寄送至123@cathaysec.com.tw，123將協助借用。"
+    },
+    {
+      "id": "powerpivot-contact",
+      "categories": ["answerable"],
+      "query": "PowerPivot使用上遇到問題要找誰？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["PowerPivot"],
+      "expectedKeywords": ["數位營運資訊處"],
+      "groups": [],
+      "notes": "Doc: 相關問題請找數位營運資訊處，廖育紋、蔡慧芳 ANITA。"
+    },
+    {
+      "id": "shared-folder",
+      "categories": ["answerable"],
+      "query": "要申請共用公槽資料夾的新增權限，該怎麼做？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["同仁申請共用公槽資料夾"],
+      "expectedKeywords": ["聯繫單"],
+      "groups": [],
+      "notes": "Doc: 請填寫聯繫單(申請人/員工編號/資料夾路徑)。"
+    },
+    {
+      "id": "portal-eroll",
+      "categories": ["answerable"],
+      "query": "國泰員工入口網的密碼忘記了怎麼辦？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["國泰員工入口網、CTeam密碼、國泰e點名"],
+      "expectedKeywords": ["忘記密碼"],
+      "groups": [],
+      "notes": "Doc: 密碼連動為國泰金控網站帳密(並非AD)，請至國泰員工入口網站-忘記密碼-請點我修改。"
+    },
+    {
+      "id": "vpn-overseas",
+      "categories": ["answerable"],
+      "query": "員工要出國，需要短暫申請VPN國外連線，流程是什麼？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["VPN國外連線短暫申請"],
+      "expectedKeywords": ["主管"],
+      "groups": [],
+      "notes": "Doc: 員工如有到國外連線需求，請寄信CC雙方主管，123收到後轉寄網路組與資安窗口。"
+    },
+    {
+      "id": "cs-vpn-acl-open",
+      "categories": ["answerable", "acl"],
+      "query": "分公司CS人員的VPN連線可以使用哪些系統？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["分公司CS團隊VPN連線可使用權限列表"],
+      "expectedKeywords": ["CRM"],
+      "groups": [],
+      "notes": "Doc lists 可使用/不可使用權限. allowed_groups is empty in the shipped corpus (no data/metadata.json restriction configured for this file) so it must be visible to a user with no groups."
+    },
+    {
+      "id": "cs-vpn-acl-other-group",
+      "categories": ["answerable", "acl"],
+      "query": "分公司CS人員的VPN連線可以使用哪些系統？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["分公司CS團隊VPN連線可使用權限列表"],
+      "expectedKeywords": ["CRM"],
+      "groups": ["Finance-Random-Group"],
+      "notes": "Same query, different unrelated group, to confirm allowed_groups=[] means visible to ANY group (not just no-group), per documents.py's 'empty allowed_groups = visible to all' convention."
+    },
+    {
+      "id": "daizhou-cant-click",
+      "categories": ["answerable", "image"],
+      "query": "大州系統的功能按鈕都點不動，要怎麼修？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["大州系統_功能無法點選"],
+      "expectedKeywords": ["安全性"],
+      "expectedImagePaths": ["大州系統_功能無法點選/p01.png"],
+      "groups": [],
+      "notes": "Doc: 工具-網際網路選項-安全性-自訂等級-啟用允許以指令碼開啟視窗; has ../assets/大州系統_功能無法點選/p01.png as Visual Evidence."
+    },
+    {
+      "id": "daizhou-first-setup",
+      "categories": ["answerable", "image"],
+      "query": "大州系統第一次使用時，瀏覽器的網際網路選項要怎麼設定？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["大州首次使用設定"],
+      "expectedKeywords": ["網際網路選項"],
+      "expectedImagePaths": ["大州首次使用設定/p01.png"],
+      "groups": [],
+      "notes": "Doc 第1頁: 大州 預設Browser -> 網際網路選項(一般/安全性/進階); has ../assets/大州首次使用設定/p01.png."
+    },
+    {
+      "id": "hq-ip-phone-panel",
+      "categories": ["answerable", "image"],
+      "query": "總公司IP話機的面板按鍵配置圖要去哪裡查？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["總公司IP話機操作"],
+      "expectedKeywords": ["面板"],
+      "expectedImagePaths": ["總公司IP話機操作/p02.png"],
+      "groups": [],
+      "notes": "Doc 第2頁 - 面板說明 section has ../assets/總公司IP話機操作/p02.png as Visual Evidence."
+    },
+    {
+      "id": "hq-ip-phone-transfer",
+      "categories": ["answerable"],
+      "query": "總公司IP話機要怎麼把電話轉接給別的分機？",
+      "expectedFound": true,
+      "expectedSourceTitles": ["總公司IP話機操作"],
+      "expectedKeywords": ["Transfer"],
+      "groups": [],
+      "notes": "Doc 第1頁 轉接/轉出手機/三方會談表: 直接轉接 -> 通話中 -> Transfer -> 分機號 -> 掛斷."
+    },
+    {
+      "id": "no-answer-parental-leave",
+      "categories": ["no_answer"],
+      "query": "公司員工的育嬰假天數上限是多少？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "expectedKeywords": [],
+      "groups": [],
+      "notes": "HR leave policy. Verified absent from data/sources/*.md via grep for '育嬰' before adding this case."
+    },
+    {
+      "id": "no-answer-raise",
+      "categories": ["no_answer"],
+      "query": "要怎麼申請加薪或調薪？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "expectedKeywords": [],
+      "groups": [],
+      "notes": "HR compensation policy, not an IT topic and not in the corpus. Verified absent via grep for '加薪'."
+    },
+    {
+      "id": "no-answer-welfare-trip",
+      "categories": ["no_answer"],
+      "query": "福利委員會的旅遊補助要怎麼申請？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "expectedKeywords": [],
+      "groups": [],
+      "notes": "Employee welfare committee topic, not IT, not in the corpus. Verified absent via grep for '福利委員會'."
+    },
+    {
+      "id": "no-answer-sap-password",
+      "categories": ["no_answer"],
+      "query": "SAP ERP系統的密碼要怎麼重置？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "expectedKeywords": [],
+      "groups": [],
+      "notes": "SAP is never mentioned anywhere in data/sources/*.md (verified via grep -i SAP). This is a plausible-sounding IT question the corpus genuinely cannot answer -- must not be hallucinated from general model knowledge (spec §8.4)."
+    },
+    {
+      "id": "no-answer-vpn-619",
+      "categories": ["no_answer", "error_code"],
+      "query": "VPN連線出現 Error -619，這是什麼問題？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "expectedKeywords": [],
+      "groups": [],
+      "notes": "VPN常見Q&A問答.md only documents -455, -14, -8 and the license/OTP/server-address cases -- -619 does not appear (verified via grep -o). This checks the system does not guess/generalize an undocumented error code just because the doc topic (VPN) matches."
+    }
+  ]
+}

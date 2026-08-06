@@ -22,6 +22,8 @@ class AgentSettings:
     asset_url_ttl_seconds: int = 3600
     asset_max_dimension: int = 1024
     asset_max_bytes: int = 1_000_000
+    user_directory_mode: str = "disabled"
+    user_directory_cache_ttl_seconds: float = 300.0
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -66,6 +68,12 @@ class AgentSettings:
             asset_max_bytes=int(
                 environ.get("RAG_ASSET_MAX_BYTES", "1000000")
             ),
+            user_directory_mode=(
+                environ.get("USER_DIRECTORY_MODE", "disabled").strip().lower()
+            ),
+            user_directory_cache_ttl_seconds=float(
+                environ.get("USER_DIRECTORY_CACHE_TTL_SECONDS", "300")
+            ),
         )
         settings.validate()
         return settings
@@ -73,6 +81,14 @@ class AgentSettings:
     def validate(self) -> None:
         if self.mode not in {"echo", "api"}:
             raise SettingsError("AGENT_MODE must be either 'echo' or 'api'.")
+        if self.user_directory_mode not in {"disabled", "graph"}:
+            raise SettingsError(
+                "USER_DIRECTORY_MODE must be either 'disabled' or 'graph'."
+            )
+        if self.user_directory_cache_ttl_seconds <= 0:
+            raise SettingsError(
+                "USER_DIRECTORY_CACHE_TTL_SECONDS must be greater than zero."
+            )
         if self.api_auth_mode not in {"none", "service_token", "google_id_token"}:
             raise SettingsError(
                 "AGENT_API_AUTH_MODE must be none, service_token, or google_id_token."
@@ -133,6 +149,14 @@ class AgentSettings:
             return None
         parsed_url = urlparse(self.api_url)
         return f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+    @property
+    def resolved_feedback_url(self) -> str | None:
+        """POST /feedback on the same Agent Service host as `api_url` (spec §14)."""
+        if not self.api_url:
+            return None
+        parsed_url = urlparse(self.api_url)
+        return f"{parsed_url.scheme}://{parsed_url.netloc}/feedback"
 
     @property
     def ready(self) -> bool:
