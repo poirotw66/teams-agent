@@ -87,7 +87,7 @@ class EvalCase:
     notes: str = ""
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "EvalCase":
+    def from_dict(cls, value: dict[str, Any]) -> EvalCase:
         return cls(
             id=str(value["id"]),
             categories=tuple(value.get("categories", [])),
@@ -405,7 +405,7 @@ async def _run_gemini_case(service: Any, case: EvalCase) -> CaseRun:
         retrieved_titles=citation_titles,
         image_paths=(),  # spike does not map images (spec §8.3/gemini_file_search.py)
         latency_seconds=latency,
-        llm_calls=1 if result.found or result.answer else 1,
+        llm_calls=1,
         cost_usd=None,  # google-genai usage_metadata not surfaced by the spike adapter
     )
 
@@ -418,9 +418,8 @@ def _corpus_titles(settings: Any) -> frozenset[str]:
 
 
 def _build_hybrid_service(settings: Any, index: Any) -> Any:
-    from langchain.chat_models import init_chat_model
-
     from agent_service.knowledge import HybridKnowledgeService
+    from langchain.chat_models import init_chat_model
 
     model = init_chat_model(settings.model) if settings.model else None
     return HybridKnowledgeService(settings, index, model)
@@ -498,8 +497,10 @@ def _format_summary(backend: str, report: dict[str, Any]) -> str:
         f"P95 Latency (s):         {report['p95_latency_seconds']}",
         f"Avg LLM calls/query:     {report['avg_llm_calls_per_query']}",
         f"Avg cost/query (USD):    {report['avg_cost_usd_per_query']}",
-        f"Total cost (USD):        {report['total_cost_usd']} "
-        f"(complete: {report['cost_complete']})",
+        (
+            f"Total cost (USD):        {report['total_cost_usd']} "
+            f"(complete: {report['cost_complete']})"
+        ),
     ]
     return "\n".join(lines)
 

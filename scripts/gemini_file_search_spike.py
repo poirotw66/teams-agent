@@ -37,9 +37,13 @@ docs/gemini-file-search-spike.md — do not commit fabricated numbers.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import shutil
 import sys
+import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 REQUIRED_ENV_VAR = "GEMINI_API_KEY"
@@ -59,7 +63,7 @@ def _require_api_key() -> str:
 
 def _client(api_key: str):
     try:
-        import google.genai as genai
+        from google import genai
     except ImportError as exc:
         print(
             "error: google-genai is not installed. Install the spike extra:\n"
@@ -91,18 +95,109 @@ def cmd_upload(args: argparse.Namespace) -> None:
             print(f"skip (not a file): {path}", file=sys.stderr)
             continue
         print(f"uploading {path} ...")
-        operation = client.file_search_stores.upload_to_file_search_store(
-            file_search_store_name=args.store,
-            file=str(path),
-            config=types.UploadToFileSearchStoreConfig(display_name=path.name),
+        # The SDK guesses the mime type from the filename and raises
+        # ValueError for .md on systems whose mimetypes registry has no
+        # markdown entry (observed on macOS). Always pass it explicitly.
+        config = types.UploadToFileSearchStoreConfig(
+            display_name=_ascii_display_name(path),
+            mime_type=_mime_type_for(path),
         )
-        while not operation.done:
-            time.sleep(2)
-            operation = client.operations.get(operation)
+        # custom_metadata drives `--metadata-filter` on query (spec §8.3
+        # item 5). Unlike the file path, metadata values DO accept
+        # non-ASCII, so the real Chinese filename is preserved here.
+        metadata = _parse_metadata(args.metadata) if args.metadata else []
+        metadata.extend(_parse_metadata([f"source_file={path.name}"]))
+        config.custom_metadata = metadata
+
+        with _ascii_path(path) as upload_path:
+            operation = client.file_search_stores.upload_to_file_search_store(
+                file_search_store_name=args.store,
+                file=str(upload_path),
+                config=config,
+            )
+            while not operation.done:
+                time.sleep(2)
+                operation = client.operations.get(operation)
         if operation.error:
             print(f"  FAILED: {operation.error}", file=sys.stderr)
         else:
             print(f"  done: {operation.response}")
+
+
+@contextmanager
+def _ascii_path(path: Path):
+    """Yield a path safe to hand to ``upload_to_file_search_store``.
+
+    FINDING (spec §8.3 / §18.7 ops-complexity, verified 2026-08-06): the
+    resumable-upload path puts the *file path* into an HTTP header, and
+    httpx rejects non-ASCII header values with UnicodeEncodeError. Every
+    document in ``data/sources/`` has a Traditional Chinese filename, so
+    File Search cannot ingest this corpus directly — each file must be
+    staged under an ASCII name first.
+
+    Isolated precisely: an ASCII path succeeds even when ``display_name``
+    and ``custom_metadata`` carry Chinese, so the restriction is on the
+    path alone. Documented in docs/gemini-file-search-spike.md.
+    """
+    if str(path).isascii():
+        yield path
+        return
+    with tempfile.TemporaryDirectory(prefix="gemini-spike-") as staging:
+        staged = Path(staging) / _ascii_display_name(path)
+        shutil.copyfile(path, staged)
+        print(f"  (staged as ASCII filename: {staged.name})")
+        yield staged
+
+
+# Markdown is the only source format in data/sources/. text/plain is used
+# rather than text/markdown because the File Search ingestion pipeline
+# accepts it uniformly across SDK versions.
+_MIME_TYPES = {
+    ".md": "text/plain",
+    ".txt": "text/plain",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+}
+
+
+def _mime_type_for(path: Path) -> str:
+    return _MIME_TYPES.get(path.suffix.lower(), "text/plain")
+
+
+def _ascii_display_name(path: Path) -> str:
+    """Derive an ASCII slug from a filename.
+
+    Used for the staged upload filename (see ``_ascii_path``, where ASCII
+    is a verified hard requirement) and reused as ``display_name`` for
+    consistency between the two.
+
+    Note: whether ``display_name`` *itself* tolerates non-ASCII was not
+    tested in the 2026-08-06 spike — only the file path was isolated as
+    the failing input. Do not cite this function as evidence about
+    ``display_name``.
+    """
+    stem = path.stem.encode("ascii", "ignore").decode("ascii").strip(" -_")
+    if not stem:
+        # Entirely non-ASCII filename: fall back to a stable content hash so
+        # two different documents never collide.
+        digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()[:12]
+        stem = f"doc-{digest}"
+    return f"{stem}{path.suffix.lower()}"
+
+
+def _parse_metadata(pairs: list[str]) -> list:
+    """Parse ``key=value`` pairs into CustomMetadata entries."""
+    from google.genai import types
+
+    metadata = []
+    for pair in pairs:
+        key, _, value = pair.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise SystemExit(f"invalid --metadata entry (expected key=value): {pair!r}")
+        metadata.append(types.CustomMetadata(key=key, string_value=value))
+    return metadata
 
 
 def cmd_list_documents(args: argparse.Namespace) -> None:
@@ -147,8 +242,16 @@ def cmd_delete_document(args: argparse.Namespace) -> None:
     if not args.delete:
         print("refusing to delete: pass --delete to confirm.", file=sys.stderr)
         raise SystemExit(2)
+    from google.genai import types
+
     client = _client(_require_api_key())
-    client.file_search_stores.documents.delete(name=args.document)
+    # force=True is required: without it the API rejects the call with
+    # 400 FAILED_PRECONDITION "Cannot delete non-empty Document", because
+    # an ingested document always owns its derived chunks.
+    client.file_search_stores.documents.delete(
+        name=args.document,
+        config=types.DeleteDocumentConfig(force=True),
+    )
     print(f"deleted document: {args.document}")
 
 
@@ -176,6 +279,14 @@ def build_parser() -> argparse.ArgumentParser:
     upload = subparsers.add_parser("upload", help="Upload documents to a store.")
     upload.add_argument("--store", required=True, help="Store resource name (fileSearchStores/...).")
     upload.add_argument("files", nargs="+", help="Paths under data/sources/ to upload.")
+    upload.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Custom metadata applied to every uploaded file, e.g. --metadata category=vpn. "
+        "Repeatable. Needed to exercise --metadata-filter on query (spec §8.3 item 5).",
+    )
     upload.set_defaults(func=cmd_upload)
 
     list_documents = subparsers.add_parser("list-documents", help="List documents in a store.")

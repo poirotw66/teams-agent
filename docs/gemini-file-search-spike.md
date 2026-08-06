@@ -105,24 +105,106 @@ Run the **same** query set against both `HybridKnowledgeService` and
 **Do not promote `GEMINI_FILE_SEARCH` to the default `KNOWLEDGE_SERVICE_MODE`
 until this table is filled in with real measurements and reviewed.**
 
-## Results (TBD)
+## Results — spike executed 2026-08-06
 
-No spike has been run yet as part of this change. Fill in after executing
-the checklist above — do not fabricate numbers.
+Executed against a real store with 4 corpus documents
+(`VPN常見Q&A問答`, `國泰期貨艾揚登入出現-200`, `樹精靈AP無法登入`,
+`金控入口網密碼變更方式`), model `gemini-3.5-flash-lite`. The store was
+deleted afterwards. Numbers below are observed, not estimated.
+
+### Checklist outcome
+
+| # | Item | Result |
+| --- | --- | --- |
+| 1 | 建立 Store | OK |
+| 2 | 上傳少量測試文件 | OK **only after fixing three script defects** (see below) |
+| 3 | 執行中文查詢 | OK — fluent Traditional Chinese answers |
+| 4 | 取得來源 | Partial — titles returned, but `uri` and `document_name` are both `None` |
+| 5 | 測試 metadata filter | OK — `category="vpn"` returned only the VPN doc; `category="app"` only the three app docs |
+| 6 | 測試文件刪除 | OK — requires `DeleteDocumentConfig(force=True)`; document count 4 → 3 and the deleted content stopped being cited |
+| 7 | 錯誤碼 / 專有名詞命中 | Mixed — see findings 4 and 5 |
+
+### Findings
+
+**1. The corpus cannot be uploaded as-is: file paths must be ASCII.**
+`upload_to_file_search_store` puts the file path into an HTTP header, and
+httpx raises `UnicodeEncodeError` for non-ASCII values. All 19 documents in
+`data/sources/` have Traditional Chinese filenames, so every one of them
+fails. Isolated precisely by bisection: an ASCII path succeeds while
+`custom_metadata` carries Chinese, so **only the path** is restricted.
+`scripts/gemini_file_search_spike.py` now stages each file under an ASCII
+name before upload and records the real filename in `custom_metadata`.
+
+A production migration would need this staging step plus a stable
+slug→original-title mapping. Note the derived slugs are near-useless on
+their own: 「國泰期貨艾揚登入出現-200.md」 → `200.md`,
+「樹精靈AP無法登入.md」 → `AP.md`, 「金控入口網密碼變更方式.md」 →
+`doc-41c1698e7c60.md` (no ASCII characters survive at all).
+
+**2. Two further SDK requirements the script had wrong.** `.md` has no
+mimetype entry on macOS, so `mime_type` must be passed explicitly; and
+document deletion needs `force=True` or the API returns
+`400 FAILED_PRECONDITION: Cannot delete non-empty Document`. Both are fixed
+in the script. All three defects existed because the script had been written
+against the SDK but never executed until this spike.
+
+**3. Citation quality is materially worse than Hybrid.** Grounding chunks
+return `title` only — set to the ASCII slug — with `uri=None` and
+`document_name=None`. Mapping a citation back to a real document therefore
+requires a side lookup through `custom_metadata`. Hybrid returns the real
+document title and chunk id directly and scored 100% Citation Accuracy on
+the 30-case set (`docs/retrieval-ab-test-report.md`).
+
+**4. Default answers violate §8.4 — but this is configuration, not a hard
+limit.** With File Search's built-in prompting, answers drifted into model
+general knowledge. Asked about `Error -619` (absent from the corpus) it
+correctly said so, then continued 「但通常VPN連線問題可能與以下幾個方面有關」
+and volunteered generic steps. Asked about 艾揚 -200 it mixed in TLS/proxy
+steps belonging to a different document and prefaced them with 「通常這類
+錯誤…」. Both breach §8.4/§17 (不得使用模型一般知識補充公司流程).
+
+Re-running the same `-619` query with an explicit `system_instruction`
+carrying our grounding rules produced a clean refusal with no general
+knowledge added. So the adapter must supply its own system instruction —
+File Search's defaults are not safe for this requirement on their own.
+
+**5. Error-code retrieval itself worked.** The `-455` probe returned the
+correct grounded procedure with the right source document.
+
+**6. Store lifecycle needs ownership conventions.** The API key in use
+already had 54 pre-existing File Search stores from unrelated work
+(`session-*`, `helpdesk-store`, `your-fileSearchStore-name`). Nothing
+identifies an owner or a project. Adopting File Search would need naming and
+cleanup conventions, or stores accumulate indefinitely.
+
+**7. Data residency is a new consideration.** Unlike inference calls, a File
+Search store keeps a *persistent copy* of internal IT documents on Google's
+side. The corpus already transits Google for embeddings, but persistence is
+an additional step that needs an explicit infosec decision before any
+production use. The spike store was deleted immediately after these runs.
+
+
+### Criterion comparison
+
+Hybrid figures come from the 30-case run in
+`docs/retrieval-ab-test-report.md`. The File Search column is a qualitative
+result from 4 documents and a handful of probes — it is **not** a
+like-for-like score, and is labelled accordingly rather than given a fake
+percentage.
 
 | Criterion | HybridKnowledgeService | GeminiFileSearchKnowledgeService | Notes |
 | --- | --- | --- | --- |
-| Answer Accuracy | TBD | TBD | |
-| Recall@K | TBD | TBD | |
-| Groundedness | TBD | TBD | |
-| Citation Accuracy | TBD | TBD | |
-| No-answer Accuracy | TBD | TBD | |
-| Error-code Accuracy | TBD | TBD | |
+| Answer Accuracy | 100% (25/25) | Not scored — answers fluent and mostly correct | Not run on the full eval set |
+| Recall@K | 100% (25/25) | Not scored | Relevant doc was retrieved in every probe |
+| Groundedness | 100% (25/25) | **Fails by default** | Adds model general knowledge unless a custom system_instruction is supplied (finding 4) |
+| Citation Accuracy | 100% (25/25) | **Degraded** | Only an ASCII slug title; uri and document_name are None (finding 3) |
+| No-answer Accuracy | 100% (5/5) | Correct on both probes | Correctly says the code is undocumented, but then over-explains without a custom prompt |
+| Error-code Accuracy | 100% (7/7) | Correct on the -455 probe | Cross-document contamination seen on the 艾揚 -200 probe |
 | ACL Accuracy | TBD | N/A (not implemented in spike) | |
 | Image Match Accuracy | TBD | N/A (not implemented in spike) | |
-| P95 Latency | TBD | TBD | |
-| 單次成本 | TBD | TBD | |
-| 維運複雜度 | TBD | TBD | |
+| P95 Latency | 3.31 s | Not measured | Probes were run interactively, not timed |
+| 單次成本 | US$0.00106/query | Not measured | Storage cost of a persistent store not assessed |
+| 維運複雜度 | Index built locally via `rag-index`; corpus and index stay under repo control | **Higher** | ASCII staging required, slug↔title mapping needed, store lifecycle unowned, persistent external copy of internal documents (findings 1, 6, 7) |
 
 ## Known spike limitations (by design, per §8.3 scope)
 

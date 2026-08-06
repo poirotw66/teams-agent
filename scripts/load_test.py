@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Concurrent load driver for the Agent Service (spec §16, §19 item 22).
 
 Spec §2.1 forbids rewriting the runtime language on the basis of an untested
