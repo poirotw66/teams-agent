@@ -103,6 +103,40 @@ mode also needs the `spike` extra installed, which the production image
 does not install by default (`RUN pip install --no-cache-dir ./agent_service`
 installs only the base dependency set).
 
+## Build & deploy verification (2026-08-06)
+
+Both images were built and the Agent Service was deployed to a throwaway Cloud
+Run service (`teams-rag-agent-verify`, deleted afterwards) to verify packaging
+and startup without touching the live services. Results:
+
+| Check | Result |
+|---|---|
+| `cloudbuild-agent.yaml` build | OK (78s) |
+| `cloudbuild-adapter.yaml` build | OK (48s) |
+| `data/faq.json` present in image | OK — 1683 bytes, 6 faqKeys parsed |
+| `data/index/chunks.json` in image | OK — 1.5 MB |
+| Corpus in image | OK — 19 documents |
+| Settings resolution in container | OK — `data_dir=/app/data`, index and FAQ paths exist |
+| `GET /readyz` | 200, `chunks: 22`, `retrieval: hybrid` |
+| `POST /agent/chat` | 200 in 1.37s; correlation ID echoed; IT + non-IT split correctly |
+| `POST /feedback` | 200 |
+| Structured logging (§15.2) | All required fields present in Cloud Logging |
+
+Note that a local `docker build` has still never been run — Docker is not
+installed on the development machine. Verification went through Cloud Build,
+which is the path `deploy-gcp.sh` uses anyway.
+
+To repeat this verification without disturbing the live services, build with a
+distinct tag (not `:latest`, which the running services reference) and deploy
+under a `-verify` service name, then delete it:
+
+```bash
+gcloud builds submit . --config=deploy/cloudbuild-agent.yaml \
+  --substitutions=_IMAGE=<registry>/teams-rag-agent:verify-poc --project=<project>
+# deploy to teams-rag-agent-verify, check /readyz, then:
+gcloud run services delete teams-rag-agent-verify --region=<region> --project=<project>
+```
+
 ## Knowledge corpus and index delivery — known limitation
 
 **Deployment currently requires a developer machine that holds the corpus.**

@@ -24,6 +24,14 @@ Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 - `POST /retrieval/search`：純檢索除錯用端點
 - `GET /healthz` / `GET /readyz`：健康檢查與索引就緒檢查
 
+> **部署後請用 `/readyz` 而非 `/healthz` 驗證服務。** 從公司網路對 Cloud Run 上的
+> 服務請求 `/healthz` 會得到 Google 的 404 錯誤頁，且回應不含
+> `x-cloud-trace-context` 或 `server: Google Frontend` 標頭——代表該路徑在抵達
+> Cloud Run 之前就被攔截，請求從未進入容器。同一支程式在本機測試 `/healthz`
+> 回 200 正常，線上既有的 `teams-rag-agent` 也是同樣症狀，可見這是環境層行為而非
+> 程式缺陷（2026-08-06 實測）。`/readyz` 不受影響，且會額外回報已載入的 chunk 數。
+> Cloud Run 預設的容器健康檢查走 TCP，不受此影響。
+
 ## 專案狀態
 
 截至 2026-07-29：
