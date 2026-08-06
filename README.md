@@ -591,10 +591,23 @@ docker run --rm -p 8080:8080 --env-file agent_service/.env teams-agent-rag-servi
 ```
 
 `data/faq.json` 會隨 `agent_service/Dockerfile` 的 `COPY data ./data` 一併
-打包進 image（`data/sources`、`data/index`、`data/assets` 也會一起複製，
-索引不存在時 image 啟動後會依 `RAG_AUTO_BUILD_INDEX` 自動建立）；這也是
-`data/faq.json` 必須被 Git 追蹤的另一個原因——否則從乾淨的 clone
-`docker build` 出來的 image 裡不會有 FAQ 設定。
+打包進 image；這也是 `data/faq.json` 必須被 Git 追蹤的原因——否則從乾淨的
+clone `docker build` 出來的 image 裡不會有 FAQ 設定。
+
+> **build context 必須含有語料。** `COPY data ./data` 複製的是**建置當下本機
+> 的 `data/`**。`data/sources`、`data/index`、`data/assets` 都是 gitignored，
+> 因此從乾淨的 clone 建置出來的 image **沒有語料也沒有索引**。此時
+> `RAG_AUTO_BUILD_INDEX` 幫不上忙——自動建索引需要 `data/sources/` 裡的
+> Markdown 文件，沒有來源文件時 `build_index()` 會直接拋出
+> `No Markdown source documents were found.`，服務無法通過 readiness 檢查。
+> 語料交付方式與其限制詳見
+> [`deploy/README.md`](deploy/README.md) 的「Knowledge corpus and index
+> delivery」。
+
+> **尚未驗證。** 本節的兩個 `docker build` 指令在本階段**未實際執行過**
+> （開發環境未安裝 Docker）。Cloud Run 部署走的是 `gcloud builds submit`
+> 的遠端建置路徑，首次部署時請確認建置成功，並用 `/readyz` 回報的 chunk
+> 數確認索引確實進到 image 內。
 
 Messaging endpoint：
 

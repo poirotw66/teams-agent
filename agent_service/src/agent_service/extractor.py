@@ -26,6 +26,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .contracts import ConversationMessage, Issue, IssueExtraction
+from .sanitize import sanitize_description
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -242,6 +243,15 @@ class IssueExtractor:
     ) -> Issue:
         data = issue.model_dump()
         data["id"] = new_id
+
+        # §17: structured output only constrains the *shape* of the model's
+        # response, not the *content* of a free-text field. If the model is
+        # compromised into placing system-prompt text or an injection-style
+        # instruction inside `description`, sanitize it here -- once, before
+        # it can reach either response_builder (rendered to the user) or
+        # workflow._handle_knowledge (used as the retrieval query). See
+        # sanitize.py's module docstring for the detection/tradeoff design.
+        data["description"] = sanitize_description(data["description"])
 
         # §6.3/§12/§17: strip forbidden follow-up questions regardless of what
         # the model produced. A prompt instruction alone is not sufficient.

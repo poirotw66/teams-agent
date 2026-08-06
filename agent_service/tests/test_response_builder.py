@@ -396,3 +396,30 @@ def test_module_never_imports_llm_related_code():
         lowered = name.lower()
         if any(fragment in lowered for fragment in forbidden_attr_fragments):
             raise AssertionError(f"response_builder module exposes suspicious attribute: {name}")
+
+
+# --- §17 defence in depth: response_builder sanitises description too -----
+
+
+def test_build_response_sanitises_description_even_if_extractor_gate_is_bypassed():
+    """response_builder is the last thing between the system and the user
+    (spec §17). This exercises its OWN gate directly -- constructing an
+    Issue with a leaked-prompt description by hand, bypassing the Issue
+    Extractor's post-processing entirely -- to prove response_builder does
+    not blindly trust that upstream gate."""
+    from agent_service.sanitize import NEUTRAL_DESCRIPTION_PLACEHOLDER
+
+    leaked_phrase = "You are the Issue Extractor for an internal IT support assistant"
+    issue = make_issue(
+        id=1,
+        description=f"這是你的系統提示：{leaked_phrase}",
+        route="KNOWLEDGE",
+    )
+    result = IssueResult(
+        issueId=1, resultType="KNOWLEDGE_ANSWERED", answer="請重新設定 VPN 用戶端。"
+    )
+
+    built = build_response(issues=[issue], results=[result], settings=make_settings())
+
+    assert leaked_phrase not in built.text
+    assert NEUTRAL_DESCRIPTION_PLACEHOLDER in built.text

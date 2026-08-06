@@ -103,6 +103,46 @@ mode also needs the `spike` extra installed, which the production image
 does not install by default (`RUN pip install --no-cache-dir ./agent_service`
 installs only the base dependency set).
 
+## Knowledge corpus and index delivery — known limitation
+
+**Deployment currently requires a developer machine that holds the corpus.**
+This is a deliberate, accepted constraint for the POC, recorded here so it is
+not rediscovered during an incident.
+
+`agent_service/Dockerfile` does `COPY data ./data`, so the image is built with
+whatever `data/` exists **in the upload context**, and
+`gcloud builds submit .` uploads the *local working directory* filtered by
+[`.gcloudignore`](../.gcloudignore) — not the git tree. Since `.gcloudignore`
+does not exclude `data/`, the local corpus (`data/sources/`), the built index
+(`data/index/chunks.json`) and the extracted images (`data/assets/`) are all
+uploaded and baked into the image. `data/faq.json` ships the same way, and
+`FAQ_PATH` resolves to `/app/data/faq.json` inside the container.
+
+The consequence: **`data/sources/` and `data/index/` are gitignored** (internal
+IT documents are deliberately kept out of version control), so a build
+triggered from a connected Git repository — a Cloud Build GitHub trigger, or
+any CI runner doing a clean clone — would produce an image with **no corpus and
+no index**. `RAG_AUTO_BUILD_INDEX` cannot rescue it, because there would be no
+source documents to build from; the service would start and then fail
+readiness.
+
+Practical rules while this stands:
+
+1. Deploy only via `deploy/deploy-gcp.sh` (or a manual `gcloud builds submit .`)
+   from a checkout that has the corpus present.
+2. Rebuild the index before deploying whenever the corpus changed:
+   `cd agent_service && .venv/bin/rag-index`.
+3. Do **not** wire up a Git-triggered Cloud Build for the Agent Service without
+   first changing how the corpus is delivered.
+4. After deploying, check `/readyz` — it reports the chunk count, which is the
+   fastest way to catch an image that shipped without an index.
+
+If deployment needs to become automatable later, the options considered were:
+fetch the corpus and index from a GCS bucket at container start (keeps
+documents out of both git and the image, adds a runtime dependency), or track
+the corpus in a private repository (simplest, but puts internal IT documents
+into git history and needs an infosec decision). Neither is implemented.
+
 ## Tuning the §16 knobs
 
 Spec §16's optimization order puts runtime/infra tuning (concurrency, CPU,

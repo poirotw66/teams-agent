@@ -57,6 +57,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .contracts import AgentImage, Citation, Issue, IssueResult
+from .sanitize import sanitize_description
 from .settings import RagSettings
 
 # Spec §14: shown after every FAQ / Knowledge answer. The actual 👍/👎
@@ -125,15 +126,28 @@ def _dedupe_images(all_images: list[AgentImage]) -> list[AgentImage]:
     return result
 
 
+def _safe_description(issue: Issue) -> str:
+    """Spec §17 defence in depth: the last gate before ``Issue.description``
+    is rendered to the user. The primary gate is the Issue Extractor's own
+    post-processing (``extractor.py``'s ``_coerce_issue``), which already
+    runs every description through the same ``sanitize_description``. This
+    call is a no-op in the normal path and only matters if a description
+    ever reaches this module without going through the extractor (a future
+    workflow change, a test double, a bug). It is plain deterministic
+    string handling, not a model call -- it does not violate spec §5.3.
+    """
+    return sanitize_description(issue.description)
+
+
 def _render_not_it(issue: Issue) -> str:
     # Spec §13 "非 IT": "{topic}問題不在此 IT 助手的服務範圍。"
-    return f"{issue.description}問題不在此 IT 助手的服務範圍。"
+    return f"{_safe_description(issue)}問題不在此 IT 助手的服務範圍。"
 
 
 def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "FAQ" — exact template.
     return (
-        f"問題：{issue.description}\n\n"
+        f"問題：{_safe_description(issue)}\n\n"
         f"處理方式：\n{result.answer}\n\n"
         f"來源：\nFAQ"
     )
@@ -141,7 +155,7 @@ def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
 
 def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "Knowledge" — exact shape, source lines list document titles.
-    header = f"問題：{issue.description}\n\n處理方式：\n{result.answer}"
+    header = f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
     if not result.sources:
         return header
     return f"{header}\n\n來源：\n{_render_sources_block(result.sources)}"
@@ -151,21 +165,25 @@ def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "Need More Info" — numbered, at most 2 questions (§6.3).
     questions = result.questions[:_MAX_QUESTIONS]
     numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, start=1))
-    return f"為了協助確認 {issue.description} 問題，請補充：\n\n{numbered}"
+    return f"為了協助確認 {_safe_description(issue)} 問題，請補充：\n\n{numbered}"
 
 
 def _render_no_knowledge(
     issue: Issue, result: IssueResult, *, offer_ticket: bool
 ) -> str:
     # Spec §8.4: never fabricate an answer when the knowledge base has none.
-    text = f"問題：{issue.description}\n\n目前企業知識庫中查無相關資訊，我無法提供答案。"
+    text = f"問題：{_safe_description(issue)}\n\n目前企業知識庫中查無相關資訊，我無法提供答案。"
     if offer_ticket:
         text += "\n\n是否需要協助建立工單？請回覆「是」以建立工單。"
     return text
 
 
 def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
-    lines = [f"問題：{issue.description}", "", f"已為你建立工單，工單編號：{result.ticketId}"]
+    lines = [
+        f"問題：{_safe_description(issue)}",
+        "",
+        f"已為你建立工單，工單編號：{result.ticketId}",
+    ]
     if result.sources and result.sources[0].url:
         lines.append(f"工單連結：{result.sources[0].url}")
     if result.answer:
@@ -175,15 +193,16 @@ def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
 
 
 def _render_ticket_found(issue: Issue, result: IssueResult) -> str:
-    header = f"問題：{issue.description}\n\n你的工單如下："
+    description = _safe_description(issue)
+    header = f"問題：{description}\n\n你的工單如下："
     if not result.sources:
-        return f"問題：{issue.description}\n\n目前查無你建立的工單。"
+        return f"問題：{description}\n\n目前查無你建立的工單。"
     return f"{header}\n{_render_sources_block(result.sources)}"
 
 
 def _render_failed(issue: Issue, correlation_id: str | None) -> str:
     # Spec §17: never leak IssueResult.error / a stack trace to the user.
-    text = f"問題：{issue.description}\n\n處理時發生問題，請稍後再試。"
+    text = f"問題：{_safe_description(issue)}\n\n處理時發生問題，請稍後再試。"
     if correlation_id:
         text += f"\n\n追蹤編號：{correlation_id}"
     return text
