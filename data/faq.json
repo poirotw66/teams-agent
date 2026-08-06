@@ -1,0 +1,40 @@
+{
+  "faqs": [
+    {
+      "id": "FAQ_001",
+      "faqKey": "PASSWORD_RESET",
+      "enabled": true,
+      "answer": "請至金控入口網（國泰員工入口網）點選「忘記密碼」或「密碼變更」選項進行密碼重設。若仍無法完成，請聯繫「123資訊小幫手」協助處理。"
+    },
+    {
+      "id": "FAQ_002",
+      "faqKey": "VPN_HELP",
+      "enabled": true,
+      "answer": "VPN 連線異常時，請先確認網路狀態與帳號密碼是否正確、是否到期或被鎖定。若確認無誤仍無法連線，請聯繫「123資訊小幫手」協助排查。"
+    },
+    {
+      "id": "FAQ_003",
+      "faqKey": "IT_CONTACT",
+      "enabled": true,
+      "answer": "如自助處理無法解決問題，請透過內部管道聯繫「123資訊小幫手」尋求人工協助。"
+    },
+    {
+      "id": "FAQ_004",
+      "faqKey": "TICKET_HOWTO",
+      "enabled": true,
+      "answer": "通報資訊問題時，信件主旨請以「[平台名稱]+功能名稱+異常說明」格式撰寫，並於內容中提供：客戶姓名、帳號/ID、問題軟體名稱、問題說明、發生時間、載具及系統版本，若有截圖請一併附上，以利加速處理。"
+    },
+    {
+      "id": "FAQ_005",
+      "faqKey": "GITLAB_UNLOCK",
+      "enabled": true,
+      "answer": "Gitlab 帳號解鎖或重置，請透過內部管道聯繫資訊管理處相關負責同仁協助處理。"
+    },
+    {
+      "id": "FAQ_006",
+      "faqKey": "IT_SERVICE_HOURS",
+      "enabled": false,
+      "answer": "IT 服務時間目前尚未於知識庫中確認，本項目暫時停用，請改由「123資訊小幫手」查詢最新服務時間。"
+    }
+  ]
+}

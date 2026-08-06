@@ -1,9 +1,22 @@
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
+
+# Fields recognized in the YAML front matter block described in spec §9.
+_FRONT_MATTER_PATTERN = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?", re.DOTALL)
+_KNOWN_FRONT_MATTER_KEYS = {
+    "title",
+    "owner",
+    "version",
+    "effectiveDate",
+    "reviewDate",
+    "audience",
+}
 
 
 @dataclass(frozen=True)
@@ -22,6 +35,35 @@ class DocumentImage:
 
 
 @dataclass
+class DocumentMetadata:
+    """Governance metadata parsed from a source document's YAML front matter."""
+
+    title: str | None = None
+    owner: str | None = None
+    version: str | None = None
+    effective_date: str | None = None
+    review_date: str | None = None
+    audience: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "DocumentMetadata":
+        audience = value.get("audience") or []
+        if not isinstance(audience, list):
+            audience = [audience]
+        return cls(
+            title=value.get("title"),
+            owner=value.get("owner"),
+            version=str(value["version"]) if value.get("version") is not None else None,
+            effective_date=value.get("effective_date"),
+            review_date=value.get("review_date"),
+            audience=[str(item) for item in audience],
+        )
+
+
+@dataclass
 class DocumentChunk:
     chunk_id: str
     title: str
@@ -31,6 +73,7 @@ class DocumentChunk:
     allowed_groups: list[str] | None = None
     images: list[DocumentImage] | None = None
     vector: list[float] | None = None
+    metadata: DocumentMetadata | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -43,7 +86,70 @@ class DocumentChunk:
             for item in normalized.get("images") or []
             if isinstance(item, dict)
         ]
+        if isinstance(normalized.get("metadata"), dict):
+            normalized["metadata"] = DocumentMetadata.from_dict(normalized["metadata"])
+        elif "metadata" in normalized:
+            normalized["metadata"] = None
         return cls(**normalized)
+
+
+def _coerce_date_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def parse_front_matter(raw_text: str) -> tuple[dict[str, Any], str]:
+    """Split optional leading YAML front matter from the document body.
+
+    Returns a tuple of (front_matter_dict, remaining_body_text). Documents
+    without a leading ``---`` delimited block return an empty dict and the
+    original text untouched, preserving current behaviour.
+    """
+    match = _FRONT_MATTER_PATTERN.match(raw_text)
+    if not match:
+        return {}, raw_text
+
+    block = match.group(1)
+    body = raw_text[match.end() :]
+    try:
+        data = yaml.safe_load(block)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML front matter: {exc}") from exc
+
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise TypeError("Front matter must be a YAML mapping.")
+
+    unknown_keys = set(data) - _KNOWN_FRONT_MATTER_KEYS
+    if unknown_keys:
+        raise ValueError(f"Unknown front matter field(s): {', '.join(sorted(unknown_keys))}")
+
+    return data, body
+
+
+def _document_metadata_from_front_matter(
+    front_matter: dict[str, Any],
+    fallback_title: str,
+) -> DocumentMetadata:
+    audience = front_matter.get("audience") or []
+    if not isinstance(audience, list):
+        raise TypeError("Front matter 'audience' must be a list of strings.")
+
+    version = front_matter.get("version")
+    return DocumentMetadata(
+        title=str(front_matter["title"]) if front_matter.get("title") else fallback_title,
+        owner=str(front_matter["owner"]) if front_matter.get("owner") else None,
+        version=str(version) if version is not None else None,
+        effective_date=_coerce_date_value(front_matter.get("effectiveDate")),
+        review_date=_coerce_date_value(front_matter.get("reviewDate")),
+        audience=[str(item) for item in audience],
+    )
 
 
 def _strip_excluded_markdown(raw_text: str) -> str:
@@ -135,11 +241,27 @@ def chunk_markdown(
     metadata: dict[str, Any] | None = None,
 ) -> list[DocumentChunk]:
     raw_text = source_path.read_text(encoding="utf-8")
-    canonical_markdown = _strip_excluded_markdown(raw_text)
+    front_matter, body_text = parse_front_matter(raw_text)
+    canonical_markdown = _strip_excluded_markdown(body_text)
     text = clean_markdown(canonical_markdown)
     title_match = re.search(r"(?m)^#\s+(.+)$", text)
-    title = title_match.group(1).strip() if title_match else source_path.stem
+    derived_title = title_match.group(1).strip() if title_match else source_path.stem
+
+    doc_metadata = (
+        _document_metadata_from_front_matter(front_matter, derived_title)
+        if front_matter
+        else None
+    )
+    title = doc_metadata.title if doc_metadata and doc_metadata.title else derived_title
     metadata = metadata or {}
+
+    allowed_groups = list(metadata.get("allowedGroups", []))
+    if not allowed_groups and doc_metadata and doc_metadata.audience:
+        # "all-employees" is the open/no-restriction marker, matching the
+        # existing "empty allowed_groups = visible to all" convention.
+        allowed_groups = [
+            group for group in doc_metadata.audience if group != "all-employees"
+        ]
 
     # Keep level-three headings with their parent page/section so screenshots and
     # the instructions they illustrate remain in the same retrieval chunk.
@@ -148,7 +270,7 @@ def chunk_markdown(
     for raw_section in sections:
         raw_section = raw_section.strip()
         section = clean_markdown(raw_section)
-        if not section or section == f"# {title}":
+        if not section or section == f"# {derived_title}":
             continue
         images = extract_images(raw_section, source_path)
         content_parts.extend(
@@ -178,8 +300,9 @@ def chunk_markdown(
                 source_path=relative_path,
                 content=content,
                 classification=str(metadata.get("classification", "internal")),
-                allowed_groups=list(metadata.get("allowedGroups", [])),
+                allowed_groups=allowed_groups,
                 images=images,
+                metadata=doc_metadata,
             )
         )
     return chunks
