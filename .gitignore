@@ -5,7 +5,32 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 .DS_Store
-data/index/
 agent_service/.venv/
-data/
 outputs/
+
+# data/: `data/` used to be ignored wholesale. That is wrong for anything
+# under it that is *configuration* rather than corpus/build output, because
+# git cannot "un-ignore" a file under a directory pattern like `data/`
+# (see `git help gitignore`, "It is not possible to re-include a file if a
+# parent directory of that file is excluded"). So instead of one blanket
+# `data/` rule, ignore each regeneratable/runtime subtree individually and
+# let everything else under data/ (currently: faq.json, eval/) be tracked.
+#
+# Ignored (not reproducible from a clean clone on purpose, or runtime
+# state that must never be committed):
+#   data/sources/       raw knowledge corpus (internal IT documents)
+#   data/index/          built BM25/embedding index, regenerated via
+#                         `uv run rag-index`
+#   data/assets/          images extracted from the corpus for Adaptive
+#                         Cards, regenerated alongside the corpus
+#   data/conversations/  Conversation Repository FILE-mode store; runtime
+#                         state, may contain user message text
+#
+# Tracked (small, hand-curated configuration/fixtures the service's
+# behavior depends on — spec §7.2 FAQ config, §18.7 A/B/eval fixtures):
+#   data/faq.json
+#   data/eval/
+data/sources/
+data/index/
+data/assets/
+data/conversations/

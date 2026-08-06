@@ -1,0 +1,199 @@
+# Teams App 設定與測試說明（spec §20 項目 20）
+
+本文件涵蓋 Teams app 註冊與側載（sideload）、Azure Bot Service 設定、
+Messaging endpoint 切換、本機 Dev Tunnel 測試，以及只能在真實 Teams 用戶
+端手動驗證的 POC 驗收項目（spec §19 第 1、2、12 項）。
+
+環境變數、Docker、Cloud Run 部署細節請見
+[`../README.md`](../README.md) 與 [`../deploy/README.md`](../deploy/README.md)；
+本文件只涵蓋 Teams／Azure Bot 這一側的設定與手動測試。
+
+## 1. 先備條件
+
+- 一個已建立的 Azure Bot resource，綁定一個 Entra App Registration。
+- 具有 Teams 授權的 Microsoft 365 公司或學校帳號（免費／個人版 Teams 不
+  支援自訂 app 側載）。
+- 若沒有 `Upload a custom app` 選項：需要 Teams 管理員在 app setup policy
+  開啟 custom app upload，或由管理員直接在 Teams admin center 上傳
+  package。
+
+## 2. Azure Bot Service 設定
+
+1. Azure Portal → 建立或開啟既有的 Azure Bot resource。
+2. 記下並妥善保存：
+   - Application (client) ID → `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID`
+   - Directory (tenant) ID → `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID`
+   - Client secret **Value**（只在建立當下顯示一次）→
+     `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET`
+3. 啟用 **Microsoft Teams** channel，確認狀態為 `Healthy`。
+4. **Settings → Configuration → Messaging endpoint** 設為：
+   - 本機開發：目前的 Dev Tunnel HTTPS URL + `/api/messages`（見第 4 節）
+   - 雲端：`https://<teams-agent-adapter-cloud-run-url>/api/messages`
+     （見 [`../deploy/README.md`](../deploy/README.md)）
+
+這三個值只能放在本機 `.env` 或雲端 Secret Manager，絕不可提交到 Git 或
+寫進程式碼（spec §17）。
+
+## 3. Teams App 註冊與側載（Sideload）
+
+1. 確認 `appPackage/manifest.json`、`appPackage/color.png`（192×192 全彩
+   icon）、`appPackage/outline.png`（32×32 白色透明 outline icon）齊全。
+2. `manifest.json` 中需要確認／調整：
+   - `id`：Teams app 的唯一識別碼（GUID）
+   - `bots[0].botId`：與 Azure Bot 的 Microsoft App ID（client ID）一致
+   - `bots[0].scopes`：`["personal", "team"]`
+   - `supportsChannelFeatures: "tier1"`（v1.25 schema 必要欄位）
+   - `developer.websiteUrl` / `privacyUrl` / `termsOfUseUrl`：**目前是
+     PoC placeholder**（`https://example.com/...`）。正式對外發布前必須
+     換成公司真實網址；PoC 內部測試可先保留 placeholder。
+3. 打包：
+
+   ```bash
+   ./scripts/build-teams-package.sh
+   ```
+
+   產出 `appPackage/dist/teams-ai-agent.zip`。
+
+4. 側載到 Team：Teams 用戶端 → **Apps** → **Manage your apps** →
+   **Upload an app** → **Upload a custom app** → 選擇
+   `teams-ai-agent.zip` → 選擇要安裝的 Team。
+
+## 4. 本機測試：Dev Tunnel
+
+本機開發時 Teams（透過 Azure Bot）需要一個公開 HTTPS endpoint 才能打到
+`localhost`。
+
+啟動完整本機環境（Agent Service + Teams Adapter + Dev Tunnel）：
+
+```bash
+./start.sh
+```
+
+`start.sh` 會依序：
+
+1. 啟動 Agent Service（`:8000`，等待 `/readyz` 就緒）。
+2. 啟動 Teams Adapter（`:3978`，等待 `/readyz` 就緒）。
+3. 啟動 `devtunnel host -p 3978 --allow-anonymous`。
+
+若 Dev Tunnel 已由其他 Terminal 執行，改用：
+
+```bash
+START_TUNNEL=false ./start.sh
+```
+
+首次使用 Dev Tunnel 需要先登入：
+
+```bash
+devtunnel user login -e
+```
+
+取得 tunnel 顯示的 `Connect via browser` URL（**不要**使用 inspect URL 或
+tunnel ID）後，回到第 2 節把 Azure Bot Messaging endpoint 設為
+`https://<tunnel-domain>/api/messages`，並確認根目錄 `.env` 的
+`BOT_PUBLIC_BASE_URL` 與這個 tunnel domain 一致（用於簽出來源圖片
+URL）——Dev Tunnel URL 每次啟動都可能改變，改變時要同步更新並重啟 Teams
+Adapter。
+
+`Ctrl+C` 會停止 `start.sh` 啟動的所有子程序（Agent Service、Teams
+Adapter、Dev Tunnel）。若 `3978` 或 `8000` 已被舊程序占用，腳本會先偵測並
+提示需要手動關閉哪個服務。
+
+## 5. User Directory Service：Graph 權限（`USER_DIRECTORY_MODE=graph`）
+
+預設 `USER_DIRECTORY_MODE=disabled`（不呼叫 Microsoft Graph，POC 預設，
+不需要任何 Graph API 權限）。
+
+若要啟用 `USER_DIRECTORY_MODE=graph`（在 Teams 訊息本身沒有帶 email 時，
+透過 `GET /users/{id}` 補查使用者 email，供工單建立使用 spec §11.4／§12）：
+
+1. Azure Portal → Entra ID → App registrations → 找到 Bot 使用的 App
+   Registration → **API permissions**。
+2. 新增 **Microsoft Graph → Application permissions → `User.Read.All`**。
+3. 由 Entra 租戶管理員完成 **Grant admin consent**（Application
+   permission 一定要 admin consent，使用者本人無法自行同意）。
+4. 設定 `USER_DIRECTORY_MODE=graph`，需要時可調整
+   `USER_DIRECTORY_CACHE_TTL_SECONDS`（預設 300 秒，查詢結果的 in-process
+   快取時間）。
+
+實作見 [`../src/teams_agent/directory.py`](../src/teams_agent/directory.py)：
+Graph 呼叫使用 Bot 自己的 app-only 憑證（client credentials flow，重用
+Microsoft 365 Agents SDK 既有的 `MsalConnectionManager`），從不使用使用者
+提供的 token；查詢失敗一律降級為「取不到 email」而不中斷該輪對話。若未授
+予 `User.Read.All` 或未完成 admin consent，Graph 呼叫會失敗並記錄
+warning，行為等同 `disabled`（工單建立會因缺少可信任 email 而明確拒絕，
+不會用猜測值頂替，見 spec §11.4）。
+
+## 6. 手動測試腳本（僅能在真實 Teams 驗證）
+
+以下項目對應 spec §19 POC 驗收標準中，只有在真實 Teams 用戶端才能觀察到
+的部分（第 1、2、12 項），加上 Feedback 按鈕（spec §14）。自動化測試（單
+元／整合測試）涵蓋的其餘 §19 項目不在此重複。
+
+### 6.1 前置
+
+- [ ] Teams app 已側載到測試 Team（第 3 節）。
+- [ ] Azure Bot Messaging endpoint 指向要驗證的環境（Dev Tunnel 或 Cloud
+      Run Adapter URL）。
+- [ ] `agent_service` 與（若走 Dev Tunnel）本機 Teams Adapter 皆已啟動且
+      `/readyz` 回應 `ready`。
+
+### 6.2 項目 1／2：Teams 可正常與 Agent 對話、服務可部署且可達
+
+1. 在已安裝的 Team 頻道輸入 `@Bot` 加上一句單一 IT 問題，例如：
+
+   ```text
+   @Bot VPN 連線一直失敗，錯誤代碼 691
+   ```
+
+   - [ ] Bot 在合理時間內（Cloud Run `--timeout=90` 之內）回覆。
+   - [ ] 回覆內容非 Echo，而是知識庫／FAQ 產生的實際答案。
+2. 切換到 `personal` scope（私訊 Bot），重複一句簡單問候：
+
+   - [ ] Bot 正常回覆（不需要 `@mention`）。
+3. 在頻道中傳送一句**未 `@mention`** Bot 的訊息：
+
+   - [ ] Bot 不應觸發回覆（後端不應收到這則訊息的 request）。
+4. 若正在驗證 Cloud Run 部署：確認 Messaging endpoint 已指向 Cloud Run
+   Adapter URL（不是 Dev Tunnel），且上述對話仍然成功：
+
+   - [ ] 驗證 Cloud Run Adapter 服務可從 Teams／Azure Bot 端可達。
+
+### 6.3 項目 12：來源圖片可正常顯示
+
+1. 提出一個已知有對應圖片來源的問題（例如大州系統相關文件內含截圖）。
+2. 檢查 Bot 回覆的 Adaptive Card：
+
+   - [ ] 圖片實際渲染出來（不是破圖／空白／逾時）。
+   - [ ] 圖片大小在 Teams 卡片內合理顯示（未被裁切或過大）。
+3. 等待超過 `RAG_ASSET_URL_TTL_SECONDS`（預設 3600 秒）後，嘗試重新載入
+   同一張卡片／同一個圖片 URL（例如重新整理 Teams 用戶端後回看舊訊息）：
+
+   - [ ] 已過期的簽名 URL 不應再次可讀取（確認短效簽章確實生效）。
+
+### 6.4 Feedback 👍/👎 按鈕（spec §14）
+
+1. 提出一個會被 FAQ 或 Knowledge Service 命中的問題，取得回覆。
+2. 確認回覆下方（或隨附卡片動作）出現：
+
+   ```text
+   這個回答有解決你的問題嗎？
+   👍 已解決   👎 未解決
+   ```
+
+   - [ ] 兩個按鈕都會顯示（前提：`FEEDBACK_ENABLED=true`，預設值）。
+3. 分別點擊 👍 與 👎：
+
+   - [ ] 點擊後有明確的使用者可見結果（例如按鈕消失或顯示已收到回饋）。
+   - [ ] Agent Service log 出現 `Feedback recorded: ...` 一行，包含
+         correlation ID、conversation ID、issue ID、user ID 與
+         `rating`（`up`/`down`），且不含問題原文或答案全文。
+4. 將 `FEEDBACK_ENABLED=false` 後重啟 Agent Service，重複步驟 1：
+
+   - [ ] 回覆不再顯示 Feedback 按鈕（`/agent/chat` 回應的
+         `feedbackEnabled` 為 `false`）。
+
+### 6.5 記錄結果
+
+每次手動測試建議記錄：日期、測試環境（Dev Tunnel／Cloud Run）、
+`agent_service` 與 Teams Adapter 的版本／commit、以上各項目的通過與否，
+並保留任何失敗案例的 correlation ID 以便對照後端 log（spec §15）。
