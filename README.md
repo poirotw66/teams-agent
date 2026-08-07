@@ -201,7 +201,6 @@ CLIENT_ID=<Application (client) ID>
 CLIENT_SECRET=<Client secret Value>
 TENANT_ID=<Directory (tenant) ID>
 PORT=3978
-HOST=0.0.0.0
 AGENT_MODE=echo
 ```
 
@@ -651,8 +650,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `CLIENT_SECRET` | — | Client secret **Value**；只能放 `.env` 或 Secret Manager |
 | `TENANT_ID` | — | Entra Directory (tenant) ID（單一租戶 app 必填） |
 | `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | 略過 `/api/messages` 的 JWT 驗證；**僅限本機**，Cloud Run 絕不可設 |
-| `PORT` | `3978` | HTTP 監聽埠；Cloud Run 會自動注入 |
-| `HOST` | `0.0.0.0` | 監聽位址 |
+| `PORT` | `3978` | HTTP 監聽埠；Cloud Run 會自動注入。無 `HOST` 設定——Teams SDK 的 `FastAPIAdapter` 固定綁 `0.0.0.0` |
 | `LOG_LEVEL` | `INFO` | 可暫時改 `DEBUG` 做本機除錯 |
 | `AGENT_MODE` | `echo` | `echo`（不呼叫外部 AI）或 `api`（呼叫 Agent Service） |
 | `AGENT_API_URL` | — | `AGENT_MODE=api` 時必填，指向 Agent Service 的 `/agent/chat` |

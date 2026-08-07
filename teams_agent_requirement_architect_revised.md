@@ -2,7 +2,13 @@
 ## 架構優化版系統開發需求
 
 > 文件定位：本文件為既有 BU 需求的架構優化版本。  
-> 核心原則：保留既有 Python、Microsoft 365 Agents SDK Python、LangGraph、Hybrid RAG 與 Cloud Run 雙服務架構，以最小改造完成可驗證的 IT 智能助手 POC。
+> 核心原則：保留既有 Python、Microsoft Teams SDK（Python）、LangGraph、Hybrid RAG 與 Cloud Run 雙服務架構，以最小改造完成可驗證的 IT 智能助手 POC。
+>
+> **2026-08 修訂**：Teams Agent Framework 由 Microsoft 365 Agents SDK Python 改為
+> Microsoft Teams SDK（`microsoft-teams-apps`）。原因是確認的封鎖性限制——集團
+> 沒有 Azure Subscription，無法建立 Agents SDK 所依賴的 Azure Bot Service
+> resource；bot 改在 Teams Developer Portal 對 Entra ID app registration 註冊。
+> 語言、LangGraph、Hybrid RAG 與 Cloud Run 雙服務架構均未更動。
 
 ---
 
@@ -40,9 +46,9 @@ Teams 使用者提問
 本專案維持以下既有技術：
 
 - Runtime：Python 3.11
-- Teams Agent Framework：Microsoft 365 Agents SDK Python
+- Teams Agent Framework：Microsoft Teams SDK（Python，`microsoft-teams-apps`）
 - Workflow Framework：LangGraph
-- Teams Adapter Hosting：aiohttp
+- Teams Adapter Hosting：FastAPI（Teams SDK 的 `FastAPIAdapter`）
 - Agent Service Hosting：FastAPI
 - AI Model：Gemini
 - 預設 Knowledge Backend：既有 Hybrid RAG
@@ -67,11 +73,12 @@ Teams 使用者提問
 Microsoft Teams
       │
       ▼
-Azure Bot Service
+Bot Framework 服務
+（Teams Developer Portal 註冊，非 Azure Bot Service）
       │
       ▼
 Public Teams Adapter
-Microsoft 365 Agents SDK Python
+Microsoft Teams SDK（Python）
       │ Cloud Run IAM
       ▼
 Private LangGraph Agent Service
@@ -979,7 +986,7 @@ A/B Test 完成前，Hybrid RAG 維持預設。
 以下不列入 POC 必要驗收：
 
 - Node.js 重寫
-- Microsoft 365 Agents SDK JavaScript
+- Microsoft Teams SDK TypeScript 重寫
 - Gemini File Search 正式取代 Hybrid RAG
 - 完整 Issue Repository
 - 完整 Issue Lifecycle
@@ -997,7 +1004,7 @@ A/B Test 完成前，Hybrid RAG 維持預設。
 # 20. 交付項目
 
 1. 更新後 Python 原始碼
-2. Microsoft 365 Agents SDK Python Teams Adapter
+2. Microsoft Teams SDK（Python）Teams Adapter
 3. LangGraph Agent Workflow
 4. Issue Extractor
 5. FAQ Repository 與 FAQ Service
