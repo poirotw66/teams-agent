@@ -24,7 +24,7 @@ Teams Adapter
 - LangGraph routing、relevance grading、query rewrite、grounded generation
 - 保存 Markdown 圖片與父章節關聯，回答可回傳受 ACL 保護來源的圖片 metadata
 - 沒有 LLM 金鑰也能運作的 extractive local mode
-- `/agent/chat` Teams contract、`/retrieval/search` 除錯端點
+- `/agent/chat` Teams contract、`/agent/chat/stream` SSE 進度串流、`/retrieval/search` 除錯端點
 - Service token、tenant allowlist、health/readiness endpoints
 - Dockerfile 與單元／API 測試
 - 每次 `/agent/chat` 會在後端 log 記錄 LLM／embedding token 用量與 USD 價格估算
@@ -190,6 +190,26 @@ Agent Service 不提供公開圖片檔案；Teams Adapter 會驗證相對路徑�
 - `GET /readyz`：索引已載入及目前模型／檢索模式
 - `POST /retrieval/search`：檢索除錯
 - `POST /agent/chat`：Teams Adapter 使用的正式入口
+- `POST /agent/chat/stream`：同一份答案，改以 Server-Sent Events 回傳
+
+`/agent/chat/stream` 的事件格式：
+
+```text
+event: stage
+data: {"label": "正在檢索知識庫…"}
+
+event: response
+data: {"answer": "...", "citations": [...], "feedbackEnabled": true, ...}
+```
+
+`stage` 對應 LangGraph 節點完成（標籤定義在 `workflow.STAGE_LABELS`），
+`response` 的 body 與 `/agent/chat` 完全相同，兩者必定擇一出現在最後：
+workflow 失敗時改送 `event: error`。
+
+錯誤語意與 `/agent/chat` 有一處必然的差異：HTTP status 在第一個 byte 送出
+時就已定案，因此**執行中**的失敗無法再變成 503，只能以 `error` 事件送出。
+在 workflow 開始前就能判定的拒絕（service token 錯誤、tenant 不在
+allowlist）仍然是正常的 HTTP 401／403。
 
 每次 `/agent/chat` 完成時，後端會輸出 structured log，包含：
 

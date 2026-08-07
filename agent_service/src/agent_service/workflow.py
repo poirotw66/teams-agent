@@ -58,8 +58,9 @@ import asyncio
 import inspect
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -97,6 +98,27 @@ logger = logging.getLogger(__name__)
 # matched instead of persisting extra state. Kept in sync with the exact
 # Chinese copy in response_builder._render_no_knowledge.
 _TICKET_OFFER_MARKER = "是否需要協助建立工單"
+
+# Progress stages surfaced to the Teams user while the graph runs (spec §5.1
+# node boundaries, reused as user-visible progress).
+#
+# The mapping is keyed by the node that just FINISHED and names the work that
+# is now starting, because `graph.astream` emits an update only once a node
+# completes. `save_conversation` is deliberately absent: by the time it runs
+# the answer is already known, and the Teams Adapter finalizes the streamed
+# message rather than showing another status line.
+#
+# These are the only user-visible strings in this module. Everything else the
+# user reads is rendered by `response_builder`.
+STAGE_LABELS: dict[str, str] = {
+    "load_conversation": "正在理解你的問題…",
+    "extract_issues": "正在確認問題類型…",
+    "filter_it_issues": "正在檢索知識庫…",
+    "process_issues": "正在整理答案…",
+}
+# Sent before the graph starts, so the user sees something within one Teams
+# round-trip rather than waiting for the first node to finish.
+INITIAL_STAGE_LABEL = "已收到你的問題…"
 
 
 class AgentState(TypedDict, total=False):
@@ -590,12 +612,12 @@ class AgentWorkflow:
 
     # --- entry points --------------------------------------------------
 
-    async def run(
-        self, request: AgentRequest, *, correlation_id: str | None = None
+    def _initial_state(
+        self, request: AgentRequest, correlation_id: str | None
     ) -> AgentState:
         # Spec §15.1: derived exactly once, never regenerated between nodes.
         resolved_correlation_id = correlation_id or request.correlationId or str(uuid.uuid4())
-        initial_state: AgentState = {
+        return {
             "request": request,
             "correlation_id": resolved_correlation_id,
             "issues": [],
@@ -607,22 +629,70 @@ class AgentWorkflow:
             "images": [],
             "feedback_enabled": False,
         }
-        result: AgentState = await self.graph.ainvoke(initial_state)
+
+    async def run(
+        self, request: AgentRequest, *, correlation_id: str | None = None
+    ) -> AgentState:
+        result: AgentState = await self.graph.ainvoke(
+            self._initial_state(request, correlation_id)
+        )
         return result
+
+    @staticmethod
+    def _to_response(state: AgentState) -> AgentResponse:
+        return AgentResponse(
+            answer=state.get("final_response", ""),
+            traceId=state["correlation_id"],
+            correlationId=state["correlation_id"],
+            citations=state.get("citations", []),
+            images=state.get("images", []),
+            issueResults=state.get("issue_results", []),
+            feedbackEnabled=state.get("feedback_enabled", False),
+        )
 
     async def respond(
         self, request: AgentRequest, *, correlation_id: str | None = None
     ) -> AgentResponse:
-        result = await self.run(request, correlation_id=correlation_id)
-        return AgentResponse(
-            answer=result.get("final_response", ""),
-            traceId=result["correlation_id"],
-            correlationId=result["correlation_id"],
-            citations=result.get("citations", []),
-            images=result.get("images", []),
-            issueResults=result.get("issue_results", []),
-            feedbackEnabled=result.get("feedback_enabled", False),
-        )
+        return self._to_response(await self.run(request, correlation_id=correlation_id))
+
+    async def stream(
+        self, request: AgentRequest, *, correlation_id: str | None = None
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """Run the graph, yielding progress stages before the final state.
+
+        Yields ``("stage", label)`` as each node completes and finally
+        ``("state", AgentState)`` -- the same state :meth:`run` returns, so
+        callers build the ``AgentResponse`` and emit the spec §15.2 log line
+        exactly as they do on the non-streaming path. The answer is identical
+        to what :meth:`respond` produces for the same request: this streams
+        *when* the user learns things, never *what* they learn.
+
+        Why stages and not tokens: spec §5.3 requires the Response Builder to
+        be deterministic string templating over answers that upstream nodes
+        already finished producing, so at the point ``final_response`` exists
+        there is no token stream left to forward. The latency a user actually
+        waits through is issue extraction plus retrieval, which is exactly
+        what these stages cover.
+
+        ``stream_mode="updates"`` yields ``{node_name: delta}`` once per
+        completed node. ``AgentState`` is a plain ``TypedDict`` with no
+        reducer annotations, so LangGraph's own merge semantics are
+        last-value-wins per key and folding the deltas here reproduces the
+        same final state ``ainvoke`` would have returned.
+        """
+        state: AgentState = self._initial_state(request, correlation_id)
+
+        async for update in self.graph.astream(dict(state), stream_mode="updates"):
+            if not isinstance(update, dict):
+                continue
+            for node_name, delta in update.items():
+                if isinstance(delta, dict):
+                    state.update(delta)  # type: ignore[typeddict-item]
+                label = STAGE_LABELS.get(node_name)
+                if label:
+                    yield "stage", label
+
+        yield "state", state
 
 
 @dataclass(frozen=True)

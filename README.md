@@ -34,6 +34,7 @@ Teams Adapter（公開）：
 Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 
 - `POST /agent/chat`：LangGraph Workflow 主入口
+- `POST /agent/chat/stream`：同上，但以 SSE 逐步回報進度（見第 4.3 節）
 - `POST /feedback`：記錄 👍/👎 回饋（spec §14）
 - `POST /retrieval/search`：純檢索除錯用端點
 - `GET /healthz` / `GET /readyz`：健康檢查與索引就緒檢查
@@ -429,6 +430,45 @@ openssl rand -hex 32
 `ragImages` 應為 `ready`。圖片 signed URL 到期後不可再次讀取；正式環境請將
 signing key 放入 Secret Manager 或 Key Vault。
 
+### 4.3 進度串流（Streaming）
+
+`AGENT_MODE=api` 時，Adapter 會呼叫 Agent Service 的
+`POST /agent/chat/stream`（SSE），把 LangGraph 的節點進度即時顯示給使用者，
+不必等整個 workflow 跑完才看到第一個字：
+
+```text
+已收到你的問題…
+正在理解你的問題…      ← Load Conversation 完成
+正在確認問題類型…      ← Extract Issues 完成
+正在檢索知識庫…        ← Filter IT Issues 完成（最耗時的一段）
+正在整理答案…          ← Process Issues 完成
+[Adaptive Card 最終答案 + 來源 + 👍/👎]
+```
+
+**只在 1:1 私訊生效。** Teams 平台不支援在頻道與群組聊天串流訊息，Adapter
+會先看 `conversation.conversationType`，非 `personal` 時直接走原本的單次回覆
+路徑（不會多花一次失敗的往返）。本專案 `defaultInstallScope` 是 `team`，
+所以**多數頻道流量本來就不會串流**——這是 Teams 的限制，不是設定問題。
+
+其他行為：
+
+- 最終的 Adaptive Card 是串流的收尾訊息。Teams 只允許在串流的**最後一則**
+  訊息帶附件，因此進度文字會先被清掉，由卡片取代而不是疊加在下面。
+- 串流過程若失敗，使用者一定會拿到東西：Teams 拒絕串流 → 退回一般回覆；
+  Agent Service 回報錯誤 → 顯示標準錯誤訊息與追蹤編號；使用者按下 Stop 或
+  超過 Teams 的兩分鐘串流上限 → 保留已顯示的內容，不重複回答。
+- 答案內容與 `POST /agent/chat` **完全一致**，串流只改變使用者*何時*看到，
+  不改變*看到什麼*。
+- `AGENT_STREAMING_ENABLED=false` 可整個關掉，行為回到單次回覆。
+
+> **為什麼是「階段」而不是逐字（token）串流。** spec §5.3 要求 Response
+> Builder 必須是純字串樣板、不得呼叫 LLM，答案在進到它之前就已由 FAQ／
+> Knowledge Service 產生完畢——也就是說 `final_response` 成形時已經沒有
+> token 流可以轉發了。而使用者實際在等的是 Issue 抽取與知識庫檢索，正好
+> 就是這些階段涵蓋的範圍。要做到真正的逐字串流，必須改寫 Knowledge
+> Service 的 grounded answer 產生流程（且多 issue 併發時的輸出順序需要
+> 重新設計），屬於另一個獨立議題。
+
 ## 5. Agent Service Workflow（LangGraph, spec §5）
 
 `agent_service` 的 `/agent/chat` 由一個 LangGraph Workflow
@@ -657,6 +697,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `AGENT_API_TOKEN` | — | `AGENT_API_AUTH_MODE=service_token` 時必填 |
 | `AGENT_API_AUTH_MODE` | `none`（有設 `AGENT_API_TOKEN` 時預設 `service_token`） | `none` \| `service_token` \| `google_id_token`（Cloud Run 服務間 IAM） |
 | `AGENT_API_AUDIENCE` | — | `google_id_token` 模式下的 identity token audience（Agent Service URL） |
+| `AGENT_STREAMING_ENABLED` | `true` | 是否在 1:1 私訊串流進度（見第 4.3 節）；頻道／群組聊天不受影響（Teams 不支援） |
 | `AGENT_API_TIMEOUT_SECONDS` | `10` | 非 localhost 的 `AGENT_API_URL` 會強制要求 HTTPS |
 | `BOT_PUBLIC_BASE_URL` | — | 用於簽出來源圖片 URL 的公開網域（只填 domain，不加 `/api/messages`） |
 | `RAG_ASSET_DIR` | `<repo>/data/assets` | 來源圖片根目錄 |

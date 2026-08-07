@@ -26,6 +26,10 @@ class AgentSettings:
     asset_max_bytes: int = 1_000_000
     user_directory_mode: str = "disabled"
     user_directory_cache_ttl_seconds: float = 300.0
+    # Stream workflow progress into Teams while the Agent Service runs.
+    # Only takes effect in 1:1 personal chats -- Teams rejects streamed
+    # messages in channels and group chats (see teams_agent.agent).
+    streaming_enabled: bool = True
     # Microsoft Teams SDK app (Entra app registration) credentials. The SDK
     # reads CLIENT_ID / CLIENT_SECRET / TENANT_ID from the environment itself;
     # they are mirrored here so `/readyz` can report whether the adapter is
@@ -85,6 +89,10 @@ class AgentSettings:
             ),
             user_directory_cache_ttl_seconds=float(
                 environ.get("USER_DIRECTORY_CACHE_TTL_SECONDS", "300")
+            ),
+            streaming_enabled=(
+                environ.get("AGENT_STREAMING_ENABLED", "true").strip().lower()
+                in _TRUE_VALUES
             ),
             client_id=environ.get("CLIENT_ID", "").strip() or None,
             client_secret=environ.get("CLIENT_SECRET", "").strip() or None,
@@ -175,6 +183,21 @@ class AgentSettings:
             return None
         parsed_url = urlparse(self.api_url)
         return f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+    @property
+    def resolved_stream_url(self) -> str | None:
+        """`/agent/chat/stream` alongside the configured `/agent/chat`.
+
+        Derived from `api_url` by suffix rather than configured separately,
+        so the two endpoints can never drift onto different hosts.
+        """
+        if not self.api_url:
+            return None
+        return f"{self.api_url.rstrip('/')}/stream"
+
+    @property
+    def streaming_ready(self) -> bool:
+        return self.streaming_enabled and self.mode == "api" and bool(self.api_url)
 
     @property
     def resolved_feedback_url(self) -> str | None:

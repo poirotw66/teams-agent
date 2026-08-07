@@ -6,10 +6,11 @@ from dotenv import load_dotenv
 from microsoft_teams.api import ConversationUpdateActivity, MessageActivity
 from microsoft_teams.api.activities.utils import StripMentionsTextOptions
 from microsoft_teams.apps import ActivityContext, App, ErrorEvent
+from microsoft_teams.apps.plugins import StreamNotAllowedError, TerminalStreamError
 
 from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
-from .contracts import AgentRequest, FeedbackRequest, account_field
+from .contracts import AgentRequest, AgentResponse, FeedbackRequest, account_field
 from .directory import EntraAppTokenProvider, build_user_directory_service
 from .server import build_http_adapter
 from .settings import AgentSettings
@@ -186,6 +187,14 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
         request.conversation.conversationId or "unknown",
     )
 
+    if _streaming_supported(ctx):
+        delivered = await _answer_streaming(ctx, request, correlation_id)
+        if delivered:
+            return
+        # Streaming was refused by Teams before any answer reached the user.
+        # Fall through to the plain request/response path rather than leaving
+        # the turn unanswered.
+
     try:
         response = await agent_gateway.answer(request)
     except AgentGatewayError:
@@ -196,12 +205,96 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
         )
         return
 
-    activity = build_agent_activity(
+    await ctx.send(_build_activity(response, request))
+
+
+def _build_activity(response: AgentResponse, request: AgentRequest):
+    return build_agent_activity(
         response,
         agent_settings,
         conversation_id=request.conversation.conversationId,
     )
-    await ctx.send(activity)
+
+
+def _streaming_supported(ctx: ActivityContext[MessageActivity]) -> bool:
+    """Whether this turn may stream progress.
+
+    Teams only renders streamed messages in 1:1 personal chats; in a channel
+    or group chat the service answers the first stream activity with HTTP 403
+    (surfacing as `StreamNotAllowedError`). This bot installs to a team by
+    default, so most turns take the plain path -- checking the scope up front
+    keeps them from paying a failed round-trip to find that out.
+    """
+    if not agent_settings.streaming_ready:
+        return False
+    conversation = ctx.activity.conversation
+    return bool(conversation) and conversation.conversation_type == "personal"
+
+
+async def _answer_streaming(
+    ctx: ActivityContext[MessageActivity],
+    request: AgentRequest,
+    correlation_id: str,
+) -> bool:
+    """Stream workflow progress, then finalize with the answer.
+
+    Returns True when the user has been given something -- an answer or an
+    error message -- and False only when nothing was delivered and the caller
+    should retry on the non-streaming path.
+
+    The final Adaptive Card is emitted as the stream's closing activity
+    because Teams only accepts an attachment on the last message of a stream;
+    `clear_text` first drops the accumulated progress text so the card
+    replaces it rather than appearing under it.
+    """
+    try:
+        async for kind, value in agent_gateway.answer_stream(request):
+            if kind == "stage":
+                ctx.stream.update(value)
+            elif kind == "response":
+                ctx.stream.clear_text()
+                ctx.stream.emit(_build_activity(value, request))
+        await ctx.stream.close()
+        return True
+    except StreamNotAllowedError:
+        # Teams refused mid-flight despite the scope check (e.g. a policy the
+        # adapter cannot see). Nothing was rendered, so the caller retries
+        # without streaming.
+        logger.warning(
+            "Teams refused streaming; falling back to a plain reply: "
+            "correlation_id=%s",
+            correlation_id,
+        )
+        return False
+    except AgentGatewayError:
+        logger.exception(
+            "Agent Gateway streaming failed: correlation_id=%s", correlation_id
+        )
+        await _fail_stream(ctx, correlation_id)
+        return True
+    except TerminalStreamError:
+        # Cancelled by the user or past Teams' two-minute streaming limit.
+        # Partial progress is already on screen, so a plain re-answer would
+        # duplicate it; report the turn as delivered.
+        logger.warning(
+            "Teams ended the stream before completion: correlation_id=%s",
+            correlation_id,
+        )
+        return True
+
+
+async def _fail_stream(
+    ctx: ActivityContext[MessageActivity], correlation_id: str
+) -> None:
+    """Turn a half-streamed turn into the standard error reply."""
+    text = "AI Agent 暫時無法回應，請稍後再試。" f"\n\n追蹤編號：`{correlation_id}`"
+    try:
+        ctx.stream.clear_text()
+        ctx.stream.emit(text)
+        await ctx.stream.close()
+    except TerminalStreamError:
+        # The stream itself is unusable; deliver the error as a normal message.
+        await ctx.send(text)
 
 
 @agent_app.event("error")
