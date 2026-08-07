@@ -155,6 +155,14 @@ requires a side lookup through `custom_metadata`. Hybrid returns the real
 document title and chunk id directly and scored 100% Citation Accuracy on
 the 30-case set (`docs/retrieval-ab-test-report.md`).
 
+> **Superseded on 2026-08-07.** The adapter now always sends a grounding
+> system instruction (commit `b71602e`), and the full 30-case A/B run scored
+> Gemini at 100% Answer Accuracy, 100% No-answer and 100% Error-code
+> accuracy. The behaviour described below was observed *without* that
+> instruction and no longer occurs. See `docs/retrieval-ab-test-report.md`
+> §4 for the corrected quality comparison — the reasons to stay on Hybrid
+> are latency and the missing ACL/image support, not answer quality.
+
 **4. Default answers violate §8.4 — but this is configuration, not a hard
 limit.** With File Search's built-in prompting, answers drifted into model
 general knowledge. Asked about `Error -619` (absent from the corpus) it
@@ -176,6 +184,129 @@ already had 54 pre-existing File Search stores from unrelated work
 (`session-*`, `helpdesk-store`, `your-fileSearchStore-name`). Nothing
 identifies an owner or a project. Adopting File Search would need naming and
 cleanup conventions, or stores accumulate indefinitely.
+
+**8. Cost model (looked up 2026-08-07, not estimated).** Per
+ai.google.dev: File Search **storage is free**; quotas are 1 GB (free tier),
+10 GB (tier 1), 100 GB (tier 2), 1 TB (tier 3). Indexing is charged as
+`gemini-embedding-2` embeddings ($0.15 / 1M tokens); query-time embedding is
+free, and only the retrieved document tokens are billed as ordinary context.
+
+Measured on this corpus: indexing all 19 documents (~9,665 tokens) is a
+**one-off US$0.0014**. A single grounded query reported
+`prompt=16, tool_use_prompt=2004, output=426` via `usage_metadata`, i.e.
+**US$0.001671/query** at gemini-3.5-flash-lite list price, against Hybrid's
+measured **US$0.001065/query** — File Search is ~1.57x per query. Storage
+being free means the difference is entirely per-query volume:
+
+| Queries | Gemini FS | Hybrid | Difference |
+| --- | --- | --- | --- |
+| 1,000 | US$1.67 | US$1.07 | US$0.61 |
+| 10,000 | US$16.71 | US$10.65 | US$6.06 |
+| 100,000 | US$167.10 | US$106.50 | US$60.60 |
+
+Caveat: the per-query figure is one manual probe, not a 30-case mean. As of
+Task 17 the adapter does surface `usage_metadata` on every call (via
+`file_search_usage.extract_usage`, exposed as `last_usage`/`last_cost_usd`
+and logged at INFO — see finding 9), but that wiring itself has not been
+re-run against a live store to produce a fresh 30-case mean; the A/B table's
+Gemini cost figure should still be treated as unmeasured until
+`scripts/retrieval_ab_test.py` is re-run end to end.
+
+**10. Both gaps verified end to end against a live store (2026-08-07).**
+Finding 9 established feasibility and the adapter now implements it. This
+closes the loop: re-probed using `GeminiFileSearchKnowledgeService` itself —
+not a hand-built filter — against a store holding one document uploaded as
+`allowed_groups=['cs-team']` and one as `[]` (public):
+
+| Caller | Query | found | Sources returned |
+| --- | --- | --- | --- |
+| `groups=['cs-team']` | restricted content | **True** | 分公司CS團隊VPN連線可使用權限列表 |
+| `groups=[]` | restricted content | **False** | (none) |
+| `groups=[]` | public content | **True** | 總公司IP話機操作 |
+
+Three things this confirms beyond the unit tests: the filter the adapter
+builds really does exclude documents the caller may not see; citations carry
+the **real Chinese titles**, not the ASCII upload slugs; and images resolve
+through the local registry (the IP-phone document returned its 1 image).
+`usage_metadata` extraction reported real per-call token counts and cost.
+
+Still unverified: the `enforce_acl=False` escape hatch and the
+caller-supplied-filter rejection path (unit tests only); a full 19-document
+corpus upload through the script's ACL path; and a fresh 30-case cost mean.
+
+**9. ACL and image mapping — probed feasible 2026-08-07, implemented and
+unit-tested in Task 17, NOT re-verified end to end against a live store.**
+The A/B report originally listed these as the two functional gaps blocking
+adoption. They were first probed by hand against a live store (below) to
+establish whether they are solvable at all, rather than assumed. Task 17
+then wired the workaround described here into
+`gemini_file_search.py::GeminiFileSearchKnowledgeService` for real:
+`filter_for`/`upload_metadata_for` (`file_search_acl.py`) build and enforce
+the query-time/upload-time metadata described below, and
+`FileSearchDocumentRegistry` (`file_search_registry.py`) does the slug→title
+and slug→images join. All of that is covered by unit tests
+(`tests/test_gemini_file_search.py`, `tests/test_file_search_acl.py`,
+`tests/test_file_search_registry.py`) using fake response objects — **none
+of it has been re-run against a live File Search store**. The manual probe
+below only exercised the filter *string* by hand with the spike script's
+`query --metadata-filter`, not the adapter's actual call site, and did not
+exercise `enforce_acl`'s "reject a caller-supplied metadata_filter" guard or
+the upload script's new `--dry-run`/ACL-attach path against a real store.
+Treat the workaround's mechanics as confirmed, and the new adapter code
+paths as unit-tested but operationally unverified, before relying on this
+in any environment with real ACL-restricted documents.
+
+*ACL — solvable, with a workaround.* `CustomMetadata` accepts
+`string_list_value`, but a list value is **not matchable by
+`metadata_filter`**: with `allowed_groups` stored as a list, an unfiltered
+query returned the document while `allowed_groups="cs-team"` returned
+nothing, and `allowed_groups IN [...]` is rejected with 400 INVALID_ARGUMENT.
+Only scalar `string_value` filters work.
+
+The workaround is one scalar key per group (`grp_<name>="1"`), with the
+query-time filter OR-ing across the caller's groups. Verified end to end on
+two documents:
+
+| Filter | Documents returned |
+| --- | --- |
+| `grp_cs_team="1"` | restricted doc only |
+| `grp_all_employees="1"` | public doc only |
+| `grp_cs_team="1" OR grp_all_employees="1"` | both eligible |
+
+Caveats before treating this as equivalent to Hybrid's ACL: metadata keys per
+document grow with the number of groups that can see it; the filter string
+grows with the caller's group count (no length limit was probed); and
+correctness depends on the adapter building the filter correctly, so a bug
+becomes a disclosure. Hybrid enforces the same rule inside our own code,
+where it is unit-tested.
+
+*Images — solvable by a local join, no File Search feature needed.* Images
+come from `data/assets/`, extracted at index time and recorded per chunk in
+our own index. File Search never sees them. But the citation it returns
+carries the ASCII slug, and the slug maps 1:1 back to our local document
+record, which already knows that document's images:
+
+```
+slug=doc-f8da1df6e202.md  -> 1 image   (大州系統_功能無法點選)
+slug=doc-be7ba83c6fee.md  -> 2 images  (大州首次使用設定)
+slug=IP.md                -> 1 image   (總公司IP話機操作)
+```
+
+The join is document-level rather than chunk-level, so attribution would be
+slightly coarser than Hybrid's (which knows which chunk carried the image).
+
+Neither gap was a hard blocker, and neither is a gap anymore in code: both
+are now implemented in `gemini_file_search.py` (Task 17) and unit-tested.
+The ACL path still carries a correctness risk Hybrid's own in-process
+enforcement does not — a bug in filter construction is a disclosure, not
+just a wrong answer — which is why Task 17 makes `enforce_acl=True` the
+non-bypassable default and rejects rather than silently combines a
+caller-supplied `metadata_filter` with the ACL clause (AND-combining filter
+strings was never probed against a live store, so the adapter does not
+guess at it). What remains open is exactly the re-verification named above:
+this write-up documents unit-tested behaviour, not a fresh live-store
+confirmation that the wired-up adapter behaves the same way the manual
+probe did.
 
 **7. Data residency is a new consideration.** Unlike inference calls, a File
 Search store keeps a *persistent copy* of internal IT documents on Google's

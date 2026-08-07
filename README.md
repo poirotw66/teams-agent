@@ -452,6 +452,59 @@ LangGraph Workflow 不直接依賴任何具體資料庫、檢索產品或工單�
 | Ticket Service | `agent_service/src/agent_service/ticket.py` | `DISABLED` / `HTTP`（呼叫內部工單 API） | `TICKET_SERVICE_MODE=DISABLED` \| `HTTP` |
 | User Directory Service | `src/teams_agent/directory.py`（Teams Adapter 端） | `disabled`（不查 Graph）/ `graph`（`GET /users/{id}`） | `USER_DIRECTORY_MODE=disabled` \| `graph` |
 
+### Retrieval A/B Test：Hybrid vs. Gemini File Search（spec §18.7）
+
+`KNOWLEDGE_SERVICE_MODE` 該用 `HYBRID` 還是 `GEMINI_FILE_SEARCH`，不是憑印象決定，而是跑同一組
+30 案例評估集（`data/eval/retrieval_eval_set.json`）過兩個後端、比對 spec §18.7 列出的每一項指
+標。以下是 2026-08-07 對一個全新建立、跑完即刪除的 Gemini File Search store（19 份語料全數上
+傳）所量到的**實測**結果，完整方法、原始輸出與誠實限制見
+[`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md)，這裡只列結論。
+
+| 指標 | Hybrid（預設） | Gemini File Search |
+|---|---|---|
+| Answer / Recall@K / Groundedness / Citation / No-answer / Error-code Accuracy | 100% | 100% |
+| Image Match Accuracy | 100% (3/3) | 100% (3/3) |
+| ACL Accuracy（30 案例欄位） | 100% (2/2) | 100% (2/2)——**此欄位對兩者皆無鑑別力**，見下方說明 |
+| P50 / P95 Latency | **3.00s / 4.07s** | 5.71s / 7.15s |
+| 平均成本／查詢 | **US$0.001059** | US$0.001804 |
+| 平均 LLM 呼叫／查詢 | 2.17 | 1.00 |
+
+八項品質指標兩邊都是 100%，這種情況畫圖表反而是雜訊——表格已經把「打平」講清楚了。真正有落差、
+且值得用眼睛比大小的只有延遲與成本，所以只畫這兩項：
+
+```mermaid
+xychart-beta
+    title "延遲比較（秒，越低越好）"
+    x-axis ["P50", "P95"]
+    y-axis "秒" 0 --> 8
+    bar "Hybrid" [3.00, 4.07]
+    bar "Gemini File Search" [5.71, 7.15]
+```
+
+```mermaid
+xychart-beta
+    title "平均每查詢成本（USD，越低越好）"
+    x-axis ["Hybrid", "Gemini File Search"]
+    y-axis "USD" 0 --> 0.002
+    bar [0.001059, 0.001804]
+```
+
+**ACL 欄位為什麼不能直接看 100%**：評估集裡的兩個 ACL 案例現在都預期「找得到」，因為語料庫目前
+每份文件都是 `audience: all-employees`（見
+[`docs/knowledge-document-governance.md`](docs/knowledge-document-governance.md) 的治理決策）。
+一個完全不檢查權限的後端一樣會在這兩題拿到 100%，所以這個數字不能拿來比較兩個後端誰的 ACL 做得
+好。真正驗證 ACL 的是一個獨立跑的探測（`scripts/acl_verification.py`：上傳一份合成的受限文件與
+一份公開文件到一個用完即刪的 store，分別用有權限／無權限的使用者查詢）——結果是 Gemini adapter
+的權限過濾機制**確實有效**（有權限者看得到、無權限者看不到且答案不洩漏內容），但這只證明「機制
+本身能用」，不代表「現有 19 份公開語料的存取控制現況有被測試到」，因為現況就是全部公開。詳細結
+果見報告 2.3 節。
+
+**決策：`KNOWLEDGE_SERVICE_MODE` 維持 `HYBRID`（預設）。** 對業務關係人來說，理由可以濃縮成一句
+話：**兩者回答品質打平，但 Hybrid 快將近 2 倍、每次查詢便宜約 4 成，而且沒有額外的維運負擔**（中
+文檔名需要額外轉換層、圖片對應只能做到文件層級、上傳流程中斷重試需要人工檢查是否留下重複文件）。
+沒有任何一項指標讓 Gemini File Search 贏過 Hybrid 到值得承擔這些代價，所以維持現狀，不需要額外
+決策或審批。
+
 ### 設定 FAQ（spec §7）
 
 FAQ 僅用於答案固定、不需文件檢索、不需依使用者條件變化的高頻問題（例如密
@@ -504,6 +557,8 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
   audience）規範，對應 spec §9。
 - [`docs/gemini-file-search-spike.md`](docs/gemini-file-search-spike.md) ——
   Gemini File Search 技術 Spike 的執行方式與限制，對應 spec §8.3。
+- [`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md) ——
+  Hybrid vs. Gemini File Search 的完整 A/B 測試方法、原始數據與誠實限制，對應 spec §18.7（摘要見上方）。
 - [`agent_service/README.md`](agent_service/README.md) —— Agent Service
   本身的啟動、索引建立與 API 範例。
 

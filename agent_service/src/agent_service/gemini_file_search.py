@@ -16,9 +16,15 @@ test suite — never requires it to be installed.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
-from .contracts import Citation, KnowledgeResult, UserContext
+from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
+from .file_search_acl import filter_for
+from .file_search_registry import FileSearchDocumentRegistry
+from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
+
+logger = logging.getLogger(__name__)
 
 # Grounding rules handed to the model as a system instruction.
 #
@@ -86,6 +92,9 @@ class GeminiFileSearchKnowledgeService:
         file_search_store: str,
         model: str = "gemini-2.5-flash",
         top_k: int = 4,
+        registry: FileSearchDocumentRegistry | None = None,
+        max_images: int = 2,
+        enforce_acl: bool = True,
     ) -> None:
         if not file_search_store:
             raise ValueError(
@@ -95,7 +104,29 @@ class GeminiFileSearchKnowledgeService:
         self.file_search_store = file_search_store
         self.model = model
         self.top_k = top_k
+        self.registry = registry
+        self.max_images = max_images
+        self.enforce_acl = enforce_acl
         self._client = None
+
+        # Usage/cost of the most recent search() call, mirroring
+        # HybridKnowledgeService's last_llm_call_count convention
+        # (knowledge.py) rather than inventing a third exposure pattern.
+        self.last_usage: FileSearchUsage | None = None
+        self.last_cost_usd: float | None = None
+
+        if not enforce_acl:
+            # Loudly logged per Task 17 requirement C: disabling ACL
+            # enforcement must never be a quiet default.
+            logger.warning(
+                "GeminiFileSearchKnowledgeService constructed with "
+                "enforce_acl=False: no metadata_filter will be derived from "
+                "the caller's groups, so every document in "
+                "file_search_store=%s is visible to every caller regardless "
+                "of allowed_groups. This must never be the default in "
+                "production.",
+                file_search_store,
+            )
 
     def _get_client(self):
         genai, _types = _import_genai()
@@ -115,14 +146,51 @@ class GeminiFileSearchKnowledgeService:
 
         Note: this is a spike-quality synchronous-under-the-hood call (the
         google-genai client is sync); it is wrapped so the async
-        ``KnowledgeService`` Protocol shape (spec §8.1) is satisfied. ACL /
-        tenant allowlist enforcement for File Search stores is NOT part of
-        this spike (spec §8.3 explicitly scopes the spike to store creation,
-        upload, Chinese queries, sources, metadata filter, deletion and
-        error-code comparison only) — do not select GEMINI_FILE_SEARCH mode
-        for any environment carrying ACL-restricted documents until that is
-        addressed.
+        ``KnowledgeService`` Protocol shape (spec §8.1) is satisfied.
+
+        ACL (Task 17): when ``enforce_acl`` is True (the default), the
+        ``metadata_filter`` sent to File Search is always derived from
+        ``user_context.groups`` via ``file_search_acl.filter_for`` — a caller
+        cannot omit it. This is unit-tested (see
+        ``tests/test_gemini_file_search.py`` and
+        ``tests/test_file_search_acl.py``) but has NOT been re-verified end
+        to end against a live store by this task; the live probe in
+        docs/gemini-file-search-spike.md finding 9 only exercised
+        ``filter_for``'s OR-of-equalities shape by hand, not this call site.
+
+        Composing with a caller-supplied ``metadata_filter``: only an
+        OR-of-scalar-equalities filter string was verified against a live
+        store (finding 9); AND-combining it with the ACL clause
+        (``f"({acl}) AND ({caller})"``) was never probed, so this method
+        does NOT attempt that composition — silently trusting unverified
+        filter-language semantics for an access-control decision is exactly
+        the kind of assumption this codebase avoids. Instead, when
+        ``enforce_acl`` is True, passing a non-``None`` ``metadata_filter``
+        raises ``ValueError`` rather than either dropping the ACL clause
+        (unsafe) or guessing at AND semantics (unverified, and a bug there
+        is a privilege leak). A caller that truly needs additional
+        narrowing must either encode it as more restrictive
+        ``allowed_groups`` at upload time, or construct the service with
+        ``enforce_acl=False`` (loudly logged) and take on ACL enforcement
+        itself.
         """
+        if self.enforce_acl:
+            if metadata_filter is not None:
+                raise ValueError(
+                    "GeminiFileSearchKnowledgeService.search: a caller-supplied "
+                    "metadata_filter cannot be combined with ACL enforcement "
+                    "(enforce_acl=True) because AND-combining filter strings "
+                    "was never verified against a live File Search store "
+                    "(docs/gemini-file-search-spike.md finding 9). Passing a "
+                    "filter here could silently widen access past the "
+                    "caller's groups. Narrow via allowed_groups at upload "
+                    "time instead, or construct with enforce_acl=False if "
+                    "you are enforcing ACL elsewhere."
+                )
+            effective_filter = filter_for(user_context.groups)
+        else:
+            effective_filter = metadata_filter
+
         _genai, types = _import_genai()
         client = self._get_client()
 
@@ -130,7 +198,7 @@ class GeminiFileSearchKnowledgeService:
             file_search=types.FileSearch(
                 file_search_store_names=[self.file_search_store],
                 top_k=self.top_k,
-                metadata_filter=metadata_filter,
+                metadata_filter=effective_filter,
             )
         )
         response = await client.aio.models.generate_content(
@@ -150,6 +218,20 @@ class GeminiFileSearchKnowledgeService:
             ),
         )
 
+        usage = extract_usage(response)
+        self.last_usage = usage
+        self.last_cost_usd = estimate_cost(usage, self.model)
+        logger.info(
+            "File Search query usage: correlation_id=%s input_tokens=%s "
+            "output_tokens=%s total_tokens=%s estimated_cost_usd=%s usage=%s",
+            correlation_id,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
+            self.last_cost_usd,
+            log_fields(usage, self.model),
+        )
+
         chunks = self._grounding_chunks(response)
         if not chunks:
             # Spec §8.4: 找不到答案時明確表示未命中, 不得編造.
@@ -163,16 +245,60 @@ class GeminiFileSearchKnowledgeService:
 
         answer = self._response_text(response)
         sources = [
-            Citation(title=chunk.title, url=chunk.uri, chunkId=chunk.document_name)
+            Citation(
+                title=self._resolve_title(chunk.title),
+                url=chunk.uri,
+                chunkId=chunk.document_name,
+            )
             for chunk in chunks
         ]
         return KnowledgeResult(
             found=True,
             answer=answer,
             sources=sources,
-            images=[],  # spike does not map File Search results to AgentImage
+            images=self._images_for(chunks),
             backend="GEMINI_FILE_SEARCH",
         )
+
+    def _resolve_title(self, slug: str) -> str:
+        """Map a grounding chunk's ASCII upload slug to its real title.
+
+        Degrades to the slug itself (today's behaviour) when there is no
+        registry, or the registry does not know this slug — never raises
+        (docs/gemini-file-search-spike.md finding 3).
+        """
+        if self.registry is None:
+            return slug
+        title = self.registry.title_for(slug)
+        return title if title is not None else slug
+
+    def _images_for(self, chunks: list[GeminiGroundingChunk]) -> list[AgentImage]:
+        """Images for the cited documents, via the local registry join.
+
+        De-duplicated and order-stable across chunks, capped at
+        ``self.max_images`` the same way ``HybridKnowledgeService._images_for``
+        caps images (knowledge.py) — stop as soon as the cap is reached.
+        Returns ``[]`` when there is no registry, matching today's
+        behaviour exactly (spec §8.3 spike scope).
+        """
+        if self.registry is None:
+            return []
+        images: list[AgentImage] = []
+        seen: set[str] = set()
+        seen_slugs: set[str] = set()
+        for chunk in chunks:
+            slug = chunk.title
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            for image in self.registry.images_for(slug):
+                if image.path in seen:
+                    continue
+                seen.add(image.path)
+                images.append(image)
+                if len(images) >= self.max_images:
+                    return images
+        return images
 
     @staticmethod
     def _response_text(response) -> str:
