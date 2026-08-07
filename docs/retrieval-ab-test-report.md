@@ -151,8 +151,8 @@ No-answer 與 Error-code 皆 100%，slug 對照後 Recall 與 Citation 也都 10
 
 | 缺口 | 工作量性質 |
 |---|---|
-| ACL 強制（§17） | 需設計：File Search 的 metadata filter 能否表達群組權限尚未驗證 |
-| 圖片來源對應（§19-12） | 需實作 |
+| ACL 強制（§17） | **已驗證可行**：需每群組一個純量 metadata 欄位（list 值無法被 filter 比對），查詢時以 OR 串接使用者群組。風險：正確性依賴 adapter 組出正確 filter，寫錯即外洩 |
+| 圖片來源對應（§19-12） | **已驗證可行**：不需 File Search 功能，用 slug↔本地文件記錄 join 即可（圖片本來就在我們自己的索引裡）。代價：只能做到文件層級歸屬，不如 Hybrid 的 chunk 層級精準 |
 | slug↔原始標題對照 | 需實作（spike 腳本已有 ASCII 轉檔可沿用） |
 | 成本量測 | 需在 adapter 回報 usage metadata |
 | 延遲改善 | 未知是否可控（單次呼叫已是最省的形式） |

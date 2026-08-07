@@ -208,6 +208,53 @@ Caveat: the per-query figure is one probe, not a 30-case mean — the adapter
 does not yet surface `usage_metadata`, which is why the A/B table reports
 Gemini cost as unmeasured. Wiring that up would make the comparison exact.
 
+**9. ACL and image mapping are both achievable — measured 2026-08-07.**
+The A/B report lists these as the two functional gaps blocking adoption. They
+were probed against a live store to establish whether they are solvable at
+all, rather than assumed:
+
+*ACL — solvable, with a workaround.* `CustomMetadata` accepts
+`string_list_value`, but a list value is **not matchable by
+`metadata_filter`**: with `allowed_groups` stored as a list, an unfiltered
+query returned the document while `allowed_groups="cs-team"` returned
+nothing, and `allowed_groups IN [...]` is rejected with 400 INVALID_ARGUMENT.
+Only scalar `string_value` filters work.
+
+The workaround is one scalar key per group (`grp_<name>="1"`), with the
+query-time filter OR-ing across the caller's groups. Verified end to end on
+two documents:
+
+| Filter | Documents returned |
+| --- | --- |
+| `grp_cs_team="1"` | restricted doc only |
+| `grp_all_employees="1"` | public doc only |
+| `grp_cs_team="1" OR grp_all_employees="1"` | both eligible |
+
+Caveats before treating this as equivalent to Hybrid's ACL: metadata keys per
+document grow with the number of groups that can see it; the filter string
+grows with the caller's group count (no length limit was probed); and
+correctness depends on the adapter building the filter correctly, so a bug
+becomes a disclosure. Hybrid enforces the same rule inside our own code,
+where it is unit-tested.
+
+*Images — solvable by a local join, no File Search feature needed.* Images
+come from `data/assets/`, extracted at index time and recorded per chunk in
+our own index. File Search never sees them. But the citation it returns
+carries the ASCII slug, and the slug maps 1:1 back to our local document
+record, which already knows that document's images:
+
+```
+slug=doc-f8da1df6e202.md  -> 1 image   (大州系統_功能無法點選)
+slug=doc-be7ba83c6fee.md  -> 2 images  (大州首次使用設定)
+slug=IP.md                -> 1 image   (總公司IP話機操作)
+```
+
+The join is document-level rather than chunk-level, so attribution would be
+slightly coarser than Hybrid's (which knows which chunk carried the image).
+
+Neither gap is a hard blocker. Both are implementation work the adapter does
+not currently do, and the ACL one carries a correctness risk Hybrid does not.
+
 **7. Data residency is a new consideration.** Unlike inference calls, a File
 Search store keeps a *persistent copy* of internal IT documents on Google's
 side. The corpus already transits Google for embeddings, but persistence is
