@@ -37,6 +37,9 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "TICKET_SERVICE_TIMEOUT_SECONDS",
         "CONVERSATION_REPOSITORY_MODE",
         "CONVERSATION_STORE_PATH",
+        "CONVERSATION_FIRESTORE_PROJECT",
+        "CONVERSATION_FIRESTORE_DATABASE",
+        "CONVERSATION_FIRESTORE_COLLECTION",
         "FAQ_PATH",
         "FEEDBACK_ENABLED",
     ]
@@ -64,6 +67,10 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.ticket_service_timeout_seconds == 10.0
     assert settings.conversation_repository_mode == "MEMORY"
     assert settings.conversation_store_path == (tmp_path / "conversations").resolve()
+    # Firestore project/database default to whatever ADC resolves to.
+    assert settings.conversation_firestore_project is None
+    assert settings.conversation_firestore_database is None
+    assert settings.conversation_firestore_collection == "conversations"
     assert settings.faq_path == (tmp_path / "faq.json").resolve()
     assert settings.feedback_enabled is True
 
@@ -198,6 +205,75 @@ def test_invalid_conversation_repository_mode_raises(
 
     with pytest.raises(ValueError):
         RagSettings.from_env()
+
+
+def test_firestore_conversation_repository_mode_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """FIRESTORE needs no extra config: ADC supplies project and database."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONVERSATION_REPOSITORY_MODE", "FIRESTORE")
+
+    settings = RagSettings.from_env()
+
+    assert settings.conversation_repository_mode == "FIRESTORE"
+    assert settings.conversation_firestore_collection == "conversations"
+
+
+def test_firestore_project_database_and_collection_are_configurable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONVERSATION_REPOSITORY_MODE", "FIRESTORE")
+    monkeypatch.setenv("CONVERSATION_FIRESTORE_PROJECT", "itr-aimasteryhub-lab")
+    monkeypatch.setenv("CONVERSATION_FIRESTORE_DATABASE", "teams-agent")
+    monkeypatch.setenv("CONVERSATION_FIRESTORE_COLLECTION", "poc_conversations")
+
+    settings = RagSettings.from_env()
+
+    assert settings.conversation_firestore_project == "itr-aimasteryhub-lab"
+    assert settings.conversation_firestore_database == "teams-agent"
+    assert settings.conversation_firestore_collection == "poc_conversations"
+
+
+def test_nested_firestore_collection_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bad collection id must fail at startup, not on the first write."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONVERSATION_REPOSITORY_MODE", "FIRESTORE")
+    monkeypatch.setenv("CONVERSATION_FIRESTORE_COLLECTION", "conversations/nested")
+
+    with pytest.raises(ValueError):
+        RagSettings.from_env()
+
+
+def test_blank_firestore_collection_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Blank means unset here, as it does for every other env var."""
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CONVERSATION_REPOSITORY_MODE", "FIRESTORE")
+    monkeypatch.setenv("CONVERSATION_FIRESTORE_COLLECTION", "   ")
+
+    settings = RagSettings.from_env()
+
+    assert settings.conversation_firestore_collection == "conversations"
+
+
+def test_blank_firestore_collection_rejected_when_constructed_directly(
+    tmp_path: Path,
+) -> None:
+    """The env layer normalizes blanks away; validate() is the backstop."""
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "index.json",
+        conversation_repository_mode="FIRESTORE",
+        conversation_firestore_collection="   ",
+    )
+
+    with pytest.raises(ValueError):
+        settings.validate()
 
 
 def test_feedback_enabled_can_be_disabled(
