@@ -226,6 +226,18 @@ START_TUNNEL=false ./start.sh
 `Ctrl+C` 會停止由腳本啟動的所有子程序。若 `3978` 或 `8000` 已被舊程序占用，
 腳本會先停止並提示需要手動關閉哪個服務。
 
+不需要 Teams、Azure 或 devtunnel，就能把一輪完整對話跑過一次（含 Bot 送出去
+的訊息）：
+
+```bash
+uv run python scripts/simulate_teams.py                     # Echo 模式
+uv run python scripts/simulate_teams.py \
+    --agent-url http://localhost:8000/agent/chat            # 完整 RAG + 串流
+```
+
+驗收順序與檢查點見
+[`docs/teams-app-setup.md` §5.5](docs/teams-app-setup.md)。
+
 確認 health 與 readiness endpoints：
 
 ```bash

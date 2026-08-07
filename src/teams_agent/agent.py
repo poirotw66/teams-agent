@@ -62,9 +62,13 @@ async def on_conversation_update(
     )
 
 
-@agent_app.on_message_pattern(re.compile(r"^/help$", re.IGNORECASE))
-async def on_help(ctx: ActivityContext[MessageActivity]) -> None:
-    await ctx.send(f"目前模式：`{agent_settings.mode}`。傳送任意文字即可開始測試。")
+# Commands are matched after the bot's @mention is stripped, not by
+# `on_message_pattern`. That decorator tests the regex against the raw
+# `activity.text`, which in a channel is "<at>TeamsAgent</at> /help" -- so an
+# anchored pattern never matches there. This app installs to a team by
+# default and advertises /help for both scopes in the manifest, so command
+# matching has to survive being @mentioned.
+_HELP_COMMAND = re.compile(r"^/help$", re.IGNORECASE)
 
 
 async def _handle_feedback(ctx: ActivityContext[MessageActivity], data: dict) -> None:
@@ -153,6 +157,12 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
 
     if not message:
         await ctx.send("我收到訊息了，但其中沒有可處理的文字。")
+        return
+
+    if _HELP_COMMAND.match(message):
+        await ctx.send(
+            f"目前模式：`{agent_settings.mode}`。傳送任意文字即可開始測試。"
+        )
         return
 
     # Spec §15.1: one Correlation ID per Teams activity, generated once here

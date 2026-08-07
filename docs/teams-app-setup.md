@@ -165,6 +165,103 @@ credentials grant），從不使用使用者提供的 token；查詢失敗一律
 warning，行為等同 `disabled`（工單建立會因缺少可信任 email 而明確拒絕，
 不會用猜測值頂替，見 spec §11.4）。
 
+## 5.5 兩段式本機驗收
+
+驗收分兩段，順序不能顛倒——第一段能自動化、跑一次幾秒鐘，用來擋掉協定層的
+錯誤；第二段只能靠人眼，成本高，所以放在後面。
+
+```
+修改程式
+    │
+    ▼
+第 1 段：協定與往返（可自動化，不需要 Teams）
+    │   scripts/simulate_teams.py
+    │   或 Microsoft 365 Agents Playground
+    ▼
+第 2 段：Teams 用戶端渲染（只能人工）
+    │   側載到真實 Teams
+    ▼
+驗收完成
+```
+
+### 第 1 段：`scripts/simulate_teams.py`（最快，先跑這個）
+
+在本機同時跑起真實的 Teams Adapter 與一個假的 Bot Framework 服務，送進真的
+Bot Framework Activity，並把 Bot **送出去**的訊息攔下來印出。不需要 Teams、
+不需要 Azure、不需要 devtunnel、不需要任何憑證。
+
+```bash
+# Echo 模式：只需要 Adapter，其他什麼都不用開
+uv run python scripts/simulate_teams.py
+
+# 完整 RAG 路徑：另一個 terminal 先 `cd agent_service && uv run rag-agent`
+uv run python scripts/simulate_teams.py \
+    --agent-url http://localhost:8000/agent/chat
+
+# 頻道情境（會走非串流的單次回覆路徑）
+uv run python scripts/simulate_teams.py \
+    --agent-url http://localhost:8000/agent/chat --scope channel
+```
+
+1:1 私訊 + `--agent-url` 的預期輸出（串流會生效）：
+
+```text
+mode=api scope=personal streaming=True
+
+--- 問題 ---
+  POST /api/messages -> 200, 6 activity(ies) out
+  send   [typing] 已收到你的問題…
+  send   [typing] 正在理解你的問題…
+  send   [typing] 正在確認問題類型…
+  send   [typing] 正在檢索知識庫…
+  send   [typing] 正在整理答案…
+  send   AdaptiveCard blocks=[...] actions=['👍 已解決', '👎 未解決']
+```
+
+檢查點：
+
+- [ ] 每一輪 `POST /api/messages` 都回 `200`。
+- [ ] 每一輪都**至少送出一則** activity（沒送就代表使用者那邊是空的）。
+- [ ] `--scope personal` 且 `AGENT_MODE=api` 時 `streaming=True`，並看到 5 個
+      `[typing]` 進度。
+- [ ] `--scope channel` 時 `streaming=False`，只有一則卡片。
+- [ ] `/help` 在**兩種 scope** 都回「目前模式：…」而不是去查知識庫。
+- [ ] 結尾是 `OK: ... 0 problem(s)`（非 0 會以 exit code 1 結束，可接 CI）。
+
+### 第 1 段（替代）：Microsoft 365 Agents Playground
+
+想要互動式介面時用這個。Teams SDK 自己的 `microsoft-teams-devtools` 已標記
+deprecated，官方建議改用
+[Agents Playground](https://learn.microsoft.com/en-us/microsoftteams/platform/toolkit/debug-your-agents-playground)。
+
+```bash
+START_TUNNEL=false ./start.sh        # Playground 在本機，不需要 devtunnel
+```
+
+Playground 的 messaging endpoint 指向 `http://localhost:3978/api/messages`。
+
+`.env` 必須有：
+
+```dotenv
+DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
+```
+
+Playground 不帶真的 Bot Framework JWT；而且**沒有憑證時 `/readyz` 會回 503**，
+`start.sh` 等不到就會直接失敗退出。
+
+### 第 2 段：側載到真實 Teams
+
+第 1 段涵蓋不到的，全部集中在這裡——它們都是 Teams **用戶端**的行為，任何本機
+模擬器都無法代勞：
+
+- [ ] Adaptive Card 實際渲染正常（不是純文字或破版）。
+- [ ] 來源圖片載得出來（簽章 URL 在 Teams 端可讀）。
+- [ ] 👍/👎 按鈕按下去有反應，且後端收到 feedback。
+- [ ] **串流在 1:1 私訊真的會動**（進度文字逐步更新，最後被卡片取代）。
+- [ ] 串流的兩分鐘上限與使用者按 Stop 的行為符合預期。
+
+詳細的手動測試腳本見下一節。
+
 ## 6. 手動測試腳本（僅能在真實 Teams 驗證）
 
 以下項目對應 spec §19 POC 驗收標準中，只有在真實 Teams 用戶端才能觀察到

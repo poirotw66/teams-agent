@@ -258,3 +258,77 @@ async def test_a_cancelled_stream_is_not_re_answered(api_mode, monkeypatch) -> N
 
     assert delivered is True
     assert ctx.sent == []
+
+
+# --- commands survive being @mentioned ----------------------------------
+
+
+def mention_activity(text: str, scope: str) -> MessageActivity:
+    """A channel message as Teams actually delivers it: mention still in text."""
+    return MessageActivity.model_validate(
+        {
+            "type": "message",
+            "id": "activity-1",
+            "channelId": "msteams",
+            "from": {"id": "user-1"},
+            "recipient": {"id": "bot-1", "name": "TeamsAgent"},
+            "conversation": {"id": "conversation-1", "conversationType": scope},
+            "text": f"<at>TeamsAgent</at> {text}",
+            "entities": [
+                {
+                    "type": "mention",
+                    "text": "<at>TeamsAgent</at>",
+                    "mentioned": {"id": "bot-1", "name": "TeamsAgent"},
+                }
+            ],
+        }
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["channel", "groupChat"])
+async def test_help_works_when_the_bot_is_mentioned(monkeypatch, scope) -> None:
+    # Regression: /help used to go through on_message_pattern, which matches
+    # the raw activity text -- "<at>TeamsAgent</at> /help" never matched the
+    # anchored pattern, so /help silently fell through to the RAG path in
+    # exactly the scope this app installs to by default.
+    monkeypatch.setattr(agent_module, "agent_settings", AgentSettings())
+
+    async def unexpected_answer(_request):
+        raise AssertionError("/help must not reach the Agent Gateway.")
+
+    install_gateway(monkeypatch, answer=unexpected_answer)
+    ctx = FakeContext(scope)
+    ctx.activity = mention_activity("/help", scope)
+
+    await agent_module._handle_message(ctx)
+
+    assert len(ctx.sent) == 1
+    assert "目前模式" in ctx.sent[0]
+
+
+@pytest.mark.asyncio
+async def test_help_still_works_in_personal_chat(monkeypatch) -> None:
+    monkeypatch.setattr(agent_module, "agent_settings", AgentSettings())
+
+    async def unexpected_answer(_request):
+        raise AssertionError("/help must not reach the Agent Gateway.")
+
+    install_gateway(monkeypatch, answer=unexpected_answer)
+    ctx = FakeContext("personal")
+    ctx.activity = MessageActivity.model_validate(
+        {
+            "type": "message",
+            "id": "activity-1",
+            "channelId": "msteams",
+            "from": {"id": "user-1"},
+            "recipient": {"id": "bot-1"},
+            "conversation": {"id": "conversation-1", "conversationType": "personal"},
+            "text": "/help",
+        }
+    )
+
+    await agent_module._handle_message(ctx)
+
+    assert len(ctx.sent) == 1
+    assert "目前模式" in ctx.sent[0]
