@@ -759,6 +759,11 @@ uv run pytest
 uv run ruff check .
 ```
 
+## 11. POC 驗收狀態
+
+spec §19 二十二項驗收標準與 §20 二十項交付項目的逐項對照、佐證測試名稱與
+待辦清單，見 [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md)。
+
 ## 未來方向
 
 ### Milestone 2：接入 Microsoft Teams 頻道
