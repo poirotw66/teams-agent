@@ -3,17 +3,36 @@ from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
-from microsoft_agents.activity import Activity
+from microsoft_teams.api import MessageActivity
 
 
-def _nested_id(data: object, key: str) -> str | None:
-    if not isinstance(data, dict):
-        return None
-    value = data.get(key)
-    if not isinstance(value, dict):
-        return None
-    identifier = value.get("id")
-    return identifier if isinstance(identifier, str) else None
+def _info_id(info: object) -> str | None:
+    """Read `.id` off a Teams SDK channel-data info model (team/channel/tenant).
+
+    The Microsoft Teams SDK parses `channelData` into typed pydantic models
+    (`TeamInfo`, `ChannelInfo`, `TenantInfo`), but every field on them is
+    optional and Teams omits whole sections depending on the scope -- a 1:1
+    personal chat carries no team or channel at all. Reading defensively keeps
+    `from_activity` total over every conversation scope.
+    """
+    identifier = getattr(info, "id", None)
+    return identifier if isinstance(identifier, str) and identifier else None
+
+
+def account_field(account: object, snake_case: str, camel_case: str) -> str | None:
+    """Read a Teams `Account` field that may not be modelled by this SDK version.
+
+    `microsoft-teams-api` 2.0.x does not declare `tenantId` or `email` on
+    `Account`, but its models are configured with `extra="allow"`, so Teams
+    still delivers them -- under their raw camelCase key. Later SDK versions
+    promote them to real snake_case fields. Checking both keeps the adapter
+    working across either without pinning to one.
+    """
+    for name in (snake_case, camel_case):
+        value = getattr(account, name, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 @dataclass(frozen=True)
@@ -57,19 +76,19 @@ class AgentRequest:
     @classmethod
     def from_activity(
         cls,
-        activity: Activity,
+        activity: MessageActivity,
         text: str,
         correlation_id: str | None = None,
         email: str | None = None,
         groups: list[str] | None = None,
     ) -> "AgentRequest":
         channel_data = activity.channel_data
-        sender = activity.from_property
+        sender = activity.from_
         conversation = activity.conversation
 
-        tenant_id = _nested_id(channel_data, "tenant")
+        tenant_id = _info_id(getattr(channel_data, "tenant", None))
         if not tenant_id and sender:
-            tenant_id = sender.tenant_id
+            tenant_id = account_field(sender, "tenant_id", "tenantId")
 
         # Generate a correlation id only if the caller didn't already mint one
         # for this activity. Callers (teams_agent.agent) should always pass
@@ -84,8 +103,8 @@ class AgentRequest:
             channel=activity.channel_id or "unknown",
             conversation=ConversationIdentity(
                 tenantId=tenant_id,
-                teamId=_nested_id(channel_data, "team"),
-                channelId=_nested_id(channel_data, "channel"),
+                teamId=_info_id(getattr(channel_data, "team", None)),
+                channelId=_info_id(getattr(channel_data, "channel", None)),
                 conversationId=conversation.id if conversation else None,
             ),
             user=UserIdentity(

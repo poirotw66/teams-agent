@@ -31,7 +31,7 @@ Cloud Run 部署、Teams 端圖片渲染、壓測），改以實測紀錄佐證�
 | # | 驗收標準 | 狀態 | 佐證 |
 |---|---|---|---|
 | 1 | Teams 可正常與 Agent 對話 | ⚠️ | 已於 Teams 頻道完成 Agent API 模式端到端實測（README 專案狀態）。目前走 Dev Tunnel 路徑；雲端路徑待第 2 項的 endpoint 切換後複測 |
-| 2 | Teams Adapter 與 Agent Service 可部署至 Cloud Run | ⚠️ | 兩個服務皆已部署於 `asia-east1`／`itr-aimasteryhub-lab`，Adapter→Agent 走 Cloud Run IAM identity token。**待辦：Azure Bot messaging endpoint 尚未從 Dev Tunnel 切到 Cloud Run Adapter** |
+| 2 | Teams Adapter 與 Agent Service 可部署至 Cloud Run | ⚠️ | 兩個服務皆已部署於 `asia-east1`／`itr-aimasteryhub-lab`，Adapter→Agent 走 Cloud Run IAM identity token。**待辦：Teams Developer Portal 的 bot endpoint 尚未從 Dev Tunnel 切到 Cloud Run Adapter** |
 | 3 | 可取得可信任的使用者識別資訊 | ✅ | `test_acceptance_03_trusted_user_identity_is_extracted_from_request`、`test_acceptance_03_incomplete_identity_is_not_trusted_for_tickets`；身分來自 Teams／Entra context，不接受對話中自行指定（§11.4） |
 | 4 | 可載入最近對話上下文 | ✅ | `test_acceptance_04_loads_recent_conversation_context_across_turns`；`ConversationService` 同時套用 `MAX_HISTORY_MESSAGES` 與 `CONVERSATION_HISTORY_ROUNDS` 兩個上限 |
 | 5 | 可拆解最多三個 Issue | ✅ | `test_acceptance_05_splits_up_to_three_issues_and_prioritizes_the_rest`；超過三個時請使用者指定優先項目（§4.2） |
@@ -57,7 +57,7 @@ Cloud Run 部署、Teams 端圖片渲染、壓測），改以實測紀錄佐證�
 
 以下皆**刻意未做**，符合 §3.3「POC 不建立未驗證的未來平台能力」：
 
-Node.js 重寫、M365 Agents SDK JavaScript、Gemini File Search 正式取代 Hybrid
+Node.js 重寫、Teams SDK TypeScript、Gemini File Search 正式取代 Hybrid
 RAG、完整 Issue Repository、完整 Issue Lifecycle、工單催辦、Production Ticket
 Service 實作、FAQ 後台、知識庫後台、Multi-Agent、Approval、完整 CI/CD、高可用
 與災難復原。
@@ -99,7 +99,7 @@ regression test 釘住。
 | # | 交付項目 | 位置 |
 |---|---|---|
 | 1 | 更新後 Python 原始碼 | `src/`、`agent_service/src/` |
-| 2 | M365 Agents SDK Python Teams Adapter | `src/teams_agent/` |
+| 2 | Microsoft Teams SDK (Python) Teams Adapter | `src/teams_agent/` |
 | 3 | LangGraph Agent Workflow | `agent_service/src/agent_service/workflow.py` |
 | 4 | Issue Extractor | `agent_service/src/agent_service/extractor.py` |
 | 5 | FAQ Repository 與 FAQ Service | `agent_service/src/agent_service/faq.py`、`data/faq.json` |
@@ -127,7 +127,7 @@ regression test 釘住。
 
 依影響程度排序：
 
-1. **將 Azure Bot messaging endpoint 切到 Cloud Run Adapter**，並在雲端複測
+1. **將 Teams Developer Portal 的 bot endpoint 切到 Cloud Run Adapter**，並在雲端複測
    一次端到端（第 1、2 項）。純設定操作，不需改碼——這是目前唯一還卡住驗收
    標準的動作。
 2. **下次部署時套用 Agent SA 的 `roles/datastore.user`**，Firestore 模式才會

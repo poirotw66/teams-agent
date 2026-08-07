@@ -96,7 +96,7 @@ class AgentGateway:
             return AgentResponse.from_payload(payload, request.requestId)
         except AgentGatewayError:
             raise
-        except (asyncio.TimeoutError, ClientError, TypeError, ValueError) as error:
+        except (TimeoutError, ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Agent API request failed.") from error
 
     async def send_feedback(self, feedback: FeedbackRequest) -> None:
@@ -126,5 +126,5 @@ class AgentGateway:
             )
         except AgentGatewayError:
             raise
-        except (asyncio.TimeoutError, ClientError, TypeError, ValueError) as error:
+        except (TimeoutError, ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Feedback submission failed.") from error

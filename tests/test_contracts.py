@@ -1,4 +1,4 @@
-from microsoft_agents.activity import Activity, ChannelAccount, ConversationAccount
+from microsoft_teams.api import MessageActivity
 
 from teams_agent.contracts import (
     AgentRequest,
@@ -7,22 +7,40 @@ from teams_agent.contracts import (
 )
 
 
+def make_message_activity(**overrides) -> MessageActivity:
+    """Build a MessageActivity the way the Teams SDK deserializes one.
+
+    `model_validate` (rather than the constructor) is used so the camelCase
+    `channelData` payload goes through the same alias-driven parsing path the
+    SDK uses on a real inbound activity.
+    """
+    payload: dict = {
+        "type": "message",
+        "id": "activity-1",
+        "channelId": "msteams",
+        "from": {"id": "teams-user-1"},
+        "conversation": {"id": "conversation-1"},
+        "recipient": {"id": "bot-1"},
+    }
+    payload.update(overrides)
+    return MessageActivity.model_validate(payload)
+
+
 def test_agent_request_extracts_teams_context() -> None:
-    activity = Activity(
-        type="message",
-        channel_id="msteams",
-        channel_data={
+    activity = make_message_activity(
+        channelData={
             "tenant": {"id": "tenant-1"},
             "team": {"id": "team-1"},
             "channel": {"id": "channel-1"},
         },
-        from_property=ChannelAccount(
-            id="teams-user-1",
-            name="Justin",
-            aad_object_id="entra-user-1",
-        ),
-        conversation=ConversationAccount(id="conversation-1"),
         locale="zh-TW",
+        **{
+            "from": {
+                "id": "teams-user-1",
+                "name": "Justin",
+                "aadObjectId": "entra-user-1",
+            }
+        },
     )
 
     request = AgentRequest.from_activity(activity, "如何申請 API Key？")
@@ -40,6 +58,34 @@ def test_agent_request_extracts_teams_context() -> None:
         "text": "如何申請 API Key？",
         "locale": "zh-TW",
     }
+
+
+def test_agent_request_handles_personal_scope_without_team_or_channel() -> None:
+    # A 1:1 personal chat carries no team/channel in channelData; the tenant
+    # id then only comes off the sender account.
+    activity = make_message_activity(
+        channelData={"tenant": {"id": "tenant-1"}},
+        **{"from": {"id": "teams-user-1", "tenantId": "tenant-from-account"}},
+    )
+
+    payload = AgentRequest.from_activity(activity, "hello").to_payload()
+
+    assert payload["conversation"] == {
+        "tenantId": "tenant-1",
+        "teamId": None,
+        "channelId": None,
+        "conversationId": "conversation-1",
+    }
+
+
+def test_agent_request_falls_back_to_sender_tenant_without_channel_data() -> None:
+    activity = make_message_activity(
+        **{"from": {"id": "teams-user-1", "tenantId": "tenant-from-account"}}
+    )
+
+    payload = AgentRequest.from_activity(activity, "hello").to_payload()
+
+    assert payload["conversation"]["tenantId"] == "tenant-from-account"
 
 
 def test_agent_response_formats_citations() -> None:
@@ -103,12 +149,7 @@ def test_agent_response_uses_request_id_when_trace_id_is_missing() -> None:
 
 
 def test_agent_request_generates_stable_correlation_id_matching_request_id() -> None:
-    activity = Activity(
-        type="message",
-        channel_id="msteams",
-        from_property=ChannelAccount(id="teams-user-1"),
-        conversation=ConversationAccount(id="conversation-1"),
-    )
+    activity = make_message_activity()
 
     request = AgentRequest.from_activity(
         activity, "hello", correlation_id="fixed-correlation-id"
@@ -120,11 +161,8 @@ def test_agent_request_generates_stable_correlation_id_matching_request_id() -> 
 
 
 def test_agent_request_includes_email_and_groups() -> None:
-    activity = Activity(
-        type="message",
-        channel_id="msteams",
-        from_property=ChannelAccount(id="teams-user-1", aad_object_id="entra-1"),
-        conversation=ConversationAccount(id="conversation-1"),
+    activity = make_message_activity(
+        **{"from": {"id": "teams-user-1", "aadObjectId": "entra-1"}}
     )
 
     request = AgentRequest.from_activity(

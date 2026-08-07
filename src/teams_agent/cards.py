@@ -1,4 +1,4 @@
-from microsoft_agents.activity import Activity, Attachment
+from microsoft_teams.api import Attachment, MessageActivityInput
 
 from .contracts import AgentResponse, format_agent_response
 from .media import build_asset_url
@@ -91,15 +91,21 @@ def _feedback_action(
     }
 
 
-def _card_activity(response: AgentResponse, body: list[dict[str, object]]) -> Activity:
+def _card_activity(
+    response: AgentResponse, body: list[dict[str, object]]
+) -> MessageActivityInput:
+    # The card stays a plain dict rather than a `microsoft_teams.cards`
+    # model tree: the Adaptive Card JSON here is fully determined by the
+    # Agent Service response, and `Attachment.content` is passed through to
+    # Teams verbatim. Keeping it as data avoids re-encoding every card
+    # element as an SDK model for no behavioral gain.
     card = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.5",
         "body": body,
     }
-    return Activity(
-        type="message",
+    return MessageActivityInput(
         summary=response.answer[:200],
         attachments=[
             Attachment(
@@ -115,7 +121,7 @@ def build_agent_activity(
     settings: AgentSettings,
     conversation_id: str | None = None,
     now: int | None = None,
-) -> Activity | str:
+) -> MessageActivityInput | str:
     feedback_issue_ids = (
         _feedback_issue_ids(response)
         if response.feedbackEnabled and conversation_id

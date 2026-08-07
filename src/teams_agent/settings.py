@@ -3,6 +3,8 @@ from os import environ
 from pathlib import Path
 from urllib.parse import urlparse
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
 
 class SettingsError(ValueError):
     """Raised when application configuration is invalid."""
@@ -24,6 +26,16 @@ class AgentSettings:
     asset_max_bytes: int = 1_000_000
     user_directory_mode: str = "disabled"
     user_directory_cache_ttl_seconds: float = 300.0
+    # Microsoft Teams SDK app (Entra app registration) credentials. The SDK
+    # reads CLIENT_ID / CLIENT_SECRET / TENANT_ID from the environment itself;
+    # they are mirrored here so `/readyz` can report whether the adapter is
+    # able to authenticate, and so the User Directory Service can run the
+    # app-only Graph client-credentials flow without reaching into SDK
+    # internals. Values are never logged or echoed back to users (spec §17).
+    client_id: str | None = None
+    client_secret: str | None = None
+    tenant_id: str | None = None
+    allow_unauthenticated_requests: bool = False
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -74,6 +86,15 @@ class AgentSettings:
             user_directory_cache_ttl_seconds=float(
                 environ.get("USER_DIRECTORY_CACHE_TTL_SECONDS", "300")
             ),
+            client_id=environ.get("CLIENT_ID", "").strip() or None,
+            client_secret=environ.get("CLIENT_SECRET", "").strip() or None,
+            tenant_id=environ.get("TENANT_ID", "").strip() or None,
+            allow_unauthenticated_requests=(
+                environ.get("DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS", "")
+                .strip()
+                .lower()
+                in _TRUE_VALUES
+            ),
         )
         settings.validate()
         return settings
@@ -110,6 +131,11 @@ class AgentSettings:
         if self.asset_max_bytes < 100_000 or self.asset_max_bytes > 1_000_000:
             raise SettingsError(
                 "RAG_ASSET_MAX_BYTES must be between 100000 and 1000000."
+            )
+        if self.client_id and not self.tenant_id:
+            raise SettingsError(
+                "TENANT_ID is required alongside CLIENT_ID for a single-tenant "
+                "Teams app registration."
             )
         if self.public_base_url:
             parsed_public_url = urlparse(self.public_base_url)
@@ -161,6 +187,23 @@ class AgentSettings:
     @property
     def ready(self) -> bool:
         return self.mode == "echo" or bool(self.api_url)
+
+    @property
+    def teams_auth_ready(self) -> bool:
+        """Whether the Teams SDK can validate inbound Bot Framework JWTs.
+
+        `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` short-circuits JWT
+        validation and is only ever acceptable for local development against
+        the Teams SDK devtools, never in Cloud Run.
+        """
+        return bool(self.client_id and self.client_secret) or (
+            self.allow_unauthenticated_requests
+        )
+
+    @property
+    def graph_credentials_ready(self) -> bool:
+        """Whether an app-only Microsoft Graph token can be acquired."""
+        return bool(self.client_id and self.client_secret and self.tenant_id)
 
     @property
     def images_ready(self) -> bool:

@@ -1,8 +1,8 @@
+import asyncio
 import logging
 from os import environ
 
-from .agent import agent_app, agent_settings, connection_manager
-from .server import start_server
+from .agent import agent_app
 
 
 def configure_logging() -> None:
@@ -14,16 +14,10 @@ def configure_logging() -> None:
 
 def main() -> None:
     configure_logging()
-    start_server(
-        agent_application=agent_app,
-        auth_configuration=connection_manager.get_default_connection_configuration(),
-        readiness={
-            "status": "ready" if agent_settings.ready else "not_ready",
-            "agentMode": agent_settings.mode,
-            "ragImages": "ready" if agent_settings.images_ready else "disabled",
-        },
-        settings=agent_settings,
-    )
+    # `App.start` owns the uvicorn lifecycle for the FastAPI instance built in
+    # `teams_agent.server`, and registers `POST /api/messages` on it during
+    # `initialize()`. Cloud Run injects PORT; 3978 is the local default.
+    asyncio.run(agent_app.start(int(environ.get("PORT", "3978"))))
 
 
 if __name__ == "__main__":

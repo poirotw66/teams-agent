@@ -32,7 +32,8 @@ The script:
 6. Deploys the public Teams Adapter.
 7. Configures the Adapter Cloud Run URL for signed RAG images.
 
-After deployment, set Azure Bot Messaging endpoint to:
+After deployment, set the bot's Endpoint address in the Teams Developer
+Portal (https://dev.teams.microsoft.com, Tools -> Bot management) to:
 
 ```text
 https://<teams-agent-adapter-url>/api/messages
@@ -53,7 +54,7 @@ separate Cloud Run services with different exposure and different config:
 
 | | Teams Adapter (`teams-agent-adapter`) | Agent Service (`teams-rag-agent`) |
 |---|---|---|
-| Visibility | `--allow-unauthenticated` (public; Azure Bot must reach it) | `--no-allow-unauthenticated` (private; only the Adapter's service account has `roles/run.invoker`) |
+| Visibility | `--allow-unauthenticated` (public; the Bot Framework service must reach it) | `--no-allow-unauthenticated` (private; only the Adapter's service account has `roles/run.invoker`) |
 | Auth to the other service | N/A | Verifies each caller is the Adapter, via Cloud Run IAM identity tokens (`AGENT_API_AUTH_MODE=google_id_token`, `AGENT_API_AUDIENCE=<agent-url>`) |
 | Config source | `.env` at the project root / `.env.example` | `agent_service/.env` / `agent_service/.env.example` |
 | Full env var reference | [`../README.md`](../README.md) | [`../README.md`](../README.md) |
@@ -61,7 +62,8 @@ separate Cloud Run services with different exposure and different config:
 Never merge the two into one Cloud Run service or one `.env` file — the
 private/public split is what lets the Agent Service (which holds the
 Gemini API key and reaches the knowledge base) stay unauthenticated-free
-while the Adapter, which must be internet-reachable for Azure Bot, carries
+while the Adapter, which must be internet-reachable for the Bot Framework
+service, carries
 no AI credentials at all.
 
 ## Secrets (spec §17: API keys only via Secret Manager or env, never in code/Git)
@@ -72,7 +74,7 @@ to the service account that needs them:
 | Secret | Bound to | Cloud Run env var it becomes |
 |---|---|---|
 | `teams-agent-google-api-key` | Agent SA | `GOOGLE_API_KEY` |
-| `teams-agent-bot-client-secret` | Adapter SA | `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET` |
+| `teams-agent-bot-client-secret` | Adapter SA | `CLIENT_SECRET` |
 | `teams-agent-asset-signing-key` | Adapter SA | `RAG_ASSET_SIGNING_KEY` |
 
 Not yet wired into `deploy-gcp.sh` (add them the same way, as

@@ -1,4 +1,3 @@
-import asyncio
 
 import pytest
 
@@ -102,7 +101,7 @@ async def test_api_mode_sends_google_identity_token() -> None:
 @pytest.mark.asyncio
 async def test_api_timeout_is_converted_to_gateway_error() -> None:
     async def timeout_transport(*_args):
-        raise asyncio.TimeoutError
+        raise TimeoutError
 
     gateway = AgentGateway(
         AgentSettings(mode="api", api_url="https://agent.example/chat"),
@@ -168,7 +167,7 @@ async def test_send_feedback_is_noop_in_echo_mode() -> None:
 @pytest.mark.asyncio
 async def test_send_feedback_raises_gateway_error_on_transport_failure() -> None:
     async def failing_transport(*_args):
-        raise asyncio.TimeoutError
+        raise TimeoutError
 
     gateway = AgentGateway(
         AgentSettings(mode="api", api_url="https://agent.example/agent/chat"),

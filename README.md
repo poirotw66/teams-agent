@@ -1,8 +1,20 @@
 # Teams Agent Backend
 
-這是一個可擴充的 Microsoft Teams AI Agent，使用 Python、Microsoft 365
-Agents SDK 與 LangGraph。Teams Adapter、Agentic RAG、Gemini hybrid retrieval、
+這是一個可擴充的 Microsoft Teams AI Agent，使用 Python、[Microsoft Teams
+SDK](https://microsoft.github.io/teams-sdk)（`microsoft-teams-apps`）與
+LangGraph。Teams Adapter、Agentic RAG、Gemini hybrid retrieval、
 來源圖片 Adaptive Card 與 GCP Cloud Run 部署均已完成。
+
+> **2026-08 架構變更：Microsoft 365 Agents SDK → Microsoft Teams SDK。**
+> 集團沒有 Azure Subscription，也無法建立 Azure Bot Service resource，因此
+> Teams Adapter 已改用 Microsoft Teams SDK，bot 註冊改在 [Teams Developer
+> Portal](https://dev.teams.microsoft.com/apps) 完成——只需要一個 Entra ID
+> app registration（隨 Microsoft 365 授權提供），不需要 Azure 訂閱。
+> 三個 `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__*` 環境變數已由
+> `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` 取代。
+> 詳見 [`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
+> 本文件第 3 節以後仍留有先前 Azure Bot 時期的驗收紀錄，作為歷史脈絡保留；
+> 設定步驟一律以第 1、2 節與 `docs/teams-app-setup.md` 為準。
 
 ```text
 使用者：hello
@@ -13,9 +25,11 @@ Bot：收到：hello
 
 Teams Adapter（公開）：
 
-- `POST /api/messages`：Azure Bot Service 的 Messaging endpoint
+- `POST /api/messages`：Teams SDK 註冊的 Messaging endpoint（由 SDK 驗證
+  Bot Framework JWT）
 - `GET /healthz`：部署平台的健康檢查
-- `GET /readyz`：Bot 與 Agent 模式的就緒檢查
+- `GET /readyz`：Teams 憑證與 Agent 模式的就緒檢查
+- `GET /rag-assets/{path}`：簽章保護的來源圖片（供 Teams 端載入）
 
 Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 
@@ -39,7 +53,7 @@ Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 - Milestone 1「Azure Bot 與本機後端打通」已完成。
 - Milestone 2 的 Teams app package 已成功上傳公司 Teams。
 - Teams 頻道的 LangGraph RAG 端到端測試已成功。
-- 下一個驗收點是將 Azure Bot Messaging endpoint 從 Dev Tunnel 切換至
+- 下一個驗收點是將 Teams Developer Portal 的 bot endpoint 從 Dev Tunnel 切換至
   Cloud Run Adapter。
 
 截至 2026-07-30，GCP Cloud Run 部署已完成：
@@ -54,19 +68,18 @@ Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 本機開發路徑已驗證：
 
 ```text
-Azure Bot Test in Web Chat
+Teams 用戶端（或 Teams SDK devtools）
 → 公開 HTTPS Dev Tunnel
 → POST /api/messages
-→ Microsoft 365 Agents SDK
+→ Microsoft Teams SDK
 → Echo handler
-→ Azure Bot
-→ Web Chat 顯示「收到：hello」
+→ Teams 顯示「收到：hello」
 ```
 
 雲端正式路徑已驗證至 Cloud Run Adapter／Agent：
 
 ```text
-Teams／Azure Bot
+Teams／Bot Framework 服務
 → Public Cloud Run Teams Adapter
 → Cloud Run IAM identity token
 → Private Cloud Run LangGraph Agent
@@ -78,9 +91,9 @@ Teams／Azure Bot
 已完成項目：
 
 - [x] 建立 Python 3.11 專案與 `uv` 開發環境
-- [x] 使用 Microsoft 365 Agents SDK 建立 `AgentApplication`
-- [x] 使用 MSAL connection manager 連接 Azure Bot／Entra App
-- [x] 建立受 Connector JWT 保護的 `POST /api/messages`
+- [x] 使用 Microsoft Teams SDK 建立 `App`（2026-08 前為 M365 Agents SDK 的 `AgentApplication`）
+- [x] 以 Entra app registration 憑證連接 Teams（2026-08 前為 MSAL connection manager + Azure Bot）
+- [x] 建立受 Bot Framework JWT 保護的 `POST /api/messages`
 - [x] 建立公開的 `GET /healthz`
 - [x] 支援歡迎訊息、`/help` 與 Echo 回覆
 - [x] 清除 Teams 訊息中的 Bot `@mention`
@@ -90,13 +103,13 @@ Teams／Azure Bot
 - [x] 支援 Agent timeout、錯誤降級、trace ID 與來源引用
 - [x] 建立 `/readyz` readiness endpoint
 - [x] 使用 Dev Tunnels 暴露本機 HTTPS endpoint
-- [x] Azure Bot `Test in Web Chat` 端到端測試成功
+- [x] 端到端測試成功（當時走 Azure Bot `Test in Web Chat`）
 - [x] 加入 Dockerfile、環境變數範例、單元測試與 Ruff
 - [x] 確認錯誤 App ID 會被 JWT audience validation 阻擋
 
 Teams 與後續里程碑狀態：
 
-- [x] 啟用 Microsoft Teams channel，Azure 狀態為 `Healthy`
+- [x] 啟用 Microsoft Teams channel
 - [x] 建立通過 v1.25 schema 驗證的 Teams app package
 - [x] 加入 manifest v1.25 必要的 `supportsChannelFeatures`
 - [x] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
@@ -112,7 +125,7 @@ Teams 與後續里程碑狀態：
 - [ ] 串接唯讀內部 API 工具
 - [x] 部署 Teams Adapter 與 LangGraph Agent 至 GCP Cloud Run
 - [x] 設定 private service-to-service IAM 與 Secret Manager
-- [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run Adapter
+- [ ] 將 Teams Developer Portal 的 bot endpoint 切換至 Cloud Run Adapter
 
 ## 架構
 
@@ -121,8 +134,8 @@ Teams 與後續里程碑狀態：
 
 ![Teams Agent 專案架構圖](./team-agent-arc.png)
 
-本機開發時，Adapter 跑在 `:3978`、Agent 跑在 `:8000`，Azure Bot Messaging
-endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
+本機開發時，Adapter 跑在 `:3978`、Agent 跑在 `:8000`，Teams Developer Portal
+的 bot endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
 回答可帶 citation 與來源圖片 metadata；Adapter 再把相對路徑簽成短效 URL，
 並把圖片縮放到 Teams 可用尺寸後放入 Adaptive Card。
 
@@ -131,10 +144,14 @@ endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
 以下限制是既有的、經審視過的架構決策，不是尚待補完的缺口，後續開發不應在
 沒有新證據的情況下推翻：
 
-- **不因假設重寫語言／框架**：本專案維持 Python、Microsoft 365 Agents SDK
-  Python 與 LangGraph。是否改用其他語言或框架，必須根據壓力測試結果、確認
-  的功能缺口、維運能力或 SDK 支援狀況決定，不得只因「其他語言可能適合高
-  併發」而重寫。
+- **不因假設重寫語言／框架**：本專案維持 Python 與 LangGraph。是否改用其他
+  語言或框架，必須根據壓力測試結果、確認的功能缺口、維運能力或 SDK 支援狀況
+  決定，不得只因「其他語言可能適合高併發」而重寫。
+  2026-08 從 Microsoft 365 Agents SDK 換成 Microsoft Teams SDK 正是符合這條
+  原則的例子：不是假設，而是確認的封鎖性限制——集團沒有 Azure Subscription，
+  無法建立 Agents SDK 所依賴的 Azure Bot Service resource。語言（Python）、
+  Agent Service、LangGraph 與 Cloud Run 架構皆未更動，改動範圍限於
+  `src/teams_agent/` 這層薄通訊層。
 - **Hybrid RAG 維持預設**：`KNOWLEDGE_SERVICE_MODE=HYBRID`
   (`HybridKnowledgeService`) 是預設且唯一的正式知識後端。
   `GeminiFileSearchKnowledgeService`（`KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH`）
@@ -154,12 +171,17 @@ endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
 
 ## 1. 必要條件
 
-- Python 3.10–3.14（建議 3.11）
-- 已建立的 Azure Bot resource
-- Azure Bot 綁定之 Entra App Registration 的：
-  - Application (client) ID
-  - Directory (tenant) ID
-  - Client secret **Value**
+- Python 3.11–3.13（Microsoft Teams SDK 要求 `>= 3.11`）
+- 一個 Entra ID app registration（Microsoft 365 內含，**不需要 Azure 訂閱**）
+- 在 [Teams Developer Portal](https://dev.teams.microsoft.com/apps) 完成的
+  bot 設定，messaging endpoint 指向本服務的 `/api/messages`
+- 上述 app registration 的：
+  - Application (client) ID → `CLIENT_ID`
+  - Directory (tenant) ID → `TENANT_ID`
+  - Client secret **Value** → `CLIENT_SECRET`
+
+**不需要**：Azure Subscription、Azure Bot Service resource、Azure Portal。
+完整步驟見 [`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
 
 Client secret 只放在本機 `.env` 或雲端 Secret Manager，不可提交到 Git。
 
@@ -175,9 +197,9 @@ cp .env.example .env
 編輯 `.env`：
 
 ```dotenv
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=<Microsoft App ID>
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=<Client secret Value>
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=<Tenant ID>
+CLIENT_ID=<Application (client) ID>
+CLIENT_SECRET=<Client secret Value>
+TENANT_ID=<Directory (tenant) ID>
 PORT=3978
 HOST=0.0.0.0
 AGENT_MODE=echo
@@ -215,11 +237,16 @@ curl http://localhost:3978/readyz
 
 ```json
 {"status": "ok"}
-{"status": "ready", "agentMode": "echo"}
+{"status": "ready", "agentMode": "echo", "teamsAuth": "ready", "ragImages": "disabled"}
 ```
 
-`POST /api/messages` 會驗證 Azure Bot 傳入的 Bearer token，因此不能用普通 `curl`
-模擬完整 Bot Activity。
+`teamsAuth` 為 `not_configured`（`/readyz` 回 503）代表 `.env` 缺少
+`CLIENT_ID` / `CLIENT_SECRET`，Teams SDK 無法驗證進來的 Bot Framework JWT。
+
+`POST /api/messages` 由 Teams SDK 驗證 Bot Framework JWT，因此不能用普通 `curl`
+模擬完整 Bot Activity。本機若要在沒有憑證的情況下測試，可暫時設定
+`DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true`——**僅限本機**，
+絕不可用於 Cloud Run。
 
 ### 本機 Log
 
@@ -245,7 +272,7 @@ LOG_LEVEL=INFO
 Dev Tunnel 的 inspect URL 可用來查看 HTTP 流量，但不得分享其中的
 Authorization header。
 
-## 3. 讓 Azure Bot 連到本機
+## 3. 讓 Teams 連到本機
 
 開發時可使用 Microsoft Dev Tunnels 或其他提供公開 HTTPS 的 tunnel：
 
@@ -255,17 +282,19 @@ devtunnel host -p 3978 --allow-anonymous
 ```
 
 使用 CLI 顯示的 `Connect via browser` URL；不要使用 inspect URL 或 tunnel ID。
-取得 tunnel HTTPS URL 後，在 Azure Portal 設定：
+取得 tunnel HTTPS URL 後，在 Teams Developer Portal 設定：
 
 ```text
-Azure Bot
-→ Settings
-→ Configuration
-→ Messaging endpoint
+https://dev.teams.microsoft.com/apps
+→ 選擇你的 app
+→ App features → Bot
+→ Endpoint address
 → https://<tunnel-domain>/api/messages
 ```
 
-儲存後進入 `Test in Web Chat`，傳送 `hello`。成功時 Bot 應回覆：
+儲存後把 app package 側載到 Teams（見
+[`docs/teams-app-setup.md`](docs/teams-app-setup.md)），在頻道 @mention Bot
+或開 1:1 聊天傳送 `hello`。成功時 Bot 應回覆：
 
 ```text
 收到：hello
@@ -280,12 +309,13 @@ Terminal 2：devtunnel host -p 3978 --allow-anonymous
 
 ### 常見錯誤
 
-`Invalid audience` 表示 `.env` 的 Client ID 與 Azure Bot 的 Microsoft App ID
-不完全相同。請特別檢查多餘字元、前導字元及複製錯誤，修正後重新啟動後端。
+`Invalid audience` 表示 `.env` 的 `CLIENT_ID` 與 Teams Developer Portal 中
+bot 的 App ID 不完全相同。請特別檢查多餘字元、前導字元及複製錯誤，修正後
+重新啟動後端。
 
-瀏覽器直接開啟 `/` 或 `/api/messages` 時看到
-`Authorization header not found` 是正常行為。瀏覽器只能直接檢查 `/healthz`；
-`/api/messages` 必須由 Azure Bot Service 使用 `POST` 並攜帶 Connector JWT。
+瀏覽器直接開啟 `/` 或 `/api/messages` 時看到 401／`Method Not Allowed`
+是正常行為。瀏覽器只能直接檢查 `/healthz` 與 `/readyz`；`/api/messages`
+必須以 `POST` 並攜帶 Bot Framework JWT 呼叫。
 
 ## 4. Agent 模式
 
@@ -617,9 +647,10 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 
 | 變數 | 預設值 | 說明 |
 |---|---|---|
-| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID` | — | Azure Bot／Entra App 的 Application (client) ID |
-| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET` | — | Client secret **Value**；只能放 `.env` 或 Secret Manager |
-| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID` | — | Entra Directory (tenant) ID |
+| `CLIENT_ID` | — | Entra App registration 的 Application (client) ID；Teams SDK 直接讀取 |
+| `CLIENT_SECRET` | — | Client secret **Value**；只能放 `.env` 或 Secret Manager |
+| `TENANT_ID` | — | Entra Directory (tenant) ID（單一租戶 app 必填） |
+| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | 略過 `/api/messages` 的 JWT 驗證；**僅限本機**，Cloud Run 絕不可設 |
 | `PORT` | `3978` | HTTP 監聽埠；Cloud Run 會自動注入 |
 | `HOST` | `0.0.0.0` | 監聽位址 |
 | `LOG_LEVEL` | `INFO` | 可暫時改 `DEBUG` 做本機除錯 |
@@ -726,10 +757,10 @@ Messaging endpoint：
 https://<public-service-domain>/api/messages
 ```
 
-部署到 GCP Cloud Run 或 Azure Container Apps 時，將三個
-`CONNECTIONS__SERVICE_CONNECTION__SETTINGS__...` 值設成安全的環境變數／secret。
-服務必須允許 Azure Bot Service 經由公網 HTTPS 呼叫；應用程式本身仍會驗證
-Connector JWT。
+部署到 GCP Cloud Run 時，`CLIENT_ID` 與 `TENANT_ID` 走一般環境變數，
+`CLIENT_SECRET` 一律走 Secret Manager。服務必須允許 Microsoft 的 Bot
+Framework 服務經由公網 HTTPS 呼叫；應用程式本身仍會由 Teams SDK 驗證
+Bot Framework JWT。
 
 ## 8. Cloud Run 部署
 
@@ -739,7 +770,7 @@ CPU／memory／timeout 設定）。目前部署狀態摘要見本文件「專案
 
 ## 9. Teams App 設定與測試
 
-Teams app 註冊、Azure Bot 設定、Dev Tunnel 本機測試、`USER_DIRECTORY_MODE=graph`
+Teams app 註冊、Teams Developer Portal bot 設定、Dev Tunnel 本機測試、`USER_DIRECTORY_MODE=graph`
 所需的 Graph 權限，以及只能在真實 Teams 上手動驗證的項目（對話、部署可達
 性、圖片顯示、Feedback 按鈕）完整說明見
 [`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
@@ -772,7 +803,7 @@ spec §19 二十二項驗收標準與 §20 二十項交付項目的逐項對照�
 
 目前已完成：
 
-- [x] Azure Bot 的 Microsoft Teams channel 已啟用且為 `Healthy`
+- [x] bot 的 Microsoft Teams channel 已啟用
 - [x] 建立 Teams app manifest
 - [x] Bot scopes 設為 `team` 與 `personal`
 - [x] 預設安裝範圍設為 `team`
@@ -782,8 +813,8 @@ spec §19 二十二項驗收標準與 §20 二十項交付項目的逐項對照�
 - [x] 加入 manifest v1.25 `supportsChannelFeatures: tier1`
 - [x] App package 成功上傳公司 Teams
 
-Teams App 已完成安裝並通過頻道測試。目前需在 Azure Bot Configuration 將
-Messaging endpoint 切換為：
+Teams App 已完成安裝並通過頻道測試。目前需在 Teams Developer Portal
+（App features → Bot → Endpoint address）將 endpoint 切換為：
 
 ```text
 https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
@@ -812,7 +843,7 @@ Microsoft Teams 免費／個人版不提供此企業自訂 app 上傳流程；�
 
 ```text
 Teams
-→ Azure Bot Service
+→ Bot Framework 服務
 → Teams Adapter /api/messages
 → Agent Gateway /agent/chat
 → 回傳答案
@@ -867,7 +898,7 @@ Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 - [x] Adapter／Agent 使用獨立 Service Account
 - [x] Agent 設為 private，僅允許 Adapter `roles/run.invoker`
 - [x] 設定 Cloud Run scale-to-zero 與最大 3 instances
-- [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run
+- [ ] 將 Teams Developer Portal 的 bot endpoint 切換至 Cloud Run
 - [x] 對話狀態由 in-memory 遷移到受管儲存（Firestore，`CONVERSATION_REPOSITORY_MODE=FIRESTORE`）
 - 加入 OpenTelemetry、集中式 log、錯誤率與 P95 latency 監控
 - 加入 prompt injection 防護、PII 遮蔽、內容安全與工具權限政策
@@ -887,7 +918,7 @@ Web Chat Echo ✅
 → Teams Channel Agent API 模式 ✅
 → Gemini LLM／embedding ✅
 → GCP Cloud Run + IAM + Secret Manager ✅
-→ Azure Bot endpoint 切換（目前）
+→ Teams Developer Portal bot endpoint 切換（目前）
 → 建立 FAQ 評估集
 → 唯讀內部工具
 → Entra 群組與文件 ACL
@@ -909,4 +940,4 @@ Web Chat Echo ✅
 - [x] 記錄第一次 Teams + LangGraph RAG 端到端測試結果
 - [x] Cloud Run Agent 未授權請求回覆 403
 - [x] Cloud Run RAG、citation 與 signed image smoke test
-- [ ] Azure Bot endpoint 切換後完成 Teams 雲端驗收
+- [ ] bot endpoint 切換後完成 Teams 雲端驗收

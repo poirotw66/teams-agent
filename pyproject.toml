@@ -5,22 +5,24 @@ build-backend = "hatchling.build"
 [project]
 name = "teams-agent-backend"
 version = "0.1.0"
-description = "Microsoft Teams echo bot backend built with the Microsoft 365 Agents SDK."
+description = "Microsoft Teams AI Agent adapter built with the Microsoft Teams SDK."
 readme = "README.md"
-requires-python = ">=3.10,<3.15"
+requires-python = ">=3.11,<4"
 dependencies = [
     "aiohttp>=3.11,<4",
+    "fastapi>=0.115,<1",
     "google-auth[requests]>=2.40,<3",
-    "microsoft-agents-activity>=1.2,<1.3",
-    "microsoft-agents-authentication-msal>=1.2,<1.3",
-    "microsoft-agents-hosting-aiohttp>=1.2,<1.3",
-    "microsoft-agents-hosting-core>=1.2,<1.3",
+    "microsoft-teams-api>=2.0.15,<3",
+    "microsoft-teams-apps>=2.0.15,<3",
+    "microsoft-teams-cards>=2.0.15,<3",
     "pillow>=11.3,<13",
     "python-dotenv>=1.1,<2",
+    "uvicorn>=0.34,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "httpx>=0.28,<1",
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.25,<1",
     "ruff>=0.11,<1",
@@ -38,4 +40,4 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"

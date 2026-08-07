@@ -1,85 +1,72 @@
 import logging
 import re
-from os import environ
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from microsoft_agents.activity import load_configuration_from_env
-from microsoft_agents.authentication.msal import MsalConnectionManager
-from microsoft_agents.hosting.aiohttp import CloudAdapter
-from microsoft_agents.hosting.core import (
-    AgentApplication,
-    Authorization,
-    MemoryStorage,
-    TurnContext,
-    TurnState,
-)
+from microsoft_teams.api import ConversationUpdateActivity, MessageActivity
+from microsoft_teams.api.activities.utils import StripMentionsTextOptions
+from microsoft_teams.apps import ActivityContext, App, ErrorEvent
 
 from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
-from .contracts import AgentRequest, FeedbackRequest
-from .directory import GRAPH_DEFAULT_SCOPES, build_user_directory_service
+from .contracts import AgentRequest, FeedbackRequest, account_field
+from .directory import EntraAppTokenProvider, build_user_directory_service
+from .server import build_http_adapter
 from .settings import AgentSettings
 from .text import clean_message_text
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-agents_sdk_config = load_configuration_from_env(environ)
 agent_settings = AgentSettings.from_env()
 agent_gateway = AgentGateway(agent_settings)
 
-storage = MemoryStorage()
-connection_manager = MsalConnectionManager(**agents_sdk_config)
-adapter = CloudAdapter(connection_manager=connection_manager)
-authorization = Authorization(storage, connection_manager, **agents_sdk_config)
+# The Microsoft Teams SDK reads CLIENT_ID / CLIENT_SECRET / TENANT_ID from the
+# environment itself and validates the inbound Bot Framework JWT on
+# `POST /api/messages`. `build_http_adapter` hands it the same FastAPI app
+# that serves `/healthz`, `/readyz` and `/rag-assets/`, so one uvicorn
+# process serves everything.
+agent_app = App(http_server_adapter=build_http_adapter(agent_settings))
 
-agent_app = AgentApplication[TurnState](
-    storage=storage,
-    adapter=adapter,
-    authorization=authorization,
-    **agents_sdk_config,
-)
-
-
-async def _graph_token_provider() -> str:
-    """Acquire an app-only Graph token via the SDK's own MSAL connection.
-
-    Reuses `MsalConnectionManager`'s default Service Connection (the same
-    connection the adapter already builds for Bot Framework auth) instead of
-    inventing a separate auth flow. `AccessTokenProviderBase.get_access_token`
-    runs MSAL's confidential-client-credentials flow and caches the result
-    internally, so repeated calls are cheap.
-    """
-    connection = connection_manager.get_default_connection()
-    return await connection.get_access_token(
-        "https://graph.microsoft.com", GRAPH_DEFAULT_SCOPES
+# Graph lookups reuse the app's own Entra app registration (app-only client
+# credentials). Built only when Graph mode is on *and* a full credential set
+# exists; otherwise the User Directory Service falls back to disabled and the
+# adapter simply forwards no email (spec §11.4).
+_graph_token_provider = (
+    EntraAppTokenProvider(
+        agent_settings.client_id or "",
+        agent_settings.client_secret or "",
+        agent_settings.tenant_id or "",
     )
-
+    if agent_settings.user_directory_mode == "graph"
+    and agent_settings.graph_credentials_ready
+    else None
+)
 
 user_directory_service = build_user_directory_service(
     agent_settings.user_directory_mode,
-    _graph_token_provider if agent_settings.user_directory_mode == "graph" else None,
+    _graph_token_provider,
     agent_settings.user_directory_cache_ttl_seconds,
 )
 
 
-@agent_app.conversation_update("membersAdded")
-async def on_members_added(context: TurnContext, _state: TurnState) -> bool:
-    await context.send_activity(
+@agent_app.on_conversation_update
+async def on_conversation_update(
+    ctx: ActivityContext[ConversationUpdateActivity],
+) -> None:
+    if not ctx.activity.members_added:
+        return
+    await ctx.send(
         "你好，我是 Teams AI Agent 測試 Bot。請傳送訊息，我會先用 Echo 模式回覆。"
     )
-    return True
 
 
-@agent_app.message(re.compile(r"^/help$", re.IGNORECASE))
-async def on_help(context: TurnContext, _state: TurnState) -> None:
-    await context.send_activity(
-        f"目前模式：`{agent_settings.mode}`。傳送任意文字即可開始測試。"
-    )
+@agent_app.on_message_pattern(re.compile(r"^/help$", re.IGNORECASE))
+async def on_help(ctx: ActivityContext[MessageActivity]) -> None:
+    await ctx.send(f"目前模式：`{agent_settings.mode}`。傳送任意文字即可開始測試。")
 
 
-async def _handle_feedback(context: TurnContext, data: dict) -> None:
+async def _handle_feedback(ctx: ActivityContext[MessageActivity], data: dict) -> None:
     """Handle a feedback Action.Submit payload (spec §14).
 
     Failures are logged and always degrade silently for the user (§17):
@@ -92,7 +79,7 @@ async def _handle_feedback(context: TurnContext, data: dict) -> None:
         rating = data.get("rating")
         conversation_id = data.get("conversationId")
         issue_id = data.get("issueId")
-        sender = context.activity.from_property
+        sender = ctx.activity.from_
         user_id = sender.id if sender else None
 
         if (
@@ -129,20 +116,42 @@ async def _handle_feedback(context: TurnContext, data: dict) -> None:
             correlation_id,
         )
 
-    await context.send_activity("感謝你的回饋！")
+    await ctx.send("感謝你的回饋！")
 
 
-@agent_app.activity("message")
-async def on_message(context: TurnContext, _state: TurnState) -> None:
-    value = context.activity.value
+@agent_app.on_message
+async def on_message(ctx: ActivityContext[MessageActivity]) -> None:
+    """Entry point for every inbound Teams message.
+
+    The Teams SDK reports handler exceptions through its `error` event but
+    does not reply to the user on its own, so the turn is wrapped here to
+    keep the adapter's contract from the Agents SDK version: the user always
+    gets a reply, never a stack trace (spec §17).
+    """
+    try:
+        await _handle_message(ctx)
+    except Exception:
+        logger.exception("Unhandled error while processing a message activity")
+        await ctx.send("Bot 處理訊息時發生錯誤，請稍後再試。")
+
+
+async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
+    value = ctx.activity.value
     if isinstance(value, dict) and value.get(FEEDBACK_ACTION_MARKER):
-        await _handle_feedback(context, value)
+        await _handle_feedback(ctx, value)
         return
 
-    message = clean_message_text(context.remove_recipient_mention(context.activity))
+    # Strip the bot's own @mention on a copy so the original activity keeps
+    # the text Teams actually delivered (the SDK's `strip_mentions_text`
+    # rewrites in place).
+    recipient = ctx.activity.recipient
+    stripped = ctx.activity.model_copy().strip_mentions_text(
+        StripMentionsTextOptions(account_id=recipient.id) if recipient else None
+    )
+    message = clean_message_text(stripped.text)
 
     if not message:
-        await context.send_activity("我收到訊息了，但其中沒有可處理的文字。")
+        await ctx.send("我收到訊息了，但其中沒有可處理的文字。")
         return
 
     # Spec §15.1: one Correlation ID per Teams activity, generated once here
@@ -155,12 +164,17 @@ async def on_message(context: TurnContext, _state: TurnState) -> None:
     # a single request.
     correlation_id = str(uuid4())
 
-    sender = context.activity.from_property
-    entra_object_id = sender.aad_object_id if sender else None
-    email = await user_directory_service.get_email(entra_object_id)
+    sender = ctx.activity.from_
+    # Teams populates `from.email` on some channels; the User Directory
+    # Service only has to call Graph when the activity didn't carry one
+    # (spec §12).
+    email = account_field(sender, "email", "email") if sender else None
+    if not email:
+        entra_object_id = sender.aad_object_id if sender else None
+        email = await user_directory_service.get_email(entra_object_id)
 
     request = AgentRequest.from_activity(
-        context.activity,
+        ctx.activity,
         message,
         correlation_id=correlation_id,
         email=email,
@@ -176,7 +190,7 @@ async def on_message(context: TurnContext, _state: TurnState) -> None:
         response = await agent_gateway.answer(request)
     except AgentGatewayError:
         logger.exception("Agent Gateway failed: correlation_id=%s", correlation_id)
-        await context.send_activity(
+        await ctx.send(
             "AI Agent 暫時無法回應，請稍後再試。"
             f"\n\n追蹤編號：`{correlation_id}`"
         )
@@ -187,10 +201,11 @@ async def on_message(context: TurnContext, _state: TurnState) -> None:
         agent_settings,
         conversation_id=request.conversation.conversationId,
     )
-    await context.send_activity(activity)
+    await ctx.send(activity)
 
 
-@agent_app.error
-async def on_error(context: TurnContext, error: Exception) -> None:
-    logger.exception("Unhandled error while processing an activity", exc_info=error)
-    await context.send_activity("Bot 處理訊息時發生錯誤，請稍後再試。")
+@agent_app.event("error")
+async def on_error(event: ErrorEvent) -> None:
+    logger.exception(
+        "Unhandled error while processing an activity", exc_info=event.error
+    )

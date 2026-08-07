@@ -90,18 +90,18 @@ gcloud auth list --filter=status:ACTIVE --format='value(account)' \
   | grep -q . || fail "請先執行 gcloud auth login --update-adc"
 
 GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GOOGLE_API_KEY)"
-BOT_CLIENT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID)"
-BOT_CLIENT_SECRET_VALUE="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET)"
-BOT_TENANT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID)"
+BOT_CLIENT_ID="$(env_value .env CLIENT_ID)"
+BOT_CLIENT_SECRET_VALUE="$(env_value .env CLIENT_SECRET)"
+BOT_TENANT_ID="$(env_value .env TENANT_ID)"
 ASSET_SIGNING_KEY_VALUE="$(env_value .env RAG_ASSET_SIGNING_KEY)"
 RAG_MODEL="$(env_value agent_service/.env RAG_MODEL)"
 RAG_EMBEDDING_MODEL="$(env_value agent_service/.env RAG_EMBEDDING_MODEL)"
 RAG_ALLOWED_TENANTS="$(env_value agent_service/.env RAG_ALLOWED_TENANTS)"
 
 require_value "${GOOGLE_API_KEY_VALUE}" "agent_service/.env GOOGLE_API_KEY"
-require_value "${BOT_CLIENT_ID}" ".env Bot Client ID"
-require_value "${BOT_CLIENT_SECRET_VALUE}" ".env Bot Client Secret"
-require_value "${BOT_TENANT_ID}" ".env Bot Tenant ID"
+require_value "${BOT_CLIENT_ID}" ".env CLIENT_ID"
+require_value "${BOT_CLIENT_SECRET_VALUE}" ".env CLIENT_SECRET"
+require_value "${BOT_TENANT_ID}" ".env TENANT_ID"
 require_value "${ASSET_SIGNING_KEY_VALUE}" ".env RAG_ASSET_SIGNING_KEY"
 require_value "${RAG_MODEL}" "agent_service/.env RAG_MODEL"
 require_value "${RAG_EMBEDDING_MODEL}" "agent_service/.env RAG_EMBEDDING_MODEL"
@@ -260,8 +260,8 @@ gcloud run deploy "${ADAPTER_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=${BOT_CLIENT_ID},CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=${BOT_TENANT_ID},RAG_ASSET_DIR=/app/data/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000" \
-  --set-secrets="CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
+  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},RAG_ASSET_DIR=/app/data/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000" \
+  --set-secrets="CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
 
 ADAPTER_URL="$(gcloud run services describe "${ADAPTER_SERVICE}" \
   --region="${REGION}" \
@@ -277,4 +277,4 @@ gcloud run services update "${ADAPTER_SERVICE}" \
 printf '\nDeployment complete.\n'
 printf 'Agent URL:   %s\n' "${AGENT_URL}"
 printf 'Adapter URL: %s\n' "${ADAPTER_URL}"
-printf 'Azure Bot Messaging endpoint: %s/api/messages\n' "${ADAPTER_URL}"
+printf 'Teams Developer Portal bot endpoint: %s/api/messages\n' "${ADAPTER_URL}"
