@@ -204,14 +204,57 @@ being free means the difference is entirely per-query volume:
 | 10,000 | US$16.71 | US$10.65 | US$6.06 |
 | 100,000 | US$167.10 | US$106.50 | US$60.60 |
 
-Caveat: the per-query figure is one probe, not a 30-case mean — the adapter
-does not yet surface `usage_metadata`, which is why the A/B table reports
-Gemini cost as unmeasured. Wiring that up would make the comparison exact.
+Caveat: the per-query figure is one manual probe, not a 30-case mean. As of
+Task 17 the adapter does surface `usage_metadata` on every call (via
+`file_search_usage.extract_usage`, exposed as `last_usage`/`last_cost_usd`
+and logged at INFO — see finding 9), but that wiring itself has not been
+re-run against a live store to produce a fresh 30-case mean; the A/B table's
+Gemini cost figure should still be treated as unmeasured until
+`scripts/retrieval_ab_test.py` is re-run end to end.
 
-**9. ACL and image mapping are both achievable — measured 2026-08-07.**
-The A/B report lists these as the two functional gaps blocking adoption. They
-were probed against a live store to establish whether they are solvable at
-all, rather than assumed:
+**10. Both gaps verified end to end against a live store (2026-08-07).**
+Finding 9 established feasibility and the adapter now implements it. This
+closes the loop: re-probed using `GeminiFileSearchKnowledgeService` itself —
+not a hand-built filter — against a store holding one document uploaded as
+`allowed_groups=['cs-team']` and one as `[]` (public):
+
+| Caller | Query | found | Sources returned |
+| --- | --- | --- | --- |
+| `groups=['cs-team']` | restricted content | **True** | 分公司CS團隊VPN連線可使用權限列表 |
+| `groups=[]` | restricted content | **False** | (none) |
+| `groups=[]` | public content | **True** | 總公司IP話機操作 |
+
+Three things this confirms beyond the unit tests: the filter the adapter
+builds really does exclude documents the caller may not see; citations carry
+the **real Chinese titles**, not the ASCII upload slugs; and images resolve
+through the local registry (the IP-phone document returned its 1 image).
+`usage_metadata` extraction reported real per-call token counts and cost.
+
+Still unverified: the `enforce_acl=False` escape hatch and the
+caller-supplied-filter rejection path (unit tests only); a full 19-document
+corpus upload through the script's ACL path; and a fresh 30-case cost mean.
+
+**9. ACL and image mapping — probed feasible 2026-08-07, implemented and
+unit-tested in Task 17, NOT re-verified end to end against a live store.**
+The A/B report originally listed these as the two functional gaps blocking
+adoption. They were first probed by hand against a live store (below) to
+establish whether they are solvable at all, rather than assumed. Task 17
+then wired the workaround described here into
+`gemini_file_search.py::GeminiFileSearchKnowledgeService` for real:
+`filter_for`/`upload_metadata_for` (`file_search_acl.py`) build and enforce
+the query-time/upload-time metadata described below, and
+`FileSearchDocumentRegistry` (`file_search_registry.py`) does the slug→title
+and slug→images join. All of that is covered by unit tests
+(`tests/test_gemini_file_search.py`, `tests/test_file_search_acl.py`,
+`tests/test_file_search_registry.py`) using fake response objects — **none
+of it has been re-run against a live File Search store**. The manual probe
+below only exercised the filter *string* by hand with the spike script's
+`query --metadata-filter`, not the adapter's actual call site, and did not
+exercise `enforce_acl`'s "reject a caller-supplied metadata_filter" guard or
+the upload script's new `--dry-run`/ACL-attach path against a real store.
+Treat the workaround's mechanics as confirmed, and the new adapter code
+paths as unit-tested but operationally unverified, before relying on this
+in any environment with real ACL-restricted documents.
 
 *ACL — solvable, with a workaround.* `CustomMetadata` accepts
 `string_list_value`, but a list value is **not matchable by
@@ -252,8 +295,18 @@ slug=IP.md                -> 1 image   (總公司IP話機操作)
 The join is document-level rather than chunk-level, so attribution would be
 slightly coarser than Hybrid's (which knows which chunk carried the image).
 
-Neither gap is a hard blocker. Both are implementation work the adapter does
-not currently do, and the ACL one carries a correctness risk Hybrid does not.
+Neither gap was a hard blocker, and neither is a gap anymore in code: both
+are now implemented in `gemini_file_search.py` (Task 17) and unit-tested.
+The ACL path still carries a correctness risk Hybrid's own in-process
+enforcement does not — a bug in filter construction is a disclosure, not
+just a wrong answer — which is why Task 17 makes `enforce_acl=True` the
+non-bypassable default and rejects rather than silently combines a
+caller-supplied `metadata_filter` with the ACL clause (AND-combining filter
+strings was never probed against a live store, so the adapter does not
+guess at it). What remains open is exactly the re-verification named above:
+this write-up documents unit-tested behaviour, not a fresh live-store
+confirmation that the wired-up adapter behaves the same way the manual
+probe did.
 
 **7. Data residency is a new consideration.** Unlike inference calls, a File
 Search store keeps a *persistent copy* of internal IT documents on Google's

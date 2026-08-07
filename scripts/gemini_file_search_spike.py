@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import sys
@@ -85,28 +86,110 @@ def cmd_create_store(args: argparse.Namespace) -> None:
     print(f"created store: {store.name!r} (display_name={args.name!r})")
 
 
+def _default_index_path() -> Path:
+    # scripts/ sits at the repo root alongside data/, mirroring
+    # settings.py's RagSettings default (data_dir = project_dir.parent / "data").
+    return Path(__file__).resolve().parent.parent / "data" / "index" / "chunks.json"
+
+
+def _load_acl_index(index_path: Path) -> dict[str, list[str]]:
+    """Map an upload slug to the ``allowed_groups`` the local index recorded for it.
+
+    Reads the built index (``data/index/chunks.json``) rather than
+    re-parsing each source file's YAML front matter here, for two reasons:
+
+    1. ``allowed_groups`` is not simply the front matter's ``allowedGroups``
+       key -- ``documents.py::chunk_markdown`` also derives it from
+       ``DocumentMetadata.audience`` when ``allowedGroups`` is absent (spec
+       §9's "empty allowed_groups == visible to all" convention with an
+       audience-based fallback). Re-implementing that derivation here would
+       be a second, driftable copy of logic that already exists once in
+       ``documents.py``.
+    2. The index is exactly what ``FileSearchDocumentRegistry`` builds
+       citations/images from (see ``file_search_registry.py``), so reading
+       it here means the ACL metadata attached at upload time is guaranteed
+       to describe the same document the query-time registry already
+       assumes -- one source of truth instead of two that could disagree.
+
+    The trade-off: this requires the index to have been rebuilt (``rag-index``)
+    after any front-matter/audience change, before running `upload`. That is
+    already true of the query-time registry, so it is not a new requirement.
+
+    Keyed by upload slug (the same ASCII slug ``_ascii_display_name``
+    produces for a given source filename), so a caller just computes the
+    slug for the file it is about to upload and looks it up directly.
+    """
+    if not index_path.is_file():
+        return {}
+    value = json.loads(index_path.read_text(encoding="utf-8"))
+    acl_by_slug: dict[str, list[str]] = {}
+    for chunk in value.get("chunks", []):
+        source_path = chunk.get("source_path")
+        if not source_path:
+            continue
+        slug = _ascii_display_name(Path(source_path))
+        # All chunks of one document carry the same allowed_groups; the
+        # first one seen for a slug is as good as any.
+        acl_by_slug.setdefault(slug, list(chunk.get("allowed_groups") or []))
+    return acl_by_slug
+
+
 def cmd_upload(args: argparse.Namespace) -> None:
     from google.genai import types
 
-    client = _client(_require_api_key())
+    try:
+        from agent_service.file_search_acl import upload_metadata_for
+    except ImportError as exc:
+        print(
+            "error: could not import agent_service.file_search_acl. Run this "
+            "script with agent_service/.venv/bin/python, not the repo-root "
+            f"venv.\n  ({exc})",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+
+    acl_index = _load_acl_index(args.index_path)
+
+    client = None if args.dry_run else _client(_require_api_key())
     for raw_path in args.files:
         path = Path(raw_path)
         if not path.is_file():
             print(f"skip (not a file): {path}", file=sys.stderr)
             continue
-        print(f"uploading {path} ...")
-        # The SDK guesses the mime type from the filename and raises
-        # ValueError for .md on systems whose mimetypes registry has no
-        # markdown entry (observed on macOS). Always pass it explicitly.
-        config = types.UploadToFileSearchStoreConfig(
-            display_name=_ascii_display_name(path),
-            mime_type=_mime_type_for(path),
-        )
+
+        slug = _ascii_display_name(path)
+
         # custom_metadata drives `--metadata-filter` on query (spec §8.3
         # item 5). Unlike the file path, metadata values DO accept
         # non-ASCII, so the real Chinese filename is preserved here.
         metadata = _parse_metadata(args.metadata) if args.metadata else []
         metadata.extend(_parse_metadata([f"source_file={path.name}"]))
+
+        allowed_groups = acl_index.get(slug)
+        if allowed_groups is None:
+            print(
+                f"  warning: {path.name!r} (slug={slug!r}) is not in the "
+                f"local index ({args.index_path}); ACL metadata defaults to "
+                "public (grp_public). Rebuild the index first if this "
+                "document should be restricted.",
+                file=sys.stderr,
+            )
+        acl_metadata = upload_metadata_for(allowed_groups)
+        metadata.extend(acl_metadata)
+
+        if args.dry_run:
+            print(f"[dry-run] {path} -> slug={slug!r}")
+            print(f"  would attach metadata keys: {[entry.key for entry in metadata]}")
+            continue
+
+        print(f"uploading {path} ...")
+        # The SDK guesses the mime type from the filename and raises
+        # ValueError for .md on systems whose mimetypes registry has no
+        # markdown entry (observed on macOS). Always pass it explicitly.
+        config = types.UploadToFileSearchStoreConfig(
+            display_name=slug,
+            mime_type=_mime_type_for(path),
+        )
         config.custom_metadata = metadata
 
         with _ascii_path(path) as upload_path:
@@ -286,6 +369,21 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="KEY=VALUE",
         help="Custom metadata applied to every uploaded file, e.g. --metadata category=vpn. "
         "Repeatable. Needed to exercise --metadata-filter on query (spec §8.3 item 5).",
+    )
+    upload.add_argument(
+        "--index-path",
+        type=Path,
+        default=_default_index_path(),
+        help="Path to the built local index (default: data/index/chunks.json), used to "
+        "look up each document's allowed_groups so ACL metadata (Task 17, "
+        "file_search_acl.upload_metadata_for) is attached automatically.",
+    )
+    upload.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print, per file, the slug and the metadata keys that WOULD be attached "
+        "(including ACL keys), without uploading or requiring an API key. Use this to "
+        "verify ACL encoding before trusting it.",
     )
     upload.set_defaults(func=cmd_upload)
 

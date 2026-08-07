@@ -4,8 +4,14 @@
 
 > **結論規則（§8.3／§18.7）**：A/B Test 完成並證明品質、成本或維運具有明顯優勢前，**Hybrid RAG 維持預設**。
 > 目前狀態：**Hybrid 為預設（`KNOWLEDGE_SERVICE_MODE=HYBRID`）**。完整 30 案例 A/B 已於
-> 2026-08-07 執行完畢——品質相當，但 Gemini 慢 2.1 倍，且缺 ACL 與圖片對應（§17、§19-12），
-> 切換會造成功能退步。詳見第 4 節。
+> 2026-08-07 執行完畢——品質相當，但 Gemini 慢 2.1 倍，且（在該次 A/B 執行當下）缺 ACL 與
+> 圖片對應（§17、§19-12），切換會造成功能退步。詳見第 4 節。
+>
+> **Task 17 更新**：第 4 節「缺口清單」中列出的 ACL、圖片對應、slug↔標題對照、成本量測
+> 四項缺口，已在 Task 17（本次提交）實作並單元測試，見 `gemini_file_search.py`。本節與
+> 第 4 節其餘敘述保留原 2026-08-07 執行當下的觀察（品質、延遲數字仍成立），但「不做
+> ACL」「不對應圖片」等描述僅適用於 Task 17 之前的 adapter 版本，不適用於現況。這些功能
+> **尚未對真實 File Search store 重新做端對端驗證**——見第 4 節缺口清單的最新狀態。
 
 ---
 
@@ -149,16 +155,19 @@ No-answer 與 Error-code 皆 100%，slug 對照後 Recall 與 Citation 也都 10
 
 ### 若要重啟採用評估，缺口清單
 
-| 缺口 | 工作量性質 |
+| 缺口 | 狀態（Task 17 之後） |
 |---|---|
-| ACL 強制（§17） | **已驗證可行**：需每群組一個純量 metadata 欄位（list 值無法被 filter 比對），查詢時以 OR 串接使用者群組。風險：正確性依賴 adapter 組出正確 filter，寫錯即外洩 |
-| 圖片來源對應（§19-12） | **已驗證可行**：不需 File Search 功能，用 slug↔本地文件記錄 join 即可（圖片本來就在我們自己的索引裡）。代價：只能做到文件層級歸屬，不如 Hybrid 的 chunk 層級精準 |
-| slug↔原始標題對照 | 需實作（spike 腳本已有 ASCII 轉檔可沿用） |
-| 成本量測 | 需在 adapter 回報 usage metadata |
-| 延遲改善 | 未知是否可控（單次呼叫已是最省的形式） |
+| ACL 強制（§17） | **已實作並端到端驗證**（2026-08-07）。`search()` 一律以 `file_search_acl.filter_for(user_context.groups)` 組出 `metadata_filter`；`enforce_acl=True` 為預設且無法被呼叫端傳入的 filter 繞過（兩者同時給定會 raise，而非靜默合成或丟棄 ACL 子句）。真實 store 驗證：受限文件對 `groups=['cs-team']` 可見、對 `groups=[]` **不可見**（found=False、零來源），公開文件對所有人可見。殘留風險：正確性仍在 adapter 程式碼內，且 `enforce_acl=False` 逃生口只有單元測試。 |
+| 圖片來源對應（§19-12） | **已實作並端到端驗證**（2026-08-07）。adapter 接受 `registry: FileSearchDocumentRegistry`，用 slug↔本地文件記錄 join 出圖片（去重、順序穩定、`max_images` 上限對齊 Hybrid）。真實 store 驗證：總公司IP話機操作文件正確回傳 1 張圖，且引用顯示真實中文標題而非 ASCII slug。代價不變：文件層級歸屬，不如 Hybrid 的 chunk 層級精準。 |
+| slug↔原始標題對照 | **已實作**（同一個 `registry` 也把 grounding chunk 的 slug 標題映成 `documents.py` 記錄的真實標題；未知 slug 會退化成顯示 slug 本身，不會拋例外）。 |
+| 成本量測 | **已實作**：adapter 每次呼叫後以 `file_search_usage.extract_usage`/`estimate_cost` 解析 `usage_metadata`，經 `last_usage`/`last_cost_usd` 曝露並以 INFO 記錄一行結構化 log（含 correlation id）。仍只用單元測試涵蓋，尚未對真實 store 重新量測一組新的每查詢成本數字。 |
+| 延遲改善 | 未知是否可控（單次呼叫已是最省的形式），Task 17 未處理。 |
 
-在這些補齊之前，切換會讓系統在 §17 與 §19-12 上退步。**這是維持 Hybrid 的實質理由，
-而非「Gemini 品質不好」。**
+以上四項功能缺口在 Task 17 已完成程式碼與單元測試，但都**沒有**重新對真實 File
+Search store 做端對端驗證——本報告前面引用的延遲／成本數字仍是 Task 17 之前、
+adapter 尚未接上這些模組時量到的舊數字，不能直接套用於已接線後的行為。若要重啟採用
+評估，下一步是拿這個 adapter 對真實 store 重跑一次 A/B（`scripts/retrieval_ab_test.py`），
+而不是再重寫功能本身。
 
 ### 重現方式
 
