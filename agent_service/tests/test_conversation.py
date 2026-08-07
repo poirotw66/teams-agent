@@ -526,9 +526,16 @@ class TestFakeFirestoreMatchesTheRealSdk:
     """
 
     @staticmethod
-    def real_sdk():
+    def real_sdk(module: str = "google.cloud.firestore"):
+        """Import a real-SDK module, or skip when the extra isn't installed.
+
+        Every real-SDK import in this class must go through here. A bare
+        ``import google.cloud...`` raises ``ModuleNotFoundError`` instead of
+        skipping, which turns "the optional extra is absent" into a failing
+        default suite.
+        """
         return pytest.importorskip(
-            "google.cloud.firestore",
+            module,
             reason="install the 'firestore' extra to check the Fake against the real SDK",
         )
 
@@ -557,11 +564,10 @@ class TestFakeFirestoreMatchesTheRealSdk:
         assert sdk.Query.DESCENDING == "DESCENDING"
 
     def test_snapshot_exposes_exists_and_to_dict(self):
-        from google.cloud.firestore_v1.base_document import DocumentSnapshot
-
-        self.real_sdk()
-        assert isinstance(DocumentSnapshot.exists, property)
-        assert callable(DocumentSnapshot.to_dict)
+        base_document = self.real_sdk("google.cloud.firestore_v1.base_document")
+        snapshot = base_document.DocumentSnapshot
+        assert isinstance(snapshot.exists, property)
+        assert callable(snapshot.to_dict)
 
     def test_fake_mirrors_the_same_surface(self):
         """The Fake side of the same contract, checked without the SDK."""
