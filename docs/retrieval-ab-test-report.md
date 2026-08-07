@@ -3,7 +3,9 @@
 對應規格：§8.3（Gemini File Search 僅作為候選 Adapter）、§18.7（Retrieval A/B Test）、§20 項目 14。
 
 > **結論規則（§8.3／§18.7）**：A/B Test 完成並證明品質、成本或維運具有明顯優勢前，**Hybrid RAG 維持預設**。
-> 目前狀態：**Hybrid 為預設（`KNOWLEDGE_SERVICE_MODE=HYBRID`）**，Gemini File Search 尚未取得可比較數據，因此不具備變更預設的依據。
+> 目前狀態：**Hybrid 為預設（`KNOWLEDGE_SERVICE_MODE=HYBRID`）**。完整 30 案例 A/B 已於
+> 2026-08-07 執行完畢——品質相當，但 Gemini 慢 2.1 倍，且缺 ACL 與圖片對應（§17、§19-12），
+> 切換會造成功能退步。詳見第 4 節。
 
 ---
 
@@ -40,52 +42,54 @@ cd agent_service
 
 ## 2. 結果
 
-**執行時間**：2026-08-06T08:13:10Z
-**設定**：`model=google_genai:gemini-3.5-flash-lite`、`embedding=google_genai:gemini-embedding-2`、`top_k=4`、`min_score=0.08`
-**原始輸出**：`outputs/retrieval-ab-test-20260806T081310Z/results.json`
+**執行時間**：2026-08-07T02:05:07Z
+**設定**：兩個後端使用**同一個模型** `gemini-3.5-flash-lite`、同一組 30 案例、`top_k=4`
+**原始輸出**：`outputs/retrieval-ab-test-20260807T020507Z/results.json`
+**Gemini store**：19 份語料全數上傳（`ab-eval-20260807`，測後刪除）
 
-| 指標 | HybridKnowledgeService | GeminiFileSearchKnowledgeService |
-|---|---|---|
-| Answer Accuracy | **100.0%** (25/25) | TBD — 未執行 |
-| Recall@K | **100.0%** (25/25) | TBD — 未執行 |
-| Groundedness | **100.0%** (25/25) | TBD — 未執行 |
-| Citation Accuracy | **100.0%** (25/25) | TBD — 未執行 |
-| No-answer Accuracy | **100.0%** (5/5) | TBD — 未執行 |
-| Error-code Accuracy | **100.0%** (7/7) | TBD — 未執行 |
-| ACL Accuracy | **100.0%** (2/2) | TBD — 未執行 |
-| Image Match Accuracy | **100.0%** (3/3) | TBD — 未執行 |
-| P50 Latency | 2.35 s | TBD |
-| P95 Latency | 3.31 s | TBD |
-| 平均 LLM 呼叫／查詢 | 2.17 | TBD |
-| 平均成本／查詢 | **US$0.00106** | TBD |
-| 本次總成本 | US$0.0318（30 案例） | — |
-| 錯誤數 | 0 | — |
-| 維運複雜度 | 索引在本地建置（`rag-index`），無外部儲存體需依賴；語料與 index 皆在 repo 控制下 | 需管理外部 File Search Store、文件上傳與刪除生命週期 |
+| 指標 | Hybrid | Gemini File Search | 說明 |
+|---|---|---|---|
+| Answer Accuracy | 96.0% (24/25) | **100.0% (25/25)** | 25 案例的差距為 1 題，屬雜訊範圍 |
+| Recall@K | 100.0% (25/25) | **100.0% (25/25)**※ | ※ 原始計分 0%，見下方「計分假象」 |
+| Groundedness | 100.0% (25/25) | 見下方說明 | 同一標題比對問題 |
+| Citation Accuracy | 100.0% (25/25) | **100.0% (25/25)**※ | ※ 同上 |
+| No-answer Accuracy | 100.0% (5/5) | 100.0% (5/5) | 兩者都正確拒答 |
+| Error-code Accuracy | 100.0% (7/7) | 100.0% (7/7) | 平手 |
+| ACL Accuracy | 100.0% (2/2) | 100.0% (2/2)❗ | ❗ **此指標無效**，見下方 |
+| Image Match Accuracy | 100.0% (3/3) | **0.0% (0/3)** | Gemini adapter 未實作圖片對應 |
+| P50 Latency | **2.38 s** | 5.31 s | Hybrid 快 2.2 倍 |
+| P95 Latency | **3.20 s** | 6.81 s | Hybrid 快 2.1 倍 |
+| 平均 LLM 呼叫／查詢 | 2.17 | **1.00** | Gemini 檢索與生成合併為一次呼叫 |
+| 平均成本／查詢 | US$0.00106 | **未量測** | adapter 未回報 usage metadata |
+| 錯誤數 | 0 | 0 | |
 
-### Gemini File Search 側的狀態
+### 計分假象：Gemini 的 0% 不是檢索失敗
 
-本 harness 執行時 `GEMINI_FILE_SEARCH_STORE` 未配置，依設計跳過。
+Harness 原始輸出中 Gemini 的 Recall@K／Groundedness／Citation Accuracy 皆為 **0%**。
+這是**標題對不上造成的假象，不是檢索失敗**。
 
-§8.3 的技術 spike 已於 **2026-08-06 實際執行完畢**（完整結果見
-`docs/gemini-file-search-spike.md`），但那是 4 份文件的定性探測，**不是**同一組
-30 案例的評分，因此上表 Gemini 欄位維持 TBD 而非填入不可比的數字。
+證據：`vpn-455` 案例中 Gemini 回傳的來源是 `VPNQ&A.md`，而評估集期望的是
+`VPN常見Q&A問答`——同一份文件，但前者是上傳時被迫使用的 ASCII slug（見
+`docs/gemini-file-search-spike.md` 發現 1）。答案內容本身完全正確，Answer Accuracy
+100% 也印證了檢索確實命中。
 
-Spike 中足以影響採用決策的發現：
+以 slug↔原始檔名對照重新計分後（19 份語料的 slug 無碰撞）：
 
-1. **語料無法直接上傳**——`upload_to_file_search_store` 把檔案路徑放進 HTTP
-   header，非 ASCII 會拋 `UnicodeEncodeError`。19 份文件全為中文檔名，全數失敗。
-   需先轉存為 ASCII 檔名，且轉出的 slug 幾乎不具辨識度（「金控入口網密碼變更方式.md」
-   → `doc-41c1698e7c60.md`）。
-2. **引用品質較差**——grounding chunk 只回 ASCII slug 當 title，`uri` 與
-   `document_name` 皆為 `None`，必須另外查 metadata 才能對回原始文件。Hybrid 直接
-   回傳真實文件標題與 chunk id。
-3. **預設回答違反 §8.4**——會用模型通用知識補充公司流程。這是設定問題：補上自訂
-   `system_instruction` 後即正確拒答。若採用，adapter 必須自帶 system instruction。
-4. **維運面**——store 生命週期無歸屬慣例（同一把金鑰下已累積 54 個他用 store），
-   且會在 Google 端留存內部文件的持久副本，需資安決策。
+```text
+Gemini Recall@K  (slug-mapped): 25/25 = 100.0%
+Gemini Citation  (slug-mapped): 25/25 = 100.0%
+```
 
-正面發現：metadata filter 運作正確、錯誤碼 -455 探測命中正確、文件刪除可用
-（需 `force=True`）。
+**這代表兩件事**：檢索品質確實與 Hybrid 相當；但引用層在沒有額外對照表的情況下
+不可用，而 §19 項目 11 要求「回覆包含來源文件」，所以這是採用時必須先補的工。
+
+### ACL 100% 是無效指標
+
+兩個 ACL 案例都期望 `found=True`（因為語料目前全部標為 `all-employees`），因此
+**一個完全不檢查權限的後端也會得到 100%**。`gemini_file_search.py` 中沒有任何一處
+引用 `groups`——它不做 ACL。Hybrid 的 100% 有實質意義，Gemini 的沒有。
+
+在語料補上真正受限的文件、且群組串接完成之前，這個指標無法用來比較兩者。
 
 ## 3. 對結果的誠實解讀
 
@@ -100,15 +104,54 @@ Spike 中足以影響採用決策的發現：
 
 ## 4. 決策
 
-依 §8.3／§18.7，變更預設檢索後端需要 A/B 證據。目前 Gemini File Search 側完全沒有數據，**維持 `KNOWLEDGE_SERVICE_MODE=HYBRID`**。
+**維持 `KNOWLEDGE_SERVICE_MODE=HYBRID`**，但理由與本報告前一版不同，必須據實更正。
 
-技術 spike 已完成，其結果讓「切換」的門檻變高而非變低：語料上傳需要額外的轉檔層、
-引用需要額外的對照層、grounding 需要自帶 system instruction，這三項都是 Hybrid 目前
-不需要的工。
+### 需要更正的先前判斷
 
-下一步若仍要評估切換，順序為：
-1. ~~完成技術 spike~~（已於 2026-08-06 完成）
-2. 建立長期 store 並補上 ASCII 轉檔與 slug↔標題對照，設定
-   `GEMINI_FILE_SEARCH_STORE` 後重跑本 harness 取得同組 30 案例的分數
-3. 比較上表全部指標，特別關注 §18.7 明列的 Error-code Accuracy、ACL Accuracy、Image Match Accuracy——這三項是既有 Hybrid 已具備、而 File Search 需證明不退步的能力
-4. 一併評估維運複雜度與資料落地政策
+前一版（依 2026-08-06 的 4 份文件定性 spike）認為 Gemini File Search 的回答品質有
+問題——會用模型通用知識補充公司流程。**那是在 adapter 尚未帶 system instruction 時
+觀察到的**。補上之後（commit `b71602e`），30 案例的 Answer Accuracy 是 100%，
+No-answer 與 Error-code 皆 100%，slug 對照後 Recall 與 Citation 也都 100%。
+
+**就檢索與回答品質而言，Gemini File Search 與 Hybrid 相當，並沒有比較差。**
+先前「spike 讓門檻變高」的說法，在品質這一面上是錯的，在維運面上仍然成立。
+
+### 維持 Hybrid 的實際理由
+
+1. **延遲**：Hybrid P50 2.38s／P95 3.20s，Gemini P50 5.31s／P95 6.81s。快 2.1 倍。
+   對 Teams 互動體驗而言這是最直接有感的差異。
+2. **已具備的能力會退步**：Gemini adapter 目前**不做 ACL**（§17 明訂不得將未授權文件
+   送入回答），**不對應圖片**（§19 項目 12 要求圖片來源可正常顯示，Hybrid 100% 而
+   Gemini 0%）。這兩項不是調參數，是要重寫的功能。
+3. **引用需要額外對照層**：中文檔名無法直接上傳，slug 也無法直接當來源標題。
+4. **成本未知**：adapter 未回報 usage metadata，無法與 Hybrid 的 US$0.00106/query 比較。
+
+### 若要重啟採用評估，缺口清單
+
+| 缺口 | 工作量性質 |
+|---|---|
+| ACL 強制（§17） | 需設計：File Search 的 metadata filter 能否表達群組權限尚未驗證 |
+| 圖片來源對應（§19-12） | 需實作 |
+| slug↔原始標題對照 | 需實作（spike 腳本已有 ASCII 轉檔可沿用） |
+| 成本量測 | 需在 adapter 回報 usage metadata |
+| 延遲改善 | 未知是否可控（單次呼叫已是最省的形式） |
+
+在這些補齊之前，切換會讓系統在 §17 與 §19-12 上退步。**這是維持 Hybrid 的實質理由，
+而非「Gemini 品質不好」。**
+
+### 重現方式
+
+```bash
+# 建立 store 並上傳全部語料（腳本會自動處理中文檔名）
+python scripts/gemini_file_search_spike.py create-store --name ab-eval
+python scripts/gemini_file_search_spike.py upload --store <store> data/sources/*.md
+
+cd agent_service
+export GEMINI_FILE_SEARCH_STORE=<store>
+.venv/bin/python ../scripts/retrieval_ab_test.py \
+    --eval-set ../data/eval/retrieval_eval_set.json \
+    --backends hybrid,gemini --output-dir ../outputs
+```
+
+評估用的 store 已刪除——持久保存內部 IT 文件於 Google 端需要資安決策（見
+`docs/gemini-file-search-spike.md` 發現 7）。上述兩行指令即可重建。

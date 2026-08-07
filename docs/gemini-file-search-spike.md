@@ -155,6 +155,14 @@ requires a side lookup through `custom_metadata`. Hybrid returns the real
 document title and chunk id directly and scored 100% Citation Accuracy on
 the 30-case set (`docs/retrieval-ab-test-report.md`).
 
+> **Superseded on 2026-08-07.** The adapter now always sends a grounding
+> system instruction (commit `b71602e`), and the full 30-case A/B run scored
+> Gemini at 100% Answer Accuracy, 100% No-answer and 100% Error-code
+> accuracy. The behaviour described below was observed *without* that
+> instruction and no longer occurs. See `docs/retrieval-ab-test-report.md`
+> §4 for the corrected quality comparison — the reasons to stay on Hybrid
+> are latency and the missing ACL/image support, not answer quality.
+
 **4. Default answers violate §8.4 — but this is configuration, not a hard
 limit.** With File Search's built-in prompting, answers drifted into model
 general knowledge. Asked about `Error -619` (absent from the corpus) it

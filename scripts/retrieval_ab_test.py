@@ -425,6 +425,13 @@ def _build_hybrid_service(settings: Any, index: Any) -> Any:
     return HybridKnowledgeService(settings, index, model)
 
 
+def _bare_model_id(model: str | None) -> str | None:
+    """Strip a LangChain provider prefix: "google_genai:gemini-x" -> "gemini-x"."""
+    if not model:
+        return None
+    return model.split(":", 1)[1] if ":" in model else model
+
+
 def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
     """Returns (service, skip_reason). Never raises -- degrades cleanly."""
     if not settings.gemini_file_search_store:
@@ -439,7 +446,11 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
         service = GeminiFileSearchKnowledgeService(
             api_key=None,
             file_search_store=settings.gemini_file_search_store,
-            model=settings.model or "gemini-2.5-flash",
+            # settings.model is LangChain-flavoured ("google_genai:gemini-x"),
+            # but google-genai wants the bare model id. Stripping the provider
+            # prefix also keeps both backends on the SAME model, without which
+            # the §18.7 comparison would not be like-for-like.
+            model=_bare_model_id(settings.model) or "gemini-2.5-flash",
             top_k=settings.top_k,
         )
     except Exception as exc:  # noqa: BLE001
