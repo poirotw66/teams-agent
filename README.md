@@ -193,7 +193,12 @@ Client secret 只放在本機 `.env` 或雲端 Secret Manager，不可提交到 
 ```bash
 uv sync --extra dev
 cp .env.example .env
+cp -r data/sources.sample data/sources   # 見下方說明
 ```
+
+`data/sources/` 存放公司內部真實知識文件、是 gitignored 的，所以剛 clone 的
+repo 沒有語料，Agent Service 會啟動失敗。`data/sources.sample/` 提供一份範例
+語料讓本機開發能直接跑；拿到真實文件後放進 `data/sources/` 取代即可。
 
 編輯 `.env`：
 

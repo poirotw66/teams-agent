@@ -184,6 +184,18 @@ warning，行為等同 `disabled`（工單建立會因缺少可信任 email 而�
 驗收完成
 ```
 
+### 第 0 步：準備知識語料（乾淨 clone 必做一次）
+
+`data/sources/` 存放公司內部真實知識文件，是 gitignored 的，所以剛 clone 的
+repo **沒有任何語料**，Agent Service 會啟動失敗。先用範例語料頂上：
+
+```bash
+cp -r data/sources.sample data/sources
+```
+
+`data/sources/` 本身被 gitignore，複製過去不會被誤 commit。拿到真實文件後直接
+放進同一個目錄取代即可。
+
 ### 第 1 段：`scripts/simulate_teams.py`（最快，先跑這個）
 
 在本機同時跑起真實的 Teams Adapter 與一個假的 Bot Framework 服務，送進真的
@@ -235,19 +247,45 @@ deprecated，官方建議改用
 [Agents Playground](https://learn.microsoft.com/en-us/microsoftteams/platform/toolkit/debug-your-agents-playground)。
 
 ```bash
+cp .env.example .env                          # 若還沒有
+cp agent_service/.env.example agent_service/.env
+cp -r data/sources.sample data/sources        # 見第 0 步
+
 START_TUNNEL=false ./start.sh        # Playground 在本機，不需要 devtunnel
+```
+
+`.env` 至少要改這幾項：
+
+```dotenv
+DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
+AGENT_MODE=api
+AGENT_API_URL=http://localhost:8000/agent/chat
+```
+
+`DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` 是必要的：Playground 不帶真的
+Bot Framework JWT，而且**沒有憑證時 `/readyz` 會回 503**，`start.sh` 等不到就
+會直接失敗退出。這個旗標**只能用在本機**。
+
+啟動成功的樣子：
+
+```text
+[start] 啟動 LangGraph Agent Service：http://localhost:8000
+[start] 等待 Agent Service readiness…
+[start] 啟動 Teams Adapter：http://localhost:3978
+[start] 等待 Teams Adapter readiness…
+[start] START_TUNNEL=false，略過 Dev Tunnel。
+[start] 全部服務已啟動。按 Ctrl+C 可一起停止。
+```
+
+```bash
+curl -sS http://localhost:3978/readyz
+# {"status":"ready","agentMode":"api","teamsAuth":"ready","ragImages":"disabled"}
 ```
 
 Playground 的 messaging endpoint 指向 `http://localhost:3978/api/messages`。
 
-`.env` 必須有：
-
-```dotenv
-DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
-```
-
-Playground 不帶真的 Bot Framework JWT；而且**沒有憑證時 `/readyz` 會回 503**，
-`start.sh` 等不到就會直接失敗退出。
+`ragImages` 顯示 `disabled` 是正常的——本機沒有 `BOT_PUBLIC_BASE_URL`（沒開
+tunnel 就沒有公開網址），來源圖片要等第 2 段在真實 Teams 才能驗。
 
 ### 第 2 段：側載到真實 Teams
 
