@@ -185,6 +185,29 @@ already had 54 pre-existing File Search stores from unrelated work
 identifies an owner or a project. Adopting File Search would need naming and
 cleanup conventions, or stores accumulate indefinitely.
 
+**8. Cost model (looked up 2026-08-07, not estimated).** Per
+ai.google.dev: File Search **storage is free**; quotas are 1 GB (free tier),
+10 GB (tier 1), 100 GB (tier 2), 1 TB (tier 3). Indexing is charged as
+`gemini-embedding-2` embeddings ($0.15 / 1M tokens); query-time embedding is
+free, and only the retrieved document tokens are billed as ordinary context.
+
+Measured on this corpus: indexing all 19 documents (~9,665 tokens) is a
+**one-off US$0.0014**. A single grounded query reported
+`prompt=16, tool_use_prompt=2004, output=426` via `usage_metadata`, i.e.
+**US$0.001671/query** at gemini-3.5-flash-lite list price, against Hybrid's
+measured **US$0.001065/query** — File Search is ~1.57x per query. Storage
+being free means the difference is entirely per-query volume:
+
+| Queries | Gemini FS | Hybrid | Difference |
+| --- | --- | --- | --- |
+| 1,000 | US$1.67 | US$1.07 | US$0.61 |
+| 10,000 | US$16.71 | US$10.65 | US$6.06 |
+| 100,000 | US$167.10 | US$106.50 | US$60.60 |
+
+Caveat: the per-query figure is one probe, not a 30-case mean — the adapter
+does not yet surface `usage_metadata`, which is why the A/B table reports
+Gemini cost as unmeasured. Wiring that up would make the comparison exact.
+
 **7. Data residency is a new consideration.** Unlike inference calls, a File
 Search store keeps a *persistent copy* of internal IT documents on Google's
 side. The corpus already transits Google for embeddings, but persistence is
