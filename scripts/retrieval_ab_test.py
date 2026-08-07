@@ -377,6 +377,10 @@ async def _run_hybrid_case(
 async def _run_gemini_case(service: Any, case: EvalCase) -> CaseRun:
     from agent_service.contracts import UserContext
 
+    # Mirrors _run_hybrid_case: the caller's groups flow straight into
+    # UserContext so GeminiFileSearchKnowledgeService.search derives a real
+    # metadata_filter from them (file_search_acl.filter_for) instead of the
+    # ACL path silently going untested.
     user_context = UserContext(groups=list(case.groups))
     started = time.perf_counter()
     try:
@@ -403,10 +407,15 @@ async def _run_gemini_case(service: Any, case: EvalCase) -> CaseRun:
         # best-effort Recall@K proxy -- documented as a known limitation in
         # docs/retrieval-ab-test-report.md, not silently treated as exact.
         retrieved_titles=citation_titles,
-        image_paths=(),  # spike does not map images (spec §8.3/gemini_file_search.py)
+        image_paths=tuple(image.path for image in result.images),
         latency_seconds=latency,
         llm_calls=1,
-        cost_usd=None,  # google-genai usage_metadata not surfaced by the spike adapter
+        # Task 17 wired last_cost_usd from response.usage_metadata
+        # (file_search_usage.estimate_cost). None here means the SDK/response
+        # genuinely did not carry usage data for this call, not "unmeasured
+        # by design" -- see docs/retrieval-ab-test-report.md for whether that
+        # happened on this run.
+        cost_usd=getattr(service, "last_cost_usd", None),
     )
 
 
@@ -443,6 +452,18 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
     except ImportError as exc:
         return None, f"google-genai SDK not installed ({exc}). Run: uv sync --extra spike"
     try:
+        from agent_service.file_search_registry import FileSearchDocumentRegistry
+
+        # Without this, grounding-chunk titles stay as the ASCII upload slug
+        # (e.g. "VPNQ&A.md" instead of "VPN常見Q&A問答") and the registry-fed
+        # image lookup never fires -- the image column would read 0% for the
+        # wrong reason (no join, not "no images"). Built from the same local
+        # index both backends already load, so slug -> real title/images
+        # matches exactly what was actually uploaded.
+        registry = FileSearchDocumentRegistry.from_index_path(settings.index_path)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"Failed to build FileSearchDocumentRegistry: {exc}"
+    try:
         service = GeminiFileSearchKnowledgeService(
             api_key=None,
             file_search_store=settings.gemini_file_search_store,
@@ -452,6 +473,7 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
             # the §18.7 comparison would not be like-for-like.
             model=_bare_model_id(settings.model) or "gemini-2.5-flash",
             top_k=settings.top_k,
+            registry=registry,
         )
     except Exception as exc:  # noqa: BLE001
         return None, f"Failed to construct GeminiFileSearchKnowledgeService: {exc}"
