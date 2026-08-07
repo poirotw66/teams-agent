@@ -448,9 +448,54 @@ LangGraph Workflow 不直接依賴任何具體資料庫、檢索產品或工單�
 |---|---|---|---|
 | FAQ | `agent_service/src/agent_service/faq.py` | `FaqService`（純查表，讀 `FAQ_PATH` JSON） | 編輯 `data/faq.json` |
 | Knowledge Service | `agent_service/src/agent_service/knowledge.py` | `HybridKnowledgeService`（BM25 + embedding，預設） / `GeminiFileSearchKnowledgeService`（spike，見下） | `KNOWLEDGE_SERVICE_MODE=HYBRID` \| `GEMINI_FILE_SEARCH` |
-| Conversation Repository | `agent_service/src/agent_service/conversation.py` | `MEMORY`（in-process）/ `FILE`（JSON 檔案持久化） | `CONVERSATION_REPOSITORY_MODE=MEMORY` \| `FILE` |
+| Conversation Repository | `agent_service/src/agent_service/conversation.py` | `MEMORY`（in-process，本機預設）/ `FILE`（JSON 檔案）/ `FIRESTORE`（受管，Cloud Run 使用） | `CONVERSATION_REPOSITORY_MODE=MEMORY` \| `FILE` \| `FIRESTORE` |
 | Ticket Service | `agent_service/src/agent_service/ticket.py` | `DISABLED` / `HTTP`（呼叫內部工單 API） | `TICKET_SERVICE_MODE=DISABLED` \| `HTTP` |
 | User Directory Service | `src/teams_agent/directory.py`（Teams Adapter 端） | `disabled`（不查 Graph）/ `graph`（`GET /users/{id}`） | `USER_DIRECTORY_MODE=disabled` \| `graph` |
+
+### Conversation 持久化：為什麼 Cloud Run 上必須用 Firestore（spec §10.3）
+
+程式預設是 `MEMORY`，本機開發與測試用它剛好，但部署到 Cloud Run 上它會直接
+破壞 spec §10.1 要求的「連續問答／使用者補充資訊／工單確認」：
+
+- Cloud Run **scale-to-zero**：instance 被回收後，記憶體裡的對話全部消失，
+  使用者補完資訊回來時系統已經不記得前一輪問了什麼。
+- Cloud Run 最多 **3 個 instance**：同一段對話的前後兩輪可能落在不同
+  instance。它們既不共用記憶體、也不共用本機磁碟，所以 `FILE` 模式一樣救
+  不了——這不是「重啟才會壞」，是每一輪都可能壞。
+
+因此 `deploy/deploy-gcp.sh` 在雲端固定使用 `FIRESTORE`。選 Firestore 而不是
+Redis 或 PostgreSQL 的理由（對應 spec §10.3 的選型考量）：
+
+| 考量 | Firestore | Memorystore/Redis | Cloud SQL |
+|---|---|---|---|
+| Cloud Run 網路可達性 | 直連，不需 VPC connector | 需要 VPC connector | 需要 connector 或 VPC |
+| scale-to-zero 成本 | 用多少算多少 | instance 常駐計費 | instance 常駐計費 |
+| 資料保存期限 | 原生 TTL policy | 原生 TTL | 需自建清理 |
+| 維運複雜度 | 無 schema migration | 無 | 需管 schema |
+
+Workflow 完全沒有因此改動：三種模式都躲在同一個 `ConversationRepository`
+Protocol 後面（spec §3.2），而且**同一套行為測試會 parametrize 跑過三種實
+作**，確保它們行為一致。Firestore 的測試由 in-process Fake client 驅動，不
+連線、不需憑證。
+
+要點：
+
+- **Timeout 與 TTL 是兩件事**。`CONVERSATION_TIMEOUT_HOURS` 由程式在每次讀
+  取時檢查 `lastActivityAt` 強制執行，不依賴 TTL 是否已經跑過；TTL 只負責
+  資料保存期限，避免 store 無限成長。
+- **附加訊息不做 read-modify-write**。每則訊息是一份獨立 document，兩個
+  instance 同時寫入不會互相覆蓋。
+- 文件結構、排序保證與並行性論證寫在
+  `agent_service/src/agent_service/conversation.py` 的
+  `FirestoreConversationRepository` docstring；GCP 端的 database、TTL 與 IAM
+  設定見 [`deploy/README.md`](deploy/README.md)。
+
+本機要用 Firestore 模式時需要安裝 optional extra：
+
+```bash
+cd agent_service
+uv pip install '.[firestore]'
+```
 
 ### Retrieval A/B Test：Hybrid vs. Gemini File Search（spec §18.7）
 
@@ -626,8 +671,11 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `TICKET_SERVICE_BASE_URL` | 空 | `TICKET_SERVICE_MODE=HTTP` 時必填，須為 `http(s)://` |
 | `TICKET_SERVICE_TOKEN` | 空 | 工單 API 的 Bearer token，正式環境放 Secret Manager |
 | `TICKET_SERVICE_TIMEOUT_SECONDS` | `10.0` | 範圍 1–60 |
-| `CONVERSATION_REPOSITORY_MODE` | `MEMORY` | `MEMORY`（in-process）\| `FILE`（JSON 檔案持久化） |
+| `CONVERSATION_REPOSITORY_MODE` | `MEMORY` | `MEMORY`（in-process）\| `FILE`（JSON 檔案）\| `FIRESTORE`（受管，Cloud Run 部署使用） |
 | `CONVERSATION_STORE_PATH` | `<RAG_DATA_DIR>/conversations` | `CONVERSATION_REPOSITORY_MODE=FILE` 時的儲存路徑；不可提交到 Git |
+| `CONVERSATION_FIRESTORE_PROJECT` | 空（由 ADC 解析） | 僅 `FIRESTORE` 模式；指向其他專案時才需設定 |
+| `CONVERSATION_FIRESTORE_DATABASE` | 空（`(default)`） | 僅 `FIRESTORE` 模式；使用具名 database 時才需設定 |
+| `CONVERSATION_FIRESTORE_COLLECTION` | `conversations` | 僅 `FIRESTORE` 模式；root collection 名稱，不可含 `/` |
 | `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ 設定檔路徑 |
 | `FEEDBACK_ENABLED` | `true` | 是否開放 `POST /feedback` 與 Teams 端 👍/👎 按鈕 |
 
@@ -815,7 +863,7 @@ Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
 - [x] Agent 設為 private，僅允許 Adapter `roles/run.invoker`
 - [x] 設定 Cloud Run scale-to-zero 與最大 3 instances
 - [ ] 將 Azure Bot Messaging endpoint 切換至 Cloud Run
-- 對話狀態由 MemoryStorage 遷移到 Redis、PostgreSQL 或受管儲存
+- [x] 對話狀態由 in-memory 遷移到受管儲存（Firestore，`CONVERSATION_REPOSITORY_MODE=FIRESTORE`）
 - 加入 OpenTelemetry、集中式 log、錯誤率與 P95 latency 監控
 - 加入 prompt injection 防護、PII 遮蔽、內容安全與工具權限政策
 - 建立 dev、test、prod 環境與獨立 App Registration

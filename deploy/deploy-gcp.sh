@@ -21,6 +21,13 @@ GOOGLE_API_SECRET="teams-agent-google-api-key"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
 
+# Conversation Repository (spec §10.3). Cloud Run scales to zero and routes
+# across instances, so MEMORY/FILE cannot hold conversation context here --
+# this deploy always uses the managed Firestore backend.
+FIRESTORE_DATABASE="${GCP_FIRESTORE_DATABASE:-(default)}"
+FIRESTORE_LOCATION="${GCP_FIRESTORE_LOCATION:-${REGION}}"
+FIRESTORE_COLLECTION="${GCP_FIRESTORE_COLLECTION:-conversations}"
+
 log() {
   printf '[deploy] %s\n' "$*"
 }
@@ -108,6 +115,7 @@ gcloud services enable \
   cloudbuild.googleapis.com \
   secretmanager.googleapis.com \
   iamcredentials.googleapis.com \
+  firestore.googleapis.com \
   --project="${PROJECT_ID}" >/dev/null
 
 log "建立 Artifact Registry 與 Service Accounts"
@@ -122,6 +130,45 @@ if ! gcloud artifacts repositories describe "${REPOSITORY}" \
 fi
 ensure_service_account "${AGENT_SA_NAME}" "Teams LangGraph RAG Agent"
 ensure_service_account "${ADAPTER_SA_NAME}" "Teams Bot Adapter"
+
+log "確認 Firestore database 與 Conversation TTL policy"
+if ! gcloud firestore databases describe \
+  --database="${FIRESTORE_DATABASE}" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  log "建立 Firestore native database (${FIRESTORE_DATABASE} @ ${FIRESTORE_LOCATION})"
+  gcloud firestore databases create \
+    --database="${FIRESTORE_DATABASE}" \
+    --location="${FIRESTORE_LOCATION}" \
+    --type=firestore-native \
+    --project="${PROJECT_ID}" >/dev/null
+fi
+
+# Spec §10.2: conversations expire after CONVERSATION_TIMEOUT_HOURS. The
+# Agent Service writes `expiresAt` on every document it creates; these TTL
+# policies are what actually deletes them, so the store does not grow
+# without bound. `messages` is the subcollection under each conversation,
+# addressed as its own collection group.
+#
+# TTL is a retention mechanism, NOT the timeout mechanism: collection lags
+# by up to ~24h, and the Agent Service re-checks lastActivityAt on every
+# read, so a not-yet-collected conversation is still treated as expired.
+for collection_group in "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}_keys" messages; do
+  gcloud firestore fields ttls update expiresAt \
+    --collection-group="${collection_group}" \
+    --database="${FIRESTORE_DATABASE}" \
+    --project="${PROJECT_ID}" \
+    --enable-ttl \
+    --async \
+    --quiet >/dev/null 2>&1 \
+    || log "警告：無法設定 ${collection_group} 的 TTL policy，請手動確認"
+done
+
+# roles/datastore.user covers Firestore document read/write for the Agent
+# Service's own service account. The Adapter never touches Firestore.
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${AGENT_SA}" \
+  --role=roles/datastore.user \
+  --condition=None >/dev/null
 
 log "同步 Secret Manager secrets"
 upsert_secret "${GOOGLE_API_SECRET}" "${GOOGLE_API_KEY_VALUE}"
@@ -161,12 +208,18 @@ gcloud run deploy "${AGENT_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=MEMORY,FEEDBACK_ENABLED=true" \
+  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},FEEDBACK_ENABLED=true" \
   --set-secrets="GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
   # KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
-  # FEEDBACK_ENABLED above are set explicitly even though they match the
-  # RagSettings code defaults (spec §16), so this deploy is self-documenting
-  # about which mode is running in production. To enable the ticket
+  # FEEDBACK_ENABLED above are set explicitly so this deploy is
+  # self-documenting about which mode is running in production (spec §16).
+  # CONVERSATION_REPOSITORY_MODE deliberately DIFFERS from the RagSettings
+  # default of MEMORY: MEMORY is right for local dev but loses conversation
+  # context whenever Cloud Run recycles an instance (spec §10.1's 連續問答
+  # and 使用者補充資訊 would silently break). Firestore project and
+  # database are left unset so Application Default Credentials resolve them
+  # to this service's own project and the (default) database. To enable the
+  # ticket
   # integration, add TICKET_SERVICE_MODE=HTTP, TICKET_SERVICE_BASE_URL=...
   # to --set-env-vars and TICKET_SERVICE_TOKEN=<secret>:latest to
   # --set-secrets (spec §17: it is a credential, never a plain env var).

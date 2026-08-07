@@ -71,6 +71,11 @@ class RagSettings:
     # --- Conversation Repository (spec §10) ---
     conversation_repository_mode: str = "MEMORY"
     conversation_store_path: Path | None = None
+    # FIRESTORE mode only. project/database default to whatever Application
+    # Default Credentials resolve to on Cloud Run, so neither is required.
+    conversation_firestore_project: str | None = None
+    conversation_firestore_database: str | None = None
+    conversation_firestore_collection: str = "conversations"
     faq_path: Path | None = None
 
     # --- Feedback (spec §14) ---
@@ -125,6 +130,11 @@ class RagSettings:
             ).strip()
             or "MEMORY",
             conversation_store_path=conversation_store_path.expanduser().resolve(),
+            conversation_firestore_project=_str_env("CONVERSATION_FIRESTORE_PROJECT"),
+            conversation_firestore_database=_str_env("CONVERSATION_FIRESTORE_DATABASE"),
+            conversation_firestore_collection=(
+                _str_env("CONVERSATION_FIRESTORE_COLLECTION") or "conversations"
+            ),
             faq_path=faq_path.expanduser().resolve(),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
         )
@@ -177,5 +187,13 @@ class RagSettings:
         if not 1 <= self.ticket_service_timeout_seconds <= 60:
             raise ValueError("TICKET_SERVICE_TIMEOUT_SECONDS must be between 1 and 60.")
 
-        if self.conversation_repository_mode not in {"MEMORY", "FILE"}:
-            raise ValueError("CONVERSATION_REPOSITORY_MODE must be one of MEMORY or FILE.")
+        if self.conversation_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
+            raise ValueError(
+                "CONVERSATION_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE."
+            )
+        if not self.conversation_firestore_collection.strip():
+            raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not be blank.")
+        # Firestore rejects these in a collection id; catching it here turns a
+        # runtime write failure into a startup failure.
+        if "/" in self.conversation_firestore_collection:
+            raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not contain '/'.")

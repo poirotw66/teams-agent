@@ -86,13 +86,17 @@ production) — never pass these as plain `--set-env-vars`:
 
 ## New Agent Service env vars (this phase)
 
-`deploy-gcp.sh` now sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
-`TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=MEMORY`, and
-`FEEDBACK_ENABLED=true` explicitly on the Agent Cloud Run service, even
-though these match the code defaults in
-`agent_service/src/agent_service/settings.py` — being explicit means the
+`deploy-gcp.sh` sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
+`TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
+`CONVERSATION_FIRESTORE_COLLECTION=conversations` and
+`FEEDBACK_ENABLED=true` explicitly on the Agent Cloud Run service. Most of
+these match the code defaults in
+`agent_service/src/agent_service/settings.py` and are stated anyway so the
 deployed configuration doesn't silently depend on defaults nobody re-reads.
-`FAQ_PATH` and `CONVERSATION_STORE_PATH` are left unset (they default to
+
+`CONVERSATION_REPOSITORY_MODE` is the one that deliberately **differs**
+from the code default — see the next section. `FAQ_PATH` and
+`CONVERSATION_STORE_PATH` are left unset (they default to
 `RAG_DATA_DIR/faq.json` and `RAG_DATA_DIR/conversations`, which resolve
 correctly under `/app/data` inside the container). See
 [`../README.md`](../README.md) for the full table with
@@ -100,8 +104,100 @@ defaults and valid ranges, and
 [`../docs/gemini-file-search-spike.md`](../docs/gemini-file-search-spike.md)
 before ever setting `KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH` here — that
 mode also needs the `spike` extra installed, which the production image
-does not install by default (`RUN pip install --no-cache-dir ./agent_service`
-installs only the base dependency set).
+does not install (`pip install "./agent_service[firestore]"` installs the
+base set plus the Firestore backend only).
+
+## Conversation persistence: Firestore (spec §10.3)
+
+The code default is `MEMORY`, which is right for local dev and tests but
+wrong here for two independent reasons:
+
+- Cloud Run **scales to zero**. When the instance is recycled, every
+  in-flight conversation disappears — so 連續問答, 使用者補充資訊 and
+  工單確認 (spec §10.1) break silently between turns.
+- Cloud Run runs **up to 3 instances**. Two turns of the same conversation
+  can land on different instances, which do not share memory *or* local
+  disk — so `FILE` mode does not fix this either.
+
+`deploy-gcp.sh` therefore provisions and uses Firestore:
+
+| Step in the script | What it does |
+|---|---|
+| `gcloud services enable firestore.googleapis.com` | Turns the API on |
+| `gcloud firestore databases create` | Creates the native-mode database (skipped if it already exists) |
+| `gcloud firestore fields ttls update expiresAt` | Enables the TTL policy on `conversations`, `conversations_keys` and the `messages` collection group |
+| `roles/datastore.user` on the **Agent SA** | Read/write on Firestore documents. The Adapter SA gets nothing — it never touches conversation data |
+
+Overridable via env when running the script: `GCP_FIRESTORE_DATABASE`
+(default `(default)`), `GCP_FIRESTORE_LOCATION` (default = `GCP_REGION`,
+i.e. `asia-east1`), `GCP_FIRESTORE_COLLECTION` (default `conversations`).
+
+Document layout, ordering guarantees and the concurrency argument are
+documented on `FirestoreConversationRepository` in
+`agent_service/src/agent_service/conversation.py`.
+
+### TTL is retention, not timeout
+
+Two separate mechanisms, easily confused:
+
+- **Timeout** (`CONVERSATION_TIMEOUT_HOURS`, spec §10.2) is enforced in
+  code on every read: a conversation whose `lastActivityAt` is older than
+  the timeout is treated as absent and a fresh one is created. This never
+  depends on TTL having run.
+- **TTL** is data retention: Firestore deletes documents some time after
+  `expiresAt` (collection can lag by ~24h). It exists so the store does
+  not grow without bound, not to enforce conversation boundaries.
+
+If a TTL policy fails to apply, the script warns instead of aborting — the
+service still behaves correctly, it just accumulates documents until the
+policy is fixed. Check with:
+
+```bash
+gcloud firestore fields ttls list --database='(default)' --project=itr-aimasteryhub-lab
+```
+
+### Live verification (2026-08-07)
+
+`scripts/firestore_verification.py` runs the real repository against real
+Firestore in a throwaway collection and deletes everything afterwards:
+
+```bash
+cd agent_service
+.venv/bin/python ../scripts/firestore_verification.py --project itr-aimasteryhub-lab
+```
+
+Result: **10/10 checks passed**, 8 documents written and all 8 deleted;
+`collections()` afterwards returned nothing, i.e. the probe left no trace.
+
+The run was worth doing — it caught a real defect that the whole Fake-based
+suite had passed. The repository originally ordered the `messages`
+subcollection by `__name__` descending; live Firestore rejects that with
+`FAILED_PRECONDITION: The query requires an index`, so **every history read
+would have failed in production**. Ordering now uses a regular `sortKey`
+field, which Firestore auto-indexes in both directions. The Fake was
+updated to reject `__name__`-descending the same way, and
+`test_fake_rejects_descending_name_ordering_like_real_firestore` pins it.
+
+Also provisioned and verified on `itr-aimasteryhub-lab`:
+
+| Item | State |
+|---|---|
+| `(default)` Firestore database, `asia-east1`, native mode | created |
+| TTL policy on `expiresAt` — `conversations` | enabled |
+| TTL policy on `expiresAt` — `conversations_keys` | enabled |
+| TTL policy on `expiresAt` — `messages` collection group | enabled |
+
+The Agent service account still needs `roles/datastore.user`; that binding
+is applied by `deploy-gcp.sh` on the next deploy.
+
+### Data protection
+
+Conversation documents contain user message text. They inherit
+Google-managed encryption at rest and are reachable only by the Agent
+service account. Retention is bounded by the TTL policy above. If a
+retention window shorter than `CONVERSATION_TIMEOUT_HOURS` is ever
+required by policy, lower `CONVERSATION_TIMEOUT_HOURS` — the repository
+derives `expiresAt` from it, so the two can never drift apart.
 
 ## Build & deploy verification (2026-08-06)
 
