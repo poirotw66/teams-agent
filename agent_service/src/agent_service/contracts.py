@@ -235,3 +235,7 @@ class SearchHit(StrictModel):
 
 class SearchResponse(StrictModel):
     hits: list[SearchHit]
+
+
+class KnowledgeBackendUpdate(StrictModel):
+    backend: Literal["HYBRID", "GEMINI_FILE_SEARCH"]

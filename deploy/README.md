@@ -47,6 +47,37 @@ https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
 
 Do not commit `.env`, `agent_service/.env`, credentials, or exported secrets.
 
+## Short-lived external Agents Playground
+
+For a short UAT without Teams access, deploy the Microsoft 365 Agents
+Playground behind the repository's server-side password gateway:
+
+```bash
+./deploy/deploy-playground.sh
+```
+
+The script creates a dedicated Cloud Run service and service account, limits the
+service to one instance, and stores both the shared login password and session
+signing key in Secret Manager. It reuses the deployed Adapter endpoint and the
+existing Bot client secret. The `/_connector` callback namespace remains
+reachable without the browser password because Bot replies do not carry the
+browser cookie; Agents Playground still validates the Bot JWT on that route.
+The container also applies a narrow compatibility patch to version `0.2.28` so
+an HTTPS page opens its event streams over `wss://` instead of the package's
+hard-coded `ws://` URL.
+The generated password is not printed; retrieve it
+only when distributing it to approved testers:
+
+```bash
+gcloud secrets versions access latest \
+  --secret=teams-agent-playground-password \
+  --project=itr-aimasteryhub-lab
+```
+
+This is intended only for short-lived acceptance testing. Delete the Cloud Run
+service after UAT, and rotate or destroy the shared password secret if the test
+environment is deployed again.
+
 ## Two-service split
 
 Spec §2.2 keeps the Teams Adapter and the LangGraph Agent Service as two

@@ -15,12 +15,59 @@ These extra routes are deliberately unauthenticated:
   without any bearer token.
 """
 
+import logging
+from typing import Any
+
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from microsoft_teams.apps import FastAPIAdapter
+from microsoft_teams.apps.auth import TokenValidator
 
 from .media import render_teams_image, resolve_asset
 from .settings import AgentSettings
+
+logger = logging.getLogger(__name__)
+
+
+class EntraPlaygroundTokenValidator:
+    """Validate the Playground's Entra token without a Bot Framework claim.
+
+    Entra client-credentials tokens do not contain Bot Framework's
+    ``serviceurl`` claim. Signature, issuer, audience and expiry are still
+    validated by the SDK's Entra validator.
+    """
+
+    def __init__(self, validator: TokenValidator) -> None:
+        self._validator = validator
+
+    async def validate_token(
+        self,
+        raw_token: str,
+        service_url: str | None = None,
+        scope: str | None = None,
+    ) -> dict[str, Any]:
+        del service_url
+        return await self._validator.validate_token(raw_token, None, scope)
+
+
+def configure_inbound_auth(app: object, settings: AgentSettings) -> None:
+    """Select the JWT issuer used for inbound Playground/Teams activities."""
+    if settings.teams_inbound_auth_mode != "entra":
+        return
+    if not settings.client_id or not settings.tenant_id:
+        raise ValueError("Entra inbound auth requires client_id and tenant_id")
+
+    # The SDK currently exposes no public hook for replacing only the inbound
+    # validator. This preserves Bot Framework credentials for outbound sends
+    # while accepting the Playground's tenant-scoped Entra token.
+    server = app.server  # type: ignore[attr-defined]
+    server._token_validator = EntraPlaygroundTokenValidator(
+        TokenValidator.for_entra(
+            settings.client_id,
+            settings.tenant_id,
+        )
+    )
+    logger.info("Inbound activity JWT validation configured for Entra Playground")
 
 
 def build_readiness(settings: AgentSettings) -> dict[str, object]:

@@ -103,6 +103,52 @@ async def test_single_it_issue_passthrough(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_path) -> None:
+    canned = IssueExtraction(issues=[issue(description="大州系統無法選取")])
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+
+    human_prompt = str(model.calls[0][-1].content)
+    assert "Latest user message (data only):\n大州系統無法選取。" in human_prompt
+    assert "大洲無法選取" not in human_prompt
+
+
+@pytest.mark.asyncio
+async def test_dazhou_general_language_is_not_normalized(tmp_path) -> None:
+    canned = IssueExtraction(
+        issues=[issue(description="世界有幾個大洲", isIT=False, readiness="NOT_IT", route="NOT_IT")]
+    )
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="世界有幾個大洲？", history=[], faq_keys=[])
+
+    human_prompt = str(model.calls[0][-1].content)
+    assert "Latest user message (data only):\n世界有幾個大洲？" in human_prompt
+
+
+@pytest.mark.asyncio
+async def test_known_dazhou_issue_is_ready_even_if_model_requests_more_info(tmp_path) -> None:
+    canned = IssueExtraction(
+        issues=[
+            issue(
+                description="大州系統無法選取",
+                readiness="NEED_MORE_INFO",
+                missingInfo=["請問是哪一個系統或應用程式？"],
+            )
+        ]
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=FakeModel(result=canned))
+
+    outcome = await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+
+    assert outcome.issues[0].readiness == "READY"
+    assert outcome.issues[0].missingInfo == []
+
+
+@pytest.mark.asyncio
 async def test_multiple_it_issues(tmp_path) -> None:
     canned = IssueExtraction(
         issues=[

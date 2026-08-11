@@ -115,11 +115,34 @@ missing details for (e.g. "我用的是 Cisco AnyConnect" after being asked whic
 client). When that is the case, merge the new detail into that issue instead of
 creating a brand-new one.
 
+The latest user message is authoritative. Never copy a system name, error code, or
+problem from history into a complete new issue unless the latest message explicitly
+refers to it or is answering a pending follow-up question. A complete new issue must
+stand alone even when older history discusses another topic.
+
 Return ONLY the structured issues schema. Do not include any other commentary.
 """
 
 
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
+_DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
+
+
+def _normalize_known_it_terms(text: str) -> str:
+    """Normalize a narrow, observed alias without changing general language."""
+    if "大洲" in text and any(term in text for term in _DAZHOU_FAILURE_TERMS):
+        text = text.replace("大洲", "大州")
+    if "大州" in text and "大州系統" not in text and any(
+        term in text for term in _DAZHOU_FAILURE_TERMS
+    ):
+        text = text.replace("大州", "大州系統", 1)
+    return text
+
+
+def _is_known_dazhou_issue(description: str) -> bool:
+    return "大州" in description and any(
+        term in description for term in _DAZHOU_FAILURE_TERMS
+    )
 
 
 @dataclass(frozen=True)
@@ -146,6 +169,7 @@ class IssueExtractor:
         faq_keys: list[str],
         correlation_id: str | None = None,
     ) -> ExtractionOutcome:
+        normalized_text = _normalize_known_it_terms(text)
         if self.model is None:
             logger.warning(
                 "IssueExtractor running without a model (no API key); "
@@ -153,13 +177,15 @@ class IssueExtractor:
                 correlation_id,
             )
             return ExtractionOutcome(
-                issues=[self._fallback_issue(text)],
+                issues=[self._fallback_issue(normalized_text)],
                 too_many_issues=False,
                 llm_calls=0,
             )
 
         try:
-            raw = await self._call_model(text=text, history=history, faq_keys=faq_keys)
+            raw = await self._call_model(
+                text=normalized_text, history=history, faq_keys=faq_keys
+            )
             llm_calls = 1
         except Exception as exc:  # noqa: BLE001 - never let one bad call fail the request
             logger.error(
@@ -169,7 +195,7 @@ class IssueExtractor:
                 correlation_id,
             )
             return ExtractionOutcome(
-                issues=[self._fallback_issue(text)],
+                issues=[self._fallback_issue(normalized_text)],
                 too_many_issues=False,
                 llm_calls=1,
             )
@@ -264,6 +290,10 @@ class IssueExtractor:
             data["missingInfo"] = []
             data["faqKey"] = None
         else:
+            if _is_known_dazhou_issue(data["description"]):
+                data["readiness"] = "READY"
+                data["missingInfo"] = []
+
             if data["readiness"] == "NOT_IT":
                 # isIT is true but the model said NOT_IT; treat as READY unless
                 # missing info says otherwise below.

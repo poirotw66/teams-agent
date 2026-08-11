@@ -558,6 +558,30 @@ async def test_follow_up_supplies_missing_info_and_re_extracts_with_history(
 
 
 @pytest.mark.asyncio
+async def test_complete_new_issue_does_not_receive_resolved_topic_history(
+    tmp_path: Path,
+) -> None:
+    first_issue = issue(id=1, description="VPN Error 619", readiness="READY")
+    second_issue = issue(id=1, description="大州系統無法選取", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="答案", backend="HYBRID")
+    )
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue], [second_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("VPN Error 619"))
+    await workflow.respond(make_request("大州系統無法選取"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
+    assert "VPN Error 619" not in second_prompt
+    assert "Latest user message (data only):\n大州系統無法選取" in second_prompt
+
+
+@pytest.mark.asyncio
 async def test_no_llm_call_happens_after_response_builder_runs(tmp_path: Path) -> None:
     it_issue = issue(id=1, description="VPN 無法連線")
     knowledge = FakeKnowledgeService(

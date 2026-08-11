@@ -1,11 +1,17 @@
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from teams_agent.media import build_asset_url
-from teams_agent.server import build_readiness, create_web_app
+from teams_agent.server import (
+    EntraPlaygroundTokenValidator,
+    build_readiness,
+    configure_inbound_auth,
+    create_web_app,
+)
 from teams_agent.settings import AgentSettings
 
 
@@ -61,6 +67,54 @@ def test_readyz_accepts_the_local_unauthenticated_escape_hatch(tmp_path: Path) -
     )
 
     assert build_readiness(settings)["status"] == "ready"
+
+
+def test_configure_inbound_auth_uses_entra_validator(tmp_path, monkeypatch) -> None:
+    settings = make_settings(tmp_path, teams_inbound_auth_mode="entra")
+    sentinel = object()
+    calls = []
+
+    class FakeServer:
+        _token_validator = None
+
+    class FakeApp:
+        server = FakeServer()
+
+    def fake_for_entra(client_id, tenant_id):
+        calls.append((client_id, tenant_id))
+        return sentinel
+
+    monkeypatch.setattr(
+        "teams_agent.server.TokenValidator.for_entra", fake_for_entra
+    )
+
+    app = FakeApp()
+    configure_inbound_auth(app, settings)
+
+    assert calls == [("client-1", "tenant-1")]
+    assert isinstance(app.server._token_validator, EntraPlaygroundTokenValidator)
+    assert app.server._token_validator._validator is sentinel
+
+
+@pytest.mark.asyncio
+async def test_entra_playground_validator_omits_botframework_service_url() -> None:
+    calls = []
+
+    class FakeValidator:
+        async def validate_token(self, raw_token, service_url, scope):
+            calls.append((raw_token, service_url, scope))
+            return {"aud": "client-1"}
+
+    validator = EntraPlaygroundTokenValidator(FakeValidator())
+
+    payload = await validator.validate_token(
+        "token",
+        "https://playground.example/_connector",
+        "scope-1",
+    )
+
+    assert payload == {"aud": "client-1"}
+    assert calls == [("token", None, "scope-1")]
 
 
 def test_signed_asset_url_is_served(tmp_path: Path) -> None:

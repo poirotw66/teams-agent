@@ -67,6 +67,30 @@ def test_service_token_is_required_when_configured(tmp_path: Path) -> None:
     assert accepted.status_code == 200
 
 
+def test_knowledge_backend_control_reports_unconfigured_gemini(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path, token="test-token"))) as client:
+        rejected = client.get("/admin/knowledge-backend")
+        status = client.get(
+            "/admin/knowledge-backend",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        switched = client.put(
+            "/admin/knowledge-backend",
+            headers={"Authorization": "Bearer test-token"},
+            json={"backend": "GEMINI_FILE_SEARCH"},
+        )
+
+    assert rejected.status_code == 401
+    assert status.status_code == 200
+    assert status.json()["activeBackend"] == "HYBRID"
+    gemini = next(
+        item for item in status.json()["options"] if item["id"] == "GEMINI_FILE_SEARCH"
+    )
+    assert gemini["available"] is False
+    assert switched.status_code == 409
+    assert "GEMINI_FILE_SEARCH_STORE" in switched.json()["detail"]
+
+
 def parse_sse(body: str) -> list[tuple[str, dict]]:
     """Parse an SSE body into (event, data) pairs."""
     events: list[tuple[str, dict]] = []

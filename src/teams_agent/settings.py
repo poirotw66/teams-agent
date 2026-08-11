@@ -39,6 +39,10 @@ class AgentSettings:
     client_id: str | None = None
     client_secret: str | None = None
     tenant_id: str | None = None
+    # Cloud-hosted Microsoft 365 Agents Playground sends an Entra client-
+    # credentials token directly to the bot endpoint. Real Teams/Bot Framework
+    # traffic uses the Bot Framework issuer instead.
+    teams_inbound_auth_mode: str = "botframework"
     allow_unauthenticated_requests: bool = False
 
     @classmethod
@@ -97,6 +101,11 @@ class AgentSettings:
             client_id=environ.get("CLIENT_ID", "").strip() or None,
             client_secret=environ.get("CLIENT_SECRET", "").strip() or None,
             tenant_id=environ.get("TENANT_ID", "").strip() or None,
+            teams_inbound_auth_mode=(
+                environ.get("TEAMS_INBOUND_AUTH_MODE", "botframework")
+                .strip()
+                .lower()
+            ),
             allow_unauthenticated_requests=(
                 environ.get("DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS", "")
                 .strip()
@@ -113,6 +122,17 @@ class AgentSettings:
         if self.user_directory_mode not in {"disabled", "graph"}:
             raise SettingsError(
                 "USER_DIRECTORY_MODE must be either 'disabled' or 'graph'."
+            )
+        if self.teams_inbound_auth_mode not in {"botframework", "entra"}:
+            raise SettingsError(
+                "TEAMS_INBOUND_AUTH_MODE must be either 'botframework' or 'entra'."
+            )
+        if self.teams_inbound_auth_mode == "entra" and not (
+            self.client_id and self.tenant_id
+        ):
+            raise SettingsError(
+                "CLIENT_ID and TENANT_ID are required when "
+                "TEAMS_INBOUND_AUTH_MODE=entra."
             )
         if self.user_directory_cache_ttl_seconds <= 0:
             raise SettingsError(
@@ -147,8 +167,23 @@ class AgentSettings:
             )
         if self.public_base_url:
             parsed_public_url = urlparse(self.public_base_url)
-            if parsed_public_url.scheme != "https" or not parsed_public_url.netloc:
-                raise SettingsError("BOT_PUBLIC_BASE_URL must be an absolute HTTPS URL.")
+            is_local_playground_url = (
+                parsed_public_url.scheme == "http"
+                and parsed_public_url.hostname in {"localhost", "127.0.0.1", "::1"}
+                and self.allow_unauthenticated_requests
+            )
+            if (
+                not parsed_public_url.netloc
+                or (
+                    parsed_public_url.scheme != "https"
+                    and not is_local_playground_url
+                )
+            ):
+                raise SettingsError(
+                    "BOT_PUBLIC_BASE_URL must use HTTPS, except for a localhost "
+                    "Playground URL when DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS "
+                    "is enabled."
+                )
             if not self.asset_signing_key or len(self.asset_signing_key) < 16:
                 raise SettingsError(
                     "RAG_ASSET_SIGNING_KEY must contain at least 16 characters "

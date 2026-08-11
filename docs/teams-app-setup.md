@@ -260,6 +260,7 @@ START_TUNNEL=false ./start.sh        # Playground 在本機，不需要 devtunne
 DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
 AGENT_MODE=api
 AGENT_API_URL=http://localhost:8000/agent/chat
+BOT_PUBLIC_BASE_URL=http://localhost:3978
 ```
 
 `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` 是必要的：Playground 不帶真的
@@ -279,13 +280,15 @@ Bot Framework JWT，而且**沒有憑證時 `/readyz` 會回 503**，`start.sh` 
 
 ```bash
 curl -sS http://localhost:3978/readyz
-# {"status":"ready","agentMode":"api","teamsAuth":"ready","ragImages":"disabled"}
+# {"status":"ready","agentMode":"api","teamsAuth":"ready","ragImages":"ready"}
 ```
 
 Playground 的 messaging endpoint 指向 `http://localhost:3978/api/messages`。
 
-`ragImages` 顯示 `disabled` 是正常的——本機沒有 `BOT_PUBLIC_BASE_URL`（沒開
-tunnel 就沒有公開網址），來源圖片要等第 2 段在真實 Teams 才能驗。
+Playground 與 Adapter 都在同一台電腦上，因此來源圖片可直接走
+`http://localhost:3978/rag-assets/...`。這個 HTTP 例外只在
+`DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true` 時成立；真實 Teams 與
+Cloud Run 仍強制使用公開 HTTPS URL。
 
 ### 第 2 段：側載到真實 Teams
 

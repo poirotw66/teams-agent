@@ -174,6 +174,24 @@ async def test_images_deduplicated_order_stable_and_capped():
 
 
 @pytest.mark.asyncio
+async def test_legacy_xiaozhou_grounding_uses_canonical_dazhou_name():
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        text="請調整小州系統設定，不是大洲分類。",
+        grounding_chunks=[
+            make_chunk(make_context(title="xiaozhou-feature-not-clickable.md"))
+        ],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("大州系統無法選取", UserContext(groups=[]))
+
+    assert result.answer == "請調整大州系統設定，不是大州分類。"
+
+
+@pytest.mark.asyncio
 async def test_registry_none_preserves_todays_behaviour():
     service = GeminiFileSearchKnowledgeService(
         api_key="key", file_search_store="fileSearchStores/x", registry=None

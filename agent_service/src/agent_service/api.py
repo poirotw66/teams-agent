@@ -4,6 +4,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,7 @@ from .contracts import (
     AgentRequest,
     AgentResponse,
     FeedbackRequest,
+    KnowledgeBackendUpdate,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -22,6 +24,7 @@ from .extractor import IssueExtractor
 from .faq import FaqService
 from .graph import RagAgent
 from .indexer import build_index
+from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
@@ -79,21 +82,41 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             build_repository(resolved_settings), resolved_settings
         )
         ticket_service = build_ticket_service(resolved_settings)
-        knowledge_service = build_knowledge_service(
-            resolved_settings, index, agent.model
+        hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
+        knowledge_services = {
+            "HYBRID": build_knowledge_service(hybrid_settings, index, agent.model)
+        }
+        unavailable_backends: dict[str, str] = {}
+        if resolved_settings.gemini_file_search_store:
+            gemini_settings = replace(
+                resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
+            )
+            knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
+                gemini_settings, index, agent.model
+            )
+        else:
+            unavailable_backends["GEMINI_FILE_SEARCH"] = (
+                "尚未設定 GEMINI_FILE_SEARCH_STORE"
+            )
+        knowledge_router = KnowledgeBackendRouter(
+            knowledge_services,
+            resolved_settings.knowledge_service_mode,
+            unavailable_backends,
+            build_backend_state_store(resolved_settings),
         )
         extractor = IssueExtractor(resolved_settings, agent.model)
         workflow = AgentWorkflow(
             resolved_settings,
             extractor=extractor,
             faq_service=faq_service,
-            knowledge_service=knowledge_service,
+            knowledge_service=knowledge_router,
             conversation_service=conversation_service,
             ticket_service=ticket_service,
         )
 
         app.state.index = index
         app.state.agent = agent
+        app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
         logger.info(
             "Agentic RAG ready: chunks=%s model=%s embeddings=%s "
@@ -131,7 +154,31 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 if resolved_settings.embedding_model
                 else "chinese-bm25"
             ),
+            "knowledgeBackend": await request.app.state.knowledge_router.active_backend(),
         }
+
+    @app.get(
+        "/admin/knowledge-backend",
+        dependencies=[Depends(authorize)],
+    )
+    async def get_knowledge_backend(request: Request) -> dict[str, object]:
+        router: KnowledgeBackendRouter = request.app.state.knowledge_router
+        return await router.status()
+
+    @app.put(
+        "/admin/knowledge-backend",
+        dependencies=[Depends(authorize)],
+    )
+    async def set_knowledge_backend(
+        payload: KnowledgeBackendUpdate, request: Request
+    ) -> dict[str, object]:
+        router: KnowledgeBackendRouter = request.app.state.knowledge_router
+        try:
+            await router.select(payload.backend)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        logger.info("Knowledge backend changed: backend=%s", payload.backend)
+        return await router.status()
 
     def _authorize_tenant(payload: AgentRequest) -> None:
         tenant_id = payload.conversation.tenantId

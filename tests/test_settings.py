@@ -33,6 +33,42 @@ def test_api_mode_allows_local_http_for_development() -> None:
     assert settings.ready is True
 
 
+def test_public_base_url_allows_local_http_for_playground(tmp_path) -> None:
+    settings = AgentSettings(
+        asset_dir=tmp_path,
+        public_base_url="http://localhost:3978",
+        asset_signing_key="test-signing-key-long-enough",
+        allow_unauthenticated_requests=True,
+    )
+
+    settings.validate()
+
+    assert settings.images_ready is True
+
+
+def test_public_base_url_rejects_local_http_outside_playground_mode(tmp_path) -> None:
+    settings = AgentSettings(
+        asset_dir=tmp_path,
+        public_base_url="http://localhost:3978",
+        asset_signing_key="test-signing-key-long-enough",
+    )
+
+    with pytest.raises(SettingsError, match="DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS"):
+        settings.validate()
+
+
+def test_public_base_url_rejects_insecure_remote_url(tmp_path) -> None:
+    settings = AgentSettings(
+        asset_dir=tmp_path,
+        public_base_url="http://adapter.internal",
+        asset_signing_key="test-signing-key-long-enough",
+        allow_unauthenticated_requests=True,
+    )
+
+    with pytest.raises(SettingsError, match="HTTPS"):
+        settings.validate()
+
+
 def test_google_identity_token_uses_cloud_run_origin_as_audience() -> None:
     settings = AgentSettings(
         mode="api",
@@ -58,6 +94,23 @@ def test_user_directory_mode_rejects_unknown_value() -> None:
 
     with pytest.raises(SettingsError, match="USER_DIRECTORY_MODE"):
         settings.validate()
+
+
+def test_entra_inbound_auth_requires_app_identity() -> None:
+    settings = AgentSettings(teams_inbound_auth_mode="entra")
+
+    with pytest.raises(SettingsError, match="CLIENT_ID and TENANT_ID"):
+        settings.validate()
+
+
+def test_entra_inbound_auth_accepts_app_identity() -> None:
+    settings = AgentSettings(
+        teams_inbound_auth_mode="entra",
+        client_id="client-1",
+        tenant_id="tenant-1",
+    )
+
+    settings.validate()
 
 
 def test_resolved_feedback_url_derives_from_api_url() -> None:

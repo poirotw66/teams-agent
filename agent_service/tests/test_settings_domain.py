@@ -31,6 +31,10 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "MAX_RETRIEVAL_REWRITES",
         "KNOWLEDGE_SERVICE_MODE",
         "GEMINI_FILE_SEARCH_STORE",
+        "GEMINI_FILE_SEARCH_MODEL",
+        "GEMINI_FILE_SEARCH_ENFORCE_ACL",
+        "KNOWLEDGE_BACKEND_STATE_MODE",
+        "KNOWLEDGE_BACKEND_STATE_COLLECTION",
         "TICKET_SERVICE_MODE",
         "TICKET_SERVICE_BASE_URL",
         "TICKET_SERVICE_TOKEN",
@@ -62,6 +66,8 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.max_retrieval_rewrites == 1
     assert settings.knowledge_service_mode == "HYBRID"
     assert settings.gemini_file_search_store is None
+    assert settings.knowledge_backend_state_mode == "MEMORY"
+    assert settings.knowledge_backend_state_collection == "runtime_config"
     assert settings.ticket_service_mode == "DISABLED"
     assert settings.ticket_service_base_url is None
     assert settings.ticket_service_timeout_seconds == 10.0
@@ -149,6 +155,20 @@ def test_invalid_knowledge_service_mode_raises(
     _minimal_env(monkeypatch, tmp_path)
     monkeypatch.setenv("KNOWLEDGE_SERVICE_MODE", "PINECONE")
 
+    with pytest.raises(ValueError):
+        RagSettings.from_env()
+
+
+def test_invalid_knowledge_backend_state_settings_raise(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("KNOWLEDGE_BACKEND_STATE_MODE", "REDIS")
+    with pytest.raises(ValueError):
+        RagSettings.from_env()
+
+    monkeypatch.setenv("KNOWLEDGE_BACKEND_STATE_MODE", "FIRESTORE")
+    monkeypatch.setenv("KNOWLEDGE_BACKEND_STATE_COLLECTION", "config/nested")
     with pytest.raises(ValueError):
         RagSettings.from_env()
 

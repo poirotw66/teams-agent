@@ -168,6 +168,22 @@ def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:
     return last.role == "assistant" and _TICKET_OFFER_MARKER in last.text
 
 
+def _needs_history_for_follow_up(conversation: ConversationContext) -> bool:
+    """Only expose prior turns when the assistant is awaiting a reply.
+
+    Passing every resolved topic to the extractor makes a complete new issue
+    vulnerable to being merged with the previous one (for example, a VPN
+    question followed by an unrelated 大州 question). The two supported
+    cross-turn states are explicit and visible in the assistant response.
+    """
+    if not conversation.messages:
+        return False
+    last = conversation.messages[-1]
+    if last.role != "assistant":
+        return False
+    return "請補充：" in last.text or _TICKET_OFFER_MARKER in last.text
+
+
 def _knowledge_search_supports_call_counter(knowledge_service: KnowledgeService) -> bool:
     try:
         signature = inspect.signature(knowledge_service.search)
@@ -189,6 +205,7 @@ def build_knowledge_service(
     from .knowledge import HybridKnowledgeService
 
     if settings.knowledge_service_mode == "GEMINI_FILE_SEARCH":
+        from .file_search_registry import FileSearchDocumentRegistry
         from .gemini_file_search import GeminiFileSearchKnowledgeService
 
         logger.warning(
@@ -198,8 +215,11 @@ def build_knowledge_service(
         return GeminiFileSearchKnowledgeService(
             api_key=None,
             file_search_store=settings.gemini_file_search_store or "",
-            model=settings.model or "gemini-2.5-flash",
+            model=settings.gemini_file_search_model,
             top_k=settings.top_k,
+            registry=FileSearchDocumentRegistry.from_chunks(index.chunks),
+            max_images=settings.max_images,
+            enforce_acl=settings.gemini_file_search_enforce_acl,
         )
     return HybridKnowledgeService(settings, index, model)
 
@@ -271,6 +291,8 @@ class AgentWorkflow:
         correlation_id = state["correlation_id"]
         conversation = state["conversation"]
         history = await self.conversation_service.get_history(conversation.conversationId)
+        if not _needs_history_for_follow_up(conversation):
+            history = []
         faq_keys = self.faq_service.available_keys()
         outcome = await self.extractor.extract(
             text=request.message.text,

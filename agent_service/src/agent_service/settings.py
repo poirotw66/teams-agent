@@ -61,6 +61,10 @@ class RagSettings:
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
     gemini_file_search_store: str | None = None
+    gemini_file_search_model: str = "gemini-2.5-flash"
+    gemini_file_search_enforce_acl: bool = True
+    knowledge_backend_state_mode: str = "MEMORY"
+    knowledge_backend_state_collection: str = "runtime_config"
 
     # --- Ticket Service (spec §11) ---
     ticket_service_mode: str = "DISABLED"
@@ -120,6 +124,18 @@ class RagSettings:
             knowledge_service_mode=environ.get("KNOWLEDGE_SERVICE_MODE", "HYBRID").strip()
             or "HYBRID",
             gemini_file_search_store=_str_env("GEMINI_FILE_SEARCH_STORE"),
+            gemini_file_search_model=(
+                _str_env("GEMINI_FILE_SEARCH_MODEL") or "gemini-2.5-flash"
+            ),
+            gemini_file_search_enforce_acl=_bool_env(
+                "GEMINI_FILE_SEARCH_ENFORCE_ACL", True
+            ),
+            knowledge_backend_state_mode=(
+                _str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"
+            ),
+            knowledge_backend_state_collection=(
+                _str_env("KNOWLEDGE_BACKEND_STATE_COLLECTION") or "runtime_config"
+            ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
@@ -174,6 +190,14 @@ class RagSettings:
             raise ValueError(
                 "KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH."
             )
+        if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
+            raise ValueError(
+                "KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE."
+            )
+        if not self.knowledge_backend_state_collection.strip():
+            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not be blank.")
+        if "/" in self.knowledge_backend_state_collection:
+            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not contain '/'.")
 
         if self.ticket_service_mode not in {"DISABLED", "HTTP"}:
             raise ValueError("TICKET_SERVICE_MODE must be one of DISABLED or HTTP.")
