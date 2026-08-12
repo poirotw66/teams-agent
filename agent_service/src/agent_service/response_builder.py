@@ -249,6 +249,22 @@ def _render_result(
     return _render_failed(issue, correlation_id)
 
 
+def _render_multi_issue_block(position: int, issue: Issue, content: str) -> str:
+    """Give each issue a distinct Markdown section without changing its answer."""
+    description = _safe_description(issue)
+    problem_prefix = f"問題：{description}\n\n"
+    clarification_prefix = f"為了協助確認 {description} 問題，請補充：\n\n"
+
+    if content.startswith(problem_prefix):
+        body = content.removeprefix(problem_prefix)
+    elif content.startswith(clarification_prefix):
+        body = f"**需要補充資訊**\n\n{content.removeprefix(clarification_prefix)}"
+    else:
+        body = content
+
+    return f"**問題 {position}｜{description}**\n\n{body}"
+
+
 def build_response(
     *,
     issues: list[Issue],
@@ -294,9 +310,16 @@ def build_response(
     all_images: list[AgentImage] = []
     feedback_eligible = False
 
-    for issue in ordered_issues:
+    multiple_issues = len(ordered_issues) > 1
+    issue_blocks: list[str] = []
+    for position, issue in enumerate(ordered_issues, start=1):
         if not issue.isIT:
-            blocks.append(_render_not_it(issue))
+            rendered = _render_not_it(issue)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
             continue
 
         result = results_by_issue_id.get(issue.id)
@@ -304,21 +327,32 @@ def build_response(
             # Defensive: an IT issue that never got a result. Do not
             # silently drop it (§4.2) — surface it as a generic failure
             # without inventing details.
-            blocks.append(_render_failed(issue, correlation_id))
+            rendered = _render_failed(issue, correlation_id)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
             continue
 
-        blocks.append(
-            _render_result(
-                issue,
-                result,
-                offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
-                correlation_id=correlation_id,
-            )
+        rendered = _render_result(
+            issue,
+            result,
+            offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
+            correlation_id=correlation_id,
+        )
+        issue_blocks.append(
+            _render_multi_issue_block(position, issue, rendered)
+            if multiple_issues
+            else rendered
         )
         all_sources.extend(result.sources)
         all_images.extend(result.images)
         if result.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES:
             feedback_eligible = True
+
+    if issue_blocks:
+        blocks.append(("\n\n---\n\n" if multiple_issues else "\n\n").join(issue_blocks))
 
     if not blocks:
         text = ALL_NON_IT_MESSAGE if not ordered_issues else ""

@@ -241,6 +241,164 @@ def _unable_to_provide_detail(text: str) -> bool:
     return normalized in exact or normalized.startswith(prefixes)
 
 
+def _abandons_pending_issue(text: str) -> bool:
+    """Recognise an explicit request to stop or switch away from a follow-up."""
+    normalized = text.strip().lower().rstrip("。.!！?？")
+    markers = (
+        "不問了",
+        "算了",
+        "取消",
+        "不用了",
+        "先不用",
+        "換個問題",
+        "換一題",
+        "另外一個問題",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _compose_pending_description(pending: PendingIssueContext, detail: str) -> str:
+    """Join complementary user fragments into one stable retrieval query."""
+    base = (pending.contextText or pending.description).strip().rstrip("。.!！?？")
+    addition = detail.strip().rstrip("。.!！?？")
+    if not base:
+        return addition
+    if not addition or addition.lower() in base.lower():
+        return base
+    return f"{base} {addition}"
+
+
+def _missing_info_kind(question: str) -> str | None:
+    normalized = question.lower()
+    if any(term in normalized for term in ("系統", "應用程式", "app", "軟體", "平台", "用戶端")):
+        return "SYSTEM"
+    if any(term in normalized for term in ("錯誤訊息", "錯誤碼", "error", "代碼")):
+        return "ERROR"
+    if any(term in normalized for term in ("功能", "操作", "需求", "要做什麼", "協助項目")):
+        return "FEATURE"
+    return None
+
+
+def _detail_satisfies_kind(text: str, kind: str) -> bool:
+    normalized = text.strip().lower().rstrip("。.!！?？")
+    if not normalized:
+        return False
+    if kind == "ERROR":
+        return bool(
+            any(term in normalized for term in ("錯誤", "error", "失敗", "異常"))
+            or any(character.isdigit() for character in normalized)
+        )
+    if kind == "FEATURE":
+        return any(
+            term in normalized
+            for term in (
+                "借用",
+                "預約",
+                "申請",
+                "登入",
+                "連線",
+                "上傳",
+                "下載",
+                "安裝",
+                "開啟",
+                "列印",
+                "查詢",
+                "重置",
+                "變更",
+                "設定",
+            )
+        )
+    if kind == "SYSTEM":
+        if len(normalized) > 40:
+            return False
+        # Product-only fragments normally contain Latin letters (Webex,
+        # SAP, PortalX) or a short Chinese proper name.  Problem/action words
+        # indicate that this is likely a complete issue rather than a name.
+        issue_markers = (
+            "無法",
+            "不能",
+            "壞",
+            "問題",
+            "怎麼",
+            "如何",
+            "借用",
+            "登入",
+            "連線",
+            "申請",
+            "錯誤",
+            "error",
+        )
+        return not any(marker in normalized for marker in issue_markers)
+    return False
+
+
+def _answers_missing_info(text: str, questions: list[str]) -> bool:
+    return any(
+        kind is not None and _detail_satisfies_kind(text, kind)
+        for question in questions
+        if (kind := _missing_info_kind(question)) is not None
+    )
+
+
+def _complete_complementary_pending_issue(
+    issues: list[Issue],
+    pending_issues: list[PendingIssueContext],
+    latest_text: str,
+) -> list[Issue]:
+    """Resolve two complementary fragments instead of asking in a loop.
+
+    The extractor has already decided that the latest message is IT-related.
+    If one active clarification exists and the extractor still wants to ask a
+    different clarification, conversationally the short latest turn is the
+    answer to the outstanding slot.  Compose both user fragments and proceed
+    with a best-effort lookup.  Clearly non-IT turns never enter this path and
+    explicit topic abandonment is handled separately.
+    """
+    if (
+        len(pending_issues) != 1
+        or len(issues) != 1
+        or _abandons_pending_issue(latest_text)
+    ):
+        return issues
+    pending = pending_issues[0]
+    current = issues[0]
+    if (
+        not current.isIT
+        or current.readiness != "NEED_MORE_INFO"
+        or not pending.missingInfo
+        or not _answers_missing_info(latest_text, pending.missingInfo)
+        or not _answers_missing_info(
+            pending.contextText or pending.description, current.missingInfo
+        )
+    ):
+        return issues
+    return [
+        current.model_copy(
+            update={
+                "description": _compose_pending_description(pending, latest_text),
+                "readiness": "READY",
+                "missingInfo": [],
+                "route": pending.route if pending.route != "NOT_IT" else "KNOWLEDGE",
+                "faqKey": pending.faqKey,
+            }
+        )
+    ]
+
+
+def _preserves_interrupted_clarification(state: AgentState) -> bool:
+    """Keep an unresolved IT question alive across a harmless non-IT aside."""
+    prior = state.get("prior_pending_issues", [])
+    issues = state.get("issues", [])
+    request = state.get("request")
+    return bool(
+        prior
+        and issues
+        and all(not issue.isIT for issue in issues)
+        and request is not None
+        and not _abandons_pending_issue(request.message.text)
+    )
+
+
 def _requests_ticket_offer(text: str) -> bool:
     """Detect a request to present the ticket option, without creating one."""
     normalized = text.strip()
@@ -501,6 +659,9 @@ class AgentWorkflow:
                 correlation_id=correlation_id,
             )
             issues = outcome.issues
+            issues = _complete_complementary_pending_issue(
+                issues, prior_pending_issues, request.message.text
+            )
             too_many_issues = outcome.too_many_issues
             llm_calls = outcome.llm_calls
             previous_count = max(
@@ -823,6 +984,7 @@ class AgentWorkflow:
         request = state["request"]
         conversation = state["conversation"]
         correlation_id = state["correlation_id"]
+        pending_issues = self._pending_issues_for_next_turn(state)
         await self.conversation_service.record_message(
             conversation.conversationId,
             role="user",
@@ -834,8 +996,8 @@ class AgentWorkflow:
             role="assistant",
             text=state.get("final_response", ""),
             correlation_id=correlation_id,
-            follow_up_state=self._follow_up_state(state),
-            pending_issues=self._pending_issues_for_next_turn(state),
+            follow_up_state=self._follow_up_state(state, pending_issues),
+            pending_issues=pending_issues,
         )
         return {}
 
@@ -854,6 +1016,8 @@ class AgentWorkflow:
             for question in pending.askedQuestions
         ]
         pending_contexts: list[PendingIssueContext] = []
+        if _preserves_interrupted_clarification(state):
+            return list(prior)
         for result in state.get("issue_results", []):
             issue = issues_by_id.get(result.issueId)
             if issue is None:
@@ -865,6 +1029,11 @@ class AgentWorkflow:
                 pending_contexts.append(
                     PendingIssueContext(
                         description=issue.description,
+                        contextText=(
+                            prior[0].contextText
+                            if len(prior) == 1 and prior[0].contextText
+                            else state["request"].message.text
+                        ),
                         route=issue.route,
                         faqKey=issue.faqKey,
                         missingInfo=result.questions,
@@ -885,11 +1054,15 @@ class AgentWorkflow:
         return pending_contexts
 
     @staticmethod
-    def _follow_up_state(state: AgentState) -> str:
+    def _follow_up_state(
+        state: AgentState, pending_issues: list[PendingIssueContext]
+    ) -> str:
         if any(
             result.resultType == "NEED_MORE_INFO"
             for result in state.get("issue_results", [])
         ):
+            return "AWAITING_CLARIFICATION"
+        if pending_issues and _preserves_interrupted_clarification(state):
             return "AWAITING_CLARIFICATION"
         if _TICKET_OFFER_MARKER in state.get("final_response", ""):
             return "AWAITING_TICKET_CONFIRMATION"

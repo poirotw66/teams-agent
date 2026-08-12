@@ -781,6 +781,90 @@ async def test_short_system_name_completes_generic_pending_workflow(
 
 
 @pytest.mark.asyncio
+async def test_non_it_aside_does_not_discard_pending_clarification(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="會議如何借用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    aside = issue(
+        description="早餐吃麥當勞",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+    )
+    completed_issue = issue(description="Webex 會議如何借用", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請填寫會議借用資料。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue], [aside], [completed_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("會議如何借用？"))
+    aside_response = await workflow.respond(make_request("早餐吃麥當勞"))
+
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    assert aside_response.answer == ALL_NON_IT_MESSAGE
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+    assert context.messages[-1].pendingIssues[0].contextText == "會議如何借用？"
+
+    completed = await workflow.respond(make_request("webex"))
+
+    assert extractor_model.calls == 3
+    assert knowledge.calls == ["Webex 會議如何借用"]
+    assert completed.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert any("會議如何借用？" in prompt for prompt in extractor_model.human_messages[-2:])
+
+
+@pytest.mark.asyncio
+async def test_complementary_follow_up_fragment_is_merged_instead_of_reasked(
+    tmp_path: Path,
+) -> None:
+    pending_webex = issue(
+        description="Webex 相關協助",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["需要協助的功能或操作"],
+    )
+    incorrectly_reasked = issue(
+        description="會議借用系統與操作",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    knowledge = FakeKnowledgeService(
+        responses={
+            "webex 會議借用": KnowledgeResult(
+                found=True,
+                answer="請填寫 Webex 會議借用資料。",
+                backend="HYBRID",
+            )
+        }
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_webex], [incorrectly_reasked]],
+        knowledge=knowledge,
+    )
+
+    first = await workflow.respond(make_request("webex"))
+    second = await workflow.respond(make_request("會議借用？"))
+
+    assert first.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert extractor_model.calls == 2
+    assert knowledge.calls == ["webex 會議借用"]
+    assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert "請補充" not in second.answer
+
+
+@pytest.mark.asyncio
 async def test_structured_follow_up_state_includes_history_without_template_marker(
     tmp_path: Path,
 ) -> None:

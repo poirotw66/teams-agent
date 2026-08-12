@@ -174,6 +174,47 @@ def test_multi_issue_rendered_in_issue_id_order():
     assert built.text.index("問題一") < built.text.index("問題二")
 
 
+def test_multi_issue_uses_separate_numbered_sections_for_mixed_results():
+    pending = make_issue(
+        id=1,
+        description="Webex 相關協助",
+        readiness="NEED_MORE_INFO",
+        route="KNOWLEDGE",
+    )
+    answered = make_issue(
+        id=2,
+        description="大州系統無法連線",
+        route="KNOWLEDGE",
+    )
+    pending_result = IssueResult(
+        issueId=1,
+        resultType="NEED_MORE_INFO",
+        questions=["請問您需要進行什麼操作？"],
+    )
+    answered_result = IssueResult(
+        issueId=2,
+        resultType="KNOWLEDGE_ANSWERED",
+        answer="請調整瀏覽器安全性設定。",
+    )
+
+    built = build_response(
+        issues=[pending, answered],
+        results=[pending_result, answered_result],
+        settings=make_settings(),
+    )
+
+    assert built.text == (
+        "**問題 1｜Webex 相關協助**\n\n"
+        "**需要補充資訊**\n\n"
+        "1. 請問您需要進行什麼操作？\n\n"
+        "---\n\n"
+        "**問題 2｜大州系統無法連線**\n\n"
+        "處理方式：\n請調整瀏覽器安全性設定。"
+    )
+    assert built.text.count("Webex 相關協助") == 1
+    assert built.text.count("大州系統無法連線") == 1
+
+
 def test_failed_issue_does_not_suppress_other_answered_issue():
     ok_issue = make_issue(id=1, description="VPN 無法登入", route="FAQ")
     failed_issue = make_issue(id=2, description="Outlook 錯誤", route="KNOWLEDGE")

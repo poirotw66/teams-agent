@@ -146,6 +146,11 @@ class PendingIssueContext(StrictModel):
     """Structured unresolved issue state carried between conversation turns."""
 
     description: str
+    # The user's original wording is kept separately from the extractor's
+    # normalized description.  It lets a later short fragment (for example
+    # "Webex" or "會議借用") be composed into a clean retrieval query without
+    # depending on model-generated prose.
+    contextText: str | None = None
     route: Route = "KNOWLEDGE"
     faqKey: str | None = None
     missingInfo: list[str] = Field(default_factory=list)
