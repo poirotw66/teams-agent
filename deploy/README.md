@@ -333,3 +333,16 @@ measured evidence (spec §18's performance test):
 - **Scale-to-zero**: both services deploy with `--min=0 --max=3`. Raise
   `--max` only after observing sustained concurrency near the current
   limit; `--min=0` is intentional for a POC to avoid idle cost.
+
+## Mock Ticket API 驗收環境
+
+部署 Cloud Run Mock Ticket API 並將 Agent 切換到 HTTP 工單模式：
+
+```bash
+./deploy/deploy-mock-ticket.sh
+```
+
+Mock API 使用 Secret Manager Bearer Token 保護建立與查詢操作，資料存放於
+Firestore `mock_tickets` collection。此服務僅供驗收，不代表正式工單系統。
+重新執行完整的 `deploy-gcp.sh` 會把工單模式重設為 `DISABLED`；需要時再執行
+本腳本即可恢復 Mock 工單環境。

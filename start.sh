@@ -7,6 +7,9 @@ AGENT_SERVICE_DIR="${PROJECT_DIR}/agent_service"
 TEAMS_PORT="${PORT:-3978}"
 RAG_PORT="${RAG_PORT:-8000}"
 START_TUNNEL="${START_TUNNEL:-true}"
+START_MOCK_TICKET="${START_MOCK_TICKET:-false}"
+MOCK_TICKET_PORT="${MOCK_TICKET_PORT:-8090}"
+PLAYGROUND_TEST_USER_EMAIL="${PLAYGROUND_TEST_USER_EMAIL:-playground.user@example.test}"
 CHILD_PIDS=()
 
 log() {
@@ -67,6 +70,31 @@ port_is_in_use "${TEAMS_PORT}" \
 port_is_in_use "${RAG_PORT}" \
   && fail "Agent Service port ${RAG_PORT} 已被占用，請先停止舊的 uv run rag-agent。"
 
+if [[ "${START_MOCK_TICKET}" == "true" ]]; then
+  port_is_in_use "${MOCK_TICKET_PORT}" \
+    && fail "Mock Ticket port ${MOCK_TICKET_PORT} 已被占用。"
+
+  log "啟動本機 Mock Ticket Service：http://127.0.0.1:${MOCK_TICKET_PORT}"
+  (
+    cd "${PROJECT_DIR}"
+    MOCK_TICKET_PORT="${MOCK_TICKET_PORT}" \
+      exec uv run python -m teams_agent.mock_ticket_service
+  ) &
+  CHILD_PIDS+=("$!")
+
+  log "等待 Mock Ticket Service readiness…"
+  for _ in {1..15}; do
+    if curl --fail --silent \
+      "http://127.0.0.1:${MOCK_TICKET_PORT}/healthz" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  curl --fail --silent \
+    "http://127.0.0.1:${MOCK_TICKET_PORT}/healthz" >/dev/null \
+    || fail "Mock Ticket Service 在 15 秒內未就緒。"
+fi
+
 if [[ "${START_TUNNEL}" == "true" ]]; then
   require_command devtunnel
 fi
@@ -74,6 +102,10 @@ fi
 log "啟動 LangGraph Agent Service：http://localhost:${RAG_PORT}"
 (
   cd "${AGENT_SERVICE_DIR}"
+  if [[ "${START_MOCK_TICKET}" == "true" ]]; then
+    export TICKET_SERVICE_MODE=HTTP
+    export TICKET_SERVICE_BASE_URL="http://127.0.0.1:${MOCK_TICKET_PORT}"
+  fi
   PORT="${RAG_PORT}" exec uv run rag-agent
 ) &
 CHILD_PIDS+=("$!")
@@ -91,6 +123,9 @@ curl --fail --silent "http://localhost:${RAG_PORT}/readyz" >/dev/null \
 log "啟動 Teams Adapter：http://localhost:${TEAMS_PORT}"
 (
   cd "${PROJECT_DIR}"
+  if [[ "${START_MOCK_TICKET}" == "true" ]]; then
+    export PLAYGROUND_TEST_USER_EMAIL
+  fi
   PORT="${TEAMS_PORT}" exec uv run teams-agent
 ) &
 CHILD_PIDS+=("$!")

@@ -20,11 +20,13 @@ call returns, because a prompt alone is not a security boundary (spec §17).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import ConversationMessage, Issue, IssueExtraction
 from .sanitize import sanitize_description
 from .settings import RagSettings
@@ -126,6 +128,11 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
+_TICKET_COMMAND_RE = re.compile(
+    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?)*"
+    r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?工單|開單|報修"
+)
+_TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
 
 
 def _normalize_known_it_terms(text: str) -> str:
@@ -142,6 +149,33 @@ def _normalize_known_it_terms(text: str) -> str:
 def _is_known_dazhou_issue(description: str) -> bool:
     return "大州" in description and any(
         term in description for term in _DAZHOU_FAILURE_TERMS
+    )
+
+
+def _strip_ticket_command(text: str) -> str:
+    return _TICKET_COMMAND_RE.sub("", text).strip(_TICKET_COMMAND_PUNCTUATION)
+
+
+def merge_pending_ticket_issues(issues: list[Issue]) -> Issue:
+    """Merge issues recovered from a pending-offer confirmation into one ticket."""
+    descriptions: list[str] = []
+    for issue in issues:
+        if not issue.isIT:
+            continue
+        description = sanitize_description(_strip_ticket_command(issue.description))
+        if description and description not in descriptions:
+            descriptions.append(description)
+
+    merged = "；".join(descriptions) or "使用者要求建立 IT 支援工單"
+    return Issue(
+        id=1,
+        description=merged[:_SAFE_FALLBACK_DESCRIPTION_MAX_LEN],
+        isIT=True,
+        readiness="READY",
+        missingInfo=[],
+        route="TICKET",
+        faqKey=None,
+        ticketAction=None,
     )
 
 
@@ -170,6 +204,23 @@ class IssueExtractor:
         correlation_id: str | None = None,
     ) -> ExtractionOutcome:
         normalized_text = _normalize_known_it_terms(text)
+        ticket_intent = classify_ticket_intent(normalized_text)
+
+        # Ticket intent is a deterministic guardrail, not an LLM suggestion.
+        # These operations must never become a third issue or a knowledge
+        # lookup because the extractor happened to split the wording poorly.
+        if ticket_intent in {
+            TicketIntent.DELETE_DENIED,
+            TicketIntent.CANCEL,
+            TicketIntent.QUERY,
+            TicketIntent.CREATE,
+        }:
+            return ExtractionOutcome(
+                issues=[self._ticket_intent_issue(normalized_text, ticket_intent)],
+                too_many_issues=False,
+                llm_calls=0,
+            )
+
         if self.model is None:
             logger.warning(
                 "IssueExtractor running without a model (no API key); "
@@ -246,6 +297,37 @@ class IssueExtractor:
             readiness="READY",
             missingInfo=[],
             route="KNOWLEDGE",
+            faqKey=None,
+            ticketAction=None,
+        )
+
+    def _ticket_intent_issue(self, text: str, ticket_intent: TicketIntent) -> Issue:
+        """Build one safe ticket issue directly from the user's current turn.
+
+        For explicit creation, keeping the command-stripped original wording
+        preserves every actual problem in a multi-problem message.  It is more
+        reliable than asking an LLM to split the message and then trying to
+        infer which extracted item was merely "請建立工單".
+        """
+        if ticket_intent == TicketIntent.CREATE:
+            description = _strip_ticket_command(text)
+            description = sanitize_description(description)
+            if not description:
+                description = "使用者要求建立 IT 支援工單"
+        elif ticket_intent == TicketIntent.QUERY:
+            description = "查詢目前使用者的工單"
+        elif ticket_intent == TicketIntent.DELETE_DENIED:
+            description = "刪除工單"
+        else:
+            description = "取消建立工單"
+
+        return Issue(
+            id=1,
+            description=description[:_SAFE_FALLBACK_DESCRIPTION_MAX_LEN],
+            isIT=True,
+            readiness="READY",
+            missingInfo=[],
+            route="TICKET",
             faqKey=None,
             ticketAction=None,
         )

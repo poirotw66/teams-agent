@@ -2,7 +2,12 @@
 
 import pytest
 
-from agent_service.confirmation import is_explicit_ticket_confirmation
+from agent_service.confirmation import (
+    TicketIntent,
+    classify_ticket_intent,
+    is_explicit_ticket_confirmation,
+    is_pending_ticket_offer_confirmation,
+)
 
 # Spec §11.3: these MUST be treated as explicit confirmation.
 AFFIRMATIVE_EXAMPLES = [
@@ -91,3 +96,30 @@ def test_hedge_vetoes_even_when_affirmative_pattern_present() -> None:
     text = "可能要報修"
     assert is_explicit_ticket_confirmation(text) is False
     assert "報修" in text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("刪除工單後建立工單", TicketIntent.DELETE_DENIED),
+        ("不知道，先不要建立工單", TicketIntent.CANCEL),
+        ("不要開單，幫我查詢我的工單", TicketIntent.CANCEL),
+        ("請建立工單後查詢我的工單", TicketIntent.QUERY),
+        ("VPN Error 619，請建立工單", TicketIntent.CREATE),
+        ("是", TicketIntent.NONE),
+    ],
+)
+def test_ticket_intent_has_fixed_cancel_query_create_none_priority(
+    text: str, expected: TicketIntent
+) -> None:
+    assert classify_ticket_intent(text) == expected
+
+
+@pytest.mark.parametrize("text", ["是", "是。", "好", "好的！", "可以", "確認"])
+def test_pending_offer_accepts_only_short_confirmations(text: str) -> None:
+    assert is_pending_ticket_offer_confirmation(text) is True
+
+
+@pytest.mark.parametrize("text", ["不是", "不知道", "可能", "再看看", "先不要"])
+def test_pending_offer_rejects_ambiguous_or_negative_replies(text: str) -> None:
+    assert is_pending_ticket_offer_confirmation(text) is False

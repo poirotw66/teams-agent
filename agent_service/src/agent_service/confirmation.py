@@ -33,6 +33,23 @@ Issue Extractor, not here.
 
 from __future__ import annotations
 
+from enum import Enum
+
+
+class TicketIntent(str, Enum):
+    """The ticket operation requested by the current message.
+
+    This intentionally small, deterministic taxonomy is a safety boundary for
+    side-effecting ticket operations.  It is not an LLM classification: every
+    caller receives the same result for the same text.
+    """
+
+    DELETE_DENIED = "DELETE_DENIED"
+    CANCEL = "CANCEL"
+    QUERY = "QUERY"
+    CREATE = "CREATE"
+    NONE = "NONE"
+
 # Hedging words: presence anywhere means the statement is not a firm,
 # explicit confirmation (spec §11.3 non-confirmation examples such as
 # "可能要報修").
@@ -101,6 +118,97 @@ _AFFIRMATIVE_PATTERNS: tuple[str, ...] = (
     "請開單",
     "請報修",
 )
+
+# Cancellation must be recognised as a ticket-specific request.  A generic
+# "不要" in an otherwise valid IT question (for example, "不要要求密碼") is
+# not a ticket cancellation, whereas "先不要建立工單" is.
+_CANCEL_PATTERNS: tuple[str, ...] = (
+    "取消工單",
+    "取消建立",
+    "不要建立工單",
+    "不要建工單",
+    "不要開工單",
+    "不要開單",
+    "不要報修",
+    "先不要建立工單",
+    "先不要建工單",
+    "先不要開工單",
+    "先不要開單",
+    "先不要報修",
+    "先不建立工單",
+    "先不開單",
+    "先不報修",
+    "不用建立工單",
+    "不用開單",
+    "不用報修",
+    "不必建立工單",
+    "不必開單",
+    "不必報修",
+    "暫時不要建立工單",
+    "暫時不要開單",
+    "暫時不要報修",
+    "不需要建立工單",
+    "不需要開單",
+    "不需要報修",
+)
+
+_DELETE_PATTERNS: tuple[str, ...] = (
+    "刪除工單",
+    "刪掉工單",
+    "刪工單",
+    "移除工單",
+)
+
+_QUERY_MARKERS: tuple[str, ...] = (
+    "查詢",
+    "查一下",
+    "查查",
+    "查看",
+    "檢視",
+    "列出",
+    "進度",
+    "狀態",
+    "列表",
+    "追蹤",
+)
+
+_PENDING_OFFER_CONFIRMATIONS: tuple[str, ...] = (
+    "是",
+    "好",
+    "好的",
+    "可以",
+    "確認",
+    "確定",
+)
+
+
+def classify_ticket_intent(text: str) -> TicketIntent:
+    """Classify the ticket intent with a fixed, auditable precedence.
+
+    The priority is deliberately
+    ``DELETE_DENIED > CANCEL > QUERY > CREATE > NONE``.  In
+    particular, a cancellation wins even when the text also includes an old
+    affirmative phrase, preventing a pending offer or an LLM route from
+    reopening a ticket request the user just withdrew.
+    """
+    normalized = text.strip()
+    if not normalized:
+        return TicketIntent.NONE
+
+    if any(pattern in normalized for pattern in _DELETE_PATTERNS):
+        return TicketIntent.DELETE_DENIED
+    if any(pattern in normalized for pattern in _CANCEL_PATTERNS):
+        return TicketIntent.CANCEL
+    if "工單" in normalized and any(marker in normalized for marker in _QUERY_MARKERS):
+        return TicketIntent.QUERY
+    if is_explicit_ticket_confirmation(normalized):
+        return TicketIntent.CREATE
+    return TicketIntent.NONE
+
+
+def is_pending_ticket_offer_confirmation(text: str) -> bool:
+    """Accept a short confirmation only when the workflow has a live offer."""
+    return text.strip().rstrip("。.!！") in _PENDING_OFFER_CONFIRMATIONS
 
 
 def is_explicit_ticket_confirmation(text: str) -> bool:

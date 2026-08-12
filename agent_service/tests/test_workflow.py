@@ -180,6 +180,7 @@ class FlakyFaqService:
 class FakeTicketService:
     def __init__(self) -> None:
         self.created: list = []
+        self.list_calls: list[str] = []
         self.items = [TicketItem(id="item-1", name="General Support")]
         self._by_requester: dict[str, list[Ticket]] = {}
 
@@ -198,6 +199,7 @@ class FakeTicketService:
         return ticket
 
     async def list_tickets_by_requester(self, requester_id, *, correlation_id=None):
+        self.list_calls.append(requester_id)
         return self._by_requester.get(requester_id, [])
 
     async def get_ticket(self, ticket_id, requester_id, *, correlation_id=None):
@@ -431,6 +433,153 @@ async def test_ticket_not_created_without_explicit_confirmation(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_ticket_cancellation_short_circuits_retrieval_ticket_api_and_feedback(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(route="TICKET")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+        settings_overrides={"feedback_enabled": True},
+    )
+
+    response = await workflow.respond(make_request("不知道，先不要建立工單"))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert response.issueResults[0].resultType == "TICKET_CANCELLED"
+    assert response.answer == "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+    assert response.citations == []
+    assert response.images == []
+    assert response.feedbackEnabled is False
+
+
+@pytest.mark.asyncio
+async def test_ticket_delete_is_safely_denied_without_retrieval_or_ticket_api(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(route="TICKET")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+        settings_overrides={"feedback_enabled": True},
+    )
+
+    denied = await workflow.respond(make_request("刪除工單"))
+    follow_up = await workflow.respond(make_request("是"))
+
+    assert extractor_model.calls == 1  # only the later standalone "是"
+    assert knowledge.calls == []
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert denied.issueResults[0].resultType == "TICKET_DELETE_DENIED"
+    assert denied.answer.startswith("目前不支援刪除工單")
+    assert denied.citations == []
+    assert denied.images == []
+    assert denied.feedbackEnabled is False
+    assert follow_up.issueResults[0].resultType != "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_yes_after_cancellation_cannot_reuse_a_pending_ticket_offer(tmp_path: Path) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        # First produce a real pending offer. After cancellation, this
+        # simulates a bad extractor route on the later bare "是".
+        issues_sequence=[
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+            [issue(description="VPN Error 619", route="TICKET")],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("VPN Error 619"))
+    cancelled = await workflow.respond(make_request("先不要建立工單"))
+    follow_up = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立工單" in offered.answer
+    assert cancelled.issueResults[0].resultType == "TICKET_CANCELLED"
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert follow_up.issueResults[0].resultType != "TICKET_CREATED"
+    assert knowledge.calls == ["VPN Error 619"]
+
+
+@pytest.mark.asyncio
+async def test_yes_creates_ticket_only_when_previous_turn_contains_live_offer(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("VPN Error 619"))
+    confirmed = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立工單" in offered.answer
+    assert len(ticket_service.created) == 1
+    assert ticket_service.created[0][0].description == "VPN Error 619"
+    assert confirmed.issueResults[0].resultType == "TICKET_CREATED"
+    assert knowledge.calls == ["VPN Error 619"]
+
+
+@pytest.mark.asyncio
+async def test_yes_merges_multiple_pending_issues_into_one_ticket(tmp_path: Path) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(id=1, description="VPN Error 619", route="KNOWLEDGE"),
+                issue(id=2, description="SAP 密碼無法重置", route="KNOWLEDGE"),
+            ],
+            [
+                issue(id=1, description="VPN Error 619 建立工單", route="TICKET"),
+                issue(id=2, description="SAP 密碼無法重置 建立工單", route="TICKET"),
+            ],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(
+        make_request("VPN Error 619，而且 SAP 密碼也無法重置")
+    )
+    confirmed = await workflow.respond(make_request("是"))
+
+    assert offered.answer.count("是否需要協助建立工單") == 2
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert "VPN Error 619" in draft.description
+    assert "SAP 密碼無法重置" in draft.description
+    assert "建立工單" not in draft.description
+    assert draft.description == "VPN Error 619；SAP 密碼無法重置"
+    assert len(confirmed.issueResults) == 1
+    assert confirmed.issueResults[0].resultType == "TICKET_CREATED"
+    assert "處理時發生問題" not in confirmed.answer
+    assert knowledge.calls == ["VPN Error 619", "SAP 密碼無法重置"]
+    assert _extractor_model.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     tmp_path: Path,
 ) -> None:
@@ -483,6 +632,43 @@ async def test_one_ticket_per_turn(tmp_path: Path) -> None:
     assert len(ticket_service.created) == 1
     created_types = [r.resultType for r in response.issueResults]
     assert created_types.count("TICKET_CREATED") == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_multi_problem_creation_builds_one_ticket_without_retrieval(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(id=1, description="VPN Error 619"),
+                issue(id=2, description="SAP 密碼也無法重置"),
+                issue(id=3, description="請建立工單", route="TICKET"),
+            ]
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    response = await workflow.respond(
+        make_request("VPN Error 619，而且 SAP 密碼也無法重置，請建立工單")
+    )
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert "VPN Error 619" in draft.title
+    assert "SAP 密碼也無法重置" in draft.title
+    assert "VPN Error 619" in draft.description
+    assert "SAP 密碼也無法重置" in draft.description
+    assert len(response.issueResults) == 1
+    assert response.issueResults[0].resultType == "TICKET_CREATED"
 
 
 @pytest.mark.asyncio

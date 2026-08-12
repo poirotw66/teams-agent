@@ -78,6 +78,22 @@ ANSWER_PROMPT = """\
 {context}
 """
 
+_INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
+    "資訊不足",
+    "信息不足",
+    "資料不足",
+    "沒有足夠資訊",
+    "沒有足夠信息",
+    "無法提供答案",
+    "無法回答",
+    "查無相關資訊",
+    "查無相關信息",
+    "沒有相關資訊",
+    "沒有相關信息",
+    "找不到相關資訊",
+    "找不到相關信息",
+)
+
 
 class RelevanceDecision(BaseModel):
     relevant: bool
@@ -89,6 +105,16 @@ class RewrittenQuery(BaseModel):
 
 def message_text(message: BaseMessage) -> str:
     return str(message.text).strip()
+
+
+def _answer_indicates_insufficient_information(answer: str) -> bool:
+    """Whether a generated answer explicitly says the KB cannot answer.
+
+    In that case sources and images would imply support that the answer just
+    denied, so HYBRID reports a strict miss instead.
+    """
+    normalized = answer.lower()
+    return any(marker in normalized for marker in _INSUFFICIENT_INFORMATION_MARKERS)
 
 
 @runtime_checkable
@@ -306,7 +332,6 @@ class HybridKnowledgeService:
                 backend="HYBRID",
             )
 
-        citations = self._unique_citations(results)
         context = "\n\n".join(
             f"[S{index}] {result.chunk.title}\n{result.chunk.content}"
             for index, result in enumerate(results, start=1)
@@ -327,16 +352,23 @@ class HybridKnowledgeService:
         )
         answer = message_text(response)
         cited_indexes = {
-            int(value) - 1 for value in re.findall(r"\[S(\d+)\]", answer)
+            int(value) - 1
+            for value in re.findall(r"\[S(\d+)\]", answer)
+            if 1 <= int(value) <= len(results)
         }
         cited_results = [
             result for index, result in enumerate(results) if index in cited_indexes
         ]
+        if _answer_indicates_insufficient_information(answer) or not cited_results:
+            # Do not fall back to every retrieved candidate.  The generated
+            # answer either declared a miss or failed to ground itself in a
+            # valid [Sx] marker, so candidate sources/images are misleading.
+            return self._no_answer()
         return KnowledgeResult(
             found=True,
             answer=answer,
-            sources=self._unique_citations(cited_results) if cited_results else citations,
-            images=self._images_for(cited_results or results),
+            sources=self._unique_citations(cited_results),
+            images=self._images_for(cited_results),
             backend="HYBRID",
         )
 

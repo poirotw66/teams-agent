@@ -289,6 +289,42 @@ def test_ticket_found_with_no_tickets_says_so():
     assert "查無你建立的工單" in built.text
 
 
+def test_ticket_cancelled_is_a_direct_reply_without_sources_or_feedback():
+    issue = make_issue(id=1, description="取消建立工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="TICKET_CANCELLED")
+
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(feedback_enabled=True),
+        offer_ticket_on_no_knowledge=True,
+    )
+
+    assert built.text == "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+    assert "來源" not in built.text
+    assert built.citations == []
+    assert built.images == []
+    assert built.feedback_enabled is False
+
+
+def test_ticket_delete_denied_is_a_direct_reply_without_sources_or_feedback():
+    issue = make_issue(id=1, description="刪除工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="TICKET_DELETE_DENIED")
+
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(feedback_enabled=True),
+        offer_ticket_on_no_knowledge=True,
+    )
+
+    assert built.text.startswith("目前不支援刪除工單")
+    assert "來源" not in built.text
+    assert built.citations == []
+    assert built.images == []
+    assert built.feedback_enabled is False
+
+
 # --- citations / images dedup ------------------------------------------------
 
 

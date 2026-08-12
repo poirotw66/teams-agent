@@ -113,6 +113,33 @@ def test_entra_inbound_auth_accepts_app_identity() -> None:
     settings.validate()
 
 
+def test_playground_test_email_requires_a_playground_auth_mode() -> None:
+    settings = AgentSettings(playground_test_user_email="playground.user@example.test")
+
+    with pytest.raises(SettingsError, match="PLAYGROUND_TEST_USER_EMAIL"):
+        settings.validate()
+
+
+def test_playground_test_email_is_allowed_in_unsafe_local_mode() -> None:
+    settings = AgentSettings(
+        playground_test_user_email="playground.user@example.test",
+        allow_unauthenticated_requests=True,
+    )
+
+    settings.validate()
+
+
+def test_playground_test_email_is_allowed_for_entra_playground() -> None:
+    settings = AgentSettings(
+        playground_test_user_email="playground.user@example.test",
+        teams_inbound_auth_mode="entra",
+        client_id="client-1",
+        tenant_id="tenant-1",
+    )
+
+    settings.validate()
+
+
 def test_resolved_feedback_url_derives_from_api_url() -> None:
     settings = AgentSettings(
         mode="api",

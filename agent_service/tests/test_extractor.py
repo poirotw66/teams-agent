@@ -75,6 +75,38 @@ async def test_model_none_fallback(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_without_llm(tmp_path) -> None:
+    # The model would have split the final instruction into a bogus third
+    # issue, but this must be handled entirely by the deterministic guardrail.
+    model = FakeModel(
+        result=IssueExtraction(
+            issues=[
+                issue(id=1, description="VPN Error 619"),
+                issue(id=2, description="SAP 密碼無法重置"),
+                issue(id=3, description="請建立工單", route="TICKET"),
+            ]
+        )
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(
+        text="VPN Error 619，而且 SAP 密碼也無法重置，請建立工單",
+        history=[],
+        faq_keys=[],
+    )
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert outcome.too_many_issues is False
+    assert len(outcome.issues) == 1
+    merged = outcome.issues[0]
+    assert merged.route == "TICKET"
+    assert "VPN Error 619" in merged.description
+    assert "SAP 密碼也無法重置" in merged.description
+    assert "建立工單" not in merged.description
+
+
+@pytest.mark.asyncio
 async def test_model_exception_returns_safe_fallback(tmp_path) -> None:
     model = FakeModel(result=RuntimeError("boom"))
     extractor = IssueExtractor(make_settings(tmp_path), model=model)

@@ -19,29 +19,15 @@ every node only *reads* it — no node ever calls ``uuid4()`` again — so the
 same id reaches the extractor, the knowledge service, the ticket service and
 the conversation repository.
 
-Pending-ticket state (spec §3.3, §11.3)
------------------------------------------
-Spec §3.3 forbids building a full Issue Repository / ticket lifecycle just
-to remember "was a ticket offered". Instead of persisting anything new, a
-turn is treated as replying to a pending ticket offer when EITHER:
-
-1. The just-loaded conversation history's last message is from the
-   assistant and contains the literal marker substring
-   ``"是否需要協助建立工單"`` — the exact offer sentence
-   ``response_builder._render_no_knowledge`` appends after a NO_KNOWLEDGE
-   result when ticket offering is enabled. This covers a user's bare
-   follow-up ("好，幫我開單") after a *previous* turn's offer.
-2. The current issue's own ``route`` is already ``"TICKET"`` — i.e. the
-   Issue Extractor itself recognised this message as an explicit request to
-   create/check a ticket (spec §11.3's fourth trigger, "使用者主動要求建立
-   工單"), so the offer and the confirmation arrive in the very same turn
-   (e.g. "請幫我建立工單" as the *first* message).
-
-Either way, ticket CREATION additionally always requires
-``is_explicit_ticket_confirmation(text)`` to be true (spec §11.3: 未經明確確認
-不得建立工單) — the pending-offer check only establishes there was a valid
-reason to be listening for a confirmation in the first place; a hedge
-("可能要報修") is never treated as a confirmation regardless of context.
+Ticket intent guardrail
+-----------------------
+Ticket operations are selected from the current message by
+``classify_ticket_intent`` with a fixed ``CANCEL > QUERY > CREATE > NONE``
+precedence.  The LLM's extracted route is never allowed to override that
+guardrail: cancellation is a direct acknowledgement, creation/query use only
+the matching Ticket Service operation, and NONE cannot call Ticket Service.
+This makes a cancellation terminal for the turn and prevents a later bare
+"是" from reviving an earlier offer.
 
 Non-blocking processing (spec §4.2)
 --------------------------------------
@@ -64,7 +50,11 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .confirmation import is_explicit_ticket_confirmation
+from .confirmation import (
+    TicketIntent,
+    classify_ticket_intent,
+    is_pending_ticket_offer_confirmation,
+)
 from .contracts import (
     AgentImage,
     AgentRequest,
@@ -77,7 +67,7 @@ from .contracts import (
     UserContext,
 )
 from .conversation import ConversationService
-from .extractor import IssueExtractor
+from .extractor import IssueExtractor, merge_pending_ticket_issues
 from .faq import FaqService
 from .graph import user_context_from_identity
 from .knowledge import KnowledgeService, LlmCallCounter
@@ -94,9 +84,9 @@ from .ticket import (
 
 logger = logging.getLogger(__name__)
 
-# See module docstring "Pending-ticket state" for why this literal is
-# matched instead of persisting extra state. Kept in sync with the exact
-# Chinese copy in response_builder._render_no_knowledge.
+# This marker remains solely for deciding whether the extractor should see a
+# no-knowledge offer as recent context.  It is not an authorization to create
+# a ticket; ticket actions are always determined from the current turn.
 _TICKET_OFFER_MARKER = "是否需要協助建立工單"
 
 # Progress stages surfaced to the Teams user while the graph runs (spec §5.1
@@ -159,6 +149,7 @@ class AgentState(TypedDict, total=False):
     citations: list[Citation]
     images: list[AgentImage]
     feedback_enabled: bool
+    ticket_intent: TicketIntent
 
 
 def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:
@@ -166,6 +157,31 @@ def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:
         return False
     last = conversation.messages[-1]
     return last.role == "assistant" and _TICKET_OFFER_MARKER in last.text
+
+
+def _pending_offer_issues(conversation: ConversationContext) -> list[Issue]:
+    """Recover the exact issue labels rendered in the live assistant offer."""
+    if not _has_pending_ticket_offer(conversation):
+        return []
+    last = conversation.messages[-1]
+    descriptions = [
+        line.removeprefix("問題：").strip()
+        for line in last.text.splitlines()
+        if line.startswith("問題：") and line.removeprefix("問題：").strip()
+    ]
+    return [
+        Issue(
+            id=index,
+            description=description,
+            isIT=True,
+            readiness="READY",
+            missingInfo=[],
+            route="TICKET",
+            faqKey=None,
+            ticketAction=None,
+        )
+        for index, description in enumerate(descriptions, start=1)
+    ]
 
 
 def _needs_history_for_follow_up(conversation: ConversationContext) -> bool:
@@ -290,21 +306,47 @@ class AgentWorkflow:
         request = state["request"]
         correlation_id = state["correlation_id"]
         conversation = state["conversation"]
-        history = await self.conversation_service.get_history(conversation.conversationId)
-        if not _needs_history_for_follow_up(conversation):
-            history = []
-        faq_keys = self.faq_service.available_keys()
-        outcome = await self.extractor.extract(
-            text=request.message.text,
-            history=history,
-            faq_keys=faq_keys,
-            correlation_id=correlation_id,
-        )
-        counter = LlmCallCounter(count=outcome.llm_calls)
+        ticket_intent = classify_ticket_intent(request.message.text)
+        pending_confirmation = False
+        if (
+            ticket_intent == TicketIntent.NONE
+            and _has_pending_ticket_offer(conversation)
+            and is_pending_ticket_offer_confirmation(request.message.text)
+        ):
+            ticket_intent = TicketIntent.CREATE
+            pending_confirmation = True
+        pending_issues = _pending_offer_issues(conversation) if pending_confirmation else []
+        if pending_issues:
+            # The extractor may recover several outstanding problems from
+            # history. A single confirmation authorizes one combined ticket,
+            # never one attempt per recovered issue.
+            issues = [merge_pending_ticket_issues(pending_issues)]
+            too_many_issues = False
+            llm_calls = 0
+        else:
+            history = await self.conversation_service.get_history(
+                conversation.conversationId
+            )
+            if ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
+                conversation
+            ):
+                history = []
+            faq_keys = self.faq_service.available_keys()
+            outcome = await self.extractor.extract(
+                text=request.message.text,
+                history=history,
+                faq_keys=faq_keys,
+                correlation_id=correlation_id,
+            )
+            issues = outcome.issues
+            too_many_issues = outcome.too_many_issues
+            llm_calls = outcome.llm_calls
+        counter = LlmCallCounter(count=llm_calls)
         return {
-            "issues": outcome.issues,
-            "too_many_issues": outcome.too_many_issues,
+            "issues": issues,
+            "too_many_issues": too_many_issues,
             "llm_call_counter": counter,
+            "ticket_intent": ticket_intent,
         }
 
     async def _filter_it_issues(self, state: AgentState) -> dict:
@@ -312,28 +354,25 @@ class AgentWorkflow:
         return {"it_issues": it_issues}
 
     async def _process_issues(self, state: AgentState) -> dict:
-        request = state["request"]
         correlation_id = state["correlation_id"]
         user = state["user"]
-        conversation = state["conversation"]
         counter = state["llm_call_counter"]
         it_issues = state.get("it_issues", [])
+        ticket_intent = state.get("ticket_intent", TicketIntent.NONE)
 
         lock = asyncio.Lock()
         ticket_created = {"done": False}
-        pending_offer = _has_pending_ticket_offer(conversation)
 
         async def handle(issue: Issue) -> IssueResult:
             try:
                 return await self._handle_issue(
                     issue,
-                    request=request,
                     user=user,
                     correlation_id=correlation_id,
                     counter=counter,
                     lock=lock,
                     ticket_created=ticket_created,
-                    pending_offer=pending_offer,
+                    ticket_intent=ticket_intent,
                 )
             except Exception as exc:  # noqa: BLE001 - one issue must never sink the rest
                 logger.error(
@@ -376,39 +415,34 @@ class AgentWorkflow:
         self,
         issue: Issue,
         *,
-        request: AgentRequest,
         user: UserContext,
         correlation_id: str,
         counter: LlmCallCounter,
         lock: asyncio.Lock,
         ticket_created: dict,
-        pending_offer: bool,
+        ticket_intent: TicketIntent,
     ) -> IssueResult:
+        if ticket_intent == TicketIntent.DELETE_DENIED:
+            return IssueResult(issueId=issue.id, resultType="TICKET_DELETE_DENIED")
+
+        if ticket_intent == TicketIntent.CANCEL:
+            return IssueResult(issueId=issue.id, resultType="TICKET_CANCELLED")
+
+        if ticket_intent in {TicketIntent.CREATE, TicketIntent.QUERY}:
+            return await self._handle_ticket(
+                issue,
+                user=user,
+                correlation_id=correlation_id,
+                lock=lock,
+                ticket_created=ticket_created,
+                ticket_intent=ticket_intent,
+            )
+
         if issue.readiness == "NEED_MORE_INFO":
             return IssueResult(
                 issueId=issue.id,
                 resultType="NEED_MORE_INFO",
                 questions=issue.missingInfo,
-            )
-
-        text = request.message.text
-        if (
-            pending_offer
-            and issue.route != "TICKET"
-            and is_explicit_ticket_confirmation(text)
-        ):
-            # A bare follow-up ("好，幫我開單") answering a PREVIOUS turn's
-            # ticket offer, even though the extractor didn't re-tag this
-            # issue's route as TICKET (spec §11.3 pending-offer path; see
-            # module docstring).
-            return await self._handle_ticket(
-                issue,
-                request=request,
-                user=user,
-                correlation_id=correlation_id,
-                lock=lock,
-                ticket_created=ticket_created,
-                pending_offer=pending_offer,
             )
 
         if issue.route == "FAQ":
@@ -428,15 +462,9 @@ class AgentWorkflow:
             return await self._handle_knowledge(issue, user, correlation_id, counter, lock)
 
         if issue.route == "TICKET":
-            return await self._handle_ticket(
-                issue,
-                request=request,
-                user=user,
-                correlation_id=correlation_id,
-                lock=lock,
-                ticket_created=ticket_created,
-                pending_offer=pending_offer,
-            )
+            # Defense in depth: extractor routes are advisory.  A message
+            # with no deterministic ticket intent must not call Ticket API.
+            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
 
         # Defensive fallback: NOT_IT issues are filtered out before this
         # point (Filter IT Issues node), so this should be unreachable.
@@ -495,20 +523,16 @@ class AgentWorkflow:
         self,
         issue: Issue,
         *,
-        request: AgentRequest,
         user: UserContext,
         correlation_id: str,
         lock: asyncio.Lock,
         ticket_created: dict,
-        pending_offer: bool,
+        ticket_intent: TicketIntent,
     ) -> IssueResult:
-        text = request.message.text
-        wants_create = is_explicit_ticket_confirmation(text) and (
-            issue.route == "TICKET" or pending_offer
-        )
-
-        if not wants_create:
+        if ticket_intent == TicketIntent.QUERY:
             return await self._query_tickets(issue, user, correlation_id)
+        if ticket_intent != TicketIntent.CREATE:
+            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
 
         # Spec §11.4: identity must come ONLY from the trusted Teams/Entra
         # context, never from the user's free text.
@@ -650,6 +674,7 @@ class AgentWorkflow:
             "citations": [],
             "images": [],
             "feedback_enabled": False,
+            "ticket_intent": TicketIntent.NONE,
         }
 
     async def run(

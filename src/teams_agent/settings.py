@@ -44,6 +44,7 @@ class AgentSettings:
     # traffic uses the Bot Framework issuer instead.
     teams_inbound_auth_mode: str = "botframework"
     allow_unauthenticated_requests: bool = False
+    playground_test_user_email: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -112,6 +113,9 @@ class AgentSettings:
                 .lower()
                 in _TRUE_VALUES
             ),
+            playground_test_user_email=(
+                environ.get("PLAYGROUND_TEST_USER_EMAIL", "").strip() or None
+            ),
         )
         settings.validate()
         return settings
@@ -133,6 +137,14 @@ class AgentSettings:
             raise SettingsError(
                 "CLIENT_ID and TENANT_ID are required when "
                 "TEAMS_INBOUND_AUTH_MODE=entra."
+            )
+        if self.playground_test_user_email and not (
+            self.allow_unauthenticated_requests
+            or self.teams_inbound_auth_mode == "entra"
+        ):
+            raise SettingsError(
+                "PLAYGROUND_TEST_USER_EMAIL is allowed only for a local "
+                "unauthenticated Playground or TEAMS_INBOUND_AUTH_MODE=entra."
             )
         if self.user_directory_cache_ttl_seconds <= 0:
             raise SettingsError(

@@ -66,6 +66,8 @@ IssueResultType = Literal[
     "NEED_MORE_INFO",
     "TICKET_CREATED",
     "TICKET_FOUND",
+    "TICKET_CANCELLED",
+    "TICKET_DELETE_DENIED",
     "FAILED",
 ]
 

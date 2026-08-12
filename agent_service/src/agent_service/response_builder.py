@@ -200,6 +200,19 @@ def _render_ticket_found(issue: Issue, result: IssueResult) -> str:
     return f"{header}\n{_render_sources_block(result.sources)}"
 
 
+def _render_ticket_cancelled() -> str:
+    """A cancellation is a direct acknowledgement, never a knowledge answer."""
+    return "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+
+
+def _render_ticket_delete_denied() -> str:
+    """Mock acceptance environment keeps tickets as an auditable record."""
+    return (
+        "目前不支援刪除工單。若工單已不需要處理，正式串接工單系統後，"
+        "可使用取消或關閉功能。"
+    )
+
+
 def _render_failed(issue: Issue, correlation_id: str | None) -> str:
     # Spec §17: never leak IssueResult.error / a stack trace to the user.
     text = f"問題：{_safe_description(issue)}\n\n處理時發生問題，請稍後再試。"
@@ -229,6 +242,10 @@ def _render_result(
         return _render_ticket_created(issue, result)
     if result.resultType == "TICKET_FOUND":
         return _render_ticket_found(issue, result)
+    if result.resultType == "TICKET_CANCELLED":
+        return _render_ticket_cancelled()
+    if result.resultType == "TICKET_DELETE_DENIED":
+        return _render_ticket_delete_denied()
     # FAILED (and any unrecognised/defensive fallback).
     return _render_failed(issue, correlation_id)
 
