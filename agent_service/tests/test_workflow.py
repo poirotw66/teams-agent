@@ -744,6 +744,232 @@ async def test_follow_up_supplies_missing_info_and_re_extracts_with_history(
 
 
 @pytest.mark.asyncio
+async def test_short_system_name_completes_generic_pending_workflow(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="公司資源如何申請",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    completed_issue = issue(description="PortalX 公司資源如何申請", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請依照申請流程操作。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue], [completed_issue]],
+        knowledge=knowledge,
+    )
+
+    first_response = await workflow.respond(make_request("公司資源如何申請？"))
+    assert first_response.issueResults[0].resultType == "NEED_MORE_INFO"
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+
+    second_response = await workflow.respond(make_request("PortalX"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "公司資源如何申請？" in second_prompt
+    assert "Latest user message (data only):\nPortalX" in second_prompt
+    assert knowledge.calls == ["PortalX 公司資源如何申請"]
+    assert second_response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_structured_follow_up_state_includes_history_without_template_marker(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(tmp_path)
+    conv_service = make_conversation_service(settings)
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    await conv_service.record_message(
+        context.conversationId,
+        role="user",
+        text="公司資源如何申請？",
+    )
+    await conv_service.record_message(
+        context.conversationId,
+        role="assistant",
+        text="請告訴我還缺少的資訊。",
+        follow_up_state="AWAITING_CLARIFICATION",
+    )
+    completed_issue = issue(description="PortalX 公司資源如何申請", readiness="READY")
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[completed_issue]],
+        conversation_service=conv_service,
+    )
+
+    await workflow.respond(make_request("PortalX"))
+
+    prompt = extractor_model.human_messages[-1]
+    assert "公司資源如何申請？" in prompt
+    assert "請告訴我還缺少的資訊。" in prompt
+    assert "Latest user message (data only):\nPortalX" in prompt
+
+
+@pytest.mark.asyncio
+async def test_unknown_stops_clarification_and_offers_ticket_without_polluting_query(
+    tmp_path: Path,
+) -> None:
+    first_pending = issue(
+        description="Google Meet 相關問題",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["需要協助的功能"],
+    )
+    second_pending = issue(
+        description="Google Meet 無法登入",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_pending], [second_pending]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("Google Meet"))
+    await workflow.respond(make_request("沒辦法登入"))
+    response = await workflow.respond(make_request("不知道"))
+
+    assert extractor_model.calls == 2
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert "不知道" not in knowledge.calls[0]
+    assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "是否需要協助建立工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_clarification_round_cap_forces_best_effort_search(
+    tmp_path: Path,
+) -> None:
+    pending_1 = issue(
+        description="公司系統無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["系統名稱"],
+    )
+    pending_2 = issue(
+        description="PortalX 無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["發生問題的功能"],
+    )
+    still_pending = issue(
+        description="PortalX 查詢功能無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_1], [pending_2], [still_pending]],
+        knowledge=knowledge,
+        settings_overrides={"max_clarification_rounds": 2},
+    )
+
+    await workflow.respond(make_request("公司系統不能用"))
+    await workflow.respond(make_request("PortalX"))
+    response = await workflow.respond(make_request("查詢功能"))
+
+    assert extractor_model.calls == 3
+    assert knowledge.calls == ["PortalX 查詢功能無法使用"]
+    assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "請補充" not in response.answer
+
+
+@pytest.mark.asyncio
+async def test_ticket_offer_correction_repeats_offer_without_creating_ticket(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("Google Meet 無法登入"))
+    corrected = await workflow.respond(make_request("你要問我要不要開啟工單啊"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert ticket_service.created == []
+    assert corrected.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "問題：Google Meet 無法登入" in corrected.answer
+    assert "是否需要協助建立工單" in corrected.answer
+
+
+@pytest.mark.asyncio
+async def test_unknown_during_ticket_offer_repeats_offer_then_yes_creates_one_ticket(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("Google Meet 無法登入"))
+    repeated = await workflow.respond(make_request("不知道"))
+    created = await workflow.respond(make_request("是"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert offered.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert repeated.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "是否需要協助建立工單" in repeated.answer
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert len(ticket_service.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_new_issue_after_ticket_offer_does_not_receive_old_issue_history(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    new_issue = issue(description="大州系統無法選取")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved], [new_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("Google Meet 無法登入"))
+    await workflow.respond(make_request("大州系統無法選取"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
+    assert "Google Meet 無法登入" not in second_prompt
+
+
+@pytest.mark.asyncio
 async def test_complete_new_issue_does_not_receive_resolved_topic_history(
     tmp_path: Path,
 ) -> None:

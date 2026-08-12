@@ -51,15 +51,22 @@ user_directory_service = build_user_directory_service(
 )
 
 
+def _welcome_message(mode: str) -> str:
+    if mode == "echo":
+        return "你好，我是 Teams AI Agent 測試 Bot。目前為 Echo 測試模式，會原樣回覆訊息。"
+    return (
+        "你好，我是 Teams AI Agent 測試 Bot。"
+        "請描述公司 IT 問題，我會查詢企業知識庫並協助處理。"
+    )
+
+
 @agent_app.on_conversation_update
 async def on_conversation_update(
     ctx: ActivityContext[ConversationUpdateActivity],
 ) -> None:
     if not ctx.activity.members_added:
         return
-    await ctx.send(
-        "你好，我是 Teams AI Agent 測試 Bot。請傳送訊息，我會先用 Echo 模式回覆。"
-    )
+    await ctx.send(_welcome_message(agent_settings.mode))
 
 
 # Commands are matched after the bot's @mention is stripped, not by

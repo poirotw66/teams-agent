@@ -261,8 +261,10 @@ async def test_acceptance_11_reply_includes_source_citations(tmp_path: Path) -> 
 
     assert response.citations
     assert response.citations[0].title == "VPN 疑難排解手冊"
-    assert "來源" in response.answer
-    assert "VPN 疑難排解手冊" in response.answer
+    # The Teams adapter renders citations as the single source section.
+    # Keeping them out of answer avoids showing the same source twice.
+    assert "來源" not in response.answer
+    assert "VPN 疑難排解手冊" not in response.answer
 
 
 # --------------------------------------------------------------------------

@@ -24,6 +24,7 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "RAG_MAX_IMAGES",
         "MAX_ISSUES_PER_MESSAGE",
         "MAX_MISSING_INFO_PER_ISSUE",
+        "MAX_CLARIFICATION_ROUNDS",
         "MAX_HISTORY_MESSAGES",
         "CONVERSATION_HISTORY_ROUNDS",
         "CONVERSATION_TIMEOUT_HOURS",
@@ -59,6 +60,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     assert settings.max_issues_per_message == 3
     assert settings.max_missing_info_per_issue == 2
+    assert settings.max_clarification_rounds == 2
     assert settings.max_history_messages == 10
     assert settings.conversation_history_rounds == 5
     assert settings.conversation_timeout_hours == 24
@@ -112,6 +114,8 @@ def test_max_retrieval_rewrites_explicit_overrides_fallback(
         ("MAX_ISSUES_PER_MESSAGE", "6"),
         ("MAX_MISSING_INFO_PER_ISSUE", "0"),
         ("MAX_MISSING_INFO_PER_ISSUE", "4"),
+        ("MAX_CLARIFICATION_ROUNDS", "0"),
+        ("MAX_CLARIFICATION_ROUNDS", "4"),
         ("MAX_HISTORY_MESSAGES", "-1"),
         ("MAX_HISTORY_MESSAGES", "51"),
         ("CONVERSATION_HISTORY_ROUNDS", "0"),

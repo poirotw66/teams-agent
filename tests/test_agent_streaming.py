@@ -28,6 +28,13 @@ from teams_agent.contracts import (
 from teams_agent.settings import AgentSettings
 
 
+def test_welcome_message_matches_actual_mode() -> None:
+    assert "Echo 測試模式" in agent_module._welcome_message("echo")
+    api_message = agent_module._welcome_message("api")
+    assert "企業知識庫" in api_message
+    assert "Echo" not in api_message
+
+
 class FakeStream:
     """Records what the handler did to the stream, in order."""
 

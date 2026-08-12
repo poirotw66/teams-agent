@@ -747,6 +747,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `AGENT_SERVICE_TOKEN` | 空（不驗證） | 有設定時 `/agent/chat`、`/feedback`、`/retrieval/search` 都要求 `Authorization: Bearer <token>` |
 | `MAX_ISSUES_PER_MESSAGE` | `3` | 單則訊息最多拆解幾個 Issue，範圍 1–5（spec §4.2） |
 | `MAX_MISSING_INFO_PER_ISSUE` | `2` | 每個 Issue 最多追問幾項，範圍 1–3（spec §6.3） |
+| `MAX_CLARIFICATION_ROUNDS` | `2` | 同一個未完成問題最多追問幾輪；達上限後停止追問並以現有資訊處理，範圍 1–3 |
 | `MAX_HISTORY_MESSAGES` | `10` | 載入 workflow context 的歷史訊息上限，範圍 0–50 |
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | 視為「最近對話」的輪數，範圍 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | 對話逾時後起新 conversation，範圍 1–168 |

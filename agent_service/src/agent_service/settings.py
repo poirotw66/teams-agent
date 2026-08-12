@@ -52,6 +52,7 @@ class RagSettings:
     # --- Issue / cost controls (spec §4.2, §6.3, §16) ---
     max_issues_per_message: int = 3
     max_missing_info_per_issue: int = 2
+    max_clarification_rounds: int = 2
     max_history_messages: int = 10
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
@@ -114,6 +115,7 @@ class RagSettings:
             max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
             max_issues_per_message=_int_env("MAX_ISSUES_PER_MESSAGE", 3),
             max_missing_info_per_issue=_int_env("MAX_MISSING_INFO_PER_ISSUE", 2),
+            max_clarification_rounds=_int_env("MAX_CLARIFICATION_ROUNDS", 2),
             max_history_messages=_int_env("MAX_HISTORY_MESSAGES", 10),
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
@@ -179,6 +181,8 @@ class RagSettings:
             raise ValueError("MAX_HISTORY_MESSAGES must be between 0 and 50.")
         if not 1 <= self.conversation_history_rounds <= 20:
             raise ValueError("CONVERSATION_HISTORY_ROUNDS must be between 1 and 20.")
+        if not 1 <= self.max_clarification_rounds <= 3:
+            raise ValueError("MAX_CLARIFICATION_ROUNDS must be between 1 and 3.")
         if not 1 <= self.conversation_timeout_hours <= 168:
             raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
         if not 1 <= self.max_llm_calls_per_request <= 20:

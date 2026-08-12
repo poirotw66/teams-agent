@@ -135,6 +135,29 @@ async def test_single_it_issue_passthrough(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_prompt_treats_underspecified_workplace_workflow_as_pending_it(
+    tmp_path,
+) -> None:
+    canned = IssueExtraction(
+        issues=[
+            issue(
+                description="申請公司資源",
+                readiness="NEED_MORE_INFO",
+                missingInfo=["使用的系統或應用程式名稱"],
+            )
+        ]
+    )
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="這項公司資源要怎麼申請？", history=[], faq_keys=[])
+
+    system_prompt = str(model.calls[0][0].content)
+    assert "workplace capability" in system_prompt
+    assert "product name is missing" in system_prompt
+
+
+@pytest.mark.asyncio
 async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_path) -> None:
     canned = IssueExtraction(issues=[issue(description="大州系統無法選取")])
     model = FakeModel(result=canned)

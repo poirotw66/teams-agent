@@ -122,6 +122,13 @@ test("authenticated UI exposes and proxies the knowledge backend control", async
     const cookie = login.headers.get("set-cookie").split(";", 1)[0];
     const page = await fetch(`${baseUrl}/`, { headers: { cookie } });
     assert.match(await page.text(), /_knowledge-control\.js/);
+    const controlScript = await fetch(`${baseUrl}/_knowledge-control.js`, {
+      headers: { cookie },
+    });
+    const controlScriptText = await controlScript.text();
+    assert.match(controlScriptText, /multi-window-warning/);
+    assert.match(controlScriptText, /Playground 會將回覆同步顯示/);
+    assert.match(controlScriptText, /測試時請只使用一個視窗/);
 
     const status = await fetch(`${baseUrl}/api/knowledge-backend`, { headers: { cookie } });
     assert.equal((await status.json()).activeBackend, "HYBRID");

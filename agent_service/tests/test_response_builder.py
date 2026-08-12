@@ -67,9 +67,9 @@ def test_knowledge_answered_template_matches_spec_13():
     )
     assert built.text == (
         "問題：VPN 錯誤 691\n\n"
-        "處理方式：\n依照知識文件，請先確認帳號密碼是否已更新……\n\n"
-        "來源：\n- vpn-guide.md"
+        "處理方式：\n依照知識文件，請先確認帳號密碼是否已更新……"
     )
+    assert built.citations == [Citation(title="vpn-guide.md")]
 
 
 def test_knowledge_answered_source_with_url_renders_markdown_link():
@@ -83,7 +83,10 @@ def test_knowledge_answered_source_with_url_renders_markdown_link():
     built = build_response(
         issues=[issue], results=[result], settings=make_settings()
     )
-    assert "- [vpn-guide.md](https://example.com/vpn-guide.md)" in built.text
+    assert "來源" not in built.text
+    assert built.citations == [
+        Citation(title="vpn-guide.md", url="https://example.com/vpn-guide.md")
+    ]
 
 
 def test_need_more_info_template_matches_spec_13():

@@ -52,7 +52,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from .contracts import ConversationContext, ConversationMessage
+from .contracts import ConversationContext, ConversationMessage, PendingIssueContext
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -420,7 +420,7 @@ class FirestoreConversationRepository:
       ``expiresAt``.
     - ``{collection}/{conversationId}/messages/{messageId}`` -- one doc per
       message: ``role``, ``text``, ``createdAt``, ``correlationId``,
-      ``sortKey``, ``expiresAt``.
+      ``followUpState``, ``pendingIssues``, ``sortKey``, ``expiresAt``.
     - ``{collection}_keys/{sha256(conversationKey)}`` -- the key index,
       mapping an isolation key (spec §18.4) to its newest conversation id.
       This mirrors ``FileConversationRepository``'s ``index.json`` and
@@ -533,6 +533,8 @@ class FirestoreConversationRepository:
                 text=data.get("text") or "",
                 createdAt=created_at,
                 correlationId=data.get("correlationId"),
+                followUpState=data.get("followUpState") or "NONE",
+                pendingIssues=data.get("pendingIssues") or [],
             )
         except Exception as exc:  # noqa: BLE001 - one bad doc must not fail a request
             logger.warning("Skipping malformed conversation message document (%s)", exc)
@@ -672,6 +674,10 @@ class FirestoreConversationRepository:
                 "text": message.text,
                 "createdAt": message.createdAt,
                 "correlationId": message.correlationId,
+                "followUpState": message.followUpState,
+                "pendingIssues": [
+                    pending.model_dump(mode="json") for pending in message.pendingIssues
+                ],
                 "sortKey": sort_key,
                 "expiresAt": expires_at,
             }
@@ -844,12 +850,16 @@ class ConversationService:
         role: str,
         text: str,
         correlation_id: str | None = None,
+        follow_up_state: str = "NONE",
+        pending_issues: list[PendingIssueContext] | None = None,
     ) -> ConversationMessage:
         message = ConversationMessage(
             role=role,  # type: ignore[arg-type]
             text=text,
             createdAt=self._clock(),
             correlationId=correlation_id,
+            followUpState=follow_up_state,
+            pendingIssues=pending_issues or [],
         )
         await self._repository.save_message(conversation_id, message)
         return message

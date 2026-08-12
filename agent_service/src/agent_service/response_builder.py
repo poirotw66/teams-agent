@@ -154,11 +154,10 @@ def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
 
 
 def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
-    # Spec §13 "Knowledge" — exact shape, source lines list document titles.
-    header = f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
-    if not result.sources:
-        return header
-    return f"{header}\n\n來源：\n{_render_sources_block(result.sources)}"
+    # Citations travel separately in BuiltResponse and are rendered by the
+    # Teams adapter. Keeping them out of the answer body prevents duplicate
+    # source sections in both plain text and Adaptive Cards.
+    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:

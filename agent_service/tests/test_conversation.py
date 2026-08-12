@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from fake_firestore import FakeFirestoreClient
 
-from agent_service.contracts import ConversationMessage
+from agent_service.contracts import ConversationMessage, PendingIssueContext
 from agent_service.conversation import (
     ConversationService,
     FileConversationRepository,
@@ -121,7 +121,19 @@ async def test_save_message_then_get_recent_messages_roundtrip(repository, clock
     )
     clock.advance(minutes=1)
     msg2 = ConversationMessage(
-        role="assistant", text="hello there", createdAt=clock(), correlationId="corr-1"
+        role="assistant",
+        text="hello there",
+        createdAt=clock(),
+        correlationId="corr-1",
+        followUpState="AWAITING_CLARIFICATION",
+        pendingIssues=[
+            PendingIssueContext(
+                description="VPN 無法連線",
+                missingInfo=["錯誤訊息或錯誤碼"],
+                askedQuestions=["錯誤訊息或錯誤碼"],
+                clarificationCount=1,
+            )
+        ],
     )
     await repository.save_message(created.conversationId, msg1)
     await repository.save_message(created.conversationId, msg2)
@@ -130,6 +142,9 @@ async def test_save_message_then_get_recent_messages_roundtrip(repository, clock
     assert [m.text for m in recent] == ["hi", "hello there"]
     assert recent[0].correlationId == "corr-1"
     assert recent[1].role == "assistant"
+    assert recent[1].followUpState == "AWAITING_CLARIFICATION"
+    assert recent[1].pendingIssues[0].description == "VPN 無法連線"
+    assert recent[1].pendingIssues[0].clarificationCount == 1
 
 
 async def test_get_recent_messages_respects_limit_and_is_most_recent(repository, clock):

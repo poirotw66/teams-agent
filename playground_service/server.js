@@ -146,10 +146,15 @@ function knowledgeControlScript() {
   const host = document.createElement("aside");
   host.id = "knowledge-backend-control";
   host.innerHTML = '<strong>知識後端</strong><select aria-label="知識後端"></select><button type="button">套用</button><span role="status">載入中…</span>';
+  const warning = document.createElement("aside");
+  warning.id = "multi-window-warning";
+  warning.setAttribute("role", "note");
+  warning.textContent = "⚠ 多視窗提示：Playground 會將回覆同步顯示於所有已開啟視窗。測試時請只使用一個視窗，避免對話互相影響。";
   const style = document.createElement("style");
-  style.textContent = '#knowledge-backend-control{position:fixed;z-index:2147483647;top:10px;right:16px;display:flex;gap:8px;align-items:center;padding:9px 12px;border:1px solid #d1d1d1;border-radius:8px;background:#fff;box-shadow:0 4px 14px #0002;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424}#knowledge-backend-control select,#knowledge-backend-control button{font:inherit;padding:5px 8px;border:1px solid #8a8886;border-radius:5px;background:#fff}#knowledge-backend-control button{border-color:#5b5fc7;background:#5b5fc7;color:#fff;cursor:pointer}#knowledge-backend-control button:disabled{opacity:.55;cursor:wait}#knowledge-backend-control span{max-width:230px;color:#616161}';
+  style.textContent = '#knowledge-backend-control{position:fixed;z-index:2147483647;top:10px;right:16px;display:flex;gap:8px;align-items:center;padding:9px 12px;border:1px solid #d1d1d1;border-radius:8px;background:#fff;box-shadow:0 4px 14px #0002;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424}#knowledge-backend-control select,#knowledge-backend-control button{font:inherit;padding:5px 8px;border:1px solid #8a8886;border-radius:5px;background:#fff}#knowledge-backend-control button{border-color:#5b5fc7;background:#5b5fc7;color:#fff;cursor:pointer}#knowledge-backend-control button:disabled{opacity:.55;cursor:wait}#knowledge-backend-control span{max-width:230px;color:#616161}#multi-window-warning{position:fixed;z-index:2147483646;top:62px;right:16px;box-sizing:border-box;max-width:min(560px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d83b01;border-radius:8px;background:#fff4ce;box-shadow:0 4px 14px #0002;color:#5c2d00;font:600 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}';
   document.head.appendChild(style);
   document.body.appendChild(host);
+  document.body.appendChild(warning);
   const select = host.querySelector("select");
   const button = host.querySelector("button");
   const status = host.querySelector("span");

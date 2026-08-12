@@ -142,11 +142,26 @@ class UserContext(StrictModel):
         return bool(stable_id and self.displayName and self.email)
 
 
+class PendingIssueContext(StrictModel):
+    """Structured unresolved issue state carried between conversation turns."""
+
+    description: str
+    route: Route = "KNOWLEDGE"
+    faqKey: str | None = None
+    missingInfo: list[str] = Field(default_factory=list)
+    askedQuestions: list[str] = Field(default_factory=list)
+    clarificationCount: int = Field(default=0, ge=0)
+
+
 class ConversationMessage(StrictModel):
     role: Literal["user", "assistant"]
     text: str
     createdAt: datetime
     correlationId: str | None = None
+    followUpState: Literal[
+        "NONE", "AWAITING_CLARIFICATION", "AWAITING_TICKET_CONFIRMATION"
+    ] = "NONE"
+    pendingIssues: list[PendingIssueContext] = Field(default_factory=list)
 
 
 class ConversationContext(StrictModel):
