@@ -3,19 +3,19 @@
     {
       "id": "FAQ_001",
       "faqKey": "PASSWORD_RESET",
-      "enabled": true,
+      "enabled": false,
       "answer": "請至金控入口網（國泰員工入口網）點選「忘記密碼」或「密碼變更」選項進行密碼重設。若仍無法完成，請聯繫「123資訊小幫手」協助處理。"
     },
     {
       "id": "FAQ_002",
       "faqKey": "VPN_HELP",
-      "enabled": true,
+      "enabled": false,
       "answer": "VPN 連線異常時，請先確認網路狀態與帳號密碼是否正確、是否到期或被鎖定。若確認無誤仍無法連線，請聯繫「123資訊小幫手」協助排查。"
     },
     {
       "id": "FAQ_003",
       "faqKey": "IT_CONTACT",
-      "enabled": true,
+      "enabled": false,
       "answer": "如自助處理無法解決問題，請透過內部管道聯繫「123資訊小幫手」尋求人工協助。"
     },
     {
@@ -27,7 +27,7 @@
     {
       "id": "FAQ_005",
       "faqKey": "GITLAB_UNLOCK",
-      "enabled": true,
+      "enabled": false,
       "answer": "Gitlab 帳號解鎖或重置，請透過內部管道聯繫資訊管理處相關負責同仁協助處理。"
     },
     {
