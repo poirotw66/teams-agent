@@ -111,6 +111,7 @@ async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_withou
     [
         ("請協助我開工單", "使用者提出的 IT 支援請求"),
         ("請幫我建立派工單", "使用者提出的 IT 支援請求"),
+        ("屜我開工單", "使用者提出的 IT 支援請求"),
         ("公發手機無法解鎖，請協助我開工單", "公發手機無法解鎖"),
         ("VPN Error 619，請建立工單", "VPN Error 619"),
     ],

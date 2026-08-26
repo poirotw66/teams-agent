@@ -3,7 +3,6 @@ from pathlib import Path
 
 from agent_service.contracts import AgentImage, Citation, Issue, IssueResult
 from agent_service.response_builder import (
-    ALL_NON_IT_MESSAGE,
     FEEDBACK_PROMPT,
     build_response,
 )
@@ -121,14 +120,18 @@ def test_need_more_info_caps_at_two_questions():
     assert "2. Q2" in built.text
 
 
-def test_all_non_it_emits_exact_spec_4_1_message():
-    issue = make_issue(id=1, description="天氣", isIT=False, readiness="NOT_IT", route="NOT_IT")
-    built = build_response(issues=[issue], results=[], settings=make_settings())
-    assert built.text == ALL_NON_IT_MESSAGE
-    assert built.text == (
-        "我目前專門協助處理公司 IT 問題。\n"
-        "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
+def test_all_non_it_names_topic_without_querying_knowledge():
+    issue = make_issue(
+        id=1,
+        description="早餐吃什麼",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
     )
+    built = build_response(issues=[issue], results=[], settings=make_settings())
+    assert "「早餐吃什麼」不屬於公司 IT 支援範圍" in built.text
+    assert "不會查詢企業知識庫" in built.text
+    assert "系統、設備、帳號、權限或錯誤訊息" in built.text
     assert built.feedback_enabled is False
 
 
@@ -324,6 +327,7 @@ def test_ticket_created_reports_id_and_url_when_present():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
     assert "TCK-001" in built.text
     assert "https://tickets.example.com/TCK-001" in built.text
+    assert built.citations == []
 
 
 def test_ticket_found_lists_tickets():
@@ -339,6 +343,7 @@ def test_ticket_found_lists_tickets():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
     assert "TCK-001 (OPEN)" in built.text
     assert "TCK-002 (CLOSED)" in built.text
+    assert built.citations == []
 
 
 def test_ticket_found_with_no_tickets_says_so():

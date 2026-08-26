@@ -93,6 +93,9 @@ _INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
     "找不到相關資訊",
     "找不到相關信息",
 )
+_KNOWLEDGE_GAP_PATTERN = re.compile(
+    r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)"
+)
 
 
 class RelevanceDecision(BaseModel):
@@ -107,14 +110,16 @@ def message_text(message: BaseMessage) -> str:
     return str(message.text).strip()
 
 
-def _answer_indicates_insufficient_information(answer: str) -> bool:
+def answer_indicates_insufficient_information(answer: str) -> bool:
     """Whether a generated answer explicitly says the KB cannot answer.
 
     In that case sources and images would imply support that the answer just
     denied, so HYBRID reports a strict miss instead.
     """
     normalized = answer.lower()
-    return any(marker in normalized for marker in _INSUFFICIENT_INFORMATION_MARKERS)
+    return bool(_KNOWLEDGE_GAP_PATTERN.search(normalized)) or any(
+        marker in normalized for marker in _INSUFFICIENT_INFORMATION_MARKERS
+    )
 
 
 @runtime_checkable
@@ -359,7 +364,7 @@ class HybridKnowledgeService:
         cited_results = [
             result for index, result in enumerate(results) if index in cited_indexes
         ]
-        if _answer_indicates_insufficient_information(answer) or not cited_results:
+        if answer_indicates_insufficient_information(answer) or not cited_results:
             # Do not fall back to every retrieved candidate.  The generated
             # answer either declared a miss or failed to ground itself in a
             # valid [Sx] marker, so candidate sources/images are misleading.

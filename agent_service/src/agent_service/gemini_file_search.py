@@ -23,6 +23,7 @@ from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
 from .file_search_acl import filter_for
 from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
+from .knowledge import answer_indicates_insufficient_information
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,14 @@ class GeminiFileSearchKnowledgeService:
             )
 
         answer = self._canonicalize_legacy_terms(self._response_text(response), chunks)
+        if answer_indicates_insufficient_information(answer):
+            return KnowledgeResult(
+                found=False,
+                answer="",
+                sources=[],
+                images=[],
+                backend="GEMINI_FILE_SEARCH",
+            )
         sources = [
             Citation(
                 title=self._resolve_title(chunk.title),

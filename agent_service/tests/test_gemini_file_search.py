@@ -223,6 +223,44 @@ async def test_no_grounding_chunks_found_false_empty_sources():
     assert result.answer == ""
 
 
+@pytest.mark.asyncio
+async def test_grounded_answer_that_declares_insufficient_information_is_a_miss():
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        text="目前知識庫中沒有足夠關於公司大廳門禁申請的資訊。",
+        grounding_chunks=[
+            make_chunk(make_context(title="unrelated-shared-folder.md"))
+        ],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("公司大廳門禁申請", UserContext(groups=[]))
+
+    assert result.found is False
+    assert result.answer == ""
+    assert result.sources == []
+    assert result.images == []
+
+
+@pytest.mark.asyncio
+async def test_grounded_permission_answer_is_not_mistaken_for_a_knowledge_miss():
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        text="您目前沒有足夠權限，請依文件流程申請。",
+        grounding_chunks=[make_chunk(make_context(title="permission-guide.md"))],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("為什麼無法存取？", UserContext(groups=[]))
+
+    assert result.found is True
+    assert result.sources[0].title == "permission-guide.md"
+
+
 # --- ACL ---------------------------------------------------------------
 
 

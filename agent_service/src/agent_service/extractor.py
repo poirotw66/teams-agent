@@ -143,12 +143,12 @@ _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _GENERIC_TICKET_DESCRIPTION = "使用者提出的 IT 支援請求"
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
 _TICKET_COMMAND_RE = re.compile(
-    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?|協助我?)*"
+    r"(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好[，,]?|協助我?)*"
     r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?(?:派)?工單|開單|報修"
 )
 _TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
 _COURTESY_ONLY_RE = re.compile(
-    r"^(?:請|麻煩|幫我|幫忙|我要|確認|確定|好的?|協助我?|謝謝(?:你|您)?)+$"
+    r"^(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好的?|協助我?|謝謝(?:你|您)?)+$"
 )
 
 

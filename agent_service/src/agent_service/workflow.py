@@ -97,6 +97,9 @@ logger = logging.getLogger(__name__)
 # no-knowledge offer as recent context.  It is not an authorization to create
 # a ticket; ticket actions are always determined from the current turn.
 _TICKET_OFFER_MARKER = "是否需要協助建立派工單"
+_TICKET_DETAIL_QUESTION = (
+    "請描述需要建立派工單的 IT 問題，例如使用的系統、功能或錯誤訊息。"
+)
 
 # Progress stages surfaced to the Teams user while the graph runs (spec §5.1
 # node boundaries, reused as user-visible progress).
@@ -453,8 +456,8 @@ def _issues_for_create_offer(
             id=1,
             description=fallback,
             isIT=True,
-            readiness="READY",
-            missingInfo=[],
+            readiness="NEED_MORE_INFO",
+            missingInfo=[_TICKET_DETAIL_QUESTION],
             route="TICKET",
             faqKey=None,
             ticketAction=None,
@@ -503,25 +506,30 @@ def _usable_ticket_contexts(
 def _recent_ticket_contexts(
     conversation: ConversationContext,
 ) -> list[PendingIssueContext]:
-    for message in reversed(conversation.messages):
-        if message.role == "user" and _abandons_pending_issue(message.text):
-            return []
-        if message.role != "assistant":
-            continue
-        if "已為你建立派工單" in message.text or "目前不會建立派工單" in message.text:
-            return []
-        usable = _usable_ticket_contexts(list(message.pendingIssues))
-        if usable:
-            return usable
-        usable = _usable_ticket_contexts(
-            [
-                PendingIssueContext(description=description)
-                for description in _issue_descriptions_from_assistant_text(message.text)
-            ]
-        )
-        if usable:
-            return usable
-    return []
+    if not conversation.messages:
+        return []
+    message = conversation.messages[-1]
+    if message.role != "assistant":
+        return []
+    if "已為你建立派工單" in message.text or "目前不會建立派工單" in message.text:
+        return []
+    usable = _usable_ticket_contexts(list(message.pendingIssues))
+    if usable:
+        return usable
+    return _usable_ticket_contexts(
+        [
+            PendingIssueContext(description=description)
+            for description in _issue_descriptions_from_assistant_text(message.text)
+        ]
+    )
+
+
+def _is_pending_ticket_detail(
+    pending_issues: list[PendingIssueContext],
+) -> bool:
+    return bool(pending_issues) and all(
+        pending.route == "TICKET" for pending in pending_issues
+    )
 
 
 def _needs_history_for_follow_up(conversation: ConversationContext) -> bool:
@@ -748,6 +756,22 @@ class AgentWorkflow:
                     for issue in issues
                 ]
         if (
+            ticket_intent == TicketIntent.NONE
+            and _is_pending_ticket_detail(prior_pending_issues)
+            and any(issue.isIT for issue in issues)
+        ):
+            issues = [
+                issue.model_copy(update={"route": "TICKET"})
+                if issue.isIT
+                else issue
+                for issue in issues
+            ]
+            if all(
+                not issue.isIT or issue.readiness == "READY"
+                for issue in issues
+            ):
+                ticket_intent = TicketIntent.CREATE
+        if (
             ticket_intent == TicketIntent.CREATE
             and not pending_confirmation
             and self.settings.ticket_service_mode != "DISABLED"
@@ -788,6 +812,12 @@ class AgentWorkflow:
         async def handle(issue: Issue) -> IssueResult:
             try:
                 if state.get("force_ticket_offer", False):
+                    if issue.readiness == "NEED_MORE_INFO":
+                        return IssueResult(
+                            issueId=issue.id,
+                            resultType="NEED_MORE_INFO",
+                            questions=issue.missingInfo,
+                        )
                     return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
                 return await self._handle_issue(
                     issue,

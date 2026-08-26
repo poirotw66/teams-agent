@@ -65,7 +65,7 @@ from .settings import RagSettings
 # only supplies the prompt copy and the boolean flag.
 FEEDBACK_PROMPT = "這個回答有解決你的問題嗎？"
 
-# Spec §4.1: exact message when every issue in the message is non-IT.
+# Fallback when no issue description is available.
 ALL_NON_IT_MESSAGE = (
     "我目前專門協助處理公司 IT 問題。\n"
     "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
@@ -144,6 +144,17 @@ def _render_not_it(issue: Issue) -> str:
     return f"{_safe_description(issue)}問題不在此 IT 助手的服務範圍。"
 
 
+def _render_all_not_it(issues: list[Issue]) -> str:
+    topics = list(dict.fromkeys(_safe_description(issue) for issue in issues))
+    if not topics:
+        return ALL_NON_IT_MESSAGE
+    quoted_topics = "、".join(f"「{topic}」" for topic in topics)
+    return (
+        f"{quoted_topics}不屬於公司 IT 支援範圍，因此我不會查詢企業知識庫。\n"
+        "我可以協助處理公司系統、設備、帳號、權限或錯誤訊息等 IT 問題。"
+    )
+
+
 def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "FAQ" — exact template.
     return (
@@ -163,6 +174,8 @@ def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "Need More Info" — numbered, at most 2 questions (§6.3).
     questions = result.questions[:_MAX_QUESTIONS]
+    if issue.route == "TICKET":
+        return "\n".join(questions)
     numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, start=1))
     return f"為了協助確認 {_safe_description(issue)} 問題，請補充：\n\n{numbered}"
 
@@ -293,9 +306,8 @@ def build_response(
     results_by_issue_id = {result.issueId: result for result in results}
 
     if ordered_issues and all(not issue.isIT for issue in ordered_issues):
-        # Spec §4.1: exact standalone message when every issue is non-IT.
         return BuiltResponse(
-            text=ALL_NON_IT_MESSAGE,
+            text=_render_all_not_it(ordered_issues),
             citations=[],
             images=[],
             feedback_enabled=False,
@@ -351,7 +363,8 @@ def build_response(
             if multiple_issues
             else rendered
         )
-        all_sources.extend(result.sources)
+        if result.resultType not in {"TICKET_CREATED", "TICKET_FOUND"}:
+            all_sources.extend(result.sources)
         all_images.extend(result.images)
         if result.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES:
             feedback_eligible = True

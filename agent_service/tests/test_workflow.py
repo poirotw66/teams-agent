@@ -31,7 +31,6 @@ from agent_service.contracts import (
 from agent_service.conversation import ConversationService, InMemoryConversationRepository
 from agent_service.extractor import IssueExtractor
 from agent_service.faq import FaqRepository, FaqService
-from agent_service.response_builder import ALL_NON_IT_MESSAGE
 from agent_service.settings import RagSettings
 from agent_service.ticket import TicketServiceDisabledError
 from agent_service.workflow import AgentWorkflow
@@ -378,7 +377,7 @@ async def test_all_non_it_issues(tmp_path: Path) -> None:
 
     response = await workflow.respond(make_request("今天天氣如何？午餐吃什麼？"))
 
-    assert response.answer == ALL_NON_IT_MESSAGE
+    assert "「天氣」、「午餐」不屬於公司 IT 支援範圍" in response.answer
     assert response.issueResults == []
 
 
@@ -590,7 +589,7 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     )
 
     offered = await workflow.respond(
-        make_request("請幫我建立工單", user=trusted_user())
+        make_request("VPN 一直斷線，請幫我建立工單", user=trusted_user())
     )
     response = await workflow.respond(
         make_request("是", user=trusted_user())
@@ -611,18 +610,25 @@ async def test_dispatch_ticket_request_offers_confirmation_without_knowledge_mis
 ) -> None:
     ticket_service = FakeTicketService()
     workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[]], ticket_service=ticket_service
+        tmp_path,
+        issues_sequence=[[issue(description="電腦無法開機")]],
+        ticket_service=ticket_service,
     )
 
-    offered = await workflow.respond(make_request("請協助建立派工單"))
+    requested = await workflow.respond(make_request("請協助建立派工單"))
 
-    assert offered.answer == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+    assert requested.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
     assert ticket_service.created == []
+
+    offered = await workflow.respond(make_request("電腦無法開機"))
+    assert offered.answer == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
 
     created = await workflow.respond(make_request("<是>"))
 
     assert created.issueResults[0].resultType == "TICKET_CREATED"
     assert "已為你建立派工單" in created.answer
+    assert ticket_service.created[0][0].description == "電腦無法開機"
 
 
 @pytest.mark.asyncio
@@ -701,7 +707,7 @@ async def test_create_command_with_current_issue_does_not_reuse_older_context(
 
 
 @pytest.mark.asyncio
-async def test_generic_create_ticket_skips_non_it_aside_and_reuses_recent_it_issue(
+async def test_generic_create_ticket_does_not_cross_non_it_aside(
     tmp_path: Path,
 ) -> None:
     ticket_service = FakeTicketService()
@@ -727,15 +733,11 @@ async def test_generic_create_ticket_skips_non_it_aside_and_reuses_recent_it_iss
 
     await workflow.respond(make_request("公發手機無法解鎖"))
     aside = await workflow.respond(make_request("今天天氣如何？"))
-    offered = await workflow.respond(make_request("請幫我建立派工單"))
-    created = await workflow.respond(make_request("是"))
+    requested = await workflow.respond(make_request("請幫我建立派工單"))
 
-    assert aside.answer == ALL_NON_IT_MESSAGE
-    assert "是否需要協助建立派工單" in offered.answer
-    draft, _correlation_id = ticket_service.created[0]
-    assert draft.description == "公發手機無法解鎖"
-    assert "天氣" not in draft.description
-    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert "「今天天氣如何？」不屬於公司 IT 支援範圍" in aside.answer
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio
@@ -765,12 +767,10 @@ async def test_generic_create_ticket_does_not_reuse_abandoned_issue(
 
     await workflow.respond(make_request("公發手機無法解鎖"))
     await workflow.respond(make_request("算了"))
-    await workflow.respond(make_request("請幫我建立派工單"))
-    await workflow.respond(make_request("是"))
+    requested = await workflow.respond(make_request("請幫我建立派工單"))
 
-    draft, _correlation_id = ticket_service.created[0]
-    assert draft.description == "使用者提出的 IT 支援請求"
-    assert "公發手機" not in draft.description
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio
@@ -794,14 +794,11 @@ async def test_generic_create_ticket_without_it_history_does_not_use_non_it_text
     )
 
     await workflow.respond(make_request("今天天氣如何？"))
-    offered = await workflow.respond(make_request("請協助我開工單"))
-    created = await workflow.respond(make_request("是"))
+    requested = await workflow.respond(make_request("屜我開工單"))
 
-    assert "是否需要協助建立派工單" in offered.answer
-    draft, _correlation_id = ticket_service.created[0]
-    assert draft.description == "使用者提出的 IT 支援請求"
-    assert "天氣" not in draft.description
-    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert "屜我" not in requested.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio
@@ -814,7 +811,7 @@ async def test_ticket_refused_when_identity_untrusted(tmp_path: Path) -> None:
     untrusted = UserIdentity(teamsUserId="teams-1")  # missing displayName/email
 
     offered = await workflow.respond(
-        make_request("請幫我建立工單", user=untrusted)
+        make_request("VPN 一直斷線，請幫我建立工單", user=untrusted)
     )
     response = await workflow.respond(
         make_request("是", user=untrusted)
@@ -835,7 +832,9 @@ async def test_one_ticket_per_turn(tmp_path: Path) -> None:
         tmp_path, issues_sequence=[[issue1, issue2]], ticket_service=ticket_service
     )
 
-    offered = await workflow.respond(make_request("請幫我建立工單"))
+    offered = await workflow.respond(
+        make_request("VPN 斷線，而且 Outlook 當機，請幫我建立工單")
+    )
     response = await workflow.respond(make_request("是"))
 
     assert "是否需要協助建立派工單" in offered.answer
@@ -1026,7 +1025,7 @@ async def test_non_it_aside_does_not_discard_pending_clarification(
         teams_conversation_id="conv-1",
         teams_user_id="user-1",
     )
-    assert aside_response.answer == ALL_NON_IT_MESSAGE
+    assert "「早餐吃麥當勞」不屬於公司 IT 支援範圍" in aside_response.answer
     assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
     assert context.messages[-1].pendingIssues[0].contextText == "會議如何借用？"
 
