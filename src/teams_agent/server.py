@@ -50,25 +50,71 @@ class EntraPlaygroundTokenValidator:
         return await self._validator.validate_token(raw_token, None, scope)
 
 
-def configure_inbound_auth(app: object, settings: AgentSettings) -> None:
-    """Select the JWT issuer used for inbound Playground/Teams activities."""
-    if settings.teams_inbound_auth_mode != "entra":
-        return
+class DualInboundTokenValidator:
+    """Accept either Bot Framework (Teams) or Entra (Playground) JWTs.
+
+    Real Teams / Azure Bot traffic uses the Bot Framework issuer. The hosted
+    Agents Playground uses a tenant-scoped Entra client-credentials token.
+    One Cloud Run adapter must accept both when demos and private Apps share
+    the same messaging endpoint.
+    """
+
+    def __init__(self, primary: Any, secondary: Any) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    async def validate_token(
+        self,
+        raw_token: str,
+        service_url: str | None = None,
+        scope: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            return await self._primary.validate_token(raw_token, service_url, scope)
+        except Exception as primary_error:
+            try:
+                return await self._secondary.validate_token(
+                    raw_token, service_url, scope
+                )
+            except Exception:
+                raise primary_error from None
+
+
+def _entra_playground_validator(settings: AgentSettings) -> EntraPlaygroundTokenValidator:
     if not settings.client_id or not settings.tenant_id:
         raise ValueError("Entra inbound auth requires client_id and tenant_id")
-
-    # The SDK currently exposes no public hook for replacing only the inbound
-    # validator. This preserves Bot Framework credentials for outbound sends
-    # while accepting the Playground's tenant-scoped Entra token.
-    server = app.server  # type: ignore[attr-defined]
-    server._token_validator = EntraPlaygroundTokenValidator(
+    return EntraPlaygroundTokenValidator(
         TokenValidator.for_entra(
             settings.client_id,
             settings.tenant_id,
         )
     )
-    logger.info("Inbound activity JWT validation configured for Entra Playground")
 
+
+def configure_inbound_auth(app: object, settings: AgentSettings) -> None:
+    """Select the JWT issuer used for inbound Playground/Teams activities."""
+    mode = settings.teams_inbound_auth_mode
+    if mode == "botframework":
+        return
+
+    # The SDK currently exposes no public hook for replacing only the inbound
+    # validator. This preserves Bot Framework credentials for outbound sends
+    # while accepting the Playground's tenant-scoped Entra token.
+    server = app.server  # type: ignore[attr-defined]
+    entra = _entra_playground_validator(settings)
+    if mode == "entra":
+        server._token_validator = entra
+        logger.info("Inbound activity JWT validation configured for Entra Playground")
+        return
+
+    # mode == "both": keep the SDK Bot Framework validator and fall back to Entra.
+    server._token_validator = DualInboundTokenValidator(
+        server._token_validator,
+        entra,
+    )
+    logger.info(
+        "Inbound activity JWT validation configured for Bot Framework and Entra Playground"
+    )
 
 def build_readiness(settings: AgentSettings) -> dict[str, object]:
     """Readiness payload reported by `GET /readyz`.

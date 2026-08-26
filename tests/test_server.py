@@ -7,6 +7,7 @@ from PIL import Image
 
 from teams_agent.media import build_asset_url
 from teams_agent.server import (
+    DualInboundTokenValidator,
     EntraPlaygroundTokenValidator,
     build_readiness,
     configure_inbound_auth,
@@ -96,6 +97,34 @@ def test_configure_inbound_auth_uses_entra_validator(tmp_path, monkeypatch) -> N
     assert app.server._token_validator._validator is sentinel
 
 
+def test_configure_inbound_auth_dual_wraps_botframework_and_entra(
+    tmp_path, monkeypatch
+) -> None:
+    settings = make_settings(tmp_path, teams_inbound_auth_mode="both")
+    entra_sentinel = object()
+    bot_framework = object()
+
+    class FakeServer:
+        _token_validator = bot_framework
+
+    class FakeApp:
+        server = FakeServer()
+
+    monkeypatch.setattr(
+        "teams_agent.server.TokenValidator.for_entra",
+        lambda client_id, tenant_id: entra_sentinel,
+    )
+
+    app = FakeApp()
+    configure_inbound_auth(app, settings)
+
+    dual = app.server._token_validator
+    assert isinstance(dual, DualInboundTokenValidator)
+    assert dual._primary is bot_framework
+    assert isinstance(dual._secondary, EntraPlaygroundTokenValidator)
+    assert dual._secondary._validator is entra_sentinel
+
+
 @pytest.mark.asyncio
 async def test_entra_playground_validator_omits_botframework_service_url() -> None:
     calls = []
@@ -115,6 +144,40 @@ async def test_entra_playground_validator_omits_botframework_service_url() -> No
 
     assert payload == {"aud": "client-1"}
     assert calls == [("token", None, "scope-1")]
+
+
+@pytest.mark.asyncio
+async def test_dual_inbound_validator_falls_back_to_secondary() -> None:
+    class RejectPrimary:
+        async def validate_token(self, raw_token, service_url, scope):
+            raise ValueError("botframework rejected")
+
+    class AcceptSecondary:
+        async def validate_token(self, raw_token, service_url, scope):
+            return {"iss": "entra"}
+
+    validator = DualInboundTokenValidator(RejectPrimary(), AcceptSecondary())
+
+    payload = await validator.validate_token("token", "https://smba.example", None)
+
+    assert payload == {"iss": "entra"}
+
+
+@pytest.mark.asyncio
+async def test_dual_inbound_validator_prefers_primary() -> None:
+    class AcceptPrimary:
+        async def validate_token(self, raw_token, service_url, scope):
+            return {"iss": "botframework"}
+
+    class RejectSecondary:
+        async def validate_token(self, raw_token, service_url, scope):
+            raise AssertionError("secondary should not run")
+
+    validator = DualInboundTokenValidator(AcceptPrimary(), RejectSecondary())
+
+    payload = await validator.validate_token("token", None, None)
+
+    assert payload == {"iss": "botframework"}
 
 
 def test_signed_asset_url_is_served(tmp_path: Path) -> None:

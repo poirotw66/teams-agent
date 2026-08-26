@@ -140,6 +140,42 @@ def test_playground_test_email_is_allowed_for_entra_playground() -> None:
     settings.validate()
 
 
+def test_playground_test_email_is_allowed_for_both_mode() -> None:
+    settings = AgentSettings(
+        playground_test_user_email="playground.user@example.test",
+        teams_inbound_auth_mode="both",
+        client_id="client-1",
+        tenant_id="tenant-1",
+    )
+
+    settings.validate()
+
+
+def test_both_inbound_auth_requires_app_identity() -> None:
+    settings = AgentSettings(teams_inbound_auth_mode="both")
+
+    with pytest.raises(SettingsError, match="CLIENT_ID and TENANT_ID"):
+        settings.validate()
+
+
+def test_playground_identity_fallback_covers_entra_and_both() -> None:
+    entra = AgentSettings(
+        teams_inbound_auth_mode="entra",
+        client_id="client-1",
+        tenant_id="tenant-1",
+    )
+    both = AgentSettings(
+        teams_inbound_auth_mode="both",
+        client_id="client-1",
+        tenant_id="tenant-1",
+    )
+    botframework = AgentSettings(teams_inbound_auth_mode="botframework")
+
+    assert entra.uses_playground_identity_fallback is True
+    assert both.uses_playground_identity_fallback is True
+    assert botframework.uses_playground_identity_fallback is False
+
+
 def test_resolved_feedback_url_derives_from_api_url() -> None:
     settings = AgentSettings(
         mode="api",

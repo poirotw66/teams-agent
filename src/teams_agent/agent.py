@@ -190,10 +190,7 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
     if not email:
         entra_object_id = sender.aad_object_id if sender else None
         email = await user_directory_service.get_email(entra_object_id)
-    if not email and (
-        agent_settings.allow_unauthenticated_requests
-        or agent_settings.teams_inbound_auth_mode == "entra"
-    ):
+    if not email and agent_settings.uses_playground_identity_fallback:
         # Agents Playground mock users do not carry a resolvable corporate
         # email. This opt-in is accepted only in the explicitly unsafe local
         # mode; AgentSettings rejects it for Cloud Run and real Teams.

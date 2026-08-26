@@ -41,7 +41,8 @@ class AgentSettings:
     tenant_id: str | None = None
     # Cloud-hosted Microsoft 365 Agents Playground sends an Entra client-
     # credentials token directly to the bot endpoint. Real Teams/Bot Framework
-    # traffic uses the Bot Framework issuer instead.
+    # traffic uses the Bot Framework issuer instead. Deployed adapters that
+    # must serve both set TEAMS_INBOUND_AUTH_MODE=both.
     teams_inbound_auth_mode: str = "botframework"
     allow_unauthenticated_requests: bool = False
     playground_test_user_email: str | None = None
@@ -127,24 +128,25 @@ class AgentSettings:
             raise SettingsError(
                 "USER_DIRECTORY_MODE must be either 'disabled' or 'graph'."
             )
-        if self.teams_inbound_auth_mode not in {"botframework", "entra"}:
+        if self.teams_inbound_auth_mode not in {"botframework", "entra", "both"}:
             raise SettingsError(
-                "TEAMS_INBOUND_AUTH_MODE must be either 'botframework' or 'entra'."
+                "TEAMS_INBOUND_AUTH_MODE must be 'botframework', 'entra', or 'both'."
             )
-        if self.teams_inbound_auth_mode == "entra" and not (
+        if self.teams_inbound_auth_mode in {"entra", "both"} and not (
             self.client_id and self.tenant_id
         ):
             raise SettingsError(
                 "CLIENT_ID and TENANT_ID are required when "
-                "TEAMS_INBOUND_AUTH_MODE=entra."
+                "TEAMS_INBOUND_AUTH_MODE is 'entra' or 'both'."
             )
         if self.playground_test_user_email and not (
             self.allow_unauthenticated_requests
-            or self.teams_inbound_auth_mode == "entra"
+            or self.teams_inbound_auth_mode in {"entra", "both"}
         ):
             raise SettingsError(
                 "PLAYGROUND_TEST_USER_EMAIL is allowed only for a local "
-                "unauthenticated Playground or TEAMS_INBOUND_AUTH_MODE=entra."
+                "unauthenticated Playground or TEAMS_INBOUND_AUTH_MODE "
+                "'entra'/'both'."
             )
         if self.user_directory_cache_ttl_seconds <= 0:
             raise SettingsError(
@@ -257,6 +259,17 @@ class AgentSettings:
     @property
     def ready(self) -> bool:
         return self.mode == "echo" or bool(self.api_url)
+
+    @property
+    def uses_playground_identity_fallback(self) -> bool:
+        """Whether missing activity emails may be filled from PLAYGROUND_TEST_USER_EMAIL.
+
+        Hosted Playground traffic is accepted in `entra` and `both` modes.
+        Local Teams SDK devtools use the unauthenticated escape hatch.
+        """
+        return self.allow_unauthenticated_requests or (
+            self.teams_inbound_auth_mode in {"entra", "both"}
+        )
 
     @property
     def teams_auth_ready(self) -> bool:
