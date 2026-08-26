@@ -115,7 +115,7 @@ regression test 釘住。
 | 15 | 效能壓測報告 | [`performance-test-report.md`](performance-test-report.md) |
 | 16 | Dockerfile | `Dockerfile`、`agent_service/Dockerfile` |
 | 17 | `.env.example` | `.env.example`、`agent_service/.env.example` |
-| 18 | README | `README.md`、`agent_service/README.md` |
+| 18 | README | `README.md`（English）、`README-TW.md`（繁中）、`agent_service/README.md`、`agent_service/README-TW.md` |
 | 19 | Cloud Run 部署說明 | [`../deploy/README.md`](../deploy/README.md) |
 | 20 | Teams App 設定與測試說明 | [`teams-app-setup.md`](teams-app-setup.md) |
 

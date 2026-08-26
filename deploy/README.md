@@ -88,7 +88,7 @@ separate Cloud Run services with different exposure and different config:
 | Visibility | `--allow-unauthenticated` (public; the Bot Framework service must reach it) | `--no-allow-unauthenticated` (private; only the Adapter's service account has `roles/run.invoker`) |
 | Auth to the other service | N/A | Verifies each caller is the Adapter, via Cloud Run IAM identity tokens (`AGENT_API_AUTH_MODE=google_id_token`, `AGENT_API_AUDIENCE=<agent-url>`) |
 | Config source | `.env` at the project root / `.env.example` | `agent_service/.env` / `agent_service/.env.example` |
-| Full env var reference | [`../README.md`](../README.md) | [`../README.md`](../README.md) |
+| Full env var reference | [`../README.md`](../README.md) ([繁中](../README-TW.md)) | [`../README.md`](../README.md) ([繁中](../README-TW.md)) |
 
 Never merge the two into one Cloud Run service or one `.env` file — the
 private/public split is what lets the Agent Service (which holds the
@@ -132,8 +132,8 @@ from the code default — see the next section. `FAQ_PATH` and
 `CONVERSATION_STORE_PATH` are left unset (they default to
 `RAG_DATA_DIR/faq.json` and `RAG_DATA_DIR/conversations`, which resolve
 correctly under `/app/data` inside the container). See
-[`../README.md`](../README.md) for the full table with
-defaults and valid ranges, and
+[`../README.md`](../README.md) for the full table with defaults and valid
+ranges ([Traditional Chinese](../README-TW.md)), and
 [`../docs/gemini-file-search-spike.md`](../docs/gemini-file-search-spike.md)
 before ever setting `KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH` here — that
 mode also needs the `spike` extra installed, which the production image

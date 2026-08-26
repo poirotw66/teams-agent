@@ -1,206 +1,216 @@
 # Teams Agent Backend
 
-這是一個可擴充的 Microsoft Teams AI Agent，使用 Python、[Microsoft Teams
-SDK](https://microsoft.github.io/teams-sdk)（`microsoft-teams-apps`）與
-LangGraph。Teams Adapter、Agentic RAG、Gemini hybrid retrieval、
-來源圖片 Adaptive Card 與 GCP Cloud Run 部署均已完成。
+> English (this page) | [繁體中文](./README-TW.md)
 
-> **2026-08 架構變更：Microsoft 365 Agents SDK → Microsoft Teams SDK。**
-> 集團沒有 Azure Subscription，也無法建立 Azure Bot Service resource，因此
-> Teams Adapter 已改用 Microsoft Teams SDK，bot 註冊改在 [Teams Developer
-> Portal](https://dev.teams.microsoft.com/apps) 完成——只需要一個 Entra ID
-> app registration（隨 Microsoft 365 授權提供），不需要 Azure 訂閱。
-> 三個 `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__*` 環境變數已由
-> `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID` 取代。
-> 詳見 [`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
-> 本文件第 3 節以後仍留有先前 Azure Bot 時期的驗收紀錄，作為歷史脈絡保留；
-> 設定步驟一律以第 1、2 節與 `docs/teams-app-setup.md` 為準。
+This is an **internal enterprise IT assistant POC** that runs in Microsoft Teams, built with Python,
+[Microsoft Teams SDK](https://microsoft.github.io/teams-sdk)
+(`microsoft-teams-apps`), and LangGraph. Colleagues can ask questions in a channel or 1:1 chat, and the system will:
+
+1. Decide whether the question is IT-related and split it into at most three independent Issues
+2. Prefer FAQ hits; otherwise run Hybrid RAG over internal knowledge and attach sources / images
+3. Ask follow-up questions when information is missing; when it cannot resolve the issue, create or query a ticket after explicit confirmation
+4. Persist conversation context and collect 👍 / 👎 feedback
+
+Teams Adapter, LangGraph Workflow, Hybrid RAG, Mock Ticket, Firestore conversation
+persistence, progress streaming, and GCP Cloud Run deployment are all complete. See the spec in
+[`teams_agent_requirement_architect_revised.md`](teams_agent_requirement_architect_revised.md);
+acceptance mapping is in [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md).
+
+> **2026-08 architecture change: Microsoft 365 Agents SDK → Microsoft Teams SDK.**
+> The group has no Azure Subscription and cannot create an Azure Bot Service resource, so
+> the Teams Adapter now uses the Microsoft Teams SDK, and bot registration is done in the [Teams Developer
+> Portal](https://dev.teams.microsoft.com/apps)—only an Entra ID
+> app registration is required (included with Microsoft 365 licensing); no Azure subscription is needed.
+> The three `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__*` environment variables have been replaced by
+> `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID`.
+> See [`docs/teams-app-setup.md`](docs/teams-app-setup.md).
+> Later sections of this document still retain a few acceptance notes from the earlier Azure Bot
+> period for historical context; current setup and test flows follow this section, sections 1 and 2, and `docs/teams-app-setup.md`.
 
 ```text
-使用者：hello
-Bot：收到：hello
+使用者：vpn無法連線
+Bot：依知識庫回覆排除步驟 + 來源引用（可附圖）+ 👍/👎
 ```
 
-服務端點：
+Service endpoints:
 
-Teams Adapter（公開）：
+Teams Adapter (public):
 
-- `POST /api/messages`：Teams SDK 註冊的 Messaging endpoint（由 SDK 驗證
-  Bot Framework JWT）
-- `GET /healthz`：部署平台的健康檢查
-- `GET /readyz`：Teams 憑證與 Agent 模式的就緒檢查
-- `GET /rag-assets/{path}`：簽章保護的來源圖片（供 Teams 端載入）
+- `POST /api/messages`: Messaging endpoint registered by the Teams SDK (Bot Framework JWT verified
+  by the SDK)
+- `GET /healthz`: Health check for the deployment platform
+- `GET /readyz`: Readiness check for Teams credentials and Agent mode
+- `GET /rag-assets/{path}`: Signed, protected source images (loaded by Teams clients)
 
-Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
+Agent Service (private; callable only by the Adapter — see section 5):
 
-- `POST /agent/chat`：LangGraph Workflow 主入口
-- `POST /agent/chat/stream`：同上，但以 SSE 逐步回報進度（見第 4.3 節）
-- `POST /feedback`：記錄 👍/👎 回饋（spec §14）
-- `POST /retrieval/search`：純檢索除錯用端點
-- `GET /healthz` / `GET /readyz`：健康檢查與索引就緒檢查
+- `POST /agent/chat`: LangGraph Workflow main entry
+- `POST /agent/chat/stream`: Same as above, but reports progress step-by-step via SSE (see section 4.3)
+- `POST /feedback`: Records 👍 / 👎 feedback (spec §14)
+- `POST /retrieval/search`: Retrieval-only debug endpoint
+- `GET /healthz` / `GET /readyz`: Health check and index readiness check
 
-> **部署後請用 `/readyz` 而非 `/healthz` 驗證服務。** 從公司網路對 Cloud Run 上的
-> 服務請求 `/healthz` 會得到 Google 的 404 錯誤頁，且回應不含
-> `x-cloud-trace-context` 或 `server: Google Frontend` 標頭——代表該路徑在抵達
-> Cloud Run 之前就被攔截，請求從未進入容器。同一支程式在本機測試 `/healthz`
-> 回 200 正常，線上既有的 `teams-rag-agent` 也是同樣症狀，可見這是環境層行為而非
-> 程式缺陷（2026-08-06 實測）。`/readyz` 不受影響，且會額外回報已載入的 chunk 數。
-> Cloud Run 預設的容器健康檢查走 TCP，不受此影響。
+> **After deployment, verify the service with `/readyz`, not `/healthz`.** Requests to `/healthz` on the Cloud Run
+> service from the corporate network return Google's 404 error page, and the response has no
+> `x-cloud-trace-context` or `server: Google Frontend` headers—meaning the path is intercepted
+> before it reaches Cloud Run, so the request never enters the container. The same binary returns 200 for `/healthz`
+> in local tests, and the existing online `teams-rag-agent` shows the same symptom, so this is environment-layer behavior rather than
+> an application defect (verified 2026-08-06). `/readyz` is unaffected and additionally reports the loaded chunk count.
+> Cloud Run's default container health check uses TCP and is not affected.
 
-## 專案狀態
+## Project status
 
-截至 2026-07-29：
+As of 2026-08-26:
 
-- Milestone 1「Azure Bot 與本機後端打通」已完成。
-- Milestone 2 的 Teams app package 已成功上傳公司 Teams。
-- Teams 頻道的 LangGraph RAG 端到端測試已成功。
-- 下一個驗收點是將 Teams Developer Portal 的 bot endpoint 從 Dev Tunnel 切換至
-  Cloud Run Adapter。
+- Teams Adapter has moved to the Microsoft Teams SDK, with the bot managed in Teams Developer Portal.
+- The Teams app package has been uploaded to company Teams; channel `@Bot` Echo and Agent API / RAG end-to-end have succeeded.
+- LangGraph Workflow covers: conversation context, Issue extraction, IT classification, FAQ, follow-up questions,
+  Hybrid RAG, ticket confirmation flow, Deterministic Response Builder, and Feedback.
+- Locally you can run the full path with `scripts/simulate_teams.py` or `./start.sh`; Agent
+  Service `/readyz` and Adapter Adaptive Card replies have been verified.
+- Most of the twenty-two POC §19 items already pass via automation; remaining work is **switching the Teams Developer Portal bot
+  endpoint to the Cloud Run Adapter** and re-testing in the cloud. See
+  [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md).
 
-截至 2026-07-30，GCP Cloud Run 部署已完成：
+GCP Cloud Run (from 2026-07-30, with ongoing redeploys):
 
-- Teams Adapter：`https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app`
-- Private RAG Agent：`https://teams-rag-agent-jt7pjdeeoa-de.a.run.app`
-- Region：`asia-east1`
-- Project：`itr-aimasteryhub-lab`
-- Adapter → Agent 使用 Cloud Run IAM identity token
-- API Key、Bot client secret 與圖片 signing key 使用 Secret Manager
+- Teams Adapter: `https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app`
+- Private Agent: `https://teams-rag-agent-jt7pjdeeoa-de.a.run.app`
+- Region: `asia-east1` / Project: `itr-aimasteryhub-lab`
+- Adapter → Agent: Cloud Run IAM identity token
+- Conversation persistence: Firestore (`CONVERSATION_REPOSITORY_MODE=FIRESTORE`)
+- Secrets: API Key, Bot client secret, image signing key → Secret Manager
+- Optional: Agents Playground / Mock Ticket short-lived test environments (see `deploy/`)
 
-本機開發路徑已驗證：
+Local development path:
 
 ```text
-Teams 用戶端（或 Teams SDK devtools）
-→ 公開 HTTPS Dev Tunnel
+Teams／simulate_teams／Devtools
+→ HTTPS Dev Tunnel（或 localhost）
 → POST /api/messages
-→ Microsoft Teams SDK
-→ Echo handler
-→ Teams 顯示「收到：hello」
+→ Microsoft Teams SDK Adapter
+→ AGENT_MODE=api 時呼叫 Agent Service
+→ LangGraph Workflow（FAQ／RAG／工單…）
+→ Adaptive Card（答案 + 來源 + 圖片 + 👍/👎）
 ```
 
-雲端正式路徑已驗證至 Cloud Run Adapter／Agent：
+Cloud path (Adapter / Agent already deployed; becomes the production entry once the bot endpoint is switched):
 
 ```text
-Teams／Bot Framework 服務
+Teams
+→ Bot Framework 服務（Teams Developer Portal 註冊）
 → Public Cloud Run Teams Adapter
 → Cloud Run IAM identity token
 → Private Cloud Run LangGraph Agent
-→ Gemini 3.5 Flash-Lite
-→ Gemini Embedding 2 hybrid retrieval
-→ Answer + citation + signed source image
+→ Gemini 3.5 Flash-Lite + Embedding 2 hybrid retrieval
+→ Answer + citation + signed source image + feedback
 ```
 
-已完成項目：
+### Completed (summary)
 
-- [x] 建立 Python 3.11 專案與 `uv` 開發環境
-- [x] 使用 Microsoft Teams SDK 建立 `App`（2026-08 前為 M365 Agents SDK 的 `AgentApplication`）
-- [x] 以 Entra app registration 憑證連接 Teams（2026-08 前為 MSAL connection manager + Azure Bot）
-- [x] 建立受 Bot Framework JWT 保護的 `POST /api/messages`
-- [x] 建立公開的 `GET /healthz`
-- [x] 支援歡迎訊息、`/help` 與 Echo 回覆
-- [x] 清除 Teams 訊息中的 Bot `@mention`
-- [x] 擷取 tenant、team、channel、conversation 與 Entra user metadata
-- [x] 建立 Echo／Agent API 雙模式
-- [x] 建立 Agent Gateway request／response contract
-- [x] 支援 Agent timeout、錯誤降級、trace ID 與來源引用
-- [x] 建立 `/readyz` readiness endpoint
-- [x] 使用 Dev Tunnels 暴露本機 HTTPS endpoint
-- [x] 端到端測試成功（當時走 Azure Bot `Test in Web Chat`）
-- [x] 加入 Dockerfile、環境變數範例、單元測試與 Ruff
-- [x] 確認錯誤 App ID 會被 JWT audience validation 阻擋
+Communications and deployment:
 
-Teams 與後續里程碑狀態：
+- [x] Python 3.11 + `uv`, Dockerfile, unit / integration tests, Ruff
+- [x] Microsoft Teams SDK Adapter (`CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID`)
+- [x] `POST /api/messages`, `/healthz`, `/readyz`, `/rag-assets/*`
+- [x] Echo / API dual modes, timeout / error degradation, correlation / trace ID
+- [x] Dev Tunnel local connectivity; Teams app package upload and channel end-to-end
+- [x] Cloud Run dual services, IAM, Secret Manager
+- [x] 1:1 DM progress streaming (`/agent/chat/stream` SSE); channels use a single reply
 
-- [x] 啟用 Microsoft Teams channel
-- [x] 建立通過 v1.25 schema 驗證的 Teams app package
-- [x] 加入 manifest v1.25 必要的 `supportsChannelFeatures`
-- [x] 使用 Microsoft 365 公司／學校帳號將 app package 上傳到 Teams
-- [ ] 在 Teams 頻道以 `@Bot` 完成 Echo 測試
-- [x] 建立獨立 LangGraph Agentic RAG Gateway
-- [x] 將 `data/sources` 內部文件建立為中文檢索索引
-- [x] 完成 route、retrieve、relevance、rewrite、grounded answer graph
-- [x] 完成來源引用、文件 ACL、service token 與 tenant allowlist
-- [x] RAG 回答可攜帶來源圖片並以 Teams Adaptive Card 顯示
-- [x] 圖片使用短效 HMAC 簽名 URL、路徑防護與 Teams 尺寸最佳化
-- [x] 選定 Gemini 3.5 Flash-Lite 與 Gemini Embedding 2
-- [x] 由 Teams 頻道完成 Agent API 模式端到端驗收
-- [ ] 串接唯讀內部 API 工具
-- [x] 部署 Teams Adapter 與 LangGraph Agent 至 GCP Cloud Run
-- [x] 設定 private service-to-service IAM 與 Secret Manager
-- [ ] 將 Teams Developer Portal 的 bot endpoint 切換至 Cloud Run Adapter
+Agent Workflow (spec §4–§14):
 
-## 架構
+- [x] Conversation (MEMORY / FILE / FIRESTORE) with timeout and multi-turn follow-ups
+- [x] Issue Extractor (up to 3 issues), IT / non-IT classification
+- [x] FAQ fixed answers (no LLM call)
+- [x] Hybrid RAG (BM25 + embedding), ACL, citation, source-image Adaptive Card
+- [x] No fabrication without knowledge; HMAC-signed images, path protection, Teams size optimization
+- [x] Tickets require explicit confirmation; HTTP Ticket Adapter + local / cloud Mock Ticket
+- [x] Query the current user's own tickets; Feedback 👍 / 👎
+- [x] Token / cost estimates written to backend logs; Retrieval A/B, security, and performance reports (`docs/`)
 
-目前實作為雙服務分離：公開的 Teams Adapter 負責 Bot 通訊與圖片簽章，
-私有的 LangGraph Agent 負責檢索與 grounded 回答。
+### In progress / TODO
+
+- [ ] Switch the Teams Developer Portal bot endpoint to the Cloud Run Adapter and re-test in the cloud
+- [ ] On the next deploy, apply Agent SA `roles/datastore.user` (Firestore takes effect in production)
+- [ ] Connect a real ticket system (POC may keep Mock / DISABLED; Production Ticket is not a required acceptance item)
+- [ ] Wire read-only internal API tools (Milestone 5)
+- [ ] Production monitoring / alerting, FAQ evaluation set, and formal citation URL mapping
+
+## Architecture
+
+Two-service split: the public Teams Adapter handles Bot communications, streaming progress, image signing, and
+Adaptive Cards; the private LangGraph Agent handles conversation, Issues, FAQ, knowledge retrieval, and tickets.
 
 ![Teams Agent 專案架構圖](./team-agent-arc.png)
 
-本機開發時，Adapter 跑在 `:3978`、Agent 跑在 `:8000`，Teams Developer Portal
-的 bot endpoint 指向 Dev Tunnel；雲端則以 Cloud Run Adapter URL 取代 tunnel。
-回答可帶 citation 與來源圖片 metadata；Adapter 再把相對路徑簽成短效 URL，
-並把圖片縮放到 Teams 可用尺寸後放入 Adaptive Card。
+Locally: Adapter `:3978`, Agent `:8000`, with the bot endpoint pointing at a Dev Tunnel.
+In the cloud: replace the tunnel with the Cloud Run Adapter URL. Answers can include citations and source images;
+the Adapter signs relative paths into short-lived URLs, resizes thumbnails into Adaptive Cards, and can attach Feedback
+buttons.
 
-### 架構決策與限制（spec §2.1、§3.2、§3.3）
+### Architecture decisions and constraints (spec §2.1, §3.2, §3.3)
 
-以下限制是既有的、經審視過的架構決策，不是尚待補完的缺口，後續開發不應在
-沒有新證據的情況下推翻：
+These constraints are existing, reviewed architecture decisions—not unfinished gaps. Later development should not overturn them
+without new evidence:
 
-- **不因假設重寫語言／框架**：本專案維持 Python 與 LangGraph。是否改用其他
-  語言或框架，必須根據壓力測試結果、確認的功能缺口、維運能力或 SDK 支援狀況
-  決定，不得只因「其他語言可能適合高併發」而重寫。
-  2026-08 從 Microsoft 365 Agents SDK 換成 Microsoft Teams SDK 正是符合這條
-  原則的例子：不是假設，而是確認的封鎖性限制——集團沒有 Azure Subscription，
-  無法建立 Agents SDK 所依賴的 Azure Bot Service resource。語言（Python）、
-  Agent Service、LangGraph 與 Cloud Run 架構皆未更動，改動範圍限於
-  `src/teams_agent/` 這層薄通訊層。
-- **Hybrid RAG 維持預設**：`KNOWLEDGE_SERVICE_MODE=HYBRID`
-  (`HybridKnowledgeService`) 是預設且唯一的正式知識後端。
-  `GeminiFileSearchKnowledgeService`（`KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH`）
-  目前僅供技術 Spike 使用（見
-  [`docs/gemini-file-search-spike.md`](docs/gemini-file-search-spike.md)），
-  只有在 Retrieval A/B Test（spec §18.7）證明其品質、成本或維運具有明顯優
-  勢後，才可能改為預設。
-- **外部能力一律走介面**：Knowledge Service、Conversation Repository、
-  Ticket Service、User Directory Service 皆以 Protocol/Interface 封裝
-  （分別見 `agent_service/src/agent_service/{knowledge,conversation,ticket}.py`
-  與 `src/teams_agent/directory.py`）。LangGraph Workflow 不得直接依賴特
-  定資料庫、檢索產品或工單系統。
-- **POC 階段不預先建立未來平台能力**：不建立完整 Issue Repository、完整
-  案件生命週期、工單催辦平台、FAQ／知識庫管理後台、Multi-Agent Framework、
-  Approval Framework 或正式高可用／災難復原機制。這些留待 POC 驗證業務價
-  值後，依實際需求評估。
+- **Do not rewrite language / framework on assumptions**: This project stays on Python and LangGraph. Whether to switch languages
+  or frameworks must be decided from load-test results, confirmed capability gaps, operational capacity, or SDK support—
+  not merely because “another language might be better for concurrency.”
+  The 2026-08 move from Microsoft 365 Agents SDK to Microsoft Teams SDK is an example that follows this
+  principle: not an assumption, but a confirmed blocking constraint—the group has no Azure Subscription and
+  cannot create the Azure Bot Service resource that Agents SDK depends on. Language (Python),
+  Agent Service, LangGraph, and the Cloud Run architecture were unchanged; the change was limited to the thin
+  communication layer in `src/teams_agent/`.
+- **Hybrid RAG remains the default**: `KNOWLEDGE_SERVICE_MODE=HYBRID`
+  (`HybridKnowledgeService`) is the default and only formal knowledge backend.
+  `GeminiFileSearchKnowledgeService` (`KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH`)
+  is currently for technical Spike use only (see
+  [`docs/gemini-file-search-spike.md`](docs/gemini-file-search-spike.md));
+  it may become the default only after a Retrieval A/B Test (spec §18.7) proves a clear advantage in
+  quality, cost, or operations.
+- **External capabilities always go through interfaces**: Knowledge Service, Conversation Repository,
+  Ticket Service, and User Directory Service are all wrapped by Protocol/Interface
+  (see `agent_service/src/agent_service/{knowledge,conversation,ticket}.py`
+  and `src/teams_agent/directory.py`). The LangGraph Workflow must not depend directly on a specific
+  database, retrieval product, or ticket system.
+- **POC phase does not pre-build future platform capabilities**: Do not build a full Issue Repository, full
+  case lifecycle, ticket escalation platform, FAQ / knowledge-base admin console, Multi-Agent Framework,
+  Approval Framework, or formal HA / disaster-recovery mechanisms. Leave those until after the POC validates business
+  value, then evaluate against real needs.
 
-## 1. 必要條件
+## 1. Prerequisites
 
-- Python 3.11–3.13（Microsoft Teams SDK 要求 `>= 3.11`）
-- 一個 Entra ID app registration（Microsoft 365 內含，**不需要 Azure 訂閱**）
-- 在 [Teams Developer Portal](https://dev.teams.microsoft.com/apps) 完成的
-  bot 設定，messaging endpoint 指向本服務的 `/api/messages`
-- 上述 app registration 的：
+- Python 3.11–3.13 (Microsoft Teams SDK requires `>= 3.11`)
+- An Entra ID app registration (included with Microsoft 365; **no Azure subscription required**)
+- Bot configuration completed in the [Teams Developer Portal](https://dev.teams.microsoft.com/apps),
+  with the messaging endpoint pointing at this service's `/api/messages`
+- From that app registration:
   - Application (client) ID → `CLIENT_ID`
   - Directory (tenant) ID → `TENANT_ID`
   - Client secret **Value** → `CLIENT_SECRET`
 
-**不需要**：Azure Subscription、Azure Bot Service resource、Azure Portal。
-完整步驟見 [`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
+**Not required**: Azure Subscription, Azure Bot Service resource, Azure Portal.
+Full steps are in [`docs/teams-app-setup.md`](docs/teams-app-setup.md).
 
-Client secret 只放在本機 `.env` 或雲端 Secret Manager，不可提交到 Git。
+Keep the client secret only in local `.env` or cloud Secret Manager; never commit it to Git.
 
-## 2. 本機設定
+## 2. Local setup
 
-使用 `uv`：
+Use `uv`. The repo root and Agent Service each have their own environment:
 
 ```bash
 uv sync --extra dev
 cp .env.example .env
+cd agent_service && uv sync --extra dev && cp .env.example .env && cd ..
 cp -r data/sources.sample data/sources   # 見下方說明
 ```
 
-`data/sources/` 存放公司內部真實知識文件、是 gitignored 的，所以剛 clone 的
-repo 沒有語料，Agent Service 會啟動失敗。`data/sources.sample/` 提供一份範例
-語料讓本機開發能直接跑；拿到真實文件後放進 `data/sources/` 取代即可。
+`data/sources/` holds real internal company knowledge documents and is gitignored, so a freshly cloned
+repo has no corpus and Agent Service will fail to start. `data/sources.sample/` provides sample
+corpus so local development can run immediately; replace it by putting real documents into `data/sources/` when you have them.
 
-編輯 `.env`：
+Edit `.env`:
 
 ```dotenv
 CLIENT_ID=<Application (client) ID>
@@ -210,29 +220,33 @@ PORT=3978
 AGENT_MODE=echo
 ```
 
-啟動：
+To verify RAG, also confirm that `agent_service/.env` uses the default `HYBRID` retrieval mode, and leave
+`RAG_MODEL` and `RAG_EMBEDDING_MODEL` empty to use local mode that needs no external API key.
+To test Gemini generation and embeddings, configure the model and API key per
+[`agent_service/README.md`](agent_service/README.md).
+
+Start:
 
 ```bash
 uv run teams-agent
 ```
 
-也可以從專案根目錄一次啟動 Agent Service、Teams Adapter 與 Dev Tunnel：
+Or from the project root, start Agent Service, Teams Adapter, and Dev Tunnel in one go:
 
 ```bash
 ./start.sh
 ```
 
-若 Dev Tunnel 已由其他 Terminal 執行：
+If Dev Tunnel is already running in another terminal:
 
 ```bash
 START_TUNNEL=false ./start.sh
 ```
 
-`Ctrl+C` 會停止由腳本啟動的所有子程序。若 `3978` 或 `8000` 已被舊程序占用，
-腳本會先停止並提示需要手動關閉哪個服務。
+`Ctrl+C` stops all child processes started by the script. If `3978` or `8000` is already occupied by an old process,
+the script stops first and tells you which service to close manually.
 
-不需要 Teams、Azure 或 devtunnel，就能把一輪完整對話跑過一次（含 Bot 送出去
-的訊息）：
+Without Teams, Azure, or devtunnel, you can still run one full conversation round (including the message the Bot would send):
 
 ```bash
 uv run python scripts/simulate_teams.py                     # Echo 模式
@@ -240,34 +254,53 @@ uv run python scripts/simulate_teams.py \
     --agent-url http://localhost:8000/agent/chat            # 完整 RAG + 串流
 ```
 
-驗收順序與檢查點見
-[`docs/teams-app-setup.md` §5.5](docs/teams-app-setup.md)。
+Before a RAG simulation, start Agent Service in another terminal:
 
-確認 health 與 readiness endpoints：
+```bash
+cd agent_service
+uv run rag-agent
+```
+
+Confirm RAG readiness and run the smoke test:
+
+```bash
+curl http://localhost:8000/readyz
+cd ..
+uv run python scripts/simulate_teams.py \
+  --agent-url http://localhost:8000/agent/chat
+```
+
+On success, readiness shows loaded `chunks` and `retrieval: "hybrid"`, and the simulator should finally print
+`OK`. This test validates the full local path Adapter → Agent Service → RAG → Teams activity.
+
+Acceptance order and checkpoints are in
+[`docs/teams-app-setup.md` §5.5](docs/teams-app-setup.md).
+
+Confirm health and readiness endpoints:
 
 ```bash
 curl http://localhost:3978/healthz
 curl http://localhost:3978/readyz
 ```
 
-預期結果：
+Expected results:
 
 ```json
 {"status": "ok"}
 {"status": "ready", "agentMode": "echo", "teamsAuth": "ready", "ragImages": "disabled"}
 ```
 
-`teamsAuth` 為 `not_configured`（`/readyz` 回 503）代表 `.env` 缺少
-`CLIENT_ID` / `CLIENT_SECRET`，Teams SDK 無法驗證進來的 Bot Framework JWT。
+`teamsAuth` as `not_configured` (`/readyz` returns 503) means `.env` is missing
+`CLIENT_ID` / `CLIENT_SECRET`, so the Teams SDK cannot verify incoming Bot Framework JWTs.
 
-`POST /api/messages` 由 Teams SDK 驗證 Bot Framework JWT，因此不能用普通 `curl`
-模擬完整 Bot Activity。本機若要在沒有憑證的情況下測試，可暫時設定
-`DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true`——**僅限本機**，
-絕不可用於 Cloud Run。
+`POST /api/messages` is JWT-verified by the Teams SDK, so ordinary `curl` cannot
+simulate a full Bot Activity. For local testing without credentials, you may temporarily set
+`DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true`—**local only**;
+never use it on Cloud Run.
 
-### 本機 Log
+### Local logs
 
-只要 `uv run teams-agent` 保持執行，Teams／Web Chat 的請求會顯示在 Terminal：
+While `uv run teams-agent` stays running, Teams / Web Chat requests appear in the terminal:
 
 ```text
 INFO teams_agent.agent Message received:
@@ -276,30 +309,29 @@ request_id=<uuid> channel=msteams conversation=<conversation-id>
 POST /api/messages HTTP/1.1 200
 ```
 
-目前 log 刻意不記錄使用者完整問題、Bot 回答、Client Secret 或 API Token。
-每次請求會保留 request ID、channel 與 conversation ID 供問題追蹤。
+Logs intentionally do not record the user's full question, Bot answer, Client Secret, or API Token.
+Each request keeps request ID, channel, and conversation ID for troubleshooting.
 
-Log level 可在 `.env` 設定：
+Log level can be set in `.env`:
 
 ```dotenv
 LOG_LEVEL=INFO
 ```
 
-需要更詳細的本機除錯資訊時可暫時改為 `DEBUG`，修改後必須重新啟動 Bot。
-Dev Tunnel 的 inspect URL 可用來查看 HTTP 流量，但不得分享其中的
-Authorization header。
+Temporarily switch to `DEBUG` for more local debug detail; restart the Bot after changing it.
+The Dev Tunnel inspect URL can show HTTP traffic, but never share Authorization headers from it.
 
-## 3. 讓 Teams 連到本機
+## 3. Connect Teams to local
 
-開發時可使用 Microsoft Dev Tunnels 或其他提供公開 HTTPS 的 tunnel：
+During development you can use Microsoft Dev Tunnels or another tunnel that provides public HTTPS:
 
 ```bash
 devtunnel user login -e
 devtunnel host -p 3978 --allow-anonymous
 ```
 
-使用 CLI 顯示的 `Connect via browser` URL；不要使用 inspect URL 或 tunnel ID。
-取得 tunnel HTTPS URL 後，在 Teams Developer Portal 設定：
+Use the `Connect via browser` URL shown by the CLI; do not use the inspect URL or tunnel ID.
+After you have the tunnel HTTPS URL, configure it in Teams Developer Portal:
 
 ```text
 https://dev.teams.microsoft.com/apps
@@ -309,50 +341,50 @@ https://dev.teams.microsoft.com/apps
 → https://<tunnel-domain>/api/messages
 ```
 
-儲存後把 app package 側載到 Teams（見
-[`docs/teams-app-setup.md`](docs/teams-app-setup.md)），在頻道 @mention Bot
-或開 1:1 聊天傳送 `hello`。成功時 Bot 應回覆：
+Save, then sideload the app package into Teams (see
+[`docs/teams-app-setup.md`](docs/teams-app-setup.md)), @mention the Bot in a channel,
+or open a 1:1 chat and send `hello`. On success the Bot should reply:
 
 ```text
 收到：hello
 ```
 
-本機測試期間必須同時保持兩個程序執行：
+During local testing you must keep both processes running:
 
 ```text
 Terminal 1：uv run teams-agent
 Terminal 2：devtunnel host -p 3978 --allow-anonymous
 ```
 
-### 常見錯誤
+### Common errors
 
-`Invalid audience` 表示 `.env` 的 `CLIENT_ID` 與 Teams Developer Portal 中
-bot 的 App ID 不完全相同。請特別檢查多餘字元、前導字元及複製錯誤，修正後
-重新啟動後端。
+`Invalid audience` means the `CLIENT_ID` in `.env` does not exactly match the bot App ID in Teams Developer Portal.
+Check carefully for extra characters, leading characters, and copy/paste mistakes; then
+restart the backend after fixing.
 
-瀏覽器直接開啟 `/` 或 `/api/messages` 時看到 401／`Method Not Allowed`
-是正常行為。瀏覽器只能直接檢查 `/healthz` 與 `/readyz`；`/api/messages`
-必須以 `POST` 並攜帶 Bot Framework JWT 呼叫。
+Seeing 401 / `Method Not Allowed` when opening `/` or `/api/messages` directly in a browser
+is expected. Browsers can only check `/healthz` and `/readyz` directly; `/api/messages`
+must be called with `POST` and a Bot Framework JWT.
 
-## 4. Agent 模式
+## 4. Agent modes
 
-### Echo 模式
+### Echo mode
 
-開發與 Teams 通訊驗證階段使用：
+Use during development and Teams connectivity validation:
 
 ```dotenv
 AGENT_MODE=echo
 ```
 
-這個模式不會呼叫外部 AI：
+This mode does not call external AI:
 
 ```text
 hello → 收到：hello
 ```
 
-### API 模式
+### API mode
 
-本專案已在 `agent_service/` 建立 LangGraph Agent Gateway。啟動後設定：
+This project already provides a LangGraph Agent Gateway under `agent_service/`. After starting it, set:
 
 ```dotenv
 AGENT_MODE=api
@@ -361,10 +393,10 @@ AGENT_API_TOKEN=<internal-service-token>
 AGENT_API_TIMEOUT_SECONDS=10
 ```
 
-非 localhost 的 `AGENT_API_URL` 強制使用 HTTPS。Token 只能放在 `.env`、
-Secret Manager 或 Key Vault，不可寫入程式碼與 Git。
+Non-localhost `AGENT_API_URL` values must use HTTPS. Keep tokens only in `.env`,
+Secret Manager, or Key Vault—never in code or Git.
 
-Teams Adapter 送出的 request：
+Request sent by the Teams Adapter:
 
 ```json
 {
@@ -388,7 +420,7 @@ Teams Adapter 送出的 request：
 }
 ```
 
-Agent Gateway 最小 response：
+Minimal Agent Gateway response:
 
 ```json
 {
@@ -412,20 +444,20 @@ Agent Gateway 最小 response：
 }
 ```
 
-若 Agent API timeout、連線失敗或回傳格式錯誤，Teams 會收到友善降級訊息與
-request trace ID。
+If the Agent API times out, fails to connect, or returns a bad payload, Teams receives a friendly degraded message plus
+the request trace ID.
 
-### RAG 圖片 Adaptive Card
+### RAG image Adaptive Card
 
-來源 Markdown 使用相對圖片語法：
+Source Markdown uses relative image syntax:
 
 ```markdown
 ![大州無法點選 — IE 安全性調整](../assets/大州系統_功能無法點選/p01.png)
 ```
 
-Agent Gateway 只回傳經驗證的相對圖片路徑；Teams Adapter 會產生一小時有效的
-HMAC signed URL、將圖片縮到最長邊 1024 pixels、限制在 1 MB，再放入
-Adaptive Card。根目錄 `.env` 需要：
+The Agent Gateway returns only validated relative image paths; the Teams Adapter creates a one-hour
+HMAC signed URL, resizes the image so the longest side is 1024 pixels, caps size at 1 MB, then places it in an
+Adaptive Card. Root `.env` needs:
 
 ```dotenv
 BOT_PUBLIC_BASE_URL=https://<目前的-3978-dev-tunnel-domain>
@@ -436,22 +468,22 @@ RAG_ASSET_MAX_DIMENSION=1024
 RAG_ASSET_MAX_BYTES=1000000
 ```
 
-產生開發用 signing key：
+Generate a development signing key:
 
 ```bash
 openssl rand -hex 32
 ```
 
-`BOT_PUBLIC_BASE_URL` 只填 domain，不加 `/api/messages`。Dev Tunnel URL
-改變時必須同步更新並重新啟動 Teams Adapter。`GET /readyz` 的
-`ragImages` 應為 `ready`。圖片 signed URL 到期後不可再次讀取；正式環境請將
-signing key 放入 Secret Manager 或 Key Vault。
+`BOT_PUBLIC_BASE_URL` is domain only—do not append `/api/messages`. When the Dev Tunnel URL
+changes, update it and restart the Teams Adapter. `GET /readyz`
+`ragImages` should be `ready`. Expired image signed URLs cannot be read again; in production put the
+signing key in Secret Manager or Key Vault.
 
-### 4.3 進度串流（Streaming）
+### 4.3 Progress streaming
 
-`AGENT_MODE=api` 時，Adapter 會呼叫 Agent Service 的
-`POST /agent/chat/stream`（SSE），把 LangGraph 的節點進度即時顯示給使用者，
-不必等整個 workflow 跑完才看到第一個字：
+When `AGENT_MODE=api`, the Adapter calls Agent Service
+`POST /agent/chat/stream` (SSE) and shows LangGraph node progress to the user in real time,
+so they do not wait for the whole workflow to finish before seeing the first update:
 
 ```text
 已收到你的問題…
@@ -462,35 +494,35 @@ signing key 放入 Secret Manager 或 Key Vault。
 [Adaptive Card 最終答案 + 來源 + 👍/👎]
 ```
 
-**只在 1:1 私訊生效。** Teams 平台不支援在頻道與群組聊天串流訊息，Adapter
-會先看 `conversation.conversationType`，非 `personal` 時直接走原本的單次回覆
-路徑（不會多花一次失敗的往返）。本專案 `defaultInstallScope` 是 `team`，
-所以**多數頻道流量本來就不會串流**——這是 Teams 的限制，不是設定問題。
+**Only works in 1:1 DMs.** The Teams platform does not support streaming messages in channels or group chats; the Adapter
+first checks `conversation.conversationType`, and for anything other than `personal` uses the original single-reply
+path (no extra failed round-trip). This project's `defaultInstallScope` is `team`,
+so **most channel traffic will not stream**—that is a Teams limitation, not a configuration issue.
 
-其他行為：
+Other behavior:
 
-- 最終的 Adaptive Card 是串流的收尾訊息。Teams 只允許在串流的**最後一則**
-  訊息帶附件，因此進度文字會先被清掉，由卡片取代而不是疊加在下面。
-- 串流過程若失敗，使用者一定會拿到東西：Teams 拒絕串流 → 退回一般回覆；
-  Agent Service 回報錯誤 → 顯示標準錯誤訊息與追蹤編號；使用者按下 Stop 或
-  超過 Teams 的兩分鐘串流上限 → 保留已顯示的內容，不重複回答。
-- 答案內容與 `POST /agent/chat` **完全一致**，串流只改變使用者*何時*看到，
-  不改變*看到什麼*。
-- `AGENT_STREAMING_ENABLED=false` 可整個關掉，行為回到單次回覆。
+- The final Adaptive Card is the streaming closing message. Teams only allows attachments on the **last**
+  streaming message, so progress text is cleared and replaced by the card rather than stacked underneath.
+- If streaming fails mid-way, the user always gets something: Teams rejects streaming → fall back to a normal reply;
+  Agent Service reports an error → show the standard error message and trace ID; user presses Stop or
+  exceeds Teams' two-minute streaming limit → keep already-shown content and do not answer again.
+- Answer content is **identical** to `POST /agent/chat`; streaming only changes *when* the user sees it,
+  not *what* they see.
+- `AGENT_STREAMING_ENABLED=false` turns streaming off entirely and returns to single-reply behavior.
 
-> **為什麼是「階段」而不是逐字（token）串流。** spec §5.3 要求 Response
-> Builder 必須是純字串樣板、不得呼叫 LLM，答案在進到它之前就已由 FAQ／
-> Knowledge Service 產生完畢——也就是說 `final_response` 成形時已經沒有
-> token 流可以轉發了。而使用者實際在等的是 Issue 抽取與知識庫檢索，正好
-> 就是這些階段涵蓋的範圍。要做到真正的逐字串流，必須改寫 Knowledge
-> Service 的 grounded answer 產生流程（且多 issue 併發時的輸出順序需要
-> 重新設計），屬於另一個獨立議題。
+> **Why “stages” instead of token-by-token streaming.** Spec §5.3 requires the Response
+> Builder to be a pure string template with no LLM calls; the answer is already produced by FAQ /
+> Knowledge Service before it reaches the builder—so by the time `final_response` is formed there is no
+> token stream left to forward. What users actually wait on is Issue extraction and knowledge retrieval, which
+> is exactly what these stages cover. True token streaming would require rewriting Knowledge
+> Service grounded-answer generation (and redesigning output order for concurrent multi-issue cases),
+> which is a separate topic.
 
-## 5. Agent Service Workflow（LangGraph, spec §5）
+## 5. Agent Service Workflow (LangGraph, spec §5)
 
-`agent_service` 的 `/agent/chat` 由一個 LangGraph Workflow
-（`agent_service/src/agent_service/workflow.py` 的 `AgentWorkflow`）處理，
-取代單純的單次 RAG 呼叫：
+`agent_service` `/agent/chat` is handled by a LangGraph Workflow
+(`AgentWorkflow` in `agent_service/src/agent_service/workflow.py`),
+replacing a single one-shot RAG call:
 
 ```text
 Teams Message
@@ -525,123 +557,123 @@ Save Conversation       -- 寫回本輪訊息與 Issue 結果
 Teams Response
 ```
 
-### 可替換的服務介面（spec §3.2）
+### Swappable service interfaces (spec §3.2)
 
-LangGraph Workflow 不直接依賴任何具體資料庫、檢索產品或工單系統，而是透
-過下列介面注入實作，方便日後替換：
+The LangGraph Workflow does not depend directly on any concrete database, retrieval product, or ticket system; implementations are
+injected through the interfaces below so they can be replaced later:
 
-| 能力 | 介面/模組 | 目前實作 | 切換方式 |
+| Capability | Interface / module | Current implementation | How to switch |
 |---|---|---|---|
-| FAQ | `agent_service/src/agent_service/faq.py` | `FaqService`（純查表，讀 `FAQ_PATH` JSON） | 編輯 `data/faq.json` |
-| Knowledge Service | `agent_service/src/agent_service/knowledge.py` | `HybridKnowledgeService`（BM25 + embedding，預設） / `GeminiFileSearchKnowledgeService`（spike，見下） | `KNOWLEDGE_SERVICE_MODE=HYBRID` \| `GEMINI_FILE_SEARCH` |
-| Conversation Repository | `agent_service/src/agent_service/conversation.py` | `MEMORY`（in-process，本機預設）/ `FILE`（JSON 檔案）/ `FIRESTORE`（受管，Cloud Run 使用） | `CONVERSATION_REPOSITORY_MODE=MEMORY` \| `FILE` \| `FIRESTORE` |
-| Ticket Service | `agent_service/src/agent_service/ticket.py` | `DISABLED` / `HTTP`（呼叫內部工單 API） | `TICKET_SERVICE_MODE=DISABLED` \| `HTTP` |
-| User Directory Service | `src/teams_agent/directory.py`（Teams Adapter 端） | `disabled`（不查 Graph）/ `graph`（`GET /users/{id}`） | `USER_DIRECTORY_MODE=disabled` \| `graph` |
+| FAQ | `agent_service/src/agent_service/faq.py` | `FaqService` (pure lookup from `FAQ_PATH` JSON) | Edit `data/faq.json` |
+| Knowledge Service | `agent_service/src/agent_service/knowledge.py` | `HybridKnowledgeService` (BM25 + embedding, default) / `GeminiFileSearchKnowledgeService` (spike; see below) | `KNOWLEDGE_SERVICE_MODE=HYBRID` \| `GEMINI_FILE_SEARCH` |
+| Conversation Repository | `agent_service/src/agent_service/conversation.py` | `MEMORY` (in-process, local default) / `FILE` (JSON files) / `FIRESTORE` (managed; used on Cloud Run) | `CONVERSATION_REPOSITORY_MODE=MEMORY` \| `FILE` \| `FIRESTORE` |
+| Ticket Service | `agent_service/src/agent_service/ticket.py` | `DISABLED` / `HTTP` (calls internal ticket API) | `TICKET_SERVICE_MODE=DISABLED` \| `HTTP` |
+| User Directory Service | `src/teams_agent/directory.py` (Teams Adapter side) | `disabled` (no Graph lookup) / `graph` (`GET /users/{id}`) | `USER_DIRECTORY_MODE=disabled` \| `graph` |
 
-### Conversation 持久化：為什麼 Cloud Run 上必須用 Firestore（spec §10.3）
+### Conversation persistence: why Cloud Run must use Firestore (spec §10.3)
 
-程式預設是 `MEMORY`，本機開發與測試用它剛好，但部署到 Cloud Run 上它會直接
-破壞 spec §10.1 要求的「連續問答／使用者補充資訊／工單確認」：
+The code default is `MEMORY`, which is fine for local development and tests, but on Cloud Run it directly
+breaks the “continuous Q&A / user follow-up info / ticket confirmation” required by spec §10.1:
 
-- Cloud Run **scale-to-zero**：instance 被回收後，記憶體裡的對話全部消失，
-  使用者補完資訊回來時系統已經不記得前一輪問了什麼。
-- Cloud Run 最多 **3 個 instance**：同一段對話的前後兩輪可能落在不同
-  instance。它們既不共用記憶體、也不共用本機磁碟，所以 `FILE` 模式一樣救
-  不了——這不是「重啟才會壞」，是每一輪都可能壞。
+- Cloud Run **scale-to-zero**: when an instance is reclaimed, in-memory conversations disappear;
+  when the user returns with more information, the system no longer remembers the previous turn.
+- Cloud Run allows up to **3 instances**: consecutive turns of the same conversation may land on different
+  instances. They share neither memory nor local disk, so `FILE` mode cannot save you either—this is not
+  “only broken after restart”; every turn can break.
 
-因此 `deploy/deploy-gcp.sh` 在雲端固定使用 `FIRESTORE`。選 Firestore 而不是
-Redis 或 PostgreSQL 的理由（對應 spec §10.3 的選型考量）：
+Therefore `deploy/deploy-gcp.sh` always uses `FIRESTORE` in the cloud. Reasons for choosing Firestore over
+Redis or PostgreSQL (matching the selection criteria in spec §10.3):
 
-| 考量 | Firestore | Memorystore/Redis | Cloud SQL |
+| Consideration | Firestore | Memorystore/Redis | Cloud SQL |
 |---|---|---|---|
-| Cloud Run 網路可達性 | 直連，不需 VPC connector | 需要 VPC connector | 需要 connector 或 VPC |
-| scale-to-zero 成本 | 用多少算多少 | instance 常駐計費 | instance 常駐計費 |
-| 資料保存期限 | 原生 TTL policy | 原生 TTL | 需自建清理 |
-| 維運複雜度 | 無 schema migration | 無 | 需管 schema |
+| Cloud Run network reachability | Direct; no VPC connector | Needs VPC connector | Needs connector or VPC |
+| scale-to-zero cost | Pay for what you use | Always-on instance billing | Always-on instance billing |
+| Data retention | Native TTL policy | Native TTL | Custom cleanup required |
+| Operational complexity | No schema migration | None | Must manage schema |
 
-Workflow 完全沒有因此改動：三種模式都躲在同一個 `ConversationRepository`
-Protocol 後面（spec §3.2），而且**同一套行為測試會 parametrize 跑過三種實
-作**，確保它們行為一致。Firestore 的測試由 in-process Fake client 驅動，不
-連線、不需憑證。
+The Workflow itself did not change: all three modes sit behind the same `ConversationRepository`
+Protocol (spec §3.2), and **the same behavior tests are parametrized across all three
+implementations** to keep them consistent. Firestore tests are driven by an in-process Fake client—no
+network, no credentials.
 
-要點：
+Key points:
 
-- **Timeout 與 TTL 是兩件事**。`CONVERSATION_TIMEOUT_HOURS` 由程式在每次讀
-  取時檢查 `lastActivityAt` 強制執行，不依賴 TTL 是否已經跑過；TTL 只負責
-  資料保存期限，避免 store 無限成長。
-- **附加訊息不做 read-modify-write**。每則訊息是一份獨立 document，兩個
-  instance 同時寫入不會互相覆蓋。
-- 文件結構、排序保證與並行性論證寫在
-  `agent_service/src/agent_service/conversation.py` 的
-  `FirestoreConversationRepository` docstring；GCP 端的 database、TTL 與 IAM
-  設定見 [`deploy/README.md`](deploy/README.md)。
+- **Timeout and TTL are separate.** `CONVERSATION_TIMEOUT_HOURS` is enforced by the application on every read
+  via `lastActivityAt`; it does not depend on TTL having already run. TTL only controls
+  retention so the store does not grow forever.
+- **Appending messages is not read-modify-write.** Each message is its own document; two
+  instances writing at once will not overwrite each other.
+- Document structure, ordering guarantees, and concurrency rationale are in the
+  `FirestoreConversationRepository` docstring in
+  `agent_service/src/agent_service/conversation.py`; GCP database, TTL, and IAM
+  settings are in [`deploy/README.md`](deploy/README.md).
 
-本機要用 Firestore 模式時需要安裝 optional extra：
+To use Firestore mode locally, install the optional extra:
 
 ```bash
 cd agent_service
 uv pip install '.[firestore]'
 ```
 
-### Retrieval A/B Test：Hybrid vs. Gemini File Search（spec §18.7）
+### Retrieval A/B Test: Hybrid vs. Gemini File Search (spec §18.7)
 
-`KNOWLEDGE_SERVICE_MODE` 該用 `HYBRID` 還是 `GEMINI_FILE_SEARCH`，不是憑印象決定，而是跑同一組
-30 案例評估集（`data/eval/retrieval_eval_set.json`）過兩個後端、比對 spec §18.7 列出的每一項指
-標。以下是 2026-08-07 對一個全新建立、跑完即刪除的 Gemini File Search store（19 份語料全數上
-傳）所量到的**實測**結果，完整方法、原始輸出與誠實限制見
-[`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md)，這裡只列結論。
+Whether `KNOWLEDGE_SERVICE_MODE` should be `HYBRID` or `GEMINI_FILE_SEARCH` is not decided by impression; run the same
+30-case evaluation set (`data/eval/retrieval_eval_set.json`) through both backends and compare every metric listed in spec §18.7.
+Below are **measured** results from 2026-08-07 against a freshly created, delete-after-use Gemini File Search store (all 19 corpus documents
+uploaded). Full method, raw output, and honest limitations are in
+[`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md); only conclusions are listed here.
 
-| 指標 | Hybrid（預設） | Gemini File Search |
+| Metric | Hybrid (default) | Gemini File Search |
 |---|---|---|
 | Answer / Recall@K / Groundedness / Citation / No-answer / Error-code Accuracy | 100% | 100% |
 | Image Match Accuracy | 100% (3/3) | 100% (3/3) |
-| ACL Accuracy（30 案例欄位） | 100% (2/2) | 100% (2/2)——**此欄位對兩者皆無鑑別力**，見下方說明 |
+| ACL Accuracy (30-case field) | 100% (2/2) | 100% (2/2)—**this field has no discriminative power for either backend**; see note below |
 | P50 / P95 Latency | **3.00s / 4.07s** | 5.71s / 7.15s |
-| 平均成本／查詢 | **US$0.001059** | US$0.001804 |
-| 平均 LLM 呼叫／查詢 | 2.17 | 1.00 |
+| Avg cost / query | **US$0.001059** | US$0.001804 |
+| Avg LLM calls / query | 2.17 | 1.00 |
 
-八項品質指標兩邊都是 100%，這種情況畫圖表反而是雜訊——表格已經把「打平」講清楚了。真正有落差、
-且值得用眼睛比大小的只有延遲與成本，所以只畫這兩項：
+All eight quality metrics are 100% on both sides; charting that would be noise—the table already shows the tie clearly. The only real gaps
+worth comparing visually are latency and cost, so only those two are charted:
 
 ```mermaid
 xychart-beta
-    title "延遲比較（秒，越低越好）"
+    title "Latency comparison (seconds; lower is better)"
     x-axis ["P50", "P95"]
-    y-axis "秒" 0 --> 8
+    y-axis "seconds" 0 --> 8
     bar "Hybrid" [3.00, 4.07]
     bar "Gemini File Search" [5.71, 7.15]
 ```
 
 ```mermaid
 xychart-beta
-    title "平均每查詢成本（USD，越低越好）"
+    title "Average cost per query (USD; lower is better)"
     x-axis ["Hybrid", "Gemini File Search"]
     y-axis "USD" 0 --> 0.002
     bar [0.001059, 0.001804]
 ```
 
-**ACL 欄位為什麼不能直接看 100%**：評估集裡的兩個 ACL 案例現在都預期「找得到」，因為語料庫目前
-每份文件都是 `audience: all-employees`（見
-[`docs/knowledge-document-governance.md`](docs/knowledge-document-governance.md) 的治理決策）。
-一個完全不檢查權限的後端一樣會在這兩題拿到 100%，所以這個數字不能拿來比較兩個後端誰的 ACL 做得
-好。真正驗證 ACL 的是一個獨立跑的探測（`scripts/acl_verification.py`：上傳一份合成的受限文件與
-一份公開文件到一個用完即刪的 store，分別用有權限／無權限的使用者查詢）——結果是 Gemini adapter
-的權限過濾機制**確實有效**（有權限者看得到、無權限者看不到且答案不洩漏內容），但這只證明「機制
-本身能用」，不代表「現有 19 份公開語料的存取控制現況有被測試到」，因為現況就是全部公開。詳細結
-果見報告 2.3 節。
+**Why the ACL field's 100% cannot be taken at face value**: both ACL cases in the eval set now expect a hit, because every document in the current corpus
+is `audience: all-employees` (see the governance decision in
+[`docs/knowledge-document-governance.md`](docs/knowledge-document-governance.md)).
+A backend that does not check permissions at all would also score 100% on those two items, so this number cannot compare whose ACL is
+better. Real ACL verification is a separate probe (`scripts/acl_verification.py`: upload one synthetic restricted document and
+one public document to a delete-after-use store, then query as permitted / denied users)—the result is that the Gemini adapter's
+permission filter **does work** (permitted users see content; denied users do not, and answers do not leak content). That only proves “the mechanism
+itself works,” not “access control over the current 19 public corpus documents was exercised,” because today they are all public. Detailed
+results are in report section 2.3.
 
-**決策：`KNOWLEDGE_SERVICE_MODE` 維持 `HYBRID`（預設）。** 對業務關係人來說，理由可以濃縮成一句
-話：**兩者回答品質打平，但 Hybrid 快將近 2 倍、每次查詢便宜約 4 成，而且沒有額外的維運負擔**（中
-文檔名需要額外轉換層、圖片對應只能做到文件層級、上傳流程中斷重試需要人工檢查是否留下重複文件）。
-沒有任何一項指標讓 Gemini File Search 贏過 Hybrid 到值得承擔這些代價，所以維持現狀，不需要額外
-決策或審批。
+**Decision: keep `KNOWLEDGE_SERVICE_MODE` as `HYBRID` (default).** For business stakeholders, the reason fits in one
+sentence: **answer quality is tied, but Hybrid is nearly 2× faster, ~40% cheaper per query, and has no extra operational burden** (Chinese
+filenames need an extra conversion layer; image mapping only works at document level; interrupted uploads need manual checks for duplicate documents).
+No metric makes Gemini File Search win enough over Hybrid to justify those costs, so keep the status quo—no extra
+decision or approval needed.
 
-### 設定 FAQ（spec §7）
+### Configuring FAQ (spec §7)
 
-FAQ 僅用於答案固定、不需文件檢索、不需依使用者條件變化的高頻問題（例如密
-碼重設入口、VPN 安裝入口、固定聯絡窗口）。FAQ 條目存放在
-[`data/faq.json`](data/faq.json)（此檔案**有**被 Git 追蹤，見下方
-`.gitignore` 說明），格式：
+FAQ is only for high-frequency questions with fixed answers that need no document retrieval and no user-condition variation (for example password-reset
+entry points, VPN install entry points, fixed contact windows). FAQ entries live in
+[`data/faq.json`](data/faq.json) (this file **is** Git-tracked; see the
+`.gitignore` note below), in this format:
 
 ```json
 {
@@ -656,190 +688,188 @@ FAQ 僅用於答案固定、不需文件檢索、不需依使用者條件變化�
 }
 ```
 
-`faqKey` 必須唯一；Issue Extractor 只能從已啟用（`enabled: true`）的
-`faqKey` 中選擇，無法明確對應時會走 `route=KNOWLEDGE` 而不是硬猜一個
-`faqKey`。FAQ Service 本身不呼叫 LLM、不做語意相似度、不改寫答案（spec
-§7.3）——新增/修改 FAQ 只需要編輯這個 JSON 檔案，不需要改程式碼。啟動或
-重新啟動 `agent_service` 後生效；檔案路徑可用 `FAQ_PATH` 覆寫。
+`faqKey` must be unique; Issue Extractor may only choose from enabled (`enabled: true`)
+`faqKey` values. When it cannot map clearly it uses `route=KNOWLEDGE` instead of forcing a
+`faqKey`. FAQ Service itself does not call an LLM, compute semantic similarity, or rewrite answers (spec
+§7.3)—adding/editing FAQ only requires editing this JSON file, not changing code. Changes take effect after starting or
+restarting `agent_service`; the file path can be overridden with `FAQ_PATH`.
 
-### Feedback（`POST /feedback`，spec §14）
+### Feedback (`POST /feedback`, spec §14)
 
-`/agent/chat` 的回應在 `feedbackEnabled` 為 `true` 時（由
-`FEEDBACK_ENABLED` 控制，預設開啟），Teams 端會在 FAQ／Knowledge 回覆後顯
-示：
+When `/agent/chat` responses have `feedbackEnabled` set to `true` (controlled by
+`FEEDBACK_ENABLED`, on by default), Teams shows after FAQ / Knowledge replies:
 
 ```text
 這個回答有解決你的問題嗎？
 👍 已解決   👎 未解決
 ```
 
-按鈕會呼叫 `POST /feedback`（與 `/agent/chat` 一樣需要
-`Authorization: Bearer <AGENT_SERVICE_TOKEN>`，若有設定的話），內容為
-correlation ID、conversation ID、issue ID、user ID 與 `rating`
-（`up`/`down`）。POC 階段沒有獨立的 feedback 資料表（spec §3.3）：這支
-API 只是把結構化紀錄寫進服務 log（`Feedback recorded: ...`），未來要接
-BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影響系統其他
-部分。
+The buttons call `POST /feedback` (same as `/agent/chat`, requiring
+`Authorization: Bearer <AGENT_SERVICE_TOKEN>` when configured), with
+correlation ID, conversation ID, issue ID, user ID, and `rating`
+(`up`/`down`). The POC has no separate feedback table (spec §3.3): this
+API only writes a structured record into service logs (`Feedback recorded: ...`). To connect
+BigQuery or a table later, read that log line or rewrite this handler—other parts of the system are unaffected.
 
-### 相關文件
+### Related docs
 
-- [`docs/knowledge-document-governance.md`](docs/knowledge-document-governance.md) ——
-  `data/sources/*.md` 的 YAML front matter（owner／version／effectiveDate／
-  audience）規範，對應 spec §9。
-- [`docs/gemini-file-search-spike.md`](docs/gemini-file-search-spike.md) ——
-  Gemini File Search 技術 Spike 的執行方式與限制，對應 spec §8.3。
-- [`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md) ——
-  Hybrid vs. Gemini File Search 的完整 A/B 測試方法、原始數據與誠實限制，對應 spec §18.7（摘要見上方）。
-- [`agent_service/README.md`](agent_service/README.md) —— Agent Service
-  本身的啟動、索引建立與 API 範例。
+- [`docs/knowledge-document-governance.md`](docs/knowledge-document-governance.md) —
+  YAML front matter rules for `data/sources/*.md` (owner / version / effectiveDate /
+  audience), matching spec §9.
+- [`docs/gemini-file-search-spike.md`](docs/gemini-file-search-spike.md) —
+  How to run the Gemini File Search technical Spike and its limits, matching spec §8.3.
+- [`docs/retrieval-ab-test-report.md`](docs/retrieval-ab-test-report.md) —
+  Full A/B test method, raw data, and honest limitations for Hybrid vs. Gemini File Search, matching spec §18.7 (summary above).
+- [`agent_service/README.md`](agent_service/README.md) — Agent Service
+  startup, index build, and API examples.
 
-## 6. 環境變數參考（spec §16）
+## 6. Environment variable reference (spec §16)
 
-兩個服務各自讀自己的 `.env`，**不會**共用同一份設定；本機分別複製
-`.env.example` → `.env`（Teams Adapter，專案根目錄）與
-`agent_service/.env.example` → `agent_service/.env`（Agent Service）。
+Each service reads its own `.env` and does **not** share one config file; locally copy
+`.env.example` → `.env` (Teams Adapter, repo root) and
+`agent_service/.env.example` → `agent_service/.env` (Agent Service) separately.
 
-### Teams Adapter（`.env`，公開的 `teams-agent-adapter` 服務）
+### Teams Adapter (`.env`, public `teams-agent-adapter` service)
 
-| 變數 | 預設值 | 說明 |
+| Variable | Default | Description |
 |---|---|---|
-| `CLIENT_ID` | — | Entra App registration 的 Application (client) ID；Teams SDK 直接讀取 |
-| `CLIENT_SECRET` | — | Client secret **Value**；只能放 `.env` 或 Secret Manager |
-| `TENANT_ID` | — | Entra Directory (tenant) ID（單一租戶 app 必填） |
-| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | 略過 `/api/messages` 的 JWT 驗證；**僅限本機**，Cloud Run 絕不可設 |
-| `PORT` | `3978` | HTTP 監聽埠；Cloud Run 會自動注入。無 `HOST` 設定——Teams SDK 的 `FastAPIAdapter` 固定綁 `0.0.0.0` |
-| `LOG_LEVEL` | `INFO` | 可暫時改 `DEBUG` 做本機除錯 |
-| `AGENT_MODE` | `echo` | `echo`（不呼叫外部 AI）或 `api`（呼叫 Agent Service） |
-| `AGENT_API_URL` | — | `AGENT_MODE=api` 時必填，指向 Agent Service 的 `/agent/chat` |
-| `AGENT_API_TOKEN` | — | `AGENT_API_AUTH_MODE=service_token` 時必填 |
-| `AGENT_API_AUTH_MODE` | `none`（有設 `AGENT_API_TOKEN` 時預設 `service_token`） | `none` \| `service_token` \| `google_id_token`（Cloud Run 服務間 IAM） |
-| `AGENT_API_AUDIENCE` | — | `google_id_token` 模式下的 identity token audience（Agent Service URL） |
-| `AGENT_STREAMING_ENABLED` | `true` | 是否在 1:1 私訊串流進度（見第 4.3 節）；頻道／群組聊天不受影響（Teams 不支援） |
-| `AGENT_API_TIMEOUT_SECONDS` | `10` | 非 localhost 的 `AGENT_API_URL` 會強制要求 HTTPS |
-| `BOT_PUBLIC_BASE_URL` | — | 用於簽出來源圖片 URL 的公開網域（只填 domain，不加 `/api/messages`） |
-| `RAG_ASSET_DIR` | `<repo>/data/assets` | 來源圖片根目錄 |
-| `RAG_ASSET_SIGNING_KEY` | — | 至少 16 字元；HMAC 簽章金鑰，正式環境放 Secret Manager |
-| `RAG_ASSET_URL_TTL_SECONDS` | `3600` | 簽名 URL 有效秒數 |
-| `RAG_ASSET_MAX_DIMENSION` | `1024` | 圖片最長邊（pixels） |
-| `RAG_ASSET_MAX_BYTES` | `1000000` | 圖片檔案大小上限 |
-| `USER_DIRECTORY_MODE` | `disabled` | `disabled`（不呼叫 Graph）或 `graph`（`GET /users/{id}`，需 `User.Read.All`） |
-| `USER_DIRECTORY_CACHE_TTL_SECONDS` | `300` | Graph 查詢結果快取秒數（`graph` 模式才有作用） |
+| `CLIENT_ID` | — | Entra App registration Application (client) ID; read directly by Teams SDK |
+| `CLIENT_SECRET` | — | Client secret **Value**; only in `.env` or Secret Manager |
+| `TENANT_ID` | — | Entra Directory (tenant) ID (required for single-tenant apps) |
+| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | Skip JWT verification on `/api/messages`; **local only**—never set on Cloud Run |
+| `PORT` | `3978` | HTTP listen port; Cloud Run injects automatically. No `HOST` setting—Teams SDK `FastAPIAdapter` always binds `0.0.0.0` |
+| `LOG_LEVEL` | `INFO` | Temporarily set `DEBUG` for local debugging |
+| `AGENT_MODE` | `echo` | `echo` (no external AI) or `api` (call Agent Service) |
+| `AGENT_API_URL` | — | Required when `AGENT_MODE=api`; points at Agent Service `/agent/chat` |
+| `AGENT_API_TOKEN` | — | Required when `AGENT_API_AUTH_MODE=service_token` |
+| `AGENT_API_AUTH_MODE` | `none` (defaults to `service_token` when `AGENT_API_TOKEN` is set) | `none` \| `service_token` \| `google_id_token` (Cloud Run inter-service IAM) |
+| `AGENT_API_AUDIENCE` | — | Identity token audience under `google_id_token` mode (Agent Service URL) |
+| `AGENT_STREAMING_ENABLED` | `true` | Whether to stream progress in 1:1 DMs (see section 4.3); channels / group chats unaffected (Teams unsupported) |
+| `AGENT_API_TIMEOUT_SECONDS` | `10` | Non-localhost `AGENT_API_URL` values are forced to HTTPS |
+| `BOT_PUBLIC_BASE_URL` | — | Public domain used to sign source-image URLs (domain only; no `/api/messages`) |
+| `RAG_ASSET_DIR` | `<repo>/data/assets` | Source image root directory |
+| `RAG_ASSET_SIGNING_KEY` | — | At least 16 characters; HMAC signing key—put in Secret Manager for production |
+| `RAG_ASSET_URL_TTL_SECONDS` | `3600` | Signed URL lifetime in seconds |
+| `RAG_ASSET_MAX_DIMENSION` | `1024` | Longest image side (pixels) |
+| `RAG_ASSET_MAX_BYTES` | `1000000` | Max image file size |
+| `USER_DIRECTORY_MODE` | `disabled` | `disabled` (no Graph calls) or `graph` (`GET /users/{id}`, needs `User.Read.All`) |
+| `USER_DIRECTORY_CACHE_TTL_SECONDS` | `300` | Graph result cache TTL in seconds (only for `graph` mode) |
 
-### Agent Service（`agent_service/.env`，私有的 `teams-rag-agent` 服務）
+### Agent Service (`agent_service/.env`, private `teams-rag-agent` service)
 
-| 變數 | 預設值 | 說明 |
+| Variable | Default | Description |
 |---|---|---|
-| `HOST` | `0.0.0.0` | 監聽位址 |
-| `PORT` | `8000`（Cloud Run image 內為 `8080`） | HTTP 監聽埠 |
-| `LOG_LEVEL` | `INFO` | log 等級 |
-| `RAG_DATA_DIR` | `<repo>/data` | 知識文件、索引、FAQ、conversation 檔案的根目錄 |
-| `RAG_INDEX_PATH` | `<RAG_DATA_DIR>/index/chunks.json` | 建立好的檢索索引 |
-| `RAG_AUTO_BUILD_INDEX` | `true` | 索引不存在時是否自動建立 |
-| `RAG_MODEL` | 空（本機 extractive 模式） | 例：`google_genai:gemini-3.5-flash-lite` |
-| `RAG_EMBEDDING_MODEL` | 空（純 BM25） | 例：`google_genai:gemini-embedding-2` |
-| `RAG_TOP_K` | `4` | 檢索筆數，範圍 1–20 |
-| `RAG_MIN_SCORE` | `0.08` | 相關性門檻，範圍 0–1 |
-| `RAG_MAX_REWRITES` | `1` | Query rewrite 次數上限，範圍 0–3 |
-| `RAG_MAX_IMAGES` | `2` | 單次回覆附圖上限，範圍 0–4 |
-| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | `900` / `120` | 切塊大小；overlap 必須小於 size |
-| `RAG_ALLOWED_TENANTS` | 空（不限制） | 逗號分隔的 tenant allowlist |
-| `RAG_SOURCE_BASE_URL` | 空 | citation 的可點擊連結前綴 |
-| `AGENT_SERVICE_TOKEN` | 空（不驗證） | 有設定時 `/agent/chat`、`/feedback`、`/retrieval/search` 都要求 `Authorization: Bearer <token>` |
-| `MAX_ISSUES_PER_MESSAGE` | `3` | 單則訊息最多拆解幾個 Issue，範圍 1–5（spec §4.2） |
-| `MAX_MISSING_INFO_PER_ISSUE` | `2` | 每個 Issue 最多追問幾項，範圍 1–3（spec §6.3） |
-| `MAX_CLARIFICATION_ROUNDS` | `2` | 同一個未完成問題最多追問幾輪；達上限後停止追問並以現有資訊處理，範圍 1–3 |
-| `MAX_HISTORY_MESSAGES` | `10` | 載入 workflow context 的歷史訊息上限，範圍 0–50 |
-| `CONVERSATION_HISTORY_ROUNDS` | `5` | 視為「最近對話」的輪數，範圍 1–20 |
-| `CONVERSATION_TIMEOUT_HOURS` | `24` | 對話逾時後起新 conversation，範圍 1–168 |
-| `MAX_LLM_CALLS_PER_REQUEST` | `5` | 單次請求 LLM 呼叫次數上限，範圍 1–20 |
-| `MAX_RETRIEVAL_REWRITES` | 同 `RAG_MAX_REWRITES`（預設 1） | 範圍 0–3；獨立於 `RAG_MAX_REWRITES` 但預設沿用它 |
-| `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH`（spike-only，見上） |
-| `GEMINI_FILE_SEARCH_STORE` | 空 | `KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH` 時使用的 store 名稱 |
+| `HOST` | `0.0.0.0` | Listen address |
+| `PORT` | `8000` (`8080` inside Cloud Run image) | HTTP listen port |
+| `LOG_LEVEL` | `INFO` | Log level |
+| `RAG_DATA_DIR` | `<repo>/data` | Root for knowledge docs, index, FAQ, and conversation files |
+| `RAG_INDEX_PATH` | `<RAG_DATA_DIR>/index/chunks.json` | Built retrieval index |
+| `RAG_AUTO_BUILD_INDEX` | `true` | Whether to auto-build the index when missing |
+| `RAG_MODEL` | empty (local extractive mode) | e.g. `google_genai:gemini-3.5-flash-lite` |
+| `RAG_EMBEDDING_MODEL` | empty (BM25 only) | e.g. `google_genai:gemini-embedding-2` |
+| `RAG_TOP_K` | `4` | Retrieval count, range 1–20 |
+| `RAG_MIN_SCORE` | `0.08` | Relevance threshold, range 0–1 |
+| `RAG_MAX_REWRITES` | `1` | Max query rewrites, range 0–3 |
+| `RAG_MAX_IMAGES` | `2` | Max images per reply, range 0–4 |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | `900` / `120` | Chunk size; overlap must be less than size |
+| `RAG_ALLOWED_TENANTS` | empty (no restriction) | Comma-separated tenant allowlist |
+| `RAG_SOURCE_BASE_URL` | empty | Clickable citation URL prefix |
+| `AGENT_SERVICE_TOKEN` | empty (no auth) | When set, `/agent/chat`, `/feedback`, and `/retrieval/search` all require `Authorization: Bearer <token>` |
+| `MAX_ISSUES_PER_MESSAGE` | `3` | Max Issues extracted per message, range 1–5 (spec §4.2) |
+| `MAX_MISSING_INFO_PER_ISSUE` | `2` | Max follow-up items per Issue, range 1–3 (spec §6.3) |
+| `MAX_CLARIFICATION_ROUNDS` | `2` | Max follow-up rounds for the same unfinished question; after the cap, stop asking and proceed with available info, range 1–3 |
+| `MAX_HISTORY_MESSAGES` | `10` | Max history messages loaded into workflow context, range 0–50 |
+| `CONVERSATION_HISTORY_ROUNDS` | `5` | Rounds treated as “recent conversation,” range 1–20 |
+| `CONVERSATION_TIMEOUT_HOURS` | `24` | Start a new conversation after timeout, range 1–168 |
+| `MAX_LLM_CALLS_PER_REQUEST` | `5` | Max LLM calls per request, range 1–20 |
+| `MAX_RETRIEVAL_REWRITES` | same as `RAG_MAX_REWRITES` (default 1) | Range 0–3; independent of `RAG_MAX_REWRITES` but defaults to it |
+| `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH` (spike-only; see above) |
+| `GEMINI_FILE_SEARCH_STORE` | empty | Store name when `KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH` |
 | `TICKET_SERVICE_MODE` | `DISABLED` | `DISABLED` \| `HTTP` |
-| `TICKET_SERVICE_BASE_URL` | 空 | `TICKET_SERVICE_MODE=HTTP` 時必填，須為 `http(s)://` |
-| `TICKET_SERVICE_TOKEN` | 空 | 工單 API 的 Bearer token，正式環境放 Secret Manager |
-| `TICKET_SERVICE_TIMEOUT_SECONDS` | `10.0` | 範圍 1–60 |
-| `CONVERSATION_REPOSITORY_MODE` | `MEMORY` | `MEMORY`（in-process）\| `FILE`（JSON 檔案）\| `FIRESTORE`（受管，Cloud Run 部署使用） |
-| `CONVERSATION_STORE_PATH` | `<RAG_DATA_DIR>/conversations` | `CONVERSATION_REPOSITORY_MODE=FILE` 時的儲存路徑；不可提交到 Git |
-| `CONVERSATION_FIRESTORE_PROJECT` | 空（由 ADC 解析） | 僅 `FIRESTORE` 模式；指向其他專案時才需設定 |
-| `CONVERSATION_FIRESTORE_DATABASE` | 空（`(default)`） | 僅 `FIRESTORE` 模式；使用具名 database 時才需設定 |
-| `CONVERSATION_FIRESTORE_COLLECTION` | `conversations` | 僅 `FIRESTORE` 模式；root collection 名稱，不可含 `/` |
-| `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ 設定檔路徑 |
-| `FEEDBACK_ENABLED` | `true` | 是否開放 `POST /feedback` 與 Teams 端 👍/👎 按鈕 |
+| `TICKET_SERVICE_BASE_URL` | empty | Required when `TICKET_SERVICE_MODE=HTTP`; must be `http(s)://` |
+| `TICKET_SERVICE_TOKEN` | empty | Bearer token for ticket API; put in Secret Manager for production |
+| `TICKET_SERVICE_TIMEOUT_SECONDS` | `10.0` | Range 1–60 |
+| `CONVERSATION_REPOSITORY_MODE` | `MEMORY` | `MEMORY` (in-process) \| `FILE` (JSON files) \| `FIRESTORE` (managed; used for Cloud Run deploy) |
+| `CONVERSATION_STORE_PATH` | `<RAG_DATA_DIR>/conversations` | Storage path when `CONVERSATION_REPOSITORY_MODE=FILE`; do not commit to Git |
+| `CONVERSATION_FIRESTORE_PROJECT` | empty (resolved via ADC) | `FIRESTORE` mode only; set only when pointing at another project |
+| `CONVERSATION_FIRESTORE_DATABASE` | empty (`(default)`) | `FIRESTORE` mode only; set only when using a named database |
+| `CONVERSATION_FIRESTORE_COLLECTION` | `conversations` | `FIRESTORE` mode only; root collection name; must not contain `/` |
+| `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ config file path |
+| `FEEDBACK_ENABLED` | `true` | Whether to enable `POST /feedback` and Teams 👍 / 👎 buttons |
 
-完整範例見 [`.env.example`](.env.example) 與
-[`agent_service/.env.example`](agent_service/.env.example)。
+Full examples are in [`.env.example`](.env.example) and
+[`agent_service/.env.example`](agent_service/.env.example).
 
 ## 7. Docker
 
-兩個服務各自有獨立的 Dockerfile 與 image，對應雙服務架構。
+Each service has its own Dockerfile and image, matching the dual-service architecture.
 
-Teams Adapter（專案根目錄 `Dockerfile`，build context 為專案根目錄）：
+Teams Adapter (repo-root `Dockerfile`; build context is the repo root):
 
 ```bash
 docker build -t teams-agent-backend .
 docker run --rm -p 8080:8080 --env-file .env teams-agent-backend
 ```
 
-Agent Service（`agent_service/Dockerfile`，build context 仍是專案根目錄，
-因為 image 需要同時複製 `agent_service/` 與根目錄的 `data/`）：
+Agent Service (`agent_service/Dockerfile`; build context is still the repo root,
+because the image must copy both `agent_service/` and root `data/`):
 
 ```bash
 docker build -f agent_service/Dockerfile -t teams-agent-rag-service .
 docker run --rm -p 8080:8080 --env-file agent_service/.env teams-agent-rag-service
 ```
 
-`data/faq.json` 會隨 `agent_service/Dockerfile` 的 `COPY data ./data` 一併
-打包進 image；這也是 `data/faq.json` 必須被 Git 追蹤的原因——否則從乾淨的
-clone `docker build` 出來的 image 裡不會有 FAQ 設定。
+`data/faq.json` is packaged into the image via `COPY data ./data` in `agent_service/Dockerfile`;
+that is also why `data/faq.json` must be Git-tracked—otherwise an image built from a clean
+clone would have no FAQ config.
 
-> **build context 必須含有語料。** `COPY data ./data` 複製的是**建置當下本機
-> 的 `data/`**。`data/sources`、`data/index`、`data/assets` 都是 gitignored，
-> 因此從乾淨的 clone 建置出來的 image **沒有語料也沒有索引**。此時
-> `RAG_AUTO_BUILD_INDEX` 幫不上忙——自動建索引需要 `data/sources/` 裡的
-> Markdown 文件，沒有來源文件時 `build_index()` 會直接拋出
-> `No Markdown source documents were found.`，服務無法通過 readiness 檢查。
-> 語料交付方式與其限制詳見
-> [`deploy/README.md`](deploy/README.md) 的「Knowledge corpus and index
-> delivery」。
+> **Build context must include the corpus.** `COPY data ./data` copies **the local
+> `data/` at build time**. `data/sources`, `data/index`, and `data/assets` are gitignored,
+> so an image built from a clean clone has **neither corpus nor index**. In that case
+> `RAG_AUTO_BUILD_INDEX` cannot help—auto-building needs Markdown files under `data/sources/`;
+> without source documents `build_index()` raises
+> `No Markdown source documents were found.` and the service cannot pass readiness.
+> Corpus delivery and its limits are detailed in
+> [`deploy/README.md`](deploy/README.md) under “Knowledge corpus and index
+> delivery.”
 
-> **尚未驗證。** 本節的兩個 `docker build` 指令在本階段**未實際執行過**
-> （開發環境未安裝 Docker）。Cloud Run 部署走的是 `gcloud builds submit`
-> 的遠端建置路徑，首次部署時請確認建置成功，並用 `/readyz` 回報的 chunk
-> 數確認索引確實進到 image 內。
+> **Not yet verified.** The two `docker build` commands in this section have **not been run** in this phase
+> (Docker is not installed in the development environment). Cloud Run deploy uses the remote build path via `gcloud builds submit`;
+> on first deploy, confirm the build succeeds and use the chunk count from `/readyz` to verify the index
+> actually landed in the image.
 
-Messaging endpoint：
+Messaging endpoint:
 
 ```text
 https://<public-service-domain>/api/messages
 ```
 
-部署到 GCP Cloud Run 時，`CLIENT_ID` 與 `TENANT_ID` 走一般環境變數，
-`CLIENT_SECRET` 一律走 Secret Manager。服務必須允許 Microsoft 的 Bot
-Framework 服務經由公網 HTTPS 呼叫；應用程式本身仍會由 Teams SDK 驗證
-Bot Framework JWT。
+When deploying to GCP Cloud Run, `CLIENT_ID` and `TENANT_ID` are ordinary environment variables;
+`CLIENT_SECRET` always goes through Secret Manager. The service must allow Microsoft Bot
+Framework services to call it over public HTTPS; the application still verifies
+Bot Framework JWTs via the Teams SDK.
 
-## 8. Cloud Run 部署
+## 8. Cloud Run deployment
 
-正式部署腳本、Secret Manager 對應與雲端環境變數請見
-[`deploy/README.md`](deploy/README.md)（含 §16 建議調校的 concurrency／
-CPU／memory／timeout 設定）。目前部署狀態摘要見本文件「專案狀態」一節。
+For production deploy scripts, Secret Manager mapping, and cloud environment variables, see
+[`deploy/README.md`](deploy/README.md) (including §16 recommended concurrency /
+CPU / memory / timeout tuning). Current deploy status is summarized in this document's “Project status” section.
 
-## 9. Teams App 設定與測試
+## 9. Teams App setup and testing
 
-Teams app 註冊、Teams Developer Portal bot 設定、Dev Tunnel 本機測試、`USER_DIRECTORY_MODE=graph`
-所需的 Graph 權限，以及只能在真實 Teams 上手動驗證的項目（對話、部署可達
-性、圖片顯示、Feedback 按鈕）完整說明見
-[`docs/teams-app-setup.md`](docs/teams-app-setup.md)。
+Teams app registration, Teams Developer Portal bot setup, Dev Tunnel local testing, Graph permissions required for `USER_DIRECTORY_MODE=graph`,
+and items that can only be manually verified in real Teams (conversation, deploy reachability,
+image display, Feedback buttons) are fully documented in
+[`docs/teams-app-setup.md`](docs/teams-app-setup.md).
 
-## 10. 測試與程式碼檢查
+## 10. Tests and code checks
 
 ```bash
 uv run pytest
 uv run ruff check .
 ```
 
-Agent Service 有自己的測試套件與 lint：
+Agent Service has its own test suite and lint:
 
 ```bash
 cd agent_service
@@ -847,154 +877,88 @@ uv run pytest
 uv run ruff check .
 ```
 
-## 11. POC 驗收狀態
+## 11. POC acceptance status
 
-spec §19 二十二項驗收標準與 §20 二十項交付項目的逐項對照、佐證測試名稱與
-待辦清單，見 [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md)。
+Item-by-item mapping of the twenty-two acceptance criteria in spec §19 and the twenty delivery items in §20, supporting test names, and
+TODO list are in [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md).
 
-## 未來方向
+## Future direction
 
-### Milestone 2：接入 Microsoft Teams 頻道
+### Completed milestones (summary)
 
-目標是讓 Team 頻道中的使用者可以透過 `@Bot hello` 觸發現有 Echo handler。
+| Milestone | Status |
+|---|---|
+| Teams channel integration (app package, `@Bot` Echo / RAG) | ✅ |
+| Standalone Agent Gateway + Adapter contract | ✅ |
+| Hybrid RAG (index, ACL, citation, image cards) | ✅ |
+| LangGraph Workflow (FAQ / follow-ups / tickets / Feedback / streaming) | ✅ |
+| Cloud Run + IAM + Secret Manager + Firestore conversations | ✅ |
 
-目前已完成：
+Detailed historical acceptance records remain in the “Next acceptance checklist” below.
 
-- [x] bot 的 Microsoft Teams channel 已啟用
-- [x] 建立 Teams app manifest
-- [x] Bot scopes 設為 `team` 與 `personal`
-- [x] 預設安裝範圍設為 `team`
-- [x] 建立符合規格的 192×192 彩色 icon
-- [x] 建立具有透明背景的 32×32 白色 outline icon
-- [x] 建立 app package 打包腳本
-- [x] 加入 manifest v1.25 `supportsChannelFeatures: tier1`
-- [x] App package 成功上傳公司 Teams
+### Near-term TODO (blocking formal cloud cutover)
 
-Teams App 已完成安裝並通過頻道測試。目前需在 Teams Developer Portal
-（App features → Bot → Endpoint address）將 endpoint 切換為：
+1. **Teams Developer Portal** → App features → Bot → Endpoint address change to:
 
-```text
-https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
-```
+   ```text
+   https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
+   ```
 
-切換成功後，本機 Bot、Agent Service 與 Dev Tunnel 不需要保持執行。開發除錯
-時仍可使用 `./start.sh` 啟動完整本機環境。
+   After switching, re-test channel / 1:1; local Bot, Agent, and Dev Tunnel can then be stopped.
+2. On the next `./deploy/deploy-gcp.sh`, apply Agent SA `roles/datastore.user`.
+3. To connect a real ticket system: `TICKET_SERVICE_MODE=HTTP` + token in Secret Manager
+   (Production Ticket is not a required POC acceptance item).
 
-如果沒有 `Upload a custom app` 選項，需要 Teams 管理員在 app setup policy
-開啟 custom app upload，或由管理員在 Teams admin center 上傳 package。
-Microsoft Teams 免費／個人版不提供此企業自訂 app 上傳流程；請使用具有 Teams
-授權的 Microsoft 365 公司或學校帳號。
+`manifest.json` developer URLs are still PoC placeholders; replace them with
+company website / privacy / terms before formal release. If “Upload a custom app” is missing, an admin must enable
+custom app upload; use a Microsoft 365 work/school account with Teams licensing.
 
-`manifest.json` 中的 developer URLs 目前是 PoC placeholder。內部正式發布前，
-必須替換成公司的網站、隱私權政策與使用條款 URL。
+### Milestone 5: Read-only internal APIs and tools
 
-完成標準：
+- Tool allowlist and JSON Schema parameter validation
+- Use trusted Entra / IAM identity; do not accept model-supplied user IDs or roles
+- API timeout, retry, rate limit, and circuit breaker
+- Sensitive operations require explicit user confirmation
+- Full audit log; do not record secrets or unnecessary PII
 
-- App 可安裝到指定 Team。
-- 頻道輸入 `@Bot hello` 可收到 `收到：hello`。
-- 未提及 Bot 的訊息不觸發後端。
+### Milestone 6: Formal deployment and governance (remaining)
 
-### Milestone 3：串接獨立 AI Agent API
+- [ ] Switch bot endpoint to Cloud Run and complete cloud acceptance
+- [ ] OpenTelemetry, centralized logs, error-rate and P95 latency monitoring
+- [ ] Build FAQ / RAG evaluation sets; measure accuracy, citation rate, and no-answer rate
+- [ ] Map citations to formal document URLs
+- [ ] Create dev, test, and prod environments with separate App Registrations
+- [ ] Remove Dev Tunnel dependency after production path cutover
 
-保留 Teams Adapter 為薄通訊層，把 AI 邏輯放在獨立 Agent Gateway：
+Deploy scripts are in [`deploy/README.md`](deploy/README.md).
 
-```text
-Teams
-→ Bot Framework 服務
-→ Teams Adapter /api/messages
-→ Agent Gateway /agent/chat
-→ 回傳答案
-→ Teams
-```
-
-Adapter contract、client 與實際 LangGraph Agent Gateway 均已完成：
-
-- request ID 與 trace ID
-- Teams tenant、team、channel、conversation 與使用者識別
-- 問題文字與 locale
-- 結構化答案、來源引用及錯誤狀態
-- timeout、重試與友善降級訊息
-
-正式部署決策：
-
-- Agent Gateway：private Cloud Run service
-- 服務間驗證：Cloud Run IAM identity token
-- Contract：沿用 `/agent/chat` 結構化 request／response
-- Secrets：Google API Key、Bot client secret、image signing key 存於 Secret Manager
-- Timeout、無答案與錯誤：由 Adapter 與 Agent Gateway 分層處理
-
-### Milestone 4：RAG 知識問答
-
-- [x] 建立 Markdown ingestion、清理、切塊與穩定 chunk ID
-- [x] 建立中文 BM25，並預留 embedding hybrid retrieval
-- [x] 建立相關性門檻與無答案回覆
-- [x] 在 retrieval 階段套用文件群組 ACL
-- [x] 回覆附上文件標題與 chunk trace
-- [x] 建立 LangGraph route、retrieve、grade、rewrite、generate 流程
-- [x] 選定 Gemini 3.5 Flash-Lite 與 Gemini Embedding 2
-- [ ] 將正式文件 URL 映射至 citation
-- [ ] 建立 FAQ 評估集，量測正確率、引用率與無答案率
-
-完整啟動、設定與 API 範例請見
-[`agent_service/README.md`](agent_service/README.md)。
-
-### Milestone 5：內部 API 與工具
-
-先接唯讀工具，再評估寫入操作：
-
-- Tool allowlist 與 JSON Schema 參數驗證
-- 使用可信任的 Entra／IAM 身分，不接受模型自行提供 user ID 或 role
-- API timeout、重試、rate limit 與 circuit breaker
-- 敏感操作要求使用者明確確認
-- 完整 audit log，不記錄 secret 或不必要的個資
-
-### Milestone 6：正式部署與治理
-
-- [x] 部署至 GCP Cloud Run `asia-east1`
-- [x] Secret 改由 Secret Manager 管理
-- [x] Adapter／Agent 使用獨立 Service Account
-- [x] Agent 設為 private，僅允許 Adapter `roles/run.invoker`
-- [x] 設定 Cloud Run scale-to-zero 與最大 3 instances
-- [ ] 將 Teams Developer Portal 的 bot endpoint 切換至 Cloud Run
-- [x] 對話狀態由 in-memory 遷移到受管儲存（Firestore，`CONVERSATION_REPOSITORY_MODE=FIRESTORE`）
-- 加入 OpenTelemetry、集中式 log、錯誤率與 P95 latency 監控
-- 加入 prompt injection 防護、PII 遮蔽、內容安全與工具權限政策
-- 建立 dev、test、prod 環境與獨立 App Registration
-- 正式通路切換後移除對 Dev Tunnel 的依賴
-
-部署腳本與重新部署方式請見
-[`deploy/README.md`](deploy/README.md)。
-
-## 建議執行順序
+## Suggested execution order
 
 ```text
-Web Chat Echo ✅
-→ Teams App 上傳 ✅
-→ LangGraph Agent Gateway ✅
-→ data/ 文件索引與 RAG API ✅
-→ Teams Channel Agent API 模式 ✅
-→ Gemini LLM／embedding ✅
-→ GCP Cloud Run + IAM + Secret Manager ✅
+Web Chat／本機 Echo ✅
+→ Teams App 上傳與頻道 Echo ✅
+→ LangGraph Agent Gateway＋RAG ✅
+→ Workflow（FAQ／追問／工單／Feedback／串流）✅
+→ Cloud Run＋IAM＋Secret Manager＋Firestore ✅
 → Teams Developer Portal bot endpoint 切換（目前）
-→ 建立 FAQ 評估集
+→ 雲端端到端複測
+→ FAQ／RAG 評估集與正式監控
 → 唯讀內部工具
-→ Entra 群組與文件 ACL
-→ 正式監控與告警
-→ 寫入型工具與審批
+→ 寫入型工具與審批（POC 後）
 ```
 
-## 下一步驗收清單
+## Next acceptance checklist
 
-- [x] 測試 Team 成功安裝 App
-- [x] 頻道 `@Bot hello` 回覆成功
-- [x] 本機收到 `msteams` activity 並留下 request ID
-- [ ] 未 `@mention` Bot 時不觸發
-- [ ] Personal scope Echo 成功
-- [x] 啟動 `agent_service` 並將 Adapter 切為 `AGENT_MODE=api`
-- [x] 頻道提問可收到知識庫回答與來源
-- [x] 來源圖片可透過 Adaptive Card 顯示
-- [x] 無關問題回覆「沒有足夠資訊」
-- [x] 記錄第一次 Teams + LangGraph RAG 端到端測試結果
-- [x] Cloud Run Agent 未授權請求回覆 403
-- [x] Cloud Run RAG、citation 與 signed image smoke test
-- [ ] bot endpoint 切換後完成 Teams 雲端驗收
+- [x] Test Team successfully installed the App
+- [x] Channel `@Bot hello` reply succeeded
+- [x] Locally received `msteams` activity and retained request ID
+- [ ] Do not trigger when Bot is not `@mention`ed
+- [ ] Personal scope Echo succeeded
+- [x] Started `agent_service` and switched Adapter to `AGENT_MODE=api`
+- [x] Channel questions receive knowledge-base answers with sources
+- [x] Source images display via Adaptive Card
+- [x] Unrelated questions reply with「沒有足夠資訊」
+- [x] FAQ / follow-up / ticket confirmation / Feedback flow (see POC checklist)
+- [x] Cloud Run Agent returns 403 for unauthorized requests
+- [x] Cloud Run RAG, citation, and signed image smoke test
+- [ ] Complete Teams cloud acceptance after bot endpoint switch

@@ -5,7 +5,8 @@
 驗證的 POC 驗收項目（spec §19 第 1、2、12 項）。
 
 環境變數、Docker、Cloud Run 部署細節請見
-[`../README.md`](../README.md) 與 [`../deploy/README.md`](../deploy/README.md)；
+[`../README.md`](../README.md)（English）／[`../README-TW.md`](../README-TW.md)
+（繁中）與 [`../deploy/README.md`](../deploy/README.md)；
 本文件只涵蓋 Teams 這一側的設定與手動測試。
 
 > **為什麼不用 Azure Bot Service。** 集團沒有 Azure Subscription，無法建立
