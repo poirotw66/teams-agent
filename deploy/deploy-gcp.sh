@@ -280,6 +280,32 @@ gcloud run services update "${ADAPTER_SERVICE}" \
   --project="${PROJECT_ID}" \
   --update-env-vars="BOT_PUBLIC_BASE_URL=${ADAPTER_URL}" >/dev/null
 
+# If the optional mock ticket UAT service is already deployed, re-wire it.
+# deploy-gcp intentionally starts the Agent with TICKET_SERVICE_MODE=DISABLED;
+# without this restore step a plain redeploy breaks Cloud Playground ticket demos.
+MOCK_TICKET_SERVICE="${GCP_MOCK_TICKET_SERVICE:-teams-mock-ticket}"
+MOCK_TICKET_TOKEN_SECRET="teams-agent-mock-ticket-token"
+if gcloud run services describe "${MOCK_TICKET_SERVICE}" \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1 \
+  && gcloud secrets describe "${MOCK_TICKET_TOKEN_SECRET}" \
+    --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  MOCK_TICKET_URL="$(gcloud run services describe "${MOCK_TICKET_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --format='value(status.url)')"
+  log "偵測到 ${MOCK_TICKET_SERVICE}，重新接上 Agent ticket HTTP 與 Playground 測試 email"
+  gcloud run services update "${AGENT_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --update-env-vars="TICKET_SERVICE_MODE=HTTP,TICKET_SERVICE_BASE_URL=${MOCK_TICKET_URL}" \
+    --update-secrets="TICKET_SERVICE_TOKEN=${MOCK_TICKET_TOKEN_SECRET}:latest" >/dev/null
+  gcloud run services update "${ADAPTER_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --update-env-vars="PLAYGROUND_TEST_USER_EMAIL=playground.user@example.test" >/dev/null
+fi
+
 printf '\nDeployment complete.\n'
 printf 'Agent URL:   %s\n' "${AGENT_URL}"
 printf 'Adapter URL: %s\n' "${ADAPTER_URL}"

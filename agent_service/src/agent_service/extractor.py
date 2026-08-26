@@ -140,12 +140,16 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 
 
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
+_GENERIC_TICKET_DESCRIPTION = "使用者提出的 IT 支援請求"
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
 _TICKET_COMMAND_RE = re.compile(
-    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?|協助)*"
+    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?|協助我?)*"
     r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?(?:派)?工單|開單|報修"
 )
 _TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
+_COURTESY_ONLY_RE = re.compile(
+    r"^(?:請|麻煩|幫我|幫忙|我要|確認|確定|好的?|協助我?|謝謝(?:你|您)?)+$"
+)
 
 
 def _normalize_known_it_terms(text: str) -> str:
@@ -166,7 +170,24 @@ def _is_known_dazhou_issue(description: str) -> bool:
 
 
 def _strip_ticket_command(text: str) -> str:
-    return _TICKET_COMMAND_RE.sub("", text).strip(_TICKET_COMMAND_PUNCTUATION)
+    stripped = _TICKET_COMMAND_RE.sub("", text).strip(_TICKET_COMMAND_PUNCTUATION)
+    if _is_courtesy_only(stripped):
+        return ""
+    return stripped
+
+
+def _is_courtesy_only(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text.strip())
+    return (not compact) or bool(_COURTESY_ONLY_RE.fullmatch(compact))
+
+
+def _is_generic_ticket_description(description: str) -> bool:
+    cleaned = sanitize_description(description).strip()
+    return cleaned == _GENERIC_TICKET_DESCRIPTION or _is_courtesy_only(cleaned)
+
+
+def _is_generic_ticket_request(text: str) -> bool:
+    return _is_generic_ticket_description(_strip_ticket_command(text))
 
 
 def merge_pending_ticket_issues(issues: list[Issue]) -> Issue:
@@ -179,7 +200,7 @@ def merge_pending_ticket_issues(issues: list[Issue]) -> Issue:
         if description and description not in descriptions:
             descriptions.append(description)
 
-    merged = "；".join(descriptions) or "使用者提出的 IT 支援請求"
+    merged = "；".join(descriptions) or _GENERIC_TICKET_DESCRIPTION
     return Issue(
         id=1,
         description=merged[:_SAFE_FALLBACK_DESCRIPTION_MAX_LEN],
@@ -326,7 +347,7 @@ class IssueExtractor:
             description = _strip_ticket_command(text)
             description = sanitize_description(description)
             if not description:
-                description = "使用者提出的 IT 支援請求"
+                description = _GENERIC_TICKET_DESCRIPTION
         elif ticket_intent == TicketIntent.QUERY:
             description = "查詢目前使用者的工單"
         elif ticket_intent == TicketIntent.DELETE_DENIED:

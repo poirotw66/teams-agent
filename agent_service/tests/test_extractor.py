@@ -106,6 +106,30 @@ async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_withou
     assert "建立工單" not in merged.description
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("請協助我開工單", "使用者提出的 IT 支援請求"),
+        ("請幫我建立派工單", "使用者提出的 IT 支援請求"),
+        ("公發手機無法解鎖，請協助我開工單", "公發手機無法解鎖"),
+        ("VPN Error 619，請建立工單", "VPN Error 619"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_intent_keeps_current_issue_and_drops_command_leftovers(
+    tmp_path, text: str, expected: str
+) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[issue()]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=text, history=[], faq_keys=[])
+
+    assert model.calls == []
+    assert outcome.issues[0].route == "TICKET"
+    assert outcome.issues[0].description == expected
+    assert "請協助我" != outcome.issues[0].description
+
+
 @pytest.mark.asyncio
 async def test_model_exception_returns_safe_fallback(tmp_path) -> None:
     model = FakeModel(result=RuntimeError("boom"))

@@ -626,6 +626,185 @@ async def test_dispatch_ticket_request_offers_confirmation_without_knowledge_mis
 
 
 @pytest.mark.asyncio
+async def test_generic_create_ticket_reuses_recent_it_issue_from_multi_turn_conversation(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(
+            found=True, answer="請攜帶證件至服務台重設解鎖。", backend="HYBRID"
+        )
+    )
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(
+                    description="我的設備無法解鎖",
+                    readiness="NEED_MORE_INFO",
+                    missingInfo=["使用的系統或應用程式名稱"],
+                )
+            ],
+            [issue(description="公發手機無法解鎖", readiness="READY")],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    first = await workflow.respond(make_request("我的設備無法解鎖"))
+    second = await workflow.respond(make_request("公發手機"))
+    offered = await workflow.respond(make_request("請協助我開工單"))
+
+    assert first.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert knowledge.calls == ["公發手機無法解鎖"]
+    assert ticket_service.created == []
+    assert "是否需要協助建立派工單" in offered.answer
+    assert extractor_model.calls == 2
+
+    created = await workflow.respond(make_request("是"))
+
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.title == "公發手機無法解鎖"
+    assert draft.description == "公發手機無法解鎖"
+    assert "請協助我" not in draft.title
+    assert "請協助我" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_create_command_with_current_issue_does_not_reuse_older_context(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請重設 VPN。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="VPN Error 619")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("VPN Error 619"))
+    offered = await workflow.respond(make_request("公發手機無法解鎖，請協助我開工單"))
+    created = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立派工單" in offered.answer
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.description == "公發手機無法解鎖"
+    assert "VPN Error 619" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_skips_non_it_aside_and_reuses_recent_it_issue(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請攜帶證件至服務台。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="公發手機無法解鎖")],
+            [
+                issue(
+                    description="今天天氣如何？",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("公發手機無法解鎖"))
+    aside = await workflow.respond(make_request("今天天氣如何？"))
+    offered = await workflow.respond(make_request("請幫我建立派工單"))
+    created = await workflow.respond(make_request("是"))
+
+    assert aside.answer == ALL_NON_IT_MESSAGE
+    assert "是否需要協助建立派工單" in offered.answer
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.description == "公發手機無法解鎖"
+    assert "天氣" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_does_not_reuse_abandoned_issue(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請攜帶證件至服務台。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="公發手機無法解鎖")],
+            [
+                issue(
+                    description="算了",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("公發手機無法解鎖"))
+    await workflow.respond(make_request("算了"))
+    await workflow.respond(make_request("請幫我建立派工單"))
+    await workflow.respond(make_request("是"))
+
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.description == "使用者提出的 IT 支援請求"
+    assert "公發手機" not in draft.description
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_without_it_history_does_not_use_non_it_text(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(
+                    description="今天天氣如何？",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ]
+        ],
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("今天天氣如何？"))
+    offered = await workflow.respond(make_request("請協助我開工單"))
+    created = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立派工單" in offered.answer
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.description == "使用者提出的 IT 支援請求"
+    assert "天氣" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
 async def test_ticket_refused_when_identity_untrusted(tmp_path: Path) -> None:
     it_issue = issue(id=1, description="VPN 一直斷線", route="TICKET")
     ticket_service = FakeTicketService()

@@ -68,7 +68,14 @@ from .contracts import (
     UserContext,
 )
 from .conversation import ConversationService
-from .extractor import IssueExtractor, merge_pending_ticket_issues, _strip_ticket_command
+from .extractor import (
+    _GENERIC_TICKET_DESCRIPTION,
+    IssueExtractor,
+    _is_generic_ticket_description,
+    _is_generic_ticket_request,
+    _strip_ticket_command,
+    merge_pending_ticket_issues,
+)
 from .faq import FaqService
 from .graph import user_context_from_identity
 from .knowledge import KnowledgeService, LlmCallCounter
@@ -419,17 +426,28 @@ def _requests_ticket_offer(text: str) -> bool:
     return any(marker in normalized for marker in markers)
 
 
-def _issues_for_create_offer(issues: list[Issue], message_text: str) -> list[Issue]:
+def _issues_for_create_offer(
+    issues: list[Issue],
+    message_text: str,
+    recent_contexts: list[PendingIssueContext],
+) -> list[Issue]:
     """Normalize CREATE intents into one ready TICKET issue for confirmation."""
-    it_issues = [issue for issue in issues if issue.isIT]
-    if it_issues:
-        return [merge_pending_ticket_issues(it_issues)]
+    if not _is_generic_ticket_request(message_text):
+        it_issues = [issue for issue in issues if issue.isIT]
+        if it_issues:
+            return [merge_pending_ticket_issues(it_issues)]
 
-    fallback = (
-        sanitize_description(_strip_ticket_command(message_text))
-        or sanitize_description(message_text)
-        or "使用者提出的 IT 支援請求"
-    )
+    usable = _usable_ticket_contexts(recent_contexts)
+    if usable:
+        recovered = [
+            _pending_context_to_ready_issue(context, issue_id=index)
+            for index, context in enumerate(usable, start=1)
+        ]
+        return [merge_pending_ticket_issues(recovered)]
+
+    fallback = sanitize_description(_strip_ticket_command(message_text))
+    if not fallback or _is_generic_ticket_description(fallback):
+        fallback = _GENERIC_TICKET_DESCRIPTION
     return [
         Issue(
             id=1,
@@ -459,26 +477,50 @@ def _pending_context_to_ready_issue(
     )
 
 
-def _recent_unresolved_contexts(
+def _issue_descriptions_from_assistant_text(text: str) -> list[str]:
+    descriptions = [
+        line.removeprefix("問題：").strip()
+        for line in text.splitlines()
+        if line.startswith("問題：") and line.removeprefix("問題：").strip()
+    ]
+    if not descriptions:
+        return []
+    if "目前企業知識庫中查無相關資訊" in text or "處理方式：" in text:
+        return descriptions
+    return []
+
+
+def _usable_ticket_contexts(
+    contexts: list[PendingIssueContext],
+) -> list[PendingIssueContext]:
+    return [
+        context
+        for context in contexts
+        if not _is_generic_ticket_description(context.description)
+    ]
+
+
+def _recent_ticket_contexts(
     conversation: ConversationContext,
 ) -> list[PendingIssueContext]:
     for message in reversed(conversation.messages):
+        if message.role == "user" and _abandons_pending_issue(message.text):
+            return []
         if message.role != "assistant":
             continue
-        if message.pendingIssues:
-            return list(message.pendingIssues)
-        if "目前企業知識庫中查無相關資訊" not in message.text:
-            continue
-        descriptions = [
-            line.removeprefix("問題：").strip()
-            for line in message.text.splitlines()
-            if line.startswith("問題：") and line.removeprefix("問題：").strip()
-        ]
-        if descriptions:
-            return [
+        if "已為你建立派工單" in message.text or "目前不會建立派工單" in message.text:
+            return []
+        usable = _usable_ticket_contexts(list(message.pendingIssues))
+        if usable:
+            return usable
+        usable = _usable_ticket_contexts(
+            [
                 PendingIssueContext(description=description)
-                for description in descriptions
+                for description in _issue_descriptions_from_assistant_text(message.text)
             ]
+        )
+        if usable:
+            return usable
     return []
 
 
@@ -624,14 +666,14 @@ class AgentWorkflow:
             pending_confirmation = True
         pending_issues = _pending_offer_issues(conversation) if pending_confirmation else []
         active_offer_contexts = (
-            _recent_unresolved_contexts(conversation)
+            _recent_ticket_contexts(conversation)
             if ticket_intent == TicketIntent.NONE
             and _has_pending_ticket_offer(conversation)
             and _unable_to_provide_detail(request.message.text)
             else []
         )
         requested_offer_contexts = (
-            _recent_unresolved_contexts(conversation)
+            _recent_ticket_contexts(conversation)
             if ticket_intent == TicketIntent.NONE
             and _requests_ticket_offer(request.message.text)
             else []
@@ -713,7 +755,11 @@ class AgentWorkflow:
             # Explicit create language still needs a short confirmation
             # turn so the user can review before a ticket is opened.
             force_ticket_offer = True
-            issues = _issues_for_create_offer(issues, request.message.text)
+            issues = _issues_for_create_offer(
+                issues,
+                request.message.text,
+                _recent_ticket_contexts(conversation),
+            )
             too_many_issues = False
         counter = LlmCallCounter(count=llm_calls)
         return {
@@ -1085,6 +1131,14 @@ class AgentWorkflow:
                     PendingIssueContext(
                         description=issue.description,
                         route="KNOWLEDGE",
+                    )
+                )
+            elif result.resultType in {"KNOWLEDGE_ANSWERED", "FAQ_ANSWERED"}:
+                pending_contexts.append(
+                    PendingIssueContext(
+                        description=issue.description,
+                        route=issue.route,
+                        faqKey=issue.faqKey,
                     )
                 )
         return pending_contexts
