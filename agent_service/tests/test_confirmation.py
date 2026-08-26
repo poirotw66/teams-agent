@@ -38,6 +38,9 @@ EXTRA_AFFIRMATIVE_VARIANTS = [
     "確認建立工單",
     "幫我建立工單，謝謝",
     "請開工單",
+    "請協助建立派工單",
+    "幫我建立派工單",
+    "我要建立派工單",
     "麻煩報修",
     "我要開單",
     "請報修",
@@ -115,7 +118,7 @@ def test_ticket_intent_has_fixed_cancel_query_create_none_priority(
     assert classify_ticket_intent(text) == expected
 
 
-@pytest.mark.parametrize("text", ["是", "是。", "好", "好的！", "可以", "確認"])
+@pytest.mark.parametrize("text", ["是", "是。", "好", "好的！", "可以", "確認", "<是>", "「是」"])
 def test_pending_offer_accepts_only_short_confirmations(text: str) -> None:
     assert is_pending_ticket_offer_confirmation(text) is True
 
@@ -123,3 +126,12 @@ def test_pending_offer_accepts_only_short_confirmations(text: str) -> None:
 @pytest.mark.parametrize("text", ["不是", "不知道", "可能", "再看看", "先不要"])
 def test_pending_offer_rejects_ambiguous_or_negative_replies(text: str) -> None:
     assert is_pending_ticket_offer_confirmation(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["請協助建立派工單", "VPN Error 619，請建立派工單", "幫我開一張派工單"],
+)
+def test_dispatch_ticket_phrases_classify_as_create(text: str) -> None:
+    assert classify_ticket_intent(text) == TicketIntent.CREATE
+    assert is_explicit_ticket_confirmation(text) is True

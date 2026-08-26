@@ -68,12 +68,13 @@ from .contracts import (
     UserContext,
 )
 from .conversation import ConversationService
-from .extractor import IssueExtractor, merge_pending_ticket_issues
+from .extractor import IssueExtractor, merge_pending_ticket_issues, _strip_ticket_command
 from .faq import FaqService
 from .graph import user_context_from_identity
 from .knowledge import KnowledgeService, LlmCallCounter
 from .response_builder import build_response
 from .retrieval import HybridIndex
+from .sanitize import sanitize_description
 from .settings import RagSettings
 from .ticket import (
     TicketService,
@@ -88,7 +89,7 @@ logger = logging.getLogger(__name__)
 # This marker remains solely for deciding whether the extractor should see a
 # no-knowledge offer as recent context.  It is not an authorization to create
 # a ticket; ticket actions are always determined from the current turn.
-_TICKET_OFFER_MARKER = "是否需要協助建立工單"
+_TICKET_OFFER_MARKER = "是否需要協助建立派工單"
 
 # Progress stages surfaced to the Teams user while the graph runs (spec §5.1
 # node boundaries, reused as user-visible progress).
@@ -402,7 +403,7 @@ def _preserves_interrupted_clarification(state: AgentState) -> bool:
 def _requests_ticket_offer(text: str) -> bool:
     """Detect a request to present the ticket option, without creating one."""
     normalized = text.strip()
-    if "工單" not in normalized:
+    if "工單" not in normalized and "派工單" not in normalized:
         return False
     markers = (
         "要不要",
@@ -416,6 +417,31 @@ def _requests_ticket_offer(text: str) -> bool:
         "沒問",
     )
     return any(marker in normalized for marker in markers)
+
+
+def _issues_for_create_offer(issues: list[Issue], message_text: str) -> list[Issue]:
+    """Normalize CREATE intents into one ready TICKET issue for confirmation."""
+    it_issues = [issue for issue in issues if issue.isIT]
+    if it_issues:
+        return [merge_pending_ticket_issues(it_issues)]
+
+    fallback = (
+        sanitize_description(_strip_ticket_command(message_text))
+        or sanitize_description(message_text)
+        or "使用者提出的 IT 支援請求"
+    )
+    return [
+        Issue(
+            id=1,
+            description=fallback,
+            isIT=True,
+            readiness="READY",
+            missingInfo=[],
+            route="TICKET",
+            faqKey=None,
+            ticketAction=None,
+        )
+    ]
 
 
 def _pending_context_to_ready_issue(
@@ -679,6 +705,16 @@ class AgentWorkflow:
                     else issue
                     for issue in issues
                 ]
+        if (
+            ticket_intent == TicketIntent.CREATE
+            and not pending_confirmation
+            and self.settings.ticket_service_mode != "DISABLED"
+        ):
+            # Explicit create language still needs a short confirmation
+            # turn so the user can review before a ticket is opened.
+            force_ticket_offer = True
+            issues = _issues_for_create_offer(issues, request.message.text)
+            too_many_issues = False
         counter = LlmCallCounter(count=llm_calls)
         return {
             "issues": issues,

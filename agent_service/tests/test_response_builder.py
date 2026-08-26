@@ -280,7 +280,21 @@ def test_no_knowledge_does_not_fabricate_and_offers_ticket_when_enabled():
         offer_ticket_on_no_knowledge=True,
     )
     assert "查無相關資訊" in built.text
-    assert "建立工單" in built.text
+    assert "建立派工單" in built.text
+    assert "請回覆<是>以建立派工單" in built.text
+
+
+def test_create_offer_skips_knowledge_miss_preamble():
+    issue = make_issue(id=1, description="請協助建立派工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="NO_KNOWLEDGE")
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(),
+        offer_ticket_on_no_knowledge=True,
+    )
+    assert built.text == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+    assert "查無相關資訊" not in built.text
 
 
 def test_no_knowledge_without_ticket_offer_flag_has_no_ticket_prompt():
@@ -292,6 +306,7 @@ def test_no_knowledge_without_ticket_offer_flag_has_no_ticket_prompt():
         settings=make_settings(),
         offer_ticket_on_no_knowledge=False,
     )
+    assert "建立派工單" not in built.text
     assert "建立工單" not in built.text
 
 
@@ -330,7 +345,7 @@ def test_ticket_found_with_no_tickets_says_so():
     issue = make_issue(id=1, description="查詢我的工單", route="TICKET")
     result = IssueResult(issueId=1, resultType="TICKET_FOUND", sources=[])
     built = build_response(issues=[issue], results=[result], settings=make_settings())
-    assert "查無你建立的工單" in built.text
+    assert "查無你建立的派工單" in built.text
 
 
 def test_ticket_cancelled_is_a_direct_reply_without_sources_or_feedback():
@@ -344,7 +359,7 @@ def test_ticket_cancelled_is_a_direct_reply_without_sources_or_feedback():
         offer_ticket_on_no_knowledge=True,
     )
 
-    assert built.text == "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+    assert built.text == "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
     assert "來源" not in built.text
     assert built.citations == []
     assert built.images == []
@@ -362,7 +377,7 @@ def test_ticket_delete_denied_is_a_direct_reply_without_sources_or_feedback():
         offer_ticket_on_no_knowledge=True,
     )
 
-    assert built.text.startswith("目前不支援刪除工單")
+    assert built.text.startswith("目前不支援刪除派工單")
     assert "來源" not in built.text
     assert built.citations == []
     assert built.images == []

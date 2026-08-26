@@ -87,36 +87,57 @@ _NEGATION_MARKERS: tuple[str, ...] = (
 # variants).
 _AFFIRMATIVE_PATTERNS: tuple[str, ...] = (
     "建立工單",
+    "建立派工單",
     "建工單",
+    "建派工單",
     "建單",
     "開單",
     "報修",
     "開一張工單",
+    "開一張派工單",
     "開個工單",
+    "開個派工單",
     "開張工單",
+    "開張派工單",
     "提交工單",
+    "提交派工單",
     "送出工單",
+    "送出派工單",
     "申請工單",
+    "申請派工單",
     "幫我開單",
     "幫我報修",
     "幫我建立工單",
+    "幫我建立派工單",
     "幫忙建立工單",
+    "幫忙建立派工單",
     "確認建立工單",
+    "確認建立派工單",
     "確定建立工單",
+    "確定建立派工單",
     "我要報修",
     "我要開單",
     "我要建立工單",
+    "我要建立派工單",
     "麻煩開單",
     "麻煩報修",
     "麻煩建立工單",
+    "麻煩建立派工單",
     "好，幫我開單",
     "好,幫我開單",
     "好，開單",
     "請幫我建立工單",
+    "請幫我建立派工單",
+    "請協助建立工單",
+    "請協助建立派工單",
     "請建立工單",
+    "請建立派工單",
     "請開工單",
+    "請開派工單",
     "請開單",
     "請報修",
+    "協助建立工單",
+    "協助建立派工單",
 )
 
 # Cancellation must be recognised as a ticket-specific request.  A generic
@@ -124,39 +145,55 @@ _AFFIRMATIVE_PATTERNS: tuple[str, ...] = (
 # not a ticket cancellation, whereas "先不要建立工單" is.
 _CANCEL_PATTERNS: tuple[str, ...] = (
     "取消工單",
+    "取消派工單",
     "取消建立",
     "不要建立工單",
+    "不要建立派工單",
     "不要建工單",
+    "不要建派工單",
     "不要開工單",
+    "不要開派工單",
     "不要開單",
     "不要報修",
     "先不要建立工單",
+    "先不要建立派工單",
     "先不要建工單",
+    "先不要建派工單",
     "先不要開工單",
+    "先不要開派工單",
     "先不要開單",
     "先不要報修",
     "先不建立工單",
+    "先不建立派工單",
     "先不開單",
     "先不報修",
     "不用建立工單",
+    "不用建立派工單",
     "不用開單",
     "不用報修",
     "不必建立工單",
+    "不必建立派工單",
     "不必開單",
     "不必報修",
     "暫時不要建立工單",
+    "暫時不要建立派工單",
     "暫時不要開單",
     "暫時不要報修",
     "不需要建立工單",
+    "不需要建立派工單",
     "不需要開單",
     "不需要報修",
 )
 
 _DELETE_PATTERNS: tuple[str, ...] = (
     "刪除工單",
+    "刪除派工單",
     "刪掉工單",
+    "刪掉派工單",
     "刪工單",
+    "刪派工單",
     "移除工單",
+    "移除派工單",
 )
 
 _QUERY_MARKERS: tuple[str, ...] = (
@@ -199,7 +236,8 @@ def classify_ticket_intent(text: str) -> TicketIntent:
         return TicketIntent.DELETE_DENIED
     if any(pattern in normalized for pattern in _CANCEL_PATTERNS):
         return TicketIntent.CANCEL
-    if "工單" in normalized and any(marker in normalized for marker in _QUERY_MARKERS):
+    mentions_ticket = "工單" in normalized or "派工單" in normalized
+    if mentions_ticket and any(marker in normalized for marker in _QUERY_MARKERS):
         return TicketIntent.QUERY
     if is_explicit_ticket_confirmation(normalized):
         return TicketIntent.CREATE
@@ -208,7 +246,10 @@ def classify_ticket_intent(text: str) -> TicketIntent:
 
 def is_pending_ticket_offer_confirmation(text: str) -> bool:
     """Accept a short confirmation only when the workflow has a live offer."""
-    return text.strip().rstrip("。.!！") in _PENDING_OFFER_CONFIRMATIONS
+    normalized = text.strip().rstrip("。.!！")
+    # Allow wrappers used in the offer copy, e.g. <是> or 「是」.
+    normalized = normalized.strip("<>「」")
+    return normalized in _PENDING_OFFER_CONFIRMATIONS
 
 
 def is_explicit_ticket_confirmation(text: str) -> bool:

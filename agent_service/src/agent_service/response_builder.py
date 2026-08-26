@@ -170,10 +170,15 @@ def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
 def _render_no_knowledge(
     issue: Issue, result: IssueResult, *, offer_ticket: bool
 ) -> str:
+    # Explicit create requests are routed with route=TICKET and should only
+    # ask for confirmation — never pretend we searched the knowledge base.
+    if offer_ticket and issue.route == "TICKET":
+        return "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+
     # Spec §8.4: never fabricate an answer when the knowledge base has none.
     text = f"問題：{_safe_description(issue)}\n\n目前企業知識庫中查無相關資訊，我無法提供答案。"
     if offer_ticket:
-        text += "\n\n是否需要協助建立工單？請回覆「是」以建立工單。"
+        text += "\n\n是否需要協助建立派工單？請回覆<是>以建立派工單。"
     return text
 
 
@@ -181,10 +186,10 @@ def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
     lines = [
         f"問題：{_safe_description(issue)}",
         "",
-        f"已為你建立工單，工單編號：{result.ticketId}",
+        f"已為你建立派工單，派工單編號：{result.ticketId}",
     ]
     if result.sources and result.sources[0].url:
-        lines.append(f"工單連結：{result.sources[0].url}")
+        lines.append(f"派工單連結：{result.sources[0].url}")
     if result.answer:
         lines.append("")
         lines.append(result.answer)
@@ -193,21 +198,21 @@ def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
 
 def _render_ticket_found(issue: Issue, result: IssueResult) -> str:
     description = _safe_description(issue)
-    header = f"問題：{description}\n\n你的工單如下："
+    header = f"問題：{description}\n\n你的派工單如下："
     if not result.sources:
-        return f"問題：{description}\n\n目前查無你建立的工單。"
+        return f"問題：{description}\n\n目前查無你建立的派工單。"
     return f"{header}\n{_render_sources_block(result.sources)}"
 
 
 def _render_ticket_cancelled() -> str:
     """A cancellation is a direct acknowledgement, never a knowledge answer."""
-    return "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+    return "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
 
 
 def _render_ticket_delete_denied() -> str:
     """Mock acceptance environment keeps tickets as an auditable record."""
     return (
-        "目前不支援刪除工單。若工單已不需要處理，正式串接工單系統後，"
+        "目前不支援刪除派工單。若派工單已不需要處理，正式串接工單系統後，"
         "可使用取消或關閉功能。"
     )
 

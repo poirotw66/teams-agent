@@ -325,8 +325,10 @@ async def test_acceptance_15_ticket_api_called_after_explicit_confirmation(
         tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
     )
 
-    response = await workflow.respond(tw.make_request("請幫我建立工單"))
+    offered = await workflow.respond(tw.make_request("請幫我建立工單"))
+    response = await workflow.respond(tw.make_request("是"))
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert len(ticket_service.created) == 1
     assert response.issueResults[0].resultType == "TICKET_CREATED"
 

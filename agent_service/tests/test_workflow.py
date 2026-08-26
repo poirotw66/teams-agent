@@ -455,7 +455,7 @@ async def test_ticket_cancellation_short_circuits_retrieval_ticket_api_and_feedb
     assert ticket_service.created == []
     assert ticket_service.list_calls == []
     assert response.issueResults[0].resultType == "TICKET_CANCELLED"
-    assert response.answer == "好的，目前不會建立工單。若之後需要協助，請告訴我「建立工單」。"
+    assert response.answer == "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
     assert response.citations == []
     assert response.images == []
     assert response.feedbackEnabled is False
@@ -485,7 +485,7 @@ async def test_ticket_delete_is_safely_denied_without_retrieval_or_ticket_api(
     assert ticket_service.created == []
     assert ticket_service.list_calls == []
     assert denied.issueResults[0].resultType == "TICKET_DELETE_DENIED"
-    assert denied.answer.startswith("目前不支援刪除工單")
+    assert denied.answer.startswith("目前不支援刪除派工單")
     assert denied.citations == []
     assert denied.images == []
     assert denied.feedbackEnabled is False
@@ -510,7 +510,7 @@ async def test_yes_after_cancellation_cannot_reuse_a_pending_ticket_offer(tmp_pa
     cancelled = await workflow.respond(make_request("先不要建立工單"))
     follow_up = await workflow.respond(make_request("是"))
 
-    assert "是否需要協助建立工單" in offered.answer
+    assert "是否需要協助建立派工單" in offered.answer
     assert cancelled.issueResults[0].resultType == "TICKET_CANCELLED"
     assert ticket_service.created == []
     assert ticket_service.list_calls == []
@@ -535,7 +535,7 @@ async def test_yes_creates_ticket_only_when_previous_turn_contains_live_offer(
     offered = await workflow.respond(make_request("VPN Error 619"))
     confirmed = await workflow.respond(make_request("是"))
 
-    assert "是否需要協助建立工單" in offered.answer
+    assert "是否需要協助建立派工單" in offered.answer
     assert len(ticket_service.created) == 1
     assert ticket_service.created[0][0].description == "VPN Error 619"
     assert confirmed.issueResults[0].resultType == "TICKET_CREATED"
@@ -565,7 +565,7 @@ async def test_yes_merges_multiple_pending_issues_into_one_ticket(tmp_path: Path
     )
     confirmed = await workflow.respond(make_request("是"))
 
-    assert offered.answer.count("是否需要協助建立工單") == 2
+    assert offered.answer.count("是否需要協助建立派工單") == 2
     assert len(ticket_service.created) == 1
     draft, _correlation_id = ticket_service.created[0]
     assert "VPN Error 619" in draft.description
@@ -589,15 +589,40 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
         tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
     )
 
-    response = await workflow.respond(
+    offered = await workflow.respond(
         make_request("請幫我建立工單", user=trusted_user())
     )
+    response = await workflow.respond(
+        make_request("是", user=trusted_user())
+    )
 
+    assert "是否需要協助建立派工單" in offered.answer
+    assert "查無相關資訊" not in offered.answer
     assert len(ticket_service.created) == 1
     result = response.issueResults[0]
     assert result.resultType == "TICKET_CREATED"
     assert result.ticketId
-    assert "已為你建立工單" in response.answer
+    assert "已為你建立派工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_dispatch_ticket_request_offers_confirmation_without_knowledge_miss(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, *_ = build_workflow(
+        tmp_path, issues_sequence=[[]], ticket_service=ticket_service
+    )
+
+    offered = await workflow.respond(make_request("請協助建立派工單"))
+
+    assert offered.answer == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+    assert ticket_service.created == []
+
+    created = await workflow.respond(make_request("<是>"))
+
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert "已為你建立派工單" in created.answer
 
 
 @pytest.mark.asyncio
@@ -609,10 +634,14 @@ async def test_ticket_refused_when_identity_untrusted(tmp_path: Path) -> None:
     )
     untrusted = UserIdentity(teamsUserId="teams-1")  # missing displayName/email
 
-    response = await workflow.respond(
+    offered = await workflow.respond(
         make_request("請幫我建立工單", user=untrusted)
     )
+    response = await workflow.respond(
+        make_request("是", user=untrusted)
+    )
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert ticket_service.created == []
     assert response.issueResults[0].resultType == "FAILED"
     assert "untrusted_requester" not in response.answer
@@ -627,8 +656,10 @@ async def test_one_ticket_per_turn(tmp_path: Path) -> None:
         tmp_path, issues_sequence=[[issue1, issue2]], ticket_service=ticket_service
     )
 
-    response = await workflow.respond(make_request("請幫我建立工單"))
+    offered = await workflow.respond(make_request("請幫我建立工單"))
+    response = await workflow.respond(make_request("是"))
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert len(ticket_service.created) == 1
     created_types = [r.resultType for r in response.issueResults]
     assert created_types.count("TICKET_CREATED") == 1
@@ -655,12 +686,15 @@ async def test_explicit_multi_problem_creation_builds_one_ticket_without_retriev
         ticket_service=ticket_service,
     )
 
-    response = await workflow.respond(
+    offered = await workflow.respond(
         make_request("VPN Error 619，而且 SAP 密碼也無法重置，請建立工單")
     )
+    response = await workflow.respond(make_request("是"))
 
     assert extractor_model.calls == 0
     assert knowledge.calls == []
+    assert "是否需要協助建立派工單" in offered.answer
+    assert "查無相關資訊" not in offered.answer
     assert len(ticket_service.created) == 1
     draft, _correlation_id = ticket_service.created[0]
     assert "VPN Error 619" in draft.title
@@ -932,7 +966,7 @@ async def test_unknown_stops_clarification_and_offers_ticket_without_polluting_q
     assert knowledge.calls == ["Google Meet 無法登入"]
     assert "不知道" not in knowledge.calls[0]
     assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
-    assert "是否需要協助建立工單" in response.answer
+    assert "是否需要協助建立派工單" in response.answer
 
 
 @pytest.mark.asyncio
@@ -998,7 +1032,7 @@ async def test_ticket_offer_correction_repeats_offer_without_creating_ticket(
     assert ticket_service.created == []
     assert corrected.issueResults[0].resultType == "NO_KNOWLEDGE"
     assert "問題：Google Meet 無法登入" in corrected.answer
-    assert "是否需要協助建立工單" in corrected.answer
+    assert "是否需要協助建立派工單" in corrected.answer
 
 
 @pytest.mark.asyncio
@@ -1025,7 +1059,7 @@ async def test_unknown_during_ticket_offer_repeats_offer_then_yes_creates_one_ti
     assert knowledge.calls == ["Google Meet 無法登入"]
     assert offered.issueResults[0].resultType == "NO_KNOWLEDGE"
     assert repeated.issueResults[0].resultType == "NO_KNOWLEDGE"
-    assert "是否需要協助建立工單" in repeated.answer
+    assert "是否需要協助建立派工單" in repeated.answer
     assert created.issueResults[0].resultType == "TICKET_CREATED"
     assert len(ticket_service.created) == 1
 

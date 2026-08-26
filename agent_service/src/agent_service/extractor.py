@@ -142,8 +142,8 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
 _TICKET_COMMAND_RE = re.compile(
-    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?)*"
-    r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?工單|開單|報修"
+    r"(?:請|麻煩|幫我|幫忙|我要|確認|確定|好[，,]?|協助)*"
+    r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?(?:派)?工單|開單|報修"
 )
 _TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
 
@@ -179,7 +179,7 @@ def merge_pending_ticket_issues(issues: list[Issue]) -> Issue:
         if description and description not in descriptions:
             descriptions.append(description)
 
-    merged = "；".join(descriptions) or "使用者要求建立 IT 支援工單"
+    merged = "；".join(descriptions) or "使用者提出的 IT 支援請求"
     return Issue(
         id=1,
         description=merged[:_SAFE_FALLBACK_DESCRIPTION_MAX_LEN],
@@ -326,7 +326,7 @@ class IssueExtractor:
             description = _strip_ticket_command(text)
             description = sanitize_description(description)
             if not description:
-                description = "使用者要求建立 IT 支援工單"
+                description = "使用者提出的 IT 支援請求"
         elif ticket_intent == TicketIntent.QUERY:
             description = "查詢目前使用者的工單"
         elif ticket_intent == TicketIntent.DELETE_DENIED:
