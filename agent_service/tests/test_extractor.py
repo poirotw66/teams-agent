@@ -107,6 +107,30 @@ async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_withou
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "有哪些工單",
+        "有哪些派工單",
+        "我的工單進度如何？",
+        "我的派工單進度如何？",
+    ],
+)
+@pytest.mark.asyncio
+async def test_ticket_list_and_progress_queries_bypass_faq_or_model(tmp_path, text: str) -> None:
+    # Ticket queries must be handled by the deterministic guardrail before
+    # an FAQ-looking model result can route them to the knowledge base.
+    model = FakeModel(result=IssueExtraction(issues=[issue(route="FAQ", faqKey="FAQ")]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=text, history=[], faq_keys=["FAQ"])
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert outcome.issues[0].route == "TICKET"
+    assert outcome.issues[0].description == "查詢目前使用者的派工單"
+
+
+@pytest.mark.parametrize(
     ("text", "expected"),
     [
         ("請協助我開工單", "使用者提出的 IT 支援請求"),

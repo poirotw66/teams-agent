@@ -349,7 +349,7 @@ class IssueExtractor:
             if not description:
                 description = _GENERIC_TICKET_DESCRIPTION
         elif ticket_intent == TicketIntent.QUERY:
-            description = "查詢目前使用者的工單"
+            description = "查詢目前使用者的派工單"
         elif ticket_intent == TicketIntent.DELETE_DENIED:
             description = "刪除工單"
         else:

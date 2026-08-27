@@ -349,6 +349,37 @@ async def test_faq_miss_falls_back_to_knowledge(tmp_path: Path) -> None:
     assert knowledge.calls == ["某個問題"]
 
 
+@pytest.mark.parametrize("text", ["有哪些派工單", "有哪些工單"])
+@pytest.mark.asyncio
+async def test_ticket_list_queries_current_users_dispatch_tickets_not_faq(
+    tmp_path: Path, text: str
+) -> None:
+    faq = FaqService(
+        FaqRepository([FaqEntry(id="1", faqKey="TICKET_FAQ", enabled=True, answer="FAQ")])
+    )
+    ticket_service = FakeTicketService()
+    ticket_service._by_requester["user-1"] = [
+        Ticket(id="TCK-1", title="VPN 問題", status="OPEN", url="https://tickets/TCK-1")
+    ]
+    workflow, extractor_model, knowledge, _ticket, *_ = build_workflow(
+        tmp_path,
+        # This would produce an FAQ response if the deterministic ticket
+        # query guardrail did not intercept the message first.
+        issues_sequence=[[issue(route="FAQ", faqKey="TICKET_FAQ")]],
+        faq_service=faq,
+        ticket_service=ticket_service,
+    )
+
+    response = await workflow.respond(make_request(text))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert ticket_service.list_calls == ["user-1"]
+    assert response.issueResults[0].resultType == "TICKET_FOUND"
+    assert "你的派工單如下：" in response.answer
+    assert "問題：查詢目前使用者的派工單" in response.answer
+
+
 @pytest.mark.asyncio
 async def test_need_more_info_path(tmp_path: Path) -> None:
     it_issue = issue(

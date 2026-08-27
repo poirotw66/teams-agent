@@ -122,6 +122,21 @@ def test_ticket_intent_has_fixed_cancel_query_create_none_priority(
     assert classify_ticket_intent(text) == expected
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "有哪些工單",
+        "有哪些派工單",
+        "我的工單進度如何？",
+        "我的派工單進度如何？",
+    ],
+)
+def test_ticket_list_and_progress_queries_are_classified_deterministically(
+    text: str,
+) -> None:
+    assert classify_ticket_intent(text) == TicketIntent.QUERY
+
+
 @pytest.mark.parametrize("text", ["是", "是。", "好", "好的！", "可以", "確認", "<是>", "「是」"])
 def test_pending_offer_accepts_only_short_confirmations(text: str) -> None:
     assert is_pending_ticket_offer_confirmation(text) is True
