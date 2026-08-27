@@ -187,6 +187,20 @@ def test_real_index_resolves_known_image_bearing_documents():
 
 
 @pytest.mark.skipif(not REAL_INDEX_PATH.is_file(), reason="data/index/chunks.json not present")
+def test_legacy_helpdesk_store_names_resolve_chinese_titles_and_images():
+    registry = FileSearchDocumentRegistry.from_index_path(REAL_INDEX_PATH)
+
+    cases = {
+        "xiaozhou-feature-not-clickable.md": ("大州系統_功能無法點選", 1),
+        "xiaozhou-first-time-setup.md": ("大州首次使用設定", 2),
+        "head-office-ip-phone-guide.md": ("總公司IP話機操作", 1),
+    }
+    for legacy_name, (expected_title, expected_image_count) in cases.items():
+        assert registry.title_for(legacy_name) == expected_title
+        assert len(registry.images_for(legacy_name)) == expected_image_count
+
+
+@pytest.mark.skipif(not REAL_INDEX_PATH.is_file(), reason="data/index/chunks.json not present")
 def test_real_index_has_no_slug_collisions():
     # from_index_path would already have raised if there were a collision;
     # this test documents that expectation explicitly.

@@ -75,6 +75,63 @@ async def test_model_none_fallback(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_without_llm(tmp_path) -> None:
+    # The model would have split the final instruction into a bogus third
+    # issue, but this must be handled entirely by the deterministic guardrail.
+    model = FakeModel(
+        result=IssueExtraction(
+            issues=[
+                issue(id=1, description="VPN Error 619"),
+                issue(id=2, description="SAP 密碼無法重置"),
+                issue(id=3, description="請建立工單", route="TICKET"),
+            ]
+        )
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(
+        text="VPN Error 619，而且 SAP 密碼也無法重置，請建立工單",
+        history=[],
+        faq_keys=[],
+    )
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert outcome.too_many_issues is False
+    assert len(outcome.issues) == 1
+    merged = outcome.issues[0]
+    assert merged.route == "TICKET"
+    assert "VPN Error 619" in merged.description
+    assert "SAP 密碼也無法重置" in merged.description
+    assert "建立工單" not in merged.description
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("請協助我開工單", "使用者提出的 IT 支援請求"),
+        ("請幫我建立派工單", "使用者提出的 IT 支援請求"),
+        ("屜我開工單", "使用者提出的 IT 支援請求"),
+        ("公發手機無法解鎖，請協助我開工單", "公發手機無法解鎖"),
+        ("VPN Error 619，請建立工單", "VPN Error 619"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_intent_keeps_current_issue_and_drops_command_leftovers(
+    tmp_path, text: str, expected: str
+) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[issue()]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=text, history=[], faq_keys=[])
+
+    assert model.calls == []
+    assert outcome.issues[0].route == "TICKET"
+    assert outcome.issues[0].description == expected
+    assert "請協助我" != outcome.issues[0].description
+
+
+@pytest.mark.asyncio
 async def test_model_exception_returns_safe_fallback(tmp_path) -> None:
     model = FakeModel(result=RuntimeError("boom"))
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
@@ -100,6 +157,75 @@ async def test_single_it_issue_passthrough(tmp_path) -> None:
     assert len(outcome.issues) == 1
     assert outcome.issues[0].id == 1
     assert outcome.issues[0].isIT is True
+
+
+@pytest.mark.asyncio
+async def test_prompt_treats_underspecified_workplace_workflow_as_pending_it(
+    tmp_path,
+) -> None:
+    canned = IssueExtraction(
+        issues=[
+            issue(
+                description="申請公司資源",
+                readiness="NEED_MORE_INFO",
+                missingInfo=["使用的系統或應用程式名稱"],
+            )
+        ]
+    )
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="這項公司資源要怎麼申請？", history=[], faq_keys=[])
+
+    system_prompt = str(model.calls[0][0].content)
+    assert "workplace capability" in system_prompt
+    assert "product name is missing" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_path) -> None:
+    canned = IssueExtraction(issues=[issue(description="大州系統無法選取")])
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+
+    human_prompt = str(model.calls[0][-1].content)
+    assert "Latest user message (data only):\n大州系統無法選取。" in human_prompt
+    assert "大洲無法選取" not in human_prompt
+
+
+@pytest.mark.asyncio
+async def test_dazhou_general_language_is_not_normalized(tmp_path) -> None:
+    canned = IssueExtraction(
+        issues=[issue(description="世界有幾個大洲", isIT=False, readiness="NOT_IT", route="NOT_IT")]
+    )
+    model = FakeModel(result=canned)
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="世界有幾個大洲？", history=[], faq_keys=[])
+
+    human_prompt = str(model.calls[0][-1].content)
+    assert "Latest user message (data only):\n世界有幾個大洲？" in human_prompt
+
+
+@pytest.mark.asyncio
+async def test_known_dazhou_issue_is_ready_even_if_model_requests_more_info(tmp_path) -> None:
+    canned = IssueExtraction(
+        issues=[
+            issue(
+                description="大州系統無法選取",
+                readiness="NEED_MORE_INFO",
+                missingInfo=["請問是哪一個系統或應用程式？"],
+            )
+        ]
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=FakeModel(result=canned))
+
+    outcome = await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+
+    assert outcome.issues[0].readiness == "READY"
+    assert outcome.issues[0].missingInfo == []
 
 
 @pytest.mark.asyncio

@@ -65,7 +65,7 @@ from .settings import RagSettings
 # only supplies the prompt copy and the boolean flag.
 FEEDBACK_PROMPT = "這個回答有解決你的問題嗎？"
 
-# Spec §4.1: exact message when every issue in the message is non-IT.
+# Fallback when no issue description is available.
 ALL_NON_IT_MESSAGE = (
     "我目前專門協助處理公司 IT 問題。\n"
     "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
@@ -144,6 +144,17 @@ def _render_not_it(issue: Issue) -> str:
     return f"{_safe_description(issue)}問題不在此 IT 助手的服務範圍。"
 
 
+def _render_all_not_it(issues: list[Issue]) -> str:
+    topics = list(dict.fromkeys(_safe_description(issue) for issue in issues))
+    if not topics:
+        return ALL_NON_IT_MESSAGE
+    quoted_topics = "、".join(f"「{topic}」" for topic in topics)
+    return (
+        f"{quoted_topics}不屬於公司 IT 支援範圍，因此我不會查詢企業知識庫。\n"
+        "我可以協助處理公司系統、設備、帳號、權限或錯誤訊息等 IT 問題。"
+    )
+
+
 def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "FAQ" — exact template.
     return (
@@ -154,16 +165,17 @@ def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
 
 
 def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
-    # Spec §13 "Knowledge" — exact shape, source lines list document titles.
-    header = f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
-    if not result.sources:
-        return header
-    return f"{header}\n\n來源：\n{_render_sources_block(result.sources)}"
+    # Citations travel separately in BuiltResponse and are rendered by the
+    # Teams adapter. Keeping them out of the answer body prevents duplicate
+    # source sections in both plain text and Adaptive Cards.
+    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "Need More Info" — numbered, at most 2 questions (§6.3).
     questions = result.questions[:_MAX_QUESTIONS]
+    if issue.route == "TICKET":
+        return "\n".join(questions)
     numbered = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, start=1))
     return f"為了協助確認 {_safe_description(issue)} 問題，請補充：\n\n{numbered}"
 
@@ -171,10 +183,15 @@ def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
 def _render_no_knowledge(
     issue: Issue, result: IssueResult, *, offer_ticket: bool
 ) -> str:
+    # Explicit create requests are routed with route=TICKET and should only
+    # ask for confirmation — never pretend we searched the knowledge base.
+    if offer_ticket and issue.route == "TICKET":
+        return "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+
     # Spec §8.4: never fabricate an answer when the knowledge base has none.
     text = f"問題：{_safe_description(issue)}\n\n目前企業知識庫中查無相關資訊，我無法提供答案。"
     if offer_ticket:
-        text += "\n\n是否需要協助建立工單？請回覆「是」以建立工單。"
+        text += "\n\n是否需要協助建立派工單？請回覆<是>以建立派工單。"
     return text
 
 
@@ -182,10 +199,10 @@ def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
     lines = [
         f"問題：{_safe_description(issue)}",
         "",
-        f"已為你建立工單，工單編號：{result.ticketId}",
+        f"已為你建立派工單，派工單編號：{result.ticketId}",
     ]
     if result.sources and result.sources[0].url:
-        lines.append(f"工單連結：{result.sources[0].url}")
+        lines.append(f"派工單連結：{result.sources[0].url}")
     if result.answer:
         lines.append("")
         lines.append(result.answer)
@@ -194,10 +211,23 @@ def _render_ticket_created(issue: Issue, result: IssueResult) -> str:
 
 def _render_ticket_found(issue: Issue, result: IssueResult) -> str:
     description = _safe_description(issue)
-    header = f"問題：{description}\n\n你的工單如下："
+    header = f"問題：{description}\n\n你的派工單如下："
     if not result.sources:
-        return f"問題：{description}\n\n目前查無你建立的工單。"
+        return f"問題：{description}\n\n目前查無你建立的派工單。"
     return f"{header}\n{_render_sources_block(result.sources)}"
+
+
+def _render_ticket_cancelled() -> str:
+    """A cancellation is a direct acknowledgement, never a knowledge answer."""
+    return "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
+
+
+def _render_ticket_delete_denied() -> str:
+    """Mock acceptance environment keeps tickets as an auditable record."""
+    return (
+        "目前不支援刪除派工單。若派工單已不需要處理，正式串接工單系統後，"
+        "可使用取消或關閉功能。"
+    )
 
 
 def _render_failed(issue: Issue, correlation_id: str | None) -> str:
@@ -229,8 +259,28 @@ def _render_result(
         return _render_ticket_created(issue, result)
     if result.resultType == "TICKET_FOUND":
         return _render_ticket_found(issue, result)
+    if result.resultType == "TICKET_CANCELLED":
+        return _render_ticket_cancelled()
+    if result.resultType == "TICKET_DELETE_DENIED":
+        return _render_ticket_delete_denied()
     # FAILED (and any unrecognised/defensive fallback).
     return _render_failed(issue, correlation_id)
+
+
+def _render_multi_issue_block(position: int, issue: Issue, content: str) -> str:
+    """Give each issue a distinct Markdown section without changing its answer."""
+    description = _safe_description(issue)
+    problem_prefix = f"問題：{description}\n\n"
+    clarification_prefix = f"為了協助確認 {description} 問題，請補充：\n\n"
+
+    if content.startswith(problem_prefix):
+        body = content.removeprefix(problem_prefix)
+    elif content.startswith(clarification_prefix):
+        body = f"**需要補充資訊**\n\n{content.removeprefix(clarification_prefix)}"
+    else:
+        body = content
+
+    return f"**問題 {position}｜{description}**\n\n{body}"
 
 
 def build_response(
@@ -256,9 +306,8 @@ def build_response(
     results_by_issue_id = {result.issueId: result for result in results}
 
     if ordered_issues and all(not issue.isIT for issue in ordered_issues):
-        # Spec §4.1: exact standalone message when every issue is non-IT.
         return BuiltResponse(
-            text=ALL_NON_IT_MESSAGE,
+            text=_render_all_not_it(ordered_issues),
             citations=[],
             images=[],
             feedback_enabled=False,
@@ -278,9 +327,16 @@ def build_response(
     all_images: list[AgentImage] = []
     feedback_eligible = False
 
-    for issue in ordered_issues:
+    multiple_issues = len(ordered_issues) > 1
+    issue_blocks: list[str] = []
+    for position, issue in enumerate(ordered_issues, start=1):
         if not issue.isIT:
-            blocks.append(_render_not_it(issue))
+            rendered = _render_not_it(issue)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
             continue
 
         result = results_by_issue_id.get(issue.id)
@@ -288,21 +344,33 @@ def build_response(
             # Defensive: an IT issue that never got a result. Do not
             # silently drop it (§4.2) — surface it as a generic failure
             # without inventing details.
-            blocks.append(_render_failed(issue, correlation_id))
+            rendered = _render_failed(issue, correlation_id)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
             continue
 
-        blocks.append(
-            _render_result(
-                issue,
-                result,
-                offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
-                correlation_id=correlation_id,
-            )
+        rendered = _render_result(
+            issue,
+            result,
+            offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
+            correlation_id=correlation_id,
         )
-        all_sources.extend(result.sources)
+        issue_blocks.append(
+            _render_multi_issue_block(position, issue, rendered)
+            if multiple_issues
+            else rendered
+        )
+        if result.resultType not in {"TICKET_CREATED", "TICKET_FOUND"}:
+            all_sources.extend(result.sources)
         all_images.extend(result.images)
         if result.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES:
             feedback_eligible = True
+
+    if issue_blocks:
+        blocks.append(("\n\n---\n\n" if multiple_issues else "\n\n").join(issue_blocks))
 
     if not blocks:
         text = ALL_NON_IT_MESSAGE if not ordered_issues else ""

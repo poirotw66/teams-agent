@@ -66,6 +66,8 @@ IssueResultType = Literal[
     "NEED_MORE_INFO",
     "TICKET_CREATED",
     "TICKET_FOUND",
+    "TICKET_CANCELLED",
+    "TICKET_DELETE_DENIED",
     "FAILED",
 ]
 
@@ -140,11 +142,31 @@ class UserContext(StrictModel):
         return bool(stable_id and self.displayName and self.email)
 
 
+class PendingIssueContext(StrictModel):
+    """Structured unresolved issue state carried between conversation turns."""
+
+    description: str
+    # The user's original wording is kept separately from the extractor's
+    # normalized description.  It lets a later short fragment (for example
+    # "Webex" or "會議借用") be composed into a clean retrieval query without
+    # depending on model-generated prose.
+    contextText: str | None = None
+    route: Route = "KNOWLEDGE"
+    faqKey: str | None = None
+    missingInfo: list[str] = Field(default_factory=list)
+    askedQuestions: list[str] = Field(default_factory=list)
+    clarificationCount: int = Field(default=0, ge=0)
+
+
 class ConversationMessage(StrictModel):
     role: Literal["user", "assistant"]
     text: str
     createdAt: datetime
     correlationId: str | None = None
+    followUpState: Literal[
+        "NONE", "AWAITING_CLARIFICATION", "AWAITING_TICKET_CONFIRMATION"
+    ] = "NONE"
+    pendingIssues: list[PendingIssueContext] = Field(default_factory=list)
 
 
 class ConversationContext(StrictModel):
@@ -235,3 +257,7 @@ class SearchHit(StrictModel):
 
 class SearchResponse(StrictModel):
     hits: list[SearchHit]
+
+
+class KnowledgeBackendUpdate(StrictModel):
+    backend: Literal["HYBRID", "GEMINI_FILE_SEARCH"]

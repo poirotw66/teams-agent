@@ -15,7 +15,7 @@ from agent_service.knowledge import (
     RelevanceDecision,
     RewrittenQuery,
 )
-from agent_service.retrieval import HybridIndex
+from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.settings import RagSettings
 
 
@@ -198,6 +198,79 @@ async def test_hybrid_search_with_model_uses_grounded_answer_and_citations(
     assert result.sources[0].chunkId == "vpn"
     assert result.images[0].path == "vpn/p01.png"
     assert "RelevanceDecision" in model.structured_output_calls
+
+
+@pytest.mark.asyncio
+async def test_hybrid_answer_that_declares_insufficient_information_is_a_strict_miss(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FakeChatModel(
+        relevant=True,
+        answer_text="目前知識庫資訊不足，無法提供答案。[S1]",
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("VPN 密碼被鎖怎麼辦？", make_user())
+
+    assert result.found is False
+    assert result.answer == ""
+    assert result.sources == []
+    assert result.images == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", ["請參考 [S0]", "請參考 [S99]", "請參考文件"])
+async def test_hybrid_answer_without_a_valid_citation_is_a_strict_miss(
+    tmp_path: Path, answer: str
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FakeChatModel(relevant=True, answer_text=answer)
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("VPN 密碼被鎖怎麼辦？", make_user())
+
+    assert result.found is False
+    assert result.sources == []
+    assert result.images == []
+
+
+@pytest.mark.asyncio
+async def test_hybrid_sap_answer_never_falls_back_to_an_unrelated_dazhou_source(
+    tmp_path: Path,
+) -> None:
+    dazhou = vpn_chunk(
+        chunk_id="dazhou",
+        title="大州系統設定",
+        source_path="sources/dazhou.md",
+        content="大州系統的密碼規則。",
+    )
+    sap = vpn_chunk(
+        chunk_id="sap",
+        title="SAP 密碼重設",
+        source_path="sources/sap-password.md",
+        content="SAP 密碼重設需使用帳號管理入口。",
+    )
+    index = HybridIndex([dazhou, sap])
+
+    # Deliberately return an irrelevant 大州 candidate first.  Only the valid
+    # [S2] citation may be exposed; falling back to all candidates would leak
+    # the unrelated source into SAP's answer.
+    index.search = lambda *_args, **_kwargs: [  # type: ignore[method-assign]
+        SearchResult(chunk=dazhou, score=0.9, sparse_score=0.9),
+        SearchResult(chunk=sap, score=0.8, sparse_score=0.8),
+    ]
+    model = FakeChatModel(
+        relevant=True,
+        answer_text="請使用帳號管理入口重設 SAP 密碼。[S2]",
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("SAP 密碼無法重置", make_user())
+
+    assert result.found is True
+    assert [source.title for source in result.sources] == ["SAP 密碼重設"]
+    assert all("大州" not in source.title for source in result.sources)
 
 
 @pytest.mark.asyncio

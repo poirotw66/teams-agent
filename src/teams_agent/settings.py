@@ -3,6 +3,8 @@ from os import environ
 from pathlib import Path
 from urllib.parse import urlparse
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
 
 class SettingsError(ValueError):
     """Raised when application configuration is invalid."""
@@ -24,6 +26,26 @@ class AgentSettings:
     asset_max_bytes: int = 1_000_000
     user_directory_mode: str = "disabled"
     user_directory_cache_ttl_seconds: float = 300.0
+    # Stream workflow progress into Teams while the Agent Service runs.
+    # Only takes effect in 1:1 personal chats -- Teams rejects streamed
+    # messages in channels and group chats (see teams_agent.agent).
+    streaming_enabled: bool = True
+    # Microsoft Teams SDK app (Entra app registration) credentials. The SDK
+    # reads CLIENT_ID / CLIENT_SECRET / TENANT_ID from the environment itself;
+    # they are mirrored here so `/readyz` can report whether the adapter is
+    # able to authenticate, and so the User Directory Service can run the
+    # app-only Graph client-credentials flow without reaching into SDK
+    # internals. Values are never logged or echoed back to users (spec §17).
+    client_id: str | None = None
+    client_secret: str | None = None
+    tenant_id: str | None = None
+    # Cloud-hosted Microsoft 365 Agents Playground sends an Entra client-
+    # credentials token directly to the bot endpoint. Real Teams/Bot Framework
+    # traffic uses the Bot Framework issuer instead. Deployed adapters that
+    # must serve both set TEAMS_INBOUND_AUTH_MODE=both.
+    teams_inbound_auth_mode: str = "botframework"
+    allow_unauthenticated_requests: bool = False
+    playground_test_user_email: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -74,6 +96,27 @@ class AgentSettings:
             user_directory_cache_ttl_seconds=float(
                 environ.get("USER_DIRECTORY_CACHE_TTL_SECONDS", "300")
             ),
+            streaming_enabled=(
+                environ.get("AGENT_STREAMING_ENABLED", "true").strip().lower()
+                in _TRUE_VALUES
+            ),
+            client_id=environ.get("CLIENT_ID", "").strip() or None,
+            client_secret=environ.get("CLIENT_SECRET", "").strip() or None,
+            tenant_id=environ.get("TENANT_ID", "").strip() or None,
+            teams_inbound_auth_mode=(
+                environ.get("TEAMS_INBOUND_AUTH_MODE", "botframework")
+                .strip()
+                .lower()
+            ),
+            allow_unauthenticated_requests=(
+                environ.get("DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS", "")
+                .strip()
+                .lower()
+                in _TRUE_VALUES
+            ),
+            playground_test_user_email=(
+                environ.get("PLAYGROUND_TEST_USER_EMAIL", "").strip() or None
+            ),
         )
         settings.validate()
         return settings
@@ -84,6 +127,26 @@ class AgentSettings:
         if self.user_directory_mode not in {"disabled", "graph"}:
             raise SettingsError(
                 "USER_DIRECTORY_MODE must be either 'disabled' or 'graph'."
+            )
+        if self.teams_inbound_auth_mode not in {"botframework", "entra", "both"}:
+            raise SettingsError(
+                "TEAMS_INBOUND_AUTH_MODE must be 'botframework', 'entra', or 'both'."
+            )
+        if self.teams_inbound_auth_mode in {"entra", "both"} and not (
+            self.client_id and self.tenant_id
+        ):
+            raise SettingsError(
+                "CLIENT_ID and TENANT_ID are required when "
+                "TEAMS_INBOUND_AUTH_MODE is 'entra' or 'both'."
+            )
+        if self.playground_test_user_email and not (
+            self.allow_unauthenticated_requests
+            or self.teams_inbound_auth_mode in {"entra", "both"}
+        ):
+            raise SettingsError(
+                "PLAYGROUND_TEST_USER_EMAIL is allowed only for a local "
+                "unauthenticated Playground or TEAMS_INBOUND_AUTH_MODE "
+                "'entra'/'both'."
             )
         if self.user_directory_cache_ttl_seconds <= 0:
             raise SettingsError(
@@ -111,10 +174,30 @@ class AgentSettings:
             raise SettingsError(
                 "RAG_ASSET_MAX_BYTES must be between 100000 and 1000000."
             )
+        if self.client_id and not self.tenant_id:
+            raise SettingsError(
+                "TENANT_ID is required alongside CLIENT_ID for a single-tenant "
+                "Teams app registration."
+            )
         if self.public_base_url:
             parsed_public_url = urlparse(self.public_base_url)
-            if parsed_public_url.scheme != "https" or not parsed_public_url.netloc:
-                raise SettingsError("BOT_PUBLIC_BASE_URL must be an absolute HTTPS URL.")
+            is_local_playground_url = (
+                parsed_public_url.scheme == "http"
+                and parsed_public_url.hostname in {"localhost", "127.0.0.1", "::1"}
+                and self.allow_unauthenticated_requests
+            )
+            if (
+                not parsed_public_url.netloc
+                or (
+                    parsed_public_url.scheme != "https"
+                    and not is_local_playground_url
+                )
+            ):
+                raise SettingsError(
+                    "BOT_PUBLIC_BASE_URL must use HTTPS, except for a localhost "
+                    "Playground URL when DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS "
+                    "is enabled."
+                )
             if not self.asset_signing_key or len(self.asset_signing_key) < 16:
                 raise SettingsError(
                     "RAG_ASSET_SIGNING_KEY must contain at least 16 characters "
@@ -151,6 +234,21 @@ class AgentSettings:
         return f"{parsed_url.scheme}://{parsed_url.netloc}"
 
     @property
+    def resolved_stream_url(self) -> str | None:
+        """`/agent/chat/stream` alongside the configured `/agent/chat`.
+
+        Derived from `api_url` by suffix rather than configured separately,
+        so the two endpoints can never drift onto different hosts.
+        """
+        if not self.api_url:
+            return None
+        return f"{self.api_url.rstrip('/')}/stream"
+
+    @property
+    def streaming_ready(self) -> bool:
+        return self.streaming_enabled and self.mode == "api" and bool(self.api_url)
+
+    @property
     def resolved_feedback_url(self) -> str | None:
         """POST /feedback on the same Agent Service host as `api_url` (spec §14)."""
         if not self.api_url:
@@ -161,6 +259,34 @@ class AgentSettings:
     @property
     def ready(self) -> bool:
         return self.mode == "echo" or bool(self.api_url)
+
+    @property
+    def uses_playground_identity_fallback(self) -> bool:
+        """Whether missing activity emails may be filled from PLAYGROUND_TEST_USER_EMAIL.
+
+        Hosted Playground traffic is accepted in `entra` and `both` modes.
+        Local Teams SDK devtools use the unauthenticated escape hatch.
+        """
+        return self.allow_unauthenticated_requests or (
+            self.teams_inbound_auth_mode in {"entra", "both"}
+        )
+
+    @property
+    def teams_auth_ready(self) -> bool:
+        """Whether the Teams SDK can validate inbound Bot Framework JWTs.
+
+        `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` short-circuits JWT
+        validation and is only ever acceptable for local development against
+        the Teams SDK devtools, never in Cloud Run.
+        """
+        return bool(self.client_id and self.client_secret) or (
+            self.allow_unauthenticated_requests
+        )
+
+    @property
+    def graph_credentials_ready(self) -> bool:
+        """Whether an app-only Microsoft Graph token can be acquired."""
+        return bool(self.client_id and self.client_secret and self.tenant_id)
 
     @property
     def images_ready(self) -> bool:

@@ -1,9 +1,9 @@
+# The Microsoft Teams SDK (microsoft-teams-apps) requires Python >= 3.11.
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080 \
-    HOST=0.0.0.0
+    PORT=8080
 
 WORKDIR /app
 

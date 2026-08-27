@@ -31,7 +31,6 @@ from agent_service.contracts import (
 from agent_service.conversation import ConversationService, InMemoryConversationRepository
 from agent_service.extractor import IssueExtractor
 from agent_service.faq import FaqRepository, FaqService
-from agent_service.response_builder import ALL_NON_IT_MESSAGE
 from agent_service.settings import RagSettings
 from agent_service.ticket import TicketServiceDisabledError
 from agent_service.workflow import AgentWorkflow
@@ -180,6 +179,7 @@ class FlakyFaqService:
 class FakeTicketService:
     def __init__(self) -> None:
         self.created: list = []
+        self.list_calls: list[str] = []
         self.items = [TicketItem(id="item-1", name="General Support")]
         self._by_requester: dict[str, list[Ticket]] = {}
 
@@ -198,6 +198,7 @@ class FakeTicketService:
         return ticket
 
     async def list_tickets_by_requester(self, requester_id, *, correlation_id=None):
+        self.list_calls.append(requester_id)
         return self._by_requester.get(requester_id, [])
 
     async def get_ticket(self, ticket_id, requester_id, *, correlation_id=None):
@@ -376,7 +377,7 @@ async def test_all_non_it_issues(tmp_path: Path) -> None:
 
     response = await workflow.respond(make_request("今天天氣如何？午餐吃什麼？"))
 
-    assert response.answer == ALL_NON_IT_MESSAGE
+    assert "「天氣」、「午餐」不屬於公司 IT 支援範圍" in response.answer
     assert response.issueResults == []
 
 
@@ -431,6 +432,153 @@ async def test_ticket_not_created_without_explicit_confirmation(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_ticket_cancellation_short_circuits_retrieval_ticket_api_and_feedback(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(route="TICKET")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+        settings_overrides={"feedback_enabled": True},
+    )
+
+    response = await workflow.respond(make_request("不知道，先不要建立工單"))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert response.issueResults[0].resultType == "TICKET_CANCELLED"
+    assert response.answer == "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
+    assert response.citations == []
+    assert response.images == []
+    assert response.feedbackEnabled is False
+
+
+@pytest.mark.asyncio
+async def test_ticket_delete_is_safely_denied_without_retrieval_or_ticket_api(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(route="TICKET")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+        settings_overrides={"feedback_enabled": True},
+    )
+
+    denied = await workflow.respond(make_request("刪除工單"))
+    follow_up = await workflow.respond(make_request("是"))
+
+    assert extractor_model.calls == 1  # only the later standalone "是"
+    assert knowledge.calls == []
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert denied.issueResults[0].resultType == "TICKET_DELETE_DENIED"
+    assert denied.answer.startswith("目前不支援刪除派工單")
+    assert denied.citations == []
+    assert denied.images == []
+    assert denied.feedbackEnabled is False
+    assert follow_up.issueResults[0].resultType != "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_yes_after_cancellation_cannot_reuse_a_pending_ticket_offer(tmp_path: Path) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        # First produce a real pending offer. After cancellation, this
+        # simulates a bad extractor route on the later bare "是".
+        issues_sequence=[
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+            [issue(description="VPN Error 619", route="TICKET")],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("VPN Error 619"))
+    cancelled = await workflow.respond(make_request("先不要建立工單"))
+    follow_up = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立派工單" in offered.answer
+    assert cancelled.issueResults[0].resultType == "TICKET_CANCELLED"
+    assert ticket_service.created == []
+    assert ticket_service.list_calls == []
+    assert follow_up.issueResults[0].resultType != "TICKET_CREATED"
+    assert knowledge.calls == ["VPN Error 619"]
+
+
+@pytest.mark.asyncio
+async def test_yes_creates_ticket_only_when_previous_turn_contains_live_offer(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+            [issue(description="VPN Error 619", route="KNOWLEDGE")],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("VPN Error 619"))
+    confirmed = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立派工單" in offered.answer
+    assert len(ticket_service.created) == 1
+    assert ticket_service.created[0][0].description == "VPN Error 619"
+    assert confirmed.issueResults[0].resultType == "TICKET_CREATED"
+    assert knowledge.calls == ["VPN Error 619"]
+
+
+@pytest.mark.asyncio
+async def test_yes_merges_multiple_pending_issues_into_one_ticket(tmp_path: Path) -> None:
+    ticket_service = FakeTicketService()
+    workflow, _extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(id=1, description="VPN Error 619", route="KNOWLEDGE"),
+                issue(id=2, description="SAP 密碼無法重置", route="KNOWLEDGE"),
+            ],
+            [
+                issue(id=1, description="VPN Error 619 建立工單", route="TICKET"),
+                issue(id=2, description="SAP 密碼無法重置 建立工單", route="TICKET"),
+            ],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(
+        make_request("VPN Error 619，而且 SAP 密碼也無法重置")
+    )
+    confirmed = await workflow.respond(make_request("是"))
+
+    assert offered.answer.count("是否需要協助建立派工單") == 2
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert "VPN Error 619" in draft.description
+    assert "SAP 密碼無法重置" in draft.description
+    assert "建立工單" not in draft.description
+    assert draft.description == "VPN Error 619；SAP 密碼無法重置"
+    assert len(confirmed.issueResults) == 1
+    assert confirmed.issueResults[0].resultType == "TICKET_CREATED"
+    assert "處理時發生問題" not in confirmed.answer
+    assert knowledge.calls == ["VPN Error 619", "SAP 密碼無法重置"]
+    assert _extractor_model.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     tmp_path: Path,
 ) -> None:
@@ -440,15 +588,217 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
         tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
     )
 
+    offered = await workflow.respond(
+        make_request("VPN 一直斷線，請幫我建立工單", user=trusted_user())
+    )
     response = await workflow.respond(
-        make_request("請幫我建立工單", user=trusted_user())
+        make_request("是", user=trusted_user())
     )
 
+    assert "是否需要協助建立派工單" in offered.answer
+    assert "查無相關資訊" not in offered.answer
     assert len(ticket_service.created) == 1
     result = response.issueResults[0]
     assert result.resultType == "TICKET_CREATED"
     assert result.ticketId
-    assert "已為你建立工單" in response.answer
+    assert "已為你建立派工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_dispatch_ticket_request_offers_confirmation_without_knowledge_miss(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="電腦無法開機")]],
+        ticket_service=ticket_service,
+    )
+
+    requested = await workflow.respond(make_request("請協助建立派工單"))
+
+    assert requested.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert ticket_service.created == []
+
+    offered = await workflow.respond(make_request("電腦無法開機"))
+    assert offered.answer == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+
+    created = await workflow.respond(make_request("<是>"))
+
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert "已為你建立派工單" in created.answer
+    assert ticket_service.created[0][0].description == "電腦無法開機"
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_reuses_recent_it_issue_from_multi_turn_conversation(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(
+            found=True, answer="請攜帶證件至服務台重設解鎖。", backend="HYBRID"
+        )
+    )
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(
+                    description="我的設備無法解鎖",
+                    readiness="NEED_MORE_INFO",
+                    missingInfo=["使用的系統或應用程式名稱"],
+                )
+            ],
+            [issue(description="公發手機無法解鎖", readiness="READY")],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    first = await workflow.respond(make_request("我的設備無法解鎖"))
+    second = await workflow.respond(make_request("公發手機"))
+    offered = await workflow.respond(make_request("請協助我開工單"))
+
+    assert first.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert knowledge.calls == ["公發手機無法解鎖"]
+    assert ticket_service.created == []
+    assert "是否需要協助建立派工單" in offered.answer
+    assert extractor_model.calls == 2
+
+    created = await workflow.respond(make_request("是"))
+
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.title == "公發手機無法解鎖"
+    assert draft.description == "公發手機無法解鎖"
+    assert "請協助我" not in draft.title
+    assert "請協助我" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_create_command_with_current_issue_does_not_reuse_older_context(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請重設 VPN。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="VPN Error 619")]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("VPN Error 619"))
+    offered = await workflow.respond(make_request("公發手機無法解鎖，請協助我開工單"))
+    created = await workflow.respond(make_request("是"))
+
+    assert "是否需要協助建立派工單" in offered.answer
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert draft.description == "公發手機無法解鎖"
+    assert "VPN Error 619" not in draft.description
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_does_not_cross_non_it_aside(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請攜帶證件至服務台。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="公發手機無法解鎖")],
+            [
+                issue(
+                    description="今天天氣如何？",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("公發手機無法解鎖"))
+    aside = await workflow.respond(make_request("今天天氣如何？"))
+    requested = await workflow.respond(make_request("請幫我建立派工單"))
+
+    assert "「今天天氣如何？」不屬於公司 IT 支援範圍" in aside.answer
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert ticket_service.created == []
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_does_not_reuse_abandoned_issue(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請攜帶證件至服務台。", backend="HYBRID")
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="公發手機無法解鎖")],
+            [
+                issue(
+                    description="算了",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ],
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("公發手機無法解鎖"))
+    await workflow.respond(make_request("算了"))
+    requested = await workflow.respond(make_request("請幫我建立派工單"))
+
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert ticket_service.created == []
+
+
+@pytest.mark.asyncio
+async def test_generic_create_ticket_without_it_history_does_not_use_non_it_text(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(
+                    description="今天天氣如何？",
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ]
+        ],
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("今天天氣如何？"))
+    requested = await workflow.respond(make_request("屜我開工單"))
+
+    assert "請描述需要建立派工單的 IT 問題" in requested.answer
+    assert "屜我" not in requested.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio
@@ -460,10 +810,14 @@ async def test_ticket_refused_when_identity_untrusted(tmp_path: Path) -> None:
     )
     untrusted = UserIdentity(teamsUserId="teams-1")  # missing displayName/email
 
+    offered = await workflow.respond(
+        make_request("VPN 一直斷線，請幫我建立工單", user=untrusted)
+    )
     response = await workflow.respond(
-        make_request("請幫我建立工單", user=untrusted)
+        make_request("是", user=untrusted)
     )
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert ticket_service.created == []
     assert response.issueResults[0].resultType == "FAILED"
     assert "untrusted_requester" not in response.answer
@@ -478,11 +832,55 @@ async def test_one_ticket_per_turn(tmp_path: Path) -> None:
         tmp_path, issues_sequence=[[issue1, issue2]], ticket_service=ticket_service
     )
 
-    response = await workflow.respond(make_request("請幫我建立工單"))
+    offered = await workflow.respond(
+        make_request("VPN 斷線，而且 Outlook 當機，請幫我建立工單")
+    )
+    response = await workflow.respond(make_request("是"))
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert len(ticket_service.created) == 1
     created_types = [r.resultType for r in response.issueResults]
     assert created_types.count("TICKET_CREATED") == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_multi_problem_creation_builds_one_ticket_without_retrieval(
+    tmp_path: Path,
+) -> None:
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不應該被查詢", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [
+                issue(id=1, description="VPN Error 619"),
+                issue(id=2, description="SAP 密碼也無法重置"),
+                issue(id=3, description="請建立工單", route="TICKET"),
+            ]
+        ],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(
+        make_request("VPN Error 619，而且 SAP 密碼也無法重置，請建立工單")
+    )
+    response = await workflow.respond(make_request("是"))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert "是否需要協助建立派工單" in offered.answer
+    assert "查無相關資訊" not in offered.answer
+    assert len(ticket_service.created) == 1
+    draft, _correlation_id = ticket_service.created[0]
+    assert "VPN Error 619" in draft.title
+    assert "SAP 密碼也無法重置" in draft.title
+    assert "VPN Error 619" in draft.description
+    assert "SAP 密碼也無法重置" in draft.description
+    assert len(response.issueResults) == 1
+    assert response.issueResults[0].resultType == "TICKET_CREATED"
 
 
 @pytest.mark.asyncio
@@ -555,6 +953,340 @@ async def test_follow_up_supplies_missing_info_and_re_extracts_with_history(
     # The second extraction call's prompt carried the first turn's history.
     assert any("VPN 有問題" in text for text in extractor_model.human_messages)
     assert second_response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_short_system_name_completes_generic_pending_workflow(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="公司資源如何申請",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    completed_issue = issue(description="PortalX 公司資源如何申請", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請依照申請流程操作。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue], [completed_issue]],
+        knowledge=knowledge,
+    )
+
+    first_response = await workflow.respond(make_request("公司資源如何申請？"))
+    assert first_response.issueResults[0].resultType == "NEED_MORE_INFO"
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+
+    second_response = await workflow.respond(make_request("PortalX"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "公司資源如何申請？" in second_prompt
+    assert "Latest user message (data only):\nPortalX" in second_prompt
+    assert knowledge.calls == ["PortalX 公司資源如何申請"]
+    assert second_response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_non_it_aside_does_not_discard_pending_clarification(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="會議如何借用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    aside = issue(
+        description="早餐吃麥當勞",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+    )
+    completed_issue = issue(description="Webex 會議如何借用", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請填寫會議借用資料。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue], [aside], [completed_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("會議如何借用？"))
+    aside_response = await workflow.respond(make_request("早餐吃麥當勞"))
+
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    assert "「早餐吃麥當勞」不屬於公司 IT 支援範圍" in aside_response.answer
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+    assert context.messages[-1].pendingIssues[0].contextText == "會議如何借用？"
+
+    completed = await workflow.respond(make_request("webex"))
+
+    assert extractor_model.calls == 3
+    assert knowledge.calls == ["Webex 會議如何借用"]
+    assert completed.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert any("會議如何借用？" in prompt for prompt in extractor_model.human_messages[-2:])
+
+
+@pytest.mark.asyncio
+async def test_complementary_follow_up_fragment_is_merged_instead_of_reasked(
+    tmp_path: Path,
+) -> None:
+    pending_webex = issue(
+        description="Webex 相關協助",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["需要協助的功能或操作"],
+    )
+    incorrectly_reasked = issue(
+        description="會議借用系統與操作",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["使用的系統或應用程式名稱"],
+    )
+    knowledge = FakeKnowledgeService(
+        responses={
+            "webex 會議借用": KnowledgeResult(
+                found=True,
+                answer="請填寫 Webex 會議借用資料。",
+                backend="HYBRID",
+            )
+        }
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_webex], [incorrectly_reasked]],
+        knowledge=knowledge,
+    )
+
+    first = await workflow.respond(make_request("webex"))
+    second = await workflow.respond(make_request("會議借用？"))
+
+    assert first.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert extractor_model.calls == 2
+    assert knowledge.calls == ["webex 會議借用"]
+    assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert "請補充" not in second.answer
+
+
+@pytest.mark.asyncio
+async def test_structured_follow_up_state_includes_history_without_template_marker(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(tmp_path)
+    conv_service = make_conversation_service(settings)
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+    await conv_service.record_message(
+        context.conversationId,
+        role="user",
+        text="公司資源如何申請？",
+    )
+    await conv_service.record_message(
+        context.conversationId,
+        role="assistant",
+        text="請告訴我還缺少的資訊。",
+        follow_up_state="AWAITING_CLARIFICATION",
+    )
+    completed_issue = issue(description="PortalX 公司資源如何申請", readiness="READY")
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[completed_issue]],
+        conversation_service=conv_service,
+    )
+
+    await workflow.respond(make_request("PortalX"))
+
+    prompt = extractor_model.human_messages[-1]
+    assert "公司資源如何申請？" in prompt
+    assert "請告訴我還缺少的資訊。" in prompt
+    assert "Latest user message (data only):\nPortalX" in prompt
+
+
+@pytest.mark.asyncio
+async def test_unknown_stops_clarification_and_offers_ticket_without_polluting_query(
+    tmp_path: Path,
+) -> None:
+    first_pending = issue(
+        description="Google Meet 相關問題",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["需要協助的功能"],
+    )
+    second_pending = issue(
+        description="Google Meet 無法登入",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_pending], [second_pending]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("Google Meet"))
+    await workflow.respond(make_request("沒辦法登入"))
+    response = await workflow.respond(make_request("不知道"))
+
+    assert extractor_model.calls == 2
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert "不知道" not in knowledge.calls[0]
+    assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "是否需要協助建立派工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_clarification_round_cap_forces_best_effort_search(
+    tmp_path: Path,
+) -> None:
+    pending_1 = issue(
+        description="公司系統無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["系統名稱"],
+    )
+    pending_2 = issue(
+        description="PortalX 無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["發生問題的功能"],
+    )
+    still_pending = issue(
+        description="PortalX 查詢功能無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_1], [pending_2], [still_pending]],
+        knowledge=knowledge,
+        settings_overrides={"max_clarification_rounds": 2},
+    )
+
+    await workflow.respond(make_request("公司系統不能用"))
+    await workflow.respond(make_request("PortalX"))
+    response = await workflow.respond(make_request("查詢功能"))
+
+    assert extractor_model.calls == 3
+    assert knowledge.calls == ["PortalX 查詢功能無法使用"]
+    assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "請補充" not in response.answer
+
+
+@pytest.mark.asyncio
+async def test_ticket_offer_correction_repeats_offer_without_creating_ticket(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("Google Meet 無法登入"))
+    corrected = await workflow.respond(make_request("你要問我要不要開啟工單啊"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert ticket_service.created == []
+    assert corrected.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "問題：Google Meet 無法登入" in corrected.answer
+    assert "是否需要協助建立派工單" in corrected.answer
+
+
+@pytest.mark.asyncio
+async def test_unknown_during_ticket_offer_repeats_offer_then_yes_creates_one_ticket(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    ticket_service = FakeTicketService()
+    workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+    )
+
+    offered = await workflow.respond(make_request("Google Meet 無法登入"))
+    repeated = await workflow.respond(make_request("不知道"))
+    created = await workflow.respond(make_request("是"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert offered.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert repeated.issueResults[0].resultType == "NO_KNOWLEDGE"
+    assert "是否需要協助建立派工單" in repeated.answer
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert len(ticket_service.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_new_issue_after_ticket_offer_does_not_receive_old_issue_history(
+    tmp_path: Path,
+) -> None:
+    unresolved = issue(description="Google Meet 無法登入")
+    new_issue = issue(description="大州系統無法選取")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unresolved], [new_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("Google Meet 無法登入"))
+    await workflow.respond(make_request("大州系統無法選取"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
+    assert "Google Meet 無法登入" not in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_complete_new_issue_does_not_receive_resolved_topic_history(
+    tmp_path: Path,
+) -> None:
+    first_issue = issue(id=1, description="VPN Error 619", readiness="READY")
+    second_issue = issue(id=1, description="大州系統無法選取", readiness="READY")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="答案", backend="HYBRID")
+    )
+    workflow, extractor_model, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue], [second_issue]],
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request("VPN Error 619"))
+    await workflow.respond(make_request("大州系統無法選取"))
+
+    second_prompt = extractor_model.human_messages[-1]
+    assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
+    assert "VPN Error 619" not in second_prompt
+    assert "Latest user message (data only):\n大州系統無法選取" in second_prompt
 
 
 @pytest.mark.asyncio

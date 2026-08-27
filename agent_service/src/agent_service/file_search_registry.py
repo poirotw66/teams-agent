@@ -28,6 +28,32 @@ from pathlib import Path
 from .contracts import AgentImage
 from .documents import DocumentChunk, DocumentImage
 
+# The existing helpdesk-store was uploaded before the current ASCII slug
+# algorithm and uses hand-written English display names. Keep this explicit
+# compatibility table so grounding citations can still join to the canonical
+# local source metadata and images. New uploads should use ``slug_for`` and do
+# not need an entry here.
+_LEGACY_FILE_SEARCH_ALIASES: dict[str, str] = {
+    "branch-cs-vpn-permissions.md": "分公司CS團隊VPN連線可使用權限列表.md",
+    "cathay-futures-ai-login-error-200.md": "國泰期貨艾揚登入出現-200.md",
+    "chaoshu-app-crash.md": "超音樹-程式閃退問題.md",
+    "email-garbled-text.md": "郵件為亂碼.md",
+    "employee-portal-cteam-and-e-attendance.md": "國泰員工入口網、CTeam密碼、國泰e點名.md",
+    "financial-portal-password-change.md": "金控入口網密碼變更方式.md",
+    "gitlab-account-unlock.md": "Gitlab帳號解鎖跟重置.md",
+    "head-office-ip-phone-guide.md": "總公司IP話機操作.md",
+    "it-issue-reporting-guidelines.md": "資訊問題的通報格式.md",
+    "seat-relocation-request.md": "座位搬遷需求.md",
+    "shared-drive-folder-request.md": "同仁申請共用公槽資料夾.md",
+    "shuling-ap-login-issue.md": "樹精靈AP無法登入.md",
+    "vpn-faq.md": "VPN常見Q&A問答.md",
+    "vpn-temporary-overseas-access.md": "VPN國外連線短暫申請.md",
+    "webex-meeting-recording-request.md": "Webex會議借用-可錄影.md",
+    "xiaozhou-feature-not-clickable.md": "大州系統_功能無法點選.md",
+    "xiaozhou-first-time-setup.md": "大州首次使用設定.md",
+    "xq-faq.md": "XQ問題.md",
+}
+
 
 def _ascii_display_name(path: Path) -> str:
     """Derive an ASCII slug from a filename.
@@ -84,6 +110,7 @@ class FileSearchDocumentRegistry:
             chunks_by_source[chunk.source_path].append(chunk)
 
         slug_to_source: dict[str, str] = {}
+        records_by_filename: dict[str, _DocumentRecord] = {}
         for source_path in source_order:
             slug = cls.slug_for(source_path)
             if slug in slug_to_source:
@@ -100,11 +127,18 @@ class FileSearchDocumentRegistry:
                 (chunk.title for chunk in doc_chunks if chunk.title),
                 Path(source_path).stem,
             )
-            registry._by_slug[slug] = _DocumentRecord(
+            record = _DocumentRecord(
                 source_path=source_path,
                 title=title,
                 images=tuple(_collect_images(doc_chunks)),
             )
+            registry._by_slug[slug] = record
+            records_by_filename[Path(source_path).name] = record
+
+        for alias, filename in _LEGACY_FILE_SEARCH_ALIASES.items():
+            record = records_by_filename.get(filename)
+            if record is not None:
+                registry._by_slug[alias] = record
         return registry
 
     @classmethod

@@ -2,9 +2,78 @@ import pytest
 
 from teams_agent.directory import (
     DisabledUserDirectoryService,
+    EntraAppTokenProvider,
     GraphUserDirectoryService,
     build_user_directory_service,
 )
+
+
+def make_token_provider(transport, scope: str | None = None) -> EntraAppTokenProvider:
+    kwargs = {"transport": transport}
+    if scope is not None:
+        kwargs["scope"] = scope
+    return EntraAppTokenProvider("client-1", "secret-1", "tenant-1", **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_entra_token_provider_requests_client_credentials_grant() -> None:
+    seen: dict = {}
+
+    async def fake_transport(url: str, form: dict) -> dict:
+        seen["url"] = url
+        seen["form"] = form
+        return {"access_token": "app-token", "expires_in": 3600}
+
+    token = await make_token_provider(fake_transport)()
+
+    assert token == "app-token"
+    assert seen["url"].endswith("/tenant-1/oauth2/v2.0/token")
+    assert seen["form"] == {
+        "grant_type": "client_credentials",
+        "client_id": "client-1",
+        "client_secret": "secret-1",
+        "scope": "https://graph.microsoft.com/.default",
+    }
+
+
+@pytest.mark.asyncio
+async def test_entra_token_provider_caches_until_expiry() -> None:
+    calls = {"count": 0}
+
+    async def fake_transport(url: str, form: dict) -> dict:
+        calls["count"] += 1
+        return {"access_token": "app-token", "expires_in": 3600}
+
+    provider = make_token_provider(fake_transport)
+
+    assert await provider() == "app-token"
+    assert await provider() == "app-token"
+    assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entra_token_provider_refetches_when_the_token_expires() -> None:
+    calls = {"count": 0}
+
+    async def fake_transport(url: str, form: dict) -> dict:
+        calls["count"] += 1
+        # expires_in below the refresh skew means the cached token is already
+        # considered stale on the next call.
+        return {"access_token": f"app-token-{calls['count']}", "expires_in": 1}
+
+    provider = make_token_provider(fake_transport)
+
+    assert await provider() == "app-token-1"
+    assert await provider() == "app-token-2"
+
+
+@pytest.mark.asyncio
+async def test_entra_token_provider_raises_without_an_access_token() -> None:
+    async def fake_transport(url: str, form: dict) -> dict:
+        return {"error": "invalid_client"}
+
+    with pytest.raises(RuntimeError, match="access token"):
+        await make_token_provider(fake_transport)()
 
 
 @pytest.mark.asyncio

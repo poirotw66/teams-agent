@@ -52,6 +52,7 @@ class RagSettings:
     # --- Issue / cost controls (spec §4.2, §6.3, §16) ---
     max_issues_per_message: int = 3
     max_missing_info_per_issue: int = 2
+    max_clarification_rounds: int = 2
     max_history_messages: int = 10
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
@@ -61,6 +62,10 @@ class RagSettings:
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
     gemini_file_search_store: str | None = None
+    gemini_file_search_model: str = "gemini-2.5-flash"
+    gemini_file_search_enforce_acl: bool = True
+    knowledge_backend_state_mode: str = "MEMORY"
+    knowledge_backend_state_collection: str = "runtime_config"
 
     # --- Ticket Service (spec §11) ---
     ticket_service_mode: str = "DISABLED"
@@ -110,6 +115,7 @@ class RagSettings:
             max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
             max_issues_per_message=_int_env("MAX_ISSUES_PER_MESSAGE", 3),
             max_missing_info_per_issue=_int_env("MAX_MISSING_INFO_PER_ISSUE", 2),
+            max_clarification_rounds=_int_env("MAX_CLARIFICATION_ROUNDS", 2),
             max_history_messages=_int_env("MAX_HISTORY_MESSAGES", 10),
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
@@ -120,6 +126,18 @@ class RagSettings:
             knowledge_service_mode=environ.get("KNOWLEDGE_SERVICE_MODE", "HYBRID").strip()
             or "HYBRID",
             gemini_file_search_store=_str_env("GEMINI_FILE_SEARCH_STORE"),
+            gemini_file_search_model=(
+                _str_env("GEMINI_FILE_SEARCH_MODEL") or "gemini-2.5-flash"
+            ),
+            gemini_file_search_enforce_acl=_bool_env(
+                "GEMINI_FILE_SEARCH_ENFORCE_ACL", True
+            ),
+            knowledge_backend_state_mode=(
+                _str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"
+            ),
+            knowledge_backend_state_collection=(
+                _str_env("KNOWLEDGE_BACKEND_STATE_COLLECTION") or "runtime_config"
+            ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
@@ -163,6 +181,8 @@ class RagSettings:
             raise ValueError("MAX_HISTORY_MESSAGES must be between 0 and 50.")
         if not 1 <= self.conversation_history_rounds <= 20:
             raise ValueError("CONVERSATION_HISTORY_ROUNDS must be between 1 and 20.")
+        if not 1 <= self.max_clarification_rounds <= 3:
+            raise ValueError("MAX_CLARIFICATION_ROUNDS must be between 1 and 3.")
         if not 1 <= self.conversation_timeout_hours <= 168:
             raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
         if not 1 <= self.max_llm_calls_per_request <= 20:
@@ -174,6 +194,14 @@ class RagSettings:
             raise ValueError(
                 "KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH."
             )
+        if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
+            raise ValueError(
+                "KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE."
+            )
+        if not self.knowledge_backend_state_collection.strip():
+            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not be blank.")
+        if "/" in self.knowledge_backend_state_collection:
+            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not contain '/'.")
 
         if self.ticket_service_mode not in {"DISABLED", "HTTP"}:
             raise ValueError("TICKET_SERVICE_MODE must be one of DISABLED or HTTP.")

@@ -27,6 +27,9 @@ ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
 FIRESTORE_DATABASE="${GCP_FIRESTORE_DATABASE:-(default)}"
 FIRESTORE_LOCATION="${GCP_FIRESTORE_LOCATION:-${REGION}}"
 FIRESTORE_COLLECTION="${GCP_FIRESTORE_COLLECTION:-conversations}"
+KNOWLEDGE_BACKEND_STATE_COLLECTION="${GCP_KNOWLEDGE_BACKEND_STATE_COLLECTION:-runtime_config}"
+GEMINI_FILE_SEARCH_STORE="${GEMINI_FILE_SEARCH_STORE:-fileSearchStores/helpdeskstore-1p3gu83qot1s}"
+GEMINI_FILE_SEARCH_MODEL="${GEMINI_FILE_SEARCH_MODEL:-gemini-2.5-flash}"
 
 log() {
   printf '[deploy] %s\n' "$*"
@@ -93,15 +96,18 @@ GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GOOGLE_API_KEY)"
 BOT_CLIENT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID)"
 BOT_CLIENT_SECRET_VALUE="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET)"
 BOT_TENANT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID)"
+BOT_CLIENT_ID="${BOT_CLIENT_ID:-$(env_value .env CLIENT_ID)}"
+BOT_CLIENT_SECRET_VALUE="${BOT_CLIENT_SECRET_VALUE:-$(env_value .env CLIENT_SECRET)}"
+BOT_TENANT_ID="${BOT_TENANT_ID:-$(env_value .env TENANT_ID)}"
 ASSET_SIGNING_KEY_VALUE="$(env_value .env RAG_ASSET_SIGNING_KEY)"
 RAG_MODEL="$(env_value agent_service/.env RAG_MODEL)"
 RAG_EMBEDDING_MODEL="$(env_value agent_service/.env RAG_EMBEDDING_MODEL)"
 RAG_ALLOWED_TENANTS="$(env_value agent_service/.env RAG_ALLOWED_TENANTS)"
 
 require_value "${GOOGLE_API_KEY_VALUE}" "agent_service/.env GOOGLE_API_KEY"
-require_value "${BOT_CLIENT_ID}" ".env Bot Client ID"
-require_value "${BOT_CLIENT_SECRET_VALUE}" ".env Bot Client Secret"
-require_value "${BOT_TENANT_ID}" ".env Bot Tenant ID"
+require_value "${BOT_CLIENT_ID}" ".env CLIENT_ID"
+require_value "${BOT_CLIENT_SECRET_VALUE}" ".env CLIENT_SECRET"
+require_value "${BOT_TENANT_ID}" ".env TENANT_ID"
 require_value "${ASSET_SIGNING_KEY_VALUE}" ".env RAG_ASSET_SIGNING_KEY"
 require_value "${RAG_MODEL}" "agent_service/.env RAG_MODEL"
 require_value "${RAG_EMBEDDING_MODEL}" "agent_service/.env RAG_EMBEDDING_MODEL"
@@ -208,7 +214,7 @@ gcloud run deploy "${AGENT_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},FEEDBACK_ENABLED=true" \
+  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE},GEMINI_FILE_SEARCH_MODEL=${GEMINI_FILE_SEARCH_MODEL},GEMINI_FILE_SEARCH_ENFORCE_ACL=false,KNOWLEDGE_BACKEND_STATE_MODE=FIRESTORE,KNOWLEDGE_BACKEND_STATE_COLLECTION=${KNOWLEDGE_BACKEND_STATE_COLLECTION},TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},FEEDBACK_ENABLED=true" \
   --set-secrets="GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
   # KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
   # FEEDBACK_ENABLED above are set explicitly so this deploy is
@@ -260,8 +266,8 @@ gcloud run deploy "${ADAPTER_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=${BOT_CLIENT_ID},CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=${BOT_TENANT_ID},RAG_ASSET_DIR=/app/data/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000" \
-  --set-secrets="CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
+  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},TEAMS_INBOUND_AUTH_MODE=both,RAG_ASSET_DIR=/app/data/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000" \
+  --set-secrets="CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
 
 ADAPTER_URL="$(gcloud run services describe "${ADAPTER_SERVICE}" \
   --region="${REGION}" \
@@ -274,7 +280,33 @@ gcloud run services update "${ADAPTER_SERVICE}" \
   --project="${PROJECT_ID}" \
   --update-env-vars="BOT_PUBLIC_BASE_URL=${ADAPTER_URL}" >/dev/null
 
+# If the optional mock ticket UAT service is already deployed, re-wire it.
+# deploy-gcp intentionally starts the Agent with TICKET_SERVICE_MODE=DISABLED;
+# without this restore step a plain redeploy breaks Cloud Playground ticket demos.
+MOCK_TICKET_SERVICE="${GCP_MOCK_TICKET_SERVICE:-teams-mock-ticket}"
+MOCK_TICKET_TOKEN_SECRET="teams-agent-mock-ticket-token"
+if gcloud run services describe "${MOCK_TICKET_SERVICE}" \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1 \
+  && gcloud secrets describe "${MOCK_TICKET_TOKEN_SECRET}" \
+    --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  MOCK_TICKET_URL="$(gcloud run services describe "${MOCK_TICKET_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --format='value(status.url)')"
+  log "偵測到 ${MOCK_TICKET_SERVICE}，重新接上 Agent ticket HTTP 與 Playground 測試 email"
+  gcloud run services update "${AGENT_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --update-env-vars="TICKET_SERVICE_MODE=HTTP,TICKET_SERVICE_BASE_URL=${MOCK_TICKET_URL}" \
+    --update-secrets="TICKET_SERVICE_TOKEN=${MOCK_TICKET_TOKEN_SECRET}:latest" >/dev/null
+  gcloud run services update "${ADAPTER_SERVICE}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --update-env-vars="PLAYGROUND_TEST_USER_EMAIL=playground.user@example.test" >/dev/null
+fi
+
 printf '\nDeployment complete.\n'
 printf 'Agent URL:   %s\n' "${AGENT_URL}"
 printf 'Adapter URL: %s\n' "${ADAPTER_URL}"
-printf 'Azure Bot Messaging endpoint: %s/api/messages\n' "${ADAPTER_URL}"
+printf 'Teams Developer Portal bot endpoint: %s/api/messages\n' "${ADAPTER_URL}"

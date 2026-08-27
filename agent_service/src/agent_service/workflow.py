@@ -19,29 +19,15 @@ every node only *reads* it — no node ever calls ``uuid4()`` again — so the
 same id reaches the extractor, the knowledge service, the ticket service and
 the conversation repository.
 
-Pending-ticket state (spec §3.3, §11.3)
------------------------------------------
-Spec §3.3 forbids building a full Issue Repository / ticket lifecycle just
-to remember "was a ticket offered". Instead of persisting anything new, a
-turn is treated as replying to a pending ticket offer when EITHER:
-
-1. The just-loaded conversation history's last message is from the
-   assistant and contains the literal marker substring
-   ``"是否需要協助建立工單"`` — the exact offer sentence
-   ``response_builder._render_no_knowledge`` appends after a NO_KNOWLEDGE
-   result when ticket offering is enabled. This covers a user's bare
-   follow-up ("好，幫我開單") after a *previous* turn's offer.
-2. The current issue's own ``route`` is already ``"TICKET"`` — i.e. the
-   Issue Extractor itself recognised this message as an explicit request to
-   create/check a ticket (spec §11.3's fourth trigger, "使用者主動要求建立
-   工單"), so the offer and the confirmation arrive in the very same turn
-   (e.g. "請幫我建立工單" as the *first* message).
-
-Either way, ticket CREATION additionally always requires
-``is_explicit_ticket_confirmation(text)`` to be true (spec §11.3: 未經明確確認
-不得建立工單) — the pending-offer check only establishes there was a valid
-reason to be listening for a confirmation in the first place; a hedge
-("可能要報修") is never treated as a confirmation regardless of context.
+Ticket intent guardrail
+-----------------------
+Ticket operations are selected from the current message by
+``classify_ticket_intent`` with a fixed ``CANCEL > QUERY > CREATE > NONE``
+precedence.  The LLM's extracted route is never allowed to override that
+guardrail: cancellation is a direct acknowledgement, creation/query use only
+the matching Ticket Service operation, and NONE cannot call Ticket Service.
+This makes a cancellation terminal for the turn and prevents a later bare
+"是" from reviving an earlier offer.
 
 Non-blocking processing (spec §4.2)
 --------------------------------------
@@ -58,12 +44,17 @@ import asyncio
 import inspect
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .confirmation import is_explicit_ticket_confirmation
+from .confirmation import (
+    TicketIntent,
+    classify_ticket_intent,
+    is_pending_ticket_offer_confirmation,
+)
 from .contracts import (
     AgentImage,
     AgentRequest,
@@ -72,16 +63,25 @@ from .contracts import (
     ConversationContext,
     Issue,
     IssueResult,
+    PendingIssueContext,
     TicketDraft,
     UserContext,
 )
 from .conversation import ConversationService
-from .extractor import IssueExtractor
+from .extractor import (
+    _GENERIC_TICKET_DESCRIPTION,
+    IssueExtractor,
+    _is_generic_ticket_description,
+    _is_generic_ticket_request,
+    _strip_ticket_command,
+    merge_pending_ticket_issues,
+)
 from .faq import FaqService
 from .graph import user_context_from_identity
 from .knowledge import KnowledgeService, LlmCallCounter
 from .response_builder import build_response
 from .retrieval import HybridIndex
+from .sanitize import sanitize_description
 from .settings import RagSettings
 from .ticket import (
     TicketService,
@@ -93,10 +93,34 @@ from .ticket import (
 
 logger = logging.getLogger(__name__)
 
-# See module docstring "Pending-ticket state" for why this literal is
-# matched instead of persisting extra state. Kept in sync with the exact
-# Chinese copy in response_builder._render_no_knowledge.
-_TICKET_OFFER_MARKER = "是否需要協助建立工單"
+# This marker remains solely for deciding whether the extractor should see a
+# no-knowledge offer as recent context.  It is not an authorization to create
+# a ticket; ticket actions are always determined from the current turn.
+_TICKET_OFFER_MARKER = "是否需要協助建立派工單"
+_TICKET_DETAIL_QUESTION = (
+    "請描述需要建立派工單的 IT 問題，例如使用的系統、功能或錯誤訊息。"
+)
+
+# Progress stages surfaced to the Teams user while the graph runs (spec §5.1
+# node boundaries, reused as user-visible progress).
+#
+# The mapping is keyed by the node that just FINISHED and names the work that
+# is now starting, because `graph.astream` emits an update only once a node
+# completes. `save_conversation` is deliberately absent: by the time it runs
+# the answer is already known, and the Teams Adapter finalizes the streamed
+# message rather than showing another status line.
+#
+# These are the only user-visible strings in this module. Everything else the
+# user reads is rendered by `response_builder`.
+STAGE_LABELS: dict[str, str] = {
+    "load_conversation": "正在理解你的問題…",
+    "extract_issues": "正在確認問題類型…",
+    "filter_it_issues": "正在檢索知識庫…",
+    "process_issues": "正在整理答案…",
+}
+# Sent before the graph starts, so the user sees something within one Teams
+# round-trip rather than waiting for the first node to finish.
+INITIAL_STAGE_LABEL = "已收到你的問題…"
 
 
 class AgentState(TypedDict, total=False):
@@ -137,13 +161,398 @@ class AgentState(TypedDict, total=False):
     citations: list[Citation]
     images: list[AgentImage]
     feedback_enabled: bool
+    ticket_intent: TicketIntent
+    prior_pending_issues: list[PendingIssueContext]
+    force_ticket_offer: bool
 
 
 def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:
     if not conversation.messages:
         return False
     last = conversation.messages[-1]
-    return last.role == "assistant" and _TICKET_OFFER_MARKER in last.text
+    if last.role != "assistant":
+        return False
+    if last.followUpState == "AWAITING_TICKET_CONFIRMATION":
+        return True
+    # Backward compatibility for conversations saved before followUpState
+    # existed. Newly written messages use the structured state above.
+    return _TICKET_OFFER_MARKER in last.text
+
+
+def _pending_offer_issues(conversation: ConversationContext) -> list[Issue]:
+    """Recover the exact issue labels rendered in the live assistant offer."""
+    if not _has_pending_ticket_offer(conversation):
+        return []
+    last = conversation.messages[-1]
+    if last.pendingIssues:
+        return [
+            Issue(
+                id=index,
+                description=pending.description,
+                isIT=True,
+                readiness="READY",
+                missingInfo=[],
+                route="TICKET",
+                faqKey=None,
+                ticketAction=None,
+            )
+            for index, pending in enumerate(last.pendingIssues, start=1)
+        ]
+    descriptions = [
+        line.removeprefix("問題：").strip()
+        for line in last.text.splitlines()
+        if line.startswith("問題：") and line.removeprefix("問題：").strip()
+    ]
+    return [
+        Issue(
+            id=index,
+            description=description,
+            isIT=True,
+            readiness="READY",
+            missingInfo=[],
+            route="TICKET",
+            faqKey=None,
+            ticketAction=None,
+        )
+        for index, description in enumerate(descriptions, start=1)
+    ]
+
+
+def _pending_clarifications(
+    conversation: ConversationContext,
+) -> list[PendingIssueContext]:
+    if not conversation.messages:
+        return []
+    last = conversation.messages[-1]
+    if (
+        last.role == "assistant"
+        and last.followUpState == "AWAITING_CLARIFICATION"
+    ):
+        return list(last.pendingIssues)
+    return []
+
+
+def _unable_to_provide_detail(text: str) -> bool:
+    """Recognise a short answer that cannot satisfy a pending clarification."""
+    normalized = text.strip().lower().rstrip("。.!！?？")
+    if not normalized or len(normalized) > 24:
+        return False
+    exact = {
+        "不知道",
+        "不清楚",
+        "不確定",
+        "不曉得",
+        "沒有",
+        "看不懂",
+        "無法確認",
+        "不知道欸",
+        "不知道耶",
+    }
+    prefixes = ("沒有看到", "沒有顯示", "找不到", "無法提供")
+    return normalized in exact or normalized.startswith(prefixes)
+
+
+def _abandons_pending_issue(text: str) -> bool:
+    """Recognise an explicit request to stop or switch away from a follow-up."""
+    normalized = text.strip().lower().rstrip("。.!！?？")
+    markers = (
+        "不問了",
+        "算了",
+        "取消",
+        "不用了",
+        "先不用",
+        "換個問題",
+        "換一題",
+        "另外一個問題",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _compose_pending_description(pending: PendingIssueContext, detail: str) -> str:
+    """Join complementary user fragments into one stable retrieval query."""
+    base = (pending.contextText or pending.description).strip().rstrip("。.!！?？")
+    addition = detail.strip().rstrip("。.!！?？")
+    if not base:
+        return addition
+    if not addition or addition.lower() in base.lower():
+        return base
+    return f"{base} {addition}"
+
+
+def _missing_info_kind(question: str) -> str | None:
+    normalized = question.lower()
+    if any(term in normalized for term in ("系統", "應用程式", "app", "軟體", "平台", "用戶端")):
+        return "SYSTEM"
+    if any(term in normalized for term in ("錯誤訊息", "錯誤碼", "error", "代碼")):
+        return "ERROR"
+    if any(term in normalized for term in ("功能", "操作", "需求", "要做什麼", "協助項目")):
+        return "FEATURE"
+    return None
+
+
+def _detail_satisfies_kind(text: str, kind: str) -> bool:
+    normalized = text.strip().lower().rstrip("。.!！?？")
+    if not normalized:
+        return False
+    if kind == "ERROR":
+        return bool(
+            any(term in normalized for term in ("錯誤", "error", "失敗", "異常"))
+            or any(character.isdigit() for character in normalized)
+        )
+    if kind == "FEATURE":
+        return any(
+            term in normalized
+            for term in (
+                "借用",
+                "預約",
+                "申請",
+                "登入",
+                "連線",
+                "上傳",
+                "下載",
+                "安裝",
+                "開啟",
+                "列印",
+                "查詢",
+                "重置",
+                "變更",
+                "設定",
+            )
+        )
+    if kind == "SYSTEM":
+        if len(normalized) > 40:
+            return False
+        # Product-only fragments normally contain Latin letters (Webex,
+        # SAP, PortalX) or a short Chinese proper name.  Problem/action words
+        # indicate that this is likely a complete issue rather than a name.
+        issue_markers = (
+            "無法",
+            "不能",
+            "壞",
+            "問題",
+            "怎麼",
+            "如何",
+            "借用",
+            "登入",
+            "連線",
+            "申請",
+            "錯誤",
+            "error",
+        )
+        return not any(marker in normalized for marker in issue_markers)
+    return False
+
+
+def _answers_missing_info(text: str, questions: list[str]) -> bool:
+    return any(
+        kind is not None and _detail_satisfies_kind(text, kind)
+        for question in questions
+        if (kind := _missing_info_kind(question)) is not None
+    )
+
+
+def _complete_complementary_pending_issue(
+    issues: list[Issue],
+    pending_issues: list[PendingIssueContext],
+    latest_text: str,
+) -> list[Issue]:
+    """Resolve two complementary fragments instead of asking in a loop.
+
+    The extractor has already decided that the latest message is IT-related.
+    If one active clarification exists and the extractor still wants to ask a
+    different clarification, conversationally the short latest turn is the
+    answer to the outstanding slot.  Compose both user fragments and proceed
+    with a best-effort lookup.  Clearly non-IT turns never enter this path and
+    explicit topic abandonment is handled separately.
+    """
+    if (
+        len(pending_issues) != 1
+        or len(issues) != 1
+        or _abandons_pending_issue(latest_text)
+    ):
+        return issues
+    pending = pending_issues[0]
+    current = issues[0]
+    if (
+        not current.isIT
+        or current.readiness != "NEED_MORE_INFO"
+        or not pending.missingInfo
+        or not _answers_missing_info(latest_text, pending.missingInfo)
+        or not _answers_missing_info(
+            pending.contextText or pending.description, current.missingInfo
+        )
+    ):
+        return issues
+    return [
+        current.model_copy(
+            update={
+                "description": _compose_pending_description(pending, latest_text),
+                "readiness": "READY",
+                "missingInfo": [],
+                "route": pending.route if pending.route != "NOT_IT" else "KNOWLEDGE",
+                "faqKey": pending.faqKey,
+            }
+        )
+    ]
+
+
+def _preserves_interrupted_clarification(state: AgentState) -> bool:
+    """Keep an unresolved IT question alive across a harmless non-IT aside."""
+    prior = state.get("prior_pending_issues", [])
+    issues = state.get("issues", [])
+    request = state.get("request")
+    return bool(
+        prior
+        and issues
+        and all(not issue.isIT for issue in issues)
+        and request is not None
+        and not _abandons_pending_issue(request.message.text)
+    )
+
+
+def _requests_ticket_offer(text: str) -> bool:
+    """Detect a request to present the ticket option, without creating one."""
+    normalized = text.strip()
+    if "工單" not in normalized and "派工單" not in normalized:
+        return False
+    markers = (
+        "要不要",
+        "是否",
+        "問我",
+        "問問",
+        "你要問",
+        "你應該問",
+        "怎麼沒問",
+        "沒有問",
+        "沒問",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _issues_for_create_offer(
+    issues: list[Issue],
+    message_text: str,
+    recent_contexts: list[PendingIssueContext],
+) -> list[Issue]:
+    """Normalize CREATE intents into one ready TICKET issue for confirmation."""
+    if not _is_generic_ticket_request(message_text):
+        it_issues = [issue for issue in issues if issue.isIT]
+        if it_issues:
+            return [merge_pending_ticket_issues(it_issues)]
+
+    usable = _usable_ticket_contexts(recent_contexts)
+    if usable:
+        recovered = [
+            _pending_context_to_ready_issue(context, issue_id=index)
+            for index, context in enumerate(usable, start=1)
+        ]
+        return [merge_pending_ticket_issues(recovered)]
+
+    fallback = sanitize_description(_strip_ticket_command(message_text))
+    if not fallback or _is_generic_ticket_description(fallback):
+        fallback = _GENERIC_TICKET_DESCRIPTION
+    return [
+        Issue(
+            id=1,
+            description=fallback,
+            isIT=True,
+            readiness="NEED_MORE_INFO",
+            missingInfo=[_TICKET_DETAIL_QUESTION],
+            route="TICKET",
+            faqKey=None,
+            ticketAction=None,
+        )
+    ]
+
+
+def _pending_context_to_ready_issue(
+    pending: PendingIssueContext, *, issue_id: int
+) -> Issue:
+    return Issue(
+        id=issue_id,
+        description=pending.description,
+        isIT=True,
+        readiness="READY",
+        missingInfo=[],
+        route=pending.route if pending.route != "NOT_IT" else "KNOWLEDGE",
+        faqKey=pending.faqKey,
+        ticketAction=None,
+    )
+
+
+def _issue_descriptions_from_assistant_text(text: str) -> list[str]:
+    descriptions = [
+        line.removeprefix("問題：").strip()
+        for line in text.splitlines()
+        if line.startswith("問題：") and line.removeprefix("問題：").strip()
+    ]
+    if not descriptions:
+        return []
+    if "目前企業知識庫中查無相關資訊" in text or "處理方式：" in text:
+        return descriptions
+    return []
+
+
+def _usable_ticket_contexts(
+    contexts: list[PendingIssueContext],
+) -> list[PendingIssueContext]:
+    return [
+        context
+        for context in contexts
+        if not _is_generic_ticket_description(context.description)
+    ]
+
+
+def _recent_ticket_contexts(
+    conversation: ConversationContext,
+) -> list[PendingIssueContext]:
+    if not conversation.messages:
+        return []
+    message = conversation.messages[-1]
+    if message.role != "assistant":
+        return []
+    if "已為你建立派工單" in message.text or "目前不會建立派工單" in message.text:
+        return []
+    usable = _usable_ticket_contexts(list(message.pendingIssues))
+    if usable:
+        return usable
+    return _usable_ticket_contexts(
+        [
+            PendingIssueContext(description=description)
+            for description in _issue_descriptions_from_assistant_text(message.text)
+        ]
+    )
+
+
+def _is_pending_ticket_detail(
+    pending_issues: list[PendingIssueContext],
+) -> bool:
+    return bool(pending_issues) and all(
+        pending.route == "TICKET" for pending in pending_issues
+    )
+
+
+def _needs_history_for_follow_up(conversation: ConversationContext) -> bool:
+    """Only expose prior turns when the assistant is awaiting a reply.
+
+    Passing every resolved topic to the extractor makes a complete new issue
+    vulnerable to being merged with the previous one (for example, a VPN
+    question followed by an unrelated 大州 question). New messages therefore
+    carry an explicit structured follow-up state instead of relying on the
+    wording of the rendered assistant response.
+    """
+    if not conversation.messages:
+        return False
+    last = conversation.messages[-1]
+    if last.role != "assistant":
+        return False
+    if last.followUpState in {
+        "AWAITING_CLARIFICATION",
+    }:
+        return True
+    # Backward compatibility for active conversations written by an older
+    # revision. This fallback can be removed after the retention window.
+    return "請補充：" in last.text
 
 
 def _knowledge_search_supports_call_counter(knowledge_service: KnowledgeService) -> bool:
@@ -167,6 +576,7 @@ def build_knowledge_service(
     from .knowledge import HybridKnowledgeService
 
     if settings.knowledge_service_mode == "GEMINI_FILE_SEARCH":
+        from .file_search_registry import FileSearchDocumentRegistry
         from .gemini_file_search import GeminiFileSearchKnowledgeService
 
         logger.warning(
@@ -176,8 +586,11 @@ def build_knowledge_service(
         return GeminiFileSearchKnowledgeService(
             api_key=None,
             file_search_store=settings.gemini_file_search_store or "",
-            model=settings.model or "gemini-2.5-flash",
+            model=settings.gemini_file_search_model,
             top_k=settings.top_k,
+            registry=FileSearchDocumentRegistry.from_chunks(index.chunks),
+            max_images=settings.max_images,
+            enforce_acl=settings.gemini_file_search_enforce_acl,
         )
     return HybridKnowledgeService(settings, index, model)
 
@@ -248,19 +661,138 @@ class AgentWorkflow:
         request = state["request"]
         correlation_id = state["correlation_id"]
         conversation = state["conversation"]
-        history = await self.conversation_service.get_history(conversation.conversationId)
-        faq_keys = self.faq_service.available_keys()
-        outcome = await self.extractor.extract(
-            text=request.message.text,
-            history=history,
-            faq_keys=faq_keys,
-            correlation_id=correlation_id,
+        ticket_intent = classify_ticket_intent(request.message.text)
+        prior_pending_issues = _pending_clarifications(conversation)
+        force_ticket_offer = False
+        pending_confirmation = False
+        if (
+            ticket_intent == TicketIntent.NONE
+            and _has_pending_ticket_offer(conversation)
+            and is_pending_ticket_offer_confirmation(request.message.text)
+        ):
+            ticket_intent = TicketIntent.CREATE
+            pending_confirmation = True
+        pending_issues = _pending_offer_issues(conversation) if pending_confirmation else []
+        active_offer_contexts = (
+            _recent_ticket_contexts(conversation)
+            if ticket_intent == TicketIntent.NONE
+            and _has_pending_ticket_offer(conversation)
+            and _unable_to_provide_detail(request.message.text)
+            else []
         )
-        counter = LlmCallCounter(count=outcome.llm_calls)
+        requested_offer_contexts = (
+            _recent_ticket_contexts(conversation)
+            if ticket_intent == TicketIntent.NONE
+            and _requests_ticket_offer(request.message.text)
+            else []
+        )
+        if pending_issues:
+            # The extractor may recover several outstanding problems from
+            # history. A single confirmation authorizes one combined ticket,
+            # never one attempt per recovered issue.
+            issues = [merge_pending_ticket_issues(pending_issues)]
+            too_many_issues = False
+            llm_calls = 0
+        elif active_offer_contexts:
+            issues = [
+                _pending_context_to_ready_issue(pending, issue_id=index)
+                for index, pending in enumerate(active_offer_contexts, start=1)
+            ]
+            too_many_issues = False
+            llm_calls = 0
+            force_ticket_offer = True
+        elif requested_offer_contexts:
+            issues = [
+                _pending_context_to_ready_issue(pending, issue_id=index)
+                for index, pending in enumerate(requested_offer_contexts, start=1)
+            ]
+            too_many_issues = False
+            llm_calls = 0
+            force_ticket_offer = True
+        elif prior_pending_issues and _unable_to_provide_detail(request.message.text):
+            # The user cannot provide the requested detail. Stop interrogating
+            # and search with the best complete description accumulated so far;
+            # never append the literal word "不知道" to the retrieval query.
+            issues = [
+                _pending_context_to_ready_issue(pending, issue_id=index)
+                for index, pending in enumerate(prior_pending_issues, start=1)
+            ]
+            too_many_issues = False
+            llm_calls = 0
+        else:
+            history = await self.conversation_service.get_history(
+                conversation.conversationId
+            )
+            if ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
+                conversation
+            ):
+                history = []
+            faq_keys = self.faq_service.available_keys()
+            outcome = await self.extractor.extract(
+                text=request.message.text,
+                history=history,
+                faq_keys=faq_keys,
+                correlation_id=correlation_id,
+            )
+            issues = outcome.issues
+            issues = _complete_complementary_pending_issue(
+                issues, prior_pending_issues, request.message.text
+            )
+            too_many_issues = outcome.too_many_issues
+            llm_calls = outcome.llm_calls
+            previous_count = max(
+                (pending.clarificationCount for pending in prior_pending_issues),
+                default=0,
+            )
+            if previous_count >= self.settings.max_clarification_rounds:
+                # The extractor may still ask another reasonable question,
+                # but the conversation-level cap wins over per-turn output.
+                issues = [
+                    issue.model_copy(
+                        update={"readiness": "READY", "missingInfo": []}
+                    )
+                    if issue.readiness == "NEED_MORE_INFO"
+                    else issue
+                    for issue in issues
+                ]
+        if (
+            ticket_intent == TicketIntent.NONE
+            and _is_pending_ticket_detail(prior_pending_issues)
+            and any(issue.isIT for issue in issues)
+        ):
+            issues = [
+                issue.model_copy(update={"route": "TICKET"})
+                if issue.isIT
+                else issue
+                for issue in issues
+            ]
+            if all(
+                not issue.isIT or issue.readiness == "READY"
+                for issue in issues
+            ):
+                ticket_intent = TicketIntent.CREATE
+        if (
+            ticket_intent == TicketIntent.CREATE
+            and not pending_confirmation
+            and self.settings.ticket_service_mode != "DISABLED"
+        ):
+            # Explicit create language still needs a short confirmation
+            # turn so the user can review before a ticket is opened.
+            force_ticket_offer = True
+            issues = _issues_for_create_offer(
+                issues,
+                request.message.text,
+                _recent_ticket_contexts(conversation),
+            )
+            too_many_issues = False
+        counter = LlmCallCounter(count=llm_calls)
         return {
-            "issues": outcome.issues,
-            "too_many_issues": outcome.too_many_issues,
+            "issues": issues,
+            "too_many_issues": too_many_issues,
             "llm_call_counter": counter,
+            "ticket_intent": ticket_intent,
+            "prior_pending_issues": prior_pending_issues,
+            "force_ticket_offer": force_ticket_offer,
         }
 
     async def _filter_it_issues(self, state: AgentState) -> dict:
@@ -268,28 +800,33 @@ class AgentWorkflow:
         return {"it_issues": it_issues}
 
     async def _process_issues(self, state: AgentState) -> dict:
-        request = state["request"]
         correlation_id = state["correlation_id"]
         user = state["user"]
-        conversation = state["conversation"]
         counter = state["llm_call_counter"]
         it_issues = state.get("it_issues", [])
+        ticket_intent = state.get("ticket_intent", TicketIntent.NONE)
 
         lock = asyncio.Lock()
         ticket_created = {"done": False}
-        pending_offer = _has_pending_ticket_offer(conversation)
 
         async def handle(issue: Issue) -> IssueResult:
             try:
+                if state.get("force_ticket_offer", False):
+                    if issue.readiness == "NEED_MORE_INFO":
+                        return IssueResult(
+                            issueId=issue.id,
+                            resultType="NEED_MORE_INFO",
+                            questions=issue.missingInfo,
+                        )
+                    return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
                 return await self._handle_issue(
                     issue,
-                    request=request,
                     user=user,
                     correlation_id=correlation_id,
                     counter=counter,
                     lock=lock,
                     ticket_created=ticket_created,
-                    pending_offer=pending_offer,
+                    ticket_intent=ticket_intent,
                 )
             except Exception as exc:  # noqa: BLE001 - one issue must never sink the rest
                 logger.error(
@@ -332,39 +869,34 @@ class AgentWorkflow:
         self,
         issue: Issue,
         *,
-        request: AgentRequest,
         user: UserContext,
         correlation_id: str,
         counter: LlmCallCounter,
         lock: asyncio.Lock,
         ticket_created: dict,
-        pending_offer: bool,
+        ticket_intent: TicketIntent,
     ) -> IssueResult:
+        if ticket_intent == TicketIntent.DELETE_DENIED:
+            return IssueResult(issueId=issue.id, resultType="TICKET_DELETE_DENIED")
+
+        if ticket_intent == TicketIntent.CANCEL:
+            return IssueResult(issueId=issue.id, resultType="TICKET_CANCELLED")
+
+        if ticket_intent in {TicketIntent.CREATE, TicketIntent.QUERY}:
+            return await self._handle_ticket(
+                issue,
+                user=user,
+                correlation_id=correlation_id,
+                lock=lock,
+                ticket_created=ticket_created,
+                ticket_intent=ticket_intent,
+            )
+
         if issue.readiness == "NEED_MORE_INFO":
             return IssueResult(
                 issueId=issue.id,
                 resultType="NEED_MORE_INFO",
                 questions=issue.missingInfo,
-            )
-
-        text = request.message.text
-        if (
-            pending_offer
-            and issue.route != "TICKET"
-            and is_explicit_ticket_confirmation(text)
-        ):
-            # A bare follow-up ("好，幫我開單") answering a PREVIOUS turn's
-            # ticket offer, even though the extractor didn't re-tag this
-            # issue's route as TICKET (spec §11.3 pending-offer path; see
-            # module docstring).
-            return await self._handle_ticket(
-                issue,
-                request=request,
-                user=user,
-                correlation_id=correlation_id,
-                lock=lock,
-                ticket_created=ticket_created,
-                pending_offer=pending_offer,
             )
 
         if issue.route == "FAQ":
@@ -384,15 +916,9 @@ class AgentWorkflow:
             return await self._handle_knowledge(issue, user, correlation_id, counter, lock)
 
         if issue.route == "TICKET":
-            return await self._handle_ticket(
-                issue,
-                request=request,
-                user=user,
-                correlation_id=correlation_id,
-                lock=lock,
-                ticket_created=ticket_created,
-                pending_offer=pending_offer,
-            )
+            # Defense in depth: extractor routes are advisory.  A message
+            # with no deterministic ticket intent must not call Ticket API.
+            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
 
         # Defensive fallback: NOT_IT issues are filtered out before this
         # point (Filter IT Issues node), so this should be unreachable.
@@ -451,20 +977,16 @@ class AgentWorkflow:
         self,
         issue: Issue,
         *,
-        request: AgentRequest,
         user: UserContext,
         correlation_id: str,
         lock: asyncio.Lock,
         ticket_created: dict,
-        pending_offer: bool,
+        ticket_intent: TicketIntent,
     ) -> IssueResult:
-        text = request.message.text
-        wants_create = is_explicit_ticket_confirmation(text) and (
-            issue.route == "TICKET" or pending_offer
-        )
-
-        if not wants_create:
+        if ticket_intent == TicketIntent.QUERY:
             return await self._query_tickets(issue, user, correlation_id)
+        if ticket_intent != TicketIntent.CREATE:
+            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
 
         # Spec §11.4: identity must come ONLY from the trusted Teams/Entra
         # context, never from the user's free text.
@@ -574,6 +1096,7 @@ class AgentWorkflow:
         request = state["request"]
         conversation = state["conversation"]
         correlation_id = state["correlation_id"]
+        pending_issues = self._pending_issues_for_next_turn(state)
         await self.conversation_service.record_message(
             conversation.conversationId,
             role="user",
@@ -585,17 +1108,94 @@ class AgentWorkflow:
             role="assistant",
             text=state.get("final_response", ""),
             correlation_id=correlation_id,
+            follow_up_state=self._follow_up_state(state, pending_issues),
+            pending_issues=pending_issues,
         )
         return {}
 
+    @staticmethod
+    def _pending_issues_for_next_turn(
+        state: AgentState,
+    ) -> list[PendingIssueContext]:
+        issues_by_id = {issue.id: issue for issue in state.get("issues", [])}
+        prior = state.get("prior_pending_issues", [])
+        previous_count = max(
+            (pending.clarificationCount for pending in prior), default=0
+        )
+        previous_questions = [
+            question
+            for pending in prior
+            for question in pending.askedQuestions
+        ]
+        pending_contexts: list[PendingIssueContext] = []
+        if _preserves_interrupted_clarification(state):
+            return list(prior)
+        for result in state.get("issue_results", []):
+            issue = issues_by_id.get(result.issueId)
+            if issue is None:
+                continue
+            if result.resultType == "NEED_MORE_INFO":
+                asked_questions = list(
+                    dict.fromkeys([*previous_questions, *result.questions])
+                )
+                pending_contexts.append(
+                    PendingIssueContext(
+                        description=issue.description,
+                        contextText=(
+                            prior[0].contextText
+                            if len(prior) == 1 and prior[0].contextText
+                            else state["request"].message.text
+                        ),
+                        route=issue.route,
+                        faqKey=issue.faqKey,
+                        missingInfo=result.questions,
+                        askedQuestions=asked_questions,
+                        clarificationCount=previous_count + 1,
+                    )
+                )
+            elif (
+                result.resultType == "NO_KNOWLEDGE"
+                and _TICKET_OFFER_MARKER in state.get("final_response", "")
+            ):
+                pending_contexts.append(
+                    PendingIssueContext(
+                        description=issue.description,
+                        route="KNOWLEDGE",
+                    )
+                )
+            elif result.resultType in {"KNOWLEDGE_ANSWERED", "FAQ_ANSWERED"}:
+                pending_contexts.append(
+                    PendingIssueContext(
+                        description=issue.description,
+                        route=issue.route,
+                        faqKey=issue.faqKey,
+                    )
+                )
+        return pending_contexts
+
+    @staticmethod
+    def _follow_up_state(
+        state: AgentState, pending_issues: list[PendingIssueContext]
+    ) -> str:
+        if any(
+            result.resultType == "NEED_MORE_INFO"
+            for result in state.get("issue_results", [])
+        ):
+            return "AWAITING_CLARIFICATION"
+        if pending_issues and _preserves_interrupted_clarification(state):
+            return "AWAITING_CLARIFICATION"
+        if _TICKET_OFFER_MARKER in state.get("final_response", ""):
+            return "AWAITING_TICKET_CONFIRMATION"
+        return "NONE"
+
     # --- entry points --------------------------------------------------
 
-    async def run(
-        self, request: AgentRequest, *, correlation_id: str | None = None
+    def _initial_state(
+        self, request: AgentRequest, correlation_id: str | None
     ) -> AgentState:
         # Spec §15.1: derived exactly once, never regenerated between nodes.
         resolved_correlation_id = correlation_id or request.correlationId or str(uuid.uuid4())
-        initial_state: AgentState = {
+        return {
             "request": request,
             "correlation_id": resolved_correlation_id,
             "issues": [],
@@ -606,23 +1206,74 @@ class AgentWorkflow:
             "citations": [],
             "images": [],
             "feedback_enabled": False,
+            "ticket_intent": TicketIntent.NONE,
+            "prior_pending_issues": [],
+            "force_ticket_offer": False,
         }
-        result: AgentState = await self.graph.ainvoke(initial_state)
+
+    async def run(
+        self, request: AgentRequest, *, correlation_id: str | None = None
+    ) -> AgentState:
+        result: AgentState = await self.graph.ainvoke(
+            self._initial_state(request, correlation_id)
+        )
         return result
+
+    @staticmethod
+    def _to_response(state: AgentState) -> AgentResponse:
+        return AgentResponse(
+            answer=state.get("final_response", ""),
+            traceId=state["correlation_id"],
+            correlationId=state["correlation_id"],
+            citations=state.get("citations", []),
+            images=state.get("images", []),
+            issueResults=state.get("issue_results", []),
+            feedbackEnabled=state.get("feedback_enabled", False),
+        )
 
     async def respond(
         self, request: AgentRequest, *, correlation_id: str | None = None
     ) -> AgentResponse:
-        result = await self.run(request, correlation_id=correlation_id)
-        return AgentResponse(
-            answer=result.get("final_response", ""),
-            traceId=result["correlation_id"],
-            correlationId=result["correlation_id"],
-            citations=result.get("citations", []),
-            images=result.get("images", []),
-            issueResults=result.get("issue_results", []),
-            feedbackEnabled=result.get("feedback_enabled", False),
-        )
+        return self._to_response(await self.run(request, correlation_id=correlation_id))
+
+    async def stream(
+        self, request: AgentRequest, *, correlation_id: str | None = None
+    ) -> AsyncIterator[tuple[str, Any]]:
+        """Run the graph, yielding progress stages before the final state.
+
+        Yields ``("stage", label)`` as each node completes and finally
+        ``("state", AgentState)`` -- the same state :meth:`run` returns, so
+        callers build the ``AgentResponse`` and emit the spec §15.2 log line
+        exactly as they do on the non-streaming path. The answer is identical
+        to what :meth:`respond` produces for the same request: this streams
+        *when* the user learns things, never *what* they learn.
+
+        Why stages and not tokens: spec §5.3 requires the Response Builder to
+        be deterministic string templating over answers that upstream nodes
+        already finished producing, so at the point ``final_response`` exists
+        there is no token stream left to forward. The latency a user actually
+        waits through is issue extraction plus retrieval, which is exactly
+        what these stages cover.
+
+        ``stream_mode="updates"`` yields ``{node_name: delta}`` once per
+        completed node. ``AgentState`` is a plain ``TypedDict`` with no
+        reducer annotations, so LangGraph's own merge semantics are
+        last-value-wins per key and folding the deltas here reproduces the
+        same final state ``ainvoke`` would have returned.
+        """
+        state: AgentState = self._initial_state(request, correlation_id)
+
+        async for update in self.graph.astream(dict(state), stream_mode="updates"):
+            if not isinstance(update, dict):
+                continue
+            for node_name, delta in update.items():
+                if isinstance(delta, dict):
+                    state.update(delta)  # type: ignore[typeddict-item]
+                label = STAGE_LABELS.get(node_name)
+                if label:
+                    yield "stage", label
+
+        yield "state", state
 
 
 @dataclass(frozen=True)

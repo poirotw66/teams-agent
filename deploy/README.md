@@ -32,7 +32,8 @@ The script:
 6. Deploys the public Teams Adapter.
 7. Configures the Adapter Cloud Run URL for signed RAG images.
 
-After deployment, set Azure Bot Messaging endpoint to:
+After deployment, set the bot's Endpoint address in the Teams Developer
+Portal (https://dev.teams.microsoft.com, Tools -> Bot management) to:
 
 ```text
 https://<teams-agent-adapter-url>/api/messages
@@ -46,6 +47,37 @@ https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app/api/messages
 
 Do not commit `.env`, `agent_service/.env`, credentials, or exported secrets.
 
+## Short-lived external Agents Playground
+
+For a short UAT without Teams access, deploy the Microsoft 365 Agents
+Playground behind the repository's server-side password gateway:
+
+```bash
+./deploy/deploy-playground.sh
+```
+
+The script creates a dedicated Cloud Run service and service account, limits the
+service to one instance, and stores both the shared login password and session
+signing key in Secret Manager. It reuses the deployed Adapter endpoint and the
+existing Bot client secret. The `/_connector` callback namespace remains
+reachable without the browser password because Bot replies do not carry the
+browser cookie; Agents Playground still validates the Bot JWT on that route.
+The container also applies a narrow compatibility patch to version `0.2.28` so
+an HTTPS page opens its event streams over `wss://` instead of the package's
+hard-coded `ws://` URL.
+The generated password is not printed; retrieve it
+only when distributing it to approved testers:
+
+```bash
+gcloud secrets versions access latest \
+  --secret=teams-agent-playground-password \
+  --project=itr-aimasteryhub-lab
+```
+
+This is intended only for short-lived acceptance testing. Delete the Cloud Run
+service after UAT, and rotate or destroy the shared password secret if the test
+environment is deployed again.
+
 ## Two-service split
 
 Spec §2.2 keeps the Teams Adapter and the LangGraph Agent Service as two
@@ -53,15 +85,16 @@ separate Cloud Run services with different exposure and different config:
 
 | | Teams Adapter (`teams-agent-adapter`) | Agent Service (`teams-rag-agent`) |
 |---|---|---|
-| Visibility | `--allow-unauthenticated` (public; Azure Bot must reach it) | `--no-allow-unauthenticated` (private; only the Adapter's service account has `roles/run.invoker`) |
+| Visibility | `--allow-unauthenticated` (public; the Bot Framework service must reach it) | `--no-allow-unauthenticated` (private; only the Adapter's service account has `roles/run.invoker`) |
 | Auth to the other service | N/A | Verifies each caller is the Adapter, via Cloud Run IAM identity tokens (`AGENT_API_AUTH_MODE=google_id_token`, `AGENT_API_AUDIENCE=<agent-url>`) |
 | Config source | `.env` at the project root / `.env.example` | `agent_service/.env` / `agent_service/.env.example` |
-| Full env var reference | [`../README.md`](../README.md) | [`../README.md`](../README.md) |
+| Full env var reference | [`../README.md`](../README.md) ([繁中](../README-TW.md)) | [`../README.md`](../README.md) ([繁中](../README-TW.md)) |
 
 Never merge the two into one Cloud Run service or one `.env` file — the
 private/public split is what lets the Agent Service (which holds the
 Gemini API key and reaches the knowledge base) stay unauthenticated-free
-while the Adapter, which must be internet-reachable for Azure Bot, carries
+while the Adapter, which must be internet-reachable for the Bot Framework
+service, carries
 no AI credentials at all.
 
 ## Secrets (spec §17: API keys only via Secret Manager or env, never in code/Git)
@@ -72,7 +105,7 @@ to the service account that needs them:
 | Secret | Bound to | Cloud Run env var it becomes |
 |---|---|---|
 | `teams-agent-google-api-key` | Agent SA | `GOOGLE_API_KEY` |
-| `teams-agent-bot-client-secret` | Adapter SA | `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET` |
+| `teams-agent-bot-client-secret` | Adapter SA | `CLIENT_SECRET` |
 | `teams-agent-asset-signing-key` | Adapter SA | `RAG_ASSET_SIGNING_KEY` |
 
 Not yet wired into `deploy-gcp.sh` (add them the same way, as
@@ -99,8 +132,8 @@ from the code default — see the next section. `FAQ_PATH` and
 `CONVERSATION_STORE_PATH` are left unset (they default to
 `RAG_DATA_DIR/faq.json` and `RAG_DATA_DIR/conversations`, which resolve
 correctly under `/app/data` inside the container). See
-[`../README.md`](../README.md) for the full table with
-defaults and valid ranges, and
+[`../README.md`](../README.md) for the full table with defaults and valid
+ranges ([Traditional Chinese](../README-TW.md)), and
 [`../docs/gemini-file-search-spike.md`](../docs/gemini-file-search-spike.md)
 before ever setting `KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH` here — that
 mode also needs the `spike` extra installed, which the production image
@@ -300,3 +333,16 @@ measured evidence (spec §18's performance test):
 - **Scale-to-zero**: both services deploy with `--min=0 --max=3`. Raise
   `--max` only after observing sustained concurrency near the current
   limit; `--min=0` is intentional for a POC to avoid idle cost.
+
+## Mock Ticket API 驗收環境
+
+部署 Cloud Run Mock Ticket API 並將 Agent 切換到 HTTP 工單模式：
+
+```bash
+./deploy/deploy-mock-ticket.sh
+```
+
+Mock API 使用 Secret Manager Bearer Token 保護建立與查詢操作，資料存放於
+Firestore `mock_tickets` collection。此服務僅供驗收，不代表正式工單系統。
+重新執行完整的 `deploy-gcp.sh` 會把工單模式重設為 `DISABLED`；需要時再執行
+本腳本即可恢復 Mock 工單環境。

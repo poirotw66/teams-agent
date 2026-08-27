@@ -1,16 +1,20 @@
 import hmac
+import json
 import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from langchain_core.callbacks import get_usage_metadata_callback
 
 from .contracts import (
     AgentRequest,
     AgentResponse,
     FeedbackRequest,
+    KnowledgeBackendUpdate,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -20,13 +24,24 @@ from .extractor import IssueExtractor
 from .faq import FaqService
 from .graph import RagAgent
 from .indexer import build_index
+from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
 from .usage import build_usage_report
-from .workflow import AgentWorkflow, build_knowledge_service
+from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
 logger = logging.getLogger(__name__)
+
+
+def _sse(event: str, data: dict) -> str:
+    """Frame one Server-Sent Event.
+
+    `ensure_ascii=True` is deliberate: the payload is Chinese, and escaping it
+    keeps every `data:` line free of raw multi-byte content while JSON itself
+    guarantees no embedded newline can break SSE framing.
+    """
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
 def create_app(settings: RagSettings | None = None) -> FastAPI:
@@ -67,21 +82,41 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             build_repository(resolved_settings), resolved_settings
         )
         ticket_service = build_ticket_service(resolved_settings)
-        knowledge_service = build_knowledge_service(
-            resolved_settings, index, agent.model
+        hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
+        knowledge_services = {
+            "HYBRID": build_knowledge_service(hybrid_settings, index, agent.model)
+        }
+        unavailable_backends: dict[str, str] = {}
+        if resolved_settings.gemini_file_search_store:
+            gemini_settings = replace(
+                resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
+            )
+            knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
+                gemini_settings, index, agent.model
+            )
+        else:
+            unavailable_backends["GEMINI_FILE_SEARCH"] = (
+                "尚未設定 GEMINI_FILE_SEARCH_STORE"
+            )
+        knowledge_router = KnowledgeBackendRouter(
+            knowledge_services,
+            resolved_settings.knowledge_service_mode,
+            unavailable_backends,
+            build_backend_state_store(resolved_settings),
         )
         extractor = IssueExtractor(resolved_settings, agent.model)
         workflow = AgentWorkflow(
             resolved_settings,
             extractor=extractor,
             faq_service=faq_service,
-            knowledge_service=knowledge_service,
+            knowledge_service=knowledge_router,
             conversation_service=conversation_service,
             ticket_service=ticket_service,
         )
 
         app.state.index = index
         app.state.agent = agent
+        app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
         logger.info(
             "Agentic RAG ready: chunks=%s model=%s embeddings=%s "
@@ -119,14 +154,33 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 if resolved_settings.embedding_model
                 else "chinese-bm25"
             ),
+            "knowledgeBackend": await request.app.state.knowledge_router.active_backend(),
         }
 
-    @app.post(
-        "/agent/chat",
-        response_model=AgentResponse,
+    @app.get(
+        "/admin/knowledge-backend",
         dependencies=[Depends(authorize)],
     )
-    async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
+    async def get_knowledge_backend(request: Request) -> dict[str, object]:
+        router: KnowledgeBackendRouter = request.app.state.knowledge_router
+        return await router.status()
+
+    @app.put(
+        "/admin/knowledge-backend",
+        dependencies=[Depends(authorize)],
+    )
+    async def set_knowledge_backend(
+        payload: KnowledgeBackendUpdate, request: Request
+    ) -> dict[str, object]:
+        router: KnowledgeBackendRouter = request.app.state.knowledge_router
+        try:
+            await router.select(payload.backend)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        logger.info("Knowledge backend changed: backend=%s", payload.backend)
+        return await router.status()
+
+    def _authorize_tenant(payload: AgentRequest) -> None:
         tenant_id = payload.conversation.tenantId
         if (
             resolved_settings.allowed_tenants
@@ -134,50 +188,44 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         ):
             raise HTTPException(status_code=403, detail="Tenant is not allowed.")
 
+    def _start_chat(payload: AgentRequest) -> str:
         # Spec §15.1: derive the Correlation ID exactly ONCE, at this entry
-        # point, and never regenerate it downstream (workflow.run honors an
+        # point, and never regenerate it downstream (the workflow honors an
         # explicitly-passed value instead of deriving its own).
         correlation_id = payload.correlationId or str(uuid.uuid4())
-
-        workflow: AgentWorkflow = request.app.state.workflow
         logger.info(
             "Agent request started: request_id=%s channel=%s correlation_id=%s",
             payload.requestId,
             payload.channel,
             correlation_id,
         )
+        return correlation_id
 
-        started_at = time.perf_counter()
-        error_type: str | None = None
-        try:
-            # Keep the token-usage/cost accounting commit 53124a3 added: any
-            # LLM call made while running the workflow (Issue Extractor +
-            # every Knowledge Service call) is captured here.
-            with get_usage_metadata_callback() as usage_callback:
-                state = await workflow.run(payload, correlation_id=correlation_id)
-            usage = build_usage_report(usage_callback.usage_metadata)
-        except Exception as error:
-            error_type = type(error).__name__
-            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
-            # Spec §17/§15.2: never a stack trace to the caller, and log the
-            # error TYPE only (never the exception's raw text, which could
-            # embed request content).
-            logger.error(
-                "Agent request failed: request_id=%s correlation_id=%s "
-                "error_type=%s elapsed_ms=%s",
-                payload.requestId,
-                correlation_id,
-                error_type,
-                elapsed_ms,
-            )
-            raise HTTPException(
-                status_code=503,
-                detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
-            ) from error
+    def _log_chat_failure(
+        payload: AgentRequest, correlation_id: str, error: BaseException, started_at: float
+    ) -> None:
+        # Spec §17/§15.2: never a stack trace to the caller, and log the
+        # error TYPE only (never the exception's raw text, which could
+        # embed request content).
+        logger.error(
+            "Agent request failed: request_id=%s correlation_id=%s "
+            "error_type=%s elapsed_ms=%s",
+            payload.requestId,
+            correlation_id,
+            type(error).__name__,
+            round((time.perf_counter() - started_at) * 1000, 1),
+        )
 
+    def _log_chat_success(
+        payload: AgentRequest,
+        correlation_id: str,
+        state: dict,
+        usage_metadata: dict,
+        started_at: float,
+    ) -> None:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
-        _log_chat_request(payload, state, elapsed_ms=elapsed_ms, error_type=error_type)
-        usage_fields = usage.log_fields()
+        _log_chat_request(payload, state, elapsed_ms=elapsed_ms, error_type=None)
+        usage_fields = build_usage_report(usage_metadata).log_fields()
         logger.info(
             "Agent request usage: request_id=%s correlation_id=%s input_tokens=%s "
             "output_tokens=%s total_tokens=%s embedding_tokens=%s estimated_cost_usd=%s "
@@ -192,15 +240,125 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             usage_fields,
         )
 
-        issue_results = state.get("issue_results", [])
+    def _build_response(state: dict, correlation_id: str) -> AgentResponse:
         return AgentResponse(
             answer=state.get("final_response", ""),
             traceId=correlation_id,
             correlationId=correlation_id,
             citations=state.get("citations", []),
             images=state.get("images", []),
-            issueResults=issue_results,
+            issueResults=state.get("issue_results", []),
             feedbackEnabled=state.get("feedback_enabled", False),
+        )
+
+    @app.post(
+        "/agent/chat",
+        response_model=AgentResponse,
+        dependencies=[Depends(authorize)],
+    )
+    async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
+        _authorize_tenant(payload)
+        correlation_id = _start_chat(payload)
+        workflow: AgentWorkflow = request.app.state.workflow
+
+        started_at = time.perf_counter()
+        try:
+            # Keep the token-usage/cost accounting commit 53124a3 added: any
+            # LLM call made while running the workflow (Issue Extractor +
+            # every Knowledge Service call) is captured here.
+            with get_usage_metadata_callback() as usage_callback:
+                state = await workflow.run(payload, correlation_id=correlation_id)
+            usage_metadata = usage_callback.usage_metadata
+        except Exception as error:
+            _log_chat_failure(payload, correlation_id, error, started_at)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
+            ) from error
+
+        _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+        return _build_response(state, correlation_id)
+
+    @app.post(
+        "/agent/chat/stream",
+        dependencies=[Depends(authorize)],
+    )
+    async def chat_stream(payload: AgentRequest, request: Request) -> StreamingResponse:
+        """Server-Sent Events variant of `/agent/chat` (progress + answer).
+
+        Emits `stage` events while the graph runs, then exactly one terminal
+        event: `response` carrying the same `AgentResponse` body `/agent/chat`
+        returns, or `error` if the workflow raised.
+
+        The error contract differs from `/agent/chat` by necessity: the HTTP
+        status is committed the moment the first byte ships, so a mid-run
+        failure cannot become a 503 and is delivered as an `error` event
+        instead. Everything a caller can be rejected for *before* the run
+        starts -- bad service token, disallowed tenant -- is still a real HTTP
+        error, because those checks run before the response begins.
+        """
+        _authorize_tenant(payload)
+        correlation_id = _start_chat(payload)
+        workflow: AgentWorkflow = request.app.state.workflow
+
+        async def events():
+            # Sent before the graph starts so the Teams user sees progress
+            # within one round-trip instead of waiting for the first node.
+            yield _sse("stage", {"label": INITIAL_STAGE_LABEL})
+
+            started_at = time.perf_counter()
+            state: dict | None = None
+            try:
+                with get_usage_metadata_callback() as usage_callback:
+                    async for kind, value in workflow.stream(
+                        payload, correlation_id=correlation_id
+                    ):
+                        if kind == "stage":
+                            yield _sse("stage", {"label": value})
+                        elif kind == "state":
+                            state = value
+                usage_metadata = usage_callback.usage_metadata
+            except Exception as error:  # noqa: BLE001 - cannot re-raise mid-stream, see docstring
+                _log_chat_failure(payload, correlation_id, error, started_at)
+                yield _sse(
+                    "error",
+                    {
+                        "detail": "Agent service is temporarily unavailable.",
+                        "correlationId": correlation_id,
+                    },
+                )
+                return
+
+            if state is None:
+                # The graph completed without yielding a terminal state. Treat
+                # it as a failure rather than shipping an empty answer.
+                _log_chat_failure(
+                    payload, correlation_id, RuntimeError("no state"), started_at
+                )
+                yield _sse(
+                    "error",
+                    {
+                        "detail": "Agent service is temporarily unavailable.",
+                        "correlationId": correlation_id,
+                    },
+                )
+                return
+
+            _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+            yield _sse(
+                "response",
+                _build_response(state, correlation_id).model_dump(mode="json"),
+            )
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                # Cloud Run / nginx-style proxies buffer responses by default,
+                # which would defeat the point of streaming progress.
+                "X-Accel-Buffering": "no",
+            },
         )
 
     @app.post(

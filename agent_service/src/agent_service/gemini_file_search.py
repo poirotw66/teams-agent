@@ -23,6 +23,7 @@ from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
 from .file_search_acl import filter_for
 from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
+from .knowledge import answer_indicates_insufficient_information
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +244,15 @@ class GeminiFileSearchKnowledgeService:
                 backend="GEMINI_FILE_SEARCH",
             )
 
-        answer = self._response_text(response)
+        answer = self._canonicalize_legacy_terms(self._response_text(response), chunks)
+        if answer_indicates_insufficient_information(answer):
+            return KnowledgeResult(
+                found=False,
+                answer="",
+                sources=[],
+                images=[],
+                backend="GEMINI_FILE_SEARCH",
+            )
         sources = [
             Citation(
                 title=self._resolve_title(chunk.title),
@@ -299,6 +308,15 @@ class GeminiFileSearchKnowledgeService:
                 if len(images) >= self.max_images:
                     return images
         return images
+
+    @staticmethod
+    def _canonicalize_legacy_terms(
+        answer: str, chunks: list[GeminiGroundingChunk]
+    ) -> str:
+        """Repair a known naming error in the legacy helpdesk-store upload."""
+        if any(chunk.title.startswith("xiaozhou-") for chunk in chunks):
+            return answer.replace("小州", "大州").replace("大洲", "大州")
+        return answer
 
     @staticmethod
     def _response_text(response) -> str:

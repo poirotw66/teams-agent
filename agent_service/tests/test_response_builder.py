@@ -3,7 +3,6 @@ from pathlib import Path
 
 from agent_service.contracts import AgentImage, Citation, Issue, IssueResult
 from agent_service.response_builder import (
-    ALL_NON_IT_MESSAGE,
     FEEDBACK_PROMPT,
     build_response,
 )
@@ -67,9 +66,9 @@ def test_knowledge_answered_template_matches_spec_13():
     )
     assert built.text == (
         "問題：VPN 錯誤 691\n\n"
-        "處理方式：\n依照知識文件，請先確認帳號密碼是否已更新……\n\n"
-        "來源：\n- vpn-guide.md"
+        "處理方式：\n依照知識文件，請先確認帳號密碼是否已更新……"
     )
+    assert built.citations == [Citation(title="vpn-guide.md")]
 
 
 def test_knowledge_answered_source_with_url_renders_markdown_link():
@@ -83,7 +82,10 @@ def test_knowledge_answered_source_with_url_renders_markdown_link():
     built = build_response(
         issues=[issue], results=[result], settings=make_settings()
     )
-    assert "- [vpn-guide.md](https://example.com/vpn-guide.md)" in built.text
+    assert "來源" not in built.text
+    assert built.citations == [
+        Citation(title="vpn-guide.md", url="https://example.com/vpn-guide.md")
+    ]
 
 
 def test_need_more_info_template_matches_spec_13():
@@ -118,14 +120,18 @@ def test_need_more_info_caps_at_two_questions():
     assert "2. Q2" in built.text
 
 
-def test_all_non_it_emits_exact_spec_4_1_message():
-    issue = make_issue(id=1, description="天氣", isIT=False, readiness="NOT_IT", route="NOT_IT")
-    built = build_response(issues=[issue], results=[], settings=make_settings())
-    assert built.text == ALL_NON_IT_MESSAGE
-    assert built.text == (
-        "我目前專門協助處理公司 IT 問題。\n"
-        "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
+def test_all_non_it_names_topic_without_querying_knowledge():
+    issue = make_issue(
+        id=1,
+        description="早餐吃什麼",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
     )
+    built = build_response(issues=[issue], results=[], settings=make_settings())
+    assert "「早餐吃什麼」不屬於公司 IT 支援範圍" in built.text
+    assert "不會查詢企業知識庫" in built.text
+    assert "系統、設備、帳號、權限或錯誤訊息" in built.text
     assert built.feedback_enabled is False
 
 
@@ -169,6 +175,47 @@ def test_multi_issue_rendered_in_issue_id_order():
         settings=make_settings(),
     )
     assert built.text.index("問題一") < built.text.index("問題二")
+
+
+def test_multi_issue_uses_separate_numbered_sections_for_mixed_results():
+    pending = make_issue(
+        id=1,
+        description="Webex 相關協助",
+        readiness="NEED_MORE_INFO",
+        route="KNOWLEDGE",
+    )
+    answered = make_issue(
+        id=2,
+        description="大州系統無法連線",
+        route="KNOWLEDGE",
+    )
+    pending_result = IssueResult(
+        issueId=1,
+        resultType="NEED_MORE_INFO",
+        questions=["請問您需要進行什麼操作？"],
+    )
+    answered_result = IssueResult(
+        issueId=2,
+        resultType="KNOWLEDGE_ANSWERED",
+        answer="請調整瀏覽器安全性設定。",
+    )
+
+    built = build_response(
+        issues=[pending, answered],
+        results=[pending_result, answered_result],
+        settings=make_settings(),
+    )
+
+    assert built.text == (
+        "**問題 1｜Webex 相關協助**\n\n"
+        "**需要補充資訊**\n\n"
+        "1. 請問您需要進行什麼操作？\n\n"
+        "---\n\n"
+        "**問題 2｜大州系統無法連線**\n\n"
+        "處理方式：\n請調整瀏覽器安全性設定。"
+    )
+    assert built.text.count("Webex 相關協助") == 1
+    assert built.text.count("大州系統無法連線") == 1
 
 
 def test_failed_issue_does_not_suppress_other_answered_issue():
@@ -236,7 +283,21 @@ def test_no_knowledge_does_not_fabricate_and_offers_ticket_when_enabled():
         offer_ticket_on_no_knowledge=True,
     )
     assert "查無相關資訊" in built.text
-    assert "建立工單" in built.text
+    assert "建立派工單" in built.text
+    assert "請回覆<是>以建立派工單" in built.text
+
+
+def test_create_offer_skips_knowledge_miss_preamble():
+    issue = make_issue(id=1, description="請協助建立派工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="NO_KNOWLEDGE")
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(),
+        offer_ticket_on_no_knowledge=True,
+    )
+    assert built.text == "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+    assert "查無相關資訊" not in built.text
 
 
 def test_no_knowledge_without_ticket_offer_flag_has_no_ticket_prompt():
@@ -248,6 +309,7 @@ def test_no_knowledge_without_ticket_offer_flag_has_no_ticket_prompt():
         settings=make_settings(),
         offer_ticket_on_no_knowledge=False,
     )
+    assert "建立派工單" not in built.text
     assert "建立工單" not in built.text
 
 
@@ -265,6 +327,7 @@ def test_ticket_created_reports_id_and_url_when_present():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
     assert "TCK-001" in built.text
     assert "https://tickets.example.com/TCK-001" in built.text
+    assert built.citations == []
 
 
 def test_ticket_found_lists_tickets():
@@ -280,13 +343,50 @@ def test_ticket_found_lists_tickets():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
     assert "TCK-001 (OPEN)" in built.text
     assert "TCK-002 (CLOSED)" in built.text
+    assert built.citations == []
 
 
 def test_ticket_found_with_no_tickets_says_so():
     issue = make_issue(id=1, description="查詢我的工單", route="TICKET")
     result = IssueResult(issueId=1, resultType="TICKET_FOUND", sources=[])
     built = build_response(issues=[issue], results=[result], settings=make_settings())
-    assert "查無你建立的工單" in built.text
+    assert "查無你建立的派工單" in built.text
+
+
+def test_ticket_cancelled_is_a_direct_reply_without_sources_or_feedback():
+    issue = make_issue(id=1, description="取消建立工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="TICKET_CANCELLED")
+
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(feedback_enabled=True),
+        offer_ticket_on_no_knowledge=True,
+    )
+
+    assert built.text == "好的，目前不會建立派工單。若之後需要協助，請告訴我「建立派工單」。"
+    assert "來源" not in built.text
+    assert built.citations == []
+    assert built.images == []
+    assert built.feedback_enabled is False
+
+
+def test_ticket_delete_denied_is_a_direct_reply_without_sources_or_feedback():
+    issue = make_issue(id=1, description="刪除工單", route="TICKET")
+    result = IssueResult(issueId=1, resultType="TICKET_DELETE_DENIED")
+
+    built = build_response(
+        issues=[issue],
+        results=[result],
+        settings=make_settings(feedback_enabled=True),
+        offer_ticket_on_no_knowledge=True,
+    )
+
+    assert built.text.startswith("目前不支援刪除派工單")
+    assert "來源" not in built.text
+    assert built.citations == []
+    assert built.images == []
+    assert built.feedback_enabled is False
 
 
 # --- citations / images dedup ------------------------------------------------

@@ -261,8 +261,10 @@ async def test_acceptance_11_reply_includes_source_citations(tmp_path: Path) -> 
 
     assert response.citations
     assert response.citations[0].title == "VPN 疑難排解手冊"
-    assert "來源" in response.answer
-    assert "VPN 疑難排解手冊" in response.answer
+    # The Teams adapter renders citations as the single source section.
+    # Keeping them out of answer avoids showing the same source twice.
+    assert "來源" not in response.answer
+    assert "VPN 疑難排解手冊" not in response.answer
 
 
 # --------------------------------------------------------------------------
@@ -323,8 +325,12 @@ async def test_acceptance_15_ticket_api_called_after_explicit_confirmation(
         tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
     )
 
-    response = await workflow.respond(tw.make_request("請幫我建立工單"))
+    offered = await workflow.respond(
+        tw.make_request("VPN 一直斷線，請幫我建立工單")
+    )
+    response = await workflow.respond(tw.make_request("是"))
 
+    assert "是否需要協助建立派工單" in offered.answer
     assert len(ticket_service.created) == 1
     assert response.issueResults[0].resultType == "TICKET_CREATED"
 

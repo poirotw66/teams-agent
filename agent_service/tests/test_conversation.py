@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from fake_firestore import FakeFirestoreClient
 
-from agent_service.contracts import ConversationMessage
+from agent_service.contracts import ConversationMessage, PendingIssueContext
 from agent_service.conversation import (
     ConversationService,
     FileConversationRepository,
@@ -121,7 +121,19 @@ async def test_save_message_then_get_recent_messages_roundtrip(repository, clock
     )
     clock.advance(minutes=1)
     msg2 = ConversationMessage(
-        role="assistant", text="hello there", createdAt=clock(), correlationId="corr-1"
+        role="assistant",
+        text="hello there",
+        createdAt=clock(),
+        correlationId="corr-1",
+        followUpState="AWAITING_CLARIFICATION",
+        pendingIssues=[
+            PendingIssueContext(
+                description="VPN 無法連線",
+                missingInfo=["錯誤訊息或錯誤碼"],
+                askedQuestions=["錯誤訊息或錯誤碼"],
+                clarificationCount=1,
+            )
+        ],
     )
     await repository.save_message(created.conversationId, msg1)
     await repository.save_message(created.conversationId, msg2)
@@ -130,6 +142,9 @@ async def test_save_message_then_get_recent_messages_roundtrip(repository, clock
     assert [m.text for m in recent] == ["hi", "hello there"]
     assert recent[0].correlationId == "corr-1"
     assert recent[1].role == "assistant"
+    assert recent[1].followUpState == "AWAITING_CLARIFICATION"
+    assert recent[1].pendingIssues[0].description == "VPN 無法連線"
+    assert recent[1].pendingIssues[0].clarificationCount == 1
 
 
 async def test_get_recent_messages_respects_limit_and_is_most_recent(repository, clock):
@@ -526,9 +541,16 @@ class TestFakeFirestoreMatchesTheRealSdk:
     """
 
     @staticmethod
-    def real_sdk():
+    def real_sdk(module: str = "google.cloud.firestore"):
+        """Import a real-SDK module, or skip when the extra isn't installed.
+
+        Every real-SDK import in this class must go through here. A bare
+        ``import google.cloud...`` raises ``ModuleNotFoundError`` instead of
+        skipping, which turns "the optional extra is absent" into a failing
+        default suite.
+        """
         return pytest.importorskip(
-            "google.cloud.firestore",
+            module,
             reason="install the 'firestore' extra to check the Fake against the real SDK",
         )
 
@@ -557,11 +579,10 @@ class TestFakeFirestoreMatchesTheRealSdk:
         assert sdk.Query.DESCENDING == "DESCENDING"
 
     def test_snapshot_exposes_exists_and_to_dict(self):
-        from google.cloud.firestore_v1.base_document import DocumentSnapshot
-
-        self.real_sdk()
-        assert isinstance(DocumentSnapshot.exists, property)
-        assert callable(DocumentSnapshot.to_dict)
+        base_document = self.real_sdk("google.cloud.firestore_v1.base_document")
+        snapshot = base_document.DocumentSnapshot
+        assert isinstance(snapshot.exists, property)
+        assert callable(snapshot.to_dict)
 
     def test_fake_mirrors_the_same_surface(self):
         """The Fake side of the same contract, checked without the SDK."""

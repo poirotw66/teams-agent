@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    "fastapi>=0.115,<1" \
+    "google-cloud-firestore>=2.20,<3" \
+    "uvicorn>=0.34,<1"
+
+COPY src ./src
+
+ENV PYTHONPATH=/app/src
+
+USER 65532:65532
+
+EXPOSE 8080
+
+CMD ["python", "-m", "teams_agent.mock_ticket_service"]

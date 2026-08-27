@@ -1,37 +1,50 @@
-# LangGraph Agentic RAG Service
+# LangGraph Agent Service
 
-這是 Teams Adapter 後方的獨立 Agent Gateway。它會讀取專案根目錄
-`data/sources/*.md`，建立中文檢索索引，再由 LangGraph 決定直接回覆、檢索、
-判斷相關性、改寫查詢或產生有來源的回答。
+> English (this page) | [繁體中文](./README-TW.md)
+
+This is the standalone Agent Service behind the Teams Adapter. It loads
+conversation context, extracts issues, and runs FAQ / follow-up / Hybrid RAG /
+ticket flows, then assembles the reply with a Deterministic Response Builder.
+Knowledge content comes from `data/sources/*.md` at the project root.
 
 ```text
 Teams Adapter
-  → POST /agent/chat
-  → route
-     ├─ greeting → direct
-     └─ internal question → retrieve
-        ├─ relevant → grounded answer + citations
-        ├─ insufficient + LLM → rewrite once → retrieve
-        └─ insufficient → no-answer fallback
+  → POST /agent/chat  (or /agent/chat/stream)
+  → Load Conversation
+  → Extract Issues (max 3)
+  → Filter IT
+  → Process Issues (in parallel)
+       ├─ FAQ (fixed answer, no LLM)
+       ├─ Need More Info (max 2 questions)
+       ├─ Hybrid RAG (ACL + BM25/embedding)
+       └─ Ticket (explicit confirmation required)
+  → Response Builder → Save Conversation
 ```
 
-## 已完成
+The older single-shot RAG graph (`graph.py` route / retrieve / grade / rewrite /
+generate) is still kept inside the knowledge backend; the public entry point is
+`AgentWorkflow` in `workflow.py`. For the full specification and Adapter setup,
+see the root [`README.md`](../README.md)
+(Traditional Chinese: [`README-TW.md`](../README-TW.md)).
 
-- Markdown 清理、切塊與穩定 chunk ID
-- 中文字詞與 bigram BM25 檢索
-- 可選的 embedding hybrid search
-- 文件層 `allowedGroups` ACL，在 retrieval 前過濾
-- LangGraph routing、relevance grading、query rewrite、grounded generation
-- 保存 Markdown 圖片與父章節關聯，回答可回傳受 ACL 保護來源的圖片 metadata
-- 沒有 LLM 金鑰也能運作的 extractive local mode
-- `/agent/chat` Teams contract、`/retrieval/search` 除錯端點
-- Service token、tenant allowlist、health/readiness endpoints
-- Dockerfile 與單元／API 測試
-- 每次 `/agent/chat` 會在後端 log 記錄 LLM／embedding token 用量與 USD 價格估算
+## Done
 
-## 本機啟動
+- Markdown cleanup, chunking, and stable chunk IDs
+- Chinese word and bigram BM25 retrieval
+- Optional embedding hybrid search
+- Document-level `allowedGroups` ACL filtering before retrieval
+- LangGraph Workflow: conversation, issues, FAQ, follow-up, knowledge, tickets, feedback
+- Preserve Markdown images and parent-section links; answers can return image metadata from ACL-protected sources
+- Extractive local mode that works without an LLM key
+- `/agent/chat`, `/agent/chat/stream` SSE, `/feedback`, `/retrieval/search`
+- Conversation MEMORY / FILE / FIRESTORE; Ticket HTTP Adapter
+- Service token, tenant allowlist, health/readiness endpoints
+- Dockerfile and unit / integration / security tests
+- Each `/agent/chat` call logs LLM / embedding token usage and an estimated USD cost on the backend
 
-從 `agent_service/` 執行：
+## Local startup
+
+From `agent_service/`:
 
 ```bash
 uv sync --extra dev
@@ -40,13 +53,13 @@ uv run rag-index
 uv run rag-agent
 ```
 
-檢查服務：
+Check the service:
 
 ```bash
 curl http://localhost:8000/readyz
 ```
 
-測試檢索：
+Test retrieval:
 
 ```bash
 curl -X POST http://localhost:8000/retrieval/search \
@@ -58,7 +71,7 @@ curl -X POST http://localhost:8000/retrieval/search \
   }'
 ```
 
-測試 Agent：
+Test the Agent:
 
 ```bash
 curl -X POST http://localhost:8000/agent/chat \
@@ -81,52 +94,54 @@ curl -X POST http://localhost:8000/agent/chat \
   }'
 ```
 
-如果有設定 `AGENT_SERVICE_TOKEN`，兩個 POST 端點都必須加入：
+If `AGENT_SERVICE_TOKEN` is set, both POST endpoints must include:
 
 ```text
 Authorization: Bearer <相同 token>
 ```
 
-## 啟用生成式回答
+## Enable generative answers
 
-預設不會呼叫外部模型，只回傳檢索到的原文，適合先驗證資料與權限。若要讓
-LangGraph 進行語意 routing、relevance grading、query rewrite 與答案整理，
-在 `.env` 選擇一個模型：
+By default no external model is called; only retrieved source text is returned,
+which is useful for validating data and permissions first. To let LangGraph do
+semantic routing, relevance grading, query rewrite, and answer synthesis, pick a
+model in `.env`:
 
-OpenAI：
+OpenAI:
 
 ```dotenv
 RAG_MODEL=openai:gpt-4.1-mini
 OPENAI_API_KEY=<secret>
 ```
 
-Google Gemini：
+Google Gemini:
 
 ```dotenv
 RAG_MODEL=google_genai:gemini-3.5-flash-lite
 GOOGLE_API_KEY=<secret>
 ```
 
-模型名稱是部署設定，不應寫死在程式中。正式使用前，請依公司核准的模型服務
-與實際可用 model ID 調整。
+Model names are a deployment setting and must not be hard-coded. Before
+production use, adjust them to your company-approved model service and the
+actual available model IDs.
 
-若要啟用 dense embedding 與 hybrid search：
+To enable dense embeddings and hybrid search:
 
 ```dotenv
 RAG_EMBEDDING_MODEL=google_genai:gemini-embedding-2
 RAG_MAX_IMAGES=2
 ```
 
-更改 chunk 或 embedding 設定後需重建索引：
+Rebuild the index after changing chunk or embedding settings:
 
 ```bash
 uv run rag-index
 ```
 
-## 文件權限
+## Document permissions
 
-複製 `agent_service/metadata.example.json` 為 `data/metadata.json`，以來源相對路徑設定
-文件權限：
+Copy `agent_service/metadata.example.json` to `data/metadata.json` and set
+document permissions by source-relative path:
 
 ```json
 {
@@ -137,16 +152,17 @@ uv run rag-index
 }
 ```
 
-- 沒有 `allowedGroups` 的文件視為所有已通過 Agent Gateway 驗證的使用者可讀。
-- 有 `allowedGroups` 的文件只會對擁有任一對應群組的請求回傳。
-- 群組必須由 Teams／Entra／IAM 的可信任後端映射，不可採信使用者文字。
+- Documents without `allowedGroups` are readable by any user who already passed Agent Gateway authentication.
+- Documents with `allowedGroups` are returned only for requests that include at least one matching group.
+- Groups must come from a trusted Teams / Entra / IAM backend mapping; never trust user-supplied text.
 
-目前是適合 PoC 的本機 JSON 索引。資料量、併發量或 ACL 規則成長後，可保留
-LangGraph 與 API contract，只將 `HybridIndex` 替換成公司核准的向量資料庫。
+This is a local JSON index suitable for a PoC. As data volume, concurrency, or
+ACL rules grow, you can keep LangGraph and the API contract and only replace
+`HybridIndex` with a company-approved vector database.
 
-## 串接 Teams Adapter
+## Wire up the Teams Adapter
 
-在專案根目錄的 Teams Adapter `.env` 設定：
+In the Teams Adapter `.env` at the project root:
 
 ```dotenv
 AGENT_MODE=api
@@ -155,7 +171,7 @@ AGENT_API_TIMEOUT_SECONDS=20
 AGENT_API_TOKEN=<與 AGENT_SERVICE_TOKEN 相同的值>
 ```
 
-本機需同時啟動：
+Start both locally:
 
 ```text
 Terminal 1：cd agent_service && uv run rag-agent
@@ -163,10 +179,11 @@ Terminal 2：uv run teams-agent
 Terminal 3：devtunnel host -p 3978 --allow-anonymous
 ```
 
-Dev Tunnel 只需要暴露 Teams Adapter 的 `3978`；Agent Gateway 的 `8000` 可留在
-本機，不必公開。
+Dev Tunnel only needs to expose the Teams Adapter on `3978`; Agent Gateway
+`8000` can stay local and does not need to be public.
 
-當命中的 Markdown 章節包含 `../assets/...` 圖片時，`/agent/chat` 會額外回傳：
+When a matched Markdown section contains `../assets/...` images, `/agent/chat`
+also returns:
 
 ```json
 {
@@ -181,28 +198,52 @@ Dev Tunnel 只需要暴露 Teams Adapter 的 `3978`；Agent Gateway 的 `8000` �
 }
 ```
 
-Agent Service 不提供公開圖片檔案；Teams Adapter 會驗證相對路徑、簽名並透過
-自己的 HTTPS domain 提供縮圖。如此 `8000` 仍可保持內部服務。
+The Agent Service does not serve public image files; the Teams Adapter validates
+relative paths, signs them, and serves thumbnails through its own HTTPS domain.
+That way `8000` can remain an internal service.
 
 ## API
 
-- `GET /healthz`：程序存活
-- `GET /readyz`：索引已載入及目前模型／檢索模式
-- `POST /retrieval/search`：檢索除錯
-- `POST /agent/chat`：Teams Adapter 使用的正式入口
+- `GET /healthz`: process liveness
+- `GET /readyz`: index loaded plus current model / retrieval mode
+- `POST /retrieval/search`: retrieval debugging
+- `POST /agent/chat`: production entry used by the Teams Adapter
+- `POST /agent/chat/stream`: the same answer, returned as Server-Sent Events
 
-每次 `/agent/chat` 完成時，後端會輸出 structured log，包含：
+`/agent/chat/stream` event format:
+
+```text
+event: stage
+data: {"label": "正在檢索知識庫…"}
+
+event: response
+data: {"answer": "...", "citations": [...], "feedbackEnabled": true, ...}
+```
+
+`stage` corresponds to LangGraph node completion (labels defined in
+`workflow.STAGE_LABELS`). The `response` body is identical to `/agent/chat`, and
+exactly one of them appears last: on workflow failure an `event: error` is sent
+instead.
+
+Error semantics differ from `/agent/chat` in one unavoidable way: the HTTP
+status is fixed when the first byte is sent, so **in-flight** failures cannot
+become 503 and must be delivered as an `error` event. Rejections that can be
+decided before the workflow starts (bad service token, tenant not on the
+allowlist) still return normal HTTP 401 / 403.
+
+Each completed `/agent/chat` emits a structured backend log with:
 
 ```text
 input_tokens / output_tokens / total_tokens / embedding_tokens / estimated_cost_usd
 ```
 
-LLM token 來自 provider 回傳的 usage metadata；embedding token 為查詢文字的粗估。
-價格依內建 Standard paid-tier 費率表估算（USD），未知模型只記 token、不估價。
+LLM tokens come from provider usage metadata; embedding tokens are a rough
+estimate of the query text. Cost is estimated from a built-in Standard paid-tier
+rate table (USD); unknown models log tokens only and skip pricing.
 
-Swagger UI：`http://localhost:8000/docs`
+Swagger UI: `http://localhost:8000/docs`
 
-## 驗證
+## Verification
 
 ```bash
 uv run pytest -q
