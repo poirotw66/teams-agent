@@ -12,6 +12,7 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "RAG_INDEX_PATH",
         "RAG_AUTO_BUILD_INDEX",
         "RAG_MODEL",
+        "AGENT_MODEL",
         "RAG_EMBEDDING_MODEL",
         "RAG_TOP_K",
         "RAG_MIN_SCORE",
@@ -61,6 +62,19 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RAG_DATA_DIR", str(tmp_path))
 
 
+def test_agent_model_loads_from_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("RAG_MODEL", "google_genai:gemini-3.5-flash-lite")
+    monkeypatch.setenv("AGENT_MODEL", "google_genai:gemini-3.7-flash")
+
+    settings = RagSettings.from_env()
+
+    assert settings.model == "google_genai:gemini-3.5-flash-lite"
+    assert settings.agent_model == "google_genai:gemini-3.7-flash"
+
+
 def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _minimal_env(monkeypatch, tmp_path)
 
@@ -97,6 +111,8 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.handoff_retention_days == 730
     assert settings.faq_path == (tmp_path / "faq.json").resolve()
     assert settings.feedback_enabled is True
+    assert settings.model is None
+    assert settings.agent_model is None
 
 
 def test_max_retrieval_rewrites_falls_back_to_rag_max_rewrites(

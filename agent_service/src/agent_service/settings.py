@@ -38,6 +38,7 @@ class RagSettings:
     index_path: Path
     auto_build_index: bool = True
     model: str | None = None
+    agent_model: str | None = None
     embedding_model: str | None = None
     top_k: int = 4
     min_score: float = 0.08
@@ -117,6 +118,7 @@ class RagSettings:
             index_path=index_path.expanduser().resolve(),
             auto_build_index=_bool_env("RAG_AUTO_BUILD_INDEX", True),
             model=environ.get("RAG_MODEL", "").strip() or None,
+            agent_model=environ.get("AGENT_MODEL", "").strip() or None,
             embedding_model=environ.get("RAG_EMBEDDING_MODEL", "").strip() or None,
             top_k=int(environ.get("RAG_TOP_K", "4")),
             min_score=float(environ.get("RAG_MIN_SCORE", "0.08")),

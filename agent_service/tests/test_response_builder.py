@@ -120,6 +120,21 @@ def test_need_more_info_caps_at_two_questions():
     assert "2. Q2" in built.text
 
 
+def test_all_non_it_with_empty_topic_uses_default_scope_message():
+    issue = make_issue(
+        id=1,
+        description="",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+    )
+    built = build_response(issues=[issue], results=[], settings=make_settings())
+    assert built.text == (
+        "我目前專門協助處理公司 IT 問題。\n"
+        "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
+    )
+
+
 def test_all_non_it_names_topic_without_querying_knowledge():
     issue = make_issue(
         id=1,

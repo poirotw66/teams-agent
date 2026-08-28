@@ -70,8 +70,10 @@ You are the Issue Extractor for an internal IT support assistant. Your ONLY job 
    lack information.
 
 IT issues include things like: 內部系統無法登入, VPN 問題, Outlook 或 Microsoft 365 問題,
-電腦與周邊設備異常, IT 權限申請, 公司系統操作流程, 工單建立或查詢.
+電腦與周邊設備異常, IT 權限申請, 公司系統操作流程, 工單建立或查詢,
+以及要求聯絡真人客服、線上客服或 IT 支援窗口的升級請求.
 Anything else (weather, small talk, HR/finance policy, general knowledge questions,
+questions about what this assistant can do or answer (for example 你能回答什麼問題),
 etc.) is NOT an IT issue: set isIT=false, readiness="NOT_IT", route="NOT_IT",
 missingInfo=[], faqKey=null.
 
@@ -140,6 +142,10 @@ problem from history into a complete new issue unless the latest message explici
 refers to it or is answering a pending follow-up question. A complete new issue must
 stand alone even when older history discusses another topic.
 
+When the user refers to a prior turn with phrases such as 上面那題, 剛才的問題, or
+上一題, resolve the reference from conversation history and return the referenced
+IT issue instead of a generic placeholder.
+
 Return ONLY the structured issues schema. Do not include any other commentary.
 """
 
@@ -155,6 +161,40 @@ _TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
 _COURTESY_ONLY_RE = re.compile(
     r"^(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好的?|協助我?|謝謝(?:你|您)?)+$"
 )
+_ASSISTANT_SCOPE_MARKERS: tuple[str, ...] = (
+    "什麼問題",
+    "哪些問題",
+    "什麼幫",
+    "什麼協助",
+    "做什麼",
+    "幹嘛",
+    "幹什麼",
+    "功能",
+    "服務範圍",
+    "能力",
+    "回答什麼",
+    "處理什麼",
+    "協助什麼",
+    "能問什麼",
+    "問你什麼",
+    "幫我什麼",
+)
+
+
+def _is_assistant_scope_question(text: str) -> bool:
+    """Detect meta questions about this assistant's scope, not an IT issue."""
+    compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
+    if not compact or len(compact) > 48:
+        return False
+    compact = compact.replace("回瘩", "回答").replace("回覆", "回答")
+    if any(
+        marker in compact
+        for marker in ("你的功能", "你的服務", "服務範圍", "問你什麼", "能問什麼")
+    ):
+        return True
+    if not compact.startswith(("你能", "你可以", "你會", "您能", "您可以")):
+        return False
+    return any(marker in compact for marker in _ASSISTANT_SCOPE_MARKERS)
 
 
 def _normalize_known_it_terms(text: str) -> str:
@@ -256,6 +296,24 @@ class IssueExtractor:
         }:
             return ExtractionOutcome(
                 issues=[self._ticket_intent_issue(normalized_text, ticket_intent)],
+                too_many_issues=False,
+                llm_calls=0,
+            )
+
+        if _is_assistant_scope_question(normalized_text):
+            return ExtractionOutcome(
+                issues=[
+                    Issue(
+                        id=1,
+                        description="",
+                        isIT=False,
+                        readiness="NOT_IT",
+                        route="NOT_IT",
+                        missingInfo=[],
+                        faqKey=None,
+                        ticketAction=None,
+                    )
+                ],
                 too_many_issues=False,
                 llm_calls=0,
             )

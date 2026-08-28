@@ -72,6 +72,7 @@ from .conversation import ConversationService
 from .extractor import (
     _GENERIC_TICKET_DESCRIPTION,
     IssueExtractor,
+    _is_assistant_scope_question,
     _is_generic_ticket_description,
     _is_generic_ticket_request,
     _strip_ticket_command,
@@ -808,6 +809,82 @@ class AgentWorkflow:
                 tenant_id, conversation_id, requester_id
             )
 
+    @staticmethod
+    def _handoff_conversation_turns(conversation: ConversationContext) -> list[str]:
+        bounded = conversation.messages[-10:]
+        return [f"{message.role}: {message.text}" for message in bounded]
+
+    async def _complete_handoff_ticket(
+        self,
+        state: AgentState,
+        *,
+        case: HandoffCase,
+        requester_id: str,
+        from_status: HandoffStatus,
+        to_status: HandoffStatus,
+    ) -> dict:
+        if from_status is HandoffStatus.SUMMARY_REVIEW:
+            confirmed = case.summary.model_copy(
+                update={
+                    "confirmedAt": datetime.now(timezone.utc),
+                    "confirmedBy": requester_id,
+                    "version": case.summary.version + 1,
+                }
+            )
+            case = await self.handoff_repository.update_summary(
+                case.caseId, confirmed, case.version
+            )
+        issue = Issue(
+            id=1,
+            description=case.summary.issue,
+            isIT=True,
+            readiness="READY",
+            route="TICKET",
+        )
+        result = await self._handle_ticket(
+            issue,
+            user=state["user"],
+            correlation_id=state["correlation_id"],
+            lock=asyncio.Lock(),
+            ticket_created={"done": False},
+            ticket_intent=TicketIntent.CREATE,
+            ticket_body=self._summary_text(case.summary),
+        )
+        if result.resultType == "TICKET_CREATED":
+            routed = await self.handoff_repository.transition(
+                case.caseId,
+                from_status,
+                to_status,
+                case.version,
+            )
+            await self._append_handoff_event(
+                routed,
+                "handoff.ticket_selected",
+                ActorType.USER,
+                requester_id,
+                {"ticketId": result.ticketId},
+            )
+            answer = f"已依確認的案件摘要建立派工單：{result.ticketId}"
+            return {
+                "handoff_handled": True,
+                "handoff_case": routed,
+                "issue_results": [result],
+                "final_response": answer,
+            }
+        if result.resultType == "NEED_MORE_INFO":
+            return {
+                "handoff_handled": True,
+                "handoff_case": case,
+                "issue_results": [result],
+                "final_response": result.questions[0],
+            }
+        return {
+            "handoff_handled": True,
+            "handoff_case": case,
+            "issue_results": [result],
+            "final_response": "派工單建立失敗。你仍可回覆「聯絡線上客服」或「取消」。",
+        }
+
     async def _route_handoff(self, state: AgentState) -> dict:
         if self.handoff_repository is None:
             return {"handoff_handled": False}
@@ -816,9 +893,45 @@ class AgentWorkflow:
             return {"handoff_handled": False}
         tenant_id, conversation_id, requester_id = identity
         request = state["request"]
+        ticket_intent = classify_ticket_intent(request.message.text)
         case = await self.handoff_repository.get_active_case(
             tenant_id, conversation_id, requester_id
         )
+
+        if case is not None and case.status in {
+            HandoffStatus.SUMMARY_REVIEW,
+            HandoffStatus.DEMO_ACTIVE,
+        }:
+            supersede_reason: str | None = None
+            if ticket_intent is TicketIntent.QUERY:
+                supersede_reason = "ticket_query"
+            elif _is_assistant_scope_question(request.message.text):
+                supersede_reason = "assistant_scope"
+            if supersede_reason is not None:
+                cancelled = await self.handoff_repository.transition(
+                    case.caseId,
+                    case.status,
+                    HandoffStatus.CANCELLED,
+                    case.version,
+                )
+                await self._append_handoff_event(
+                    cancelled,
+                    "handoff.superseded",
+                    ActorType.USER,
+                    requester_id,
+                    {
+                        "fromStatus": case.status.value,
+                        "toStatus": "CANCELLED",
+                        "reason": supersede_reason,
+                    },
+                )
+                return {
+                    "handoff_handled": False,
+                    "handoff_case": cancelled,
+                }
+
+        if ticket_intent is TicketIntent.QUERY:
+            return {"handoff_handled": False}
 
         if case is None:
             return {"handoff_handled": False}
@@ -827,6 +940,7 @@ class AgentWorkflow:
             message=request.message.text,
             case_status=case.status.value,
             case_summary=self._summary_text(case.summary),
+            conversation_turns=self._handoff_conversation_turns(state["conversation"]),
         )
 
         if case.status == HandoffStatus.DEMO_ACTIVE:
@@ -846,6 +960,14 @@ class AgentWorkflow:
                     "handoff_case": closed,
                     "final_response": DEMO_CLOSED_MESSAGE,
                 }
+            if action is HandoffAction.CREATE_TICKET:
+                return await self._complete_handoff_ticket(
+                    state,
+                    case=case,
+                    requester_id=requester_id,
+                    from_status=HandoffStatus.DEMO_ACTIVE,
+                    to_status=HandoffStatus.ROUTED_TO_TICKET,
+                )
             await self._append_handoff_event(
                 case, "handoff.message_saved", ActorType.USER, requester_id
             )
@@ -921,65 +1043,13 @@ class AgentWorkflow:
                 "final_response": DEMO_STARTED_MESSAGE,
             }
         if action is HandoffAction.CREATE_TICKET:
-            confirmed = case.summary.model_copy(
-                update={
-                    "confirmedAt": datetime.now(timezone.utc),
-                    "confirmedBy": requester_id,
-                    "version": case.summary.version + 1,
-                }
+            return await self._complete_handoff_ticket(
+                state,
+                case=case,
+                requester_id=requester_id,
+                from_status=HandoffStatus.SUMMARY_REVIEW,
+                to_status=HandoffStatus.ROUTED_TO_TICKET,
             )
-            case = await self.handoff_repository.update_summary(
-                case.caseId, confirmed, case.version
-            )
-            issue = Issue(
-                id=1,
-                description=self._summary_text(case.summary),
-                isIT=True,
-                readiness="READY",
-                route="TICKET",
-            )
-            result = await self._handle_ticket(
-                issue,
-                user=state["user"],
-                correlation_id=state["correlation_id"],
-                lock=asyncio.Lock(),
-                ticket_created={"done": False},
-                ticket_intent=TicketIntent.CREATE,
-            )
-            if result.resultType == "TICKET_CREATED":
-                routed = await self.handoff_repository.transition(
-                    case.caseId,
-                    HandoffStatus.SUMMARY_REVIEW,
-                    HandoffStatus.ROUTED_TO_TICKET,
-                    case.version,
-                )
-                await self._append_handoff_event(
-                    routed,
-                    "handoff.ticket_selected",
-                    ActorType.USER,
-                    requester_id,
-                    {"ticketId": result.ticketId},
-                )
-                answer = f"已依確認的案件摘要建立工單：{result.ticketId}"
-                return {
-                    "handoff_handled": True,
-                    "handoff_case": routed,
-                    "issue_results": [result],
-                    "final_response": answer,
-                }
-            if result.resultType == "NEED_MORE_INFO":
-                return {
-                    "handoff_handled": True,
-                    "handoff_case": case,
-                    "issue_results": [result],
-                    "final_response": result.questions[0],
-                }
-            return {
-                "handoff_handled": True,
-                "handoff_case": case,
-                "issue_results": [result],
-                "final_response": "工單建立失敗。你仍可回覆「聯絡線上客服」或「取消」。",
-            }
 
         if action is not HandoffAction.SUPPLEMENT:
             cancelled = await self.handoff_repository.transition(
@@ -1392,6 +1462,7 @@ class AgentWorkflow:
         lock: asyncio.Lock,
         ticket_created: dict,
         ticket_intent: TicketIntent,
+        ticket_body: str | None = None,
     ) -> IssueResult:
         if ticket_intent == TicketIntent.QUERY:
             return await self._query_tickets(issue, user, correlation_id)
@@ -1445,12 +1516,12 @@ class AgentWorkflow:
         if selected_item is None:
             if selection.reason in {"model_unavailable", "model_error"}:
                 question = (
-                    "目前無法判定適用的工單類別；已保留案件內容，"
+                    "目前無法判定適用的派工單類別；已保留案件內容，"
                     "請稍後重試或聯絡線上客服。"
                 )
             else:
                 question = (
-                    "目前無法從可用工單類別判定最適合的一項；"
+                    "目前無法從可用派工單類別判定最適合的一項；"
                     "請補充與目前案件最相關的系統、功能或錯誤訊息。"
                 )
             return IssueResult(
@@ -1463,7 +1534,7 @@ class AgentWorkflow:
             requesterName=user.displayName or "",
             requesterEmail=user.email or "",
             title=issue.description[:120],
-            description=issue.description,
+            description=(ticket_body or issue.description),
             ticketItemId=selected_item.id,
         )
         try:

@@ -24,6 +24,7 @@ from typing import Literal, TypedDict
 from uuid import uuid4
 
 from langchain.chat_models import init_chat_model
+from langchain_core.language_models import BaseChatModel
 from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -35,6 +36,13 @@ from .knowledge import HybridKnowledgeService, KnowledgeService
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .usage import UsageReport, build_usage_report, estimate_text_tokens
+
+
+def build_chat_model(model_name: str | None) -> BaseChatModel | None:
+    """Return a LangChain chat model, or ``None`` when no model is configured."""
+    if not model_name:
+        return None
+    return init_chat_model(model_name)
 
 
 class RouteDecision(BaseModel):
@@ -113,7 +121,7 @@ class RagAgent:
         self.settings = settings
         self.index = index
         self.model = model or (
-            init_chat_model(settings.model) if settings.model else None
+            build_chat_model(settings.model) if settings.model else None
         )
         self.knowledge: KnowledgeService = knowledge or HybridKnowledgeService(
             settings, index, self.model

@@ -69,12 +69,24 @@ async def test_agentic_router_failure_degrades_without_keyword_rules() -> None:
 @pytest.mark.asyncio
 async def test_agentic_router_without_model_preserves_summary_review_case() -> None:
     action = await AgenticHandoffRouter(None).decide(
-        message="建立工單",
+        message="maybe later",
         case_status="SUMMARY_REVIEW",
         case_summary="案件摘要",
+        conversation_turns=["user: SAP issue", "assistant: offer"],
     )
 
     assert action is HandoffAction.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_agentic_router_close_command_in_demo_is_protocol_not_keywords() -> None:
+    action = await AgenticHandoffRouter(None).decide(
+        message="/close",
+        case_status="DEMO_ACTIVE",
+        case_summary="案件摘要",
+    )
+
+    assert action is HandoffAction.CLOSE
 
 
 def test_deterministic_summary_has_every_required_section() -> None:
@@ -122,7 +134,7 @@ async def test_summary_generator_failure_uses_deterministic_fallback() -> None:
 
     assert summary.issue == "Outlook 寄信失敗"
     assert "Outlook 無法寄信" in offer_message(summary)
-    assert "建立工單" in offer_message(summary)
+    assert "建立派工單" in offer_message(summary)
     assert "聯絡線上客服" in offer_message(summary)
 
 

@@ -369,7 +369,7 @@ async def test_agentic_ticket_selector_rejects_hallucinated_catalog_id() -> None
 
 
 @pytest.mark.asyncio
-async def test_agentic_ticket_selector_model_failure_does_not_choose_category() -> None:
+async def test_agentic_ticket_selector_model_unavailable_returns_none() -> None:
     selection = await AgenticTicketItemSelector(None).select(
         items=[TicketItem(id="vpn", name="VPN 無法連線", level=3)],
         issue_description="任何問題",

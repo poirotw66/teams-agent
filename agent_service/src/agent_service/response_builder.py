@@ -145,7 +145,11 @@ def _render_not_it(issue: Issue) -> str:
 
 
 def _render_all_not_it(issues: list[Issue]) -> str:
-    topics = list(dict.fromkeys(_safe_description(issue) for issue in issues))
+    topics = [
+        topic
+        for topic in dict.fromkeys(_safe_description(issue) for issue in issues)
+        if topic.strip()
+    ]
     if not topics:
         return ALL_NON_IT_MESSAGE
     quoted_topics = "、".join(f"「{topic}」" for topic in topics)

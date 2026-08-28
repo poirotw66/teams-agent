@@ -251,7 +251,7 @@ class FirestoreHandoffRepository:
                 "SUMMARY_REVIEW": {
                     "DEMO_ACTIVE", "CANCELLED", "FAILED", "EXPIRED", "ROUTED_TO_TICKET"
                 },
-                "DEMO_ACTIVE": {"CLOSED", "FAILED", "EXPIRED"},
+                "DEMO_ACTIVE": {"CLOSED", "FAILED", "EXPIRED", "ROUTED_TO_TICKET"},
             }
             if to_status.value not in allowed.get(from_status.value, set()):
                 raise InvalidHandoffTransitionError("invalid handoff transition")

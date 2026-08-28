@@ -129,6 +129,10 @@ def test_ticket_intent_has_fixed_cancel_query_create_none_priority(
         "有哪些派工單",
         "我的工單進度如何？",
         "我的派工單進度如何？",
+        "我的工單",
+        "我的派工單",
+        "確認我的工單",
+        "查詢我的工單",
     ],
 )
 def test_ticket_list_and_progress_queries_are_classified_deterministically(

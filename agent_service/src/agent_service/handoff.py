@@ -367,6 +367,7 @@ class InMemoryHandoffRepository:
                     HandoffStatus.CLOSED,
                     HandoffStatus.FAILED,
                     HandoffStatus.EXPIRED,
+                    HandoffStatus.ROUTED_TO_TICKET,
                 },
             }
             if to_status not in allowed.get(from_status, set()):

@@ -32,11 +32,13 @@ GEMINI_GCP_PROJECT_ID="${GCP_PROJECT_ID:-itr-aimasteryhub-lab}"
 GEMINI_API_KEY_SECRET="${GEMINI_API_KEY_SECRET:-teams-agent-google-api-key}"
 GEMINI_FILE_SEARCH_DEFAULT_STORE="${GEMINI_FILE_SEARCH_DEFAULT_STORE:-fileSearchStores/helpdeskstore-1p3gu83qot1s}"
 AGENTIC_RAG_MODEL_DEFAULT="${AGENTIC_RAG_MODEL_DEFAULT:-google_genai:gemini-3.5-flash-lite}"
+AGENTIC_AGENT_MODEL_DEFAULT="${AGENTIC_AGENT_MODEL_DEFAULT:-google_genai:gemini-3.7-flash}"
 GEMINI_FILE_SEARCH_STORE_VALUE=""
 GOOGLE_API_KEY_VALUE=""
 GEMINI_FILE_SEARCH_ENABLED="false"
 GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE="true"
 RAG_MODEL_VALUE=""
+AGENT_MODEL_VALUE=""
 
 CHILD_PIDS=()
 
@@ -244,26 +246,37 @@ configure_gemini_file_search() {
   log "      可設定 GOOGLE_API_KEY／GEMINI_API_KEY，或執行 gcloud auth login 並確認目前帳號具 ${GEMINI_API_KEY_SECRET} 的 Secret Manager 存取權。"
 }
 
-configure_agentic_rag_model() {
+configure_agentic_models() {
   local configured_rag_model
+  local configured_agent_model
 
   configured_rag_model="$(env_value "${AGENT_SERVICE_DIR}/.env" "RAG_MODEL")"
+  configured_agent_model="$(env_value "${AGENT_SERVICE_DIR}/.env" "AGENT_MODEL")"
   if [[ -n "${RAG_MODEL:-}" ]]; then
     RAG_MODEL_VALUE="${RAG_MODEL}"
-    log "Agentic RAG model 沿用 RAG_MODEL 環境變數。"
+    log "RAG model 沿用 RAG_MODEL 環境變數。"
   elif [[ -n "${configured_rag_model}" ]]; then
     RAG_MODEL_VALUE="${configured_rag_model}"
-    log "Agentic RAG model 沿用 agent_service/.env 的明確設定。"
+    log "RAG model 沿用 agent_service/.env 的明確設定。"
   elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" ]]; then
-    # File Search has a valid Google key at this point. Give the extractor,
-    # relevance grader and handoff router a real model so conversational
-    # actions are interpreted semantically rather than taking the offline
-    # router's state-preserving UNKNOWN fallback.
     RAG_MODEL_VALUE="${AGENTIC_RAG_MODEL_DEFAULT}"
-    log "啟用本機 agentic Gemini model：${RAG_MODEL_VALUE}（可用 RAG_MODEL 覆寫）。"
+    log "啟用本機 RAG Gemini model：${RAG_MODEL_VALUE}（可用 RAG_MODEL 覆寫）。"
   else
     RAG_MODEL_VALUE=""
-    log "未設定模型或 Google API key；Agent Service 將使用 extractive-local。"
+    log "未設定 RAG model 或 Google API key；知識檢索將使用 extractive-local。"
+  fi
+
+  if [[ -n "${AGENT_MODEL:-}" ]]; then
+    AGENT_MODEL_VALUE="${AGENT_MODEL}"
+    log "Agent model 沿用 AGENT_MODEL 環境變數。"
+  elif [[ -n "${configured_agent_model}" ]]; then
+    AGENT_MODEL_VALUE="${configured_agent_model}"
+    log "Agent model 沿用 agent_service/.env 的明確設定。"
+  elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" ]]; then
+    AGENT_MODEL_VALUE="${AGENTIC_AGENT_MODEL_DEFAULT}"
+    log "啟用本機 agentic Gemini model：${AGENT_MODEL_VALUE}（可用 AGENT_MODEL 覆寫）。"
+  else
+    AGENT_MODEL_VALUE=""
   fi
 }
 
@@ -310,7 +323,7 @@ require_command ps
   || fail "缺少 ${AGENT_SERVICE_DIR}/.env（可先執行 cp agent_service/.env.example agent_service/.env）"
 
 configure_gemini_file_search
-configure_agentic_rag_model
+configure_agentic_models
 
 RAG_SOURCES_DIR="${RAG_SOURCES_DIR:-${PROJECT_DIR}/data/sources}"
 if [[ ! -d "${RAG_SOURCES_DIR}" ]]; then
@@ -357,6 +370,7 @@ log "啟動 LangGraph Agent Service：http://127.0.0.1:${RAG_PORT}"
   export GEMINI_FILE_SEARCH_ENFORCE_ACL="${GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE}"
   export GOOGLE_API_KEY="${GOOGLE_API_KEY_VALUE}"
   export RAG_MODEL="${RAG_MODEL_VALUE}"
+  export AGENT_MODEL="${AGENT_MODEL_VALUE}"
   if [[ "${START_MOCK_TICKET}" == "true" ]]; then
     export TICKET_SERVICE_MODE=HTTP
     export TICKET_SERVICE_BASE_URL="http://127.0.0.1:${MOCK_TICKET_PORT}"

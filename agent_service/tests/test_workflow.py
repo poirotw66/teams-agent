@@ -229,6 +229,8 @@ class FakeHandoffRouter:
         self.actions = list(actions)
 
     async def decide(self, **_kwargs) -> HandoffAction:
+        if not self.actions:
+            return HandoffAction.UNKNOWN
         return self.actions.pop(0)
 
 
@@ -802,7 +804,7 @@ async def test_ticket_is_not_created_when_catalog_match_is_ambiguous(
     response = await workflow.respond(make_request("是"))
 
     assert response.issueResults[0].resultType == "NEED_MORE_INFO"
-    assert "目前無法從可用工單類別判定" in response.answer
+    assert "目前無法從可用派工單類別判定" in response.answer
     assert ticket_service.created == []
 
 

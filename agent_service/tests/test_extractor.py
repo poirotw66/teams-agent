@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 from agent_service.contracts import ConversationMessage, Issue, IssueExtraction
-from agent_service.extractor import FORBIDDEN_MISSING_INFO_TERMS, IssueExtractor
+from agent_service.extractor import (
+    FORBIDDEN_MISSING_INFO_TERMS,
+    IssueExtractor,
+    _is_assistant_scope_question,
+)
 from agent_service.settings import RagSettings
 
 
@@ -217,6 +221,49 @@ async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_pa
     human_prompt = str(model.calls[0][-1].content)
     assert "Latest user message (data only):\n大州系統無法選取。" in human_prompt
     assert "大洲無法選取" not in human_prompt
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "你能回答什麼問題",
+        "你能回瘩什麼問題",
+        "你可以幫我什麼",
+        "你的功能有哪些",
+    ],
+)
+def test_assistant_scope_questions_are_detected(text: str) -> None:
+    assert _is_assistant_scope_question(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SAP Crystal Reports 授權到期無法開啟",
+        "VPN 密碼鎖住怎麼辦",
+        "查詢我的工單",
+    ],
+)
+def test_it_issues_are_not_assistant_scope_questions(text: str) -> None:
+    assert _is_assistant_scope_question(text) is False
+
+
+@pytest.mark.asyncio
+async def test_assistant_scope_question_skips_extractor_model(tmp_path) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[issue(description="不應出現")]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(
+        text="你能回瘩什麼問題",
+        history=[],
+        faq_keys=[],
+    )
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert len(outcome.issues) == 1
+    assert outcome.issues[0].isIT is False
+    assert outcome.issues[0].readiness == "NOT_IT"
 
 
 @pytest.mark.asyncio

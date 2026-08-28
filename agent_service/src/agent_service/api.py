@@ -22,7 +22,7 @@ from .contracts import (
 from .conversation import ConversationService, build_repository
 from .extractor import IssueExtractor
 from .faq import FaqService
-from .graph import RagAgent
+from .graph import RagAgent, build_chat_model
 from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
@@ -75,6 +75,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         # LangGraph workflow below (spec §5) is what /agent/chat runs.
         agent = RagAgent(resolved_settings, index)
 
+        rag_model = build_chat_model(resolved_settings.model)
+        agent_model = build_chat_model(
+            resolved_settings.agent_model or resolved_settings.model
+        )
+
         # Build every §5 collaborator ONCE here (not per request):
         # FAQ / Conversation / Ticket / Knowledge services + the Issue
         # Extractor, then wire them into a single AgentWorkflow instance.
@@ -86,7 +91,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         ticket_service = build_ticket_service(resolved_settings)
         hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
         knowledge_services = {
-            "HYBRID": build_knowledge_service(hybrid_settings, index, agent.model)
+            "HYBRID": build_knowledge_service(hybrid_settings, index, rag_model)
         }
         unavailable_backends: dict[str, str] = {}
         if resolved_settings.gemini_file_search_store:
@@ -94,7 +99,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
             )
             knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
-                gemini_settings, index, agent.model
+                gemini_settings, index, rag_model
             )
         else:
             unavailable_backends["GEMINI_FILE_SEARCH"] = (
@@ -106,7 +111,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             unavailable_backends,
             build_backend_state_store(resolved_settings),
         )
-        extractor = IssueExtractor(resolved_settings, agent.model)
+        extractor = IssueExtractor(resolved_settings, agent_model)
         workflow = AgentWorkflow(
             resolved_settings,
             extractor=extractor,
@@ -123,9 +128,12 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         app.state.workflow = workflow
         app.state.handoff_repository = handoff_repository
         logger.info(
-            "Agentic RAG ready: chunks=%s model=%s embeddings=%s "
+            "Agentic RAG ready: chunks=%s agent_model=%s rag_model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",
             len(index.chunks),
+            resolved_settings.agent_model
+            or resolved_settings.model
+            or "extractive-local",
             resolved_settings.model or "extractive-local",
             resolved_settings.embedding_model or "sparse-only",
             resolved_settings.knowledge_service_mode,
@@ -153,6 +161,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             "status": "ready",
             "chunks": len(index.chunks),
             "model": resolved_settings.model or "extractive-local",
+            "agentModel": (
+                resolved_settings.agent_model
+                or resolved_settings.model
+                or "extractive-local"
+            ),
             "retrieval": (
                 "hybrid"
                 if resolved_settings.embedding_model

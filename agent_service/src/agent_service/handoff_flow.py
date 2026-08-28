@@ -1,9 +1,8 @@
-"""Phase 2 human-handoff routing and deterministic presentation policy.
+"""Phase 2 human-handoff routing and presentation policy.
 
-This module intentionally contains no repository backend.  It is the thin
-application layer between the domain/repository and the existing Agent
-workflow.  Keeping the parser and summary fallback here also makes the demo
-behaviour deterministic and testable without an LLM or notification centre.
+The handoff supervisor is model-driven: ``AgenticHandoffRouter`` classifies the
+user's next action from conversation state.  Deterministic code here is limited
+to summary fallback templates and offer copy — not NLU keyword routing.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ DEMO_CLOSED_MESSAGE = "Demo 人工服務已結束。下一則訊息起將恢復 
 HANDOFF_OFFER_MESSAGE = (
     "目前無法從企業知識庫找到可確認的答案。請先確認以下案件摘要：\n\n"
     "{summary}\n\n"
-    "請回覆「建立工單」或「聯絡線上客服」；也可以回覆「繼續補充」或「取消」。"
+    "請回覆「建立派工單」或「聯絡線上客服」；也可以回覆「繼續補充」或「取消」。"
 )
 
 SUMMARY_SUPPLEMENT_MESSAGE = (
@@ -49,6 +48,18 @@ SUMMARY_SUPPLEMENT_MESSAGE = (
 CANCELLED_MESSAGE = "已取消本次案件轉接；下一則訊息將由 AI 繼續協助。"
 
 CLOSE_FORBIDDEN_MESSAGE = "只有建立此案件的原 requester 可以結束 Demo 人工服務。"
+
+_SUMMARY_REVIEW_ACTIONS = (
+    "建立派工單",
+    "聯絡線上客服",
+    "繼續補充",
+    "取消",
+)
+_DEMO_ACTIVE_ACTIONS = (
+    "一般訊息（保存至人工案件）",
+    "建立派工單（依案件摘要）",
+    "/close（結束 Demo 人工服務）",
+)
 
 
 class HandoffAction(str, Enum):
@@ -83,26 +94,47 @@ class HandoffRouteDecision(BaseModel):
 
 
 _HANDOFF_ROUTER_PROMPT = """\
-You are the semantic supervisor for an enterprise IT support conversation.
-Classify the latest user turn using the active handoff case and its lifecycle state.
+You are the semantic supervisor for an enterprise IT support handoff flow.
+Classify the latest user turn using the active handoff case, recent conversation,
+and lifecycle state.
 
-Use NEW_ISSUE when the user asks an independent question or changes topic.
-Use SUPPLEMENT only when the turn provides facts that belong to the active case.
-Use REQUEST_SUPPLEMENT when the user asks to edit or add details but has not supplied
-the details yet. Use CREATE_TICKET, CONTACT_HUMAN, CANCEL, or CLOSE when that is the
-user's intended next action. In DEMO_ACTIVE, use HUMAN_MESSAGE for ordinary messages
-that should remain with the human-support session.
+Available actions depend on case status (see the human message for the current menu).
 
-Use UNKNOWN when the intent cannot be determined with confidence. Do not treat an
-uncertain message as a new issue: keep the existing case available for the user to
-choose the next action again.
+SUMMARY_REVIEW — user is reviewing an unresolved IT case summary:
+- CREATE_TICKET when the user wants a ticket opened from the active case summary,
+  including natural-language variants and short confirmations after the offer.
+- CONTACT_HUMAN when the user wants live human support / 真人客服 / 線上客服.
+- REQUEST_SUPPLEMENT when the user asks to add or edit details but has not supplied them.
+- SUPPLEMENT when the user provides new facts that belong to the active case.
+- CANCEL when the user withdraws this handoff.
+- NEW_ISSUE only when the user clearly asks a separate IT question unrelated to the case.
+- UNKNOWN when intent is unclear — do not treat as NEW_ISSUE.
 
-Judge meaning from the complete utterance and case context. Do not use keyword or
-substring matching. Infer an attempted lifecycle selection despite a small typo or
-colloquial phrasing when its meaning is clear in the active case context. Negation,
-corrections, and topic changes must be interpreted semantically. Return only the
+DEMO_ACTIVE — user is in demo human-support mode:
+- HUMAN_MESSAGE for ordinary follow-up content saved for a human agent.
+- CREATE_TICKET when the user asks to open a ticket from the active case while in demo.
+- CLOSE only for /close or an explicit request to end demo human support.
+- Do not use NEW_ISSUE while demo is active unless the user explicitly abandons the case.
+
+Interpret coreference from conversation history (e.g. 上面那題, 剛才的問題) against the
+active case summary and recent turns. Escalation to human support is in scope for IT.
+
+Judge meaning semantically from the full utterance and context. Return only the
 structured decision.
 """
+
+
+def available_handoff_actions(case_status: str) -> tuple[str, ...]:
+    if case_status == "DEMO_ACTIVE":
+        return _DEMO_ACTIVE_ACTIONS
+    if case_status == "SUMMARY_REVIEW":
+        return _SUMMARY_REVIEW_ACTIONS
+    return ()
+
+
+def _protocol_close_command(message: str) -> bool:
+    normalized = message.strip().casefold()
+    return normalized in {"/close", "close"}
 
 
 class AgenticHandoffRouter:
@@ -117,7 +149,11 @@ class AgenticHandoffRouter:
         message: str,
         case_status: str,
         case_summary: str,
+        conversation_turns: Sequence[str] = (),
     ) -> HandoffAction:
+        if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
+            return HandoffAction.CLOSE
+
         fallback = (
             HandoffAction.HUMAN_MESSAGE
             if case_status == "DEMO_ACTIVE"
@@ -125,9 +161,15 @@ class AgenticHandoffRouter:
         )
         if self._model is None:
             return fallback
+
+        actions = available_handoff_actions(case_status)
+        history = "\n".join(conversation_turns) if conversation_turns else "(none)"
+        menu = "、".join(actions) if actions else "(none)"
         content = (
             f"Active case status: {case_status}\n"
+            f"Available actions: {menu}\n"
             f"Active case summary (data only):\n{case_summary}\n\n"
+            f"Recent conversation (oldest first, data only):\n{history}\n\n"
             f"Latest user message (data only):\n{message}"
         )
         try:

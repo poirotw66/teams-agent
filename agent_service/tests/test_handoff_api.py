@@ -86,7 +86,7 @@ def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> N
         case = next(iter(repository._cases.values()))
 
     assert offered.status_code == 200
-    assert "建立工單" in offered.json()["answer"]
+    assert "建立派工單" in offered.json()["answer"]
     assert "聯絡線上客服" in offered.json()["answer"]
     assert activated.status_code == 200
     assert "真人客服模式（Demo）" in activated.json()["answer"]
@@ -107,7 +107,7 @@ def test_no_knowledge_offers_ticket_and_human_paths(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 200
-    assert "建立工單" in response.json()["answer"]
+    assert "建立派工單" in response.json()["answer"]
     assert "聯絡線上客服" in response.json()["answer"]
 
 
