@@ -14,6 +14,7 @@ from agent_service.knowledge import (
     LlmCallCounter,
     RelevanceDecision,
     RewrittenQuery,
+    query_lexically_matches_results,
 )
 from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.settings import RagSettings
@@ -137,6 +138,52 @@ async def test_hybrid_search_miss_returns_found_false_without_fabrication(
     assert result.sources == []
     assert result.images == []
     assert result.backend == "HYBRID"
+
+
+@pytest.mark.asyncio
+async def test_offline_search_rejects_unrelated_sap_query(tmp_path: Path) -> None:
+    index = HybridIndex([vpn_chunk()])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+
+    result = await service.search("SAP Crystal Reports 授權到期無法開啟", make_user())
+
+    assert result.found is False
+    assert result.sources == []
+
+
+@pytest.mark.asyncio
+async def test_offline_search_rejects_phone_unlock_query_against_vpn_only_corpus(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+
+    result = await service.search("公發手機無法解鎖", make_user())
+
+    assert result.found is False
+    assert result.sources == []
+
+
+@pytest.mark.asyncio
+async def test_offline_search_rejects_bare_cancel_command(tmp_path: Path) -> None:
+    index = HybridIndex([vpn_chunk()])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+
+    result = await service.search("取消", make_user())
+
+    assert result.found is False
+
+
+def test_query_lexically_matches_results_requires_distinctive_overlap() -> None:
+    vpn = SearchResult(
+        chunk=vpn_chunk(content="VPN 密碼被鎖時，請聯繫資訊小幫手協助解鎖。"),
+        score=0.9,
+        sparse_score=0.9,
+    )
+
+    assert query_lexically_matches_results("VPN 密碼被鎖怎麼辦？", [vpn]) is True
+    assert query_lexically_matches_results("SAP Crystal Reports 授權到期", [vpn]) is False
+    assert query_lexically_matches_results("公發手機無法解鎖", [vpn]) is False
 
 
 @pytest.mark.asyncio

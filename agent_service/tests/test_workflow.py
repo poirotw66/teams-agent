@@ -31,8 +31,10 @@ from agent_service.contracts import (
 from agent_service.conversation import ConversationService, InMemoryConversationRepository
 from agent_service.extractor import IssueExtractor
 from agent_service.faq import FaqRepository, FaqService
+from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
+from agent_service.handoff_flow import HandoffAction
 from agent_service.settings import RagSettings
-from agent_service.ticket import TicketServiceDisabledError
+from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
 from agent_service.workflow import AgentWorkflow
 
 # --- settings / request helpers -------------------------------------------
@@ -222,6 +224,28 @@ class DisabledFakeTicketService:
         raise TicketServiceDisabledError()
 
 
+class FakeHandoffRouter:
+    def __init__(self, actions: list[HandoffAction]) -> None:
+        self.actions = list(actions)
+
+    async def decide(self, **_kwargs) -> HandoffAction:
+        return self.actions.pop(0)
+
+
+class FakeTicketItemSelector:
+    """Test double for the model-driven catalog selector."""
+
+    def __init__(self, item_id: str | None = None, reason: str = "selected") -> None:
+        self.item_id = item_id
+        self.reason = reason
+
+    async def select(self, *, items, issue_description):
+        selected = next((item for item in items if item.id == self.item_id), None)
+        if self.item_id is None and self.reason == "selected":
+            selected = items[0] if items else None
+        return TicketItemSelection(item=selected, reason=self.reason)
+
+
 def make_conversation_service(settings: RagSettings) -> ConversationService:
     return ConversationService(
         InMemoryConversationRepository(clock=lambda: datetime.now(timezone.utc)), settings
@@ -252,6 +276,9 @@ def build_workflow(
     faq_service: FaqService | None = None,
     settings_overrides: dict | None = None,
     conversation_service: ConversationService | None = None,
+    handoff_repository=None,
+    handoff_router=None,
+    ticket_item_selector=None,
 ):
     settings = make_settings(tmp_path, **(settings_overrides or {}))
     extractor_model = FakeExtractorModel(issues_sequence)
@@ -267,6 +294,9 @@ def build_workflow(
         knowledge_service=knowledge_service,
         conversation_service=conv_service,
         ticket_service=ticket,
+        handoff_repository=handoff_repository,
+        handoff_router=handoff_router,
+        ticket_item_selector=ticket_item_selector or FakeTicketItemSelector(),
     )
     return workflow, extractor_model, knowledge_service, ticket, conv_service, settings
 
@@ -347,6 +377,108 @@ async def test_faq_miss_falls_back_to_knowledge(tmp_path: Path) -> None:
     assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
     assert "來自知識庫的答案" in response.answer
     assert knowledge.calls == ["某個問題"]
+
+
+@pytest.mark.asyncio
+async def test_new_question_supersedes_handoff_review_and_returns_to_ai(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
+    knowledge = FakeKnowledgeService(
+        responses={
+            sap_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依 VPN 密碼解鎖流程處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.NEW_ISSUE]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(vpn_issue.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請依 VPN 密碼解鎖流程處理" in answered.answer
+    assert "SAP Crystal Reports" not in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert offered.answer.startswith("目前無法從企業知識庫找到可確認的答案")
+    assert knowledge.calls == [sap_issue.description, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_handoff_summary_changes_only_after_explicit_supplement_action(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter(
+            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.SUPPLEMENT]
+        ),
+    )
+
+    await workflow.respond(make_request(sap_issue.description))
+    prompt = await workflow.respond(make_request("繼續補充"))
+    supplemented = await workflow.respond(make_request("錯誤碼 CR-1001"))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+
+    assert prompt.answer.startswith("請繼續補充問題")
+    assert "問題：SAP Crystal Reports 授權到期無法開啟" in supplemented.answer
+    assert "使用者需求：錯誤碼 CR-1001" in supplemented.answer
+    assert active is not None and active.status == HandoffStatus.SUMMARY_REVIEW
+    assert active.summary.conversationHighlights == ["錯誤碼 CR-1001"]
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_unknown_handoff_action_keeps_summary_review_case(tmp_path: Path) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(
+            responses={
+                sap_issue.description: KnowledgeResult(
+                    found=False, answer="", backend="HYBRID"
+                )
+            }
+        ),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.UNKNOWN]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    retried = await workflow.respond(make_request("意圖不明的文字"))
+    stored = await repository.get_case(active.caseId)
+
+    assert retried.answer == offered.answer
+    assert stored is not None and stored.status == HandoffStatus.SUMMARY_REVIEW
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
 
 
 @pytest.mark.parametrize("text", ["有哪些派工單", "有哪些工單"])
@@ -453,7 +585,10 @@ async def test_ticket_not_created_without_explicit_confirmation(tmp_path: Path) 
     it_issue = issue(id=1, description="VPN 一直斷線", route="TICKET")
     ticket_service = FakeTicketService()
     workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector("item-vpn"),
     )
 
     response = await workflow.respond(make_request("可能要報修"))
@@ -620,7 +755,10 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
         TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
     ]
     workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector("item-vpn"),
     )
 
     offered = await workflow.respond(
@@ -655,13 +793,16 @@ async def test_ticket_is_not_created_when_catalog_match_is_ambiguous(
             [issue(description="印表機不能用", route="TICKET")],
         ],
         ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector(
+            item_id=None, reason="needs_clarification"
+        ),
     )
 
     await workflow.respond(make_request("印表機不能用，請幫我建立工單"))
     response = await workflow.respond(make_request("是"))
 
     assert response.issueResults[0].resultType == "NEED_MORE_INFO"
-    assert "請補充報修設備或症狀" in response.answer
+    assert "目前無法從可用工單類別判定" in response.answer
     assert ticket_service.created == []
 
 

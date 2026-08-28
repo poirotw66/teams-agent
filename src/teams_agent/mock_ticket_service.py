@@ -319,7 +319,11 @@ async def get_ticket(
 
 
 def main() -> None:
-    port = int(os.environ.get("PORT", os.environ.get("MOCK_TICKET_PORT", "8090")))
+    port = int(
+        os.environ.get("MOCK_TICKET_PORT")
+        or os.environ.get("PORT")
+        or "8090"
+    )
     host = "0.0.0.0" if os.environ.get("K_SERVICE") else "127.0.0.1"
     uvicorn.run(app, host=host, port=port, log_level="info")
 

@@ -246,6 +246,32 @@ START_TUNNEL=false ./start.sh
 `Ctrl+C` 會停止由腳本啟動的所有子程序。若 `3978` 或 `8000` 已被舊程序占用，
 腳本會先停止並提示需要手動關閉哪個服務。
 
+`start.sh` 也會啟動含知識引擎選擇器的本機 Agents Playground。Gemini File Search
+優先使用 shell 環境變數與 `agent_service/.env` 的
+`GEMINI_FILE_SEARCH_STORE`、`GOOGLE_API_KEY`（或 `GEMINI_API_KEY`）；未設定
+store 時會採用與既有 Cloud Run 相同的 store。若本機沒有 API key，且已登入
+`gcloud`，腳本會從既有 Secret Manager secret 安全載入給 Agent 子程序，且不會輸出
+key。無法讀取時會明確警告並維持 HYBRID 可用。也可明確指定設定：
+
+```bash
+GEMINI_FILE_SEARCH_STORE=fileSearchStores/helpdeskstore-1p3gu83qot1s \
+GOOGLE_API_KEY=<secret> \
+./start.sh
+```
+
+同一個 Google key 可用時，若 shell 與 `agent_service/.env` 都沒有設定
+`RAG_MODEL`，腳本會啟用 `google_genai:gemini-3.5-flash-lite` 作為本機 agentic
+model，讓 issue extractor、relevance grading 與 handoff 語意路由可運作；這不會改寫
+`.env`，且任何明確 `RAG_MODEL` 都優先。沒有 Google key 時仍維持不需外部模型的
+extractive-local 模式。
+
+共用 legacy store 缺少可供本機測試身分比對的 ACL metadata 時，未開啟 tunnel 的
+Playground 預設不套用 metadata filter（與既有 Cloud Run 設定相同）。shell 的
+`GEMINI_FILE_SEARCH_ENFORCE_ACL` 永遠優先；若 `agent_service/.env` 沒有設定 store，
+其中從範本複製而來的 `true` 會視為 placeholder，讓 legacy fallback 能正常查詢。若要在
+本機強制篩選，請在 shell 明確設定為 `true`，或在 `.env` 同時指定 store 與此設定。
+開啟 `START_TUNNEL=true` 而未明確設定時，預設維持 `true`。
+
 不需要 Teams、Azure 或 devtunnel，就能把一輪完整對話跑過一次（含 Bot 送出去
 的訊息）：
 

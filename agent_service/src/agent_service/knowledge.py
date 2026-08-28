@@ -32,7 +32,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
-from .retrieval import HybridIndex, SearchResult
+from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
 
 # --- Prompts (verbatim from graph.py; tuned for Traditional Chinese) -------
@@ -96,6 +96,95 @@ _INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
 _KNOWLEDGE_GAP_PATTERN = re.compile(
     r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)"
 )
+# ponytail: without an LLM grader, BM25 alone over-matches the sample corpus.
+# Require distinctive query tokens to overlap the retrieved text before accepting
+# a hit; upgrade path is enabling RAG_MODEL relevance grading.
+_GENERIC_LEXICAL_TOKENS = frozenset(
+    {
+        "vpn",
+        "it",
+        "ai",
+        "bot",
+        "teams",
+        "agent",
+        "demo",
+        "test",
+        "help",
+        "cancel",
+        "close",
+        "請",
+        "協",
+        "助",
+        "幫",
+        "我",
+        "要",
+        "想",
+        "問",
+        "查",
+        "詢",
+        "怎",
+        "麼",
+        "如",
+        "何",
+        "為",
+        "什",
+        "麼",
+        "可",
+        "以",
+        "不",
+        "能",
+        "無",
+        "法",
+        "有",
+        "沒",
+        "是",
+        "的",
+        "了",
+        "嗎",
+        "呢",
+        "在",
+        "和",
+        "或",
+        "及",
+        "與",
+        "開",
+        "建",
+        "立",
+        "工",
+        "單",
+        "派",
+        "取",
+        "消",
+        "公",
+        "司",
+        "內",
+        "部",
+        "企",
+        "業",
+        "知",
+        "識",
+        "庫",
+        "測",
+        "試",
+        "問題",
+        "資訊",
+        "系統",
+        "無法",
+        "怎麼",
+        "如何",
+        "請問",
+        "協助",
+        "建立",
+        "開工",
+        "工單",
+        "派工",
+        "取消",
+    }
+)
+_OFFLINE_RELEVANCE_MIN_OVERLAP = 2
+_OFFLINE_RELEVANCE_MIN_RATIO = 0.34
+_OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
+_SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
 
 
 class RelevanceDecision(BaseModel):
@@ -108,6 +197,67 @@ class RewrittenQuery(BaseModel):
 
 def message_text(message: BaseMessage) -> str:
     return str(message.text).strip()
+
+
+def _distinctive_query_tokens(query: str) -> set[str]:
+    tokens: set[str] = set()
+    for token in tokenize(query):
+        if token in _GENERIC_LEXICAL_TOKENS:
+            continue
+        if re.fullmatch(r"[a-z0-9_./:-]+", token):
+            if len(token) >= 2:
+                tokens.add(token)
+            continue
+        if len(token) >= 2:
+            tokens.add(token)
+            continue
+        if re.fullmatch(r"[\u3400-\u9fff]", token):
+            tokens.add(token)
+    return tokens
+
+
+def _primary_distinctive_tokens(query: str) -> set[str]:
+    primary: set[str] = set()
+    for token in _distinctive_query_tokens(query):
+        if re.fullmatch(r"[a-z0-9_./:-]+", token):
+            primary.add(token)
+            continue
+        if len(token) >= 2 and not all(character in _SUBJECT_CHAR_STOP for character in token):
+            primary.add(token)
+    return primary
+
+
+def query_lexically_matches_results(
+    query: str, results: list[SearchResult]
+) -> bool:
+    """Conservative offline relevance guard when no LLM grader is configured."""
+    if not results:
+        return False
+
+    distinctive = _distinctive_query_tokens(query)
+    primary = _primary_distinctive_tokens(query)
+    if not distinctive or not primary:
+        return False
+
+    document_tokens: set[str] = set()
+    for result in results[:3]:
+        document_tokens.update(
+            tokenize(f"{result.chunk.title}\n{result.chunk.content}")
+        )
+    if not primary & document_tokens:
+        return False
+
+    overlap = distinctive & document_tokens
+    if len(distinctive) == 1:
+        token = next(iter(distinctive))
+        return token in document_tokens and results[0].score >= _OFFLINE_SINGLE_TOKEN_MIN_SCORE
+
+    overlap_count = len(overlap)
+    overlap_ratio = overlap_count / len(distinctive)
+    return (
+        overlap_count >= _OFFLINE_RELEVANCE_MIN_OVERLAP
+        and overlap_ratio >= _OFFLINE_RELEVANCE_MIN_RATIO
+    )
 
 
 def answer_indicates_insufficient_information(answer: str) -> bool:
@@ -239,7 +389,7 @@ class HybridKnowledgeService:
         if not results or results[0].score < self.settings.min_score:
             return False
         if not self.model:
-            return True
+            return query_lexically_matches_results(state.query, results)
 
         context = "\n\n".join(
             f"[{result.chunk.title}]\n{result.chunk.content}"

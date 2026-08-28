@@ -94,11 +94,11 @@ from .handoff_flow import (
     DEMO_MESSAGE_SAVED,
     DEMO_STARTED_MESSAGE,
     SUMMARY_SUPPLEMENT_MESSAGE,
+    AgenticHandoffRouter,
     HandoffAction,
     deterministic_summary,
-    is_explicit_human_request,
     offer_message,
-    parse_handoff_action,
+    offer_message_from_summary_text,
 )
 from .knowledge import KnowledgeService, LlmCallCounter
 from .response_builder import build_response
@@ -106,12 +106,12 @@ from .retrieval import HybridIndex
 from .sanitize import sanitize_description
 from .settings import RagSettings
 from .ticket import (
+    AgenticTicketItemSelector,
     TicketService,
     TicketServiceDisabledError,
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
-    select_ticket_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -633,6 +633,8 @@ class AgentWorkflow:
         conversation_service: ConversationService,
         ticket_service: TicketService,
         handoff_repository: HandoffRepository | None = None,
+        handoff_router: AgenticHandoffRouter | None = None,
+        ticket_item_selector: AgenticTicketItemSelector | None = None,
     ) -> None:
         self.settings = settings
         self.extractor = extractor
@@ -641,6 +643,10 @@ class AgentWorkflow:
         self.conversation_service = conversation_service
         self.ticket_service = ticket_service
         self.handoff_repository = handoff_repository
+        self.handoff_router = handoff_router or AgenticHandoffRouter(extractor.model)
+        self.ticket_item_selector = ticket_item_selector or AgenticTicketItemSelector(
+            extractor.model
+        )
         self._knowledge_supports_counter = _knowledge_search_supports_call_counter(
             knowledge_service
         )
@@ -810,31 +816,18 @@ class AgentWorkflow:
             return {"handoff_handled": False}
         tenant_id, conversation_id, requester_id = identity
         request = state["request"]
-        action = parse_handoff_action(request.message.text)
         case = await self.handoff_repository.get_active_case(
             tenant_id, conversation_id, requester_id
         )
 
         if case is None:
-            if action is HandoffAction.CLOSE:
-                return {
-                    "handoff_handled": True,
-                    "final_response": DEMO_CLOSED_MESSAGE,
-                }
-            if is_explicit_human_request(request.message.text):
-                case = await self._create_handoff_offer(state, [request.message.text])
-                if case is not None:
-                    return {
-                        "handoff_handled": True,
-                        "handoff_case": case,
-                        "final_response": offer_message(
-                            deterministic_summary(
-                                current_message=case.summary.userNeed,
-                                issue_descriptions=[case.summary.issue],
-                            )
-                        ),
-                    }
             return {"handoff_handled": False}
+
+        action = await self.handoff_router.decide(
+            message=request.message.text,
+            case_status=case.status.value,
+            case_summary=self._summary_text(case.summary),
+        )
 
         if case.status == HandoffStatus.DEMO_ACTIVE:
             if action is HandoffAction.CLOSE:
@@ -865,7 +858,19 @@ class AgentWorkflow:
         if case.status != HandoffStatus.SUMMARY_REVIEW:
             return {"handoff_handled": False, "handoff_case": case}
 
-        if action is HandoffAction.CANCEL:
+        if action is HandoffAction.UNKNOWN:
+            # A missing or failed semantic model must not cancel an unresolved
+            # case or reinterpret the current turn as a new issue. Keep the
+            # case in review and render its available next actions again.
+            return {
+                "handoff_handled": True,
+                "handoff_case": case,
+                "final_response": offer_message_from_summary_text(
+                    self._summary_text(case.summary)
+                ),
+            }
+
+        if action in {HandoffAction.CANCEL, HandoffAction.CLOSE}:
             cancelled = await self.handoff_repository.transition(
                 case.caseId,
                 case.status,
@@ -880,7 +885,7 @@ class AgentWorkflow:
                 "handoff_case": cancelled,
                 "final_response": CANCELLED_MESSAGE,
             }
-        if action is HandoffAction.SUPPLEMENT:
+        if action is HandoffAction.REQUEST_SUPPLEMENT:
             return {
                 "handoff_handled": True,
                 "handoff_case": case,
@@ -976,7 +981,25 @@ class AgentWorkflow:
                 "final_response": "工單建立失敗。你仍可回覆「聯絡線上客服」或「取消」。",
             }
 
-        # Any other text while reviewing is treated as the requested supplement.
+        if action is not HandoffAction.SUPPLEMENT:
+            cancelled = await self.handoff_repository.transition(
+                case.caseId,
+                HandoffStatus.SUMMARY_REVIEW,
+                HandoffStatus.CANCELLED,
+                case.version,
+            )
+            await self._append_handoff_event(
+                cancelled,
+                "handoff.superseded",
+                ActorType.USER,
+                requester_id,
+                {"fromStatus": "SUMMARY_REVIEW", "toStatus": "CANCELLED"},
+            )
+            return {
+                "handoff_handled": False,
+                "handoff_case": cancelled,
+            }
+
         draft = deterministic_summary(
             current_message=request.message.text,
             issue_descriptions=[case.summary.issue],
@@ -998,6 +1021,12 @@ class AgentWorkflow:
         )
         case = await self.handoff_repository.update_summary(
             case.caseId, updated_summary, case.version
+        )
+        await self._append_handoff_event(
+            case,
+            "handoff.summary_supplemented",
+            ActorType.USER,
+            requester_id,
         )
         return {
             "handoff_handled": True,
@@ -1408,14 +1437,26 @@ class AgentWorkflow:
         except (TicketServiceTimeout, TicketServiceError) as exc:
             return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
 
-        selected_item = select_ticket_item(items, issue.description)
+        selection = await self.ticket_item_selector.select(
+            items=items,
+            issue_description=issue.description,
+        )
+        selected_item = selection.item
         if selected_item is None:
+            if selection.reason in {"model_unavailable", "model_error"}:
+                question = (
+                    "目前無法判定適用的工單類別；已保留案件內容，"
+                    "請稍後重試或聯絡線上客服。"
+                )
+            else:
+                question = (
+                    "目前無法從可用工單類別判定最適合的一項；"
+                    "請補充與目前案件最相關的系統、功能或錯誤訊息。"
+                )
             return IssueResult(
                 issueId=issue.id,
                 resultType="NEED_MORE_INFO",
-                questions=[
-                    "請補充報修設備或症狀，例如 VPN、AD 帳號、螢幕、鍵盤或滑鼠。"
-                ],
+                questions=[question],
             )
         draft = TicketDraft(
             requesterId=requester_id,

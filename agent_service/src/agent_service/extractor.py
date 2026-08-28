@@ -109,6 +109,11 @@ Readiness and follow-up questions (spec §6.3):
   5. 是否可重現 (whether the issue is reproducible)
 - readiness="READY" once you have enough to proceed without asking anything.
 - readiness="NEED_MORE_INFO" only when missingInfo is non-empty.
+- A concrete, self-contained symptom is normally READY for a knowledge lookup.
+  Do not ask for a product name merely because it is absent when the knowledge
+  service can attempt a grounded answer from the symptom as given. Ask only
+  when the missing detail is necessary to distinguish materially different
+  handling paths.
 
 HARD PROHIBITION: you must NEVER ask the user for a password, verification code /
 OTP, access token, secret, API key, employee id, national id, or any other

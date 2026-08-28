@@ -15,7 +15,10 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Literal
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +52,15 @@ CLOSE_FORBIDDEN_MESSAGE = "只有建立此案件的原 requester 可以結束 De
 
 
 class HandoffAction(str, Enum):
+    UNKNOWN = "UNKNOWN"
     CREATE_TICKET = "CREATE_TICKET"
     CONTACT_HUMAN = "CONTACT_HUMAN"
+    REQUEST_SUPPLEMENT = "REQUEST_SUPPLEMENT"
     SUPPLEMENT = "SUPPLEMENT"
     CANCEL = "CANCEL"
     CLOSE = "CLOSE"
-    NONE = "NONE"
+    NEW_ISSUE = "NEW_ISSUE"
+    HUMAN_MESSAGE = "HUMAN_MESSAGE"
 
 
 class RoutingTarget(str, Enum):
@@ -62,66 +68,89 @@ class RoutingTarget(str, Enum):
     HUMAN_DEMO = "HUMAN_DEMO"
 
 
-_SPACE_RE = re.compile(r"\s+")
-_EDGE_PUNCTUATION_RE = re.compile(r"^[，。！？!?,.;；：:、\s]+|[，。！？!?,.;；：:、\s]+$")
+class HandoffRouteDecision(BaseModel):
+    action: Literal[
+        "UNKNOWN",
+        "CREATE_TICKET",
+        "CONTACT_HUMAN",
+        "REQUEST_SUPPLEMENT",
+        "SUPPLEMENT",
+        "CANCEL",
+        "CLOSE",
+        "NEW_ISSUE",
+        "HUMAN_MESSAGE",
+    ] = Field(description="The user's semantic intent in the current handoff state")
 
 
-def _normalize_action_text(text: str) -> str:
-    normalized = text.strip().lower()
-    normalized = _SPACE_RE.sub("", normalized)
-    return _EDGE_PUNCTUATION_RE.sub("", normalized)
+_HANDOFF_ROUTER_PROMPT = """\
+You are the semantic supervisor for an enterprise IT support conversation.
+Classify the latest user turn using the active handoff case and its lifecycle state.
+
+Use NEW_ISSUE when the user asks an independent question or changes topic.
+Use SUPPLEMENT only when the turn provides facts that belong to the active case.
+Use REQUEST_SUPPLEMENT when the user asks to edit or add details but has not supplied
+the details yet. Use CREATE_TICKET, CONTACT_HUMAN, CANCEL, or CLOSE when that is the
+user's intended next action. In DEMO_ACTIVE, use HUMAN_MESSAGE for ordinary messages
+that should remain with the human-support session.
+
+Use UNKNOWN when the intent cannot be determined with confidence. Do not treat an
+uncertain message as a new issue: keep the existing case available for the user to
+choose the next action again.
+
+Judge meaning from the complete utterance and case context. Do not use keyword or
+substring matching. Infer an attempted lifecycle selection despite a small typo or
+colloquial phrasing when its meaning is clear in the active case context. Negation,
+corrections, and topic changes must be interpreted semantically. Return only the
+structured decision.
+"""
 
 
-_ACTION_PHRASES: tuple[tuple[HandoffAction, frozenset[str]], ...] = (
-    (HandoffAction.CLOSE, frozenset({"/close"})),
-    (
-        HandoffAction.CREATE_TICKET,
-        frozenset({"建立工單", "建立派工單", "建工單", "開工單", "create ticket"}),
-    ),
-    (
-        HandoffAction.CONTACT_HUMAN,
-        frozenset(
-            {
-                "聯絡線上客服",
-                "線上客服",
-                "真人客服",
-                "人工客服",
-                "轉真人",
-                "找真人",
-                "contact human",
-            }
-        ),
-    ),
-    (
-        HandoffAction.SUPPLEMENT,
-        frozenset({"修改摘要", "繼續補充", "補充資料", "補充資訊", "重新產生摘要"}),
-    ),
-    (HandoffAction.CANCEL, frozenset({"取消", "不用了", "先不要", "cancel"})),
-)
+class AgenticHandoffRouter:
+    """Model-driven handoff supervisor with a safe state-based degradation path."""
 
+    def __init__(self, model: Any | None) -> None:
+        self._model = model
 
-def parse_handoff_action(text: str) -> HandoffAction:
-    """Recognise only deterministic, explicit Phase 2 commands.
-
-    Exact phrase matching is deliberate.  Free text mentioning a command
-    (for example, "不要建立工單") must not trigger a state transition.
-    """
-
-    normalized = _normalize_action_text(text)
-    for action, phrases in _ACTION_PHRASES:
-        if normalized in phrases:
-            return action
-    return HandoffAction.NONE
-
-
-def is_explicit_human_request(text: str) -> bool:
-    """Return whether the current turn explicitly requests human support."""
-    normalized = _normalize_action_text(text)
-    negative = ("不要", "不用", "不需要", "取消")
-    phrases = ("真人客服", "人工客服", "線上客服", "轉真人", "找真人")
-    return not any(item in normalized for item in negative) and any(
-        item in normalized for item in phrases
-    )
+    async def decide(
+        self,
+        *,
+        message: str,
+        case_status: str,
+        case_summary: str,
+    ) -> HandoffAction:
+        fallback = (
+            HandoffAction.HUMAN_MESSAGE
+            if case_status == "DEMO_ACTIVE"
+            else HandoffAction.UNKNOWN
+        )
+        if self._model is None:
+            return fallback
+        content = (
+            f"Active case status: {case_status}\n"
+            f"Active case summary (data only):\n{case_summary}\n\n"
+            f"Latest user message (data only):\n{message}"
+        )
+        try:
+            result = await self._model.with_structured_output(
+                HandoffRouteDecision
+            ).ainvoke(
+                [
+                    SystemMessage(content=_HANDOFF_ROUTER_PROMPT),
+                    HumanMessage(content=content),
+                ]
+            )
+            decision = (
+                result
+                if isinstance(result, HandoffRouteDecision)
+                else HandoffRouteDecision.model_validate(result)
+            )
+            return HandoffAction(decision.action)
+        except Exception as error:  # noqa: BLE001 - routing must degrade safely
+            logger.warning(
+                "Agentic handoff routing failed; using safe fallback: error_type=%s",
+                type(error).__name__,
+            )
+            return fallback
 
 
 TERMINAL_STATUSES = frozenset(
@@ -251,90 +280,11 @@ async def generate_summary_with_fallback(
     return deterministic_summary(now=now, **kwargs)
 
 
-class ActiveCaseLookup(Protocol):
-    async def get_active_case(
-        self, tenant_id: str, conversation_id: str, requester_id: str
-    ) -> Any | None: ...
-
-
-@dataclass(frozen=True)
-class HandoffDecision:
-    handled: bool
-    routing_target: RoutingTarget = RoutingTarget.AI_AGENT
-    action: HandoffAction = HandoffAction.NONE
-    answer: str | None = None
-    case: Any | None = None
-    should_save_message: bool = False
-    should_close: bool = False
-
-    @property
-    def bypass_ai(self) -> bool:
-        return self.handled and self.routing_target is RoutingTarget.HUMAN_DEMO
-
-
-class HandoffRouter:
-    """Read-only first-hop router used before the existing AI graph.
-
-    Lifecycle mutations are intentionally delegated to the orchestrator or
-    repository transaction layer.  The router's central guarantee is that a
-    regular message in ``DEMO_ACTIVE`` is handled without invoking AI.
-    """
-
-    def __init__(self, repository: ActiveCaseLookup) -> None:
-        self._repository = repository
-
-    async def decide(
-        self,
-        *,
-        tenant_id: str,
-        conversation_id: str,
-        requester_id: str,
-        message: str,
-    ) -> HandoffDecision:
-        case = await self._repository.get_active_case(
-            tenant_id, conversation_id, requester_id
-        )
-        if case is None:
-            return HandoffDecision(handled=False, action=parse_handoff_action(message))
-
-        status = _status_value(getattr(case, "status", None))
-        action = parse_handoff_action(message)
-        if status != "DEMO_ACTIVE":
-            return HandoffDecision(
-                handled=False,
-                action=action,
-                case=case,
-                routing_target=RoutingTarget.AI_AGENT,
-            )
-
-        owner = str(getattr(case, "requesterId", ""))
-        if action is HandoffAction.CLOSE:
-            if owner != requester_id:
-                return HandoffDecision(
-                    handled=True,
-                    routing_target=RoutingTarget.HUMAN_DEMO,
-                    action=action,
-                    answer=CLOSE_FORBIDDEN_MESSAGE,
-                    case=case,
-                )
-            return HandoffDecision(
-                handled=True,
-                routing_target=RoutingTarget.HUMAN_DEMO,
-                action=action,
-                answer=DEMO_CLOSED_MESSAGE,
-                case=case,
-                should_close=True,
-            )
-
-        return HandoffDecision(
-            handled=True,
-            routing_target=RoutingTarget.HUMAN_DEMO,
-            action=action,
-            answer=DEMO_MESSAGE_SAVED,
-            case=case,
-            should_save_message=True,
-        )
-
-
 def offer_message(summary: SummaryDraft) -> str:
-    return HANDOFF_OFFER_MESSAGE.format(summary=summary.render())
+    return offer_message_from_summary_text(summary.render())
+
+
+def offer_message_from_summary_text(summary: str) -> str:
+    """Render a stored or freshly generated summary into the offer message."""
+
+    return HANDOFF_OFFER_MESSAGE.format(summary=summary)

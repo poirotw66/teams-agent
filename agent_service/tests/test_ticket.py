@@ -13,16 +13,17 @@ import pytest
 from agent_service.contracts import Ticket, TicketDraft, TicketItem
 from agent_service.settings import RagSettings
 from agent_service.ticket import (
+    AgenticTicketItemSelector,
     DisabledTicketService,
     HttpTicketService,
     TicketCatalogError,
+    TicketItemSelectionDecision,
     TicketServiceDisabledError,
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
     build_ticket_service,
     parse_ticket_items_payload,
-    select_ticket_item,
 )
 
 SECRET_TOKEN = "super-secret-ticket-token"
@@ -45,6 +46,24 @@ def _trusted_draft(**overrides) -> TicketDraft:
 def _client_with_handler(handler) -> httpx.AsyncClient:
     transport = httpx.MockTransport(handler)
     return httpx.AsyncClient(transport=transport, base_url="https://ticket.internal")
+
+
+class FakeCatalogModel:
+    def __init__(self, result: TicketItemSelectionDecision | Exception) -> None:
+        self.result = result
+        self.schemas = []
+
+    def with_structured_output(self, schema):
+        self.schemas.append(schema)
+        outer = self
+
+        class Handle:
+            async def ainvoke(self, _messages):
+                if isinstance(outer.result, Exception):
+                    raise outer.result
+                return outer.result
+
+        return Handle()
 
 
 # --- DISABLED mode -----------------------------------------------------
@@ -305,33 +324,59 @@ def test_ticket_catalog_rejects_unsuccessful_or_malformed_payload(payload) -> No
         parse_ticket_items_payload(payload)
 
 
-@pytest.mark.parametrize(
-    ("description", "expected_id"),
-    [
-        ("VPN 一直連不上", "vpn"),
-        ("我的 AD 帳號被鎖住", "ad-lock"),
-        ("螢幕整個黑屏", "monitor"),
-        ("需要申請 ERP 系統權限", "permission"),
-    ],
-)
-def test_select_ticket_item_uses_leaf_semantics(description, expected_id) -> None:
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_returns_valid_backend_catalog_id() -> None:
     items = [
+        TicketItem(id="system-function", name="系統功能異常", level=3),
         TicketItem(id="vpn", name="VPN 無法連線", level=3),
-        TicketItem(id="ad-lock", name="AD 帳號鎖定", level=3),
-        TicketItem(id="monitor", name="螢幕無畫面", level=3),
-        TicketItem(id="permission", name="申請系統權限", level=3),
     ]
+    model = FakeCatalogModel(
+        TicketItemSelectionDecision(
+            ticket_item_id="system-function",
+            confidence="HIGH",
+            needs_clarification=False,
+        )
+    )
 
-    assert select_ticket_item(items, description).id == expected_id
+    selection = await AgenticTicketItemSelector(model).select(
+        items=items,
+        issue_description="SAP Crystal Reports 授權到期無法開啟",
+    )
+
+    assert selection.item is items[0]
+    assert selection.reason == "selected"
+    assert model.schemas == [TicketItemSelectionDecision]
 
 
-def test_select_ticket_item_does_not_guess_when_no_category_matches() -> None:
-    items = [
-        TicketItem(id="vpn", name="VPN 無法連線", level=3),
-        TicketItem(id="monitor", name="螢幕無畫面", level=3),
-    ]
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_rejects_hallucinated_catalog_id() -> None:
+    items = [TicketItem(id="vpn", name="VPN 無法連線", level=3)]
+    model = FakeCatalogModel(
+        TicketItemSelectionDecision(
+            ticket_item_id="invented-id",
+            confidence="HIGH",
+            needs_clarification=False,
+        )
+    )
 
-    assert select_ticket_item(items, "請幫我處理這個問題") is None
+    selection = await AgenticTicketItemSelector(model).select(
+        items=items,
+        issue_description="任何問題",
+    )
+
+    assert selection.item is None
+    assert selection.reason == "invalid_catalog_id"
+
+
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_model_failure_does_not_choose_category() -> None:
+    selection = await AgenticTicketItemSelector(None).select(
+        items=[TicketItem(id="vpn", name="VPN 無法連線", level=3)],
+        issue_description="任何問題",
+    )
+
+    assert selection.item is None
+    assert selection.reason == "model_unavailable"
 
 
 # --- error handling --------------------------------------------------------

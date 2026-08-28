@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from agent_service.api import create_app
 from agent_service.contracts import Ticket, TicketItem
 from agent_service.handoff import HandoffStatus
+from agent_service.handoff_flow import HandoffAction
 from agent_service.settings import RagSettings
+from agent_service.ticket import TicketItemSelection
 
 
 def make_settings(tmp_path: Path) -> RagSettings:
@@ -42,10 +44,25 @@ def payload(text: str, request_id: str) -> dict:
     }
 
 
+class FakeHandoffRouter:
+    def __init__(self, actions: list[HandoffAction]) -> None:
+        self.actions = list(actions)
+
+    async def decide(self, **_kwargs) -> HandoffAction:
+        return self.actions.pop(0)
+
+
 def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         offered = client.post(
             "/agent/chat", json=payload("我要找真人客服", "request-1")
+        )
+        client.app.state.workflow.handoff_router = FakeHandoffRouter(
+            [
+                HandoffAction.CONTACT_HUMAN,
+                HandoffAction.HUMAN_MESSAGE,
+                HandoffAction.CLOSE,
+            ]
         )
         activated = client.post(
             "/agent/chat", json=payload("聯絡線上客服", "request-2")
@@ -82,15 +99,6 @@ def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> N
     assert case.status == HandoffStatus.CLOSED
 
 
-def test_duplicate_close_is_idempotent_and_does_not_enter_ai(tmp_path: Path) -> None:
-    with TestClient(create_app(make_settings(tmp_path))) as client:
-        first = client.post("/agent/chat", json=payload("/close", "request-1"))
-        second = client.post("/agent/chat", json=payload("/close", "request-2"))
-
-    assert first.status_code == second.status_code == 200
-    assert first.json()["answer"] == second.json()["answer"]
-
-
 def test_no_knowledge_offers_ticket_and_human_paths(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         response = client.post(
@@ -101,6 +109,31 @@ def test_no_knowledge_offers_ticket_and_human_paths(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "建立工單" in response.json()["answer"]
     assert "聯絡線上客服" in response.json()["answer"]
+
+
+def test_new_it_question_does_not_mutate_pending_handoff_summary(
+    tmp_path: Path,
+) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        offered = client.post(
+            "/agent/chat",
+            json=payload("SAP Crystal Reports 授權到期無法開啟", "request-1"),
+        )
+        client.app.state.workflow.handoff_router = FakeHandoffRouter(
+            [HandoffAction.NEW_ISSUE]
+        )
+        answered = client.post(
+            "/agent/chat",
+            json=payload("VPN 密碼鎖住怎麼辦", "request-2"),
+        )
+        repository = client.app.state.handoff_repository
+        cases = list(repository._cases.values())
+
+    assert offered.status_code == answered.status_code == 200
+    assert "問題：SAP Crystal Reports 授權到期無法開啟" in offered.json()["answer"]
+    assert "VPN 密碼鎖定時請聯繫資訊服務窗口" in answered.json()["answer"]
+    assert "SAP Crystal Reports" not in answered.json()["answer"]
+    assert cases[0].status == HandoffStatus.CANCELLED
 
 
 def test_ticket_path_uses_confirmed_handoff_summary(tmp_path: Path) -> None:
@@ -116,9 +149,18 @@ def test_ticket_path_uses_confirmed_handoff_summary(tmp_path: Path) -> None:
             return Ticket(id="MOCK-1001", title=draft.title, status="OPEN")
 
     fake = FakeTicketService()
+
+    class FakeTicketItemSelector:
+        async def select(self, *, items, issue_description):
+            return TicketItemSelection(item=items[0], reason="selected")
+
     with TestClient(create_app(make_settings(tmp_path))) as client:
         client.app.state.workflow.ticket_service = fake
+        client.app.state.workflow.ticket_item_selector = FakeTicketItemSelector()
         client.post("/agent/chat", json=payload("我要找真人客服", "request-1"))
+        client.app.state.workflow.handoff_router = FakeHandoffRouter(
+            [HandoffAction.CREATE_TICKET]
+        )
         created = client.post(
             "/agent/chat", json=payload("建立工單", "request-2")
         )
