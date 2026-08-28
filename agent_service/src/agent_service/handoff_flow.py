@@ -19,6 +19,9 @@ from typing import Any, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from .confirmation import TicketIntent, classify_ticket_intent
+from .execution_context import ExecutionContext
+
 logger = logging.getLogger(__name__)
 
 
@@ -93,6 +96,15 @@ class HandoffRouteDecision(BaseModel):
     ] = Field(description="The user's semantic intent in the current handoff state")
 
 
+class TicketQueryDecision(BaseModel):
+    is_ticket_query: bool = Field(
+        description=(
+            "True when the user wants to list or check the status of their own "
+            "dispatch tickets / 派工單 / 工單, not when opening a new ticket."
+        )
+    )
+
+
 _HANDOFF_ROUTER_PROMPT = """\
 You are the semantic supervisor for an enterprise IT support handoff flow.
 Classify the latest user turn using the active handoff case, recent conversation,
@@ -123,6 +135,21 @@ Judge meaning semantically from the full utterance and context. Return only the
 structured decision.
 """
 
+_TICKET_QUERY_ROUTER_PROMPT = """\
+You classify whether the latest user message is asking to list or check the
+status of their own existing IT dispatch tickets (派工單 / 工單).
+
+Return is_ticket_query=true for status/list/history questions about tickets the
+user already opened, including fuzzy or abbreviated wording.
+
+Return is_ticket_query=false when the user wants to open/create a new ticket,
+asks an unrelated IT knowledge question, contacts human support, or confirms a
+pending handoff summary.
+
+Judge meaning semantically from the full utterance and recent conversation.
+Return only the structured decision.
+"""
+
 
 def available_handoff_actions(case_status: str) -> tuple[str, ...]:
     if case_status == "DEMO_ACTIVE":
@@ -150,6 +177,7 @@ class AgenticHandoffRouter:
         case_status: str,
         case_summary: str,
         conversation_turns: Sequence[str] = (),
+        execution_context: ExecutionContext | None = None,
     ) -> HandoffAction:
         if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
             return HandoffAction.CLOSE
@@ -173,14 +201,23 @@ class AgenticHandoffRouter:
             f"Latest user message (data only):\n{message}"
         )
         try:
-            result = await self._model.with_structured_output(
-                HandoffRouteDecision
-            ).ainvoke(
-                [
-                    SystemMessage(content=_HANDOFF_ROUTER_PROMPT),
-                    HumanMessage(content=content),
-                ]
-            )
+            if execution_context is not None:
+                execution_context.ensure_budget()
+
+            async def _invoke():
+                return await self._model.with_structured_output(
+                    HandoffRouteDecision
+                ).ainvoke(
+                    [
+                        SystemMessage(content=_HANDOFF_ROUTER_PROMPT),
+                        HumanMessage(content=content),
+                    ]
+                )
+
+            if execution_context is not None:
+                result = await execution_context.run_llm(_invoke, component="handoff_router")
+            else:
+                result = await _invoke()
             decision = (
                 result
                 if isinstance(result, HandoffRouteDecision)
@@ -193,6 +230,61 @@ class AgenticHandoffRouter:
                 type(error).__name__,
             )
             return fallback
+
+
+class AgenticTicketQueryRouter:
+    """Model-driven ticket-list intent; degrades to no query intent when unavailable."""
+
+    def __init__(self, model: Any | None) -> None:
+        self._model = model
+
+    async def is_ticket_query(
+        self,
+        *,
+        message: str,
+        conversation_turns: Sequence[str] = (),
+        execution_context: ExecutionContext | None = None,
+    ) -> bool:
+        if self._model is None:
+            return classify_ticket_intent(message) == TicketIntent.QUERY
+
+        history = "\n".join(conversation_turns) if conversation_turns else "(none)"
+        content = (
+            f"Recent conversation (oldest first, data only):\n{history}\n\n"
+            f"Latest user message (data only):\n{message}"
+        )
+        try:
+            if execution_context is not None:
+                execution_context.ensure_budget()
+
+            async def _invoke():
+                return await self._model.with_structured_output(
+                    TicketQueryDecision
+                ).ainvoke(
+                    [
+                        SystemMessage(content=_TICKET_QUERY_ROUTER_PROMPT),
+                        HumanMessage(content=content),
+                    ]
+                )
+
+            if execution_context is not None:
+                result = await execution_context.run_llm(
+                    _invoke, component="ticket_query_router"
+                )
+            else:
+                result = await _invoke()
+            decision = (
+                result
+                if isinstance(result, TicketQueryDecision)
+                else TicketQueryDecision.model_validate(result)
+            )
+            return decision.is_ticket_query
+        except Exception as error:  # noqa: BLE001 - routing must degrade safely
+            logger.warning(
+                "Agentic ticket-query routing failed; using safe fallback: error_type=%s",
+                type(error).__name__,
+            )
+            return False
 
 
 TERMINAL_STATUSES = frozenset(

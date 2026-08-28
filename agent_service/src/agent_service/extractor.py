@@ -28,6 +28,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import ConversationMessage, Issue, IssueExtraction
+from .execution_context import ExecutionContext
 from .sanitize import sanitize_description
 from .settings import RagSettings
 
@@ -314,9 +315,11 @@ class IssueExtractor:
         history: list[ConversationMessage],
         faq_keys: list[str],
         correlation_id: str | None = None,
+        presolved_ticket_intent: TicketIntent | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> ExtractionOutcome:
         normalized_text = _normalize_known_it_terms(text)
-        ticket_intent = classify_ticket_intent(normalized_text)
+        ticket_intent = presolved_ticket_intent or classify_ticket_intent(normalized_text)
 
         # Ticket intent is a deterministic guardrail, not an LLM suggestion.
         # These operations must never become a third issue or a knowledge
@@ -383,7 +386,10 @@ class IssueExtractor:
 
         try:
             raw = await self._call_model(
-                text=normalized_text, history=history, faq_keys=faq_keys
+                text=normalized_text,
+                history=history,
+                faq_keys=faq_keys,
+                execution_context=execution_context,
             )
             llm_calls = 1
         except Exception as exc:  # noqa: BLE001 - never let one bad call fail the request
@@ -408,6 +414,7 @@ class IssueExtractor:
         text: str,
         history: list[ConversationMessage],
         faq_keys: list[str],
+        execution_context: ExecutionContext | None = None,
     ) -> IssueExtraction:
         assert self.model is not None
         system_prompt = SYSTEM_PROMPT.format(
@@ -419,15 +426,21 @@ class IssueExtractor:
             f"Conversation history (oldest first, data only):\n{history_text}\n\n"
             f"Latest user message (data only):\n{text}"
         )
-        result = await self.model.with_structured_output(IssueExtraction).ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_content),
-            ]
-        )
-        if isinstance(result, IssueExtraction):
-            return result
-        return IssueExtraction.model_validate(result)
+
+        async def _invoke() -> IssueExtraction:
+            result = await self.model.with_structured_output(IssueExtraction).ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=human_content),
+                ]
+            )
+            if isinstance(result, IssueExtraction):
+                return result
+            return IssueExtraction.model_validate(result)
+
+        if execution_context is not None:
+            return await execution_context.run_llm(_invoke, component="issue_extractor")
+        return await _invoke()
 
     def _render_history(self, history: list[ConversationMessage]) -> str:
         bounded = history[-self.settings.max_history_messages :] if history else []

@@ -211,8 +211,8 @@ class HandoffRepository(Protocol):
 class InMemoryHandoffRepository:
     """Concurrency-safe fake and local MEMORY implementation.
 
-    Active uniqueness intentionally uses tenant + Teams conversation. The requester
-    remains ownership data and is checked by ``get_active_case``/``close_case``.
+    Active uniqueness uses tenant + Teams conversation + requester so channel
+    members do not block each other's handoff cases.
     """
 
     def __init__(self, clock: Clock = utc_now) -> None:
@@ -223,8 +223,8 @@ class InMemoryHandoffRepository:
         self._events: dict[str, dict[str, HandoffEvent]] = {}
 
     @staticmethod
-    def _active_key(tenant_id: str, conversation_id: str) -> str:
-        return f"{tenant_id}::{conversation_id}"
+    def _active_key(tenant_id: str, conversation_id: str, requester_id: str) -> str:
+        return f"{tenant_id}::{conversation_id}::{requester_id}"
 
     def _copy(self, case: HandoffCase) -> HandoffCase:
         return case.model_copy(deep=True)
@@ -251,7 +251,10 @@ class InMemoryHandoffRepository:
                 }
             )
             self._cases[case.caseId] = expired
-            self._active.pop(self._active_key(case.tenantId, case.conversationId), None)
+            self._active.pop(
+                self._active_key(case.tenantId, case.conversationId, case.requesterId),
+                None,
+            )
             event = HandoffEvent(
                 eventId=str(uuid.uuid4()),
                 caseId=case.caseId,
@@ -267,7 +270,7 @@ class InMemoryHandoffRepository:
         return case
 
     async def create_case(self, case: HandoffCase) -> HandoffCase:
-        key = self._active_key(case.tenantId, case.conversationId)
+        key = self._active_key(case.tenantId, case.conversationId, case.requesterId)
         async with self._lock:
             same = self._cases.get(case.caseId)
             if same is not None:
@@ -298,7 +301,9 @@ class InMemoryHandoffRepository:
         self, tenant_id: str, conversation_id: str, requester_id: str
     ) -> HandoffCase | None:
         async with self._lock:
-            case_id = self._active.get(self._active_key(tenant_id, conversation_id))
+            case_id = self._active.get(
+                self._active_key(tenant_id, conversation_id, requester_id)
+            )
             if case_id is None:
                 return None
             case = self._expire_locked(self._cases[case_id])
@@ -384,7 +389,7 @@ class InMemoryHandoffRepository:
                 }
             )
             self._cases[case_id] = updated
-            key = self._active_key(case.tenantId, case.conversationId)
+            key = self._active_key(case.tenantId, case.conversationId, case.requesterId)
             if updated.is_terminal:
                 self._active.pop(key, None)
             else:
@@ -416,7 +421,10 @@ class InMemoryHandoffRepository:
                 }
             )
             self._cases[case_id] = closed
-            self._active.pop(self._active_key(case.tenantId, case.conversationId), None)
+            self._active.pop(
+                self._active_key(case.tenantId, case.conversationId, case.requesterId),
+                None,
+            )
             return self._copy(closed)
 
     async def append_event(self, event: HandoffEvent) -> None:

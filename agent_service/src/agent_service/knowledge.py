@@ -128,7 +128,6 @@ _GENERIC_LEXICAL_TOKENS = frozenset(
         "何",
         "為",
         "什",
-        "麼",
         "可",
         "以",
         "不",

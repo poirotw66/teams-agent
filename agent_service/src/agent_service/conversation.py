@@ -112,6 +112,7 @@ class ConversationRepository(Protocol):
         tenant_id: str | None,
         teams_conversation_id: str,
         teams_user_id: str,
+        timeout_hours: int = 24,
     ) -> ConversationContext:
         """Create and persist a brand-new conversation for this key.
 
@@ -183,6 +184,7 @@ class InMemoryConversationRepository:
         tenant_id: str | None,
         teams_conversation_id: str,
         teams_user_id: str,
+        timeout_hours: int = 24,
     ) -> ConversationContext:
         key = _conversation_key(
             tenant_id=tenant_id,
@@ -346,6 +348,7 @@ class FileConversationRepository:
         tenant_id: str | None,
         teams_conversation_id: str,
         teams_user_id: str,
+        timeout_hours: int = 24,
     ) -> ConversationContext:
         key = _conversation_key(
             tenant_id=tenant_id,
@@ -620,6 +623,7 @@ class FirestoreConversationRepository:
         tenant_id: str | None,
         teams_conversation_id: str,
         teams_user_id: str,
+        timeout_hours: int = 24,
     ) -> ConversationContext:
         key = _conversation_key(
             tenant_id=tenant_id,
@@ -627,39 +631,81 @@ class FirestoreConversationRepository:
             teams_user_id=teams_user_id,
         )
         now = self._clock()
-        context = ConversationContext(
-            conversationId=str(uuid.uuid4()),
-            startedAt=now,
-            lastActivityAt=now,
-            messages=[],
-        )
-        await self._conversation_doc(context.conversationId).set(
-            {
-                "conversationKey": key,
-                "tenantId": tenant_id,
-                "startedAt": now,
-                "lastActivityAt": now,
-                "expiresAt": self._expires_at(now),
-            }
-        )
-        # Written second so the key never points at a conversation document
-        # that does not exist yet.
-        await self._client.collection(self._keys_collection).document(
+        key_ref = self._client.collection(self._keys_collection).document(
             self._key_document_id(key)
-        ).set(
-            {
-                "conversationKey": key,
-                "conversationId": context.conversationId,
-                "updatedAt": now,
-                "expiresAt": self._expires_at(now),
-            }
         )
+        transaction = self._client.transaction()
+
+        async def operation(transaction):
+            key_snapshot = await key_ref.get(transaction=transaction)
+            if key_snapshot.exists:
+                existing_id = (key_snapshot.to_dict() or {}).get("conversationId")
+                if existing_id:
+                    conversation_snapshot = await self._conversation_doc(existing_id).get(
+                        transaction=transaction
+                    )
+                    if conversation_snapshot.exists:
+                        data = conversation_snapshot.to_dict() or {}
+                        started_at = self._to_datetime(data.get("startedAt"))
+                        last_activity_at = self._to_datetime(data.get("lastActivityAt"))
+                        if started_at and last_activity_at:
+                            existing = ConversationContext(
+                                conversationId=existing_id,
+                                startedAt=started_at,
+                                lastActivityAt=last_activity_at,
+                                messages=[],
+                            )
+                            if not _is_timed_out(existing, timeout_hours, self._clock()):
+                                return existing
+
+            context = ConversationContext(
+                conversationId=str(uuid.uuid4()),
+                startedAt=now,
+                lastActivityAt=now,
+                messages=[],
+            )
+            transaction.set(
+                self._conversation_doc(context.conversationId),
+                {
+                    "conversationKey": key,
+                    "tenantId": tenant_id,
+                    "startedAt": now,
+                    "lastActivityAt": now,
+                    "expiresAt": self._expires_at(now),
+                },
+            )
+            transaction.set(
+                key_ref,
+                {
+                    "conversationKey": key,
+                    "conversationId": context.conversationId,
+                    "updatedAt": now,
+                    "expiresAt": self._expires_at(now),
+                },
+            )
+            return context
+
+        context = await self._run_transaction(transaction, operation)
         logger.info(
             "Created conversation: conversation_id=%s tenant_id=%s",
             context.conversationId,
             tenant_id or "-",
         )
         return context
+
+    @staticmethod
+    async def _run_transaction(transaction: Any, operation: Any):
+        if hasattr(transaction, "commit") and not hasattr(transaction, "_read_only"):
+            result = await operation(transaction)
+            transaction.commit()
+            return result
+        try:
+            from google.cloud.firestore_v1.async_transaction import async_transactional
+        except ImportError as error:  # pragma: no cover - guarded by optional extra
+            raise RuntimeError(
+                "CONVERSATION_REPOSITORY_MODE=FIRESTORE requires the firestore extra"
+            ) from error
+        return await async_transactional(operation)(transaction)
 
     async def save_message(self, conversation_id: str, message: ConversationMessage) -> None:
         snapshot = await self._conversation_doc(conversation_id).get()
@@ -841,6 +887,7 @@ class ConversationService:
             tenant_id=tenant_id,
             teams_conversation_id=teams_conversation_id,
             teams_user_id=teams_user_id,
+            timeout_hours=self._settings.conversation_timeout_hours,
         )
 
     async def record_message(

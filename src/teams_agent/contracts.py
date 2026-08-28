@@ -72,6 +72,7 @@ class AgentRequest:
     # (the wire field the Agent Service and its downstream nodes propagate) —
     # see docstring in `teams_agent.agent` for the full rationale.
     correlationId: str | None = None
+    evaluationKnowledgeBackend: str | None = None
 
     @classmethod
     def from_activity(
@@ -96,6 +97,9 @@ class AgentRequest:
         # retries; the fallback here exists only to keep this a self-contained
         # constructor for direct/test usage.
         resolved_correlation_id = correlation_id or str(uuid4())
+        evaluation_backend = getattr(channel_data, "evaluationKnowledgeBackend", None)
+        if evaluation_backend not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
+            evaluation_backend = None
 
         return cls(
             requestId=resolved_correlation_id,
@@ -115,6 +119,7 @@ class AgentRequest:
                 groups=list(groups) if groups else [],
             ),
             message=MessageContent(text=text, locale=activity.locale),
+            evaluationKnowledgeBackend=evaluation_backend,
         )
 
     def to_payload(self) -> dict[str, Any]:

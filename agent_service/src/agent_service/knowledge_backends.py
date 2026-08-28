@@ -6,7 +6,7 @@ import inspect
 from threading import Lock
 from typing import Any, Protocol
 
-from .contracts import KnowledgeResult, UserContext
+from .contracts import AgentRequest, KnowledgeResult, UserContext
 from .knowledge import KnowledgeService, LlmCallCounter
 from .settings import RagSettings
 
@@ -81,12 +81,29 @@ class KnowledgeBackendRouter:
         active_backend: str,
         unavailable: dict[str, str] | None = None,
         state_store: KnowledgeBackendStateStore | None = None,
+        settings: RagSettings | None = None,
     ) -> None:
         if active_backend not in services:
             raise ValueError(f"Knowledge backend is unavailable: {active_backend}")
         self._services = dict(services)
         self._state_store = state_store or MemoryKnowledgeBackendStateStore(active_backend)
         self._unavailable = dict(unavailable or {})
+        self._settings = settings
+
+    def _allows_evaluation(self, request: AgentRequest | None) -> bool:
+        if request is None or request.evaluationKnowledgeBackend is None:
+            return False
+        if self._settings is None:
+            return True
+        return request.channel in self._settings.knowledge_evaluation_channels
+
+    async def resolve_backend(self, request: AgentRequest | None = None) -> str:
+        if self._allows_evaluation(request):
+            backend = request.evaluationKnowledgeBackend  # type: ignore[union-attr]
+            if backend in self._services:
+                return backend
+        backend = await self.active_backend()
+        return backend if backend in self._services else next(iter(self._services))
 
     async def active_backend(self) -> str:
         backend = await self._state_store.get()
@@ -126,8 +143,9 @@ class KnowledgeBackendRouter:
         *,
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
+        request: AgentRequest | None = None,
     ) -> KnowledgeResult:
-        service = self._services[await self.active_backend()]
+        service = self._services[await self.resolve_backend(request)]
         parameters = inspect.signature(service.search).parameters
         kwargs: dict[str, object] = {"correlation_id": correlation_id}
         if "call_counter" in parameters:

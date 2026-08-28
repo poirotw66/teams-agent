@@ -35,6 +35,7 @@ class AgentRequest(StrictModel):
     user: UserIdentity
     message: MessageContent
     correlationId: str | None = None
+    evaluationKnowledgeBackend: Literal["HYBRID", "GEMINI_FILE_SEARCH"] | None = None
 
 
 class Citation(StrictModel):

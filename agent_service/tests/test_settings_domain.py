@@ -36,6 +36,8 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "GEMINI_FILE_SEARCH_STORE",
         "GEMINI_FILE_SEARCH_MODEL",
         "GEMINI_FILE_SEARCH_ENFORCE_ACL",
+        "RAG_REQUIRE_FILE_SEARCH_ACL",
+        "KNOWLEDGE_BACKEND_ADMIN_ENABLED",
         "KNOWLEDGE_BACKEND_STATE_MODE",
         "KNOWLEDGE_BACKEND_STATE_COLLECTION",
         "TICKET_SERVICE_MODE",
@@ -193,6 +195,18 @@ def test_invalid_knowledge_service_mode_raises(
     monkeypatch.setenv("KNOWLEDGE_SERVICE_MODE", "PINECONE")
 
     with pytest.raises(ValueError):
+        RagSettings.from_env()
+
+
+def test_rag_require_file_search_acl_requires_enforcement_when_store_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("GEMINI_FILE_SEARCH_STORE", "fileSearchStores/example")
+    monkeypatch.setenv("RAG_REQUIRE_FILE_SEARCH_ACL", "true")
+    monkeypatch.setenv("GEMINI_FILE_SEARCH_ENFORCE_ACL", "false")
+
+    with pytest.raises(ValueError, match="RAG_REQUIRE_FILE_SEARCH_ACL"):
         RagSettings.from_env()
 
 

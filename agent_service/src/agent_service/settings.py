@@ -66,14 +66,22 @@ class RagSettings:
     gemini_file_search_store: str | None = None
     gemini_file_search_model: str = "gemini-2.5-flash"
     gemini_file_search_enforce_acl: bool = True
+    rag_require_file_search_acl: bool = False
     knowledge_backend_state_mode: str = "MEMORY"
     knowledge_backend_state_collection: str = "runtime_config"
+    knowledge_backend_admin_enabled: bool = True
+    knowledge_evaluation_channels: frozenset[str] = frozenset({"playground", "msteams-web"})
 
     # --- Ticket Service (spec §11) ---
     ticket_service_mode: str = "DISABLED"
     ticket_service_base_url: str | None = None
     ticket_service_token: str | None = None
     ticket_service_timeout_seconds: float = 10.0
+    ticket_request_dedupe_mode: str = "MEMORY"
+    ticket_request_dedupe_collection: str = "ticket_request_ledger"
+    ticket_request_dedupe_retention_days: int = 30
+    ticket_request_dedupe_firestore_project: str | None = None
+    ticket_request_dedupe_firestore_database: str | None = None
 
     # --- Conversation Repository (spec §10) ---
     conversation_repository_mode: str = "MEMORY"
@@ -149,17 +157,38 @@ class RagSettings:
             gemini_file_search_enforce_acl=_bool_env(
                 "GEMINI_FILE_SEARCH_ENFORCE_ACL", True
             ),
+            rag_require_file_search_acl=_bool_env("RAG_REQUIRE_FILE_SEARCH_ACL", False),
             knowledge_backend_state_mode=(
                 _str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"
             ),
             knowledge_backend_state_collection=(
                 _str_env("KNOWLEDGE_BACKEND_STATE_COLLECTION") or "runtime_config"
             ),
+            knowledge_backend_admin_enabled=_bool_env(
+                "KNOWLEDGE_BACKEND_ADMIN_ENABLED", True
+            ),
+            knowledge_evaluation_channels=_csv_env("KNOWLEDGE_EVALUATION_CHANNELS")
+            or frozenset({"playground", "msteams-web"}),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
             ticket_service_token=_str_env("TICKET_SERVICE_TOKEN"),
             ticket_service_timeout_seconds=_float_env("TICKET_SERVICE_TIMEOUT_SECONDS", 10.0),
+            ticket_request_dedupe_mode=(
+                _str_env("TICKET_REQUEST_DEDUPE_MODE") or "MEMORY"
+            ),
+            ticket_request_dedupe_collection=(
+                _str_env("TICKET_REQUEST_DEDUPE_COLLECTION") or "ticket_request_ledger"
+            ),
+            ticket_request_dedupe_retention_days=_int_env(
+                "TICKET_REQUEST_DEDUPE_RETENTION_DAYS", 30
+            ),
+            ticket_request_dedupe_firestore_project=_str_env(
+                "TICKET_REQUEST_DEDUPE_FIRESTORE_PROJECT"
+            ),
+            ticket_request_dedupe_firestore_database=_str_env(
+                "TICKET_REQUEST_DEDUPE_FIRESTORE_DATABASE"
+            ),
             conversation_repository_mode=environ.get(
                 "CONVERSATION_REPOSITORY_MODE", "MEMORY"
             ).strip()
@@ -224,6 +253,15 @@ class RagSettings:
             raise ValueError(
                 "KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH."
             )
+        if (
+            self.rag_require_file_search_acl
+            and self.gemini_file_search_store
+            and not self.gemini_file_search_enforce_acl
+        ):
+            raise ValueError(
+                "RAG_REQUIRE_FILE_SEARCH_ACL=true requires GEMINI_FILE_SEARCH_ENFORCE_ACL=true "
+                "when GEMINI_FILE_SEARCH_STORE is configured."
+            )
         if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
             raise ValueError(
                 "KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE."
@@ -244,6 +282,18 @@ class RagSettings:
                 raise ValueError("TICKET_SERVICE_BASE_URL must be an http(s) URL.")
         if not 1 <= self.ticket_service_timeout_seconds <= 60:
             raise ValueError("TICKET_SERVICE_TIMEOUT_SECONDS must be between 1 and 60.")
+        if self.ticket_request_dedupe_mode not in {"MEMORY", "FIRESTORE"}:
+            raise ValueError(
+                "TICKET_REQUEST_DEDUPE_MODE must be one of MEMORY or FIRESTORE."
+            )
+        if not self.ticket_request_dedupe_collection.strip():
+            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not be blank.")
+        if "/" in self.ticket_request_dedupe_collection:
+            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not contain '/'.")
+        if not 1 <= self.ticket_request_dedupe_retention_days <= 365:
+            raise ValueError(
+                "TICKET_REQUEST_DEDUPE_RETENTION_DAYS must be between 1 and 365."
+            )
 
         if self.conversation_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
             raise ValueError(

@@ -408,25 +408,30 @@ if [[ "${START_PLAYGROUND}" == "true" ]]; then
     export PLAYGROUND_INTERNAL_PORT
     export PLAYGROUND_PASSWORD="${PLAYGROUND_PASSWORD_VALUE}"
     export SESSION_SECRET="${PLAYGROUND_SESSION_SECRET_VALUE}"
-    export BOT_ENDPOINT="http://127.0.0.1:${TEAMS_PORT}/api/messages"
+    export BOT_ENDPOINT="http://127.0.0.1:${PLAYGROUND_PORT}/_adapter/api/messages"
+    export ADAPTER_TARGET_URL="http://127.0.0.1:${TEAMS_PORT}"
     export PLAYGROUND_PUBLIC_BASE_URL="${PLAYGROUND_URL}"
-    export KNOWLEDGE_CONTROL_URL="http://127.0.0.1:${RAG_PORT}/admin/knowledge-backend"
-    export KNOWLEDGE_CONTROL_TOKEN="${AGENT_SERVICE_TOKEN_VALUE}"
-    export KNOWLEDGE_CONTROL_AUTH_MODE=none
+    # Playground UI only knows msteams/emulator/directline/webchat; gateway still
+    # rewrites outbound activities to channelId=playground for agent evaluation.
+    export DEFAULT_CHANNEL_ID=msteams
     exec node server.js
   ) &
   CHILD_PIDS+=("$!")
 
   wait_for_url "Agents Playground gateway" "${PLAYGROUND_URL}/healthz" 45
+  wait_for_url "Agents Playground adapter proxy" "${PLAYGROUND_URL}/_adapter/api/messages" 45
   wait_for_url "Agents Playground UI" "http://127.0.0.1:${PLAYGROUND_INTERNAL_PORT}/" 45
 
   printf '\n[start] Agents Playground UI：%s/login\n' "${PLAYGROUND_URL}"
+  printf '[start] 請使用 %s/login，不要直接開啟內部 port %s。\n' "${PLAYGROUND_URL}" "${PLAYGROUND_INTERNAL_PORT}"
+  printf '[start] 請固定使用 127.0.0.1，不要混用 localhost，否則登入 cookie 會失效。\n'
   if [[ "${PLAYGROUND_PASSWORD_IS_DEFAULT}" == "true" ]]; then
     printf '[start] 本機測試密碼：%s\n' "${PLAYGROUND_PASSWORD_VALUE}"
   else
     printf '[start] 請使用 PLAYGROUND_PASSWORD 設定的密碼登入。\n'
   fi
-  printf '[start] 登入後右上角可選擇 HYBRID 或 Gemini File Search。\n\n'
+  printf '[start] 登入後右上角可選擇 HYBRID 或 Gemini File Search。\n'
+  printf '[start] log 若出現 Events recording disabled，代表 Playground 遙測已關閉，屬正常現象。\n\n'
 
   if [[ "${OPEN_PLAYGROUND}" == "true" ]]; then
     if command -v open >/dev/null 2>&1; then

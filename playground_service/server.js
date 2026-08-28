@@ -109,6 +109,12 @@ function clientAddress(req) {
   return (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "") || req.socket.remoteAddress || "unknown";
 }
 
+function isPublicAssetPath(pathname) {
+  // ponytail: SPA bundles are not secret; gating them breaks boot when a browser
+  // omits the session cookie on the first script request after login.
+  return pathname.startsWith("/static/") || pathname === "/favicon.ico";
+}
+
 function isRateLimited(address, now = Date.now()) {
   const entry = attempts.get(address);
   if (!entry || now - entry.startedAt >= LOGIN_WINDOW_MS) {
@@ -219,6 +225,138 @@ async function googleIdentityToken(audience) {
   return (await response.text()).trim();
 }
 
+function knowledgeBackendOptions(geminiAvailable, geminiReason) {
+  return [
+    { id: "HYBRID", label: "HYBRID（本機索引）", available: true, reason: null },
+    {
+      id: "GEMINI_FILE_SEARCH",
+      label: "Gemini File Search",
+      available: geminiAvailable,
+      reason: geminiReason,
+    },
+  ];
+}
+
+function createKnowledgeBackendState({ defaultBackend = "HYBRID", geminiAvailable = true, geminiReason = null } = {}) {
+  return {
+    defaultBackend,
+    sessionBackends: new Map(),
+    options: knowledgeBackendOptions(geminiAvailable, geminiReason),
+  };
+}
+
+function resolveEvaluationBackend(req, state) {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (token && state.sessionBackends.has(token)) {
+    return state.sessionBackends.get(token);
+  }
+  return state.defaultBackend;
+}
+
+function buildKnowledgeBackendStatus(state, activeBackend) {
+  return {
+    activeBackend,
+    options: state.options,
+  };
+}
+
+async function handleKnowledgeBackendRequest(req, res, state) {
+  if (req.method === "GET") {
+    const activeBackend = resolveEvaluationBackend(req, state);
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify(buildKnowledgeBackendStatus(state, activeBackend)));
+    return;
+  }
+
+  const form = await readJson(req);
+  if (!["HYBRID", "GEMINI_FILE_SEARCH"].includes(form.backend)) {
+    res.writeHead(400, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify({ detail: "不支援的知識後端" }));
+    return;
+  }
+  const selected = state.options.find((option) => option.id === form.backend);
+  if (!selected?.available) {
+    res.writeHead(409, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify({ detail: selected?.reason || "知識後端尚未設定" }));
+    return;
+  }
+
+  state.defaultBackend = form.backend;
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (token) state.sessionBackends.set(token, form.backend);
+
+  res.writeHead(200, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+  res.end(JSON.stringify(buildKnowledgeBackendStatus(state, form.backend)));
+}
+
+function injectPlaygroundEvaluation(activity, backend) {
+  if (!activity || typeof activity !== "object" || Array.isArray(activity)) {
+    return activity;
+  }
+  const next = { ...activity, channelId: "playground" };
+  const channelData = {
+    ...(activity.channelData && typeof activity.channelData === "object" && !Array.isArray(activity.channelData)
+      ? activity.channelData
+      : {}),
+  };
+  if (backend === "GEMINI_FILE_SEARCH") {
+    channelData.evaluationKnowledgeBackend = backend;
+  } else {
+    delete channelData.evaluationKnowledgeBackend;
+  }
+  next.channelData = channelData;
+  return next;
+}
+
+async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend) {
+  if (!adapterTarget) {
+    res.writeHead(503, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify({ detail: "Adapter proxy 尚未設定" }));
+    return;
+  }
+  try {
+    let body = "";
+    req.setEncoding("utf8");
+    for await (const chunk of req) {
+      body += chunk;
+      if (body.length > 1024 * 1024) {
+        res.writeHead(413, { "content-type": "text/plain; charset=utf-8", ...securityHeaders() });
+        res.end("Request body too large\n");
+        return;
+      }
+    }
+    let payload = body ? JSON.parse(body) : {};
+    if (typeof payload === "object" && payload !== null) {
+      payload = injectPlaygroundEvaluation(payload, evaluationBackend);
+      body = JSON.stringify(payload);
+    }
+    const headers = {
+      accept: req.headers.accept || "application/json",
+      "content-type": req.headers["content-type"] || "application/json",
+    };
+    for (const name of ["authorization", "x-ms-conversation-id", "x-ms-correlation-id"]) {
+      const value = req.headers[name];
+      if (typeof value === "string" && value) headers[name] = value;
+    }
+    const response = await fetch(`${adapterTarget.replace(/\/$/, "")}/api/messages`, {
+      method: req.method,
+      headers,
+      body: body || undefined,
+      signal: AbortSignal.timeout(30000),
+    });
+    const responseBody = await response.text();
+    const responseHeaders = {
+      "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
+      ...securityHeaders(),
+    };
+    res.writeHead(response.status, responseHeaders);
+    res.end(responseBody);
+  } catch (_error) {
+    res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify({ detail: "無法連線到 Teams Adapter" }));
+  }
+}
+
 async function proxyKnowledgeControl(req, res, controlUrl, controlToken, controlAuthMode, controlAudience) {
   if (!controlUrl) {
     res.writeHead(503, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
@@ -287,8 +425,24 @@ async function proxyIndex(res, target) {
   }
 }
 
-function createGateway({ password, sessionSecret, target = "http://127.0.0.1:56150", knowledgeControlUrl, knowledgeControlToken, knowledgeControlAuthMode = "none", knowledgeControlAudience, secureCookie = true }) {
-  const proxy = httpProxy.createProxyServer({ target, ws: true, xfwd: true });
+function createGateway({
+  password,
+  sessionSecret,
+  target = "http://127.0.0.1:56150",
+  adapterTarget = null,
+  geminiFileSearchAvailable = true,
+  geminiFileSearchReason = "GEMINI_FILE_SEARCH_STORE 尚未設定",
+  knowledgeControlUrl,
+  knowledgeControlToken,
+  knowledgeControlAuthMode = "none",
+  knowledgeControlAudience,
+  secureCookie = true,
+}) {
+  const proxy = httpProxy.createProxyServer({ target, ws: true, xfwd: true, changeOrigin: true });
+  const knowledgeState = createKnowledgeBackendState({
+    geminiAvailable: geminiFileSearchAvailable,
+    geminiReason: geminiFileSearchAvailable ? null : geminiFileSearchReason,
+  });
   proxy.on("error", (_error, _req, res) => {
     if (res && !res.headersSent) {
       res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
@@ -369,6 +523,29 @@ function createGateway({ password, sessionSecret, target = "http://127.0.0.1:561
       return;
     }
 
+    if (url.pathname === "/_adapter/api/messages") {
+      // agentsplayground uses wait-on against BOT_ENDPOINT with GET; only POST
+      // carries Bot Framework activities and needs the adapter proxy.
+      if (req.method === "GET" || req.method === "HEAD") {
+        res.writeHead(200, { "content-type": "application/json", ...securityHeaders() });
+        if (req.method !== "HEAD") res.end('{"status":"ok"}\n');
+        else res.end();
+        return;
+      }
+      if (req.method === "POST") {
+        await proxyAdapterMessages(req, res, adapterTarget, knowledgeState.defaultBackend);
+        return;
+      }
+      res.writeHead(405, { "content-type": "text/plain; charset=utf-8", ...securityHeaders() });
+      res.end("Method Not Allowed\n");
+      return;
+    }
+
+    if (isPublicAssetPath(url.pathname)) {
+      proxy.web(req, res);
+      return;
+    }
+
     if (!authenticated(req)) {
       res.writeHead(303, { location: "/login", ...securityHeaders() });
       res.end();
@@ -382,14 +559,18 @@ function createGateway({ password, sessionSecret, target = "http://127.0.0.1:561
     }
 
     if (url.pathname === "/api/knowledge-backend" && ["GET", "PUT"].includes(req.method)) {
-      await proxyKnowledgeControl(
-        req,
-        res,
-        knowledgeControlUrl,
-        knowledgeControlToken,
-        knowledgeControlAuthMode,
-        knowledgeControlAudience,
-      );
+      if (knowledgeControlUrl) {
+        await proxyKnowledgeControl(
+          req,
+          res,
+          knowledgeControlUrl,
+          knowledgeControlToken,
+          knowledgeControlAuthMode,
+          knowledgeControlAudience,
+        );
+        return;
+      }
+      await handleKnowledgeBackendRequest(req, res, knowledgeState);
       return;
     }
 
@@ -416,8 +597,14 @@ function createGateway({ password, sessionSecret, target = "http://127.0.0.1:561
 function start() {
   const password = requiredEnv("PLAYGROUND_PASSWORD");
   const sessionSecret = requiredEnv("SESSION_SECRET");
-  requiredEnv("BOT_ENDPOINT");
   const publicBaseUrl = requiredEnv("PLAYGROUND_PUBLIC_BASE_URL").replace(/\/$/, "");
+  const adapterTarget =
+    process.env.ADAPTER_TARGET_URL ||
+    (process.env.BOT_ENDPOINT || "").replace(/\/api\/messages\/?$/, "") ||
+    null;
+  if (!adapterTarget) {
+    throw new Error("Missing ADAPTER_TARGET_URL (or BOT_ENDPOINT ending in /api/messages)");
+  }
   const isLocal = /^http:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(publicBaseUrl);
   if (!isLocal) {
     requiredEnv("AUTH_CLIENT_ID");
@@ -427,53 +614,71 @@ function start() {
 
   const internalPort = Number(process.env.PLAYGROUND_INTERNAL_PORT || 56150);
   const playgroundBinary = path.join(__dirname, "node_modules", ".bin", "agentsplayground");
-  const child = spawn(
-    playgroundBinary,
-    [
-      "--port",
-      String(internalPort),
-      "--service-url",
-      `${publicBaseUrl}/_connector`,
-      "--disable-telemetry",
-    ],
-    {
-    env: {
-      ...process.env,
-      // This package uses its legacy environment name to suppress launching a
-      // desktop browser. Cloud Run containers do not include xdg-open.
-      TEAMSAPPTESTER_BROWSER: "none",
-      DEFAULT_CHANNEL_ID: process.env.DEFAULT_CHANNEL_ID || "msteams",
-    },
-      stdio: "inherit",
-    },
-  );
-
-  child.on("exit", (code, signal) => {
-    console.error(`Agents Playground exited (code=${code}, signal=${signal})`);
-    process.exit(code || 1);
-  });
-
+  const botEndpoint = `${publicBaseUrl}/_adapter/api/messages`;
   const port = Number(process.env.PORT || 8080);
   const server = createGateway({
     password,
     sessionSecret,
     target: `http://127.0.0.1:${internalPort}`,
+    adapterTarget,
+    geminiFileSearchAvailable: process.env.GEMINI_FILE_SEARCH_AVAILABLE !== "false",
     knowledgeControlUrl: process.env.KNOWLEDGE_CONTROL_URL,
     knowledgeControlToken: process.env.KNOWLEDGE_CONTROL_TOKEN,
     knowledgeControlAuthMode: process.env.KNOWLEDGE_CONTROL_AUTH_MODE || "none",
     knowledgeControlAudience: process.env.KNOWLEDGE_CONTROL_AUDIENCE,
     secureCookie: publicBaseUrl.startsWith("https://"),
   });
-  server.listen(port, "0.0.0.0", () => console.log(`Password gateway listening on 0.0.0.0:${port}`));
 
+  let child = null;
   const shutdown = () => {
     server.close(() => process.exit(0));
-    child.kill("SIGTERM");
+    if (child) child.kill("SIGTERM");
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+
+  // Listen before spawning agentsplayground: its startup runs wait-on against
+  // BOT_ENDPOINT (/_adapter/api/messages). If the gateway is not listening yet,
+  // wait-on fails and the UI websocket never stabilizes.
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Password gateway listening on 0.0.0.0:${port}`);
+    child = spawn(
+      playgroundBinary,
+      [
+        "--port",
+        String(internalPort),
+        "--service-url",
+        `${publicBaseUrl}/_connector`,
+        "--disable-telemetry",
+      ],
+      {
+        env: {
+          ...process.env,
+          BOT_ENDPOINT: botEndpoint,
+          TEAMSAPPTESTER_BROWSER: "none",
+          DEFAULT_CHANNEL_ID: process.env.DEFAULT_CHANNEL_ID || "msteams",
+        },
+        stdio: "inherit",
+      },
+    );
+
+    child.on("exit", (code, signal) => {
+      console.error(`Agents Playground exited (code=${code}, signal=${signal})`);
+      process.exit(code || 1);
+    });
+  });
 }
 
 if (require.main === module) start();
 
-module.exports = { createGateway, parseCookies, safeEqual, signSession, verifySession };
+module.exports = {
+  createGateway,
+  isPublicAssetPath,
+  parseCookies,
+  safeEqual,
+  signSession,
+  verifySession,
+  injectPlaygroundEvaluation,
+  buildKnowledgeBackendStatus,
+  createKnowledgeBackendState,
+};

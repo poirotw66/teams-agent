@@ -29,6 +29,7 @@ from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_stor
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
+from .ticket_dedupe import build_ticket_request_dedupe
 from .usage import build_usage_report
 from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
@@ -110,8 +111,19 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             resolved_settings.knowledge_service_mode,
             unavailable_backends,
             build_backend_state_store(resolved_settings),
+            resolved_settings,
         )
         extractor = IssueExtractor(resolved_settings, agent_model)
+        ticket_request_dedupe = build_ticket_request_dedupe(resolved_settings)
+        if (
+            resolved_settings.rag_require_file_search_acl
+            and resolved_settings.gemini_file_search_store
+            and not resolved_settings.gemini_file_search_enforce_acl
+        ):
+            raise RuntimeError(
+                "Refusing to start with GEMINI_FILE_SEARCH_ENFORCE_ACL=false while "
+                "RAG_REQUIRE_FILE_SEARCH_ACL=true."
+            )
         workflow = AgentWorkflow(
             resolved_settings,
             extractor=extractor,
@@ -120,6 +132,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             conversation_service=conversation_service,
             ticket_service=ticket_service,
             handoff_repository=handoff_repository,
+            ticket_request_dedupe=ticket_request_dedupe,
         )
 
         app.state.index = index
@@ -189,6 +202,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
     async def set_knowledge_backend(
         payload: KnowledgeBackendUpdate, request: Request
     ) -> dict[str, object]:
+        if not resolved_settings.knowledge_backend_admin_enabled:
+            raise HTTPException(
+                status_code=403,
+                detail="Knowledge backend switching is disabled in this environment.",
+            )
         router: KnowledgeBackendRouter = request.app.state.knowledge_router
         try:
             await router.select(payload.backend)

@@ -22,8 +22,8 @@ from .handoff import (
 from .settings import RagSettings
 
 
-def _active_id(tenant_id: str, conversation_id: str) -> str:
-    raw = f"{tenant_id}\0{conversation_id}".encode()
+def _active_id(tenant_id: str, conversation_id: str, requester_id: str) -> str:
+    raw = f"{tenant_id}\0{conversation_id}\0{requester_id}".encode()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -49,7 +49,7 @@ class FileHandoffRepository(InMemoryHandoffRepository):
                     for item in data.get("cases", [])
                 }
                 self._active = {
-                    self._active_key(case.tenantId, case.conversationId): case.caseId
+                    self._active_key(case.tenantId, case.conversationId, case.requesterId): case.caseId
                     for case in self._cases.values()
                     if not case.is_terminal
                 }
@@ -154,7 +154,9 @@ class FirestoreHandoffRepository:
 
     async def create_case(self, case: HandoffCase) -> HandoffCase:
         case_ref = self._cases.document(case.caseId)
-        active_ref = self._active.document(_active_id(case.tenantId, case.conversationId))
+        active_ref = self._active.document(
+            _active_id(case.tenantId, case.conversationId, case.requesterId)
+        )
         transaction = self._client.transaction()
 
         async def operation(transaction):
@@ -180,7 +182,9 @@ class FirestoreHandoffRepository:
     async def get_active_case(self, tenant_id, conversation_id, requester_id):
         from .handoff import ActorType, HandoffEvent, HandoffStatus, utc_now
 
-        active = await self._active.document(_active_id(tenant_id, conversation_id)).get()
+        active = await self._active.document(
+            _active_id(tenant_id, conversation_id, requester_id)
+        ).get()
         if not active.exists:
             return None
         case = await self.get_case(active.to_dict()["caseId"])
@@ -222,7 +226,9 @@ class FirestoreHandoffRepository:
             transaction.set(ref, updated.model_dump(mode="python"))
             if updated.is_terminal:
                 transaction.delete(
-                    self._active.document(_active_id(case.tenantId, case.conversationId))
+                    self._active.document(
+                        _active_id(case.tenantId, case.conversationId, case.requesterId)
+                    )
                 )
             return updated
 

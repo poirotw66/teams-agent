@@ -2,6 +2,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_service.api import create_app
@@ -89,6 +90,21 @@ def test_knowledge_backend_control_reports_unconfigured_gemini(tmp_path: Path) -
     assert gemini["available"] is False
     assert switched.status_code == 409
     assert "GEMINI_FILE_SEARCH_STORE" in switched.json()["detail"]
+
+
+def test_startup_refuses_rag_acl_requirement_without_enforcement(tmp_path: Path) -> None:
+    settings = replace(
+        make_settings(tmp_path),
+        gemini_file_search_store="fileSearchStores/example",
+        rag_require_file_search_acl=True,
+        gemini_file_search_enforce_acl=False,
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="GEMINI_FILE_SEARCH_ENFORCE_ACL=false"),
+        TestClient(create_app(settings)),
+    ):
+        pass
 
 
 def parse_sse(body: str) -> list[tuple[str, dict]]:

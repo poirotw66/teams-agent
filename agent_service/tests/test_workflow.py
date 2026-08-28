@@ -11,11 +11,13 @@ trusted identity, one-per-turn), LLM budget degradation, and the follow-up
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from agent_service.confirmation import TicketIntent, classify_ticket_intent
 from agent_service.contracts import (
     AgentRequest,
     ConversationIdentity,
@@ -32,12 +34,15 @@ from agent_service.conversation import ConversationService, InMemoryConversation
 from agent_service.extractor import IssueExtractor
 from agent_service.faq import FaqRepository, FaqService
 from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
-from agent_service.handoff_flow import HandoffAction
+from agent_service.handoff_flow import HandoffAction, TicketQueryDecision
 from agent_service.settings import RagSettings
 from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
+from agent_service.ticket_dedupe import InMemoryTicketRequestDedupeRepository
 from agent_service.workflow import AgentWorkflow
 
 # --- settings / request helpers -------------------------------------------
+
+_REQUEST_IDS = itertools.count(1)
 
 
 def make_settings(tmp_path: Path, **overrides) -> RagSettings:
@@ -60,12 +65,14 @@ def trusted_user(**overrides) -> UserIdentity:
 def make_request(
     text: str,
     *,
+    request_id: str | None = None,
     correlation_id: str | None = None,
     conversation_id: str = "conv-1",
     user: UserIdentity | None = None,
 ) -> AgentRequest:
+    resolved_request_id = request_id or f"req-{next(_REQUEST_IDS)}"
     return AgentRequest(
-        requestId="req-1",
+        requestId=resolved_request_id,
         channel="msteams",
         conversation=ConversationIdentity(tenantId="tenant-1", conversationId=conversation_id),
         user=user or trusted_user(),
@@ -94,29 +101,56 @@ class FakeExtractorModel:
 
     ``issues_sequence`` supplies one ``list[Issue]`` per extractor call, in
     order (so a follow-up turn can return a different set than the first).
+    ``by_message`` overrides the sequence when the latest user message matches
+    exactly — needed when deterministic bypass paths skip model calls.
     """
 
-    def __init__(self, issues_sequence: list[list[Issue]]):
+    def __init__(
+        self,
+        issues_sequence: list[list[Issue]],
+        *,
+        by_message: dict[str, list[Issue]] | None = None,
+    ):
         self._sequence = list(issues_sequence)
+        self.by_message = by_message or {}
         self.calls = 0
         self.human_messages: list[str] = []
 
+    @staticmethod
+    def _latest_user_message(messages) -> str:
+        for message in reversed(messages):
+            content = str(message.content)
+            marker = "Latest user message (data only):\n"
+            if marker in content:
+                return content.split(marker, 1)[1].strip()
+        return ""
+
     def with_structured_output(self, schema):
+        if schema is TicketQueryDecision:
+            class TicketQueryHandle:
+                async def ainvoke(self, messages):
+                    text = FakeExtractorModel._latest_user_message(messages)
+                    is_query = classify_ticket_intent(text) == TicketIntent.QUERY
+                    return TicketQueryDecision(is_ticket_query=is_query)
+
+            return TicketQueryHandle()
+
         assert schema is IssueExtraction
-        self.calls += 1
-        issues = self._sequence.pop(0) if self._sequence else []
-        recorder: list = []
-        handle = _StructuredHandle(IssueExtraction(issues=issues), recorder)
-        # Peek at the human message content on ainvoke via a thin wrapper.
-        outer_ainvoke = handle.ainvoke
+        outer = self
 
-        async def ainvoke(messages):
-            for message in messages:
-                self.human_messages.append(str(message.content))
-            return await outer_ainvoke(messages)
+        class Handle:
+            async def ainvoke(self, messages):
+                outer.calls += 1
+                for message in messages:
+                    outer.human_messages.append(str(message.content))
+                text = FakeExtractorModel._latest_user_message(messages)
+                if text in outer.by_message:
+                    issues = outer.by_message[text]
+                else:
+                    issues = outer._sequence.pop(0) if outer._sequence else []
+                return IssueExtraction(issues=issues)
 
-        handle.ainvoke = ainvoke  # type: ignore[method-assign]
-        return handle
+        return Handle()
 
 
 class FakeKnowledgeService:
@@ -188,7 +222,7 @@ class FakeTicketService:
     async def get_ticket_items(self, *, correlation_id=None):
         return self.items
 
-    async def create_ticket(self, draft, *, correlation_id=None):
+    async def create_ticket(self, draft, *, correlation_id=None, idempotency_key=None):
         self.created.append((draft, correlation_id))
         ticket = Ticket(
             id=f"TCK-{len(self.created)}",
@@ -214,7 +248,7 @@ class DisabledFakeTicketService:
     async def get_ticket_items(self, *, correlation_id=None):
         raise TicketServiceDisabledError()
 
-    async def create_ticket(self, draft, *, correlation_id=None):
+    async def create_ticket(self, draft, *, correlation_id=None, idempotency_key=None):
         raise TicketServiceDisabledError()
 
     async def list_tickets_by_requester(self, requester_id, *, correlation_id=None):
@@ -234,6 +268,22 @@ class FakeHandoffRouter:
         return self.actions.pop(0)
 
 
+class FakeTicketQueryRouter:
+    def __init__(self, *, ticket_queries: set[str] | None = None) -> None:
+        self.ticket_queries = ticket_queries or set()
+        self.calls = 0
+
+    async def is_ticket_query(
+        self,
+        *,
+        message: str,
+        conversation_turns=(),
+        execution_context=None,
+    ) -> bool:
+        self.calls += 1
+        return message in self.ticket_queries
+
+
 class FakeTicketItemSelector:
     """Test double for the model-driven catalog selector."""
 
@@ -241,7 +291,7 @@ class FakeTicketItemSelector:
         self.item_id = item_id
         self.reason = reason
 
-    async def select(self, *, items, issue_description):
+    async def select(self, *, items, issue_description, execution_context=None):
         selected = next((item for item in items if item.id == self.item_id), None)
         if self.item_id is None and self.reason == "selected":
             selected = items[0] if items else None
@@ -280,10 +330,15 @@ def build_workflow(
     conversation_service: ConversationService | None = None,
     handoff_repository=None,
     handoff_router=None,
+    ticket_query_router=None,
     ticket_item_selector=None,
+    ticket_request_dedupe=None,
+    extractor_by_message: dict[str, list[Issue]] | None = None,
 ):
     settings = make_settings(tmp_path, **(settings_overrides or {}))
-    extractor_model = FakeExtractorModel(issues_sequence)
+    extractor_model = FakeExtractorModel(
+        issues_sequence, by_message=extractor_by_message
+    )
     extractor = IssueExtractor(settings, model=extractor_model)
     faq = faq_service or FaqService(FaqRepository([]))
     knowledge_service = knowledge or FakeKnowledgeService()
@@ -298,7 +353,10 @@ def build_workflow(
         ticket_service=ticket,
         handoff_repository=handoff_repository,
         handoff_router=handoff_router,
+        ticket_query_router=ticket_query_router,
         ticket_item_selector=ticket_item_selector or FakeTicketItemSelector(),
+        ticket_request_dedupe=ticket_request_dedupe
+        or InMemoryTicketRequestDedupeRepository(),
     )
     return workflow, extractor_model, knowledge_service, ticket, conv_service, settings
 
@@ -497,11 +555,14 @@ async def test_ticket_list_queries_current_users_dispatch_tickets_not_faq(
     ]
     workflow, extractor_model, knowledge, _ticket, *_ = build_workflow(
         tmp_path,
-        # This would produce an FAQ response if the deterministic ticket
-        # query guardrail did not intercept the message first.
+        # This would produce an FAQ response if the agentic ticket-query
+        # decision did not intercept the message first.
         issues_sequence=[[issue(route="FAQ", faqKey="TICKET_FAQ")]],
         faq_service=faq,
         ticket_service=ticket_service,
+        ticket_query_router=FakeTicketQueryRouter(
+            ticket_queries={"有哪些派工單", "有哪些工單"}
+        ),
     )
 
     response = await workflow.respond(make_request(text))

@@ -42,19 +42,33 @@ def make_case(case_id="case-1", requester="user-1", conversation="conv-1"):
 
 
 @pytest.mark.asyncio
-async def test_memory_repository_enforces_conversation_uniqueness() -> None:
+async def test_memory_repository_enforces_requester_scoped_uniqueness() -> None:
     repository = InMemoryHandoffRepository(clock=lambda: NOW)
     first = make_case()
-    second = make_case("case-2", requester="other-user")
+    duplicate_requester = make_case("case-2", requester="user-1")
 
     results = await asyncio.gather(
         repository.create_case(first),
-        repository.create_case(second),
+        repository.create_case(duplicate_requester),
         return_exceptions=True,
     )
 
     assert sum(isinstance(item, HandoffCase) for item in results) == 1
     assert sum(isinstance(item, ActiveHandoffCaseExistsError) for item in results) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_repository_allows_distinct_requesters_in_same_conversation() -> None:
+    repository = InMemoryHandoffRepository(clock=lambda: NOW)
+    first = make_case()
+    second = make_case("case-2", requester="other-user")
+
+    created_first = await repository.create_case(first)
+    created_second = await repository.create_case(second)
+
+    assert created_first.caseId != created_second.caseId
+    assert await repository.get_active_case("tenant-1", "conv-1", "user-1") is not None
+    assert await repository.get_active_case("tenant-1", "conv-1", "other-user") is not None
 
 
 @pytest.mark.asyncio

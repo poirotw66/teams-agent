@@ -151,7 +151,7 @@ def test_ticket_path_uses_confirmed_handoff_summary(tmp_path: Path) -> None:
     fake = FakeTicketService()
 
     class FakeTicketItemSelector:
-        async def select(self, *, items, issue_description):
+        async def select(self, *, items, issue_description, execution_context=None):
             return TicketItemSelection(item=items[0], reason="selected")
 
     with TestClient(create_app(make_settings(tmp_path))) as client:

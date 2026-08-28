@@ -252,9 +252,7 @@ def _is_ticket_list_query(text: str) -> bool:
     if any(marker in normalized for marker in create_markers):
         return False
     compact = normalized.replace(" ", "")
-    if compact.startswith("我的") and len(compact) <= 12:
-        return True
-    return False
+    return compact.startswith("我的") and len(compact) <= 12
 
 
 def classify_ticket_intent(text: str) -> TicketIntent:

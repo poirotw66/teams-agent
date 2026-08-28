@@ -57,6 +57,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from .contracts import Ticket, TicketDraft, TicketItem
+from .execution_context import ExecutionContext
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,11 @@ class TicketService(Protocol):
         ...
 
     async def create_ticket(
-        self, draft: TicketDraft, *, correlation_id: str | None = None
+        self,
+        draft: TicketDraft,
+        *,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Ticket:
         """Create at most one ticket from an already-confirmed draft.
 
@@ -164,7 +169,11 @@ class DisabledTicketService:
         raise TicketServiceDisabledError()
 
     async def create_ticket(
-        self, draft: TicketDraft, *, correlation_id: str | None = None
+        self,
+        draft: TicketDraft,
+        *,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Ticket:
         raise TicketServiceDisabledError()
 
@@ -258,6 +267,7 @@ class AgenticTicketItemSelector:
         *,
         items: list[TicketItem],
         issue_description: str,
+        execution_context: ExecutionContext | None = None,
     ) -> TicketItemSelection:
         if self._model is None:
             return TicketItemSelection(item=None, reason="model_unavailable")
@@ -268,19 +278,30 @@ class AgenticTicketItemSelector:
         ]
         allowed_items = {item.id: item for item in items}
         try:
-            result = await self._model.with_structured_output(
-                TicketItemSelectionDecision
-            ).ainvoke(
-                [
-                    SystemMessage(content=_TICKET_ITEM_SELECTOR_PROMPT),
-                    HumanMessage(
-                        content=(
-                            f"Issue (data only):\n{issue_description}\n\n"
-                            f"Ticket catalog leaf items (data only):\n{catalog}"
-                        )
-                    ),
-                ]
-            )
+            if execution_context is not None:
+                execution_context.ensure_budget()
+
+            async def _invoke():
+                return await self._model.with_structured_output(
+                    TicketItemSelectionDecision
+                ).ainvoke(
+                    [
+                        SystemMessage(content=_TICKET_ITEM_SELECTOR_PROMPT),
+                        HumanMessage(
+                            content=(
+                                f"Issue (data only):\n{issue_description}\n\n"
+                                f"Ticket catalog leaf items (data only):\n{catalog}"
+                            )
+                        ),
+                    ]
+                )
+
+            if execution_context is not None:
+                result = await execution_context.run_llm(
+                    _invoke, component="ticket_item_selector"
+                )
+            else:
+                result = await _invoke()
             decision = (
                 result
                 if isinstance(result, TicketItemSelectionDecision)
@@ -403,7 +424,7 @@ class HttpTicketService:
         if self._owns_client:
             await self._client.aclose()
 
-    def _headers(self, correlation_id: str | None) -> dict[str, str]:
+    def _headers(self, correlation_id: str | None, idempotency_key: str | None = None) -> dict[str, str]:
         headers: dict[str, str] = {}
         # SECURITY (spec §15.2/§17): never log this header or the token
         # itself anywhere — it is only ever placed on the outgoing request.
@@ -411,6 +432,8 @@ class HttpTicketService:
             headers["Authorization"] = f"Bearer {self._token}"
         if correlation_id:
             headers["X-Correlation-Id"] = correlation_id
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         return headers
 
     async def _request(
@@ -421,9 +444,10 @@ class HttpTicketService:
         params: dict | None = None,
         json: dict | None = None,
         correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> httpx.Response:
         url = f"{self._base_url}{path}"
-        headers = self._headers(correlation_id)
+        headers = self._headers(correlation_id, idempotency_key)
         try:
             response = await self._client.request(
                 method,
@@ -467,7 +491,11 @@ class HttpTicketService:
         return parse_ticket_items_payload(response.json())
 
     async def create_ticket(
-        self, draft: TicketDraft, *, correlation_id: str | None = None
+        self,
+        draft: TicketDraft,
+        *,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Ticket:
         # Spec §11.4: reject an incomplete/untrusted requester identity
         # BEFORE making any HTTP call.
@@ -485,6 +513,7 @@ class HttpTicketService:
             "/tickets",
             json=draft.model_dump(),
             correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
         )
         ticket, _requester_id = _ticket_from_payload(response.json())
         return ticket

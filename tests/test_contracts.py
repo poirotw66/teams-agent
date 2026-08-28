@@ -26,6 +26,35 @@ def make_message_activity(**overrides) -> MessageActivity:
     return MessageActivity.model_validate(payload)
 
 
+def test_agent_request_reads_evaluation_knowledge_backend_from_channel_data() -> None:
+    activity = make_message_activity(
+        channelId="playground",
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "evaluationKnowledgeBackend": "GEMINI_FILE_SEARCH",
+        },
+    )
+
+    request = AgentRequest.from_activity(activity, "VPN 問題")
+    payload = request.to_payload()
+
+    assert request.channel == "playground"
+    assert payload["evaluationKnowledgeBackend"] == "GEMINI_FILE_SEARCH"
+
+
+def test_agent_request_ignores_invalid_evaluation_knowledge_backend() -> None:
+    activity = make_message_activity(
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "evaluationKnowledgeBackend": "PINECONE",
+        },
+    )
+
+    payload = AgentRequest.from_activity(activity, "hello").to_payload()
+
+    assert payload["evaluationKnowledgeBackend"] is None
+
+
 def test_agent_request_extracts_teams_context() -> None:
     activity = make_message_activity(
         channelData={
