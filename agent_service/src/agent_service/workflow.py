@@ -46,6 +46,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -78,6 +79,27 @@ from .extractor import (
 )
 from .faq import FaqService
 from .graph import user_context_from_identity
+from .handoff import (
+    ActiveHandoffCaseExistsError,
+    ActorType,
+    CaseSummary,
+    HandoffCase,
+    HandoffEvent,
+    HandoffRepository,
+    HandoffStatus,
+)
+from .handoff_flow import (
+    CANCELLED_MESSAGE,
+    DEMO_CLOSED_MESSAGE,
+    DEMO_MESSAGE_SAVED,
+    DEMO_STARTED_MESSAGE,
+    SUMMARY_SUPPLEMENT_MESSAGE,
+    HandoffAction,
+    deterministic_summary,
+    is_explicit_human_request,
+    offer_message,
+    parse_handoff_action,
+)
 from .knowledge import KnowledgeService, LlmCallCounter
 from .response_builder import build_response
 from .retrieval import HybridIndex
@@ -89,6 +111,7 @@ from .ticket import (
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
+    select_ticket_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -164,6 +187,8 @@ class AgentState(TypedDict, total=False):
     ticket_intent: TicketIntent
     prior_pending_issues: list[PendingIssueContext]
     force_ticket_offer: bool
+    handoff_case: HandoffCase
+    handoff_handled: bool
 
 
 def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:
@@ -607,6 +632,7 @@ class AgentWorkflow:
         knowledge_service: KnowledgeService,
         conversation_service: ConversationService,
         ticket_service: TicketService,
+        handoff_repository: HandoffRepository | None = None,
     ) -> None:
         self.settings = settings
         self.extractor = extractor
@@ -614,6 +640,7 @@ class AgentWorkflow:
         self.knowledge_service = knowledge_service
         self.conversation_service = conversation_service
         self.ticket_service = ticket_service
+        self.handoff_repository = handoff_repository
         self._knowledge_supports_counter = _knowledge_search_supports_call_counter(
             knowledge_service
         )
@@ -624,17 +651,29 @@ class AgentWorkflow:
     def _build_graph(self):
         builder = StateGraph(AgentState)
         builder.add_node("load_conversation", self._load_conversation)
+        builder.add_node("route_handoff", self._route_handoff)
         builder.add_node("extract_issues", self._extract_issues)
         builder.add_node("filter_it_issues", self._filter_it_issues)
         builder.add_node("process_issues", self._process_issues)
+        builder.add_node("evaluate_handoff", self._evaluate_handoff)
         builder.add_node("build_response", self._build_response)
         builder.add_node("save_conversation", self._save_conversation)
 
         builder.add_edge(START, "load_conversation")
-        builder.add_edge("load_conversation", "extract_issues")
+        builder.add_edge("load_conversation", "route_handoff")
+        builder.add_conditional_edges(
+            "route_handoff",
+            lambda state: "handled" if state.get("handoff_handled") else "ai",
+            {"handled": "save_conversation", "ai": "extract_issues"},
+        )
         builder.add_edge("extract_issues", "filter_it_issues")
         builder.add_edge("filter_it_issues", "process_issues")
-        builder.add_edge("process_issues", "build_response")
+        builder.add_edge("process_issues", "evaluate_handoff")
+        builder.add_conditional_edges(
+            "evaluate_handoff",
+            lambda state: "handled" if state.get("handoff_handled") else "build",
+            {"handled": "save_conversation", "build": "build_response"},
+        )
         builder.add_edge("build_response", "save_conversation")
         builder.add_edge("save_conversation", END)
         return builder.compile()
@@ -656,6 +695,315 @@ class AgentWorkflow:
             teams_user_id=teams_user_id,
         )
         return {"user": user, "conversation": conversation}
+
+    def _handoff_identity(self, state: AgentState) -> tuple[str, str, str] | None:
+        request = state["request"]
+        tenant_id = request.conversation.tenantId
+        conversation_id = request.conversation.conversationId
+        requester_id = request.user.entraObjectId or request.user.teamsUserId
+        if not tenant_id or not conversation_id or not requester_id:
+            return None
+        return tenant_id, conversation_id, requester_id
+
+    async def _append_handoff_event(
+        self,
+        case: HandoffCase,
+        event_type: str,
+        actor_type: ActorType,
+        actor_id: str | None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self.handoff_repository is None:
+            return
+        await self.handoff_repository.append_event(
+            HandoffEvent(
+                eventId=str(uuid.uuid4()),
+                caseId=case.caseId,
+                eventType=event_type,
+                actorType=actor_type,
+                actorId=actor_id,
+                occurredAt=datetime.now(timezone.utc),
+                payload=payload or {},
+                correlationId=case.correlationId,
+                retentionExpiresAt=case.retentionExpiresAt,
+            )
+        )
+
+    @staticmethod
+    def _summary_text(summary: CaseSummary) -> str:
+        return deterministic_summary(
+            current_message=summary.userNeed,
+            issue_descriptions=[summary.issue],
+            conversation_highlights=summary.conversationHighlights,
+            attempted_solutions=summary.attemptedSolutions,
+            now=summary.generatedAt,
+        ).render()
+
+    async def _create_handoff_offer(
+        self, state: AgentState, issue_descriptions: list[str]
+    ) -> HandoffCase | None:
+        if self.handoff_repository is None:
+            return None
+        identity = self._handoff_identity(state)
+        if identity is None:
+            return None
+        tenant_id, conversation_id, requester_id = identity
+        request = state["request"]
+        now = datetime.now(timezone.utc)
+        draft = deterministic_summary(
+            current_message=request.message.text,
+            issue_descriptions=issue_descriptions,
+        )
+        summary = CaseSummary(
+            issue=draft.issue,
+            userNeed=draft.user_need,
+            conversationHighlights=draft.conversation_highlights,
+            attemptedSolutions=draft.attempted_solutions,
+            unresolvedReason=draft.unresolved_reason,
+            requestedOutcome=draft.requested_outcome,
+            generatedAt=draft.generated_at,
+        )
+        case = HandoffCase(
+            caseId=str(uuid.uuid4()),
+            sessionId=str(uuid.uuid4()),
+            tenantId=tenant_id,
+            conversationId=conversation_id,
+            requesterId=requester_id,
+            requesterName=request.user.displayName,
+            status=HandoffStatus.OFFERED,
+            summary=summary,
+            createdAt=now,
+            updatedAt=now,
+            sessionExpiresAt=now + timedelta(hours=self.settings.handoff_demo_timeout_hours),
+            retentionExpiresAt=now + timedelta(days=self.settings.handoff_retention_days),
+            correlationId=state["correlation_id"],
+        )
+        try:
+            case = await self.handoff_repository.create_case(case)
+            await self._append_handoff_event(
+                case, "handoff.offered", ActorType.SYSTEM, None
+            )
+            case = await self.handoff_repository.transition(
+                case.caseId,
+                HandoffStatus.OFFERED,
+                HandoffStatus.SUMMARY_REVIEW,
+                case.version,
+            )
+            await self._append_handoff_event(
+                case,
+                "handoff.summary_reviewed",
+                ActorType.SYSTEM,
+                None,
+                {"fromStatus": "OFFERED", "toStatus": "SUMMARY_REVIEW"},
+            )
+            return case
+        except ActiveHandoffCaseExistsError:
+            return await self.handoff_repository.get_active_case(
+                tenant_id, conversation_id, requester_id
+            )
+
+    async def _route_handoff(self, state: AgentState) -> dict:
+        if self.handoff_repository is None:
+            return {"handoff_handled": False}
+        identity = self._handoff_identity(state)
+        if identity is None:
+            return {"handoff_handled": False}
+        tenant_id, conversation_id, requester_id = identity
+        request = state["request"]
+        action = parse_handoff_action(request.message.text)
+        case = await self.handoff_repository.get_active_case(
+            tenant_id, conversation_id, requester_id
+        )
+
+        if case is None:
+            if action is HandoffAction.CLOSE:
+                return {
+                    "handoff_handled": True,
+                    "final_response": DEMO_CLOSED_MESSAGE,
+                }
+            if is_explicit_human_request(request.message.text):
+                case = await self._create_handoff_offer(state, [request.message.text])
+                if case is not None:
+                    return {
+                        "handoff_handled": True,
+                        "handoff_case": case,
+                        "final_response": offer_message(
+                            deterministic_summary(
+                                current_message=case.summary.userNeed,
+                                issue_descriptions=[case.summary.issue],
+                            )
+                        ),
+                    }
+            return {"handoff_handled": False}
+
+        if case.status == HandoffStatus.DEMO_ACTIVE:
+            if action is HandoffAction.CLOSE:
+                closed = await self.handoff_repository.close_case(
+                    case.caseId, requester_id, case.version
+                )
+                await self._append_handoff_event(
+                    closed,
+                    "handoff.closed",
+                    ActorType.USER,
+                    requester_id,
+                    {"fromStatus": "DEMO_ACTIVE", "toStatus": "CLOSED"},
+                )
+                return {
+                    "handoff_handled": True,
+                    "handoff_case": closed,
+                    "final_response": DEMO_CLOSED_MESSAGE,
+                }
+            await self._append_handoff_event(
+                case, "handoff.message_saved", ActorType.USER, requester_id
+            )
+            return {
+                "handoff_handled": True,
+                "handoff_case": case,
+                "final_response": DEMO_MESSAGE_SAVED,
+            }
+
+        if case.status != HandoffStatus.SUMMARY_REVIEW:
+            return {"handoff_handled": False, "handoff_case": case}
+
+        if action is HandoffAction.CANCEL:
+            cancelled = await self.handoff_repository.transition(
+                case.caseId,
+                case.status,
+                HandoffStatus.CANCELLED,
+                case.version,
+            )
+            await self._append_handoff_event(
+                cancelled, "handoff.cancelled", ActorType.USER, requester_id
+            )
+            return {
+                "handoff_handled": True,
+                "handoff_case": cancelled,
+                "final_response": CANCELLED_MESSAGE,
+            }
+        if action is HandoffAction.SUPPLEMENT:
+            return {
+                "handoff_handled": True,
+                "handoff_case": case,
+                "final_response": SUMMARY_SUPPLEMENT_MESSAGE,
+            }
+        if action is HandoffAction.CONTACT_HUMAN:
+            confirmed = case.summary.model_copy(
+                update={
+                    "confirmedAt": datetime.now(timezone.utc),
+                    "confirmedBy": requester_id,
+                    "version": case.summary.version + 1,
+                }
+            )
+            case = await self.handoff_repository.update_summary(
+                case.caseId, confirmed, case.version
+            )
+            active = await self.handoff_repository.transition(
+                case.caseId,
+                HandoffStatus.SUMMARY_REVIEW,
+                HandoffStatus.DEMO_ACTIVE,
+                case.version,
+            )
+            await self._append_handoff_event(
+                active,
+                "handoff.accepted",
+                ActorType.USER,
+                requester_id,
+                {"fromStatus": "SUMMARY_REVIEW", "toStatus": "DEMO_ACTIVE"},
+            )
+            return {
+                "handoff_handled": True,
+                "handoff_case": active,
+                "final_response": DEMO_STARTED_MESSAGE,
+            }
+        if action is HandoffAction.CREATE_TICKET:
+            confirmed = case.summary.model_copy(
+                update={
+                    "confirmedAt": datetime.now(timezone.utc),
+                    "confirmedBy": requester_id,
+                    "version": case.summary.version + 1,
+                }
+            )
+            case = await self.handoff_repository.update_summary(
+                case.caseId, confirmed, case.version
+            )
+            issue = Issue(
+                id=1,
+                description=self._summary_text(case.summary),
+                isIT=True,
+                readiness="READY",
+                route="TICKET",
+            )
+            result = await self._handle_ticket(
+                issue,
+                user=state["user"],
+                correlation_id=state["correlation_id"],
+                lock=asyncio.Lock(),
+                ticket_created={"done": False},
+                ticket_intent=TicketIntent.CREATE,
+            )
+            if result.resultType == "TICKET_CREATED":
+                routed = await self.handoff_repository.transition(
+                    case.caseId,
+                    HandoffStatus.SUMMARY_REVIEW,
+                    HandoffStatus.ROUTED_TO_TICKET,
+                    case.version,
+                )
+                await self._append_handoff_event(
+                    routed,
+                    "handoff.ticket_selected",
+                    ActorType.USER,
+                    requester_id,
+                    {"ticketId": result.ticketId},
+                )
+                answer = f"已依確認的案件摘要建立工單：{result.ticketId}"
+                return {
+                    "handoff_handled": True,
+                    "handoff_case": routed,
+                    "issue_results": [result],
+                    "final_response": answer,
+                }
+            if result.resultType == "NEED_MORE_INFO":
+                return {
+                    "handoff_handled": True,
+                    "handoff_case": case,
+                    "issue_results": [result],
+                    "final_response": result.questions[0],
+                }
+            return {
+                "handoff_handled": True,
+                "handoff_case": case,
+                "issue_results": [result],
+                "final_response": "工單建立失敗。你仍可回覆「聯絡線上客服」或「取消」。",
+            }
+
+        # Any other text while reviewing is treated as the requested supplement.
+        draft = deterministic_summary(
+            current_message=request.message.text,
+            issue_descriptions=[case.summary.issue],
+            conversation_highlights=[
+                *case.summary.conversationHighlights,
+                request.message.text,
+            ],
+            attempted_solutions=case.summary.attemptedSolutions,
+        )
+        updated_summary = CaseSummary(
+            issue=draft.issue,
+            userNeed=draft.user_need,
+            conversationHighlights=draft.conversation_highlights,
+            attemptedSolutions=draft.attempted_solutions,
+            unresolvedReason=draft.unresolved_reason,
+            requestedOutcome=draft.requested_outcome,
+            generatedAt=draft.generated_at,
+            version=case.summary.version + 1,
+        )
+        case = await self.handoff_repository.update_summary(
+            case.caseId, updated_summary, case.version
+        )
+        return {
+            "handoff_handled": True,
+            "handoff_case": case,
+            "final_response": offer_message(draft),
+        }
 
     async def _extract_issues(self, state: AgentState) -> dict:
         request = state["request"]
@@ -865,6 +1213,39 @@ class AgentWorkflow:
                 issue_results.append(outcome)
         return {"issue_results": issue_results}
 
+    async def _evaluate_handoff(self, state: AgentState) -> dict:
+        if self.handoff_repository is None:
+            return {"handoff_handled": False}
+        trigger_results = {
+            result.issueId
+            for result in state.get("issue_results", [])
+            if result.resultType in {"NO_KNOWLEDGE", "FAILED"}
+        }
+        if not trigger_results:
+            return {"handoff_handled": False}
+        descriptions = [
+            issue.description
+            for issue in state.get("issues", [])
+            if issue.id in trigger_results
+        ]
+        case = await self._create_handoff_offer(state, descriptions)
+        if case is None:
+            return {"handoff_handled": False}
+        draft = deterministic_summary(
+            current_message=case.summary.userNeed,
+            issue_descriptions=[case.summary.issue],
+            conversation_highlights=case.summary.conversationHighlights,
+            attempted_solutions=case.summary.attemptedSolutions,
+        )
+        return {
+            "handoff_handled": True,
+            "handoff_case": case,
+            "final_response": offer_message(draft),
+            "citations": [],
+            "images": [],
+            "feedback_enabled": False,
+        }
+
     async def _handle_issue(
         self,
         issue: Issue,
@@ -1027,14 +1408,22 @@ class AgentWorkflow:
         except (TicketServiceTimeout, TicketServiceError) as exc:
             return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
 
-        item_id = items[0].id if items else "GENERAL"
+        selected_item = select_ticket_item(items, issue.description)
+        if selected_item is None:
+            return IssueResult(
+                issueId=issue.id,
+                resultType="NEED_MORE_INFO",
+                questions=[
+                    "請補充報修設備或症狀，例如 VPN、AD 帳號、螢幕、鍵盤或滑鼠。"
+                ],
+            )
         draft = TicketDraft(
             requesterId=requester_id,
             requesterName=user.displayName or "",
             requesterEmail=user.email or "",
             title=issue.description[:120],
             description=issue.description,
-            ticketItemId=item_id,
+            ticketItemId=selected_item.id,
         )
         try:
             ticket = await self.ticket_service.create_ticket(draft, correlation_id=correlation_id)
@@ -1209,6 +1598,7 @@ class AgentWorkflow:
             "ticket_intent": TicketIntent.NONE,
             "prior_pending_issues": [],
             "force_ticket_offer": False,
+            "handoff_handled": False,
         }
 
     async def run(

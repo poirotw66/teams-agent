@@ -781,6 +781,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `MAX_HISTORY_MESSAGES` | `10` | Max history messages loaded into workflow context, range 0–50 |
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | Rounds treated as “recent conversation,” range 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | Start a new conversation after timeout, range 1–168 |
+| `CONVERSATION_RETENTION_DAYS` | `730` | Firestore message retention; separate from the 24-hour conversation timeout |
 | `MAX_LLM_CALLS_PER_REQUEST` | `5` | Max LLM calls per request, range 1–20 |
 | `MAX_RETRIEVAL_REWRITES` | same as `RAG_MAX_REWRITES` (default 1) | Range 0–3; independent of `RAG_MAX_REWRITES` but defaults to it |
 | `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH` (spike-only; see above) |
@@ -794,6 +795,11 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `CONVERSATION_FIRESTORE_PROJECT` | empty (resolved via ADC) | `FIRESTORE` mode only; set only when pointing at another project |
 | `CONVERSATION_FIRESTORE_DATABASE` | empty (`(default)`) | `FIRESTORE` mode only; set only when using a named database |
 | `CONVERSATION_FIRESTORE_COLLECTION` | `conversations` | `FIRESTORE` mode only; root collection name; must not contain `/` |
+| `HANDOFF_REPOSITORY_MODE` | `MEMORY` | `MEMORY` \| `FILE` \| `FIRESTORE`; Cloud Run must use `FIRESTORE` |
+| `HANDOFF_STORE_PATH` | `<RAG_DATA_DIR>/handoffs` | Local persistence path in `FILE` mode |
+| `HANDOFF_FIRESTORE_COLLECTION` | `handoffs` | Root collection for Handoff cases; audit events use `<name>_events` |
+| `HANDOFF_DEMO_TIMEOUT_HOURS` | `24` | Demo session timeout; expiration restores AI routing without deleting the case |
+| `HANDOFF_RETENTION_DAYS` | `730` | Case/summary/audit retention period, separate from session timeout |
 | `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ config file path |
 | `FEEDBACK_ENABLED` | `true` | Whether to enable `POST /feedback` and Teams 👍 / 👎 buttons |
 

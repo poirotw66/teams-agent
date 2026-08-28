@@ -755,7 +755,7 @@ def build_repository(
         return FirestoreConversationRepository(
             client,
             collection=settings.conversation_firestore_collection,
-            retention_hours=settings.conversation_timeout_hours,
+            retention_hours=settings.conversation_retention_days * 24,
             # Keep a tail comfortably larger than the history window so the
             # trimming in ConversationService, not the repository, decides
             # what the extractor sees.

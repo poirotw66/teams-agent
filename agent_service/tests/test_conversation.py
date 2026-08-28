@@ -660,18 +660,19 @@ async def test_build_repository_firestore_mode_uses_configured_collection(tmp_pa
     assert client.document_count("poc_conversations_keys/") == 1
 
 
-async def test_build_repository_firestore_retention_follows_timeout_setting(tmp_path, clock):
+async def test_build_repository_firestore_retention_is_separate_from_timeout(tmp_path, clock):
     client = FakeFirestoreClient()
     settings = make_settings(
         tmp_path,
         conversation_repository_mode="FIRESTORE",
         conversation_timeout_hours=48,
+        conversation_retention_days=2,
     )
     repo = build_repository(settings, clock=clock, firestore_client=client)
     created = await repo.create_conversation(**KEY_A)
 
     document = client.read(f"conversations/{created.conversationId}")
-    assert document["expiresAt"] == clock() + timedelta(hours=48)
+    assert document["expiresAt"] == clock() + timedelta(days=2)
 
 
 async def test_build_repository_firestore_tail_covers_history_window(tmp_path, clock):

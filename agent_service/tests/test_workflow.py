@@ -615,6 +615,10 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
 ) -> None:
     it_issue = issue(id=1, description="VPN 一直斷線", route="TICKET")
     ticket_service = FakeTicketService()
+    ticket_service.items = [
+        TicketItem(id="item-power", name="電腦無法開機", level=3),
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+    ]
     workflow, *_ = build_workflow(
         tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
     )
@@ -629,10 +633,36 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     assert "是否需要協助建立派工單" in offered.answer
     assert "查無相關資訊" not in offered.answer
     assert len(ticket_service.created) == 1
+    assert ticket_service.created[0][0].ticketItemId == "item-vpn"
     result = response.issueResults[0]
     assert result.resultType == "TICKET_CREATED"
     assert result.ticketId
     assert "已為你建立派工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_ticket_is_not_created_when_catalog_match_is_ambiguous(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    ticket_service.items = [
+        TicketItem(id="item-power", name="電腦無法開機", level=3),
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+    ]
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="印表機不能用", route="TICKET")],
+        ],
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("印表機不能用，請幫我建立工單"))
+    response = await workflow.respond(make_request("是"))
+
+    assert response.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert "請補充報修設備或症狀" in response.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio

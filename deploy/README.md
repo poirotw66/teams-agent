@@ -122,6 +122,8 @@ production) — never pass these as plain `--set-env-vars`:
 `deploy-gcp.sh` sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
 `TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
 `CONVERSATION_FIRESTORE_COLLECTION=conversations` and
+`HANDOFF_REPOSITORY_MODE=FIRESTORE`, `HANDOFF_FIRESTORE_COLLECTION=handoffs`,
+`HANDOFF_DEMO_TIMEOUT_HOURS=24`, `HANDOFF_RETENTION_DAYS=730` and
 `FEEDBACK_ENABLED=true` explicitly on the Agent Cloud Run service. Most of
 these match the code defaults in
 `agent_service/src/agent_service/settings.py` and are stated anyway so the
@@ -159,6 +161,7 @@ wrong here for two independent reasons:
 | `gcloud services enable firestore.googleapis.com` | Turns the API on |
 | `gcloud firestore databases create` | Creates the native-mode database (skipped if it already exists) |
 | `gcloud firestore fields ttls update expiresAt` | Enables the TTL policy on `conversations`, `conversations_keys` and the `messages` collection group |
+| `gcloud firestore fields ttls update retentionExpiresAt` | Enables the separate 730-day retention TTL on `handoffs` and `handoffs_events`; `sessionExpiresAt` remains application-controlled |
 | `roles/datastore.user` on the **Agent SA** | Read/write on Firestore documents. The Adapter SA gets nothing — it never touches conversation data |
 
 Overridable via env when running the script: `GCP_FIRESTORE_DATABASE`

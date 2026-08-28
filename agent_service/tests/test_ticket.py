@@ -15,11 +15,14 @@ from agent_service.settings import RagSettings
 from agent_service.ticket import (
     DisabledTicketService,
     HttpTicketService,
+    TicketCatalogError,
     TicketServiceDisabledError,
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
     build_ticket_service,
+    parse_ticket_items_payload,
+    select_ticket_item,
 )
 
 SECRET_TOKEN = "super-secret-ticket-token"
@@ -237,10 +240,34 @@ async def test_get_ticket_items_parses_catalog() -> None:
         assert request.url.path == "/ticket-items"
         return httpx.Response(
             200,
-            json=[
-                {"id": "item-vpn", "name": "VPN"},
-                {"id": "item-laptop", "name": "Laptop"},
-            ],
+            json={
+                "Code": "000000",
+                "Msg": "successful",
+                "Data": {
+                    "items": [
+                        {
+                            "id": "network",
+                            "level": 1,
+                            "name": "系統服務",
+                            "children": [
+                                {
+                                    "id": "network-service",
+                                    "level": 2,
+                                    "name": "網路服務",
+                                    "children": [
+                                        {
+                                            "id": "item-vpn",
+                                            "level": 3,
+                                            "name": "VPN 無法連線",
+                                            "children": [],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
         )
 
     client = _client_with_handler(handler)
@@ -249,9 +276,62 @@ async def test_get_ticket_items_parses_catalog() -> None:
     items = await service.get_ticket_items()
 
     assert items == [
-        TicketItem(id="item-vpn", name="VPN"),
-        TicketItem(id="item-laptop", name="Laptop"),
+        TicketItem(
+            id="item-vpn",
+            name="VPN 無法連線",
+            level=3,
+            path=["系統服務", "網路服務", "VPN 無法連線"],
+        )
     ]
+
+
+def test_ticket_catalog_keeps_legacy_flat_array_compatible() -> None:
+    assert parse_ticket_items_payload([{"id": "legacy", "name": "General"}]) == [
+        TicketItem(id="legacy", name="General", level=1, path=["General"])
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"Code": "999999", "Msg": "failed", "Data": None},
+        {"Code": "000000", "Msg": "successful"},
+        {"Code": "000000", "Data": {"items": "not-an-array"}},
+        {"Code": "000000", "Data": {"items": [{"id": "x", "name": "X", "children": {}}]}},
+    ],
+)
+def test_ticket_catalog_rejects_unsuccessful_or_malformed_payload(payload) -> None:
+    with pytest.raises(TicketCatalogError):
+        parse_ticket_items_payload(payload)
+
+
+@pytest.mark.parametrize(
+    ("description", "expected_id"),
+    [
+        ("VPN 一直連不上", "vpn"),
+        ("我的 AD 帳號被鎖住", "ad-lock"),
+        ("螢幕整個黑屏", "monitor"),
+        ("需要申請 ERP 系統權限", "permission"),
+    ],
+)
+def test_select_ticket_item_uses_leaf_semantics(description, expected_id) -> None:
+    items = [
+        TicketItem(id="vpn", name="VPN 無法連線", level=3),
+        TicketItem(id="ad-lock", name="AD 帳號鎖定", level=3),
+        TicketItem(id="monitor", name="螢幕無畫面", level=3),
+        TicketItem(id="permission", name="申請系統權限", level=3),
+    ]
+
+    assert select_ticket_item(items, description).id == expected_id
+
+
+def test_select_ticket_item_does_not_guess_when_no_category_matches() -> None:
+    items = [
+        TicketItem(id="vpn", name="VPN 無法連線", level=3),
+        TicketItem(id="monitor", name="螢幕無畫面", level=3),
+    ]
+
+    assert select_ticket_item(items, "請幫我處理這個問題") is None
 
 
 # --- error handling --------------------------------------------------------

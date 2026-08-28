@@ -209,6 +209,8 @@ class FaqEntry(StrictModel):
 class TicketItem(StrictModel):
     id: str
     name: str
+    level: int = Field(default=1, ge=1)
+    path: list[str] = Field(default_factory=list)
 
 
 class Ticket(StrictModel):

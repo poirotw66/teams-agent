@@ -23,6 +23,7 @@ from .conversation import ConversationService, build_repository
 from .extractor import IssueExtractor
 from .faq import FaqService
 from .graph import RagAgent
+from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .retrieval import HybridIndex
@@ -81,6 +82,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         conversation_service = ConversationService(
             build_repository(resolved_settings), resolved_settings
         )
+        handoff_repository = build_handoff_repository(resolved_settings)
         ticket_service = build_ticket_service(resolved_settings)
         hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
         knowledge_services = {
@@ -112,12 +114,14 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             knowledge_service=knowledge_router,
             conversation_service=conversation_service,
             ticket_service=ticket_service,
+            handoff_repository=handoff_repository,
         )
 
         app.state.index = index
         app.state.agent = agent
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
+        app.state.handoff_repository = handoff_repository
         logger.info(
             "Agentic RAG ready: chunks=%s model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",

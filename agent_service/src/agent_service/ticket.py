@@ -19,7 +19,10 @@ The ``HttpTicketService`` assumes the following REST surface. Any real or
 mock ticket backend wired up in HTTP mode must implement this contract:
 
 - ``GET  {base_url}/ticket-items``
-    -> ``200`` with a JSON array of ``{"id": str, "name": str}`` objects.
+    -> ``200`` with BU's ``Code``/``Msg``/``Data.items`` envelope containing
+       a recursive category tree. Only leaf nodes are exposed to the
+       workflow as selectable ``TicketItem`` objects. A legacy flat JSON
+       array remains accepted during migration.
 - ``POST {base_url}/tickets``
     body: the ``TicketDraft`` fields as JSON.
     -> ``201``/``200`` with a JSON object containing at least
@@ -46,7 +49,9 @@ cancellation, or supplementary-info flows. It is a thin adapter only.
 from __future__ import annotations
 
 import logging
-from typing import Protocol
+import re
+import unicodedata
+from typing import Any, Protocol
 
 import httpx
 
@@ -89,6 +94,10 @@ class UntrustedRequesterError(Exception):
     context. If any is missing or blank, the ticket must NOT be created —
     this is raised before any HTTP call is attempted.
     """
+
+
+class TicketCatalogError(TicketServiceError):
+    """Raised when the backend ticket-item catalog is unsuccessful or malformed."""
 
 
 # --- Protocol (spec §11.1) --------------------------------------------
@@ -183,6 +192,149 @@ def _ticket_from_payload(payload: dict) -> tuple[Ticket, str | None]:
     return Ticket(**fields), requester_id
 
 
+_MAX_CATALOG_DEPTH = 10
+_MAX_CATALOG_ITEMS = 1000
+_NORMALIZE_RE = re.compile(r"[^0-9a-z\u4e00-\u9fff]+")
+_LATIN_TERM_RE = re.compile(r"[a-z][a-z0-9_-]{1,}")
+
+# IDs remain dynamic and always come from the backend. These aliases only
+# describe stable user vocabulary for the supplied business categories.
+_TICKET_ITEM_ALIASES: dict[str, tuple[str, ...]] = {
+    "電腦無法開機": ("無法開機", "不能開機", "開不了機", "電源沒反應"),
+    "電腦效能異常": ("電腦很慢", "效能異常", "速度很慢", "卡頓"),
+    "電腦頻繁當機": ("頻繁當機", "一直當機", "藍屏", "自動重開機"),
+    "螢幕無畫面": ("螢幕無畫面", "螢幕黑屏", "黑屏", "顯示器沒畫面"),
+    "鍵盤或滑鼠異常": ("鍵盤", "滑鼠", "游標不能動"),
+    "系統無法登入": ("系統無法登入", "系統登入失敗", "不能登入系統"),
+    "系統功能異常": ("系統功能異常", "功能異常", "功能不能用"),
+    "公司網路無法連線": ("公司網路", "無法上網", "網路斷線", "網路無法連線"),
+    "VPN 無法連線": ("vpn", "vpn連不上", "vpn無法登入"),
+    "AD 帳號鎖定": ("ad帳號鎖定", "帳號被鎖", "網域帳號鎖定"),
+    "AD 密碼重設": ("ad密碼", "密碼重設", "重設密碼", "忘記密碼"),
+    "申請系統權限": ("申請系統權限", "申請權限", "權限申請", "申請"),
+    "系統權限異常": ("系統權限異常", "權限不足", "沒有權限", "權限錯誤"),
+}
+
+
+def _normalize_catalog_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).lower()
+    return _NORMALIZE_RE.sub("", normalized)
+
+
+def _unwrap_success_data(payload: Any) -> Any:
+    """Accept the BU envelope while preserving the legacy raw response shape."""
+
+    if not isinstance(payload, dict) or "Code" not in payload:
+        return payload
+    code = str(payload.get("Code", ""))
+    if code != "000000":
+        message = str(payload.get("Msg", "ticket service rejected the request"))[:200]
+        raise TicketCatalogError(f"Ticket catalog returned code {code}: {message}")
+    if "Data" not in payload:
+        raise TicketCatalogError("Ticket catalog response is missing Data")
+    return payload["Data"]
+
+
+def parse_ticket_items_payload(payload: Any) -> list[TicketItem]:
+    """Normalize a flat legacy catalog or BU's recursive tree into leaf items."""
+
+    data = _unwrap_success_data(payload)
+    if isinstance(data, dict):
+        nodes = data.get("items")
+    else:
+        nodes = data
+    if not isinstance(nodes, list):
+        raise TicketCatalogError("Ticket catalog Data.items must be an array")
+
+    leaves: list[TicketItem] = []
+    seen_ids: set[str] = set()
+    visited = 0
+
+    def visit(node: Any, parents: tuple[str, ...], depth: int) -> None:
+        nonlocal visited
+        visited += 1
+        if visited > _MAX_CATALOG_ITEMS:
+            raise TicketCatalogError("Ticket catalog contains too many items")
+        if depth > _MAX_CATALOG_DEPTH:
+            raise TicketCatalogError("Ticket catalog exceeds the maximum depth")
+        if not isinstance(node, dict):
+            raise TicketCatalogError("Ticket catalog item must be an object")
+
+        item_id = node.get("id")
+        name = node.get("name")
+        level = node.get("level", depth)
+        children = node.get("children", [])
+        if not isinstance(item_id, str) or not item_id.strip():
+            raise TicketCatalogError("Ticket catalog item has an invalid id")
+        if not isinstance(name, str) or not name.strip():
+            raise TicketCatalogError("Ticket catalog item has an invalid name")
+        if not isinstance(level, int) or isinstance(level, bool) or level < 1:
+            raise TicketCatalogError("Ticket catalog item has an invalid level")
+        if not isinstance(children, list):
+            raise TicketCatalogError("Ticket catalog item children must be an array")
+
+        clean_name = " ".join(name.split())
+        path = (*parents, clean_name)
+        if children:
+            for child in children:
+                visit(child, path, depth + 1)
+            return
+        clean_id = item_id.strip()
+        if clean_id in seen_ids:
+            raise TicketCatalogError(f"Ticket catalog contains duplicate id {clean_id}")
+        seen_ids.add(clean_id)
+        leaves.append(
+            TicketItem(id=clean_id, name=clean_name, level=level, path=list(path))
+        )
+
+    for root in nodes:
+        visit(root, (), 1)
+    return leaves
+
+
+def select_ticket_item(items: list[TicketItem], description: str) -> TicketItem | None:
+    """Choose one allowed leaf deterministically; return None when ambiguous."""
+
+    if not items:
+        return None
+    if len(items) == 1:
+        return items[0]
+    query = _normalize_catalog_text(description)
+    if not query:
+        return None
+
+    ranked: list[tuple[int, TicketItem]] = []
+    for item in items:
+        score = 0
+        normalized_name = _normalize_catalog_text(item.name)
+        if normalized_name and normalized_name in query:
+            score += 200 + len(normalized_name)
+
+        for latin_term in _LATIN_TERM_RE.findall(item.name.lower()):
+            if latin_term in query:
+                score += 100 + len(latin_term)
+
+        aliases = _TICKET_ITEM_ALIASES.get(item.name, ())
+        for alias in aliases:
+            normalized_alias = _normalize_catalog_text(alias)
+            if normalized_alias and normalized_alias in query:
+                score += 60 + len(normalized_alias)
+
+        for segment in item.path[:-1]:
+            normalized_segment = _normalize_catalog_text(segment)
+            if normalized_segment and normalized_segment in query:
+                score += 10 + len(normalized_segment)
+        ranked.append((score, item))
+
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    best_score, best = ranked[0]
+    if best_score <= 0:
+        return None
+    if len(ranked) > 1 and ranked[1][0] == best_score:
+        return None
+    return best
+
+
 class HttpTicketService:
     """Ticket Service backed by an HTTP REST API (spec §11.2, ``HTTP`` mode).
 
@@ -272,7 +424,7 @@ class HttpTicketService:
         response = await self._request(
             "GET", "/ticket-items", correlation_id=correlation_id
         )
-        return [TicketItem(**item) for item in response.json()]
+        return parse_ticket_items_payload(response.json())
 
     async def create_ticket(
         self, draft: TicketDraft, *, correlation_id: str | None = None
