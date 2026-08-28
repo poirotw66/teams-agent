@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .execution_context import ExecutionContext
+from .extractor import _is_human_escalation_request
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,30 @@ def _protocol_close_command(message: str) -> bool:
     return normalized in {"/close", "close"}
 
 
+def classify_summary_review_action(message: str) -> HandoffAction | None:
+    """Map explicit handoff menu replies without an LLM round trip."""
+    compact = re.sub(r"\s+", "", message.strip().rstrip("。.!！?？"))
+    if compact in {"取消", "不用了", "先不用", "算了"}:
+        return HandoffAction.CANCEL
+    if compact in {"繼續補充", "補充", "再補充"} or compact.startswith("繼續補充"):
+        return HandoffAction.REQUEST_SUPPLEMENT
+    if classify_ticket_intent(message) == TicketIntent.CREATE:
+        return HandoffAction.CREATE_TICKET
+    contact_markers = (
+        "聯絡線上客服",
+        "联系线上客服",
+        "聯繫線上客服",
+        "联系線上客服",
+        "找線上客服",
+        "找线上客服",
+    )
+    if any(marker in compact for marker in contact_markers):
+        return HandoffAction.CONTACT_HUMAN
+    if _is_human_escalation_request(message):
+        return HandoffAction.CONTACT_HUMAN
+    return None
+
+
 class AgenticHandoffRouter:
     """Model-driven handoff supervisor with a safe state-based degradation path."""
 
@@ -181,6 +206,14 @@ class AgenticHandoffRouter:
     ) -> HandoffAction:
         if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
             return HandoffAction.CLOSE
+
+        if case_status == "DEMO_ACTIVE" and classify_ticket_intent(message) == TicketIntent.CREATE:
+            return HandoffAction.CREATE_TICKET
+
+        if case_status == "SUMMARY_REVIEW":
+            explicit = classify_summary_review_action(message)
+            if explicit is not None:
+                return explicit
 
         fallback = (
             HandoffAction.HUMAN_MESSAGE

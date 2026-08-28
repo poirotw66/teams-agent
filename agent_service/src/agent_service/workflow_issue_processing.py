@@ -306,23 +306,29 @@ class IssueProcessingWorkflowMixin:
         except (TicketServiceTimeout, TicketServiceError) as exc:
             return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
 
-        selection = await self.ticket_item_selector.select(
-            items=items,
-            issue_description=issue.description,
-            execution_context=execution_context,
-        )
-        selected_item = selection.item
-        if selected_item is None and handoff_confirmed:
+        if handoff_confirmed:
             selected_item = handoff_ticket_item_fallback(items)
-            if selected_item is not None:
-                logger.info(
-                    "Handoff ticket creation used catalog fallback: item_id=%s "
-                    "correlation_id=%s",
-                    selected_item.id,
-                    correlation_id,
-                )
+            selection_reason = "handoff_fallback" if selected_item else None
+        else:
+            selected_item = None
+            selection_reason = None
         if selected_item is None:
-            if selection.reason in {"model_unavailable", "model_error"}:
+            selection = await self.ticket_item_selector.select(
+                items=items,
+                issue_description=issue.description,
+                execution_context=execution_context,
+            )
+            selected_item = selection.item
+            selection_reason = selection.reason
+        if selected_item is not None and selection_reason == "handoff_fallback":
+            logger.info(
+                "Handoff ticket creation used catalog fallback: item_id=%s "
+                "correlation_id=%s",
+                selected_item.id,
+                correlation_id,
+            )
+        if selected_item is None:
+            if selection_reason in {"model_unavailable", "model_error"}:
                 question = (
                     "目前無法判定適用的派工單類別；已保留案件內容，"
                     "請稍後重試或聯絡線上客服。"

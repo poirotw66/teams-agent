@@ -10,6 +10,7 @@ from typing import Any
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import Citation, ConversationContext, Issue, IssueResult
+from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, _is_human_escalation_request
 from .handoff import (
     ActiveHandoffCaseExistsError,
     ActorType,
@@ -77,6 +78,62 @@ class HandoffWorkflowMixin:
             attempted_solutions=summary.attemptedSolutions,
             now=summary.generatedAt,
         ).render()
+
+    @staticmethod
+    def _is_standalone_human_escalation(state: AgentState) -> bool:
+        request = state["request"]
+        decision = state.get("supervisor_decision")
+        if decision is not None and decision.intent == "HUMAN_ESCALATION":
+            return True
+        return _is_human_escalation_request(request.message.text)
+
+    async def _promote_case_to_demo(
+        self,
+        case: HandoffCase,
+        requester_id: str,
+    ) -> HandoffCase:
+        confirmed = case.summary.model_copy(
+            update={
+                "confirmedAt": datetime.now(timezone.utc),
+                "confirmedBy": requester_id,
+                "version": case.summary.version + 1,
+            }
+        )
+        case = await self.handoff_repository.update_summary(
+            case.caseId, confirmed, case.version
+        )
+        active = await self.handoff_repository.transition(
+            case.caseId,
+            HandoffStatus.SUMMARY_REVIEW,
+            HandoffStatus.DEMO_ACTIVE,
+            case.version,
+        )
+        await self._append_handoff_event(
+            active,
+            "handoff.accepted",
+            ActorType.USER,
+            requester_id,
+            {"fromStatus": "SUMMARY_REVIEW", "toStatus": "DEMO_ACTIVE"},
+        )
+        return active
+
+    async def _start_standalone_human_demo(self, state: AgentState) -> dict:
+        case = await self._create_handoff_offer(
+            state,
+            [HUMAN_ESCALATION_ISSUE_DESCRIPTION],
+        )
+        if case is None:
+            return {"handoff_handled": False}
+        identity = self._handoff_identity(state)
+        if identity is None:
+            return {"handoff_handled": False}
+        _, _, requester_id = identity
+        active = await self._promote_case_to_demo(case, requester_id)
+        return {
+            "handoff_handled": True,
+            "handoff_case": active,
+            "final_response": DEMO_STARTED_MESSAGE,
+        }
 
     async def _create_handoff_offer(
         self, state: AgentState, issue_descriptions: list[str]
@@ -394,6 +451,11 @@ class HandoffWorkflowMixin:
         if ticket_intent is TicketIntent.QUERY:
             return {"handoff_handled": False, "ticket_intent": ticket_intent}
 
+        if case is None and self._is_standalone_human_escalation(state):
+            demo = await self._start_standalone_human_demo(state)
+            demo["ticket_intent"] = ticket_intent
+            return demo
+
         if case is None:
             return {"handoff_handled": False, "ticket_intent": ticket_intent}
 
@@ -476,29 +538,7 @@ class HandoffWorkflowMixin:
                 "final_response": SUMMARY_SUPPLEMENT_MESSAGE,
             }
         if action is HandoffAction.CONTACT_HUMAN:
-            confirmed = case.summary.model_copy(
-                update={
-                    "confirmedAt": datetime.now(timezone.utc),
-                    "confirmedBy": requester_id,
-                    "version": case.summary.version + 1,
-                }
-            )
-            case = await self.handoff_repository.update_summary(
-                case.caseId, confirmed, case.version
-            )
-            active = await self.handoff_repository.transition(
-                case.caseId,
-                HandoffStatus.SUMMARY_REVIEW,
-                HandoffStatus.DEMO_ACTIVE,
-                case.version,
-            )
-            await self._append_handoff_event(
-                active,
-                "handoff.accepted",
-                ActorType.USER,
-                requester_id,
-                {"fromStatus": "SUMMARY_REVIEW", "toStatus": "DEMO_ACTIVE"},
-            )
+            active = await self._promote_case_to_demo(case, requester_id)
             return {
                 "handoff_handled": True,
                 "handoff_case": active,

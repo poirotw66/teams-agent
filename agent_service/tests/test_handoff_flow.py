@@ -7,6 +7,7 @@ from agent_service.handoff_flow import (
     HandoffAction,
     HandoffRouteDecision,
     RoutingTarget,
+    classify_summary_review_action,
     deterministic_summary,
     generate_summary_with_fallback,
     offer_message,
@@ -76,6 +77,34 @@ async def test_agentic_router_without_model_preserves_summary_review_case() -> N
     )
 
     assert action is HandoffAction.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("建立派工單", HandoffAction.CREATE_TICKET),
+        ("聯絡線上客服", HandoffAction.CONTACT_HUMAN),
+        ("我要找真人客服", HandoffAction.CONTACT_HUMAN),
+        ("繼續補充", HandoffAction.REQUEST_SUPPLEMENT),
+        ("取消", HandoffAction.CANCEL),
+    ],
+)
+def test_classify_summary_review_action(message: str, expected: HandoffAction) -> None:
+    assert classify_summary_review_action(message) is expected
+
+
+@pytest.mark.asyncio
+async def test_agentic_router_uses_explicit_summary_review_menu_without_model() -> None:
+    router = AgenticHandoffRouter(FakeStructuredModel(HandoffRouteDecision(action="UNKNOWN")))
+
+    action = await router.decide(
+        message="建立派工單",
+        case_status="SUMMARY_REVIEW",
+        case_summary="問題：SAP Crystal Reports 授權到期無法開啟",
+    )
+
+    assert action is HandoffAction.CREATE_TICKET
+    assert router._model.schemas == []
 
 
 @pytest.mark.asyncio

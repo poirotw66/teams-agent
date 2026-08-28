@@ -262,7 +262,27 @@ class FakeHandoffRouter:
     def __init__(self, actions: list[HandoffAction]) -> None:
         self.actions = list(actions)
 
-    async def decide(self, **_kwargs) -> HandoffAction:
+    async def decide(
+        self,
+        *,
+        message: str,
+        case_status: str,
+        **_kwargs,
+    ) -> HandoffAction:
+        from agent_service.confirmation import TicketIntent, classify_ticket_intent
+        from agent_service.handoff_flow import (
+            _protocol_close_command,
+            classify_summary_review_action,
+        )
+
+        if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
+            return HandoffAction.CLOSE
+        if case_status == "DEMO_ACTIVE" and classify_ticket_intent(message) == TicketIntent.CREATE:
+            return HandoffAction.CREATE_TICKET
+        if case_status == "SUMMARY_REVIEW":
+            explicit = classify_summary_review_action(message)
+            if explicit is not None:
+                return explicit
         if not self.actions:
             return HandoffAction.UNKNOWN
         return self.actions.pop(0)
@@ -491,9 +511,7 @@ async def test_handoff_summary_changes_only_after_explicit_supplement_action(
         issues_sequence=[[sap_issue]],
         knowledge=FakeKnowledgeService(),
         handoff_repository=repository,
-        handoff_router=FakeHandoffRouter(
-            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.SUPPLEMENT]
-        ),
+        handoff_router=FakeHandoffRouter([HandoffAction.SUPPLEMENT]),
     )
 
     await workflow.respond(make_request(sap_issue.description))

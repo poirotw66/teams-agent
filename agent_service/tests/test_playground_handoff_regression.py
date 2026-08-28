@@ -40,7 +40,7 @@ async def test_handoff_router_receives_conversation_context(tmp_path: Path) -> N
 
     router = AgenticHandoffRouter(CapturingModel())
     action = await router.decide(
-        message="我要找真人客服",
+        message="流落線上客服",
         case_status="SUMMARY_REVIEW",
         case_summary=f"問題：{SAP_ISSUE}",
         conversation_turns=[
@@ -66,12 +66,7 @@ async def test_demo_mode_create_ticket_uses_case_issue_not_full_summary(
         handoff_repository=InMemoryHandoffRepository(
             clock=lambda: datetime.now(timezone.utc)
         ),
-        handoff_router=tw.FakeHandoffRouter(
-            [
-                HandoffAction.CONTACT_HUMAN,
-                HandoffAction.CREATE_TICKET,
-            ]
-        ),
+        handoff_router=tw.FakeHandoffRouter([]),
         ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
     )
 
@@ -177,7 +172,7 @@ async def test_human_escalation_after_ticket_query_is_not_rejected_as_non_it(
     response = await workflow.respond(tw.make_request("我要找真人客服"))
 
     assert "不屬於公司 IT 支援範圍" not in response.answer
-    assert "建立派工單" in response.answer or "聯絡線上客服" in response.answer
+    assert "真人客服模式" in response.answer
 
 
 @pytest.mark.asyncio
@@ -185,16 +180,7 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     """Walk through the main Playground script with agentic fakes."""
     ticket_service = tw.FakeTicketService()
     handoff_repo = InMemoryHandoffRepository(clock=lambda: datetime.now(timezone.utc))
-    handoff_router = tw.FakeHandoffRouter(
-        [
-            HandoffAction.CONTACT_HUMAN,
-            HandoffAction.UNKNOWN,
-            HandoffAction.CLOSE,
-            HandoffAction.CREATE_TICKET,
-            HandoffAction.NEW_ISSUE,
-            HandoffAction.CREATE_TICKET,
-        ]
-    )
+    handoff_router = tw.FakeHandoffRouter([])
     vpn_need_more = tw.issue(
         description="VPN 密碼鎖住怎麼辦",
         readiness="NEED_MORE_INFO",
@@ -261,7 +247,10 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     assert "派工單" in listed.answer
 
     escalation = await workflow.respond(tw.make_request("我要找真人客服"))
-    assert "不屬於公司 IT 支援範圍" not in escalation.answer
+    assert "真人客服模式" in escalation.answer
+
+    closed_demo = await workflow.respond(tw.make_request("/close"))
+    assert "已結束" in closed_demo.answer
 
     vpn = await workflow.respond(tw.make_request("VPN 密碼鎖住怎麼辦"))
     assert vpn.issueResults[0].resultType == "NEED_MORE_INFO"
@@ -312,7 +301,7 @@ async def test_ticket_query_supersedes_handoff_review_and_lists_tickets(
 
 
 @pytest.mark.asyncio
-async def test_standalone_human_escalation_offers_handoff_without_knowledge_lookup(
+async def test_standalone_human_escalation_starts_demo_without_knowledge_lookup(
     tmp_path: Path,
 ) -> None:
     knowledge = tw.FakeKnowledgeService(
@@ -339,8 +328,7 @@ async def test_standalone_human_escalation_offers_handoff_without_knowledge_look
     assert knowledge_service.calls == []
     assert "0800-006-098" not in response.answer
     assert "XQ" not in response.answer
-    assert "建立派工單" in response.answer
-    assert "聯絡線上客服" in response.answer
+    assert "真人客服模式" in response.answer
 
 
 @pytest.mark.asyncio

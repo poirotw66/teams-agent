@@ -54,18 +54,8 @@ class FakeHandoffRouter:
 
 def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
-        offered = client.post(
-            "/agent/chat", json=payload("我要找真人客服", "request-1")
-        )
-        client.app.state.workflow.handoff_router = FakeHandoffRouter(
-            [
-                HandoffAction.CONTACT_HUMAN,
-                HandoffAction.HUMAN_MESSAGE,
-                HandoffAction.CLOSE,
-            ]
-        )
         activated = client.post(
-            "/agent/chat", json=payload("聯絡線上客服", "request-2")
+            "/agent/chat", json=payload("我要找真人客服", "request-1")
         )
 
         original_extract = client.app.state.workflow.extractor.extract
@@ -75,19 +65,16 @@ def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> N
 
         client.app.state.workflow.extractor.extract = fail_if_ai_is_called
         demo_message = client.post(
-            "/agent/chat", json=payload("補充錯誤碼 691", "request-3")
+            "/agent/chat", json=payload("補充錯誤碼 691", "request-2")
         )
-        closed = client.post("/agent/chat", json=payload("/close", "request-4"))
+        closed = client.post("/agent/chat", json=payload("/close", "request-3"))
         client.app.state.workflow.extractor.extract = original_extract
         resumed = client.post(
-            "/agent/chat", json=payload("VPN 密碼被鎖", "request-5")
+            "/agent/chat", json=payload("VPN 密碼被鎖", "request-4")
         )
         repository = client.app.state.handoff_repository
         case = next(iter(repository._cases.values()))
 
-    assert offered.status_code == 200
-    assert "建立派工單" in offered.json()["answer"]
-    assert "聯絡線上客服" in offered.json()["answer"]
     assert activated.status_code == 200
     assert "真人客服模式（Demo）" in activated.json()["answer"]
     assert demo_message.status_code == 200
