@@ -5,8 +5,10 @@ import pytest
 from agent_service.contracts import ConversationMessage, Issue, IssueExtraction
 from agent_service.extractor import (
     FORBIDDEN_MISSING_INFO_TERMS,
+    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
     IssueExtractor,
     _is_assistant_scope_question,
+    _is_human_escalation_request,
 )
 from agent_service.settings import RagSettings
 
@@ -246,6 +248,49 @@ def test_assistant_scope_questions_are_detected(text: str) -> None:
 )
 def test_it_issues_are_not_assistant_scope_questions(text: str) -> None:
     assert _is_assistant_scope_question(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "聯絡線上客服",
+        "聯繫線上客服",
+        "我要找真人客服",
+        "找真人客服",
+    ],
+)
+def test_standalone_human_escalation_requests_are_detected(text: str) -> None:
+    assert _is_human_escalation_request(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SAP Crystal Reports 授權到期無法開啟",
+        "SAP Crystal Reports 授權到期，我要找真人客服",
+        "XQ 客服電話是多少",
+    ],
+)
+def test_substantive_it_messages_are_not_escalation_only(text: str) -> None:
+    assert _is_human_escalation_request(text) is False
+
+
+@pytest.mark.asyncio
+async def test_standalone_escalation_skips_extractor_model(tmp_path) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[issue(description="不應出現")]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(
+        text="聯絡線上客服",
+        history=[],
+        faq_keys=[],
+    )
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert len(outcome.issues) == 1
+    assert outcome.issues[0].description == HUMAN_ESCALATION_ISSUE_DESCRIPTION
+    assert outcome.issues[0].route == "KNOWLEDGE"
 
 
 @pytest.mark.asyncio

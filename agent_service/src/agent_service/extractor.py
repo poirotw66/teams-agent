@@ -179,6 +179,39 @@ _ASSISTANT_SCOPE_MARKERS: tuple[str, ...] = (
     "問你什麼",
     "幫我什麼",
 )
+HUMAN_ESCALATION_ISSUE_DESCRIPTION = "使用者要求聯絡線上客服"
+_ESCALATION_PHRASES: tuple[str, ...] = (
+    "聯絡線上客服",
+    "联系线上客服",
+    "我要找真人客服",
+    "找真人客服",
+    "聯絡客服",
+    "聯繫客服",
+    "人工客服",
+    "轉人工",
+    "转人工",
+    "it支援窗口",
+    "it支持窗口",
+)
+
+
+def _normalize_escalation_text(text: str) -> str:
+    compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
+    return compact.replace("聯繫", "聯絡").casefold()
+
+
+def _is_human_escalation_request(text: str) -> bool:
+    """Detect escalation-only turns that must not trigger a knowledge lookup."""
+    compact = _normalize_escalation_text(text)
+    if not compact or len(compact) > 40:
+        return False
+    if not any(phrase.casefold() in compact for phrase in _ESCALATION_PHRASES):
+        return False
+    stripped = compact
+    for phrase in sorted(_ESCALATION_PHRASES, key=len, reverse=True):
+        stripped = stripped.replace(phrase.casefold(), "")
+    stripped = re.sub(r"[，,。！？!?了嗎呢吧請]+", "", stripped)
+    return len(stripped) <= 4
 
 
 def _is_assistant_scope_question(text: str) -> bool:
@@ -309,6 +342,24 @@ class IssueExtractor:
                         isIT=False,
                         readiness="NOT_IT",
                         route="NOT_IT",
+                        missingInfo=[],
+                        faqKey=None,
+                        ticketAction=None,
+                    )
+                ],
+                too_many_issues=False,
+                llm_calls=0,
+            )
+
+        if _is_human_escalation_request(normalized_text):
+            return ExtractionOutcome(
+                issues=[
+                    Issue(
+                        id=1,
+                        description=HUMAN_ESCALATION_ISSUE_DESCRIPTION,
+                        isIT=True,
+                        readiness="READY",
+                        route="KNOWLEDGE",
                         missingInfo=[],
                         faqKey=None,
                         ticketAction=None,

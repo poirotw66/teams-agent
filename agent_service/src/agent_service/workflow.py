@@ -71,6 +71,7 @@ from .contracts import (
 from .conversation import ConversationService
 from .extractor import (
     _GENERIC_TICKET_DESCRIPTION,
+    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
     IssueExtractor,
     _is_assistant_scope_question,
     _is_generic_ticket_description,
@@ -113,6 +114,7 @@ from .ticket import (
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
+    handoff_ticket_item_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -849,6 +851,7 @@ class AgentWorkflow:
             ticket_created={"done": False},
             ticket_intent=TicketIntent.CREATE,
             ticket_body=self._summary_text(case.summary),
+            handoff_confirmed=True,
         )
         if result.resultType == "TICKET_CREATED":
             routed = await self.handoff_repository.transition(
@@ -1412,6 +1415,13 @@ class AgentWorkflow:
         counter: LlmCallCounter,
         lock: asyncio.Lock,
     ) -> IssueResult:
+        if issue.description == HUMAN_ESCALATION_ISSUE_DESCRIPTION:
+            return IssueResult(
+                issueId=issue.id,
+                resultType="NO_KNOWLEDGE",
+                backend="ESCALATION",
+            )
+
         async with lock:
             budget_exceeded = counter.count >= self.settings.max_llm_calls_per_request
 
@@ -1463,6 +1473,7 @@ class AgentWorkflow:
         ticket_created: dict,
         ticket_intent: TicketIntent,
         ticket_body: str | None = None,
+        handoff_confirmed: bool = False,
     ) -> IssueResult:
         if ticket_intent == TicketIntent.QUERY:
             return await self._query_tickets(issue, user, correlation_id)
@@ -1513,6 +1524,15 @@ class AgentWorkflow:
             issue_description=issue.description,
         )
         selected_item = selection.item
+        if selected_item is None and handoff_confirmed:
+            selected_item = handoff_ticket_item_fallback(items)
+            if selected_item is not None:
+                logger.info(
+                    "Handoff ticket creation used catalog fallback: item_id=%s "
+                    "correlation_id=%s",
+                    selected_item.id,
+                    correlation_id,
+                )
         if selected_item is None:
             if selection.reason in {"model_unavailable", "model_error"}:
                 question = (

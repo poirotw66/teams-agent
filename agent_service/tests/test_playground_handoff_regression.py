@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agent_service.contracts import KnowledgeResult
+from agent_service.extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from agent_service.handoff import InMemoryHandoffRepository
 from agent_service.handoff_flow import HandoffAction, HandoffRouteDecision
 from agent_service.workflow import AgentWorkflow
@@ -110,6 +111,43 @@ async def test_summary_review_create_ticket_from_handoff_not_catalog_prompt(
     assert "MOCK-" in created.answer or created.issueResults[0].ticketId
     assert "目前無法從可用派工單類別判定" not in created.answer
     assert ticket_service.created[0][0].title == PUBLIC_PHONE_ISSUE
+
+
+@pytest.mark.asyncio
+async def test_handoff_create_ticket_falls_back_when_selector_is_uncertain(
+    tmp_path: Path,
+) -> None:
+    from agent_service.ticket import TicketItem
+
+    class CatalogTicketService(tw.FakeTicketService):
+        def __init__(self) -> None:
+            super().__init__()
+            self.items = [
+                TicketItem(id="item-system-function", name="系統功能異常", level=3),
+            ]
+
+    ticket_service = CatalogTicketService()
+    workflow, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description=SAP_ISSUE)]],
+        ticket_service=ticket_service,
+        handoff_repository=InMemoryHandoffRepository(
+            clock=lambda: datetime.now(timezone.utc)
+        ),
+        handoff_router=tw.FakeHandoffRouter([HandoffAction.CREATE_TICKET]),
+        ticket_item_selector=tw.FakeTicketItemSelector(
+            item_id=None,
+            reason="needs_clarification",
+        ),
+    )
+
+    await workflow.respond(tw.make_request(SAP_ISSUE))
+    created = await workflow.respond(tw.make_request("建立工單"))
+
+    assert created.issueResults[0].resultType == "TICKET_CREATED"
+    assert "目前無法從可用派工單類別判定" not in created.answer
+    assert ticket_service.created[0][0].title == SAP_ISSUE
+    assert ticket_service.created[0][0].ticketItemId == "item-system-function"
 
 
 @pytest.mark.asyncio
@@ -267,6 +305,38 @@ async def test_ticket_query_supersedes_handoff_review_and_lists_tickets(
 
     listed_again = await workflow.respond(tw.make_request("查詢我的工單"))
     assert listed_again.issueResults[0].resultType == "TICKET_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_standalone_human_escalation_offers_handoff_without_knowledge_lookup(
+    tmp_path: Path,
+) -> None:
+    knowledge = tw.FakeKnowledgeService(
+        responses={
+            HUMAN_ESCALATION_ISSUE_DESCRIPTION: KnowledgeResult(
+                found=True,
+                answer="XQ 客服電話：0800-006-098",
+                backend="HYBRID",
+            ),
+        }
+    )
+    workflow, extractor_model, knowledge_service, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description="不應被使用")]],
+        knowledge=knowledge,
+        handoff_repository=InMemoryHandoffRepository(
+            clock=lambda: datetime.now(timezone.utc)
+        ),
+    )
+
+    response = await workflow.respond(tw.make_request("聯絡線上客服"))
+
+    assert extractor_model.calls == 0
+    assert knowledge_service.calls == []
+    assert "0800-006-098" not in response.answer
+    assert "XQ" not in response.answer
+    assert "建立派工單" in response.answer
+    assert "聯絡線上客服" in response.answer
 
 
 @pytest.mark.asyncio

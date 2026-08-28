@@ -218,6 +218,21 @@ class TicketItemSelection:
     reason: str
 
 
+_HANDOFF_FALLBACK_ITEM_IDS = (
+    "item-system-function",
+    "item-system-login",
+    "item-access-error",
+)
+
+
+def handoff_ticket_item_fallback(items: list[TicketItem]) -> TicketItem | None:
+    """Pick a generic leaf when the user already confirmed a handoff summary."""
+    by_id = {item.id: item for item in items}
+    for item_id in _HANDOFF_FALLBACK_ITEM_IDS:
+        if item_id in by_id:
+            return by_id[item_id]
+    return items[0] if items else None
+
 _TICKET_ITEM_SELECTOR_PROMPT = """\
 You select the single best ticket category for an internal IT support case.
 

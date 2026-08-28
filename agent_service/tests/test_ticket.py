@@ -23,6 +23,7 @@ from agent_service.ticket import (
     TicketServiceTimeout,
     UntrustedRequesterError,
     build_ticket_service,
+    handoff_ticket_item_fallback,
     parse_ticket_items_payload,
 )
 
@@ -322,6 +323,18 @@ def test_ticket_catalog_keeps_legacy_flat_array_compatible() -> None:
 def test_ticket_catalog_rejects_unsuccessful_or_malformed_payload(payload) -> None:
     with pytest.raises(TicketCatalogError):
         parse_ticket_items_payload(payload)
+
+
+def test_handoff_ticket_item_fallback_prefers_system_function() -> None:
+    items = [
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+        TicketItem(id="item-system-function", name="系統功能異常", level=3),
+    ]
+
+    selected = handoff_ticket_item_fallback(items)
+
+    assert selected is not None
+    assert selected.id == "item-system-function"
 
 
 @pytest.mark.asyncio
