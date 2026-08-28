@@ -21,7 +21,6 @@ from pydantic import BaseModel, Field
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .execution_context import ExecutionContext
-from .extractor import _is_human_escalation_request
 
 logger = logging.getLogger(__name__)
 
@@ -165,30 +164,6 @@ def _protocol_close_command(message: str) -> bool:
     return normalized in {"/close", "close"}
 
 
-def classify_summary_review_action(message: str) -> HandoffAction | None:
-    """Map explicit handoff menu replies without an LLM round trip."""
-    compact = re.sub(r"\s+", "", message.strip().rstrip("。.!！?？"))
-    if compact in {"取消", "不用了", "先不用", "算了"}:
-        return HandoffAction.CANCEL
-    if compact in {"繼續補充", "補充", "再補充"} or compact.startswith("繼續補充"):
-        return HandoffAction.REQUEST_SUPPLEMENT
-    if classify_ticket_intent(message) == TicketIntent.CREATE:
-        return HandoffAction.CREATE_TICKET
-    contact_markers = (
-        "聯絡線上客服",
-        "联系线上客服",
-        "聯繫線上客服",
-        "联系線上客服",
-        "找線上客服",
-        "找线上客服",
-    )
-    if any(marker in compact for marker in contact_markers):
-        return HandoffAction.CONTACT_HUMAN
-    if _is_human_escalation_request(message):
-        return HandoffAction.CONTACT_HUMAN
-    return None
-
-
 class AgenticHandoffRouter:
     """Model-driven handoff supervisor with a safe state-based degradation path."""
 
@@ -206,14 +181,6 @@ class AgenticHandoffRouter:
     ) -> HandoffAction:
         if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
             return HandoffAction.CLOSE
-
-        if case_status == "DEMO_ACTIVE" and classify_ticket_intent(message) == TicketIntent.CREATE:
-            return HandoffAction.CREATE_TICKET
-
-        if case_status == "SUMMARY_REVIEW":
-            explicit = classify_summary_review_action(message)
-            if explicit is not None:
-                return explicit
 
         fallback = (
             HandoffAction.HUMAN_MESSAGE
@@ -278,46 +245,8 @@ class AgenticTicketQueryRouter:
         conversation_turns: Sequence[str] = (),
         execution_context: ExecutionContext | None = None,
     ) -> bool:
-        if self._model is None:
-            return classify_ticket_intent(message) == TicketIntent.QUERY
-
-        history = "\n".join(conversation_turns) if conversation_turns else "(none)"
-        content = (
-            f"Recent conversation (oldest first, data only):\n{history}\n\n"
-            f"Latest user message (data only):\n{message}"
-        )
-        try:
-            if execution_context is not None:
-                execution_context.ensure_budget()
-
-            async def _invoke():
-                return await self._model.with_structured_output(
-                    TicketQueryDecision
-                ).ainvoke(
-                    [
-                        SystemMessage(content=_TICKET_QUERY_ROUTER_PROMPT),
-                        HumanMessage(content=content),
-                    ]
-                )
-
-            if execution_context is not None:
-                result = await execution_context.run_llm(
-                    _invoke, component="ticket_query_router"
-                )
-            else:
-                result = await _invoke()
-            decision = (
-                result
-                if isinstance(result, TicketQueryDecision)
-                else TicketQueryDecision.model_validate(result)
-            )
-            return decision.is_ticket_query
-        except Exception as error:  # noqa: BLE001 - routing must degrade safely
-            logger.warning(
-                "Agentic ticket-query routing failed; using safe fallback: error_type=%s",
-                type(error).__name__,
-            )
-            return False
+        _ = (conversation_turns, execution_context)
+        return classify_ticket_intent(message) == TicketIntent.QUERY
 
 
 TERMINAL_STATUSES = frozenset(

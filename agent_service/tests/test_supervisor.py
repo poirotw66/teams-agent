@@ -1,28 +1,31 @@
 import pytest
 
-from agent_service.supervisor import ConversationSupervisor
+from agent_service.supervisor import ConversationSupervisor, ConversationSupervisorDecision
 
 
 @pytest.mark.asyncio
-async def test_supervisor_detects_scope_question() -> None:
-    decision = ConversationSupervisor.deterministic("你能回答什麼問題")
-    assert decision.intent == "ASSISTANT_META"
+async def test_supervisor_classifies_unknown_chitchat_via_model() -> None:
+    class CapturingModel:
+        schemas: list = []
+
+        def with_structured_output(self, schema):
+            CapturingModel.schemas.append(schema)
+
+            class Handle:
+                async def ainvoke(self, _messages):
+                    return ConversationSupervisorDecision(
+                        intent="NON_IT",
+                        confidence=0.9,
+                    )
+
+            return Handle()
+
+    decision = await ConversationSupervisor(CapturingModel()).decide(message="午餐呢")
+    assert decision.intent == "NON_IT"
+    assert CapturingModel.schemas == [ConversationSupervisorDecision]
 
 
 @pytest.mark.asyncio
-async def test_supervisor_detects_human_escalation() -> None:
-    decision = ConversationSupervisor.deterministic("聯絡線上客服")
-    assert decision.intent == "HUMAN_ESCALATION"
-
-
-@pytest.mark.asyncio
-async def test_supervisor_detects_clarification_unknown() -> None:
-    decision = ConversationSupervisor.deterministic("不知道", pending_clarification=True)
-    assert decision.clarificationDisposition == "UNKNOWN"
-
-
-@pytest.mark.asyncio
-async def test_supervisor_detects_clarification_abandon() -> None:
-    decision = ConversationSupervisor.deterministic("算了不問了", pending_clarification=True)
-    assert decision.topicRelation == "ABANDON"
-    assert decision.clarificationDisposition == "ABANDON"
+async def test_supervisor_without_model_returns_unknown() -> None:
+    decision = await ConversationSupervisor(None).decide(message="VPN 無法登入")
+    assert decision.intent == "UNKNOWN"

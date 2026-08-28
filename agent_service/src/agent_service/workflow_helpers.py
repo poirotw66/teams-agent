@@ -61,6 +61,34 @@ STAGE_LABELS: dict[str, str] = {
 INITIAL_STAGE_LABEL = "已收到你的問題…"
 
 
+def non_it_issue_from_message(text: str, *, issue_id: int = 1) -> Issue:
+    """Build a NOT_IT issue from the user's current turn without an extractor LLM call."""
+    description = sanitize_description(text.strip())[:4000]
+    return Issue(
+        id=issue_id,
+        description=description,
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+        missingInfo=[],
+        faqKey=None,
+        ticketAction=None,
+    )
+
+
+def assistant_scope_issue(*, issue_id: int = 1) -> Issue:
+    return Issue(
+        id=issue_id,
+        description="",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+        missingInfo=[],
+        faqKey=None,
+        ticketAction=None,
+    )
+
+
 class AgentState(TypedDict, total=False):
     """Workflow state (spec §5.2), plus a few documented workflow-only fields.
 
@@ -107,6 +135,7 @@ class AgentState(TypedDict, total=False):
     handoff_handled: bool
     handoff_superseded_new_issue: bool
     supervisor_decision: ConversationSupervisorDecision
+    skip_issue_pipeline: bool
 
 
 def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:

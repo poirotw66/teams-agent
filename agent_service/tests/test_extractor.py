@@ -276,8 +276,9 @@ def test_substantive_it_messages_are_not_escalation_only(text: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_standalone_escalation_skips_extractor_model(tmp_path) -> None:
-    model = FakeModel(result=IssueExtraction(issues=[issue(description="不應出現")]))
+async def test_extractor_delegates_routing_to_supervisor_at_workflow_level(tmp_path) -> None:
+    """Routing shortcuts live in the supervisor node, not IssueExtractor."""
+    model = FakeModel(result=IssueExtraction(issues=[issue(description="聯絡線上客服")]))
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
     outcome = await extractor.extract(
@@ -286,29 +287,9 @@ async def test_standalone_escalation_skips_extractor_model(tmp_path) -> None:
         faq_keys=[],
     )
 
-    assert model.calls == []
-    assert outcome.llm_calls == 0
-    assert len(outcome.issues) == 1
-    assert outcome.issues[0].description == HUMAN_ESCALATION_ISSUE_DESCRIPTION
-    assert outcome.issues[0].route == "KNOWLEDGE"
-
-
-@pytest.mark.asyncio
-async def test_assistant_scope_question_skips_extractor_model(tmp_path) -> None:
-    model = FakeModel(result=IssueExtraction(issues=[issue(description="不應出現")]))
-    extractor = IssueExtractor(make_settings(tmp_path), model=model)
-
-    outcome = await extractor.extract(
-        text="你能回瘩什麼問題",
-        history=[],
-        faq_keys=[],
-    )
-
-    assert model.calls == []
-    assert outcome.llm_calls == 0
-    assert len(outcome.issues) == 1
-    assert outcome.issues[0].isIT is False
-    assert outcome.issues[0].readiness == "NOT_IT"
+    assert len(model.calls) == 1
+    assert outcome.llm_calls == 1
+    assert outcome.issues[0].description == "聯絡線上客服"
 
 
 @pytest.mark.asyncio

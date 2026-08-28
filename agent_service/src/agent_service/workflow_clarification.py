@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from .confirmation import TicketIntent, is_pending_ticket_offer_confirmation
+from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
 from .graph import user_context_from_identity
 from .knowledge import LlmCallCounter
-from .supervisor import ConversationSupervisor
+from .supervisor import ConversationSupervisor, ConversationSupervisorDecision
 from .workflow_helpers import (
     AgentState,
     _complete_complementary_pending_issue,
@@ -21,11 +22,53 @@ from .workflow_helpers import (
     _pending_offer_issues,
     _recent_ticket_contexts,
     _requests_ticket_offer,
+    assistant_scope_issue,
+    non_it_issue_from_message,
 )
 
 
 class ClarificationWorkflowMixin:
     """LangGraph nodes owned by the clarification subgraph."""
+
+    @staticmethod
+    def _ticket_intent_from_supervisor(
+        decision: ConversationSupervisorDecision,
+    ) -> dict:
+        if decision.intent == "TICKET_QUERY" or decision.requestedAction == "QUERY_TICKETS":
+            return {"ticket_intent": TicketIntent.QUERY}
+        if decision.intent == "TICKET_CREATE" or decision.requestedAction == "CREATE_TICKET":
+            return {"ticket_intent": TicketIntent.CREATE}
+        return {}
+
+    @classmethod
+    def _apply_supervisor_routing(
+        cls,
+        conversation: ConversationContext,
+        request: AgentRequest,
+        decision: ConversationSupervisorDecision,
+    ) -> dict:
+        """Apply the supervisor LLM decision to LangGraph routing state."""
+        routing = cls._ticket_intent_from_supervisor(decision)
+        if _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation):
+            return routing
+
+        if decision.intent == "NON_IT":
+            return {
+                **routing,
+                "skip_issue_pipeline": True,
+                "issues": [non_it_issue_from_message(request.message.text)],
+                "it_issues": [],
+                "issue_results": [],
+            }
+        if decision.intent == "ASSISTANT_META":
+            return {
+                **routing,
+                "skip_issue_pipeline": True,
+                "issues": [assistant_scope_issue()],
+                "it_issues": [],
+                "issue_results": [],
+            }
+        return routing
 
     async def _load_conversation(self, state: AgentState) -> dict:
         request = state["request"]
@@ -59,12 +102,16 @@ class ClarificationWorkflowMixin:
             ),
             recent_turns=_conversation_turns_for_supervisor(conversation) or None,
         )
+        routing = self._apply_supervisor_routing(
+            conversation, request, supervisor_decision
+        )
         return {
             "user": user,
             "conversation": conversation,
             "execution_context": execution_context,
             "llm_call_counter": execution_context.llm_calls,
             "supervisor_decision": supervisor_decision,
+            **routing,
         }
 
     async def _extract_issues(self, state: AgentState) -> dict:
@@ -80,12 +127,7 @@ class ClarificationWorkflowMixin:
             if superseded_new_issue
             else _pending_clarifications(conversation)
         )
-        decision = state.get("supervisor_decision") or ConversationSupervisor.deterministic(
-            request.message.text,
-            pending_clarification=bool(
-                prior_pending_issues or _has_pending_ticket_offer(conversation)
-            ),
-        )
+        decision = state.get("supervisor_decision") or ConversationSupervisorDecision()
         force_ticket_offer = False
         pending_confirmation = False
         if (

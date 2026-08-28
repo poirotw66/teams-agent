@@ -336,42 +336,6 @@ class IssueExtractor:
                 llm_calls=0,
             )
 
-        if _is_assistant_scope_question(normalized_text):
-            return ExtractionOutcome(
-                issues=[
-                    Issue(
-                        id=1,
-                        description="",
-                        isIT=False,
-                        readiness="NOT_IT",
-                        route="NOT_IT",
-                        missingInfo=[],
-                        faqKey=None,
-                        ticketAction=None,
-                    )
-                ],
-                too_many_issues=False,
-                llm_calls=0,
-            )
-
-        if _is_human_escalation_request(normalized_text):
-            return ExtractionOutcome(
-                issues=[
-                    Issue(
-                        id=1,
-                        description=HUMAN_ESCALATION_ISSUE_DESCRIPTION,
-                        isIT=True,
-                        readiness="READY",
-                        route="KNOWLEDGE",
-                        missingInfo=[],
-                        faqKey=None,
-                        ticketAction=None,
-                    )
-                ],
-                too_many_issues=False,
-                llm_calls=0,
-            )
-
         if self.model is None:
             logger.warning(
                 "IssueExtractor running without a model (no API key); "

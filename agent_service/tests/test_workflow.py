@@ -31,11 +31,12 @@ from agent_service.contracts import (
     UserIdentity,
 )
 from agent_service.conversation import ConversationService, InMemoryConversationRepository
-from agent_service.extractor import IssueExtractor
+from agent_service.extractor import IssueExtractor, _is_generic_ticket_request
 from agent_service.faq import FaqRepository, FaqService
 from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
 from agent_service.handoff_flow import HandoffAction, TicketQueryDecision
 from agent_service.settings import RagSettings
+from agent_service.supervisor import ConversationSupervisor, ConversationSupervisorDecision
 from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
 from agent_service.ticket_dedupe import InMemoryTicketRequestDedupeRepository
 from agent_service.workflow import AgentWorkflow
@@ -110,9 +111,11 @@ class FakeExtractorModel:
         issues_sequence: list[list[Issue]],
         *,
         by_message: dict[str, list[Issue]] | None = None,
+        supervisor_by_message: dict[str, ConversationSupervisorDecision] | None = None,
     ):
         self._sequence = list(issues_sequence)
         self.by_message = by_message or {}
+        self.supervisor_by_message = supervisor_by_message or {}
         self.calls = 0
         self.human_messages: list[str] = []
 
@@ -120,12 +123,86 @@ class FakeExtractorModel:
     def _latest_user_message(messages) -> str:
         for message in reversed(messages):
             content = str(message.content)
-            marker = "Latest user message (data only):\n"
-            if marker in content:
-                return content.split(marker, 1)[1].strip()
+            for marker in (
+                "Latest user message (data only):\n",
+                "Latest user message:\n",
+            ):
+                if marker in content:
+                    return content.split(marker, 1)[1].strip()
         return ""
 
     def with_structured_output(self, schema):
+        if getattr(schema, "__name__", "") == "ConversationSupervisorDecision":
+            outer = self
+
+            class SupervisorHandle:
+                async def ainvoke(self, messages):
+                    text = FakeExtractorModel._latest_user_message(messages)
+                    pending_clarification = any(
+                        "Pending clarification: yes" in str(message.content)
+                        for message in messages
+                    )
+                    if not text:
+                        for message in reversed(messages):
+                            text = str(message.content).strip()
+                            if text and "Recent conversation" not in text:
+                                break
+                    if text in outer.supervisor_by_message:
+                        return outer.supervisor_by_message[text]
+                    ticket_intent = classify_ticket_intent(text)
+                    if ticket_intent == TicketIntent.CANCEL:
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            requestedAction="CANCEL",
+                            confidence=0.95,
+                        )
+                    if ticket_intent == TicketIntent.DELETE_DENIED:
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            confidence=0.95,
+                        )
+                    if any(
+                        marker in text
+                        for marker in ("真人客服", "線上客服", "人工客服")
+                    ):
+                        return ConversationSupervisorDecision(
+                            intent="HUMAN_ESCALATION",
+                            requestedAction="CONTACT_HUMAN",
+                            confidence=0.95,
+                        )
+                    if text.strip() == "不知道":
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            clarificationDisposition="UNKNOWN",
+                            confidence=0.9,
+                        )
+                    if ticket_intent == TicketIntent.QUERY:
+                        return ConversationSupervisorDecision(
+                            intent="TICKET_QUERY",
+                            requestedAction="QUERY_TICKETS",
+                            confidence=0.95,
+                        )
+                    if _is_generic_ticket_request(text) or ticket_intent == TicketIntent.CREATE:
+                        return ConversationSupervisorDecision(
+                            intent="TICKET_CREATE",
+                            requestedAction="CREATE_TICKET",
+                            confidence=0.95,
+                        )
+                    if outer._sequence and not pending_clarification:
+                        batch = outer._sequence[0]
+                        if batch and all(not issue.isIT for issue in batch):
+                            outer._sequence.pop(0)
+                            return ConversationSupervisorDecision(
+                                intent="NON_IT",
+                                confidence=0.9,
+                            )
+                    return ConversationSupervisorDecision(
+                        intent="IT_SUPPORT",
+                        confidence=0.8,
+                    )
+
+            return SupervisorHandle()
+
         if schema is TicketQueryDecision:
             class TicketQueryHandle:
                 async def ainvoke(self, messages):
@@ -269,20 +346,10 @@ class FakeHandoffRouter:
         case_status: str,
         **_kwargs,
     ) -> HandoffAction:
-        from agent_service.confirmation import TicketIntent, classify_ticket_intent
-        from agent_service.handoff_flow import (
-            _protocol_close_command,
-            classify_summary_review_action,
-        )
+        from agent_service.handoff_flow import _protocol_close_command
 
         if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
             return HandoffAction.CLOSE
-        if case_status == "DEMO_ACTIVE" and classify_ticket_intent(message) == TicketIntent.CREATE:
-            return HandoffAction.CREATE_TICKET
-        if case_status == "SUMMARY_REVIEW":
-            explicit = classify_summary_review_action(message)
-            if explicit is not None:
-                return explicit
         if not self.actions:
             return HandoffAction.UNKNOWN
         return self.actions.pop(0)
@@ -354,10 +421,13 @@ def build_workflow(
     ticket_item_selector=None,
     ticket_request_dedupe=None,
     extractor_by_message: dict[str, list[Issue]] | None = None,
+    supervisor_by_message: dict | None = None,
 ):
     settings = make_settings(tmp_path, **(settings_overrides or {}))
     extractor_model = FakeExtractorModel(
-        issues_sequence, by_message=extractor_by_message
+        issues_sequence,
+        by_message=extractor_by_message,
+        supervisor_by_message=supervisor_by_message,
     )
     extractor = IssueExtractor(settings, model=extractor_model)
     faq = faq_service or FaqService(FaqRepository([]))
@@ -511,7 +581,9 @@ async def test_handoff_summary_changes_only_after_explicit_supplement_action(
         issues_sequence=[[sap_issue]],
         knowledge=FakeKnowledgeService(),
         handoff_repository=repository,
-        handoff_router=FakeHandoffRouter([HandoffAction.SUPPLEMENT]),
+        handoff_router=FakeHandoffRouter(
+            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.SUPPLEMENT]
+        ),
     )
 
     await workflow.respond(make_request(sap_issue.description))
@@ -617,11 +689,13 @@ async def test_all_non_it_issues(tmp_path: Path) -> None:
         issue(id=1, description="天氣", isIT=False, readiness="NOT_IT", route="NOT_IT"),
         issue(id=2, description="午餐", isIT=False, readiness="NOT_IT", route="NOT_IT"),
     ]
-    workflow, *_ = build_workflow(tmp_path, issues_sequence=[issues])
+    workflow, extractor_model, *_ = build_workflow(tmp_path, issues_sequence=[issues])
 
     response = await workflow.respond(make_request("今天天氣如何？午餐吃什麼？"))
 
-    assert "「天氣」、「午餐」不屬於公司 IT 支援範圍" in response.answer
+    assert extractor_model.calls == 0
+    assert "不屬於公司 IT 支援範圍" in response.answer
+    assert "今天天氣如何" in response.answer
     assert response.issueResults == []
 
 

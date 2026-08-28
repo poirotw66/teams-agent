@@ -7,6 +7,7 @@ from agent_service.contracts import Ticket, TicketItem
 from agent_service.handoff import HandoffStatus
 from agent_service.handoff_flow import HandoffAction
 from agent_service.settings import RagSettings
+from agent_service.supervisor import ConversationSupervisorDecision
 from agent_service.ticket import TicketItemSelection
 
 
@@ -52,8 +53,24 @@ class FakeHandoffRouter:
         return self.actions.pop(0)
 
 
+class StubSupervisor:
+    async def decide(self, *, message: str, pending_clarification: bool = False, recent_turns=None):
+        _ = (pending_clarification, recent_turns)
+        if "真人客服" in message:
+            return ConversationSupervisorDecision(
+                intent="HUMAN_ESCALATION",
+                requestedAction="CONTACT_HUMAN",
+                confidence=0.95,
+            )
+        return ConversationSupervisorDecision()
+
+
 def test_explicit_human_demo_lifecycle_and_close_restore_ai(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
+        client.app.state.workflow.supervisor = StubSupervisor()
+        client.app.state.workflow.handoff_router = FakeHandoffRouter(
+            [HandoffAction.HUMAN_MESSAGE, HandoffAction.CLOSE]
+        )
         activated = client.post(
             "/agent/chat", json=payload("我要找真人客服", "request-1")
         )

@@ -92,8 +92,18 @@ def build_agent_workflow_graph(state_type: type, workflow: WorkflowGraphNodes) -
     builder.add_edge("load_conversation", "route_handoff")
     builder.add_conditional_edges(
         "route_handoff",
-        lambda state: "handled" if state.get("handoff_handled") else "ai",
-        {"handled": "save_conversation", "ai": "extract_issues"},
+        lambda state: (
+            "handled"
+            if state.get("handoff_handled")
+            else "respond"
+            if state.get("skip_issue_pipeline")
+            else "ai"
+        ),
+        {
+            "handled": "save_conversation",
+            "respond": "build_response",
+            "ai": "extract_issues",
+        },
     )
     builder.add_edge("extract_issues", "filter_it_issues")
     builder.add_edge("filter_it_issues", "process_issues")

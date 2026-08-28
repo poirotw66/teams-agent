@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .confirmation import TicketIntent, classify_ticket_intent
-from .contracts import Citation, ConversationContext, Issue, IssueResult
-from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, _is_human_escalation_request
+from .contracts import AgentRequest, Citation, ConversationContext, Issue, IssueResult
+from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from .handoff import (
     ActiveHandoffCaseExistsError,
     ActorType,
@@ -81,11 +81,8 @@ class HandoffWorkflowMixin:
 
     @staticmethod
     def _is_standalone_human_escalation(state: AgentState) -> bool:
-        request = state["request"]
         decision = state.get("supervisor_decision")
-        if decision is not None and decision.intent == "HUMAN_ESCALATION":
-            return True
-        return _is_human_escalation_request(request.message.text)
+        return decision is not None and decision.intent == "HUMAN_ESCALATION"
 
     async def _promote_case_to_demo(
         self,
@@ -199,6 +196,10 @@ class HandoffWorkflowMixin:
             )
 
     async def _resolve_ticket_intent(self, state: AgentState) -> TicketIntent:
+        preset = state.get("ticket_intent")
+        if preset is not None:
+            return preset
+
         request = state["request"]
         text = request.message.text
         deterministic = classify_ticket_intent(text)
@@ -208,12 +209,20 @@ class HandoffWorkflowMixin:
             TicketIntent.CREATE,
         }:
             return deterministic
-        if await self.ticket_query_router.is_ticket_query(
-            message=text,
-            conversation_turns=self._handoff_conversation_turns(state["conversation"]),
-            execution_context=state.get("execution_context"),
-        ):
-            return TicketIntent.QUERY
+
+        decision = state.get("supervisor_decision")
+        if decision is not None:
+            if (
+                decision.intent == "TICKET_QUERY"
+                or decision.requestedAction == "QUERY_TICKETS"
+            ):
+                return TicketIntent.QUERY
+            if (
+                decision.intent == "TICKET_CREATE"
+                or decision.requestedAction == "CREATE_TICKET"
+            ):
+                return TicketIntent.CREATE
+
         return TicketIntent.NONE
 
     @staticmethod

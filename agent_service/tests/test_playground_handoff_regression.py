@@ -66,7 +66,9 @@ async def test_demo_mode_create_ticket_uses_case_issue_not_full_summary(
         handoff_repository=InMemoryHandoffRepository(
             clock=lambda: datetime.now(timezone.utc)
         ),
-        handoff_router=tw.FakeHandoffRouter([]),
+        handoff_router=tw.FakeHandoffRouter(
+            [HandoffAction.CONTACT_HUMAN, HandoffAction.CREATE_TICKET]
+        ),
         ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
     )
 
@@ -168,7 +170,6 @@ async def test_human_escalation_after_ticket_query_is_not_rejected_as_non_it(
 
     await workflow.respond(tw.make_request(SAP_ISSUE))
     await workflow.respond(tw.make_request("建立派工單"))
-    await workflow.respond(tw.make_request("是"))
     response = await workflow.respond(tw.make_request("我要找真人客服"))
 
     assert "不屬於公司 IT 支援範圍" not in response.answer
@@ -180,7 +181,14 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     """Walk through the main Playground script with agentic fakes."""
     ticket_service = tw.FakeTicketService()
     handoff_repo = InMemoryHandoffRepository(clock=lambda: datetime.now(timezone.utc))
-    handoff_router = tw.FakeHandoffRouter([])
+    handoff_router = tw.FakeHandoffRouter(
+        [
+            HandoffAction.CONTACT_HUMAN,
+            HandoffAction.SUPPLEMENT,
+            HandoffAction.CREATE_TICKET,
+            HandoffAction.CREATE_TICKET,
+        ]
+    )
     vpn_need_more = tw.issue(
         description="VPN 密碼鎖住怎麼辦",
         readiness="NEED_MORE_INFO",
@@ -335,6 +343,8 @@ async def test_standalone_human_escalation_starts_demo_without_knowledge_lookup(
 async def test_assistant_scope_question_supersedes_handoff_review(
     tmp_path: Path,
 ) -> None:
+    from agent_service.supervisor import ConversationSupervisorDecision
+
     workflow, extractor_model, *_ = tw.build_workflow(
         tmp_path,
         issues_sequence=[[tw.issue(description="大州系統無法顯示")]],
@@ -344,6 +354,13 @@ async def test_assistant_scope_question_supersedes_handoff_review(
         handoff_repository=InMemoryHandoffRepository(
             clock=lambda: datetime.now(timezone.utc)
         ),
+        supervisor_by_message={
+            "你能回答什麼問題": ConversationSupervisorDecision(
+                intent="ASSISTANT_META",
+                requestedAction="ANSWER",
+                confidence=0.95,
+            )
+        },
     )
 
     await workflow.respond(tw.make_request("大洲無法顯示"))
@@ -358,12 +375,21 @@ async def test_assistant_scope_question_supersedes_handoff_review(
 
 @pytest.mark.asyncio
 async def test_assistant_scope_question_does_not_trigger_handoff(tmp_path: Path) -> None:
+    from agent_service.supervisor import ConversationSupervisorDecision
+
     workflow, extractor_model, *_ = tw.build_workflow(
         tmp_path,
         issues_sequence=[[tw.issue(description="不應被使用")]],
         handoff_repository=InMemoryHandoffRepository(
             clock=lambda: datetime.now(timezone.utc)
         ),
+        supervisor_by_message={
+            "你能回瘩什麼問題": ConversationSupervisorDecision(
+                intent="ASSISTANT_META",
+                requestedAction="ANSWER",
+                confidence=0.95,
+            )
+        },
     )
 
     response = await workflow.respond(tw.make_request("你能回瘩什麼問題"))
@@ -521,6 +547,8 @@ async def test_successful_knowledge_answer_clears_pending_handoff_offer(
     tmp_path: Path,
 ) -> None:
     """Scenario 5: a knowledge hit closes a stale handoff offer for the next turn."""
+    from agent_service.supervisor import ConversationSupervisorDecision
+
     vpn_issue = tw.issue(description="VPN 密碼鎖住怎麼辦", readiness="READY")
     knowledge = tw.FakeKnowledgeService(
         responses={
@@ -539,6 +567,12 @@ async def test_successful_knowledge_answer_clears_pending_handoff_offer(
         knowledge=knowledge,
         handoff_repository=handoff_repo,
         handoff_router=tw.FakeHandoffRouter([HandoffAction.NEW_ISSUE]),
+        supervisor_by_message={
+            "謝謝": ConversationSupervisorDecision(
+                intent="NON_IT",
+                confidence=0.9,
+            ),
+        },
     )
 
     await workflow.respond(tw.make_request(SAP_ISSUE))

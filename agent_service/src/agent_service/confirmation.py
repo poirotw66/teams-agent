@@ -245,6 +245,9 @@ def _is_ticket_list_query(text: str) -> bool:
         "確認我的派工單",
         "看看我的工單",
         "看看我的派工單",
+        "有哪些工單",
+        "有哪些派工單",
+        "我現在有哪些工單",
     }
     if normalized in bare_queries:
         return True
