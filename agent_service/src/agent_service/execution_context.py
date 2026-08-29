@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -10,7 +11,13 @@ from typing import TypeVar
 from .knowledge import LlmCallCounter
 from .settings import RagSettings
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T")
+
+
+class RequestDeadlineExceeded(RuntimeError):
+    """Raised when the per-request execution deadline has passed."""
 
 
 @dataclass
@@ -46,10 +53,23 @@ class ExecutionContext:
             deadline=datetime.now(UTC) + timedelta(seconds=timeout),
         )
 
+    def remaining_seconds(self) -> float | None:
+        if self.deadline is None:
+            return None
+        return (self.deadline - datetime.now(UTC)).total_seconds()
+
+    def ensure_deadline(self) -> None:
+        remaining = self.remaining_seconds()
+        if remaining is not None and remaining <= 0:
+            raise RequestDeadlineExceeded(
+                f"Request deadline exceeded for request_id={self.request_id}"
+            )
+
     def budget_remaining(self) -> int:
         return max(0, self.model_budget - self.llm_calls.count)
 
     def ensure_budget(self) -> None:
+        self.ensure_deadline()
         if self.llm_calls.count >= self.model_budget:
             raise RuntimeError("LLM call budget exhausted for this request.")
 
@@ -68,4 +88,11 @@ class ExecutionContext:
             return await operation()
         finally:
             self.llm_calls.increment()
-            _ = component  # reserved for structured logging/tracing hooks
+            logger.debug(
+                "LLM call recorded: component=%s count=%d/%d request_id=%s correlation_id=%s",
+                component,
+                self.llm_calls.count,
+                self.model_budget,
+                self.request_id,
+                self.correlation_id,
+            )

@@ -6,9 +6,9 @@ from agent_service.workflow_subgraphs import (
     CLARIFICATION_NODES,
     HANDOFF_NODES,
     KNOWLEDGE_NODES,
+    RESPONSE_NODES,
     TICKET_NODES,
-    build_clarification_subgraph,
-    build_handoff_subgraph,
+    build_agent_workflow_graph,
 )
 
 
@@ -17,18 +17,36 @@ def test_domain_node_groups_are_documented() -> None:
     assert "route_handoff" in HANDOFF_NODES
     assert "process_issues" in KNOWLEDGE_NODES
     assert "process_issues" in TICKET_NODES
+    assert "build_response" in RESPONSE_NODES
 
 
-def test_subgraph_builders_compile() -> None:
-    async def noop(_state):
-        return {}
+def test_production_graph_builder_compiles() -> None:
+    class StubWorkflow:
+        async def _load_conversation(self, state):
+            return {}
 
-    assert build_clarification_subgraph(
-        load_conversation=noop,
-        extract_issues=noop,
-        filter_it_issues=noop,
-    )
-    assert build_handoff_subgraph(route_handoff=noop, evaluate_handoff=noop)
+        async def _route_handoff(self, state):
+            return {}
+
+        async def _extract_issues(self, state):
+            return {}
+
+        async def _filter_it_issues(self, state):
+            return {}
+
+        async def _process_issues(self, state):
+            return {}
+
+        async def _evaluate_handoff(self, state):
+            return {}
+
+        async def _build_response(self, state):
+            return {}
+
+        async def _save_conversation(self, state):
+            return {}
+
+    assert build_agent_workflow_graph(dict, StubWorkflow())
 
 
 def test_workflow_node_implementations_are_split_by_domain() -> None:

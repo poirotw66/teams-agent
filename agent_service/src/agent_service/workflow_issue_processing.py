@@ -8,7 +8,7 @@ import logging
 
 from .confirmation import TicketIntent
 from .contracts import AgentRequest, Citation, Issue, IssueResult, TicketDraft, UserContext
-from .execution_context import ExecutionContext
+from .execution_context import ExecutionContext, RequestDeadlineExceeded
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from .knowledge import LlmCallCounter
 from .ticket import (
@@ -154,12 +154,24 @@ class IssueProcessingWorkflowMixin:
                 )
             # Miss or disabled entry falls back to KNOWLEDGE, never fails.
             return await self._handle_knowledge(
-                issue, user, correlation_id, counter, lock, agent_request=agent_request
+                issue,
+                user,
+                correlation_id,
+                counter,
+                lock,
+                agent_request=agent_request,
+                execution_context=execution_context,
             )
 
         if issue.route == "KNOWLEDGE":
             return await self._handle_knowledge(
-                issue, user, correlation_id, counter, lock, agent_request=agent_request
+                issue,
+                user,
+                correlation_id,
+                counter,
+                lock,
+                agent_request=agent_request,
+                execution_context=execution_context,
             )
 
         if issue.route == "TICKET":
@@ -180,6 +192,7 @@ class IssueProcessingWorkflowMixin:
         lock: asyncio.Lock,
         *,
         agent_request: AgentRequest | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> IssueResult:
         if issue.description == HUMAN_ESCALATION_ISSUE_DESCRIPTION:
             return IssueResult(
@@ -190,18 +203,26 @@ class IssueProcessingWorkflowMixin:
 
         async with lock:
             budget_exceeded = counter.count >= self.settings.max_llm_calls_per_request
+            deadline_exceeded = False
+            if execution_context is not None:
+                try:
+                    execution_context.ensure_deadline()
+                except RequestDeadlineExceeded:
+                    deadline_exceeded = True
 
-        if budget_exceeded:
+        if budget_exceeded or deadline_exceeded:
             # Spec §16: stop making further LLM calls and degrade gracefully
             # rather than raising.
+            backend = "DEADLINE_EXCEEDED" if deadline_exceeded else "BUDGET_EXCEEDED"
             logger.warning(
-                "LLM call budget exceeded, degrading issue to NO_KNOWLEDGE: "
-                "issue_id=%s correlation_id=%s",
+                "LLM guard tripped, degrading issue to NO_KNOWLEDGE: "
+                "issue_id=%s backend=%s correlation_id=%s",
                 issue.id,
+                backend,
                 correlation_id,
             )
             return IssueResult(
-                issueId=issue.id, resultType="NO_KNOWLEDGE", backend="BUDGET_EXCEEDED"
+                issueId=issue.id, resultType="NO_KNOWLEDGE", backend=backend
             )
 
         search_kwargs: dict[str, object] = {

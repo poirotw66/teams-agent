@@ -1,8 +1,12 @@
-"""LangGraph subgraph builders for AgentWorkflow domain boundaries."""
+"""LangGraph workflow graph builder and domain node group constants.
+
+Production uses only :func:`build_agent_workflow_graph`. The ``*_NODES`` tuples
+document how node implementations are split across mixin modules; they are not
+separate compiled subgraphs.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Protocol
 
 from langgraph.graph import END, START, StateGraph
@@ -30,50 +34,6 @@ class WorkflowGraphNodes(Protocol):
     async def _build_response(self, state: dict) -> dict: ...
 
     async def _save_conversation(self, state: dict) -> dict: ...
-
-
-def build_clarification_subgraph(
-    *,
-    load_conversation: Callable[..., Any],
-    extract_issues: Callable[..., Any],
-    filter_it_issues: Callable[..., Any],
-) -> Any:
-    builder = StateGraph(dict)
-    builder.add_node("load_conversation", load_conversation)
-    builder.add_node("extract_issues", extract_issues)
-    builder.add_node("filter_it_issues", filter_it_issues)
-    builder.add_edge(START, "load_conversation")
-    builder.add_edge("load_conversation", "extract_issues")
-    builder.add_edge("extract_issues", "filter_it_issues")
-    builder.add_edge("filter_it_issues", END)
-    return builder.compile()
-
-
-def build_knowledge_subgraph(*, process_issues: Callable[..., Any]) -> Any:
-    builder = StateGraph(dict)
-    builder.add_node("process_issues", process_issues)
-    builder.add_edge(START, "process_issues")
-    builder.add_edge("process_issues", END)
-    return builder.compile()
-
-
-def build_ticket_subgraph(*, process_issues: Callable[..., Any]) -> Any:
-    return build_knowledge_subgraph(process_issues=process_issues)
-
-
-def build_handoff_subgraph(
-    *,
-    route_handoff: Callable[..., Any],
-    evaluate_handoff: Callable[..., Any],
-) -> Any:
-    builder = StateGraph(dict)
-    builder.add_node("route_handoff", route_handoff)
-    builder.add_node("evaluate_handoff", evaluate_handoff)
-    builder.add_edge(START, "route_handoff")
-    builder.add_edge("route_handoff", END)
-    builder.add_edge(START, "evaluate_handoff")
-    builder.add_edge("evaluate_handoff", END)
-    return builder.compile()
 
 
 def build_agent_workflow_graph(state_type: type, workflow: WorkflowGraphNodes) -> Any:
