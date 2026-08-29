@@ -8,7 +8,7 @@ from .execution_context import ExecutionContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
 from .graph import user_context_from_identity
 from .knowledge import LlmCallCounter
-from .supervisor import ConversationSupervisor, ConversationSupervisorDecision
+from .supervisor import ConversationSupervisorDecision
 from .workflow_helpers import (
     AgentState,
     _complete_complementary_pending_issue,

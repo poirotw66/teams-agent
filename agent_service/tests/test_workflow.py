@@ -36,7 +36,7 @@ from agent_service.faq import FaqRepository, FaqService
 from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
 from agent_service.handoff_flow import HandoffAction, TicketQueryDecision
 from agent_service.settings import RagSettings
-from agent_service.supervisor import ConversationSupervisor, ConversationSupervisorDecision
+from agent_service.supervisor import ConversationSupervisorDecision
 from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
 from agent_service.ticket_dedupe import InMemoryTicketRequestDedupeRepository
 from agent_service.workflow import AgentWorkflow

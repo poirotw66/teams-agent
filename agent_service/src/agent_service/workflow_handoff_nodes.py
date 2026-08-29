@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .confirmation import TicketIntent, classify_ticket_intent
-from .contracts import AgentRequest, Citation, ConversationContext, Issue, IssueResult
+from .contracts import Citation, ConversationContext, Issue, IssueResult
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from .handoff import (
     ActiveHandoffCaseExistsError,

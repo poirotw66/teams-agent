@@ -5,7 +5,6 @@ import pytest
 from agent_service.contracts import ConversationMessage, Issue, IssueExtraction
 from agent_service.extractor import (
     FORBIDDEN_MISSING_INFO_TERMS,
-    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
     IssueExtractor,
     _is_assistant_scope_question,
     _is_human_escalation_request,

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import pytest
 
 from agent_service.supervisor import ConversationSupervisor, ConversationSupervisorDecision
@@ -6,7 +8,7 @@ from agent_service.supervisor import ConversationSupervisor, ConversationSupervi
 @pytest.mark.asyncio
 async def test_supervisor_classifies_unknown_chitchat_via_model() -> None:
     class CapturingModel:
-        schemas: list = []
+        schemas: ClassVar[list[type]] = []
 
         def with_structured_output(self, schema):
             CapturingModel.schemas.append(schema)
