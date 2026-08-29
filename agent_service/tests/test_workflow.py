@@ -34,7 +34,7 @@ from agent_service.conversation import ConversationService, InMemoryConversation
 from agent_service.extractor import IssueExtractor, _is_generic_ticket_request
 from agent_service.faq import FaqRepository, FaqService
 from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
-from agent_service.handoff_flow import HandoffAction, TicketQueryDecision
+from agent_service.handoff_flow import HandoffAction
 from agent_service.settings import RagSettings
 from agent_service.supervisor import ConversationSupervisorDecision
 from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
@@ -203,15 +203,6 @@ class FakeExtractorModel:
 
             return SupervisorHandle()
 
-        if schema is TicketQueryDecision:
-            class TicketQueryHandle:
-                async def ainvoke(self, messages):
-                    text = FakeExtractorModel._latest_user_message(messages)
-                    is_query = classify_ticket_intent(text) == TicketIntent.QUERY
-                    return TicketQueryDecision(is_ticket_query=is_query)
-
-            return TicketQueryHandle()
-
         assert schema is IssueExtraction
         outer = self
 
@@ -355,22 +346,6 @@ class FakeHandoffRouter:
         return self.actions.pop(0)
 
 
-class FakeTicketQueryRouter:
-    def __init__(self, *, ticket_queries: set[str] | None = None) -> None:
-        self.ticket_queries = ticket_queries or set()
-        self.calls = 0
-
-    async def is_ticket_query(
-        self,
-        *,
-        message: str,
-        conversation_turns=(),
-        execution_context=None,
-    ) -> bool:
-        self.calls += 1
-        return message in self.ticket_queries
-
-
 class FakeTicketItemSelector:
     """Test double for the model-driven catalog selector."""
 
@@ -417,7 +392,6 @@ def build_workflow(
     conversation_service: ConversationService | None = None,
     handoff_repository=None,
     handoff_router=None,
-    ticket_query_router=None,
     ticket_item_selector=None,
     ticket_request_dedupe=None,
     extractor_by_message: dict[str, list[Issue]] | None = None,
@@ -443,7 +417,6 @@ def build_workflow(
         ticket_service=ticket,
         handoff_repository=handoff_repository,
         handoff_router=handoff_router,
-        ticket_query_router=ticket_query_router,
         ticket_item_selector=ticket_item_selector or FakeTicketItemSelector(),
         ticket_request_dedupe=ticket_request_dedupe
         or InMemoryTicketRequestDedupeRepository(),
@@ -650,9 +623,6 @@ async def test_ticket_list_queries_current_users_dispatch_tickets_not_faq(
         issues_sequence=[[issue(route="FAQ", faqKey="TICKET_FAQ")]],
         faq_service=faq,
         ticket_service=ticket_service,
-        ticket_query_router=FakeTicketQueryRouter(
-            ticket_queries={"有哪些派工單", "有哪些工單"}
-        ),
     )
 
     response = await workflow.respond(make_request(text))
@@ -1272,7 +1242,7 @@ async def test_llm_budget_cap_degrades_remaining_issues(tmp_path: Path) -> None:
 
     response = await workflow.respond(make_request("三個問題"))
 
-    # The extractor call alone already consumes the budget (1), so no
+    # The supervisor call alone already consumes the budget (1), so no
     # knowledge-service call should ever happen.
     assert knowledge.calls == []
     assert all(r.resultType == "NO_KNOWLEDGE" for r in response.issueResults)

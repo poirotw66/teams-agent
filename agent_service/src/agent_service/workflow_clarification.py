@@ -7,7 +7,6 @@ from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
 from .graph import user_context_from_identity
-from .knowledge import LlmCallCounter
 from .supervisor import ConversationSupervisorDecision
 from .workflow_helpers import (
     AgentState,
@@ -167,14 +166,12 @@ class ClarificationWorkflowMixin:
             # never one attempt per recovered issue.
             issues = [merge_pending_ticket_issues(pending_issues)]
             too_many_issues = False
-            llm_calls = 0
         elif active_offer_contexts:
             issues = [
                 _pending_context_to_ready_issue(pending, issue_id=index)
                 for index, pending in enumerate(active_offer_contexts, start=1)
             ]
             too_many_issues = False
-            llm_calls = 0
             force_ticket_offer = True
         elif requested_offer_contexts:
             issues = [
@@ -182,7 +179,6 @@ class ClarificationWorkflowMixin:
                 for index, pending in enumerate(requested_offer_contexts, start=1)
             ]
             too_many_issues = False
-            llm_calls = 0
             force_ticket_offer = True
         elif prior_pending_issues and decision.clarificationDisposition == "UNKNOWN":
             # The user cannot provide the requested detail. Stop interrogating
@@ -193,7 +189,6 @@ class ClarificationWorkflowMixin:
                 for index, pending in enumerate(prior_pending_issues, start=1)
             ]
             too_many_issues = False
-            llm_calls = 0
         else:
             history = await self.conversation_service.get_history(
                 conversation.conversationId
@@ -222,11 +217,6 @@ class ClarificationWorkflowMixin:
                 issues, prior_pending_issues, request.message.text, decision=decision
             )
             too_many_issues = outcome.too_many_issues
-            execution_context = state.get("execution_context")
-            if execution_context is not None:
-                llm_calls = execution_context.llm_calls.count
-            else:
-                llm_calls = outcome.llm_calls
             previous_count = max(
                 (pending.clarificationCount for pending in prior_pending_issues),
                 default=0,
@@ -272,11 +262,9 @@ class ClarificationWorkflowMixin:
                 _recent_ticket_contexts(conversation),
             )
             too_many_issues = False
-        counter = LlmCallCounter(count=llm_calls)
         return {
             "issues": issues,
             "too_many_issues": too_many_issues,
-            "llm_call_counter": counter,
             "ticket_intent": ticket_intent,
             "prior_pending_issues": prior_pending_issues,
             "force_ticket_offer": force_ticket_offer,

@@ -50,7 +50,7 @@ from .conversation import ConversationService
 from .extractor import IssueExtractor
 from .faq import FaqService
 from .handoff import HandoffRepository
-from .handoff_flow import AgenticHandoffRouter, AgenticTicketQueryRouter
+from .handoff_flow import AgenticHandoffRouter
 from .knowledge import KnowledgeService
 from .settings import RagSettings
 from .supervisor import ConversationSupervisor
@@ -98,7 +98,6 @@ class AgentWorkflow(
         ticket_service: TicketService,
         handoff_repository: HandoffRepository | None = None,
         handoff_router: AgenticHandoffRouter | None = None,
-        ticket_query_router: AgenticTicketQueryRouter | None = None,
         ticket_item_selector: AgenticTicketItemSelector | None = None,
         ticket_request_dedupe: TicketRequestDedupeRepository | None = None,
     ) -> None:
@@ -110,9 +109,6 @@ class AgentWorkflow(
         self.ticket_service = ticket_service
         self.handoff_repository = handoff_repository
         self.handoff_router = handoff_router or AgenticHandoffRouter(extractor.model)
-        self.ticket_query_router = ticket_query_router or AgenticTicketQueryRouter(
-            extractor.model
-        )
         self.ticket_item_selector = ticket_item_selector or AgenticTicketItemSelector(
             extractor.model
         )

@@ -223,9 +223,6 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
         ticket_service=ticket_service,
         handoff_repository=handoff_repo,
         handoff_router=handoff_router,
-        ticket_query_router=tw.FakeTicketQueryRouter(
-            ticket_queries={"我現在有哪些工單"}
-        ),
         ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
         extractor_by_message={
             "VPN 密碼鎖住怎麼辦": [vpn_need_more],
@@ -287,9 +284,6 @@ async def test_ticket_query_supersedes_handoff_review_and_lists_tickets(
             clock=lambda: datetime.now(timezone.utc)
         ),
         handoff_router=tw.FakeHandoffRouter([HandoffAction.CREATE_TICKET]),
-        ticket_query_router=tw.FakeTicketQueryRouter(
-            ticket_queries={"確認我的工單", "我的工單", "查詢我的工單"}
-        ),
         ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
     )
 
@@ -527,9 +521,6 @@ async def test_agentic_ticket_query_beats_faq_and_knowledge(tmp_path: Path) -> N
         faq_service=faq,
         knowledge=knowledge,
         ticket_service=ticket_service,
-        ticket_query_router=tw.FakeTicketQueryRouter(
-            ticket_queries={"我的派工單", "我有哪些工單"}
-        ),
     )
 
     for text in ("我的派工單", "我有哪些工單"):

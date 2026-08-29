@@ -19,7 +19,6 @@ from typing import Any, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from .confirmation import TicketIntent, classify_ticket_intent
 from .execution_context import ExecutionContext
 
 logger = logging.getLogger(__name__)
@@ -96,15 +95,6 @@ class HandoffRouteDecision(BaseModel):
     ] = Field(description="The user's semantic intent in the current handoff state")
 
 
-class TicketQueryDecision(BaseModel):
-    is_ticket_query: bool = Field(
-        description=(
-            "True when the user wants to list or check the status of their own "
-            "dispatch tickets / 派工單 / 工單, not when opening a new ticket."
-        )
-    )
-
-
 _HANDOFF_ROUTER_PROMPT = """\
 You are the semantic supervisor for an enterprise IT support handoff flow.
 Classify the latest user turn using the active handoff case, recent conversation,
@@ -133,21 +123,6 @@ active case summary and recent turns. Escalation to human support is in scope fo
 
 Judge meaning semantically from the full utterance and context. Return only the
 structured decision.
-"""
-
-_TICKET_QUERY_ROUTER_PROMPT = """\
-You classify whether the latest user message is asking to list or check the
-status of their own existing IT dispatch tickets (派工單 / 工單).
-
-Return is_ticket_query=true for status/list/history questions about tickets the
-user already opened, including fuzzy or abbreviated wording.
-
-Return is_ticket_query=false when the user wants to open/create a new ticket,
-asks an unrelated IT knowledge question, contacts human support, or confirms a
-pending handoff summary.
-
-Judge meaning semantically from the full utterance and recent conversation.
-Return only the structured decision.
 """
 
 
@@ -230,23 +205,6 @@ class AgenticHandoffRouter:
                 type(error).__name__,
             )
             return fallback
-
-
-class AgenticTicketQueryRouter:
-    """Model-driven ticket-list intent; degrades to no query intent when unavailable."""
-
-    def __init__(self, model: Any | None) -> None:
-        self._model = model
-
-    async def is_ticket_query(
-        self,
-        *,
-        message: str,
-        conversation_turns: Sequence[str] = (),
-        execution_context: ExecutionContext | None = None,
-    ) -> bool:
-        _ = (conversation_turns, execution_context)
-        return classify_ticket_intent(message) == TicketIntent.QUERY
 
 
 TERMINAL_STATUSES = frozenset(
