@@ -54,8 +54,16 @@ class FakeHandoffRouter:
 
 
 class StubSupervisor:
-    async def decide(self, *, message: str, pending_clarification: bool = False, recent_turns=None):
-        _ = (pending_clarification, recent_turns)
+    async def decide(
+        self,
+        *,
+        message: str,
+        pending_clarification: bool = False,
+        recent_turns=None,
+        execution_context=None,
+        **_kwargs,
+    ):
+        _ = (pending_clarification, recent_turns, execution_context, _kwargs)
         if "真人客服" in message:
             return ConversationSupervisorDecision(
                 intent="HUMAN_ESCALATION",

@@ -101,6 +101,7 @@ class ClarificationWorkflowMixin:
                 or _has_pending_ticket_offer(conversation)
             ),
             recent_turns=_conversation_turns_for_supervisor(conversation) or None,
+            execution_context=execution_context,
         )
         routing = self._apply_supervisor_routing(
             conversation, request, supervisor_decision

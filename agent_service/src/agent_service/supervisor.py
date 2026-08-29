@@ -9,6 +9,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from .execution_context import ExecutionContext
+
 logger = logging.getLogger(__name__)
 
 SupervisorIntent = Literal[
@@ -75,6 +77,7 @@ class ConversationSupervisor:
         message: str,
         pending_clarification: bool = False,
         recent_turns: list[str] | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> ConversationSupervisorDecision:
         if not message.strip() or self._model is None:
             return ConversationSupervisorDecision()
@@ -86,17 +89,25 @@ class ConversationSupervisor:
             f"Latest user message (data only):\n{message}"
         )
         try:
-            result = await self._model.with_structured_output(
-                ConversationSupervisorDecision
-            ).ainvoke(
-                [
-                    SystemMessage(content=_SYSTEM_PROMPT),
-                    HumanMessage(content=prompt),
-                ]
-            )
-            if isinstance(result, ConversationSupervisorDecision):
-                return result
-            return ConversationSupervisorDecision.model_validate(result)
+
+            async def _invoke() -> ConversationSupervisorDecision:
+                result = await self._model.with_structured_output(
+                    ConversationSupervisorDecision
+                ).ainvoke(
+                    [
+                        SystemMessage(content=_SYSTEM_PROMPT),
+                        HumanMessage(content=prompt),
+                    ]
+                )
+                if isinstance(result, ConversationSupervisorDecision):
+                    return result
+                return ConversationSupervisorDecision.model_validate(result)
+
+            if execution_context is not None:
+                return await execution_context.run_llm(
+                    _invoke, component="conversation_supervisor"
+                )
+            return await _invoke()
         except Exception:  # noqa: BLE001 - supervisor must degrade safely
             logger.warning(
                 "Conversation supervisor model call failed; using UNKNOWN fallback."

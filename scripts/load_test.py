@@ -147,7 +147,17 @@ def build_payload(text: str) -> dict[str, Any]:
     }
 
 
-async def _issue(client: Any, url: str, text: str, headers: dict[str, str]) -> RequestOutcome:
+async def _issue(
+    client: Any,
+    url: str,
+    text: str,
+    headers: dict[str, str],
+    *,
+    stub: _StubModel | None = None,
+) -> RequestOutcome:
+    if stub is not None:
+        stub.structured_calls = 0
+        stub.generate_calls = 0
     started = time.perf_counter()
     try:
         response = await client.post(url, json=build_payload(text), headers=headers)
@@ -161,14 +171,12 @@ async def _issue(client: Any, url: str, text: str, headers: dict[str, str]) -> R
     latency = time.perf_counter() - started
     ok = response.status_code == 200
     llm_calls: int | None = None
-    if ok:
+    if ok and stub is not None:
+        llm_calls = stub.llm_calls
+    elif ok:
         try:
-            body = response.json()
-            # issueResults is the closest per-request signal the response
-            # exposes; the authoritative LLM call count is in the service log
-            # line (§15.2 llm_call_count).
-            llm_calls = len(body.get("issueResults") or []) or None
-        except Exception:  # noqa: BLE001 - a malformed body is still a success/failure signal
+            response.json()
+        except Exception:  # noqa: BLE001 - malformed body still counts as success/failure signal
             llm_calls = None
     return RequestOutcome(
         latency_seconds=latency,
@@ -186,12 +194,15 @@ async def run_load(
     total_requests: int,
     queries: list[str],
     headers: dict[str, str],
+    stub: _StubModel | None = None,
 ) -> LoadReport:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def worker(index: int) -> RequestOutcome:
         async with semaphore:
-            return await _issue(client, url, queries[index % len(queries)], headers)
+            return await _issue(
+                client, url, queries[index % len(queries)], headers, stub=stub
+            )
 
     started = time.perf_counter()
     outcomes = await asyncio.gather(*(worker(index) for index in range(total_requests)))
@@ -214,22 +225,35 @@ class _StubModel:
 
     def __init__(self) -> None:
         self.model_name = "stub-dry-run"
+        self.structured_calls = 0
+        self.generate_calls = 0
+
+    @property
+    def llm_calls(self) -> int:
+        return self.structured_calls + self.generate_calls
 
     def with_structured_output(self, schema: Any) -> _StubStructured:
-        return _StubStructured(schema)
+        return _StubStructured(self, schema)
 
     async def ainvoke(self, _messages: Any) -> Any:
         from langchain_core.messages import AIMessage
 
+        self.generate_calls += 1
         return AIMessage(content="（壓測樁）根據內部知識庫，請依文件步驟操作。[S1]")
 
 
 class _StubStructured:
-    def __init__(self, schema: Any) -> None:
-        self.schema = schema
+    def __init__(self, model: _StubModel, schema: Any) -> None:
+        self._model = model
+        self._schema = schema
 
     async def ainvoke(self, _messages: Any) -> Any:
-        name = getattr(self.schema, "__name__", "")
+        self._model.structured_calls += 1
+        name = getattr(self._schema, "__name__", "")
+        if name == "ConversationSupervisorDecision":
+            from agent_service.supervisor import ConversationSupervisorDecision
+
+            return ConversationSupervisorDecision(intent="IT_SUPPORT", confidence=0.85)
         if name == "IssueExtraction":
             from agent_service.contracts import Issue, IssueExtraction
 
@@ -246,12 +270,16 @@ class _StubStructured:
                 ]
             )
         if name == "RelevanceDecision":
-            return self.schema(relevant=True)
+            return self._schema(relevant=True)
         if name == "RewrittenQuery":
-            return self.schema(query="壓測查詢")
+            return self._schema(query="壓測查詢")
         if name == "RouteDecision":
-            return self.schema(route="retrieve")
-        return self.schema()
+            return self._schema(route="retrieve")
+        if name == "HandoffRouteDecision":
+            return self._schema(action="UNKNOWN")
+        if name == "TicketQueryDecision":
+            return self._schema(is_ticket_query=False)
+        return self._schema()
 
 
 async def _dry_run(args: argparse.Namespace) -> LoadReport:
@@ -270,6 +298,7 @@ async def _dry_run(args: argparse.Namespace) -> LoadReport:
         app.router.lifespan_context(app),
     ):
         _install_stub_model(app)
+        stub = getattr(app.state, "load_test_stub", None)
         return await run_load(
             client,
             "/agent/chat",
@@ -277,21 +306,30 @@ async def _dry_run(args: argparse.Namespace) -> LoadReport:
             total_requests=args.requests,
             queries=DEFAULT_QUERIES,
             headers={},
+            stub=stub,
         )
 
 
-def _install_stub_model(app: Any) -> None:
+def _install_stub_model(app: Any) -> _StubModel:
     """Replace every real model reference reachable from app.state."""
     stub = _StubModel()
     workflow = getattr(app.state, "workflow", None)
     if workflow is not None:
-        for attr in ("extractor", "knowledge_service", "knowledge"):
-            target = getattr(workflow, attr, None)
-            if target is not None and hasattr(target, "model"):
-                target.model = stub
+        workflow.extractor.model = stub
+        workflow.supervisor._model = stub
+        workflow.handoff_router._model = stub
+        workflow.ticket_query_router._model = stub
+        workflow.ticket_item_selector._model = stub
     agent = getattr(app.state, "agent", None)
     if agent is not None and hasattr(agent, "model"):
         agent.model = stub
+    router = getattr(app.state, "knowledge_router", None)
+    if router is not None:
+        for service in router._services.values():
+            if hasattr(service, "model"):
+                service.model = stub
+    app.state.load_test_stub = stub
+    return stub
 
 
 def _remote_auth_header(args: argparse.Namespace) -> dict[str, str]:
