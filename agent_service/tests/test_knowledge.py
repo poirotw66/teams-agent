@@ -13,11 +13,11 @@ from agent_service.execution_context import ExecutionContext
 from agent_service.knowledge import (
     HybridKnowledgeService,
     KnowledgeService,
-    LlmCallCounter,
     RelevanceDecision,
     RewrittenQuery,
     query_lexically_matches_results,
 )
+from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.settings import RagSettings
 
@@ -386,6 +386,61 @@ async def test_execution_context_routes_knowledge_llm_calls(tmp_path: Path) -> N
 
     assert result.found is True
     assert context.llm_calls.count == 2
+
+
+@pytest.mark.asyncio
+async def test_budget_exhaustion_on_generate_returns_budget_exceeded_backend(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FakeChatModel(relevant=True, answer_text="請聯繫資訊小幫手協助解鎖 [S1]")
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+    context = ExecutionContext(
+        correlation_id="corr-1",
+        request_id="req-1",
+        tenant_id="tenant-1",
+        idempotency_key="tenant-1::req-1",
+        model_budget=1,
+        llm_calls=LlmCallCounter(),
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+    )
+
+    result = await service.search(
+        "VPN 密碼被鎖怎麼辦？",
+        make_user(),
+        execution_context=context,
+    )
+
+    assert result.found is False
+    assert result.backend == "BUDGET_EXCEEDED"
+    assert context.llm_calls.count == 1
+
+
+@pytest.mark.asyncio
+async def test_rewrite_skipped_when_budget_cannot_cover_full_path(tmp_path: Path) -> None:
+    index = CountingIndex([vpn_chunk(content="VPN 密碼處理方式。")])
+    model = FakeChatModel(relevant=False, rewritten_query="VPN 密碼")
+    settings = make_settings(tmp_path, max_retrieval_rewrites=1)
+    service = HybridKnowledgeService(settings, index, model=model)
+    context = ExecutionContext(
+        correlation_id="corr-1",
+        request_id="req-1",
+        tenant_id="tenant-1",
+        idempotency_key="tenant-1::req-1",
+        model_budget=3,
+        llm_calls=LlmCallCounter(),
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+    )
+
+    result = await service.search(
+        "VPN 密碼被鎖怎麼辦？",
+        make_user(),
+        execution_context=context,
+    )
+
+    assert result.found is False
+    assert result.backend == "BUDGET_EXCEEDED"
+    assert model.structured_output_calls.count("RewrittenQuery") == 0
 
 
 def test_gemini_mode_is_not_the_default(tmp_path: Path) -> None:

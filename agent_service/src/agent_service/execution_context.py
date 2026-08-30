@@ -26,6 +26,10 @@ class RequestOperationTimedOut(RequestDeadlineExceeded):
     """Raised when an in-flight model call exceeds the remaining request deadline."""
 
 
+class RequestModelBudgetExceeded(RuntimeError):
+    """Raised when the request has insufficient remaining LLM call budget."""
+
+
 @dataclass
 class ExecutionContext:
     correlation_id: str
@@ -77,10 +81,19 @@ class ExecutionContext:
     def budget_remaining(self) -> int:
         return max(0, self.model_budget - self.llm_calls.count)
 
-    def ensure_budget(self) -> None:
+    def ensure_budget_slots(self, slots: int = 1) -> None:
+        if slots < 1:
+            raise ValueError("slots must be at least 1")
         self.ensure_deadline()
-        if self.llm_calls.count >= self.model_budget:
-            raise RuntimeError("LLM call budget exhausted for this request.")
+        if self.llm_calls.count + slots > self.model_budget:
+            raise RequestModelBudgetExceeded(
+                f"Insufficient LLM budget for {slots} call(s): "
+                f"count={self.llm_calls.count} budget={self.model_budget} "
+                f"request_id={self.request_id}"
+            )
+
+    def ensure_budget(self) -> None:
+        self.ensure_budget_slots(1)
 
     def record_llm_call(self) -> None:
         self.ensure_budget()

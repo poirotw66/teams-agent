@@ -58,7 +58,7 @@ class RagSettings:
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
     conversation_retention_days: int = 730
-    max_llm_calls_per_request: int = 5
+    max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
 
     # --- Knowledge Service (spec §8) ---
@@ -144,7 +144,7 @@ class RagSettings:
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
             conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 730),
-            max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 5),
+            max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
             max_retrieval_rewrites=_int_env(
                 "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
             ),

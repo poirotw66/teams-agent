@@ -36,6 +36,7 @@ from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
 from .execution_context import (
     ExecutionContext,
     RequestDeadlineExceeded,
+    RequestModelBudgetExceeded,
     RequestOperationTimedOut,
 )
 from .llm_call_counter import LlmCallCounter
@@ -43,6 +44,9 @@ from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
 
 KnowledgeLLM = TypeVar("KnowledgeLLM")
+
+# rewrite + post-rewrite relevance grade + grounded answer generation
+_KNOWLEDGE_REWRITE_PATH_SLOTS = 3
 
 # --- Prompts (verbatim from graph.py; tuned for Traditional Chinese) -------
 
@@ -297,6 +301,8 @@ class KnowledgeService(Protocol):
         user_context: UserContext,
         *,
         correlation_id: str | None = None,
+        call_counter: LlmCallCounter | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult: ...
 
 
@@ -351,15 +357,26 @@ class HybridKnowledgeService:
                     self.last_llm_call_count = counter.count
                     return result
                 if state.attempt < self.settings.max_retrieval_rewrites and self.model:
+                    if execution_context is not None:
+                        try:
+                            execution_context.ensure_budget_slots(
+                                _KNOWLEDGE_REWRITE_PATH_SLOTS
+                            )
+                        except RequestModelBudgetExceeded:
+                            self.last_llm_call_count = counter.count
+                            return self._limit_result("BUDGET_EXCEEDED")
                     state = await self._rewrite(
                         state, counter, execution_context=execution_context
                     )
                     state = await self._retrieve(state, groups)
                     continue
                 break
+        except RequestModelBudgetExceeded:
+            self.last_llm_call_count = counter.count
+            return self._limit_result("BUDGET_EXCEEDED")
         except (RequestDeadlineExceeded, RequestOperationTimedOut):
             self.last_llm_call_count = counter.count
-            return self._no_answer()
+            return self._limit_result("DEADLINE_EXCEEDED")
 
         self.last_llm_call_count = counter.count
         return self._no_answer()
@@ -572,6 +589,15 @@ class HybridKnowledgeService:
             sources=self._unique_citations(cited_results),
             images=self._images_for(cited_results),
             backend="HYBRID",
+        )
+
+    def _limit_result(self, backend: str) -> KnowledgeResult:
+        return KnowledgeResult(
+            found=False,
+            answer="",
+            sources=[],
+            images=[],
+            backend=backend,
         )
 
     def _no_answer(self) -> KnowledgeResult:

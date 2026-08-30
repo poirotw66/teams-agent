@@ -89,7 +89,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.conversation_history_rounds == 5
     assert settings.conversation_timeout_hours == 24
     assert settings.conversation_retention_days == 730
-    assert settings.max_llm_calls_per_request == 5
+    assert settings.max_llm_calls_per_request == 6
     assert settings.max_retrieval_rewrites == 1
     assert settings.knowledge_service_mode == "HYBRID"
     assert settings.gemini_file_search_store is None

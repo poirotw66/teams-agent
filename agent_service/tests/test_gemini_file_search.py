@@ -16,12 +16,14 @@ import pytest
 
 from agent_service.contracts import UserContext
 from agent_service.documents import DocumentChunk, DocumentImage
+from agent_service.execution_context import ExecutionContext
 from agent_service.file_search_acl import PUBLIC_GROUP_KEY, filter_for, group_metadata_key
 from agent_service.file_search_registry import FileSearchDocumentRegistry
 from agent_service.gemini_file_search import (
     GROUNDING_SYSTEM_INSTRUCTION,
     GeminiFileSearchKnowledgeService,
 )
+from agent_service.llm_call_counter import LlmCallCounter
 
 # --- fake response plumbing -------------------------------------------------
 
@@ -139,6 +141,30 @@ async def test_unknown_slug_degrades_to_slug_title_and_no_images():
     assert result.found is True
     assert result.sources[0].title == "unknown-slug.md"
     assert result.images == []
+
+
+@pytest.mark.asyncio
+async def test_execution_context_budget_exceeded_returns_budget_backend() -> None:
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        grounding_chunks=[make_chunk(make_context(title="doc.md"))],
+    )
+    install_fake_client(service, response)
+    context = ExecutionContext(
+        correlation_id="corr-1",
+        request_id="req-1",
+        tenant_id="tenant-1",
+        idempotency_key="tenant-1::req-1",
+        model_budget=1,
+        llm_calls=LlmCallCounter(count=1),
+    )
+
+    result = await service.search("query", UserContext(groups=[]), execution_context=context)
+
+    assert result.found is False
+    assert result.backend == "BUDGET_EXCEEDED"
 
 
 @pytest.mark.asyncio

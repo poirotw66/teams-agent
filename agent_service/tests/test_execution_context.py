@@ -6,9 +6,10 @@ import pytest
 from agent_service.execution_context import (
     ExecutionContext,
     RequestDeadlineExceeded,
+    RequestModelBudgetExceeded,
     RequestOperationTimedOut,
 )
-from agent_service.knowledge import LlmCallCounter
+from agent_service.llm_call_counter import LlmCallCounter
 
 
 def _context(*, deadline: datetime | None = None, model_budget: int = 3) -> ExecutionContext:
@@ -40,6 +41,22 @@ def test_ensure_budget_checks_deadline_before_llm_budget() -> None:
 
     with pytest.raises(RequestDeadlineExceeded):
         context.ensure_budget()
+
+
+def test_ensure_budget_raises_model_budget_exceeded() -> None:
+    context = _context(model_budget=1)
+    context.llm_calls.count = 1
+
+    with pytest.raises(RequestModelBudgetExceeded):
+        context.ensure_budget()
+
+
+def test_ensure_budget_slots_requires_multiple_remaining() -> None:
+    context = _context(model_budget=3)
+    context.llm_calls.count = 2
+
+    with pytest.raises(RequestModelBudgetExceeded):
+        context.ensure_budget_slots(2)
 
 
 @pytest.mark.asyncio
@@ -88,7 +105,7 @@ async def test_run_llm_reserves_budget_before_slow_operation_completes() -> None
         async def noop() -> None:
             return None
 
-        with pytest.raises(RuntimeError, match="budget exhausted"):
+        with pytest.raises(RequestModelBudgetExceeded):
             await context.run_llm(noop, component="second")
 
     first = asyncio.create_task(context.run_llm(slow, component="first"))
