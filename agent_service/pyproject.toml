@@ -44,9 +44,10 @@ firestore = [
 [project.scripts]
 rag-agent = "agent_service.main:main"
 rag-index = "agent_service.indexer:main"
+knowledge-portal = "knowledge_portal.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_service"]
+packages = ["src/agent_service", "src/knowledge_portal"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -1,0 +1,259 @@
+from __future__ import annotations
+
+import hashlib
+import re
+from datetime import date, datetime
+
+from agent_service.documents import chunk_markdown, parse_front_matter
+
+from .models import (
+    AudienceType,
+    ParsePreview,
+    PreviewSegment,
+    ValidationIssue,
+    ValidationSummary,
+)
+
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|password|passwd|token)\b\s*[:=]\s*\S+"),
+    re.compile(r"(?i)\b(sk-[a-z0-9]{10,}|AIza[0-9A-Za-z\-_]{20,})\b"),
+    re.compile(r"(?i)\b\d{3}-\d{2}-\d{4}\b"),
+)
+_EXTERNAL_IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\((https?://[^)]+)\)")
+_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _parse_iso_date(value: str) -> date | None:
+    if not _DATE_PATTERN.match(value):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def build_parse_preview(markdown_content: str, title: str) -> ParsePreview:
+    _, body = parse_front_matter(markdown_content)
+    sections = re.split(r"(?m)(?=^#{1,3}\s+)", body.strip() or markdown_content)
+    segments: list[PreviewSegment] = []
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        heading_match = re.match(r"^#{1,3}\s+(.+)$", section, flags=re.MULTILINE)
+        heading = heading_match.group(1).strip() if heading_match else title
+        excerpt = re.sub(r"^#{1,6}\s+", "", section, flags=re.MULTILINE).strip()
+        excerpt = excerpt[:280] + ("…" if len(excerpt) > 280 else "")
+        segments.append(
+            PreviewSegment(
+                heading=heading,
+                excerpt=excerpt,
+                char_count=len(section),
+            )
+        )
+    external_images = _EXTERNAL_IMAGE_PATTERN.findall(markdown_content)
+    return ParsePreview(
+        title=title,
+        segments=segments[:12],
+        image_count=len(re.findall(r"!\[[^\]]*\]\([^)]+\)", markdown_content)),
+        external_image_urls=external_images,
+    )
+
+
+def validate_draft(
+    *,
+    title: str,
+    owner_unit_id: str,
+    change_reason: str,
+    effective_at: str,
+    review_due_at: str,
+    audience_type: AudienceType,
+    audience_group_ids: list[str],
+    markdown_content: str,
+    require_operational_fields: bool = True,
+) -> ValidationSummary:
+    issues: list[ValidationIssue] = []
+
+    def add(code: str, severity: str, message: str, field: str | None = None) -> None:
+        issues.append(
+            ValidationIssue(code=code, severity=severity, message=message, field=field)
+        )
+
+    if require_operational_fields:
+        if not title.strip():
+            add("TITLE_REQUIRED", "BLOCKING", "Title is required.", "title")
+        if not owner_unit_id.strip():
+            add("OWNER_REQUIRED", "BLOCKING", "Owner unit is required.", "owner_unit_id")
+        if not change_reason.strip():
+            add(
+                "CHANGE_REASON_REQUIRED",
+                "BLOCKING",
+                "Change reason is required.",
+                "change_reason",
+            )
+        if not effective_at.strip():
+            add(
+                "EFFECTIVE_DATE_REQUIRED",
+                "BLOCKING",
+                "Effective date is required.",
+                "effective_at",
+            )
+        if not review_due_at.strip():
+            add(
+                "REVIEW_DUE_REQUIRED",
+                "BLOCKING",
+                "Review due date is required.",
+                "review_due_at",
+            )
+
+    effective = _parse_iso_date(effective_at)
+    review_due = _parse_iso_date(review_due_at)
+    if effective_at and effective is None:
+        add("EFFECTIVE_DATE_INVALID", "BLOCKING", "Effective date must be YYYY-MM-DD.", "effective_at")
+    if review_due_at and review_due is None:
+        add("REVIEW_DUE_INVALID", "BLOCKING", "Review due date must be YYYY-MM-DD.", "review_due_at")
+    if effective and review_due and review_due < effective:
+        add(
+            "REVIEW_BEFORE_EFFECTIVE",
+            "BLOCKING",
+            "Review due date cannot be earlier than effective date.",
+            "review_due_at",
+        )
+
+    if audience_type == "RESTRICTED_GROUPS" and not audience_group_ids:
+        add(
+            "AUDIENCE_GROUPS_REQUIRED",
+            "BLOCKING",
+            "Restricted content requires at least one audience group.",
+            "audience_group_ids",
+        )
+    if audience_type == "ALL_EMPLOYEES" and audience_group_ids:
+        add(
+            "AUDIENCE_GROUPS_IGNORED",
+            "WARNING",
+            "Audience groups are ignored when visibility is all employees.",
+            "audience_group_ids",
+        )
+
+    stripped = markdown_content.strip()
+    if not stripped:
+        add("EMPTY_CONTENT", "BLOCKING", "Document content cannot be empty.", "markdown_content")
+    else:
+        try:
+            parse_front_matter(stripped)
+        except (TypeError, ValueError) as exc:
+            add("FRONT_MATTER_INVALID", "BLOCKING", str(exc), "markdown_content")
+
+    if not re.search(r"(?m)^#\s+\S", stripped):
+        add(
+            "MISSING_HEADING",
+            "WARNING",
+            "Content should include at least one level-1 heading.",
+            "markdown_content",
+        )
+
+    for pattern in _SECRET_PATTERNS:
+        if pattern.search(stripped):
+            add(
+                "SUSPECTED_SECRET",
+                "BLOCKING",
+                "Content appears to contain credentials or sensitive identifiers.",
+                "markdown_content",
+            )
+            break
+
+    preview = build_parse_preview(stripped, title)
+    if preview.external_image_urls:
+        add(
+            "EXTERNAL_IMAGE_URL",
+            "BLOCKING",
+            "External image URLs must be uploaded to controlled storage before publish.",
+            "markdown_content",
+        )
+
+    for image_match in re.finditer(r"!\[([^\]]*)\]\(([^)]+)\)", stripped):
+        alt_text = image_match.group(1).strip()
+        target = image_match.group(2).strip()
+        if "://" not in target and not alt_text:
+            add(
+                "MISSING_ALT_TEXT",
+                "WARNING",
+                "Images should include alternative text.",
+                "markdown_content",
+            )
+            break
+
+    if review_due:
+        days = (review_due - date.today()).days
+        if days < 0:
+            add(
+                "REVIEW_OVERDUE",
+                "WARNING",
+                "Review due date is already past.",
+                "review_due_at",
+            )
+        elif days <= 7:
+            add(
+                "REVIEW_DUE_SOON",
+                "INFO",
+                "Review due date is within 7 days.",
+                "review_due_at",
+            )
+
+    return ValidationSummary(issues=issues)
+
+
+def build_front_matter_markdown(
+    *,
+    title: str,
+    owner_unit_id: str,
+    effective_at: str,
+    review_due_at: str,
+    audience_type: AudienceType,
+    audience_group_ids: list[str],
+    version_number: int,
+    body: str,
+) -> str:
+    audience_values = (
+        ["all-employees"]
+        if audience_type == "ALL_EMPLOYEES"
+        else audience_group_ids
+    )
+    front_matter = {
+        "title": title,
+        "owner": owner_unit_id,
+        "version": str(version_number),
+        "effectiveDate": effective_at,
+        "reviewDate": review_due_at,
+        "audience": audience_values,
+    }
+    import yaml
+
+    header = yaml.safe_dump(front_matter, allow_unicode=True, sort_keys=False).strip()
+    normalized_body = body.strip()
+    if normalized_body.startswith("---"):
+        return normalized_body
+    return f"---\n{header}\n---\n\n{normalized_body}\n"
+
+
+def estimate_retrieval_segments(markdown_content: str, title: str, chunk_size: int, overlap: int) -> int:
+    from pathlib import Path
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir) / "draft.md"
+        temp_path.write_text(markdown_content, encoding="utf-8")
+        try:
+            chunks = chunk_markdown(
+                temp_path,
+                "draft.md",
+                chunk_size=chunk_size,
+                overlap=overlap,
+            )
+        except Exception:
+            return 0
+        return len(chunks)

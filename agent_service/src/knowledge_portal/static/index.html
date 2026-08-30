@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>知識營運介面</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Teams IT 智能助手</p>
+        <h1>知識營運介面</h1>
+      </div>
+      <div class="identity">
+        <label>
+          使用者
+          <input id="userId" value="contributor.demo">
+        </label>
+        <label>
+          顯示名稱
+          <input id="userName" value="知識貢獻者">
+        </label>
+        <label>
+          角色
+          <select id="userRole">
+            <option value="CONTRIBUTOR">知識貢獻者</option>
+            <option value="REVIEWER">知識審核者</option>
+            <option value="MANAGER">知識管理者</option>
+            <option value="PLATFORM">平台管理者</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <button data-view="dashboard" class="active">儀表板</button>
+      <button data-view="library">知識庫</button>
+      <button data-view="editor">新增／更新</button>
+      <button data-view="audit">稽核紀錄</button>
+    </nav>
+
+    <main>
+      <section id="view-dashboard" class="view active">
+        <h2>儀表板</h2>
+        <div id="dashboardCards" class="cards"></div>
+      </section>
+
+      <section id="view-library" class="view">
+        <h2>知識庫</h2>
+        <div id="documentList" class="panel"></div>
+        <div id="documentDetail" class="panel hidden"></div>
+      </section>
+
+      <section id="view-editor" class="view">
+        <h2>新增知識文件</h2>
+        <form id="createForm" class="panel form-grid">
+          <label>標題<input name="title" required></label>
+          <label>摘要<textarea name="summary" rows="2"></textarea></label>
+          <label>擁有單位<input name="owner_unit_id" value="IT Service Desk" required></label>
+          <label>分類<input name="category"></label>
+          <label>生效日<input name="effective_at" type="date" required></label>
+          <label>下次檢視日<input name="review_due_at" type="date" required></label>
+          <label>變更原因<textarea name="change_reason" rows="2" required></textarea></label>
+          <label>適用範圍
+            <select name="audience_type">
+              <option value="ALL_EMPLOYEES">全體員工</option>
+              <option value="RESTRICTED_GROUPS">特定群組</option>
+            </select>
+          </label>
+          <label class="full">Markdown 內容
+            <textarea name="markdown_content" rows="14" required># 範例標題
+
+## 正文（canonical）
+
+請在此撰寫知識內容。</textarea>
+          </label>
+          <button type="submit">建立草稿</button>
+        </form>
+      </section>
+
+      <section id="view-audit" class="view">
+        <h2>稽核紀錄</h2>
+        <div id="auditList" class="panel"></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
