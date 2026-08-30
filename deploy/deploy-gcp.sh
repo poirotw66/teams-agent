@@ -2,7 +2,6 @@
 
 set -Eeuo pipefail
 
-PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ID="${GCP_PROJECT_ID:-itr-aimasteryhub-lab}"
 REGION="${GCP_REGION:-asia-east1}"
 REPOSITORY="${GCP_ARTIFACT_REPOSITORY:-teams-agent}"
@@ -47,6 +46,12 @@ fail() {
   printf '[deploy] ERROR: %s\n' "$*" >&2
   exit 1
 }
+
+if [[ "${TERRAFORM_MANAGED:-0}" == "1" ]]; then
+  fail "Project is Terraform-managed. Run infra/terraform apply for shape, inject secrets separately, then deploy/release-gcp.sh for images. Unset TERRAFORM_MANAGED only if you intentionally want a full legacy deploy."
+fi
+
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 env_value() {
   local file="$1"

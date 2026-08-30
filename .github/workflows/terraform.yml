@@ -30,8 +30,16 @@ jobs:
       - name: terraform fmt
         run: terraform fmt -check -recursive
 
-      - name: terraform init (no backend)
-        run: terraform init -backend=false
+      - name: Provider lock consistency (no credentials)
+        run: |
+          terraform init -backend=false -lockfile=readonly
+          cp .terraform.lock.hcl .terraform.lock.hcl.expected
+          terraform providers lock \
+            -platform=linux_amd64 \
+            -platform=linux_arm64 \
+            -platform=darwin_amd64 \
+            -platform=darwin_arm64
+          diff -u .terraform.lock.hcl.expected .terraform.lock.hcl
 
       - name: terraform validate
         run: terraform validate

@@ -30,6 +30,15 @@ Use this checklist when importing the environment created by `deploy/deploy-gcp.
 
 Replace project/region/names if your tfvars differ.
 
+## Environment backends
+
+| Workflow | Init command |
+|---|---|
+| POC import | `terraform init -backend-config=../environments/poc/backend.hcl` |
+| New test project | `terraform init -backend-config=../environments/test/backend.hcl` |
+
+Do not share state between environments. See [../DEPLOYER_IAM.md](../DEPLOYER_IAM.md).
+
 ## Import script (run from `infra/terraform`)
 
 Set `PROJECT`, `REGION`, then import in dependency order:

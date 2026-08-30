@@ -1,5 +1,5 @@
-# Copy to terraform.tfvars in infra/terraform after init.
-# POC environment values mirror deploy/deploy-gcp.sh defaults.
+# Copy to infra/terraform/terraform.tfvars for POC import only.
+# Do NOT use this file's backend or allow_latest_image_tags for new projects.
 
 project_id = "itr-aimasteryhub-lab"
 region     = "asia-east1"
@@ -7,5 +7,12 @@ region     = "asia-east1"
 bot_client_id = "REPLACE_WITH_ENTRA_CLIENT_ID"
 bot_tenant_id = "REPLACE_WITH_ENTRA_TENANT_ID"
 
-# Required for zero-diff import against an existing Adapter deployment:
+# Import-only escape hatch while images stay on :latest in live POC.
+allow_latest_image_tags = true
+
+# Required for zero-diff import against the existing Adapter deployment:
 # adapter_public_base_url = "https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app"
+
+# Optional explicit pins during import (otherwise :latest via allow_latest_image_tags):
+# agent_image   = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-rag-agent:latest"
+# adapter_image = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-agent-adapter:latest"

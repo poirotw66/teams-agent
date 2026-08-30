@@ -1,10 +1,19 @@
 locals {
+  firestore_location_id         = coalesce(var.firestore_location_id, var.region)
   agent_service_account_email   = "${var.agent_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
   adapter_service_account_email = "${var.adapter_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
   artifact_registry_path        = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repository_id}"
 
-  agent_image   = var.agent_image != "" ? var.agent_image : "${local.artifact_registry_path}/${var.agent_service_name}:latest"
-  adapter_image = var.adapter_image != "" ? var.adapter_image : "${local.artifact_registry_path}/${var.adapter_service_name}:latest"
+  agent_image = var.agent_image != "" ? var.agent_image : (
+    var.allow_latest_image_tags
+    ? "${local.artifact_registry_path}/${var.agent_service_name}:latest"
+    : null
+  )
+  adapter_image = var.adapter_image != "" ? var.adapter_image : (
+    var.allow_latest_image_tags
+    ? "${local.artifact_registry_path}/${var.adapter_service_name}:latest"
+    : null
+  )
 
   required_apis = toset([
     "run.googleapis.com",
@@ -58,5 +67,27 @@ locals {
     RAG_ASSET_URL_TTL_SECONDS = "3600"
     RAG_ASSET_MAX_DIMENSION   = "1024"
     RAG_ASSET_MAX_BYTES       = "1000000"
+  }
+}
+
+resource "terraform_data" "image_policy" {
+  lifecycle {
+    precondition {
+      condition     = local.agent_image != null && local.adapter_image != null
+      error_message = "Set agent_image and adapter_image to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
+    }
+
+    precondition {
+      condition     = var.adapter_public_base_url == "" || can(regex("^https://", var.adapter_public_base_url))
+      error_message = "adapter_public_base_url must be an https URL when set."
+    }
+
+    precondition {
+      condition = !var.allow_latest_image_tags || (
+        (var.agent_image == "" || endswith(var.agent_image, ":latest")) &&
+        (var.adapter_image == "" || endswith(var.adapter_image, ":latest"))
+      )
+      error_message = "When allow_latest_image_tags=true, omit images or use :latest explicitly for import workflows only."
+    }
   }
 }

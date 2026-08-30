@@ -1,12 +1,23 @@
 variable "project_id" {
-  description = "GCP project ID for the POC environment."
+  description = "GCP project ID."
   type        = string
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", var.project_id))
+    error_message = "project_id must be a valid GCP project ID."
+  }
 }
 
 variable "region" {
-  description = "Primary GCP region for Cloud Run, Artifact Registry, and Firestore."
+  description = "Primary GCP region for Cloud Run and Artifact Registry."
   type        = string
   default     = "asia-east1"
+}
+
+variable "firestore_location_id" {
+  description = "Firestore location. Defaults to region when null."
+  type        = string
+  default     = null
 }
 
 variable "artifact_repository_id" {
@@ -45,12 +56,6 @@ variable "firestore_database_id" {
   default     = "(default)"
 }
 
-variable "firestore_location_id" {
-  description = "Firestore multi-region or region location."
-  type        = string
-  default     = "asia-east1"
-}
-
 variable "firestore_conversations_collection" {
   type    = string
   default = "conversations"
@@ -86,14 +91,20 @@ variable "asset_signing_secret_id" {
   default = "teams-agent-asset-signing-key"
 }
 
+variable "allow_latest_image_tags" {
+  description = "Import-only escape hatch for existing POC environments. New projects must keep this false and pin images by commit SHA or digest."
+  type        = bool
+  default     = false
+}
+
 variable "agent_image" {
-  description = "Container image for the Agent service. Release pipeline owns updates; Terraform ignores image drift after initial import."
+  description = "Immutable Agent container image (commit SHA tag or @sha256 digest)."
   type        = string
   default     = ""
 }
 
 variable "adapter_image" {
-  description = "Container image for the Adapter service. Release pipeline owns updates; Terraform ignores image drift after initial import."
+  description = "Immutable Adapter container image (commit SHA tag or @sha256 digest)."
   type        = string
   default     = ""
 }
@@ -121,11 +132,21 @@ variable "rag_allowed_tenants" {
 variable "bot_client_id" {
   description = "Entra application (client) ID for the Teams bot. Not a secret."
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", var.bot_client_id))
+    error_message = "bot_client_id must be a UUID."
+  }
 }
 
 variable "bot_tenant_id" {
   description = "Entra tenant ID for the Teams bot. Not a secret."
   type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", var.bot_tenant_id))
+    error_message = "bot_tenant_id must be a UUID."
+  }
 }
 
 variable "gemini_file_search_store" {
@@ -159,7 +180,7 @@ variable "ticket_request_dedupe_mode" {
 }
 
 variable "adapter_public_base_url" {
-  description = "Public HTTPS URL of the Adapter Cloud Run service for BOT_PUBLIC_BASE_URL. Set after first deploy/import for zero-diff plans."
+  description = "Public HTTPS URL of the Adapter Cloud Run service for BOT_PUBLIC_BASE_URL."
   type        = string
   default     = ""
 }

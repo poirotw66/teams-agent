@@ -347,13 +347,25 @@ After import reaches a zero-diff plan, split operations as follows:
 
 ```text
 terraform apply  → infrastructure + non-secret env + IAM
-release pipeline → immutable image build + Cloud Run revision update
+release-gcp.sh   → immutable image build + Cloud Run image update only
 smoke test       → /readyz, Agent IAM, Teams E2E
 ```
 
-Do not run `deploy-gcp.sh` and Terraform against the same POC project for
-the same knobs (CPU, memory, env, IAM). Secret **values** stay outside
-Terraform state.
+Do not run `deploy-gcp.sh` when `TERRAFORM_MANAGED=1` on a Terraform-managed project —
+it still mutates IAM, secrets, CPU, memory, scaling, timeout, and all env vars. Use
+[`release-gcp.sh`](./release-gcp.sh) instead. Secret **values** stay outside Terraform state.
+
+Deployer / CI identities: [`../infra/DEPLOYER_IAM.md`](../infra/DEPLOYER_IAM.md).
+
+### Release only (Terraform-managed projects)
+
+```bash
+export GCP_PROJECT_ID=your-project-id
+export TERRAFORM_MANAGED=1   # blocks accidental deploy-gcp.sh
+./deploy/release-gcp.sh      # build SHA-tagged images, update Cloud Run image only
+```
+
+Optional: `RELEASE_GIT_SHA=abc1234 ./deploy/release-gcp.sh` to override the tag.
 
 ## Mock Ticket API 驗收環境
 

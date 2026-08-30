@@ -1,15 +1,7 @@
-# Copy to terraform.tfvars and fill in non-secret values.
-# Never commit terraform.tfvars with real project-specific secrets.
-
-project_id = "itr-aimasteryhub-lab"
-region     = "asia-east1"
-
-bot_client_id = "00000000-0000-0000-0000-000000000000"
-bot_tenant_id = "00000000-0000-0000-0000-000000000000"
-
-# Optional: set after import so BOT_PUBLIC_BASE_URL matches the live Adapter URL.
-# adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"
-
-# Optional: pin images for first import; release pipeline owns updates afterward.
-# agent_image   = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-rag-agent:latest"
-# adapter_image = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-agent-adapter:latest"
+# Do not copy this file directly — use an environment-specific example:
+#
+#   POC import:  cp ../environments/poc/terraform.tfvars.example terraform.tfvars
+#   New test:    cp ../environments/test/terraform.tfvars.example terraform.tfvars
+#
+# New projects must pin agent_image and adapter_image (commit SHA or digest).
+# allow_latest_image_tags=true is import-only for the existing POC.

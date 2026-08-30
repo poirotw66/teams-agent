@@ -2,6 +2,7 @@ resource "google_cloud_run_v2_service" "agent" {
   depends_on = [
     google_project_service.required,
     google_secret_manager_secret_iam_member.agent_google_api_key,
+    terraform_data.image_policy,
   ]
 
   name     = var.agent_service_name
@@ -68,6 +69,7 @@ resource "google_cloud_run_v2_service" "adapter" {
     google_cloud_run_v2_service.agent,
     google_secret_manager_secret_iam_member.adapter_bot_client_secret,
     google_secret_manager_secret_iam_member.adapter_asset_signing_key,
+    terraform_data.image_policy,
   ]
 
   name     = var.adapter_service_name

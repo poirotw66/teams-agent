@@ -1,6 +1,17 @@
 # Terraform — POC core infrastructure
 
-Minimal, readable IaC for the Teams Agent POC on GCP. This describes **long-lived infrastructure** already provisioned by `deploy/deploy-gcp.sh`; it does **not** replace application release (image build/deploy) or secret **values**.
+Minimal, readable IaC for the Teams Agent POC on GCP. This describes **long-lived infrastructure**; it does **not** store secret **values** or replace application release (image build/deploy).
+
+## Two workflows — do not mix them
+
+| Workflow | Backend | tfvars example | Image policy |
+|---|---|---|---|
+| **POC import** (existing `deploy-gcp.sh` project) | `../environments/poc/backend.hcl` | `../environments/poc/terraform.tfvars.example` | `allow_latest_image_tags = true` during import only |
+| **New test project** (clean-room handoff drill) | `../environments/test/backend.hcl` | `../environments/test/terraform.tfvars.example` | **Pinned** `agent_image` / `adapter_image` (SHA or digest) |
+
+Each environment must use a **different GCS state bucket or at least a different prefix**. Never bootstrap a new test project against the POC backend.
+
+Deployer / CI identities: [../DEPLOYER_IAM.md](../DEPLOYER_IAM.md).
 
 ## Scope
 
@@ -12,39 +23,48 @@ Minimal, readable IaC for the Teams Agent POC on GCP. This describes **long-live
 | IAM (Firestore, Secret Accessor, Run invoker) | Playground / Mock Ticket (optional UAT) |
 | Secret Manager secret **containers** + IAM | Entra client secret value |
 | Firestore database + TTL field policies | Production HA / VPC / WAF / DR |
-| Cloud Run service **shape** (CPU, memory, env, SA, IAM) | Cloud Build job definitions (still in `deploy/`) |
+| Cloud Run service **shape** (CPU, memory, env, SA, IAM) | Cloud Build job definitions (in `deploy/`) |
 
 ## Ownership boundary
 
 ```text
 terraform apply   → infrastructure shape, IAM, env vars, secret references
-release pipeline  → build immutable image (commit SHA) + deploy revision
+release-gcp.sh    → build immutable image (commit SHA) + Cloud Run image update only
 smoke test        → /readyz, Agent IAM, Teams E2E
 ```
 
-Cloud Run **container images** are ignored after import (`lifecycle.ignore_changes` on `image`). Release updates images via `gcloud run deploy` or Cloud Build without fighting Terraform drift.
+Cloud Run **container images** are ignored after import (`lifecycle.ignore_changes` on `image`). Release updates images via `deploy/release-gcp.sh` without fighting Terraform drift.
 
-Do **not** let `deploy-gcp.sh` and Terraform both mutate the same knobs (CPU, env, IAM) on the live POC project once import is complete.
+**Do not** run `deploy-gcp.sh` on Terraform-managed projects (`TERRAFORM_MANAGED=1`). It still mutates IAM, secrets, CPU, env, scaling, and timeout.
 
-## Prerequisites
+## Suggested completion order
 
-- Terraform >= 1.5
-- `gcloud` authenticated to the target project
-- Permission to create/read the resources in [INVENTORY.md](./INVENTORY.md)
+1. Ensure `backend "gcs" {}` in `versions.tf` (done).
+2. Bootstrap the correct environment backend bucket + prefix.
+3. Copy the matching `terraform.tfvars.example` → `terraform.tfvars`.
+4. **POC:** import all live resources ([INVENTORY.md](./INVENTORY.md)).
+5. Run `terraform plan` until `0 to add, 0 to change, 0 to destroy`.
+6. Save evidence: `../scripts/terraform-plan-evidence.sh`.
+7. Use `deploy/release-gcp.sh` for image releases (not `deploy-gcp.sh`).
+8. Run a clean-room handoff drill on a **test** project with pinned images.
+9. Declare Terraform handoff complete.
 
-## Quick start (new test project)
+## New test project (greenfield)
 
 ```bash
 cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars (project_id, bot_client_id, bot_tenant_id)
 
-terraform init -backend-config=../environments/poc/backend.hcl
+# 1. Bootstrap state in the TEST project (see ../environments/test/backend.hcl)
+# 2. Copy tfvars — must pin images; allow_latest_image_tags stays false
+cp ../environments/test/terraform.tfvars.example terraform.tfvars
+# edit project_id, bot IDs, agent_image, adapter_image
+
+terraform init -backend-config=../environments/test/backend.hcl
 terraform plan
 terraform apply
 ```
 
-Inject secret **values** separately (CI, manual, or company secrets platform):
+Inject secret **values** separately:
 
 ```bash
 printf '%s' "$GOOGLE_API_KEY" | gcloud secrets versions add teams-agent-google-api-key --data-file=-
@@ -52,54 +72,56 @@ printf '%s' "$CLIENT_SECRET" | gcloud secrets versions add teams-agent-bot-clien
 printf '%s' "$RAG_ASSET_SIGNING_KEY" | gcloud secrets versions add teams-agent-asset-signing-key --data-file=-
 ```
 
-Build and release application images (see `deploy/README.md`).
+Build and release application images:
+
+```bash
+export GCP_PROJECT_ID=your-test-project-id
+./deploy/release-gcp.sh
+```
+
+After apply, set `adapter_public_base_url` in tfvars if not passed on first apply, then re-apply.
 
 ## Import existing POC project (zero-diff goal)
 
 **Do not `apply` to the live POC project until import reaches `Plan: 0 to add, 0 to change, 0 to destroy`.**
 
-1. Bootstrap remote state bucket (one-time, documented in `../environments/poc/backend.hcl`).
-2. Export live config (see INVENTORY.md § Audit commands).
-3. Align `terraform.tfvars` with live non-secret settings (`adapter_public_base_url`, models, etc.).
-4. `terraform init` + run import commands from [INVENTORY.md](./INVENTORY.md).
-5. Repeat `terraform plan` until zero diff.
+```bash
+cd infra/terraform
+cp ../environments/poc/terraform.tfvars.example terraform.tfvars
+# align bot IDs, adapter_public_base_url, allow_latest_image_tags = true
+
+terraform init -backend-config=../environments/poc/backend.hcl
+# run imports from INVENTORY.md
+terraform plan
+```
+
+When plan is clean, export evidence and switch releases to `release-gcp.sh` with `TERRAFORM_MANAGED=1` on POC.
 
 ## Directory layout
 
 ```text
 infra/
-  terraform/          ← root module (this directory)
+  terraform/              ← root module (this directory)
   environments/
-    poc/
-      backend.hcl
-      terraform.tfvars.example
+    poc/                  ← import existing POC (isolated state)
+    test/                 ← new handoff drill project
+  scripts/
+    terraform-plan-evidence.sh
+  DEPLOYER_IAM.md
 ```
-
-Staging / production modules can be extracted later; POC stays flat and readable.
-
-## Knowledge artifact handoff (blocker outside Terraform)
-
-Images embed `data/index/chunks.json` and assets at build time. Terraform cannot solve corpus provenance. Before handoff, document:
-
-- Who owns source documents
-- Where versioned knowledge bundles live
-- How build selects a bundle version
-- How to rebuild index and rollback
-
-See `deploy/README.md` and repository `data/` layout.
 
 ## CI
 
-Pull requests run `terraform fmt -check` and `terraform validate` (see `.github/workflows/terraform.yml`). `terraform plan` against GCP requires credentials and is intended for approved apply pipelines, not every PR.
+Pull requests run `terraform fmt -check`, provider lock consistency check, and `terraform validate` (`.github/workflows/terraform.yml`). `terraform plan` against GCP requires credentials and belongs in approved apply pipelines.
 
 ## Handoff drill acceptance
 
 A new engineer with repo + test project access (no developer laptop `.env`) should be able to:
 
-1. `terraform init` / `plan` / `apply` on a **new** project
+1. `terraform init` / `plan` / `apply` on a **new** project with **pinned images**
 2. Inject secrets via documented commands
-3. Deploy a pinned image revision
-4. Verify `/readyz`, private Agent IAM, Firestore, RAG, Teams endpoint
-5. Roll back one image revision
+3. Run `deploy/release-gcp.sh` for a SHA-tagged revision
+4. Verify `/readyz`, private Agent IAM, Firestore, RAG, Teams endpoint (`terraform output teams_developer_portal_runbook`)
+5. Roll back one image revision (release script rolls back on failure; manual rollback via previous image tag)
 
-See INVENTORY.md for the resource mapping checklist.
+See [INVENTORY.md](./INVENTORY.md) for the resource mapping checklist.

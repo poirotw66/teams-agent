@@ -3,7 +3,7 @@ resource "google_firestore_database" "default" {
 
   project     = var.project_id
   name        = var.firestore_database_id
-  location_id = var.firestore_location_id
+  location_id = local.firestore_location_id
   type        = "FIRESTORE_NATIVE"
 }
 

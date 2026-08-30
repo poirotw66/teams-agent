@@ -13,6 +13,15 @@ output "teams_bot_endpoint" {
   value       = "${google_cloud_run_v2_service.adapter.uri}/api/messages"
 }
 
+output "teams_developer_portal_runbook" {
+  description = "Links for configuring the bot in Teams Developer Portal."
+  value = {
+    messaging_endpoint = "${google_cloud_run_v2_service.adapter.uri}/api/messages"
+    runbook_doc        = "docs/teams-app-setup.md"
+    smoke_check        = "${google_cloud_run_v2_service.adapter.uri}/readyz"
+  }
+}
+
 output "agent_service_account_email" {
   value = google_service_account.agent.email
 }
