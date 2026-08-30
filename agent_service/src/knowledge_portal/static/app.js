@@ -84,10 +84,60 @@ function renderIssues(issues = []) {
     </li>`).join("")}</ul>`;
 }
 
+async function loadTestCases(documentId) {
+  const cases = await api(`/api/documents/${documentId}/test-cases`);
+  const runsByCase = {};
+  const detail = await api(`/api/documents/${documentId}`);
+  if (detail.draft_version) {
+    const runs = await api(`/api/documents/${documentId}/test-runs`).catch(() => []);
+    for (const run of runs || []) {
+      runsByCase[run.test_case_id] = run;
+    }
+  }
+  return { cases, runsByCase };
+}
+
+function renderTestCases(cases, runsByCase) {
+  if (!cases.length) {
+    return "<p>尚未建立測試問題。請先新增至少 3 題再送審。</p>";
+  }
+  return cases.map((item) => {
+    const run = runsByCase[item.test_case_id];
+    const status = run ? `<span class="status ${run.status}">${run.status}</span>` : "尚未執行";
+    return `
+      <div class="doc-row">
+        <div>
+          <strong>${item.question}</strong>
+          <div>${status}${run?.failure_reason ? ` · ${run.failure_reason}` : ""}</div>
+        </div>
+        <button class="secondary" data-run-test="${item.test_case_id}">執行</button>
+      </div>`;
+  }).join("");
+}
+
+async function runDraftSearch(documentId) {
+  const query = prompt("請輸入草稿檢索問題：");
+  if (!query) return;
+  const result = await api(`/api/documents/${documentId}/draft-search`, {
+    method: "POST",
+    body: JSON.stringify({ query, groups: [], limit: 4 }),
+  });
+  const hits = (result.hits || [])
+    .map((hit) => `[${hit.score.toFixed(2)}] ${hit.title}: ${hit.content.slice(0, 80)}…`)
+    .join("\n");
+  showToast(
+    hits
+      ? `草稿命中：${result.matchedDraft ? "是" : "否"}；正式版洩漏：${result.leakedFromActiveRelease ? "是" : "否"}`
+      : "草稿索引沒有命中",
+  );
+  if (hits) alert(`草稿檢索結果：\n${hits}`);
+}
+
 async function openDocument(documentId) {
   const detail = await api(`/api/documents/${documentId}`);
   state.selectedDocumentId = documentId;
   const draft = detail.draft_version;
+  const { cases, runsByCase } = draft ? await loadTestCases(documentId) : { cases: [], runsByCase: {} };
   const panel = document.getElementById("documentDetail");
   panel.classList.remove("hidden");
   panel.innerHTML = `
@@ -99,8 +149,11 @@ async function openDocument(documentId) {
       <div class="actions">
         <button data-action="validate">重新檢查</button>
         <button data-action="add-test">新增測試問題</button>
+        <button data-action="draft-search">草稿檢索</button>
         <button data-action="submit">送審</button>
       </div>
+      <h4>測試室</h4>
+      <div id="testCaseList">${renderTestCases(cases, runsByCase)}</div>
     ` : "<p>目前沒有可編輯草稿。</p>"}
     ${detail.open_review ? `<p>待審核 review：${detail.open_review.review_id}</p>
       <div class="actions">
@@ -115,6 +168,20 @@ async function openDocument(documentId) {
   `;
   panel.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleDocumentAction(documentId, button.dataset.action, detail));
+  });
+  panel.querySelectorAll("[data-run-test]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        const run = await api(
+          `/api/documents/${documentId}/test-cases/${button.dataset.runTest}/run`,
+          { method: "POST" },
+        );
+        showToast(`測試結果：${run.status}`);
+        await openDocument(documentId);
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
   });
 }
 
@@ -132,6 +199,10 @@ async function handleDocumentAction(documentId, action, detail) {
         body: JSON.stringify({ question, simulated_audience: [], notes: "" }),
       });
       showToast("已新增測試問題");
+    }
+    if (action === "draft-search") {
+      await runDraftSearch(documentId);
+      return;
     }
     if (action === "submit") {
       await api(`/api/documents/${documentId}/submit-review`, {

@@ -261,6 +261,17 @@ class CreateTestCaseRequest(StrictModel):
     notes: str = Field(default="", max_length=1000)
 
 
+class DraftSearchRequest(StrictModel):
+    query: str = Field(min_length=1, max_length=1000)
+    groups: list[str] = Field(default_factory=list)
+    limit: int = Field(default=4, ge=1, le=10)
+
+
+class BootstrapReleaseRequest(StrictModel):
+    sources_dir: str = ""
+    release_id: str = "release-0001"
+
+
 class DocumentListResponse(StrictModel):
     items: list[KnowledgeDocumentRecord]
     total: int

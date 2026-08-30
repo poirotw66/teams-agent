@@ -10,9 +10,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import PortalAuthError, draft_search_response, resolve_portal_actor
 from .models import (
     CreateDocumentRequest,
     CreateTestCaseRequest,
+    BootstrapReleaseRequest,
+    DraftSearchRequest,
     PortalActor,
     PortalErrorCode,
     PublishRequest,
@@ -45,30 +48,23 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Invalid service token.")
 
     def current_actor(
+        authorization: str | None = Header(default=None),
         x_portal_user_id: str | None = Header(default=None, alias="X-Portal-User-Id"),
         x_portal_user_name: str | None = Header(default=None, alias="X-Portal-User-Name"),
         x_portal_role: str | None = Header(default="CONTRIBUTOR", alias="X-Portal-Role"),
         x_portal_owner_units: str | None = Header(default="", alias="X-Portal-Owner-Units"),
     ) -> PortalActor:
-        if not x_portal_user_id or not x_portal_user_name:
-            raise HTTPException(
-                status_code=401,
-                detail="Missing portal identity headers. Entra SSO integration is planned.",
+        try:
+            return resolve_portal_actor(
+                settings=resolved_settings,
+                authorization=authorization,
+                header_user_id=x_portal_user_id,
+                header_user_name=x_portal_user_name,
+                header_role=x_portal_role,
+                header_owner_units=x_portal_owner_units,
             )
-        owner_units = [
-            item.strip()
-            for item in (x_portal_owner_units or resolved_settings.default_owner_unit_id).split(",")
-            if item.strip()
-        ]
-        role = x_portal_role or "CONTRIBUTOR"
-        if role not in {"CONTRIBUTOR", "REVIEWER", "MANAGER", "PLATFORM", "AUDITOR"}:
-            raise HTTPException(status_code=400, detail="Invalid portal role.")
-        return PortalActor(
-            user_id=x_portal_user_id,
-            display_name=x_portal_user_name,
-            role=role,
-            owner_unit_ids=owner_units,
-        )
+        except PortalAuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     def correlation_id(request: Request) -> str:
         return request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
@@ -300,6 +296,55 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         try:
             return await service.add_test_case(
                 actor, document_id, request, correlation_id_value
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/documents/{document_id}/test-runs")
+    async def list_test_runs(
+        document_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        return await service.list_test_runs(actor, document_id)
+
+    @app.post("/api/documents/{document_id}/draft-search")
+    async def draft_search(
+        document_id: str,
+        request: DraftSearchRequest,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            result = await service.search_draft(
+                actor,
+                document_id,
+                request.query,
+                request.groups,
+                request.limit,
+            )
+            return draft_search_response(result)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/admin/bootstrap-release-0001")
+    async def bootstrap_release_0001(
+        request: BootstrapReleaseRequest,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        sources_dir = Path(request.sources_dir) if request.sources_dir else (
+            resolved_settings.data_dir / "sources"
+        )
+        if not sources_dir.exists():
+            sources_dir = resolved_settings.data_dir / "sources.sample"
+        try:
+            return await service.bootstrap_release_0001(
+                actor,
+                sources_dir,
+                correlation_id_value,
+                release_id=request.release_id,
             )
         except Exception as exc:
             raise handle_errors(exc) from exc

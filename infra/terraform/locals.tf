@@ -53,6 +53,8 @@ locals {
     HANDOFF_FIRESTORE_COLLECTION       = var.firestore_handoffs_collection
     HANDOFF_DEMO_TIMEOUT_HOURS         = "24"
     HANDOFF_RETENTION_DAYS             = "730"
+    KNOWLEDGE_RELEASE_MODE             = var.knowledge_release_mode
+    KNOWLEDGE_RELEASE_DIR              = var.knowledge_release_dir
     FEEDBACK_ENABLED                   = "true"
   }
 

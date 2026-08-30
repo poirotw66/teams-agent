@@ -195,3 +195,20 @@ variable "deployment_phase" {
     error_message = "deployment_phase must be prepare, activate, or full."
   }
 }
+
+variable "knowledge_release_mode" {
+  description = "How Agent Service loads the knowledge index: AUTO, PORTAL, or BUNDLED."
+  type        = string
+  default     = "PORTAL"
+
+  validation {
+    condition     = contains(["AUTO", "PORTAL", "BUNDLED"], var.knowledge_release_mode)
+    error_message = "knowledge_release_mode must be AUTO, PORTAL, or BUNDLED."
+  }
+}
+
+variable "knowledge_release_dir" {
+  description = "Directory for portal release artifacts and active_release.json. Portal and Agent must share this path (or a GCS volume mount at the same mount point)."
+  type        = string
+  default     = "/app/data/releases"
+}

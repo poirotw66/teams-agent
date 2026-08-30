@@ -231,6 +231,10 @@ class InMemoryPortalRepository:
 def build_repository(settings) -> PortalRepository:
     if settings.repository_mode == "MEMORY":
         return InMemoryPortalRepository()
+    if settings.repository_mode == "FILE":
+        from .file_repository import FilePortalRepository
+
+        return FilePortalRepository(settings.state_path)
     if settings.repository_mode == "FIRESTORE":
         from .firestore_repository import FirestorePortalRepository
 

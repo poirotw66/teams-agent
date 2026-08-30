@@ -80,6 +80,48 @@ def test_validation_blocks_empty_content(portal_client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
+def test_bootstrap_release_endpoint(portal_client: TestClient, tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "data_dir", tmp_path)
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    (sources / "vpn.md").write_text(
+        sample_document_payload()["markdown_content"],
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(settings))
+    response = client.post(
+        "/api/admin/bootstrap-release-0001",
+        json={"sources_dir": str(sources), "release_id": "release-0001"},
+        headers=portal_headers(role="PLATFORM", user_id="platform.one", name="Platform One"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["release_id"] == "release-0001"
+    assert (tmp_path / "releases" / "active_release.json").exists()
+
+
+def test_draft_search_endpoint(portal_client: TestClient) -> None:
+    create = portal_client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(),
+    )
+    document_id = create.json()["document"]["document_id"]
+    response = portal_client.post(
+        f"/api/documents/{document_id}/draft-search",
+        json={"query": "請確認帳號未鎖定", "groups": [], "limit": 4},
+        headers=portal_headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "hits" in body
+    assert body["matchedDraft"] is True
+
+
 def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")

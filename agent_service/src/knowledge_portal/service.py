@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 from agent_service.knowledge_release import write_active_release_pointer
@@ -28,7 +29,9 @@ from .models import (
     new_etag,
     utc_now,
 )
-from .publisher import ReleaseBuildError, ReleasePublisher
+from .draft_retrieval import evaluate_test_case, search_draft_version
+from .migration import KnowledgeMigrationService
+from .publisher import ReleasePublisher
 from .rbac import (
     ensure_can_edit,
     ensure_can_publish,
@@ -56,6 +59,7 @@ class PortalService:
         self._settings = settings
         self._repository = repository
         self._publisher = ReleasePublisher(settings)
+        self._migration = KnowledgeMigrationService(settings, repository, self._publisher)
 
     async def _audit(
         self,
@@ -590,6 +594,39 @@ class PortalService:
         )
         return test_case
 
+    async def bootstrap_release_0001(
+        self,
+        actor: PortalActor,
+        sources_dir: Path,
+        correlation_id: str,
+        release_id: str = "release-0001",
+    ) -> ReleaseRecord:
+        return await self._migration.bootstrap_release_0001(
+            actor=actor,
+            sources_dir=sources_dir,
+            correlation_id=correlation_id,
+            release_id=release_id,
+        )
+
+    async def search_draft(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        query: str,
+        groups: list[str] | None = None,
+        limit: int = 4,
+    ):
+        detail = await self.get_document(actor, document_id)
+        if detail.draft_version is None:
+            raise ValueError("Draft version is required.")
+        return search_draft_version(
+            version=detail.draft_version,
+            query=query,
+            groups=groups or [],
+            settings=self._settings,
+            limit=limit,
+        )
+
     async def run_test_case(
         self,
         actor: PortalActor,
@@ -604,19 +641,20 @@ class PortalService:
         test_case = next((item for item in cases if item.test_case_id == test_case_id), None)
         ensure_not_found("test_case", test_case_id, test_case)
 
-        title_needle = detail.draft_version.title.casefold()
-        question = test_case.question.casefold()
-        status = "PASS" if title_needle[:8] and title_needle[:8] in question else "NEEDS_REVIEW"
-        if len(question) < 4:
-            status = "FAIL"
+        status, answer_excerpt, cited_titles, failure_reason = evaluate_test_case(
+            version=detail.draft_version,
+            question=test_case.question,
+            simulated_audience=test_case.simulated_audience,
+            settings=self._settings,
+        )
         test_run = TestRunRecord(
             test_run_id=new_id("run"),
             test_case_id=test_case_id,
             version_id=detail.draft_version.version_id,
             status=status,
-            answer_excerpt="Draft retrieval simulation is not yet wired to Agent Service.",
-            cited_titles=[detail.draft_version.title] if status == "PASS" else [],
-            failure_reason="" if status != "FAIL" else "Question is too short.",
+            answer_excerpt=answer_excerpt,
+            cited_titles=cited_titles,
+            failure_reason=failure_reason,
             executed_at=utc_now(),
             executed_by=actor.user_id,
         )

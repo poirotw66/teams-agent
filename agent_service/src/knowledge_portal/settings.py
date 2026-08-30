@@ -25,12 +25,27 @@ class PortalSettings:
     chunk_overlap: int
     embedding_model: str | None
     default_owner_unit_id: str
+    default_owner_unit_ids: list[str]
     require_dual_approval: bool
+    auth_mode: str
+    entra_tenant_id: str | None
+    entra_client_id: str | None
+    entra_allowed_audiences: list[str]
+    entra_platform_roles: set[str]
+    entra_manager_roles: set[str]
+    entra_reviewer_roles: set[str]
+    entra_auditor_roles: set[str]
+    agent_api_url: str | None
+    agent_api_token: str | None
+    state_path: Path
 
     @classmethod
     def from_env(cls) -> PortalSettings:
         repo_root = Path(__file__).resolve().parents[3]
         data_dir = Path(os.environ.get("KNOWLEDGE_PORTAL_DATA_DIR", repo_root / "data"))
+        default_owner_unit_id = os.environ.get(
+            "KNOWLEDGE_PORTAL_DEFAULT_OWNER_UNIT", "IT Service Desk"
+        )
         return cls(
             host=os.environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
             port=int(os.environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
@@ -71,11 +86,60 @@ class PortalSettings:
             chunk_size=int(os.environ.get("RAG_CHUNK_SIZE", "900")),
             chunk_overlap=int(os.environ.get("RAG_CHUNK_OVERLAP", "120")),
             embedding_model=os.environ.get("RAG_EMBEDDING_MODEL") or None,
-            default_owner_unit_id=os.environ.get(
-                "KNOWLEDGE_PORTAL_DEFAULT_OWNER_UNIT", "IT Service Desk"
-            ),
+            default_owner_unit_id=default_owner_unit_id,
+            default_owner_unit_ids=[
+                item.strip()
+                for item in os.environ.get(
+                    "KNOWLEDGE_PORTAL_OWNER_UNITS",
+                    default_owner_unit_id,
+                ).split(",")
+                if item.strip()
+            ],
             require_dual_approval=os.environ.get(
                 "KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL", "true"
             ).lower()
             in {"1", "true", "yes"},
+            auth_mode=os.environ.get("KNOWLEDGE_PORTAL_AUTH_MODE", "HEADER").upper(),
+            entra_tenant_id=os.environ.get("KNOWLEDGE_PORTAL_ENTRA_TENANT_ID")
+            or os.environ.get("ENTRA_TENANT_ID"),
+            entra_client_id=os.environ.get("KNOWLEDGE_PORTAL_ENTRA_CLIENT_ID")
+            or os.environ.get("ENTRA_CLIENT_ID"),
+            entra_allowed_audiences=[
+                item.strip()
+                for item in os.environ.get("KNOWLEDGE_PORTAL_ENTRA_AUDIENCES", "").split(",")
+                if item.strip()
+            ],
+            entra_platform_roles=set(
+                filter(
+                    None,
+                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_PLATFORM_ROLES", "Knowledge.PlatformAdmin").split(","),
+                )
+            ),
+            entra_manager_roles=set(
+                filter(
+                    None,
+                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_MANAGER_ROLES", "Knowledge.Manager").split(","),
+                )
+            ),
+            entra_reviewer_roles=set(
+                filter(
+                    None,
+                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_REVIEWER_ROLES", "Knowledge.Reviewer").split(","),
+                )
+            ),
+            entra_auditor_roles=set(
+                filter(
+                    None,
+                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_AUDITOR_ROLES", "Knowledge.Auditor").split(","),
+                )
+            ),
+            agent_api_url=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL"),
+            agent_api_token=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
+            or os.environ.get("AGENT_SERVICE_TOKEN"),
+            state_path=Path(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_STATE_PATH",
+                    data_dir / "portal_state" / "portal_state.json",
+                )
+            ).expanduser().resolve(),
         )
