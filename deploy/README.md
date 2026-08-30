@@ -337,6 +337,24 @@ measured evidence (spec §18's performance test):
   `--max` only after observing sustained concurrency near the current
   limit; `--min=0` is intentional for a POC to avoid idle cost.
 
+## Infrastructure as Code (Terraform)
+
+Long-lived GCP resources (APIs, Artifact Registry, service accounts, IAM,
+Secret Manager containers, Firestore, Cloud Run shape) are described in
+[`../infra/terraform/`](../infra/terraform/README.md).
+
+After import reaches a zero-diff plan, split operations as follows:
+
+```text
+terraform apply  → infrastructure + non-secret env + IAM
+release pipeline → immutable image build + Cloud Run revision update
+smoke test       → /readyz, Agent IAM, Teams E2E
+```
+
+Do not run `deploy-gcp.sh` and Terraform against the same POC project for
+the same knobs (CPU, memory, env, IAM). Secret **values** stay outside
+Terraform state.
+
 ## Mock Ticket API 驗收環境
 
 部署 Cloud Run Mock Ticket API 並將 Agent 切換到 HTTP 工單模式：

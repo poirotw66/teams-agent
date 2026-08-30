@@ -36,3 +36,12 @@ data/sources/
 data/index/
 data/assets/
 data/conversations/
+
+# Terraform local state and secrets (see infra/terraform/README.md)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+infra/terraform/terraform.tfvars
+crash.log
+crash.*.log

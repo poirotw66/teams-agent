@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars in infra/terraform after init.
+# POC environment values mirror deploy/deploy-gcp.sh defaults.
+
+project_id = "itr-aimasteryhub-lab"
+region     = "asia-east1"
+
+bot_client_id = "REPLACE_WITH_ENTRA_CLIENT_ID"
+bot_tenant_id = "REPLACE_WITH_ENTRA_TENANT_ID"
+
+# Required for zero-diff import against an existing Adapter deployment:
+# adapter_public_base_url = "https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app"
