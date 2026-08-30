@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 
-from .knowledge import LlmCallCounter
+from .llm_call_counter import LlmCallCounter
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,11 @@ T = TypeVar("T")
 
 
 class RequestDeadlineExceeded(RuntimeError):
-    """Raised when the per-request execution deadline has passed."""
+    """Raised when the request deadline has already passed before a call starts."""
+
+
+class RequestOperationTimedOut(RequestDeadlineExceeded):
+    """Raised when an in-flight model call exceeds the remaining request deadline."""
 
 
 @dataclass
@@ -30,6 +36,9 @@ class ExecutionContext:
     llm_calls: LlmCallCounter = field(default_factory=LlmCallCounter)
     selected_knowledge_backend: str | None = None
     deadline: datetime | None = None
+    _llm_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, repr=False, compare=False
+    )
 
     @classmethod
     def from_request(
@@ -77,22 +86,62 @@ class ExecutionContext:
         self.ensure_budget()
         self.llm_calls.increment()
 
+    async def _await_with_remaining(
+        self,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        remaining: float | None,
+    ) -> T:
+        if remaining is None:
+            return await operation()
+        if remaining <= 0:
+            raise RequestDeadlineExceeded(
+                f"Request deadline exceeded for request_id={self.request_id}"
+            )
+        try:
+            return await asyncio.wait_for(operation(), timeout=remaining)
+        except TimeoutError as error:
+            raise RequestOperationTimedOut(
+                f"LLM call timed out for request_id={self.request_id}"
+            ) from error
+
     async def run_llm(
         self,
         operation: Callable[[], Awaitable[T]],
         *,
         component: str,
     ) -> T:
-        self.ensure_budget()
-        try:
-            return await operation()
-        finally:
+        async with self._llm_lock:
+            self.ensure_budget()
             self.llm_calls.increment()
-            logger.debug(
-                "LLM call recorded: component=%s count=%d/%d request_id=%s correlation_id=%s",
+
+        started = time.perf_counter()
+        try:
+            result = await self._await_with_remaining(
+                operation,
+                remaining=self.remaining_seconds(),
+            )
+        except RequestOperationTimedOut:
+            logger.warning(
+                "LLM call timed out: component=%s count=%d/%d request_id=%s "
+                "correlation_id=%s elapsed_ms=%.1f",
                 component,
                 self.llm_calls.count,
                 self.model_budget,
                 self.request_id,
                 self.correlation_id,
+                (time.perf_counter() - started) * 1000,
             )
+            raise
+        else:
+            logger.debug(
+                "LLM call completed: component=%s count=%d/%d request_id=%s "
+                "correlation_id=%s elapsed_ms=%.1f",
+                component,
+                self.llm_calls.count,
+                self.model_budget,
+                self.request_id,
+                self.correlation_id,
+                (time.perf_counter() - started) * 1000,
+            )
+            return result

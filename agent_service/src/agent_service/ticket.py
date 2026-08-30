@@ -278,8 +278,6 @@ class AgenticTicketItemSelector:
         ]
         allowed_items = {item.id: item for item in items}
         try:
-            if execution_context is not None:
-                execution_context.ensure_budget()
 
             async def _invoke():
                 return await self._model.with_structured_output(

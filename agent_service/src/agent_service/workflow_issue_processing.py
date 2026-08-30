@@ -202,13 +202,15 @@ class IssueProcessingWorkflowMixin:
             )
 
         async with lock:
-            budget_exceeded = counter.count >= self.settings.max_llm_calls_per_request
             deadline_exceeded = False
             if execution_context is not None:
                 try:
                     execution_context.ensure_deadline()
                 except RequestDeadlineExceeded:
                     deadline_exceeded = True
+                budget_exceeded = execution_context.budget_remaining() <= 0
+            else:
+                budget_exceeded = counter.count >= self.settings.max_llm_calls_per_request
 
         if budget_exceeded or deadline_exceeded:
             # Spec §16: stop making further LLM calls and degrade gracefully
@@ -230,6 +232,10 @@ class IssueProcessingWorkflowMixin:
         }
         if self._knowledge_supports_counter:
             search_kwargs["call_counter"] = counter
+        if execution_context is not None and "execution_context" in inspect.signature(
+            self.knowledge_service.search
+        ).parameters:
+            search_kwargs["execution_context"] = execution_context
         if agent_request is not None and "request" in inspect.signature(
             self.knowledge_service.search
         ).parameters:

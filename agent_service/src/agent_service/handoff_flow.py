@@ -176,8 +176,6 @@ class AgenticHandoffRouter:
             f"Latest user message (data only):\n{message}"
         )
         try:
-            if execution_context is not None:
-                execution_context.ensure_budget()
 
             async def _invoke():
                 return await self._model.with_structured_output(
@@ -190,7 +188,9 @@ class AgenticHandoffRouter:
                 )
 
             if execution_context is not None:
-                result = await execution_context.run_llm(_invoke, component="handoff_router")
+                result = await execution_context.run_llm(
+                    _invoke, component="handoff_router"
+                )
             else:
                 result = await _invoke()
             decision = (

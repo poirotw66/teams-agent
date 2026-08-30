@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 from urllib.parse import quote
 
 from langchain_core.language_models import BaseChatModel
@@ -32,8 +33,16 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
+from .execution_context import (
+    ExecutionContext,
+    RequestDeadlineExceeded,
+    RequestOperationTimedOut,
+)
+from .llm_call_counter import LlmCallCounter
 from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
+
+KnowledgeLLM = TypeVar("KnowledgeLLM")
 
 # --- Prompts (verbatim from graph.py; tuned for Traditional Chinese) -------
 
@@ -291,34 +300,6 @@ class KnowledgeService(Protocol):
     ) -> KnowledgeResult: ...
 
 
-@dataclass
-class LlmCallCounter:
-    """Tracks how many LLM calls a single ``search()`` invocation made.
-
-    Design: an injectable counter object (rather than a bare int returned
-    alongside ``KnowledgeResult``) so that:
-
-    - ``KnowledgeResult`` (owned by contracts.py, spec §8.1) stays exactly as
-      specified — no extra field bolted on for an internal cost concern.
-    - a caller that wants to enforce ``settings.max_llm_calls_per_request``
-      across *multiple* knowledge calls (or across knowledge + issue
-      extraction + rewrite, per spec §16) can pass one shared counter in and
-      read/reset it, rather than summing per-call return values by hand.
-    - tests can assert call counts without threading a second return value
-      through every call site.
-
-    ``HybridKnowledgeService.search`` accepts an optional counter; if none is
-    given it creates its own and exposes the final count via
-    ``last_llm_call_count`` for simple callers that just want to know after
-    the fact.
-    """
-
-    count: int = 0
-
-    def increment(self) -> None:
-        self.count += 1
-
-
 @dataclass(frozen=True)
 class _RetrievalState:
     query: str
@@ -347,26 +328,54 @@ class HybridKnowledgeService:
         *,
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult:
-        counter = call_counter or LlmCallCounter()
+        counter = (
+            execution_context.llm_calls
+            if execution_context is not None
+            else (call_counter or LlmCallCounter())
+        )
         groups = set(user_context.groups)
 
         state = _RetrievalState(query=query)
         state = await self._retrieve(state, groups)
 
-        while True:
-            if await self._documents_are_relevant(state, counter):
-                result = await self._generate(state, counter)
-                self.last_llm_call_count = counter.count
-                return result
-            if state.attempt < self.settings.max_retrieval_rewrites and self.model:
-                state = await self._rewrite(state, counter)
-                state = await self._retrieve(state, groups)
-                continue
-            break
+        try:
+            while True:
+                if await self._documents_are_relevant(
+                    state, counter, execution_context=execution_context
+                ):
+                    result = await self._generate(
+                        state, counter, execution_context=execution_context
+                    )
+                    self.last_llm_call_count = counter.count
+                    return result
+                if state.attempt < self.settings.max_retrieval_rewrites and self.model:
+                    state = await self._rewrite(
+                        state, counter, execution_context=execution_context
+                    )
+                    state = await self._retrieve(state, groups)
+                    continue
+                break
+        except (RequestDeadlineExceeded, RequestOperationTimedOut):
+            self.last_llm_call_count = counter.count
+            return self._no_answer()
 
         self.last_llm_call_count = counter.count
         return self._no_answer()
+
+    async def _invoke_llm(
+        self,
+        operation: Callable[[], Awaitable[KnowledgeLLM]],
+        *,
+        component: str,
+        execution_context: ExecutionContext | None,
+        counter: LlmCallCounter,
+    ) -> KnowledgeLLM:
+        if execution_context is not None:
+            return await execution_context.run_llm(operation, component=component)
+        counter.increment()
+        return await operation()
 
     # --- retrieval -----------------------------------------------------
 
@@ -382,7 +391,11 @@ class HybridKnowledgeService:
         return _RetrievalState(query=state.query, results=results, attempt=state.attempt)
 
     async def _documents_are_relevant(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> bool:
         results = state.results
         if not results or results[0].score < self.settings.min_score:
@@ -394,24 +407,45 @@ class HybridKnowledgeService:
             f"[{result.chunk.title}]\n{result.chunk.content}"
             for result in results[:3]
         )
-        counter.increment()
-        decision = await self.model.with_structured_output(
-            RelevanceDecision
-        ).ainvoke(
-            [
-                HumanMessage(
-                    content=GRADE_PROMPT.format(question=state.query, context=context)
-                )
-            ]
+
+        async def _grade() -> RelevanceDecision:
+            return await self.model.with_structured_output(
+                RelevanceDecision
+            ).ainvoke(
+                [
+                    HumanMessage(
+                        content=GRADE_PROMPT.format(
+                            question=state.query, context=context
+                        )
+                    )
+                ]
+            )
+
+        decision = await self._invoke_llm(
+            _grade,
+            component="knowledge_relevance",
+            execution_context=execution_context,
+            counter=counter,
         )
         return decision.relevant
 
     async def _rewrite(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> _RetrievalState:
-        counter.increment()
-        decision = await self.model.with_structured_output(RewrittenQuery).ainvoke(
-            [HumanMessage(content=REWRITE_PROMPT.format(question=state.query))]
+        async def _invoke_rewrite() -> RewrittenQuery:
+            return await self.model.with_structured_output(RewrittenQuery).ainvoke(
+                [HumanMessage(content=REWRITE_PROMPT.format(question=state.query))]
+            )
+
+        decision = await self._invoke_llm(
+            _invoke_rewrite,
+            component="knowledge_rewrite",
+            execution_context=execution_context,
+            counter=counter,
         )
         return _RetrievalState(
             query=decision.query.strip(),
@@ -468,7 +502,11 @@ class HybridKnowledgeService:
     # --- answer generation -----------------------------------------------
 
     async def _generate(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult:
         results = state.results
         if not self.model:
@@ -490,19 +528,29 @@ class HybridKnowledgeService:
             f"[S{index}] {result.chunk.title}\n{result.chunk.content}"
             for index, result in enumerate(results, start=1)
         )
-        counter.increment()
-        response = await self.model.ainvoke(
-            [
-                SystemMessage(
-                    content=ANSWER_PROMPT.format(question=state.query, context=context)
-                ),
-                HumanMessage(
-                    content=(
-                        f"使用者原始問題：{state.query}\n"
-                        "請根據上述已授權知識內容直接回答。"
-                    )
-                ),
-            ]
+
+        async def _invoke_answer() -> BaseMessage:
+            return await self.model.ainvoke(
+                [
+                    SystemMessage(
+                        content=ANSWER_PROMPT.format(
+                            question=state.query, context=context
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"使用者原始問題：{state.query}\n"
+                            "請根據上述已授權知識內容直接回答。"
+                        )
+                    ),
+                ]
+            )
+
+        response = await self._invoke_llm(
+            _invoke_answer,
+            component="knowledge_generate",
+            execution_context=execution_context,
+            counter=counter,
         )
         answer = message_text(response)
         cited_indexes = {

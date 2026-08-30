@@ -7,6 +7,7 @@ from threading import Lock
 from typing import Any, Protocol
 
 from .contracts import AgentRequest, KnowledgeResult, UserContext
+from .execution_context import ExecutionContext
 from .knowledge import KnowledgeService, LlmCallCounter
 from .settings import RagSettings
 
@@ -143,6 +144,7 @@ class KnowledgeBackendRouter:
         *,
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
+        execution_context: ExecutionContext | None = None,
         request: AgentRequest | None = None,
     ) -> KnowledgeResult:
         service = self._services[await self.resolve_backend(request)]
@@ -150,4 +152,6 @@ class KnowledgeBackendRouter:
         kwargs: dict[str, object] = {"correlation_id": correlation_id}
         if "call_counter" in parameters:
             kwargs["call_counter"] = call_counter
+        if "execution_context" in parameters:
+            kwargs["execution_context"] = execution_context
         return await service.search(query, user_context, **kwargs)

@@ -234,7 +234,7 @@ class FakeKnowledgeService:
         self.calls: list[str] = []
         self.received_correlation_ids: list[str | None] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None):
+    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
         self.calls.append(query)
         self.received_correlation_ids.append(correlation_id)
         if call_counter is not None:
@@ -249,7 +249,7 @@ class SelectiveFailKnowledgeService:
         self.fail_marker = fail_marker
         self.calls: list[str] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None):
+    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
         self.calls.append(query)
         if call_counter is not None:
             call_counter.increment()

@@ -1,6 +1,7 @@
 """Knowledge Service tests (spec §18.3): HybridKnowledgeService behaviour."""
 
 import inspect
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from langchain_core.messages import AIMessage
 
 from agent_service.contracts import UserContext
 from agent_service.documents import DocumentChunk, DocumentImage
+from agent_service.execution_context import ExecutionContext
 from agent_service.knowledge import (
     HybridKnowledgeService,
     KnowledgeService,
@@ -359,6 +361,31 @@ async def test_llm_call_counter_tracks_calls_and_can_be_shared(tmp_path: Path) -
     # One relevance-grading call + one grounded-answer call.
     assert counter.count == 2
     assert service.last_llm_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execution_context_routes_knowledge_llm_calls(tmp_path: Path) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FakeChatModel(relevant=True, answer_text="請聯繫資訊小幫手協助解鎖 [S1]")
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+    context = ExecutionContext(
+        correlation_id="corr-1",
+        request_id="req-1",
+        tenant_id="tenant-1",
+        idempotency_key="tenant-1::req-1",
+        model_budget=4,
+        llm_calls=LlmCallCounter(),
+        deadline=datetime.now(UTC) + timedelta(seconds=5),
+    )
+
+    result = await service.search(
+        "VPN 密碼被鎖怎麼辦？",
+        make_user(),
+        execution_context=context,
+    )
+
+    assert result.found is True
+    assert context.llm_calls.count == 2
 
 
 def test_gemini_mode_is_not_the_default(tmp_path: Path) -> None:
