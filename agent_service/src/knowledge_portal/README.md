@@ -35,9 +35,25 @@ Optional bearer auth: set `KNOWLEDGE_PORTAL_TOKEN`.
 
 - Entra ID SSO
 - Full feedback workbench
-- Agent Service hot-loading of active release index
 - Email/Teams notifications
 - PDF/DOCX ingestion
+
+## Agent integration
+
+When the portal publishes or rolls back a release, it writes:
+
+- `data/releases/<release-id>/index/chunks.json`
+- `data/releases/active_release.json`
+
+Agent Service resolves the active index via `KNOWLEDGE_RELEASE_MODE`:
+
+| Mode | Behavior |
+|---|---|
+| `AUTO` | Prefer portal active release; fall back to bundled `RAG_INDEX_PATH` |
+| `PORTAL` | Require portal release index (fail `/readyz` if missing) |
+| `BUNDLED` | Ignore portal releases; use image-bundled index only |
+
+Check `GET /readyz` fields: `knowledgeReleaseId`, `knowledgeIndexSource`, `knowledgeIndexPath`.
 
 ## Environment variables
 
@@ -48,4 +64,4 @@ Optional bearer auth: set `KNOWLEDGE_PORTAL_TOKEN`.
 | `KNOWLEDGE_PORTAL_RELEASE_DIR` | `data/releases` | Immutable release artifacts |
 | `KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL` | `true` | Block self-publish by contributor |
 
-Release artifacts contain parsed sources, `manifest.json`, and `index/chunks.json`. They are written by the portal only; chat runtime must be pointed to the active release separately in a follow-up change.
+Release artifacts contain parsed sources, `manifest.json`, and `index/chunks.json`. Agent Service loads the active release when `KNOWLEDGE_RELEASE_MODE` is `AUTO` or `PORTAL`.

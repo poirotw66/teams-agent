@@ -106,6 +106,11 @@ class RagSettings:
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
 
+    # --- Knowledge release (portal-published immutable index) ---
+    knowledge_release_mode: str = "AUTO"
+    knowledge_release_dir: Path | None = None
+    knowledge_active_release_id: str | None = None
+
     @classmethod
     def from_env(cls) -> "RagSettings":
         project_dir = Path(__file__).resolve().parents[2]
@@ -212,6 +217,16 @@ class RagSettings:
             handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 730),
             faq_path=faq_path.expanduser().resolve(),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
+            knowledge_release_mode=(
+                _str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO"
+            ).upper(),
+            knowledge_release_dir=Path(
+                environ.get(
+                    "KNOWLEDGE_RELEASE_DIR",
+                    data_dir / "releases",
+                )
+            ).expanduser().resolve(),
+            knowledge_active_release_id=_str_env("KNOWLEDGE_ACTIVE_RELEASE_ID"),
         )
         settings.validate()
         return settings
@@ -318,3 +333,7 @@ class RagSettings:
             raise ValueError("HANDOFF_DEMO_TIMEOUT_HOURS must be at least 1.")
         if self.handoff_retention_days < 1:
             raise ValueError("HANDOFF_RETENTION_DAYS must be at least 1.")
+        if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
+            raise ValueError(
+                "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."
+            )

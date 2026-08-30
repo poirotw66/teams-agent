@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from agent_service.knowledge_release import write_active_release_pointer
+
 from .models import (
     AuditEventRecord,
     CreateDocumentRequest,
@@ -500,6 +502,10 @@ class PortalService:
         )
         await self._repository.save_release(release)
         await self._repository.set_active_release_id(release.release_id)
+        write_active_release_pointer(
+            self._settings.release_artifact_dir,
+            release.release_id,
+        )
 
         updated_version = version.model_copy(update={"status": "PUBLISHED"})
         updated_document = document.model_copy(
@@ -534,6 +540,10 @@ class PortalService:
         target = await self._repository.get_release(request.release_id)
         ensure_not_found("release", request.release_id, target)
         await self._repository.set_active_release_id(target.release_id)
+        write_active_release_pointer(
+            self._settings.release_artifact_dir,
+            target.release_id,
+        )
         rolled_back = target.model_copy(update={"status": "ACTIVE", "activated_at": utc_now()})
         await self._repository.save_release(rolled_back)
         await self._audit(

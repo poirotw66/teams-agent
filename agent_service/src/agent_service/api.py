@@ -26,6 +26,7 @@ from .graph import RagAgent, build_chat_model
 from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
+from .knowledge_release import resolve_knowledge_index
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
@@ -59,15 +60,16 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if not resolved_settings.index_path.exists():
-            if not resolved_settings.auto_build_index:
-                raise FileNotFoundError(
-                    f"RAG index not found: {resolved_settings.index_path}"
-                )
+        resolved_index = resolve_knowledge_index(resolved_settings)
+        if resolved_index.source == "auto_build" and not resolved_index.index_path.exists():
             index = build_index(resolved_settings)
+        elif not resolved_index.index_path.exists():
+            raise FileNotFoundError(
+                f"Knowledge index not found: {resolved_index.index_path}"
+            )
         else:
             index = HybridIndex.load(
-                resolved_settings.index_path,
+                resolved_index.index_path,
                 resolved_settings.embedding_model,
             )
 
@@ -136,6 +138,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         )
 
         app.state.index = index
+        app.state.knowledge_index_path = resolved_index.index_path
+        app.state.knowledge_release_id = resolved_index.release_id
+        app.state.knowledge_index_source = resolved_index.source
         app.state.agent = agent
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
@@ -185,6 +190,13 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 else "chinese-bm25"
             ),
             "knowledgeBackend": await request.app.state.knowledge_router.active_backend(),
+            "knowledgeIndexSource": getattr(
+                request.app.state, "knowledge_index_source", "bundled_index"
+            ),
+            "knowledgeReleaseId": getattr(request.app.state, "knowledge_release_id", None),
+            "knowledgeIndexPath": str(
+                getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
+            ),
         }
 
     @app.get(

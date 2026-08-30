@@ -140,6 +140,7 @@ def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:
     release = publish.json()
     assert release["status"] == "ACTIVE"
     assert (tmp_path / "releases" / release["release_id"] / "manifest.json").exists()
+    assert (tmp_path / "releases" / "active_release.json").exists()
 
     dashboard = client.get(
         "/api/dashboard",
