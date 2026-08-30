@@ -11,8 +11,16 @@ set -Eeuo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TERRAFORM_DIR="${REPO_ROOT}/infra/terraform"
-BACKEND_CONFIG="${1:-${REPO_ROOT}/infra/environments/poc/backend.hcl}"
-OUTPUT_FILE="${2:-${REPO_ROOT}/handoff-plan-evidence.txt}"
+BACKEND_CONFIG="${REPO_ROOT}/infra/environments/poc/backend.hcl"
+OUTPUT_FILE="${REPO_ROOT}/handoff-plan-evidence.txt"
+if [[ $# -gt 0 ]]; then
+  BACKEND_CONFIG="$1"
+  shift
+fi
+if [[ $# -gt 0 ]]; then
+  OUTPUT_FILE="$1"
+  shift
+fi
 
 cd "${TERRAFORM_DIR}"
 

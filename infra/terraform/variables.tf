@@ -184,3 +184,14 @@ variable "adapter_public_base_url" {
   type        = string
   default     = ""
 }
+
+variable "deployment_phase" {
+  description = "Greenfield bootstrap: prepare (foundation only), then activate (Cloud Run). Use full for POC import of an existing stack."
+  type        = string
+  default     = "full"
+
+  validation {
+    condition     = contains(["prepare", "activate", "full"], var.deployment_phase)
+    error_message = "deployment_phase must be prepare, activate, or full."
+  }
+}

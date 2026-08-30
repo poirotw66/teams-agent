@@ -1,6 +1,5 @@
 # Copy to infra/terraform/terraform.tfvars for a new test project.
-# Requires pinned images — build and push with deploy/release-gcp.sh first,
-# or copy digests from an existing registry.
+# Bootstrap uses deployment_phase — do not require images on the first apply.
 
 project_id = "your-test-project-id"
 region     = "asia-east1"
@@ -10,9 +9,13 @@ bot_tenant_id = "00000000-0000-0000-0000-000000000000"
 
 allow_latest_image_tags = false
 
-# Required for new environments (commit SHA tag or @sha256 digest):
-agent_image   = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-rag-agent:REPLACE_WITH_GIT_SHA"
-adapter_image = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-agent-adapter:REPLACE_WITH_GIT_SHA"
+# Step 1 — Prepare Environment (no Cloud Run, no images required):
+deployment_phase = "prepare"
 
-# Set after first apply once Adapter URL is known (or pass via -var on second apply):
+# Step 4 — Activate Services (after secrets + BUILD_ONLY=1 release-gcp.sh):
+# deployment_phase = "activate"
+# agent_image   = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-rag-agent:REPLACE_WITH_GIT_SHA"
+# adapter_image = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-agent-adapter:REPLACE_WITH_GIT_SHA"
+
+# Step 5 — set after activate once Adapter URL is known:
 # adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"

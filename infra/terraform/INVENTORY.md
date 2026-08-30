@@ -23,10 +23,10 @@ Use this checklist when importing the environment created by `deploy/deploy-gcp.
 | TTL on `messages.expiresAt` | `google_firestore_field.messages_expires_at_ttl` | `…/collectionGroups/messages/fields/expiresAt` |
 | TTL on `handoffs.retentionExpiresAt` | `google_firestore_field.handoffs_retention_ttl` | `…/collectionGroups/handoffs/fields/retentionExpiresAt` |
 | TTL on `handoffs_events.retentionExpiresAt` | `google_firestore_field.handoff_events_retention_ttl` | `…/collectionGroups/handoffs_events/fields/retentionExpiresAt` |
-| Cloud Run `teams-rag-agent` | `google_cloud_run_v2_service.agent` | `projects/itr-aimasteryhub-lab/locations/asia-east1/services/teams-rag-agent` |
-| Cloud Run `teams-agent-adapter` | `google_cloud_run_v2_service.adapter` | `projects/itr-aimasteryhub-lab/locations/asia-east1/services/teams-agent-adapter` |
-| Adapter → Agent invoker | `google_cloud_run_v2_service_iam_member.adapter_invokes_agent` | `{project}/{region}/{agent}/roles/run.invoker/serviceAccount:teams-agent-adapter@…` |
-| Adapter public invoker | `google_cloud_run_v2_service_iam_member.adapter_public` | `{project}/{region}/{adapter}/roles/run.invoker/allUsers` |
+| Cloud Run `teams-rag-agent` | `google_cloud_run_v2_service.agent[0]` | `projects/itr-aimasteryhub-lab/locations/asia-east1/services/teams-rag-agent` |
+| Cloud Run `teams-agent-adapter` | `google_cloud_run_v2_service.adapter[0]` | `projects/itr-aimasteryhub-lab/locations/asia-east1/services/teams-agent-adapter` |
+| Adapter → Agent invoker | `google_cloud_run_v2_service_iam_member.adapter_invokes_agent[0]` | `{project}/{region}/{agent}/roles/run.invoker/serviceAccount:teams-agent-adapter@…` |
+| Adapter public invoker | `google_cloud_run_v2_service_iam_member.adapter_public[0]` | `{project}/{region}/{adapter}/roles/run.invoker/allUsers` |
 
 Replace project/region/names if your tfvars differ.
 
@@ -76,14 +76,14 @@ terraform import google_firestore_field.messages_expires_at_ttl "${DB}/messages/
 terraform import google_firestore_field.handoffs_retention_ttl "${DB}/handoffs/fields/retentionExpiresAt"
 terraform import google_firestore_field.handoff_events_retention_ttl "${DB}/handoffs_events/fields/retentionExpiresAt"
 
-terraform import google_cloud_run_v2_service.agent \
+terraform import google_cloud_run_v2_service.agent[0] \
   "projects/${PROJECT}/locations/${REGION}/services/teams-rag-agent"
-terraform import google_cloud_run_v2_service.adapter \
+terraform import google_cloud_run_v2_service.adapter[0] \
   "projects/${PROJECT}/locations/${REGION}/services/teams-agent-adapter"
 
-terraform import google_cloud_run_v2_service_iam_member.adapter_invokes_agent \
+terraform import 'google_cloud_run_v2_service_iam_member.adapter_invokes_agent[0]' \
   "projects/${PROJECT}/locations/${REGION}/services/teams-rag-agent roles/run.invoker serviceAccount:teams-agent-adapter@${PROJECT}.iam.gserviceaccount.com"
-terraform import google_cloud_run_v2_service_iam_member.adapter_public \
+terraform import 'google_cloud_run_v2_service_iam_member.adapter_public[0]' \
   "projects/${PROJECT}/locations/${REGION}/services/teams-agent-adapter roles/run.invoker allUsers"
 ```
 

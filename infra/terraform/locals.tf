@@ -1,4 +1,5 @@
 locals {
+  deploy_cloud_run              = contains(["activate", "full"], var.deployment_phase)
   firestore_location_id         = coalesce(var.firestore_location_id, var.region)
   agent_service_account_email   = "${var.agent_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
   adapter_service_account_email = "${var.adapter_service_account_id}@${var.project_id}.iam.gserviceaccount.com"
@@ -71,6 +72,8 @@ locals {
 }
 
 resource "terraform_data" "image_policy" {
+  count = local.deploy_cloud_run ? 1 : 0
+
   lifecycle {
     precondition {
       condition     = local.agent_image != null && local.adapter_image != null

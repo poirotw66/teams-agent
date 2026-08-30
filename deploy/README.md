@@ -367,6 +367,12 @@ export TERRAFORM_MANAGED=1   # blocks accidental deploy-gcp.sh
 
 Optional: `RELEASE_GIT_SHA=abc1234 ./deploy/release-gcp.sh` to override the tag.
 
+Build and push only (greenfield step 3, before Cloud Run exists):
+
+```bash
+BUILD_ONLY=1 ./deploy/release-gcp.sh
+```
+
 ## Mock Ticket API 驗收環境
 
 部署 Cloud Run Mock Ticket API 並將 Agent 切換到 HTTP 工單模式：

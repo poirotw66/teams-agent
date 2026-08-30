@@ -1,4 +1,6 @@
 resource "google_cloud_run_v2_service" "agent" {
+  count = local.deploy_cloud_run ? 1 : 0
+
   depends_on = [
     google_project_service.required,
     google_secret_manager_secret_iam_member.agent_google_api_key,
@@ -64,6 +66,8 @@ resource "google_cloud_run_v2_service" "agent" {
 }
 
 resource "google_cloud_run_v2_service" "adapter" {
+  count = local.deploy_cloud_run ? 1 : 0
+
   depends_on = [
     google_project_service.required,
     google_cloud_run_v2_service.agent,
@@ -105,8 +109,8 @@ resource "google_cloud_run_v2_service" "adapter" {
         for_each = merge(
           local.adapter_env,
           {
-            AGENT_API_URL      = "${google_cloud_run_v2_service.agent.uri}/agent/chat"
-            AGENT_API_AUDIENCE = google_cloud_run_v2_service.agent.uri
+            AGENT_API_URL      = "${google_cloud_run_v2_service.agent[0].uri}/agent/chat"
+            AGENT_API_AUDIENCE = google_cloud_run_v2_service.agent[0].uri
           },
           var.adapter_public_base_url != "" ? {
             BOT_PUBLIC_BASE_URL = var.adapter_public_base_url

@@ -5,12 +5,22 @@ on:
     paths:
       - "infra/terraform/**"
       - "infra/environments/**"
+      - "infra/scripts/**"
+      - "infra/DEPLOYER_IAM.md"
+      - "deploy/release-gcp.sh"
+      - "deploy/deploy-gcp.sh"
+      - ".gitattributes"
       - ".github/workflows/terraform.yml"
   push:
     branches: [main]
     paths:
       - "infra/terraform/**"
       - "infra/environments/**"
+      - "infra/scripts/**"
+      - "infra/DEPLOYER_IAM.md"
+      - "deploy/release-gcp.sh"
+      - "deploy/deploy-gcp.sh"
+      - ".gitattributes"
       - ".github/workflows/terraform.yml"
 
 defaults:
@@ -18,6 +28,34 @@ defaults:
     working-directory: infra/terraform
 
 jobs:
+  shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject CRLF in shell scripts
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            if grep -q $'\r' "$script"; then
+              echo "CRLF line endings found in $script" >&2
+              exit 1
+            fi
+          done < <(find . -name '*.sh' -print0)
+
+      - name: bash syntax check
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find . -name '*.sh' -print0)
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          find . -name '*.sh' -print0 | xargs -0 shellcheck
+
   validate:
     runs-on: ubuntu-latest
     steps:

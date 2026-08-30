@@ -91,15 +91,19 @@ require_cmd curl
 require_cmd git
 [[ -f "${PROJECT_DIR}/data/index/chunks.json" ]] || fail "Missing data/index/chunks.json — run uv run rag-index first"
 
-PREVIOUS_AGENT_IMAGE="$(current_service_image "${AGENT_SERVICE}" || true)"
-PREVIOUS_ADAPTER_IMAGE="$(current_service_image "${ADAPTER_SERVICE}" || true)"
+BUILD_ONLY="${BUILD_ONLY:-0}"
 
-rollback_all() {
-  rollback_service_image "${AGENT_SERVICE}" "${PREVIOUS_AGENT_IMAGE}"
-  rollback_service_image "${ADAPTER_SERVICE}" "${PREVIOUS_ADAPTER_IMAGE}"
-}
+if [[ "${BUILD_ONLY}" != "1" ]]; then
+  PREVIOUS_AGENT_IMAGE="$(current_service_image "${AGENT_SERVICE}" || true)"
+  PREVIOUS_ADAPTER_IMAGE="$(current_service_image "${ADAPTER_SERVICE}" || true)"
 
-trap 'status=$?; if [[ ${status} -ne 0 ]]; then log "Release failed — attempting rollback"; rollback_all; fi; exit ${status}' ERR
+  rollback_all() {
+    rollback_service_image "${AGENT_SERVICE}" "${PREVIOUS_AGENT_IMAGE}"
+    rollback_service_image "${ADAPTER_SERVICE}" "${PREVIOUS_ADAPTER_IMAGE}"
+  }
+
+  trap 'status=$?; if [[ ${status} -ne 0 ]]; then log "Release failed — attempting rollback"; rollback_all; fi; exit ${status}' ERR
+fi
 
 gcloud config set project "${PROJECT_ID}" >/dev/null
 
@@ -114,6 +118,14 @@ gcloud builds submit "${PROJECT_DIR}" \
   --config="${PROJECT_DIR}/deploy/cloudbuild-adapter.yaml" \
   --substitutions="_IMAGE=${ADAPTER_IMAGE}" \
   --project="${PROJECT_ID}"
+
+if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
+  printf '\nBuild complete (BUILD_ONLY=1 — Cloud Run not updated).\n'
+  printf 'Git SHA:       %s\n' "${GIT_SHA}"
+  printf 'Agent image:   %s\n' "${AGENT_IMAGE}"
+  printf 'Adapter image: %s\n' "${ADAPTER_IMAGE}"
+  exit 0
+fi
 
 log "Updating Agent Cloud Run image only"
 gcloud run services update "${AGENT_SERVICE}" \
