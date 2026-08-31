@@ -1,7 +1,7 @@
 import { api, apiForm } from "../api.js";
 import { fluentButton } from "../fluent.js";
 import { navigate } from "../router.js";
-import { escapeHtml, showToast } from "../ui.js";
+import { escapeHtml, showToast } from "../ui.js?v=20260831c";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
@@ -47,7 +47,7 @@ function renderStepPanel(step, formValues) {
       <div class="panel form-grid">
         <label>生效日<input name="effective_at" type="date" required></label>
         <label>下次檢視日<input name="review_due_at" type="date" required></label>
-        <label class="full">變更原因<textarea name="change_reason" rows="2" required></textarea></label>
+        <label class="full">變更原因<textarea name="change_reason" rows="2" required>${escapeHtml(formValues.change_reason || "新增知識文件")}</textarea></label>
         <label>適用對象
           <select name="audience_type" id="createAudienceType">
             <option value="ALL_EMPLOYEES" ${formValues.audience_type !== "RESTRICTED_GROUPS" ? "selected" : ""}>全體員工</option>
@@ -107,7 +107,10 @@ function buildCreatePayload(formValues) {
 
 export async function renderCreateView(app) {
   let currentStep = 1;
-  const formValues = { audience_type: "ALL_EMPLOYEES" };
+  const formValues = {
+    audience_type: "ALL_EMPLOYEES",
+    change_reason: "新增知識文件",
+  };
 
   function render() {
     app.innerHTML = `
@@ -166,6 +169,10 @@ export async function renderCreateView(app) {
     app.querySelector("#importMarkdownFile")?.addEventListener("change", async (event) => {
       const file = event.target.files?.[0];
       if (!file) return;
+      const filenameTitle = file.name.replace(/\.md$/i, "").trim();
+      if (filenameTitle) {
+        formValues.title = filenameTitle;
+      }
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -178,6 +185,7 @@ export async function renderCreateView(app) {
           audience_type: imported.audience_type || "ALL_EMPLOYEES",
           audience_group_ids: (imported.audience_group_ids || []).join(", "),
           markdown_content: imported.markdown_content,
+          change_reason: formValues.change_reason || "新增知識文件",
         });
         const warnings = [...(imported.warnings || [])];
         if (imported.audience_type === "RESTRICTED_GROUPS") {

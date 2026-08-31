@@ -1,15 +1,32 @@
 import { navigate } from "../../router.js";
+import { confirmDialog } from "../../ui.js?v=20260831c";
+import { clearDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 
 let pendingTabFocus = null;
+
+async function goToTab(documentId, activeTab, targetTab) {
+  if (activeTab === "content" && targetTab !== "content" && isDraftEditorDirty()) {
+    const ok = await confirmDialog(
+      "尚未儲存",
+      "內容與附件有未儲存的變更。離開此分頁將捨棄這些變更。確定要離開？",
+      { confirmLabel: "離開", danger: true },
+    );
+    if (!ok) return;
+  }
+  clearDraftBaseline();
+  navigate(`#/knowledge/${documentId}/${targetTab}`);
+}
 
 export function wireTabList(tabNav, documentId, activeTab) {
   const tabs = [...tabNav.querySelectorAll('[role="tab"]')];
   tabs.forEach((node) => {
     node.tabIndex = node.dataset.tab === activeTab ? 0 : -1;
-    node.addEventListener("click", () => navigate(`#/knowledge/${documentId}/${node.dataset.tab}`));
+    node.addEventListener("click", () => {
+      goToTab(documentId, activeTab, node.dataset.tab);
+    });
   });
 
-  tabNav.addEventListener("keydown", (event) => {
+  tabNav.addEventListener("keydown", async (event) => {
     const current = tabs.findIndex((node) => node.getAttribute("aria-selected") === "true");
     if (current < 0) return;
 
@@ -28,7 +45,7 @@ export function wireTabList(tabNav, documentId, activeTab) {
 
     event.preventDefault();
     pendingTabFocus = tabs[next].dataset.tab;
-    navigate(`#/knowledge/${documentId}/${pendingTabFocus}`);
+    await goToTab(documentId, activeTab, pendingTabFocus);
   });
 }
 

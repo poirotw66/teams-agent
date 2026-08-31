@@ -6,7 +6,7 @@ import {
   openDialog,
   promptDialog,
   showToast,
-} from "../../ui.js";
+} from "../../ui.js?v=20260831c";
 
 export async function handleAction(documentId, action, detail) {
   if (action === "validate") {
@@ -15,7 +15,7 @@ export async function handleAction(documentId, action, detail) {
   }
   if (action === "add-test") {
     const question = await promptDialog("新增測試問題", "問題內容");
-    if (!question) return;
+    if (!question) return false;
     await api(`/api/documents/${documentId}/test-cases`, {
       method: "POST",
       body: JSON.stringify({ question, simulated_audience: [], notes: "" }),
@@ -24,7 +24,7 @@ export async function handleAction(documentId, action, detail) {
   }
   if (action === "draft-search") {
     const query = await promptDialog("進階診斷", "請輸入測試問題");
-    if (!query) return;
+    if (!query) return false;
     const result = await api(`/api/documents/${documentId}/draft-search`, {
       method: "POST",
       body: JSON.stringify({ query, groups: [], limit: 4 }),
@@ -41,7 +41,7 @@ export async function handleAction(documentId, action, detail) {
       confirmLabel: "關閉",
       cancelLabel: "關閉",
     });
-    return;
+    return false;
   }
   if (action === "start-revision") {
     await api(`/api/documents/${documentId}/start-revision`, { method: "POST" });
@@ -52,7 +52,7 @@ export async function handleAction(documentId, action, detail) {
     const title = document.getElementById("draftTitle")?.value?.trim();
     if (!markdown?.trim() || !title) {
       showToast("標題與正文內容不可為空", true);
-      return;
+      return false;
     }
     const audienceType = document.getElementById("draftAudienceType")?.value;
     const originalAudience = document.getElementById("draftAudienceType")?.dataset.original;
@@ -62,7 +62,7 @@ export async function handleAction(documentId, action, detail) {
         "變更適用範圍可能影響引用權限，並可能需要額外審核。確定要繼續？",
         { confirmLabel: "繼續儲存" },
       );
-      if (!ok) return;
+      if (!ok) return false;
     }
     const audienceGroups = (document.getElementById("draftAudienceGroups")?.value || "")
       .split(",")
@@ -91,9 +91,9 @@ export async function handleAction(documentId, action, detail) {
   }
   if (action === "insert-asset-ref") {
     const filename = await promptDialog("插入圖片", "圖片檔名（留空則自動命名）", { required: false });
-    if (filename === null) return;
+    if (filename === null) return false;
     const altText = await promptDialog("插入圖片", "替代文字（可留空）", { required: false, defaultValue: "" });
-    if (altText === null) return;
+    if (altText === null) return false;
     const suggestion = await api(
       `/api/documents/${documentId}/draft/asset-ref?filename=${encodeURIComponent(filename)}&alt_text=${encodeURIComponent(altText || "")}`,
       { method: "POST" },
@@ -104,15 +104,15 @@ export async function handleAction(documentId, action, detail) {
       textarea.value = `${textarea.value}${suffix}${suggestion.markdown}\n`;
     }
     showToast("已產生 Markdown 參考");
-    return;
+    return false;
   }
   if (action === "submit" || action === "edit-draft") {
     if (action === "edit-draft") {
       navigate(`#/knowledge/${documentId}/content`);
-      return;
+      return false;
     }
-    const ok = await confirmDialog("送審", "確定要將此草稿送交審核？");
-    if (!ok) return;
+    const ok = await confirmDialog("送審", "確定要將此草稿送交審核？", { confirmLabel: "確認送審" });
+    if (!ok) return false;
     await api(`/api/documents/${documentId}/submit-review`, {
       method: "POST",
       body: JSON.stringify({
@@ -132,7 +132,7 @@ export async function handleAction(documentId, action, detail) {
         multiline: true,
       },
     );
-    if (comment === null) return;
+    if (comment === null) return false;
     await api(`/api/reviews/${detail.open_review.review_id}/decision`, {
       method: "POST",
       body: JSON.stringify({
@@ -149,7 +149,7 @@ export async function handleAction(documentId, action, detail) {
       "發布後 Teams 將引用此版本。確定要發布？",
       { confirmLabel: "發布" },
     );
-    if (!ok) return;
+    if (!ok) return false;
     const versionId = detail.draft_version?.version_id || detail.document.current_published_version_id;
     await api(`/api/documents/${documentId}/publish`, {
       method: "POST",
@@ -162,26 +162,26 @@ export async function handleAction(documentId, action, detail) {
   }
   if (action === "discard-draft") {
     const reason = await promptDialog("放棄草稿", "請說明原因", { defaultValue: "放棄草稿" });
-    if (reason === null) return;
+    if (reason === null) return false;
     const ok = await confirmDialog("放棄草稿", "此操作無法復原。確定要放棄草稿？", { danger: true, confirmLabel: "放棄" });
-    if (!ok) return;
+    if (!ok) return false;
     await api(`/api/documents/${documentId}/discard-draft`, {
       method: "POST",
       body: JSON.stringify({ reason }),
     });
     showToast("已放棄草稿");
     navigate("#/knowledge");
-    return;
+    return false;
   }
   if (action === "unpublish") {
     const reason = await promptDialog("下架正式文件", "請說明原因", { defaultValue: "下架正式文件" });
-    if (reason === null) return;
+    if (reason === null) return false;
     const ok = await confirmDialog(
       "下架正式文件",
       "下架後 Teams 將無法引用此文件。確定要下架？",
       { danger: true, confirmLabel: "下架" },
     );
-    if (!ok) return;
+    if (!ok) return false;
     await api(`/api/documents/${documentId}/unpublish`, {
       method: "POST",
       body: JSON.stringify({ reason }),

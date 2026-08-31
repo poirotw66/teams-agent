@@ -7,7 +7,7 @@ import {
   isForbiddenError,
   renderSkeleton,
   renderViewEmpty,
-} from "../ui.js";
+} from "../ui.js?v=20260831c";
 
 export async function renderReviewsView(app) {
   app.innerHTML = `

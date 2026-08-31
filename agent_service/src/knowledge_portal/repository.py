@@ -20,7 +20,7 @@ from .models import (
 
 class VersionConflictError(Exception):
     def __init__(self, target_id: str) -> None:
-        super().__init__(f"Version conflict for {target_id}")
+        super().__init__("這份文件剛被其他人更新過，請重新載入後再試。")
         self.target_id = target_id
 
 

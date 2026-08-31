@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { escapeHtml, handleViewError, renderSkeleton, renderViewEmpty } from "../ui.js";
+import { escapeHtml, handleViewError, renderSkeleton, renderViewEmpty } from "../ui.js?v=20260831c";
 
 export async function renderAuditView(app) {
   app.innerHTML = `

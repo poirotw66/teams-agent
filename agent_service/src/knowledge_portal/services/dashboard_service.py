@@ -100,4 +100,6 @@ class DashboardService:
             nav.append("reviews")
         if actor.role in {"AUDITOR", "MANAGER", "PLATFORM"}:
             nav.append("audit")
+        if actor.role in {"MANAGER", "PLATFORM"}:
+            nav.append("releases")
         return nav

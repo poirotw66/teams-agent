@@ -1,5 +1,5 @@
-import { escapeHtml, stripFrontMatter } from "../../../ui.js";
-import { can, renderIssues } from "../shared.js";
+import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831c";
+import { can, renderIssues, renderParsePreview } from "../shared.js";
 
 export function renderContentTab(documentId, detail, draft) {
   if (!draft) {
@@ -68,6 +68,11 @@ export function renderContentTab(documentId, detail, draft) {
           ${editable ? `<button type="button" class="btn primary" data-action="save-draft">儲存草稿</button>` : ""}
           ${can("VALIDATE", detail.allowed_actions) ? `<button type="button" class="btn secondary" data-action="validate">重新檢查</button>` : ""}
         </div>
+      </div>
+      <div class="panel">
+        <h3>解析預覽</h3>
+        <p class="muted">以下為系統依標題結構切分的段落，實際檢索切塊可能略有不同。</p>
+        ${renderParsePreview(draft.parse_preview)}
       </div>
       <div class="panel">
         <h3>圖片附件</h3>

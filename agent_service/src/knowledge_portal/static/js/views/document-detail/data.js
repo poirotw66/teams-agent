@@ -1,6 +1,6 @@
-import { api, loadAssetPreviewUrl } from "../../api.js";
+import { api, loadAssetPreviewUrl, revokeAssetPreviewUrls } from "../../api.js";
 import { navigate } from "../../router.js";
-import { escapeHtml, showToast } from "../../ui.js";
+import { escapeHtml, showToast } from "../../ui.js?v=20260831c";
 
 export async function loadTestData(documentId, detail) {
   if (!detail.draft_version) return { cases: [], runsByCase: {} };
@@ -14,6 +14,7 @@ export async function loadTestData(documentId, detail) {
 }
 
 export async function hydrateAssetPreviews(documentId, assets) {
+  revokeAssetPreviewUrls();
   const grid = document.getElementById("assetPreviewGrid");
   if (!grid || !assets.length) return;
   grid.innerHTML = "";

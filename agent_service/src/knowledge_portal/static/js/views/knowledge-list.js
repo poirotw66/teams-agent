@@ -8,7 +8,7 @@ import {
   renderSkeleton,
   renderStatusBadge,
   renderViewEmpty,
-} from "../ui.js";
+} from "../ui.js?v=20260831c";
 
 function buildQuery(filters) {
   const params = new URLSearchParams();

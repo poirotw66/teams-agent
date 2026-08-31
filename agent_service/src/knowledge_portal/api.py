@@ -83,6 +83,14 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.middleware("http")
+    async def disable_portal_cache(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
     def handle_errors(exc: Exception) -> HTTPException:
         if isinstance(exc, PortalNotFoundError):
             return HTTPException(
@@ -104,7 +112,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                 status_code=422,
                 detail={
                     "code": PortalErrorCode.VALIDATION_FAILED.value,
-                    "message": "Validation failed.",
+                    "message": "內容檢查未通過，請修正標示的問題後再試。",
                     "issues": [issue.model_dump(mode="json") for issue in exc.issues],
                 },
             )
@@ -116,7 +124,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                     status_code=422,
                     detail={
                         "code": PortalErrorCode.VALIDATION_FAILED.value,
-                        "message": "Validation failed.",
+                        "message": "內容檢查未通過，請修正標示的問題後再試。",
                         "issues": [issue.model_dump(mode="json") for issue in summary.issues],
                     },
                 )
@@ -164,7 +172,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         _: None = Depends(authorize),
     ):
         raw = (await file.read()).decode("utf-8")
-        return service.import_markdown(raw)
+        return service.import_markdown(raw, filename=file.filename)
 
     @app.post("/api/documents/{document_id}/start-revision")
     async def start_revision(

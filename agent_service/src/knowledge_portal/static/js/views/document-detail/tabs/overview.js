@@ -1,5 +1,5 @@
 import { nextActionLabel } from "../../../labels.js";
-import { escapeHtml, renderStatusBadge, stripFrontMatter } from "../../../ui.js";
+import { escapeHtml, renderStatusBadge, stripFrontMatter } from "../../../ui.js?v=20260831c";
 
 function renderPublishedPreview(document, published) {
   if (!published) return "<p class=\"muted\">尚無正式版本內容。</p>";

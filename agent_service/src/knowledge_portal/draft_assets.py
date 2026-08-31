@@ -30,9 +30,25 @@ def normalize_upload_filename(name: str) -> str:
     return candidate
 
 
-def parse_markdown_import(raw: str, *, default_owner_unit_id: str) -> dict[str, object]:
+def title_from_filename(filename: str | None) -> str:
+    if not filename:
+        return ""
+    stem = Path(normalize_upload_filename(filename)).stem.strip()
+    return stem
+
+
+def parse_markdown_import(
+    raw: str,
+    *,
+    default_owner_unit_id: str,
+    filename: str | None = None,
+) -> dict[str, object]:
     front_matter, body = parse_front_matter(raw)
-    title = str(front_matter.get("title") or "Untitled")
+    raw_title = front_matter.get("title")
+    if raw_title and str(raw_title).strip():
+        title = str(raw_title).strip()
+    else:
+        title = title_from_filename(filename) or "Untitled"
     owner = str(front_matter.get("owner") or default_owner_unit_id)
     effective_at = str(front_matter.get("effectiveDate") or "2026-01-01")
     review_due_at = str(front_matter.get("reviewDate") or "2026-12-31")
@@ -329,7 +345,7 @@ def validate_asset_bundle(
                 (
                     "ASSET_PATH_UNEXPECTED",
                     "WARNING",
-                    f"Image path should use ../assets/{asset_slug}/: {target_path}",
+                    f"圖片路徑建議使用 ../assets/{asset_slug}/：{target_path}",
                 )
             )
         candidate = expected_root / filename
@@ -338,7 +354,7 @@ def validate_asset_bundle(
                 (
                     "MISSING_ASSET",
                     "BLOCKING",
-                    f"Referenced image not uploaded: {filename}",
+                    f"正文引用的圖片尚未上傳：{filename}",
                 )
             )
         if not alt_text.strip():
@@ -346,7 +362,7 @@ def validate_asset_bundle(
                 (
                     "MISSING_ALT_TEXT",
                     "WARNING",
-                    f"Image should include alternative text: {filename}",
+                    f"圖片建議填寫替代文字：{filename}",
                 )
             )
 
@@ -358,7 +374,7 @@ def validate_asset_bundle(
                     (
                         "ORPHAN_ASSET",
                         "WARNING",
-                        f"Uploaded image is not referenced in content: {path.name}",
+                        f"已上傳的圖片未在正文中引用：{path.name}",
                     )
                 )
     return issues

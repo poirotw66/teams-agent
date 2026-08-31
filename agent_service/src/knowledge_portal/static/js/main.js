@@ -3,11 +3,12 @@ import { api } from "./api.js";
 import { ROLE_LABELS } from "./labels.js";
 import { applyDemoPersona, getSession, syncFromDashboard, updateSession } from "./session.js";
 import { navigate, startRouter } from "./router.js";
-import { escapeHtml, renderViewForbidden } from "./ui.js";
+import { escapeHtml, renderViewForbidden } from "./ui.js?v=20260831c";
 import { renderAuditView } from "./views/audit.js";
 import { renderCreateView } from "./views/create.js";
 import { renderDocumentDetailView } from "./views/document-detail.js";
 import { renderKnowledgeListView } from "./views/knowledge-list.js";
+import { renderReleasesView } from "./views/releases.js";
 import { renderReviewsView } from "./views/reviews.js";
 import { renderWorkView } from "./views/work.js";
 
@@ -130,6 +131,18 @@ async function renderRoute({ segments, query, app }) {
       return;
     }
     await renderAuditView(app);
+    return;
+  }
+  if (segments[0] === "releases") {
+    if (!getSession().visibleNav?.includes("releases")) {
+      app.innerHTML = `
+        <section class="page">
+          <header class="page-header"><h2>發布紀錄</h2></header>
+          ${renderViewForbidden("audit")}
+        </section>`;
+      return;
+    }
+    await renderReleasesView(app);
     return;
   }
   navigate("#/work");

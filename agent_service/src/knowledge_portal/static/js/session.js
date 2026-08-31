@@ -34,6 +34,9 @@ export function visibleNavForRole(role) {
   if (["AUDITOR", "MANAGER", "PLATFORM"].includes(role)) {
     nav.push("audit");
   }
+  if (["MANAGER", "PLATFORM"].includes(role)) {
+    nav.push("releases");
+  }
   return nav;
 }
 

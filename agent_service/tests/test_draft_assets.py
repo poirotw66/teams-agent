@@ -122,6 +122,28 @@ Body text.
     assert body["asset_slug"] == "VPN Guide"
 
 
+def test_import_markdown_uses_filename_when_title_missing(draft_asset_client: TestClient) -> None:
+    raw = """# 總公司 IP 話機操作
+
+請依下列步驟操作。
+"""
+    response = draft_asset_client.post(
+        "/api/documents/import-markdown",
+        files={
+            "file": (
+                "總公司IP話機操作.md",
+                raw.encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        headers=portal_headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "總公司IP話機操作"
+    assert body["asset_slug"] == "總公司IP話機操作"
+
+
 def test_import_markdown_preserves_restricted_audience(draft_asset_client: TestClient) -> None:
     raw = """---
 title: HR Policy

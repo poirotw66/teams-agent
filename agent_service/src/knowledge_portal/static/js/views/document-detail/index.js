@@ -1,4 +1,4 @@
-import { api } from "../../api.js";
+import { api, revokeAssetPreviewUrls } from "../../api.js";
 import { navigate } from "../../router.js";
 import {
   escapeHtml,
@@ -8,8 +8,9 @@ import {
   renderSkeleton,
   renderStatusBadge,
   renderViewForbidden,
-} from "../../ui.js";
+} from "../../ui.js?v=20260831c";
 import { hydrateAssetPreviews, loadTestData } from "./data.js";
+import { captureDraftBaseline } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";
 import { renderContentTab } from "./tabs/content.js";
 import { renderOverviewTab } from "./tabs/overview.js";
@@ -29,6 +30,7 @@ function renderTabContent(tab, documentId, detail, cases, runsByCase) {
 }
 
 export async function renderDocumentDetailView(app, documentId, tab = "overview") {
+  revokeAssetPreviewUrls();
   app.innerHTML = `
     <section class="page detail-page">
       <header class="page-header">
@@ -96,8 +98,11 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
     );
 
     wireActions(app, documentId, detail, refresh);
-    if (tab === "content" && detail.draft_assets?.items?.length) {
-      await hydrateAssetPreviews(documentId, detail.draft_assets.items);
+    if (tab === "content") {
+      captureDraftBaseline();
+      if (detail.draft_assets?.items?.length) {
+        await hydrateAssetPreviews(documentId, detail.draft_assets.items);
+      }
     }
   } catch (error) {
     if (isForbiddenError(error)) {

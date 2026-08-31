@@ -406,10 +406,11 @@ class DocumentService:
         )
         return test_case
 
-    def import_markdown(self, raw: str) -> ImportMarkdownResponse:
+    def import_markdown(self, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
         parsed = parse_markdown_import(
             raw,
             default_owner_unit_id=self._settings.default_owner_unit_id,
+            filename=filename,
         )
         warnings: list[str] = []
         if raw.lstrip().startswith("---"):

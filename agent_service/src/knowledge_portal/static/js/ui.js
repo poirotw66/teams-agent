@@ -166,38 +166,88 @@ export function renderForbidden(message = "你沒有權限執行此操作。如�
 
 let activeDialog = null;
 
+const DIALOG_CANCEL_STYLE = [
+  "display:inline-flex",
+  "align-items:center",
+  "justify-content:center",
+  "min-width:5.5rem",
+  "min-height:2.25rem",
+  "padding:0.45rem 0.85rem",
+  "border:1px solid #8a8886",
+  "border-radius:4px",
+  "background:#fff",
+  "color:#242424",
+  "font:inherit",
+  "cursor:pointer",
+].join(";");
+
+function dialogConfirmStyle(danger) {
+  if (danger) {
+    return [
+      "display:inline-flex",
+      "align-items:center",
+      "justify-content:center",
+      "min-width:5.5rem",
+      "min-height:2.25rem",
+      "padding:0.45rem 0.85rem",
+      "border:1px solid #a4262c",
+      "border-radius:4px",
+      "background:#fff",
+      "color:#a4262c",
+      "font:inherit",
+      "cursor:pointer",
+    ].join(";");
+  }
+  return [
+    "display:inline-flex",
+    "align-items:center",
+    "justify-content:center",
+    "min-width:5.5rem",
+    "min-height:2.25rem",
+    "padding:0.45rem 0.85rem",
+    "border:1px solid #0078d4",
+    "border-radius:4px",
+    "background:#0078d4",
+    "color:#fff",
+    "font:inherit",
+    "cursor:pointer",
+  ].join(";");
+}
+
 export function closeDialog() {
   if (!activeDialog) return;
+  if (activeDialog instanceof HTMLDialogElement && activeDialog.open) {
+    activeDialog.close();
+  }
   activeDialog.remove();
   activeDialog = null;
+  document.body.classList.remove("dialog-open");
 }
 
 export function openDialog({ title, bodyHtml, confirmLabel = "確認", cancelLabel = "取消", danger = false }) {
   closeDialog();
   return new Promise((resolve) => {
-    const root = document.getElementById("dialogRoot");
-    const overlay = document.createElement("div");
-    overlay.className = "dialog-overlay";
-    overlay.innerHTML = `
-      <fluent-dialog class="dialog" aria-labelledby="dialogTitle">
-        <div class="dialog-header" slot="title">
+    const dialog = document.createElement("dialog");
+    dialog.className = "portal-dialog";
+    dialog.setAttribute("aria-labelledby", "dialogTitle");
+    dialog.innerHTML = `
+      <div class="portal-dialog-panel">
+        <header class="portal-dialog-header">
           <h2 id="dialogTitle">${escapeHtml(title)}</h2>
-        </div>
-        <div class="dialog-body">${bodyHtml}</div>
-        <div slot="footer" class="dialog-footer">
-          <fluent-button appearance="outline" data-dialog-cancel>${escapeHtml(cancelLabel)}</fluent-button>
-          <fluent-button appearance="${danger ? "outline" : "accent"}" data-dialog-confirm>${escapeHtml(confirmLabel)}</fluent-button>
-        </div>
-      </fluent-dialog>`;
-    root.appendChild(overlay);
-    activeDialog = overlay;
-    const dialogEl = overlay.querySelector("fluent-dialog");
-    if (dialogEl && typeof dialogEl.show === "function") {
-      dialogEl.show();
-    }
+        </header>
+        <div class="portal-dialog-body">${bodyHtml}</div>
+        <footer class="portal-dialog-actions">
+          <button type="button" style="${DIALOG_CANCEL_STYLE}" data-dialog-cancel>${escapeHtml(cancelLabel)}</button>
+          <button type="button" style="${dialogConfirmStyle(danger)}" data-dialog-confirm>${escapeHtml(confirmLabel)}</button>
+        </footer>
+      </div>`;
+    document.body.appendChild(dialog);
+    document.body.classList.add("dialog-open");
+    activeDialog = dialog;
     const previouslyFocused = document.activeElement;
 
     function finish(value) {
+      dialog.removeEventListener("cancel", onCancel);
       closeDialog();
       if (previouslyFocused instanceof HTMLElement) {
         previouslyFocused.focus();
@@ -205,22 +255,26 @@ export function openDialog({ title, bodyHtml, confirmLabel = "確認", cancelLab
       resolve(value);
     }
 
-    overlay.querySelector("[data-dialog-cancel]").addEventListener("click", () => finish(null));
-    overlay.querySelector("[data-dialog-confirm]").addEventListener("click", () => {
+    function onCancel(event) {
+      event.preventDefault();
+      finish(null);
+    }
+    dialog.addEventListener("cancel", onCancel);
+
+    dialog.querySelector("[data-dialog-cancel]")?.addEventListener("click", () => finish(null));
+    dialog.querySelector("[data-dialog-confirm]")?.addEventListener("click", () => {
       const fields = {};
-      overlay.querySelectorAll("[data-dialog-field]").forEach((node) => {
+      dialog.querySelectorAll("[data-dialog-field]").forEach((node) => {
         fields[node.dataset.dialogField] = node.value;
       });
       finish(fields);
     });
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) finish(null);
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) finish(null);
     });
-    dialogEl?.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") finish(null);
-    });
-    const firstInput = overlay.querySelector("input, textarea, select, fluent-button");
-    if (firstInput instanceof HTMLElement) firstInput.focus();
+
+    dialog.showModal();
+    dialog.querySelector("[data-dialog-confirm]")?.focus();
   });
 }
 

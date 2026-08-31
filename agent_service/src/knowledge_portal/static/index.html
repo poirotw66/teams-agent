@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>知識營運介面</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=20260831c">
     <script type="module" src="/static/vendor/fluent-web-components.min.js"></script>
   </head>
   <body>
@@ -30,6 +30,7 @@
         <fluent-button appearance="stealth" data-nav="#/knowledge" data-nav-item="knowledge">知識庫</fluent-button>
         <fluent-button appearance="stealth" data-nav="#/reviews" data-nav-item="reviews">待審核</fluent-button>
         <fluent-button appearance="stealth" data-nav="#/audit" data-nav-item="audit">稽核紀錄</fluent-button>
+        <fluent-button appearance="stealth" data-nav="#/releases" data-nav-item="releases">發布紀錄</fluent-button>
       </nav>
 
       <main id="app" class="app-main" tabindex="-1"></main>
@@ -38,6 +39,7 @@
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </fluent-design-system-provider>
 
-    <script type="module" src="/static/js/main.js"></script>
+    <meta name="portal-build" content="20260831c">
+    <script type="module" src="/static/js/main.js?v=20260831c"></script>
   </body>
 </html>

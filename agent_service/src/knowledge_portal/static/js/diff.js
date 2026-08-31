@@ -1,4 +1,4 @@
-import { escapeHtml } from "./ui.js";
+import { escapeHtml } from "./ui.js?v=20260831c";
 
 function lcsTable(before, after) {
   const rows = before.length + 1;

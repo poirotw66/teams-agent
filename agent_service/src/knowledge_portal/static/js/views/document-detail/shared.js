@@ -1,5 +1,5 @@
 import { nextActionLabel } from "../../labels.js";
-import { escapeHtml } from "../../ui.js";
+import { escapeHtml } from "../../ui.js?v=20260831c";
 
 export const TABS = [
   { id: "overview", label: "概覽" },
@@ -12,11 +12,41 @@ export function can(action, allowedActions = []) {
   return allowedActions.includes(action);
 }
 
+export function severityLabel(severity) {
+  return {
+    BLOCKING: "阻擋",
+    WARNING: "警告",
+    INFO: "提示",
+  }[severity] || severity;
+}
+
 export function renderIssues(issues = []) {
   if (!issues.length) return "<p class=\"muted\">未發現品質問題。</p>";
   return `<ul class="issue-list">${issues.map((issue) => `
-    <li class="issue ${issue.severity.toLowerCase()}">[${issue.severity}] ${escapeHtml(issue.message)}</li>
+    <li class="issue ${issue.severity.toLowerCase()}">[${severityLabel(issue.severity)}] ${escapeHtml(issue.message)}</li>
   `).join("")}</ul>`;
+}
+
+export function renderParsePreview(preview) {
+  if (!preview?.segments?.length) {
+    return "<p class=\"muted\">儲存或重新檢查後，系統會顯示段落預覽。</p>";
+  }
+  const meta = [
+    preview.segments.length ? `${preview.segments.length} 個段落` : null,
+    preview.image_count ? `${preview.image_count} 張圖片` : null,
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="parse-preview">
+      ${meta ? `<p class="muted">${escapeHtml(meta)}</p>` : ""}
+      <ol class="parse-preview-list">
+        ${preview.segments.map((segment) => `
+          <li>
+            <strong>${escapeHtml(segment.heading)}</strong>
+            <span class="muted">（${segment.char_count} 字）</span>
+            <p>${escapeHtml(segment.excerpt)}</p>
+          </li>`).join("")}
+      </ol>
+    </div>`;
 }
 
 export function getVisibleTabs(detail) {

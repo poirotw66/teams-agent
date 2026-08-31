@@ -88,42 +88,42 @@ def validate_draft(
 
     if require_operational_fields:
         if not title.strip():
-            add("TITLE_REQUIRED", "BLOCKING", "Title is required.", "title")
+            add("TITLE_REQUIRED", "BLOCKING", "請填寫標題。", "title")
         if not owner_unit_id.strip():
-            add("OWNER_REQUIRED", "BLOCKING", "Owner unit is required.", "owner_unit_id")
+            add("OWNER_REQUIRED", "BLOCKING", "請填寫擁有單位。", "owner_unit_id")
         if not change_reason.strip():
             add(
                 "CHANGE_REASON_REQUIRED",
                 "BLOCKING",
-                "Change reason is required.",
+                "請填寫變更原因。",
                 "change_reason",
             )
         if not effective_at.strip():
             add(
                 "EFFECTIVE_DATE_REQUIRED",
                 "BLOCKING",
-                "Effective date is required.",
+                "請填寫生效日。",
                 "effective_at",
             )
         if not review_due_at.strip():
             add(
                 "REVIEW_DUE_REQUIRED",
                 "BLOCKING",
-                "Review due date is required.",
+                "請填寫下次檢視日。",
                 "review_due_at",
             )
 
     effective = _parse_iso_date(effective_at)
     review_due = _parse_iso_date(review_due_at)
     if effective_at and effective is None:
-        add("EFFECTIVE_DATE_INVALID", "BLOCKING", "Effective date must be YYYY-MM-DD.", "effective_at")
+        add("EFFECTIVE_DATE_INVALID", "BLOCKING", "生效日格式須為 YYYY-MM-DD。", "effective_at")
     if review_due_at and review_due is None:
-        add("REVIEW_DUE_INVALID", "BLOCKING", "Review due date must be YYYY-MM-DD.", "review_due_at")
+        add("REVIEW_DUE_INVALID", "BLOCKING", "下次檢視日格式須為 YYYY-MM-DD。", "review_due_at")
     if effective and review_due and review_due < effective:
         add(
             "REVIEW_BEFORE_EFFECTIVE",
             "BLOCKING",
-            "Review due date cannot be earlier than effective date.",
+            "下次檢視日不可早於生效日。",
             "review_due_at",
         )
 
@@ -131,20 +131,20 @@ def validate_draft(
         add(
             "AUDIENCE_GROUPS_REQUIRED",
             "BLOCKING",
-            "Restricted content requires at least one audience group.",
+            "特定群組可見時，至少須填寫一個群組。",
             "audience_group_ids",
         )
     if audience_type == "ALL_EMPLOYEES" and audience_group_ids:
         add(
             "AUDIENCE_GROUPS_IGNORED",
             "WARNING",
-            "Audience groups are ignored when visibility is all employees.",
+            "適用對象為全體員工時，特定群組設定將被忽略。",
             "audience_group_ids",
         )
 
     stripped = markdown_content.strip()
     if not stripped:
-        add("EMPTY_CONTENT", "BLOCKING", "Document content cannot be empty.", "markdown_content")
+        add("EMPTY_CONTENT", "BLOCKING", "正文內容不可為空。", "markdown_content")
     else:
         try:
             parse_front_matter(stripped)
@@ -155,7 +155,7 @@ def validate_draft(
         add(
             "MISSING_HEADING",
             "WARNING",
-            "Content should include at least one level-1 heading.",
+            "正文建議至少包含一個一級標題（#）。",
             "markdown_content",
         )
 
@@ -164,7 +164,7 @@ def validate_draft(
             add(
                 "SUSPECTED_SECRET",
                 "BLOCKING",
-                "Content appears to contain credentials or sensitive identifiers.",
+                "內容疑似包含密碼、金鑰或其他敏感資訊。",
                 "markdown_content",
             )
             break
@@ -174,7 +174,7 @@ def validate_draft(
         add(
             "EXTERNAL_IMAGE_URL",
             "BLOCKING",
-            "External image URLs must be uploaded to controlled storage before publish.",
+            "外部圖片網址須先上傳至受控儲存後才能發布。",
             "markdown_content",
         )
 
@@ -185,7 +185,7 @@ def validate_draft(
             add(
                 "MISSING_ALT_TEXT",
                 "WARNING",
-                "Images should include alternative text.",
+                "圖片建議填寫替代文字。",
                 "markdown_content",
             )
             break
@@ -208,14 +208,14 @@ def validate_draft(
             add(
                 "REVIEW_OVERDUE",
                 "WARNING",
-                "Review due date is already past.",
+                "下次檢視日已過期。",
                 "review_due_at",
             )
         elif days <= 7:
             add(
                 "REVIEW_DUE_SOON",
                 "INFO",
-                "Review due date is within 7 days.",
+                "下次檢視日在 7 天內。",
                 "review_due_at",
             )
 

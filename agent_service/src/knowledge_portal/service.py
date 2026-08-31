@@ -188,8 +188,8 @@ class PortalService:
             actor, document_id, request, correlation_id
         )
 
-    def import_markdown(self, raw: str) -> ImportMarkdownResponse:
-        return self._documents.import_markdown(raw)
+    def import_markdown(self, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
+        return self._documents.import_markdown(raw, filename=filename)
 
     async def list_draft_assets(
         self, actor: PortalActor, document_id: str

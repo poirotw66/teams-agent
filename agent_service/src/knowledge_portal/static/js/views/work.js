@@ -9,7 +9,7 @@ import {
   isForbiddenError,
   renderSkeleton,
   renderViewEmpty,
-} from "../ui.js";
+} from "../ui.js?v=20260831c";
 
 const ROLE_SUBTITLES = {
   CONTRIBUTOR: "優先處理你的草稿與被退回內容",

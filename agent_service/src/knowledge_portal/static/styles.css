@@ -410,31 +410,44 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 }
 .toast.error { background: var(--danger); }
 
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  z-index: 1000;
+.portal-dialog {
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: calc(100vw - 2rem);
+  background: transparent;
+  color: var(--ink);
 }
-.dialog {
-  width: min(520px, 100%);
+.portal-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+body.dialog-open {
+  overflow: hidden;
+}
+.portal-dialog-panel {
+  width: min(520px, calc(100vw - 2rem));
   background: var(--surface);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
 }
-.dialog-header, .dialog-body, .dialog-footer {
+.portal-dialog-header,
+.portal-dialog-body,
+.portal-dialog-actions {
   padding: 1rem;
 }
-.dialog-header { border-bottom: 1px solid var(--border); }
-.dialog-header h2 { margin: 0; font-size: 1.05rem; }
-.dialog-footer {
+.portal-dialog-header {
+  border-bottom: 1px solid var(--border);
+}
+.portal-dialog-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.portal-dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
   border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .app-root {
@@ -471,20 +484,6 @@ fluent-button[aria-current="page"] {
 .empty-state fluent-button,
 .forbidden-state fluent-button {
   margin-top: 1rem;
-}
-
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 1000;
-}
-
-fluent-dialog.dialog {
-  width: min(520px, 100%);
 }
 
 fluent-badge.status-badge {
@@ -625,6 +624,48 @@ fluent-text-area {
 .tab:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.parse-preview-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.parse-preview-list li + li {
+  margin-top: 0.75rem;
+}
+.parse-preview-list p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.test-run-detail {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--surface-muted);
+  border-radius: var(--radius);
+  font-size: 0.92rem;
+}
+.test-run-detail p {
+  margin: 0.25rem 0;
+}
+.test-case-row {
+  align-items: flex-start;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.data-table th,
+.data-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.data-table th {
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .app-main:focus {

@@ -121,7 +121,7 @@ def evaluate_test_case(
     settings: PortalSettings,
 ) -> tuple[str, str, list[str], str]:
     if len(question.strip()) < 4:
-        return "FAIL", "", [], "Question is too short."
+        return "FAIL", "", [], "測試問題過短，請至少輸入 4 個字。"
 
     result = search_draft_version(
         version=version,
@@ -133,13 +133,13 @@ def evaluate_test_case(
     answer_excerpt = result.hits[0].content[:240] if result.hits else ""
 
     if not result.hits:
-        return "FAIL", answer_excerpt, cited_titles, "Draft index returned no hits."
+        return "FAIL", answer_excerpt, cited_titles, "草稿索引查無結果。"
     if result.leaked_from_active_release and not result.matched_draft:
         return (
             "FAIL",
             answer_excerpt,
             cited_titles,
-            "Active release answers this question with a different document.",
+            "正式版索引命中其他文件，草稿未正確命中。",
         )
     if result.matched_draft:
         return "PASS", answer_excerpt, cited_titles, ""
@@ -147,5 +147,5 @@ def evaluate_test_case(
         "NEEDS_REVIEW",
         answer_excerpt,
         cited_titles,
-        "Draft did not rank as the top matched document.",
+        "草稿有命中，但未成為最佳匹配，請人工確認。",
     )
