@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { ROLE_LABELS } from "./labels.js";
 import { applyDemoPersona, getSession, syncFromDashboard, updateSession } from "./session.js";
 import { navigate, startRouter } from "./router.js";
-import { escapeHtml, renderViewForbidden } from "./ui.js?v=20260831c";
+import { escapeHtml, renderViewForbidden } from "./ui.js?v=20260831d";
 import { renderAuditView } from "./views/audit.js";
 import { renderCreateView } from "./views/create.js";
 import { renderDocumentDetailView } from "./views/document-detail.js";

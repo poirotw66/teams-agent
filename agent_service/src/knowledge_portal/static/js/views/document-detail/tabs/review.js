@@ -1,6 +1,6 @@
 import { audienceLabel, testResultLabel } from "../../../labels.js";
 import { renderLineDiffHtml } from "../../../diff.js";
-import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831c";
+import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831d";
 import { can, renderIssues } from "../shared.js";
 
 export function renderReviewTab(detail, cases, runsByCase) {

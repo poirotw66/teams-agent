@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { getSession } from "../session.js";
 import { handleConflictError } from "../errors.js";
-import { escapeHtml, handleViewError, promptDialog, showToast } from "../ui.js?v=20260831c";
+import { escapeHtml, handleViewError, promptDialog, showToast } from "../ui.js?v=20260831d";
 
 function canManageReleases() {
   return ["MANAGER", "PLATFORM"].includes(getSession().role);

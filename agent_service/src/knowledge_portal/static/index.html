@@ -4,13 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>知識營運介面</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260831c">
+    <link rel="stylesheet" href="/static/styles.css?v=20260831d">
     <script type="module" src="/static/vendor/fluent-web-components.min.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#app">跳至主要內容</a>
     <fluent-design-system-provider use-default-config class="app-root">
       <div id="demoBanner" class="demo-banner hidden" role="status"></div>
+      <div class="app-top">
       <header class="app-header">
         <div class="brand">
           <p class="eyebrow">Teams IT 智能助手</p>
@@ -32,6 +33,7 @@
         <fluent-button appearance="stealth" data-nav="#/audit" data-nav-item="audit">稽核紀錄</fluent-button>
         <fluent-button appearance="stealth" data-nav="#/releases" data-nav-item="releases">發布紀錄</fluent-button>
       </nav>
+      </div>
 
       <main id="app" class="app-main" tabindex="-1"></main>
 
@@ -39,7 +41,7 @@
       <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     </fluent-design-system-provider>
 
-    <meta name="portal-build" content="20260831c">
-    <script type="module" src="/static/js/main.js?v=20260831c"></script>
+    <meta name="portal-build" content="20260831d">
+    <script type="module" src="/static/js/main.js?v=20260831d"></script>
   </body>
 </html>

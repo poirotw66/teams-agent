@@ -1,5 +1,5 @@
 import { nextActionLabel } from "../../labels.js";
-import { escapeHtml } from "../../ui.js?v=20260831c";
+import { escapeHtml } from "../../ui.js?v=20260831d";
 
 export const TABS = [
   { id: "overview", label: "概覽" },

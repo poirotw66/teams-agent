@@ -8,7 +8,7 @@ import {
   renderSkeleton,
   renderStatusBadge,
   renderViewForbidden,
-} from "../../ui.js?v=20260831c";
+} from "../../ui.js?v=20260831d";
 import { hydrateAssetPreviews, loadTestData } from "./data.js";
 import { captureDraftBaseline } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";

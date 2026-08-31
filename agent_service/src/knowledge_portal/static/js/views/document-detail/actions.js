@@ -6,7 +6,7 @@ import {
   openDialog,
   promptDialog,
   showToast,
-} from "../../ui.js?v=20260831c";
+} from "../../ui.js?v=20260831d";
 
 export async function handleAction(documentId, action, detail) {
   if (action === "validate") {

@@ -91,8 +91,8 @@ def test_version_conflict_message_is_traditional_chinese(portal_client: TestClie
 def test_index_html_exposes_portal_build(portal_client: TestClient) -> None:
     response = portal_client.get("/")
     assert response.status_code == 200
-    assert 'name="portal-build" content="20260831c"' in response.text
-    assert "/static/js/main.js?v=20260831c" in response.text
+    assert 'name="portal-build" content="20260831d"' in response.text
+    assert "/static/js/main.js?v=20260831d" in response.text
 
 
 def test_static_portal_assets_disable_cache(portal_client: TestClient) -> None:

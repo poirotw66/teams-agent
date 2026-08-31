@@ -1,4 +1,4 @@
-import { escapeHtml } from "./ui.js?v=20260831c";
+import { escapeHtml } from "./ui.js?v=20260831d";
 
 const FLUENT_BUNDLE = "/static/vendor/fluent-web-components.min.js";
 

@@ -2,7 +2,7 @@ import { api, apiForm } from "../../api.js";
 import { handleConflictError } from "../../errors.js";
 import { navigate } from "../../router.js";
 import { testResultLabel } from "../../labels.js";
-import { showToast } from "../../ui.js?v=20260831c";
+import { showToast } from "../../ui.js?v=20260831d";
 import { handleAction } from "./actions.js";
 
 export function wireActions(app, documentId, detail, refresh) {

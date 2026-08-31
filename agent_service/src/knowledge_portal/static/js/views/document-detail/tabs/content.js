@@ -1,4 +1,4 @@
-import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831c";
+import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831d";
 import { can, renderIssues, renderParsePreview } from "../shared.js";
 
 export function renderContentTab(documentId, detail, draft) {

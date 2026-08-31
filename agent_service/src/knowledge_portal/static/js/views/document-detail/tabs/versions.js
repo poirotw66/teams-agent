@@ -1,4 +1,4 @@
-import { escapeHtml } from "../../../ui.js?v=20260831c";
+import { escapeHtml } from "../../../ui.js?v=20260831d";
 import { can } from "../shared.js";
 
 export function renderVersionsTab(detail) {

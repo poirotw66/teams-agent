@@ -1,7 +1,7 @@
 import { api, apiForm } from "../api.js";
 import { fluentButton } from "../fluent.js";
 import { navigate } from "../router.js";
-import { escapeHtml, showToast } from "../ui.js?v=20260831c";
+import { escapeHtml, showToast } from "../ui.js?v=20260831d";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
