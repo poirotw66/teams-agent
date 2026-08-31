@@ -8,6 +8,7 @@ from agent_service.documents import load_source_chunks
 from agent_service.knowledge_release import read_active_release_id, release_index_path
 from agent_service.retrieval import HybridIndex
 
+from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord
 from .settings import PortalSettings
 from .validation import build_front_matter_markdown
@@ -52,9 +53,12 @@ def build_draft_index(
 ) -> HybridIndex:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)
-        sources_dir = temp_root / "sources"
-        sources_dir.mkdir(parents=True, exist_ok=True)
-        _write_version_source(version, sources_dir)
+        store = DraftAssetStore(settings)
+        store.materialize_workspace(
+            temp_root,
+            version=version,
+            source_filename=f"{version.document_id}.md",
+        )
         chunks = load_source_chunks(
             temp_root,
             settings.chunk_size,

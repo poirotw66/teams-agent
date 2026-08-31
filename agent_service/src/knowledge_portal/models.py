@@ -119,6 +119,7 @@ class KnowledgeVersionRecord(StrictModel):
     summary: str = ""
     title: str
     status: VersionLifecycleStatus = "DRAFT"
+    asset_slug: str = ""
     validation_summary: ValidationSummary = Field(default_factory=ValidationSummary)
     parse_preview: ParsePreview | None = None
     etag: str
@@ -255,6 +256,10 @@ class RollbackRequest(StrictModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+class RemoveDocumentRequest(StrictModel):
+    reason: str = Field(default="Removed from the knowledge library.", max_length=2000)
+
+
 class CreateTestCaseRequest(StrictModel):
     question: str = Field(min_length=1, max_length=1000)
     simulated_audience: list[str] = Field(default_factory=list)
@@ -272,6 +277,36 @@ class BootstrapReleaseRequest(StrictModel):
     release_id: str = "release-0001"
 
 
+class DraftAssetRecord(StrictModel):
+    filename: str
+    size_bytes: int
+    content_type: str
+    sha256: str
+
+
+class DraftAssetListResponse(StrictModel):
+    asset_slug: str
+    items: list[DraftAssetRecord]
+
+
+class AssetRefSuggestion(StrictModel):
+    asset_slug: str
+    filename: str
+    markdown: str
+
+
+class ImportMarkdownResponse(StrictModel):
+    title: str
+    owner_unit_id: str
+    effective_at: str
+    review_due_at: str
+    audience_type: AudienceType
+    audience_group_ids: list[str] = Field(default_factory=list)
+    markdown_content: str
+    asset_slug: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DocumentListResponse(StrictModel):
     items: list[KnowledgeDocumentRecord]
     total: int
@@ -282,6 +317,7 @@ class DocumentDetailResponse(StrictModel):
     draft_version: KnowledgeVersionRecord | None = None
     published_version: KnowledgeVersionRecord | None = None
     open_review: ReviewRecord | None = None
+    draft_assets: DraftAssetListResponse | None = None
 
 
 class DashboardSummary(StrictModel):
@@ -291,6 +327,8 @@ class DashboardSummary(StrictModel):
     review_due_soon: int
     active_release_id: str | None
     active_release_activated_at: datetime | None = None
+    relaxed_workflow: bool = True
+    min_test_cases_for_review: int = 0
 
 
 def utc_now() -> datetime:

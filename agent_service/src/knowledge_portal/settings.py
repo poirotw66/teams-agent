@@ -27,6 +27,7 @@ class PortalSettings:
     default_owner_unit_id: str
     default_owner_unit_ids: list[str]
     require_dual_approval: bool
+    relaxed_workflow: bool
     auth_mode: str
     entra_tenant_id: str | None
     entra_client_id: str | None
@@ -38,6 +39,9 @@ class PortalSettings:
     agent_api_url: str | None
     agent_api_token: str | None
     state_path: Path
+    drafts_dir: Path
+    max_asset_bytes: int
+    max_assets_per_version: int
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -107,7 +111,11 @@ class PortalSettings:
                 if item.strip()
             ],
             require_dual_approval=os.environ.get(
-                "KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL", "true"
+                "KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL", "false"
+            ).lower()
+            in {"1", "true", "yes"},
+            relaxed_workflow=os.environ.get(
+                "KNOWLEDGE_PORTAL_RELAXED_WORKFLOW", "true"
             ).lower()
             in {"1", "true", "yes"},
             auth_mode=os.environ.get("KNOWLEDGE_PORTAL_AUTH_MODE", "HEADER").upper(),
@@ -148,4 +156,14 @@ class PortalSettings:
             agent_api_token=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
             or os.environ.get("AGENT_SERVICE_TOKEN"),
             state_path=state_path,
+            drafts_dir=Path(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_DRAFTS_DIR",
+                    data_dir / "portal_drafts",
+                )
+            ).expanduser().resolve(),
+            max_asset_bytes=int(os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSET_BYTES", "2000000")),
+            max_assets_per_version=int(
+                os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSETS_PER_VERSION", "20")
+            ),
         )

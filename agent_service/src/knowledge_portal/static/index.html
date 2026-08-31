@@ -11,23 +11,22 @@
       <div>
         <p class="eyebrow">Teams IT 智能助手</p>
         <h1>知識營運介面</h1>
-        <p class="eyebrow">本機入口：<strong id="portalBaseUrl"></strong></p>
       </div>
       <div class="identity">
         <label>
           使用者
-          <input id="userId" value="contributor.demo">
+          <input id="userId" value="manager.demo">
         </label>
         <label>
           顯示名稱
-          <input id="userName" value="知識貢獻者">
+          <input id="userName" value="知識管理者">
         </label>
         <label>
           角色
           <select id="userRole">
             <option value="CONTRIBUTOR">知識貢獻者</option>
             <option value="REVIEWER">知識審核者</option>
-            <option value="MANAGER">知識管理者</option>
+            <option value="MANAGER" selected>知識管理者</option>
             <option value="PLATFORM">平台管理者</option>
           </select>
         </label>
@@ -48,13 +47,23 @@
       </section>
 
       <section id="view-library" class="view">
-        <h2>知識庫</h2>
+        <div class="section-header">
+          <h2>知識庫</h2>
+          <button type="button" id="libraryCreateBtn">新增文件</button>
+        </div>
         <div id="documentList" class="panel"></div>
         <div id="documentDetail" class="panel hidden"></div>
       </section>
 
       <section id="view-editor" class="view">
         <h2>新增知識文件</h2>
+        <div class="panel">
+          <label class="full">
+            匯入 Markdown 檔（可選）
+            <input id="importMarkdownFile" type="file" accept=".md,text/markdown">
+          </label>
+          <p class="muted">匯入後會自動填入標題與內容；建立草稿後再上傳圖片。</p>
+        </div>
         <form id="createForm" class="panel form-grid">
           <label>標題<input name="title" required></label>
           <label>摘要<textarea name="summary" rows="2"></textarea></label>

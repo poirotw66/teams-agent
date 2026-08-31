@@ -9,7 +9,7 @@ devTools/
 .DS_Store
 agent_service/.venv/
 outputs/
-
+data/
 # data/: `data/` used to be ignored wholesale. That is wrong for anything
 # under it that is *configuration* rather than corpus/build output, because
 # git cannot "un-ignore" a file under a directory pattern like `data/`
@@ -27,6 +27,9 @@ outputs/
 #                         Cards, regenerated alongside the corpus
 #   data/conversations/  Conversation Repository FILE-mode store; runtime
 #                         state, may contain user message text
+#   data/portal_drafts/  draft image bundles uploaded via Knowledge Portal
+#   data/portal_state/   Portal FILE-mode repository state
+#   data/releases/       published release artifacts built by the Portal
 #
 # Tracked (small, hand-curated configuration/fixtures the service's
 # behavior depends on — spec §7.2 FAQ config, §18.7 A/B/eval fixtures):
@@ -36,6 +39,9 @@ data/sources/
 data/index/
 data/assets/
 data/conversations/
+data/portal_drafts/
+data/portal_state/
+data/releases/
 
 # Terraform local state and secrets (see infra/terraform/README.md)
 **/.terraform/

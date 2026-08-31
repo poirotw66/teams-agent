@@ -59,6 +59,10 @@ button {
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
 .secondary { background: white; color: var(--accent); border: 1px solid var(--accent); }
 .muted { color: var(--muted); }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.8rem; margin-top: 0.8rem; }
+.asset-card { border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem; background: white; }
+.asset-card img { width: 100%; height: 100px; object-fit: contain; background: #f8fafc; border-radius: 8px; }
+.asset-card .meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; word-break: break-all; }
 .content-preview {
   white-space: pre-wrap;
   word-break: break-word;
@@ -71,3 +75,8 @@ button {
   font-size: 0.92rem;
   line-height: 1.5;
 }
+.section-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.8rem; }
+.section-header h2 { margin-bottom: 0; }
+.doc-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.danger { background: white; color: var(--danger); border: 1px solid var(--danger); }
+.status.UNPUBLISHED { background: #fee2e2; color: var(--danger); }

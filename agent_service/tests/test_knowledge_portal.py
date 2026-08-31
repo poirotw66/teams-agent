@@ -189,3 +189,140 @@ def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:
         headers=portal_headers(role="MANAGER", user_id="manager.one", name="Manager One"),
     )
     assert dashboard.json()["active_release_id"] == release["release_id"]
+
+
+def test_relaxed_workflow_skips_test_case_gate(portal_client: TestClient) -> None:
+    create = portal_client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert create.status_code == 200
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    submit = portal_client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready for review"},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert submit.status_code == 200
+
+
+def test_relaxed_workflow_allows_self_review(portal_client: TestClient) -> None:
+    create = portal_client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    submit = portal_client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready for review"},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    review_id = submit.json()["open_review"]["review_id"]
+
+    approve = portal_client.post(
+        f"/api/reviews/{review_id}/decision",
+        json={
+            "decision": "APPROVED",
+            "comment": "Self approved in relaxed mode",
+            "policy_exceptions": [],
+        },
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert approve.status_code == 200
+
+
+def test_strict_workflow_requires_three_test_cases(tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "relaxed_workflow", False)
+    client = TestClient(create_app(settings))
+
+    create = client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(user_id="author.one", name="Author One"),
+    )
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    submit = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready for review"},
+        headers=portal_headers(user_id="author.one", name="Author One"),
+    )
+    assert submit.status_code == 400
+    assert "three test questions" in submit.json()["detail"]["message"]
+
+
+def test_discard_draft_document(portal_client: TestClient) -> None:
+    create = portal_client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    document_id = create.json()["document"]["document_id"]
+
+    response = portal_client.delete(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "DISCARDED"
+
+    listing = portal_client.get("/api/documents", headers=portal_headers(role="MANAGER"))
+    assert all(item["document_id"] != document_id for item in listing.json()["items"])
+
+
+def test_unpublish_document_rebuilds_release(portal_client: TestClient, tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "require_dual_approval", False)
+    client = TestClient(create_app(settings))
+
+    create = client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    submit = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready"},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    review_id = submit.json()["open_review"]["review_id"]
+    client.post(
+        f"/api/reviews/{review_id}/decision",
+        json={"decision": "APPROVED", "comment": "ok", "policy_exceptions": []},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER"),
+    )
+    version_id = detail.json()["draft_version"]["version_id"]
+    publish = client.post(
+        f"/api/documents/{document_id}/publish",
+        json={"version_id": version_id, "reason": "Go live"},
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert publish.status_code == 200
+
+    unpublish = client.delete(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert unpublish.status_code == 200
+    body = unpublish.json()
+    assert body["document"]["status"] == "UNPUBLISHED"

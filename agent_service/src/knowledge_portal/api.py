@@ -6,11 +6,12 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import PortalAuthError, draft_search_response, resolve_portal_actor
+from .draft_assets import slug_from_title
 from .models import (
     CreateDocumentRequest,
     CreateTestCaseRequest,
@@ -19,6 +20,7 @@ from .models import (
     PortalActor,
     PortalErrorCode,
     PublishRequest,
+    RemoveDocumentRequest,
     ReviewDecisionRequest,
     RollbackRequest,
     SubmitReviewRequest,
@@ -72,6 +74,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         resolved_settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
+        resolved_settings.drafts_dir.mkdir(parents=True, exist_ok=True)
         yield
 
     app = FastAPI(
@@ -154,6 +157,118 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
             query=query,
         )
 
+    @app.post("/api/documents/import-markdown")
+    async def import_markdown(
+        file: UploadFile = File(...),
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        raw = (await file.read()).decode("utf-8")
+        return service.import_markdown(raw)
+
+    @app.post("/api/documents/{document_id}/start-revision")
+    async def start_revision(
+        document_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.start_revision(
+                actor, document_id, correlation_id_value
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/documents/{document_id}/draft/assets")
+    async def list_draft_assets(
+        document_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.list_draft_assets(actor, document_id)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/documents/{document_id}/draft/assets")
+    async def upload_draft_assets(
+        document_id: str,
+        files: list[UploadFile] = File(...),
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        uploads: list[tuple[str, bytes]] = []
+        for upload in files:
+            uploads.append((upload.filename or "image.png", await upload.read()))
+        try:
+            return await service.upload_draft_assets(
+                actor,
+                document_id,
+                uploads,
+                correlation_id_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.delete("/api/documents/{document_id}/draft/assets/{filename}")
+    async def delete_draft_asset(
+        document_id: str,
+        filename: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.delete_draft_asset(
+                actor,
+                document_id,
+                filename,
+                correlation_id_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/documents/{document_id}/draft/assets/{filename}")
+    async def get_draft_asset(
+        document_id: str,
+        filename: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        detail = await service.get_document(actor, document_id)
+        if detail.draft_version is None:
+            raise HTTPException(status_code=404, detail="Draft version not found.")
+        slug = detail.draft_version.asset_slug or slug_from_title(
+            detail.draft_version.title
+        )
+        try:
+            path, media_type = service.read_draft_asset(
+                document_id,
+                detail.draft_version.version_id,
+                slug,
+                filename,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+        return FileResponse(path, media_type=media_type)
+
+    @app.post("/api/documents/{document_id}/draft/asset-ref")
+    async def suggest_asset_ref(
+        document_id: str,
+        filename: str = "",
+        alt_text: str = "",
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.suggest_asset_ref(
+                actor, document_id, filename, alt_text
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
     @app.post("/api/documents")
     async def create_document(
         request: CreateDocumentRequest,
@@ -174,6 +289,24 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
     ):
         try:
             return await service.get_document(actor, document_id)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.delete("/api/documents/{document_id}")
+    async def remove_document(
+        document_id: str,
+        reason: str = "Removed from the knowledge library.",
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.remove_document(
+                actor,
+                document_id,
+                RemoveDocumentRequest(reason=reason),
+                correlation_id_value,
+            )
         except Exception as exc:
             raise handle_errors(exc) from exc
 

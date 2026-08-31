@@ -10,6 +10,7 @@ from pathlib import Path
 from agent_service.documents import load_source_chunks
 from agent_service.retrieval import HybridIndex
 
+from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now
 from .settings import PortalSettings
 from .validation import build_front_matter_markdown, content_hash
@@ -47,6 +48,7 @@ class ReleasePublisher:
         sources_dir.mkdir(parents=True, exist_ok=True)
 
         manifest: list[ReleaseManifestEntry] = []
+        asset_store = DraftAssetStore(self._settings)
         for version in published_versions:
             filename = f"{version.document_id}.md"
             body = version.canonical_content
@@ -63,6 +65,7 @@ class ReleasePublisher:
                 )
             target = sources_dir / filename
             target.write_text(body, encoding="utf-8")
+            asset_store.copy_assets_to_release(release_dir, version=version)
             manifest.append(
                 ReleaseManifestEntry(
                     document_id=version.document_id,
@@ -93,6 +96,10 @@ class ReleasePublisher:
                 temp_root = Path(temp_dir)
                 temp_sources = temp_root / "sources"
                 temp_sources.mkdir(parents=True, exist_ok=True)
+                temp_assets = temp_root / "assets"
+                release_assets = release_dir / "assets"
+                if release_assets.is_dir():
+                    shutil.copytree(release_assets, temp_assets)
                 for source_file in sources_dir.glob("*.md"):
                     shutil.copy2(source_file, temp_sources / source_file.name)
                 chunks = load_source_chunks(

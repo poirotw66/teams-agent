@@ -20,6 +20,7 @@ from .publisher import ReleaseBuildError, ReleasePublisher
 from .rbac import require_minimum_role
 from .repository import new_id
 from .settings import PortalSettings
+from .draft_assets import slug_from_title
 from .validation import (
     build_front_matter_markdown,
     build_parse_preview,
@@ -144,6 +145,7 @@ class KnowledgeMigrationService:
                 audience_group_ids=audience_group_ids,
                 owner_unit_id=owner_unit_id,
                 title=title,
+                asset_slug=slug_from_title(title),
                 status="PUBLISHED",
                 validation_summary=validation,
                 parse_preview=build_parse_preview(canonical, title),

@@ -32,6 +32,16 @@ Install Entra auth extras: `uv sync --extra portal`
 
 Optional bearer auth: set `KNOWLEDGE_PORTAL_TOKEN`.
 
+### Workflow mode
+
+| Setting | Default | Effect |
+|---|---|---|
+| `KNOWLEDGE_PORTAL_RELAXED_WORKFLOW` | `true` | Skip the 3 test-case gate before review; reviewers may approve their own submissions |
+| `KNOWLEDGE_PORTAL_RELAXED_WORKFLOW=false` | — | Enterprise gates: 3 test questions required; reviewers cannot self-approve |
+| `KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL` | `false` | When `true`, publishing requires two manager approvals |
+
+Managers and platform admins can always approve their own submissions, even in strict mode.
+
 ## Sync local knowledge (recommended)
 
 If you already maintain the classic local corpus (`data/sources` + `rag-index`), sync it into the portal instead of maintaining a second index:

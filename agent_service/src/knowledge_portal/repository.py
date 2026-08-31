@@ -103,6 +103,7 @@ class InMemoryPortalRepository:
         query: str | None = None,
     ) -> list[KnowledgeDocumentRecord]:
         items = list(self.documents.values())
+        items = [item for item in items if item.status != "DISCARDED"]
         if actor.role == "CONTRIBUTOR":
             items = [
                 item

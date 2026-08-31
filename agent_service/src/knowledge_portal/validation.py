@@ -13,6 +13,7 @@ from .models import (
     ValidationIssue,
     ValidationSummary,
 )
+from .draft_assets import validate_asset_bundle
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|password|passwd|token)\b\s*[:=]\s*\S+"),
@@ -75,6 +76,8 @@ def validate_draft(
     audience_group_ids: list[str],
     markdown_content: str,
     require_operational_fields: bool = True,
+    asset_slug: str = "",
+    draft_assets_root: Path | None = None,
 ) -> ValidationSummary:
     issues: list[ValidationIssue] = []
 
@@ -186,6 +189,18 @@ def validate_draft(
                 "markdown_content",
             )
             break
+
+    if asset_slug and draft_assets_root is not None:
+        seen_codes: set[str] = set()
+        for code, severity, message in validate_asset_bundle(
+            stripped,
+            asset_slug=asset_slug,
+            assets_root=draft_assets_root,
+        ):
+            if code in seen_codes and code in {"MISSING_ALT_TEXT"}:
+                continue
+            seen_codes.add(code)
+            add(code, severity, message, "markdown_content")
 
     if review_due:
         days = (review_due - date.today()).days

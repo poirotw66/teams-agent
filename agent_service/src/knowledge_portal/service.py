@@ -10,7 +10,10 @@ from .models import (
     AuditEventRecord,
     CreateDocumentRequest,
     CreateTestCaseRequest,
-    DashboardSummary,
+    DraftAssetListResponse,
+    ImportMarkdownResponse,
+    AssetRefSuggestion,
+    DraftAssetRecord,
     DocumentDetailResponse,
     DocumentListResponse,
     KnowledgeDocumentRecord,
@@ -18,6 +21,7 @@ from .models import (
     PortalActor,
     PublishRequest,
     ReleaseRecord,
+    RemoveDocumentRequest,
     ReviewDecisionRequest,
     ReviewRecord,
     RollbackRequest,
@@ -29,12 +33,20 @@ from .models import (
     new_etag,
     utc_now,
 )
+from .draft_assets import (
+    DraftAssetStore,
+    asset_content_type,
+    markdown_asset_ref,
+    parse_markdown_import,
+    slug_from_title,
+)
 from .draft_retrieval import evaluate_test_case, search_draft_version
 from .migration import KnowledgeMigrationService
-from .publisher import ReleasePublisher
+from .publisher import ReleaseBuildError, ReleasePublisher
 from .rbac import (
     ensure_can_edit,
     ensure_can_publish,
+    ensure_can_remove_document,
     ensure_can_review,
     ensure_document_visible,
     ensure_not_found,
@@ -90,7 +102,15 @@ class PortalService:
         )
 
     async def dashboard(self, actor: PortalActor) -> DashboardSummary:
-        return await self._repository.dashboard_summary(actor)
+        summary = await self._repository.dashboard_summary(actor)
+        return summary.model_copy(
+            update={
+                "relaxed_workflow": self._settings.relaxed_workflow,
+                "min_test_cases_for_review": (
+                    0 if self._settings.relaxed_workflow else 3
+                ),
+            }
+        )
 
     async def list_documents(
         self,
@@ -126,12 +146,37 @@ class PortalService:
             open_review = await self._repository.get_open_review_for_version(
                 draft_version.version_id
             )
+        draft_assets = None
+        if draft_version is not None:
+            store = DraftAssetStore(self._settings)
+            slug = draft_version.asset_slug or slug_from_title(draft_version.title)
+            draft_assets = DraftAssetListResponse(
+                asset_slug=slug,
+                items=store.list_assets(
+                    document.document_id,
+                    draft_version.version_id,
+                    slug,
+                ),
+            )
         return DocumentDetailResponse(
             document=document,
             draft_version=draft_version,
             published_version=published_version,
             open_review=open_review,
+            draft_assets=draft_assets,
         )
+
+    def _validation_context(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        title: str,
+        asset_slug: str,
+    ) -> tuple[str, Path]:
+        slug = asset_slug or slug_from_title(title)
+        store = DraftAssetStore(self._settings)
+        return slug, store.assets_root(document_id, version_id)
 
     async def create_document(
         self,
@@ -139,6 +184,15 @@ class PortalService:
         request: CreateDocumentRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
+        document_id = new_id("doc")
+        version_id = new_id("ver")
+        asset_slug = slug_from_title(request.title)
+        _, assets_root = self._validation_context(
+            document_id=document_id,
+            version_id=version_id,
+            title=request.title,
+            asset_slug=asset_slug,
+        )
         validation = validate_draft(
             title=request.title,
             owner_unit_id=request.owner_unit_id,
@@ -148,13 +202,13 @@ class PortalService:
             audience_type=request.audience_type,
             audience_group_ids=request.audience_group_ids,
             markdown_content=request.markdown_content,
+            asset_slug=asset_slug,
+            draft_assets_root=assets_root,
         )
         if validation.has_blocking:
             raise ValueError(validation)
 
         now = utc_now()
-        document_id = new_id("doc")
-        version_id = new_id("ver")
         canonical = build_front_matter_markdown(
             title=request.title,
             owner_unit_id=request.owner_unit_id,
@@ -183,6 +237,7 @@ class PortalService:
             category=request.category,
             summary=request.summary,
             title=request.title,
+            asset_slug=asset_slug,
             validation_summary=validation,
             parse_preview=build_parse_preview(canonical, request.title),
             etag=new_etag(digest),
@@ -239,6 +294,12 @@ class PortalService:
         if version.status not in {"DRAFT", "CHANGES_REQUESTED"}:
             raise ValueError("Draft version is locked for editing.")
 
+        asset_slug, assets_root = self._validation_context(
+            document_id=document_id,
+            version_id=version.version_id,
+            title=request.title,
+            asset_slug=version.asset_slug,
+        )
         validation = validate_draft(
             title=request.title,
             owner_unit_id=request.owner_unit_id,
@@ -248,6 +309,8 @@ class PortalService:
             audience_type=request.audience_type,
             audience_group_ids=request.audience_group_ids,
             markdown_content=request.markdown_content,
+            asset_slug=asset_slug,
+            draft_assets_root=assets_root,
         )
         canonical = build_front_matter_markdown(
             title=request.title,
@@ -313,7 +376,29 @@ class PortalService:
         detail = await self.get_document(actor, document_id)
         if detail.draft_version is None:
             raise ValueError("Document has no draft version to validate.")
-        return detail.draft_version.validation_summary
+        version = detail.draft_version
+        asset_slug, assets_root = self._validation_context(
+            document_id=document_id,
+            version_id=version.version_id,
+            title=version.title,
+            asset_slug=version.asset_slug,
+        )
+        validation = validate_draft(
+            title=version.title,
+            owner_unit_id=version.owner_unit_id,
+            change_reason=version.change_reason,
+            effective_at=version.effective_at,
+            review_due_at=version.review_due_at,
+            audience_type=version.audience_type,
+            audience_group_ids=version.audience_group_ids,
+            markdown_content=version.canonical_content,
+            asset_slug=asset_slug,
+            draft_assets_root=assets_root,
+        )
+        await self._repository.save_version(
+            version.model_copy(update={"validation_summary": validation})
+        )
+        return validation
 
     async def submit_for_review(
         self,
@@ -330,6 +415,12 @@ class PortalService:
         if detail.draft_version is None:
             raise ValueError("Document has no draft version.")
         version = detail.draft_version
+        asset_slug, assets_root = self._validation_context(
+            document_id=document_id,
+            version_id=version.version_id,
+            title=version.title,
+            asset_slug=version.asset_slug,
+        )
         validation = validate_draft(
             title=version.title,
             owner_unit_id=version.owner_unit_id,
@@ -339,12 +430,17 @@ class PortalService:
             audience_type=version.audience_type,
             audience_group_ids=version.audience_group_ids,
             markdown_content=version.canonical_content,
+            asset_slug=asset_slug,
+            draft_assets_root=assets_root,
         )
         if validation.has_blocking:
             raise ValueError(validation)
-        test_cases = await self._repository.list_test_cases(version.version_id)
-        if len(test_cases) < 3:
-            raise ValueError("At least three test questions are required before review.")
+        if not self._settings.relaxed_workflow:
+            test_cases = await self._repository.list_test_cases(version.version_id)
+            if len(test_cases) < 3:
+                raise ValueError(
+                    "At least three test questions are required before review."
+                )
 
         review = ReviewRecord(
             review_id=new_id("review"),
@@ -387,7 +483,11 @@ class PortalService:
         ensure_not_found("review", review_id, review)
         if review.decision is not None:
             raise ValueError("Review has already been decided.")
-        ensure_can_review(actor, review.submitted_by)
+        ensure_can_review(
+            actor,
+            review.submitted_by,
+            relaxed_workflow=self._settings.relaxed_workflow,
+        )
         version = await self._repository.get_version(review.version_id)
         ensure_not_found("version", review.version_id, version)
         document = await self._repository.get_document(review.document_id)
@@ -434,49 +534,51 @@ class PortalService:
         )
         return await self.get_document(actor, document.document_id)
 
-    async def publish_version(
+    async def _collect_active_published_versions(
         self,
         actor: PortalActor,
-        document_id: str,
-        request: PublishRequest,
-        correlation_id: str,
-    ) -> ReleaseRecord:
-        ensure_can_publish(actor)
-        detail = await self.get_document(actor, document_id)
-        document = detail.document
-        version = await self._repository.get_version(request.version_id)
-        ensure_not_found("version", request.version_id, version)
-        if version.document_id != document_id:
-            raise ValueError("Version does not belong to this document.")
-        if version.status != "APPROVED":
-            raise ValueError("Only approved versions can be published.")
-        if (
-            self._settings.require_dual_approval
-            and actor.user_id == version.created_by
-            and actor.role != "PLATFORM"
-        ):
-            raise ValueError("Contributors cannot publish their own approved content.")
-
-        all_versions = await self._repository.list_versions_for_document(document_id)
-        published_versions = [
-            item
-            for item in all_versions
-            if item.status == "PUBLISHED" and item.version_id != version.version_id
-        ]
-        published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
-
-        other_documents = await self._repository.list_documents(actor=actor)
-        for other in other_documents:
-            if other.document_id == document_id or not other.current_published_version_id:
+        *,
+        exclude_document_ids: set[str] | None = None,
+    ) -> list[KnowledgeVersionRecord]:
+        excluded = exclude_document_ids or set()
+        published_versions: list[KnowledgeVersionRecord] = []
+        for other in await self._repository.list_documents(actor=actor):
+            if other.document_id in excluded:
+                continue
+            if other.status != "PUBLISHED" or not other.current_published_version_id:
                 continue
             other_version = await self._repository.get_version(
                 other.current_published_version_id
             )
             if other_version is not None and other_version.status == "PUBLISHED":
                 published_versions.append(other_version)
+        return published_versions
+
+    async def _activate_release(
+        self,
+        *,
+        actor: PortalActor,
+        published_versions: list[KnowledgeVersionRecord],
+        correlation_id: str,
+        reason: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ReleaseRecord | None:
+        previous_release_id = await self._repository.get_active_release_id()
+        if not published_versions:
+            await self._repository.set_active_release_id(None)
+            write_active_release_pointer(self._settings.release_artifact_dir, None)
+            await self._audit(
+                actor=actor,
+                action="release.clear",
+                target_type="release",
+                target_id=previous_release_id or "none",
+                correlation_id=correlation_id,
+                reason=reason,
+                metadata=metadata or {},
+            )
+            return None
 
         release_id = new_id("release")
-        previous_release_id = await self._repository.get_active_release_id()
         try:
             release = self._publisher.build_release(
                 release_id=release_id,
@@ -510,6 +612,55 @@ class PortalService:
             self._settings.release_artifact_dir,
             release.release_id,
         )
+        await self._audit(
+            actor=actor,
+            action="release.activate",
+            target_type="release",
+            target_id=release.release_id,
+            correlation_id=correlation_id,
+            reason=reason,
+            metadata=metadata or {},
+        )
+        return release
+
+    async def publish_version(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        request: PublishRequest,
+        correlation_id: str,
+    ) -> ReleaseRecord:
+        ensure_can_publish(actor)
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        version = await self._repository.get_version(request.version_id)
+        ensure_not_found("version", request.version_id, version)
+        if version.document_id != document_id:
+            raise ValueError("Version does not belong to this document.")
+        if version.status != "APPROVED":
+            raise ValueError("Only approved versions can be published.")
+        if (
+            self._settings.require_dual_approval
+            and actor.user_id == version.created_by
+            and actor.role != "PLATFORM"
+        ):
+            raise ValueError("Contributors cannot publish their own approved content.")
+
+        published_versions = await self._collect_active_published_versions(
+            actor,
+            exclude_document_ids={document_id},
+        )
+        published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
+
+        release = await self._activate_release(
+            actor=actor,
+            published_versions=published_versions,
+            correlation_id=correlation_id,
+            reason=request.reason,
+            metadata={"documentId": document_id, "versionId": version.version_id},
+        )
+        if release is None:
+            raise ValueError("Publishing failed to produce an active release.")
 
         updated_version = version.model_copy(update={"status": "PUBLISHED"})
         updated_document = document.model_copy(
@@ -525,14 +676,88 @@ class PortalService:
         await self._repository.save_document(updated_document)
         await self._audit(
             actor=actor,
-            action="release.activate",
-            target_type="release",
-            target_id=release.release_id,
+            action="document.publish",
+            target_type="document",
+            target_id=document_id,
             correlation_id=correlation_id,
             reason=request.reason,
-            metadata={"documentId": document_id, "versionId": version.version_id},
+            metadata={"versionId": version.version_id, "releaseId": release.release_id},
         )
         return release
+
+    async def remove_document(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        request: RemoveDocumentRequest,
+        correlation_id: str,
+    ) -> DocumentDetailResponse | dict[str, str]:
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        if document.status == "IN_REVIEW":
+            raise ValueError(
+                "Documents in review cannot be removed. Approve or reject first."
+            )
+        ensure_can_remove_document(
+            actor,
+            document,
+            relaxed_workflow=self._settings.relaxed_workflow,
+        )
+
+        now = utc_now()
+        if document.current_published_version_id and document.status == "PUBLISHED":
+            ensure_can_publish(actor)
+            updated_document = document.model_copy(
+                update={
+                    "status": "UNPUBLISHED",
+                    "updated_at": now,
+                    "updated_by": actor.user_id,
+                }
+            )
+            await self._repository.save_document(updated_document)
+            published_versions = await self._collect_active_published_versions(
+                actor,
+                exclude_document_ids={document_id},
+            )
+            await self._activate_release(
+                actor=actor,
+                published_versions=published_versions,
+                correlation_id=correlation_id,
+                reason=request.reason,
+                metadata={"documentId": document_id, "action": "unpublish"},
+            )
+            await self._audit(
+                actor=actor,
+                action="document.unpublish",
+                target_type="document",
+                target_id=document_id,
+                correlation_id=correlation_id,
+                reason=request.reason,
+            )
+            return await self.get_document(actor, document_id)
+
+        if detail.draft_version is not None:
+            await self._repository.save_version(
+                detail.draft_version.model_copy(update={"status": "DISCARDED"})
+            )
+        updated_document = document.model_copy(
+            update={
+                "status": "DISCARDED",
+                "draft_version_id": None,
+                "updated_at": now,
+                "updated_by": actor.user_id,
+            }
+        )
+        await self._repository.save_document(updated_document)
+        await self._audit(
+            actor=actor,
+            action="document.discard",
+            target_type="document",
+            target_id=document_id,
+            correlation_id=correlation_id,
+            reason=request.reason,
+        )
+        return {"document_id": document_id, "status": "DISCARDED"}
 
     async def rollback_release(
         self,
@@ -593,6 +818,216 @@ class PortalService:
             correlation_id=correlation_id,
         )
         return test_case
+
+    def import_markdown(self, raw: str) -> ImportMarkdownResponse:
+        parsed = parse_markdown_import(
+            raw,
+            default_owner_unit_id=self._settings.default_owner_unit_id,
+        )
+        warnings: list[str] = []
+        if raw.lstrip().startswith("---"):
+            warnings.append("Front matter was parsed into metadata fields.")
+        return ImportMarkdownResponse(
+            title=str(parsed["title"]),
+            owner_unit_id=str(parsed["owner_unit_id"]),
+            effective_at=str(parsed["effective_at"]),
+            review_due_at=str(parsed["review_due_at"]),
+            audience_type=parsed["audience_type"],  # type: ignore[arg-type]
+            audience_group_ids=list(parsed["audience_group_ids"]),  # type: ignore[arg-type]
+            markdown_content=str(parsed["markdown_content"]),
+            asset_slug=str(parsed["asset_slug"]),
+            warnings=warnings,
+        )
+
+    async def _require_editable_draft(
+        self, actor: PortalActor, document_id: str
+    ) -> tuple[KnowledgeDocumentRecord, KnowledgeVersionRecord]:
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        ensure_can_edit(actor, document.owner_unit_id, document.created_by)
+        if detail.draft_version is None:
+            raise ValueError("Document has no editable draft version.")
+        if document.status not in {"DRAFT", "CHANGES_REQUESTED"}:
+            raise ValueError("Document cannot be edited in its current state.")
+        return document, detail.draft_version
+
+    async def list_draft_assets(
+        self, actor: PortalActor, document_id: str
+    ) -> DraftAssetListResponse:
+        _, version = await self._require_editable_draft(actor, document_id)
+        store = DraftAssetStore(self._settings)
+        slug = version.asset_slug or slug_from_title(version.title)
+        return DraftAssetListResponse(
+            asset_slug=slug,
+            items=store.list_assets(document_id, version.version_id, slug),
+        )
+
+    async def upload_draft_assets(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        uploads: list[tuple[str, bytes]],
+        correlation_id: str,
+    ) -> DraftAssetListResponse:
+        document, version = await self._require_editable_draft(actor, document_id)
+        store = DraftAssetStore(self._settings)
+        slug = version.asset_slug or slug_from_title(version.title)
+        if not version.asset_slug:
+            version = version.model_copy(update={"asset_slug": slug})
+            await self._repository.save_version(version)
+        for filename, payload in uploads:
+            store.save_asset(
+                document_id=document_id,
+                version_id=version.version_id,
+                asset_slug=slug,
+                filename=filename,
+                payload=payload,
+            )
+        await self._audit(
+            actor=actor,
+            action="draft_asset.upload",
+            target_type="document",
+            target_id=document_id,
+            correlation_id=correlation_id,
+            metadata={"count": len(uploads)},
+        )
+        return await self.list_draft_assets(actor, document_id)
+
+    async def delete_draft_asset(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        filename: str,
+        correlation_id: str,
+    ) -> DraftAssetListResponse:
+        _, version = await self._require_editable_draft(actor, document_id)
+        store = DraftAssetStore(self._settings)
+        slug = version.asset_slug or slug_from_title(version.title)
+        store.delete_asset(
+            document_id=document_id,
+            version_id=version.version_id,
+            asset_slug=slug,
+            filename=filename,
+        )
+        await self._audit(
+            actor=actor,
+            action="draft_asset.delete",
+            target_type="document",
+            target_id=document_id,
+            correlation_id=correlation_id,
+            metadata={"filename": filename},
+        )
+        return await self.list_draft_assets(actor, document_id)
+
+    async def suggest_asset_ref(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        filename: str,
+        alt_text: str = "",
+    ) -> AssetRefSuggestion:
+        _, version = await self._require_editable_draft(actor, document_id)
+        slug = version.asset_slug or slug_from_title(version.title)
+        normalized = filename or DraftAssetStore(self._settings).next_filename(
+            document_id,
+            version.version_id,
+            slug,
+        )
+        return AssetRefSuggestion(
+            asset_slug=slug,
+            filename=normalized,
+            markdown=markdown_asset_ref(
+                asset_slug=slug,
+                filename=normalized,
+                alt_text=alt_text,
+            ),
+        )
+
+    def read_draft_asset(
+        self,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+        filename: str,
+    ) -> tuple[Path, str]:
+        store = DraftAssetStore(self._settings)
+        target = store.asset_dir(document_id, version_id, asset_slug) / filename
+        if not target.is_file():
+            raise PortalNotFoundError(f"Draft asset not found: {filename}")
+        return target, asset_content_type(target.suffix)
+
+    async def start_revision(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        correlation_id: str,
+        change_reason: str = "Start a new revision from the published version.",
+    ) -> DocumentDetailResponse:
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        ensure_can_edit(actor, document.owner_unit_id, document.created_by)
+        if document.status != "PUBLISHED" or detail.published_version is None:
+            raise ValueError("Only published documents can start a new revision.")
+        if document.draft_version_id is not None:
+            raise ValueError("Document already has an open draft.")
+
+        published = detail.published_version
+        now = utc_now()
+        version_id = new_id("ver")
+        asset_slug = published.asset_slug or slug_from_title(published.title)
+        store = DraftAssetStore(self._settings)
+        store.copy_bundle(
+            source_document_id=document_id,
+            source_version_id=published.version_id,
+            target_document_id=document_id,
+            target_version_id=version_id,
+            asset_slug=asset_slug,
+        )
+        version = KnowledgeVersionRecord(
+            version_id=version_id,
+            document_id=document_id,
+            version_number=published.version_number + 1,
+            source_type="MARKDOWN_UPLOAD",
+            content_hash=published.content_hash,
+            canonical_content=published.canonical_content,
+            change_summary=f"Revision {published.version_number + 1}",
+            change_reason=change_reason,
+            effective_at=published.effective_at,
+            review_due_at=published.review_due_at,
+            audience_type=published.audience_type,
+            audience_group_ids=published.audience_group_ids,
+            owner_unit_id=published.owner_unit_id,
+            business_contact=published.business_contact,
+            category=published.category,
+            summary=published.summary,
+            title=published.title,
+            asset_slug=asset_slug,
+            status="DRAFT",
+            validation_summary=ValidationSummary(issues=[]),
+            parse_preview=published.parse_preview,
+            etag=new_etag(published.content_hash, published.version_number + 1),
+            created_at=now,
+            created_by=actor.user_id,
+        )
+        updated_document = document.model_copy(
+            update={
+                "draft_version_id": version_id,
+                "status": "DRAFT",
+                "updated_at": now,
+                "updated_by": actor.user_id,
+                "etag": new_etag(document.document_id, published.version_number + 1),
+            }
+        )
+        await self._repository.save_version(version)
+        await self._repository.save_document(updated_document)
+        await self._audit(
+            actor=actor,
+            action="document.start_revision",
+            target_type="document",
+            target_id=document_id,
+            correlation_id=correlation_id,
+        )
+        return await self.get_document(actor, document_id)
 
     async def bootstrap_release_0001(
         self,
