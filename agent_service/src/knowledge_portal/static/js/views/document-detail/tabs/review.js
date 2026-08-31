@@ -1,6 +1,6 @@
 import { audienceLabel, testResultLabel } from "../../../labels.js";
 import { renderLineDiffHtml } from "../../../diff.js";
-import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831d";
+import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831e";
 import { can, renderIssues } from "../shared.js";
 
 export function renderReviewTab(detail, cases, runsByCase) {
@@ -20,7 +20,7 @@ export function renderReviewTab(detail, cases, runsByCase) {
     ? cases.map((item) => {
       const run = runsByCase[item.test_case_id];
       const label = run ? testResultLabel(run.status) : "尚未執行";
-      return `<li>${escapeHtml(item.question)} — ${escapeHtml(label)}</li>`;
+      return `<li>${escapeHtml(item.question)} - ${escapeHtml(label)}</li>`;
     }).join("")
     : "<li class=\"muted\">尚未建立測試問題</li>";
 

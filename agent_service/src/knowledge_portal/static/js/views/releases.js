@@ -1,14 +1,14 @@
 import { api } from "../api.js";
 import { getSession } from "../session.js";
 import { handleConflictError } from "../errors.js";
-import { escapeHtml, handleViewError, promptDialog, showToast } from "../ui.js?v=20260831d";
+import { escapeHtml, handleViewError, promptDialog, showToast } from "../ui.js?v=20260831e";
 
 function canManageReleases() {
   return ["MANAGER", "PLATFORM"].includes(getSession().role);
 }
 
 function formatWhen(value) {
-  if (!value) return "—";
+  if (!value) return "未設定";
   return new Date(value).toLocaleString("zh-TW");
 }
 
@@ -26,7 +26,6 @@ export async function renderReleasesView(app) {
     <section class="page">
       <header class="page-header">
         <div>
-          <p class="eyebrow">平台管理</p>
           <h2>發布紀錄</h2>
         </div>
       </header>

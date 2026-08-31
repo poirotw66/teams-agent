@@ -1,6 +1,6 @@
 import { api, loadAssetPreviewUrl, revokeAssetPreviewUrls } from "../../api.js";
 import { navigate } from "../../router.js";
-import { escapeHtml, showToast } from "../../ui.js?v=20260831d";
+import { escapeHtml, showToast } from "../../ui.js?v=20260831e";
 
 export async function loadTestData(documentId, detail) {
   if (!detail.draft_version) return { cases: [], runsByCase: {} };

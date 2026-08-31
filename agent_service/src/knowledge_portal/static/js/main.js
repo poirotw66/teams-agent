@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { ROLE_LABELS } from "./labels.js";
 import { applyDemoPersona, getSession, syncFromDashboard, updateSession } from "./session.js";
 import { navigate, startRouter } from "./router.js";
-import { escapeHtml, renderViewForbidden } from "./ui.js?v=20260831d";
+import { escapeHtml, renderViewForbidden } from "./ui.js?v=20260831e";
 import { renderAuditView } from "./views/audit.js";
 import { renderCreateView } from "./views/create.js";
 import { renderDocumentDetailView } from "./views/document-detail.js";
@@ -88,7 +88,9 @@ function setActiveNav(segments) {
     const active = target === root;
     node.classList.toggle("active", active);
     node.setAttribute("aria-current", active ? "page" : "false");
-    node.setAttribute("appearance", active ? "accent" : "stealth");
+    if (node.tagName === "FLUENT-BUTTON") {
+      node.setAttribute("appearance", active ? "accent" : "stealth");
+    }
   });
 }
 

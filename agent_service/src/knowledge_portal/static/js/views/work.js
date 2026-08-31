@@ -9,7 +9,7 @@ import {
   isForbiddenError,
   renderSkeleton,
   renderViewEmpty,
-} from "../ui.js?v=20260831d";
+} from "../ui.js?v=20260831e";
 
 const ROLE_SUBTITLES = {
   CONTRIBUTOR: "優先處理你的草稿與被退回內容",
@@ -19,10 +19,19 @@ const ROLE_SUBTITLES = {
   AUDITOR: "查閱系統操作軌跡",
 };
 
+const QUEUE_VARIANTS = {
+  "我的草稿": "draft",
+  "被退回內容": "changes",
+  "待審文件": "review",
+  "發布失敗": "failed",
+  "即將到期": "due",
+};
+
 function queueCard(item) {
   const filter = item.filter_status ? `?status=${encodeURIComponent(item.filter_status)}` : "";
+  const variant = QUEUE_VARIANTS[item.label] || "draft";
   return `
-    <button type="button" class="queue-card" data-route="${escapeHtml(item.route + filter)}">
+    <button type="button" class="queue-card queue-card--${variant}" data-route="${escapeHtml(item.route + filter)}">
       <span class="queue-label">${escapeHtml(item.label)}</span>
       <strong class="queue-count">${item.count}</strong>
     </button>`;
@@ -33,7 +42,6 @@ export async function renderWorkView(app) {
     <section class="page">
       <header class="page-header">
         <div>
-          <p class="eyebrow">我的工作</p>
           <h2>待處理事項</h2>
         </div>
       </header>
@@ -59,8 +67,9 @@ export async function renderWorkView(app) {
     } else {
       container.innerHTML = `
         <div class="queue-grid">${actionable.map(queueCard).join("")}</div>
-        <div class="panel muted-panel">
-          <p>${escapeHtml(releaseLabel(dashboard.active_release_id))}</p>
+        <div class="release-strip" role="status">
+          <span>正式知識版本</span>
+          <strong>${escapeHtml(releaseLabel(dashboard.active_release_id))}</strong>
         </div>`;
     }
     container.querySelectorAll("[data-route]").forEach((node) => {

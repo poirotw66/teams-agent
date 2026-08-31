@@ -1,4 +1,4 @@
-import { confirmDialog } from "./ui.js?v=20260831d";
+import { confirmDialog } from "./ui.js?v=20260831e";
 
 export async function handleConflictError(error, refresh) {
   if (error?.status !== 409 && error?.code !== "CONFLICT") {

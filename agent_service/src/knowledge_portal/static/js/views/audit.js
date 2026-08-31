@@ -1,12 +1,11 @@
 import { api } from "../api.js";
-import { escapeHtml, handleViewError, renderSkeleton, renderViewEmpty } from "../ui.js?v=20260831d";
+import { escapeHtml, handleViewError, renderSkeleton, renderViewEmpty } from "../ui.js?v=20260831e";
 
 export async function renderAuditView(app) {
   app.innerHTML = `
     <section class="page">
       <header class="page-header">
         <div>
-          <p class="eyebrow">稽核紀錄</p>
           <h2>操作軌跡</h2>
         </div>
       </header>

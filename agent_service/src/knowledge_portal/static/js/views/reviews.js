@@ -7,14 +7,13 @@ import {
   isForbiddenError,
   renderSkeleton,
   renderViewEmpty,
-} from "../ui.js?v=20260831d";
+} from "../ui.js?v=20260831e";
 
 export async function renderReviewsView(app) {
   app.innerHTML = `
     <section class="page">
       <header class="page-header">
         <div>
-          <p class="eyebrow">待審核</p>
           <h2>審核工作區</h2>
         </div>
       </header>

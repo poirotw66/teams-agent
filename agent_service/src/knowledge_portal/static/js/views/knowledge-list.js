@@ -8,7 +8,7 @@ import {
   renderSkeleton,
   renderStatusBadge,
   renderViewEmpty,
-} from "../ui.js?v=20260831d";
+} from "../ui.js?v=20260831e";
 
 function buildQuery(filters) {
   const params = new URLSearchParams();
@@ -94,7 +94,6 @@ export async function renderKnowledgeListView(app, query) {
     <section class="page">
       <header class="page-header">
         <div>
-          <p class="eyebrow">知識庫</p>
           <h2>知識文件</h2>
         </div>
       </header>

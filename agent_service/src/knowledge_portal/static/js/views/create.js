@@ -1,7 +1,7 @@
 import { api, apiForm } from "../api.js";
 import { fluentButton } from "../fluent.js";
 import { navigate } from "../router.js";
-import { escapeHtml, showToast } from "../ui.js?v=20260831d";
+import { escapeHtml, showToast } from "../ui.js?v=20260831e";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
@@ -117,7 +117,6 @@ export async function renderCreateView(app) {
       <section class="page">
         <header class="page-header">
           <div>
-            <p class="eyebrow">知識庫</p>
             <h2>新增知識文件</h2>
           </div>
           ${fluentButton("返回列表", { appearance: "outline", dataset: { back: "true" } })}

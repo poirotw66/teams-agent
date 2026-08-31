@@ -1,5 +1,5 @@
 import { navigate } from "../../router.js";
-import { confirmDialog } from "../../ui.js?v=20260831d";
+import { confirmDialog } from "../../ui.js?v=20260831e";
 import { clearDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 
 let pendingTabFocus = null;

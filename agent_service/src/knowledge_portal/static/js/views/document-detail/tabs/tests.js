@@ -1,6 +1,6 @@
 import { testResultLabel } from "../../../labels.js";
 import { getSession } from "../../../session.js";
-import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831d";
+import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831e";
 import { can } from "../shared.js";
 
 function renderRunDetails(run) {

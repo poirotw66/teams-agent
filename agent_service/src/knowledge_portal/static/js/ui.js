@@ -8,6 +8,16 @@ export function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+const STATE_ICONS = {
+  empty: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M9 3h6l2 2h3a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3l2-2z"/><path d="M9 12h6M9 16h4"/></svg>`,
+  forbidden: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 3 4 6v6c0 4.42 3.4 8.55 8 9.75C16.6 20.55 20 16.42 20 12V6l-8-3z"/><path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></svg>`,
+  error: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M12 8v5M12 16h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`,
+};
+
+function stateIcon(kind) {
+  return `<span class="state-icon">${STATE_ICONS[kind] || STATE_ICONS.empty}</span>`;
+}
+
 export function showToast(message, isError = false) {
   const toast = document.getElementById("toast");
   toast.textContent = message;
@@ -102,7 +112,7 @@ export function renderViewForbidden(viewKey, overrides = {}) {
     : "";
   return `
     <div class="state-panel forbidden-state" role="alert">
-      <div class="state-icon" aria-hidden="true">⛔</div>
+      ${stateIcon("forbidden")}
       <h3>${escapeHtml(cfg.title)}</h3>
       <p>${escapeHtml(cfg.message)}</p>
       <p class="muted state-contact">${escapeHtml(cfg.contact)}</p>
@@ -114,7 +124,7 @@ export function renderViewEmpty(viewKey, actionHtml = "", overrides = {}) {
   const cfg = { ...(VIEW_EMPTY[viewKey] || { title: "沒有資料", message: "" }), ...overrides };
   return `
     <div class="state-panel empty-state">
-      <div class="state-icon" aria-hidden="true">📋</div>
+      ${stateIcon("empty")}
       <h3>${escapeHtml(cfg.title)}</h3>
       <p class="muted">${escapeHtml(cfg.message)}</p>
       ${actionHtml}
@@ -153,7 +163,7 @@ export function renderSkeleton(rows = 4) {
 export function renderError(message, retryLabel = "重試") {
   return `
     <div class="state-panel error-state" role="alert">
-      <div class="state-icon" aria-hidden="true">⚠️</div>
+      ${stateIcon("error")}
       <h3>載入失敗</h3>
       <p>${escapeHtml(message)}</p>
       <fluent-button appearance="outline" data-retry>${escapeHtml(retryLabel)}</fluent-button>
