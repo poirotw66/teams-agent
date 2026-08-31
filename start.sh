@@ -9,14 +9,18 @@ PLAYGROUND_SERVICE_DIR="${PROJECT_DIR}/playground_service"
 TEAMS_PORT="${PORT:-3978}"
 RAG_PORT="${RAG_PORT:-8000}"
 MOCK_TICKET_PORT="${MOCK_TICKET_PORT:-8090}"
+PORTAL_PORT="${KNOWLEDGE_PORTAL_PORT:-8091}"
 PLAYGROUND_PORT="${PLAYGROUND_PORT:-3979}"
 PLAYGROUND_INTERNAL_PORT="${PLAYGROUND_INTERNAL_PORT:-56150}"
 
 START_MOCK_TICKET="${START_MOCK_TICKET:-true}"
+START_PORTAL="${START_PORTAL:-true}"
 START_PLAYGROUND="${START_PLAYGROUND:-true}"
 START_TUNNEL="${START_TUNNEL:-false}"
 OPEN_PLAYGROUND="${OPEN_PLAYGROUND:-true}"
 AUTO_STOP_EXISTING="${AUTO_STOP_EXISTING:-true}"
+PORTAL_STATE_PATH="${KNOWLEDGE_PORTAL_STATE_PATH:-${PROJECT_DIR}/data/portal_state/portal_state.json}"
+PORTAL_RELEASE_DIR="${KNOWLEDGE_PORTAL_RELEASE_DIR:-${PROJECT_DIR}/data/releases}"
 PLAYGROUND_TEST_USER_EMAIL="${PLAYGROUND_TEST_USER_EMAIL:-playground.user@example.test}"
 PLAYGROUND_PASSWORD_VALUE="${PLAYGROUND_PASSWORD:-local-playground}"
 PLAYGROUND_PASSWORD_IS_DEFAULT="false"
@@ -64,7 +68,7 @@ is_project_service_process() {
   local command
   command="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
   [[ "${command}" == *"${PROJECT_DIR}"* ]] \
-    && [[ "${command}" =~ (teams-agent|rag-agent|mock_ticket_service|agentsplayground|playground_service/server.js) ]]
+    && [[ "${command}" =~ (teams-agent|rag-agent|mock_ticket_service|knowledge.portal|knowledge_portal|agentsplayground|playground_service/server.js) ]]
 }
 
 prepare_port() {
@@ -338,6 +342,10 @@ if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   require_free_port "Mock Ticket" "${MOCK_TICKET_PORT}"
 fi
 
+if [[ "${START_PORTAL}" == "true" ]]; then
+  require_free_port "Knowledge Portal" "${PORTAL_PORT}"
+fi
+
 if [[ "${START_PLAYGROUND}" == "true" ]]; then
   require_command node
   require_command npm
@@ -382,6 +390,22 @@ log "啟動 LangGraph Agent Service：http://127.0.0.1:${RAG_PORT}"
 ) &
 CHILD_PIDS+=("$!")
 wait_for_url "Agent Service" "http://127.0.0.1:${RAG_PORT}/readyz" 45
+
+if [[ "${START_PORTAL}" == "true" ]]; then
+  log "啟動 Knowledge Portal：http://127.0.0.1:${PORTAL_PORT}/"
+  (
+    cd "${AGENT_SERVICE_DIR}"
+    export KNOWLEDGE_PORTAL_PORT="${PORTAL_PORT}"
+    export KNOWLEDGE_PORTAL_REPOSITORY_MODE="${KNOWLEDGE_PORTAL_REPOSITORY_MODE:-FILE}"
+    export KNOWLEDGE_PORTAL_STATE_PATH="${PORTAL_STATE_PATH}"
+    export KNOWLEDGE_PORTAL_RELEASE_DIR="${PORTAL_RELEASE_DIR}"
+    export KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL="${KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL:-false}"
+    export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
+    exec uv run knowledge-portal
+  ) &
+  CHILD_PIDS+=("$!")
+  wait_for_url "Knowledge Portal" "http://127.0.0.1:${PORTAL_PORT}/" 45
+fi
 
 log "啟動 Teams Adapter：http://127.0.0.1:${TEAMS_PORT}"
 start_background bash -c '
@@ -447,6 +471,10 @@ if [[ "${START_TUNNEL}" == "true" ]]; then
   start_background devtunnel host -p "${TEAMS_PORT}" --allow-anonymous
 else
   log "本機 Playground 模式，不啟動 Dev Tunnel。"
+fi
+
+if [[ "${START_PORTAL}" == "true" ]]; then
+  printf '[start] Knowledge Portal：http://127.0.0.1:%s/\n' "${PORTAL_PORT}"
 fi
 
 log "所有服務已啟動。按 Ctrl+C 可一起停止。"
