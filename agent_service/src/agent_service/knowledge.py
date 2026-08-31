@@ -496,7 +496,7 @@ class HybridKnowledgeService:
             citations.append(self._citation_for(result))
         return citations
 
-    def _images_for(self, results: list[SearchResult]) -> list[AgentImage]:
+    def _collect_images(self, results: list[SearchResult]) -> list[AgentImage]:
         images: list[AgentImage] = []
         seen: set[str] = set()
         for result in results:
@@ -515,6 +515,26 @@ class HybridKnowledgeService:
                 if len(images) >= self.settings.max_images:
                     return images
         return images
+
+    def _images_for(self, cited_results: list[SearchResult]) -> list[AgentImage]:
+        """Attach chunk images from citations, then same-document siblings when needed.
+
+        Multi-page docs often split procedural text and panel diagrams across chunks.
+        When the cited chunk has no images, include images from other chunks of the
+        same source document so answers referencing soft keys can still show visuals.
+        """
+        images = self._collect_images(cited_results)
+        if images:
+            return images
+        cited_paths = {result.chunk.source_path for result in cited_results}
+        if not cited_paths:
+            return []
+        sibling_results = [
+            SearchResult(chunk=chunk, score=0.0, sparse_score=0.0)
+            for chunk in self.index.chunks
+            if chunk.source_path in cited_paths and chunk.images
+        ]
+        return self._collect_images(sibling_results)
 
     # --- answer generation -----------------------------------------------
 

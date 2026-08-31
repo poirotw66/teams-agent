@@ -136,6 +136,31 @@ def test_source_path_for_known_slug():
     assert registry.source_path_for(slug) == "sources/PowerPivot.md"
 
 
+def test_legacy_helpdesk_slug_resolves_portal_release_document_by_title():
+    image = DocumentImage(
+        path="總公司IP話機操作/p02.png",
+        title="總公司 IP 話機面板說明",
+        alt_text="總公司 IP 話機面板說明",
+    )
+    text_chunk = make_chunk(
+        "phone-text",
+        "總公司IP話機操作",
+        "sources/doc-ip-ceb794956f.md",
+    )
+    panel_chunk = make_chunk(
+        "phone-panel",
+        "總公司IP話機操作",
+        "sources/doc-ip-ceb794956f.md",
+        images=[image],
+    )
+    registry = FileSearchDocumentRegistry.from_chunks([text_chunk, panel_chunk])
+
+    assert registry.title_for("head-office-ip-phone-guide.md") == "總公司IP話機操作"
+    assert [item.path for item in registry.images_for("head-office-ip-phone-guide.md")] == [
+        "總公司IP話機操作/p02.png"
+    ]
+
+
 # --- parity with the spike script's slug algorithm ------------------------
 
 
