@@ -46,3 +46,14 @@ export function testResultLabel(status) {
 export function nextActionLabel(action) {
   return action ? NEXT_ACTION_LABELS[action] || action : "";
 }
+
+export function audienceLabel(audienceType, groupIds = []) {
+  if (audienceType === "ALL_EMPLOYEES") return "全體員工";
+  if (groupIds?.length) return groupIds.join("、");
+  return "特定群組";
+}
+
+export function releaseLabel(releaseId) {
+  if (!releaseId) return "尚未發布";
+  return "已發布至 Teams 知識庫";
+}

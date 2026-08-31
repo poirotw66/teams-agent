@@ -1,16 +1,15 @@
 import { escapeHtml } from "./ui.js";
 
-const FLUENT_VERSION = "2.6.1";
-const FLUENT_CDN = `https://cdn.jsdelivr.net/npm/@fluentui/web-components@${FLUENT_VERSION}/dist/web-components.min.js`;
+const FLUENT_BUNDLE = "/static/vendor/fluent-web-components.min.js";
 
 let fluentPromise = null;
 
 export function loadFluentComponents() {
-  if (window.__fluentComponentsLoaded) {
+  if (customElements.get("fluent-button")) {
     return Promise.resolve();
   }
   if (!fluentPromise) {
-    fluentPromise = import(FLUENT_CDN).then(() => {
+    fluentPromise = import(FLUENT_BUNDLE).then(() => {
       window.__fluentComponentsLoaded = true;
     });
   }

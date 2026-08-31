@@ -103,6 +103,9 @@ def compute_allowed_actions(
     if not can_view_document(actor, document.owner_unit_id, document.created_by):
         return []
 
+    if actor.role == "AUDITOR":
+        return ["VIEW"]
+
     actions: list[PortalAction] = ["VIEW"]
 
     if draft_version and can_edit_document(actor, document.owner_unit_id, document.created_by):

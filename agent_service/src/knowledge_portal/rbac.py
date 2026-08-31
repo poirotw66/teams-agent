@@ -9,13 +9,15 @@ class PortalPermissionError(Exception):
         super().__init__(message)
 
 
-ROLE_RANK = {
+OPERATIONAL_ROLE_RANK = {
     "CONTRIBUTOR": 1,
     "REVIEWER": 2,
     "MANAGER": 3,
     "PLATFORM": 4,
-    "AUDITOR": 5,
 }
+
+REVIEW_ROLES: frozenset[PortalRole] = frozenset({"REVIEWER", "MANAGER", "PLATFORM"})
+PUBLISH_ROLES: frozenset[PortalRole] = frozenset({"MANAGER", "PLATFORM"})
 
 
 def require_role(actor: PortalActor, *allowed: PortalRole) -> None:
@@ -26,7 +28,11 @@ def require_role(actor: PortalActor, *allowed: PortalRole) -> None:
 
 
 def require_minimum_role(actor: PortalActor, minimum: PortalRole) -> None:
-    if ROLE_RANK[actor.role] < ROLE_RANK[minimum]:
+    if actor.role == "AUDITOR":
+        raise PortalPermissionError("Auditors have read-only access.")
+    if actor.role not in OPERATIONAL_ROLE_RANK:
+        raise PortalPermissionError(f"Role {actor.role} is not allowed.")
+    if OPERATIONAL_ROLE_RANK[actor.role] < OPERATIONAL_ROLE_RANK[minimum]:
         raise PortalPermissionError(
             f"Role {actor.role} is below the required minimum {minimum}."
         )
@@ -68,7 +74,8 @@ def ensure_can_review(
     *,
     relaxed_workflow: bool = False,
 ) -> None:
-    require_minimum_role(actor, "REVIEWER")
+    if actor.role not in REVIEW_ROLES:
+        raise PortalPermissionError("You do not have permission to review documents.")
     if relaxed_workflow or actor.role in {"MANAGER", "PLATFORM"}:
         return
     if actor.role == "REVIEWER" and submitted_by == actor.user_id:
@@ -76,7 +83,8 @@ def ensure_can_review(
 
 
 def ensure_can_publish(actor: PortalActor) -> None:
-    require_minimum_role(actor, "MANAGER")
+    if actor.role not in PUBLISH_ROLES:
+        raise PortalPermissionError("You do not have permission to publish documents.")
 
 
 def ensure_can_remove_document(

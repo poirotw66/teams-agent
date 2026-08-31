@@ -58,7 +58,7 @@ export async function renderReviewsView(app) {
         </table>
       </div>`;
     container.querySelectorAll("[data-open-doc]").forEach((node) => {
-      node.addEventListener("click", () => navigate(`#/knowledge/${node.dataset.openDoc}/overview`));
+      node.addEventListener("click", () => navigate(`#/knowledge/${node.dataset.openDoc}/review`));
     });
   } catch (error) {
     handleViewError(error, {

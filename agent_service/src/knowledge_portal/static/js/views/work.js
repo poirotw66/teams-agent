@@ -1,3 +1,4 @@
+import { releaseLabel } from "../labels.js";
 import { api } from "../api.js";
 import { fluentButton } from "../fluent.js";
 import { ROLE_LABELS } from "../labels.js";
@@ -59,7 +60,7 @@ export async function renderWorkView(app) {
       container.innerHTML = `
         <div class="queue-grid">${actionable.map(queueCard).join("")}</div>
         <div class="panel muted-panel">
-          <p>正式版本：${escapeHtml(dashboard.active_release_id || "尚未發布")}</p>
+          <p>${escapeHtml(releaseLabel(dashboard.active_release_id))}</p>
         </div>`;
     }
     container.querySelectorAll("[data-route]").forEach((node) => {

@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from knowledge_portal.api import create_app
 from knowledge_portal.capabilities import compute_allowed_actions, compute_next_action
+from knowledge_portal.models import ReviewRecord
+from knowledge_portal.rbac import ensure_can_publish, ensure_can_review
 from datetime import datetime, timezone
 
 from knowledge_portal.models import (
@@ -142,3 +144,102 @@ def test_reviewer_home_route(portal_headers) -> None:
 
     response = client.get("/api/dashboard", headers=portal_headers(role="REVIEWER"))
     assert response.json()["home_route"] == "#/reviews"
+
+
+def test_auditor_capabilities_are_read_only() -> None:
+    settings = PortalSettings.from_env()
+    document = _document(status="IN_REVIEW")
+    draft = KnowledgeVersionRecord(
+        version_id="ver-test",
+        document_id="doc-test",
+        version_number=1,
+        title="Test",
+        summary="",
+        category="",
+        owner_unit_id="IT Service Desk",
+        business_contact="",
+        audience_type="ALL_EMPLOYEES",
+        audience_group_ids=[],
+        effective_at="2026-08-01",
+        review_due_at="2026-12-01",
+        change_summary="",
+        change_reason="",
+        canonical_content="# Test",
+        content_hash="abc",
+        asset_slug="test",
+        status="IN_REVIEW",
+        validation_summary=ValidationSummary(),
+        parse_preview=None,
+        etag='W/"ver-1"',
+        created_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        created_by="contributor.demo",
+    )
+    open_review = ReviewRecord(
+        review_id="review-test",
+        version_id="ver-test",
+        document_id="doc-test",
+        snapshot_hash="abc",
+        submitted_by="contributor.demo",
+        submitted_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+    )
+    allowed = compute_allowed_actions(
+        actor=_actor("AUDITOR"),
+        document=document,
+        draft_version=draft,
+        open_review=open_review,
+        settings=settings,
+    )
+
+    assert allowed == ["VIEW"]
+
+
+def test_auditor_cannot_review_or_publish() -> None:
+    actor = _actor("AUDITOR")
+
+    with pytest.raises(Exception, match="permission to review"):
+        ensure_can_review(actor, "contributor.demo", relaxed_workflow=False)
+
+    with pytest.raises(Exception, match="permission to publish"):
+        ensure_can_publish(actor)
+
+
+def test_auditor_cannot_decide_review_via_api(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "relaxed_workflow", True)
+    client = TestClient(create_app(settings))
+
+    create = client.post(
+        "/api/documents",
+        json={
+            "title": "Audit test doc",
+            "summary": "",
+            "category": "",
+            "owner_unit_id": "IT Service Desk",
+            "business_contact": "",
+            "audience_type": "ALL_EMPLOYEES",
+            "audience_group_ids": [],
+            "effective_at": "2026-08-01",
+            "review_due_at": "2026-12-01",
+            "change_summary": "Initial",
+            "change_reason": "Initial",
+            "markdown_content": "# Audit test",
+        },
+        headers=portal_headers(role="CONTRIBUTOR", user_id="contributor.demo"),
+    )
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+    submit = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready"},
+        headers=portal_headers(role="CONTRIBUTOR", user_id="contributor.demo"),
+    )
+    review_id = submit.json()["open_review"]["review_id"]
+
+    response = client.post(
+        f"/api/reviews/{review_id}/decision",
+        json={"decision": "APPROVED", "comment": "Should fail", "policy_exceptions": []},
+        headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
+    )
+    assert response.status_code == 403
