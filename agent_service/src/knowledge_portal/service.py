@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent_service.knowledge_release import write_active_release_pointer
 
@@ -18,6 +18,8 @@ from .models import (
     DocumentListResponse,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
+    PendingReviewItem,
+    PendingReviewListResponse,
     PortalActor,
     PublishRequest,
     ReleaseRecord,
@@ -30,8 +32,14 @@ from .models import (
     TestRunRecord,
     UpdateDraftRequest,
     ValidationSummary,
+    WorkQueueItem,
     new_etag,
     utc_now,
+)
+from .capabilities import (
+    compute_allowed_actions,
+    compute_next_action,
+    document_status_label,
 )
 from .draft_assets import (
     DraftAssetStore,
@@ -44,6 +52,7 @@ from .draft_retrieval import evaluate_test_case, search_draft_version
 from .migration import KnowledgeMigrationService
 from .publisher import ReleaseBuildError, ReleasePublisher
 from .rbac import (
+    PortalPermissionError,
     ensure_can_edit,
     ensure_can_publish,
     ensure_can_remove_document,
@@ -103,12 +112,42 @@ class PortalService:
 
     async def dashboard(self, actor: PortalActor) -> DashboardSummary:
         summary = await self._repository.dashboard_summary(actor)
+        profile: Literal["DEMO", "GOVERNED"] = (
+            "DEMO" if self._settings.demo_mode else "GOVERNED"
+        )
+        work_queues = [
+            WorkQueueItem(
+                label="我的草稿",
+                count=summary.my_drafts,
+                route="#/knowledge",
+                filter_status="DRAFT",
+            ),
+            WorkQueueItem(
+                label="待審文件",
+                count=summary.pending_review,
+                route="#/reviews",
+            ),
+            WorkQueueItem(
+                label="發布失敗",
+                count=summary.publish_failed,
+                route="#/knowledge",
+                filter_status="PUBLISH_FAILED",
+            ),
+            WorkQueueItem(
+                label="即將到期",
+                count=summary.review_due_soon,
+                route="#/knowledge",
+            ),
+        ]
         return summary.model_copy(
             update={
                 "relaxed_workflow": self._settings.relaxed_workflow,
                 "min_test_cases_for_review": (
                     0 if self._settings.relaxed_workflow else 3
                 ),
+                "demo_mode": self._settings.demo_mode,
+                "portal_profile": profile,
+                "work_queues": work_queues,
             }
         )
 
@@ -127,6 +166,32 @@ class PortalService:
             query=query,
         )
         return DocumentListResponse(items=items, total=len(items))
+
+    async def list_pending_reviews(
+        self, actor: PortalActor
+    ) -> PendingReviewListResponse:
+        reviews = await self._repository.list_pending_reviews(actor)
+        items: list[PendingReviewItem] = []
+        for review in reviews:
+            document = await self._repository.get_document(review.document_id)
+            if document is None:
+                continue
+            try:
+                ensure_document_visible(
+                    actor, document.owner_unit_id, document.created_by
+                )
+            except PortalPermissionError:
+                continue
+            items.append(
+                PendingReviewItem(
+                    review_id=review.review_id,
+                    document_id=review.document_id,
+                    document_title=document.title,
+                    submitted_by=review.submitted_by,
+                    submitted_at=review.submitted_at,
+                )
+            )
+        return PendingReviewListResponse(items=items, total=len(items))
 
     async def get_document(self, actor: PortalActor, document_id: str) -> DocumentDetailResponse:
         document = await self._repository.get_document(document_id)
@@ -158,12 +223,45 @@ class PortalService:
                     slug,
                 ),
             )
+        return self._document_detail_response(
+            document=document,
+            draft_version=draft_version,
+            published_version=published_version,
+            open_review=open_review,
+            draft_assets=draft_assets,
+            actor=actor,
+        )
+
+    def _document_detail_response(
+        self,
+        *,
+        document: KnowledgeDocumentRecord,
+        draft_version: KnowledgeVersionRecord | None,
+        published_version: KnowledgeVersionRecord | None,
+        open_review: ReviewRecord | None,
+        draft_assets: DraftAssetListResponse | None,
+        actor: PortalActor,
+    ) -> DocumentDetailResponse:
+        allowed_actions = compute_allowed_actions(
+            actor=actor,
+            document=document,
+            draft_version=draft_version,
+            open_review=open_review,
+            settings=self._settings,
+        )
+        next_action = compute_next_action(
+            allowed_actions,
+            document_status=document.status,
+        )
         return DocumentDetailResponse(
             document=document,
             draft_version=draft_version,
             published_version=published_version,
             open_review=open_review,
             draft_assets=draft_assets,
+            allowed_actions=allowed_actions,
+            next_action=next_action,
+            status_label=document_status_label(document.status),
         )
 
     def _validation_context(
@@ -685,13 +783,13 @@ class PortalService:
         )
         return release
 
-    async def remove_document(
+    async def discard_draft(
         self,
         actor: PortalActor,
         document_id: str,
         request: RemoveDocumentRequest,
         correlation_id: str,
-    ) -> DocumentDetailResponse | dict[str, str]:
+    ) -> dict[str, str]:
         detail = await self.get_document(actor, document_id)
         document = detail.document
         if document.status == "IN_REVIEW":
@@ -703,39 +801,12 @@ class PortalService:
             document,
             relaxed_workflow=self._settings.relaxed_workflow,
         )
+        if document.current_published_version_id and document.status == "PUBLISHED":
+            raise ValueError(
+                "Published documents must be unpublished instead of discarded."
+            )
 
         now = utc_now()
-        if document.current_published_version_id and document.status == "PUBLISHED":
-            ensure_can_publish(actor)
-            updated_document = document.model_copy(
-                update={
-                    "status": "UNPUBLISHED",
-                    "updated_at": now,
-                    "updated_by": actor.user_id,
-                }
-            )
-            await self._repository.save_document(updated_document)
-            published_versions = await self._collect_active_published_versions(
-                actor,
-                exclude_document_ids={document_id},
-            )
-            await self._activate_release(
-                actor=actor,
-                published_versions=published_versions,
-                correlation_id=correlation_id,
-                reason=request.reason,
-                metadata={"documentId": document_id, "action": "unpublish"},
-            )
-            await self._audit(
-                actor=actor,
-                action="document.unpublish",
-                target_type="document",
-                target_id=document_id,
-                correlation_id=correlation_id,
-                reason=request.reason,
-            )
-            return await self.get_document(actor, document_id)
-
         if detail.draft_version is not None:
             await self._repository.save_version(
                 detail.draft_version.model_copy(update={"status": "DISCARDED"})
@@ -758,6 +829,64 @@ class PortalService:
             reason=request.reason,
         )
         return {"document_id": document_id, "status": "DISCARDED"}
+
+    async def unpublish_document(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        request: RemoveDocumentRequest,
+        correlation_id: str,
+    ) -> DocumentDetailResponse:
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        if document.status != "PUBLISHED":
+            raise ValueError("Only published documents can be unpublished.")
+        ensure_can_publish(actor)
+
+        now = utc_now()
+        updated_document = document.model_copy(
+            update={
+                "status": "UNPUBLISHED",
+                "updated_at": now,
+                "updated_by": actor.user_id,
+            }
+        )
+        await self._repository.save_document(updated_document)
+        published_versions = await self._collect_active_published_versions(
+            actor,
+            exclude_document_ids={document_id},
+        )
+        await self._activate_release(
+            actor=actor,
+            published_versions=published_versions,
+            correlation_id=correlation_id,
+            reason=request.reason,
+            metadata={"documentId": document_id, "action": "unpublish"},
+        )
+        await self._audit(
+            actor=actor,
+            action="document.unpublish",
+            target_type="document",
+            target_id=document_id,
+            correlation_id=correlation_id,
+            reason=request.reason,
+        )
+        return await self.get_document(actor, document_id)
+
+    async def remove_document(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        request: RemoveDocumentRequest,
+        correlation_id: str,
+    ) -> DocumentDetailResponse | dict[str, str]:
+        detail = await self.get_document(actor, document_id)
+        document = detail.document
+        if document.current_published_version_id and document.status == "PUBLISHED":
+            return await self.unpublish_document(
+                actor, document_id, request, correlation_id
+            )
+        return await self.discard_draft(actor, document_id, request, correlation_id)
 
     async def rollback_release(
         self,

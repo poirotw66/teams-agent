@@ -28,6 +28,7 @@ class PortalSettings:
     default_owner_unit_ids: list[str]
     require_dual_approval: bool
     relaxed_workflow: bool
+    demo_mode: bool
     auth_mode: str
     entra_tenant_id: str | None
     entra_client_id: str | None
@@ -117,6 +118,8 @@ class PortalSettings:
             relaxed_workflow=os.environ.get(
                 "KNOWLEDGE_PORTAL_RELAXED_WORKFLOW", "true"
             ).lower()
+            in {"1", "true", "yes"},
+            demo_mode=os.environ.get("KNOWLEDGE_PORTAL_DEMO_MODE", "true").lower()
             in {"1", "true", "yes"},
             auth_mode=os.environ.get("KNOWLEDGE_PORTAL_AUTH_MODE", "HEADER").upper(),
             entra_tenant_id=os.environ.get("KNOWLEDGE_PORTAL_ENTRA_TENANT_ID")

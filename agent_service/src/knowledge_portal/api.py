@@ -292,6 +292,49 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         except Exception as exc:
             raise handle_errors(exc) from exc
 
+    @app.get("/api/reviews/pending")
+    async def list_pending_reviews(
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        return await service.list_pending_reviews(actor)
+
+    @app.post("/api/documents/{document_id}/discard-draft")
+    async def discard_draft(
+        document_id: str,
+        request: RemoveDocumentRequest,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.discard_draft(
+                actor,
+                document_id,
+                request,
+                correlation_id_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/documents/{document_id}/unpublish")
+    async def unpublish_document(
+        document_id: str,
+        request: RemoveDocumentRequest,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.unpublish_document(
+                actor,
+                document_id,
+                request,
+                correlation_id_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
     @app.delete("/api/documents/{document_id}")
     async def remove_document(
         document_id: str,

@@ -318,6 +318,30 @@ class DocumentDetailResponse(StrictModel):
     published_version: KnowledgeVersionRecord | None = None
     open_review: ReviewRecord | None = None
     draft_assets: DraftAssetListResponse | None = None
+    allowed_actions: list[str] = Field(default_factory=list)
+    next_action: str | None = None
+    status_label: str = ""
+
+
+class WorkQueueItem(StrictModel):
+    label: str
+    count: int
+    route: str
+    filter_status: str | None = None
+
+
+class PendingReviewItem(StrictModel):
+    review_id: str
+    document_id: str
+    document_title: str
+    submitted_by: str
+    submitted_at: datetime
+    status_label: str = "待審核"
+
+
+class PendingReviewListResponse(StrictModel):
+    items: list[PendingReviewItem]
+    total: int
 
 
 class DashboardSummary(StrictModel):
@@ -329,6 +353,9 @@ class DashboardSummary(StrictModel):
     active_release_activated_at: datetime | None = None
     relaxed_workflow: bool = True
     min_test_cases_for_review: int = 0
+    demo_mode: bool = True
+    portal_profile: Literal["DEMO", "GOVERNED"] = "DEMO"
+    work_queues: list[WorkQueueItem] = Field(default_factory=list)
 
 
 def utc_now() -> datetime:

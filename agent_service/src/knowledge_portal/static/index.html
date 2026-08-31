@@ -7,95 +7,33 @@
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <div>
+    <div id="demoBanner" class="demo-banner hidden" role="status"></div>
+    <header class="app-header">
+      <div class="brand">
         <p class="eyebrow">Teams IT 智能助手</p>
         <h1>知識營運介面</h1>
+        <span id="profileBadge" class="profile-badge"></span>
       </div>
-      <div class="identity">
-        <label>
-          使用者
-          <input id="userId" value="manager.demo">
-        </label>
-        <label>
-          顯示名稱
-          <input id="userName" value="知識管理者">
-        </label>
-        <label>
-          角色
-          <select id="userRole">
-            <option value="CONTRIBUTOR">知識貢獻者</option>
-            <option value="REVIEWER">知識審核者</option>
-            <option value="MANAGER" selected>知識管理者</option>
-            <option value="PLATFORM">平台管理者</option>
-          </select>
-        </label>
-      </div>
+      <div id="identityChip" class="identity-chip-wrap"></div>
     </header>
 
-    <nav class="nav">
-      <button data-view="dashboard" class="active">儀表板</button>
-      <button data-view="library">知識庫</button>
-      <button data-view="editor">新增／更新</button>
-      <button data-view="audit">稽核紀錄</button>
+    <details id="demoControls" class="demo-controls hidden">
+      <summary>Demo 身分設定</summary>
+      <div class="demo-controls-body"></div>
+    </details>
+
+    <nav class="app-nav" aria-label="主要導覽">
+      <button type="button" data-nav="#/work">我的工作</button>
+      <button type="button" data-nav="#/knowledge">知識庫</button>
+      <button type="button" data-nav="#/reviews">待審核</button>
+      <button type="button" data-nav="#/audit">稽核紀錄</button>
     </nav>
 
-    <main>
-      <section id="view-dashboard" class="view active">
-        <h2>儀表板</h2>
-        <div id="dashboardCards" class="cards"></div>
-      </section>
+    <main id="app" class="app-main"></main>
 
-      <section id="view-library" class="view">
-        <div class="section-header">
-          <h2>知識庫</h2>
-          <button type="button" id="libraryCreateBtn">新增文件</button>
-        </div>
-        <div id="documentList" class="panel"></div>
-        <div id="documentDetail" class="panel hidden"></div>
-      </section>
+    <div id="dialogRoot"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-      <section id="view-editor" class="view">
-        <h2>新增知識文件</h2>
-        <div class="panel">
-          <label class="full">
-            匯入 Markdown 檔（可選）
-            <input id="importMarkdownFile" type="file" accept=".md,text/markdown">
-          </label>
-          <p class="muted">匯入後會自動填入標題與內容；建立草稿後再上傳圖片。</p>
-        </div>
-        <form id="createForm" class="panel form-grid">
-          <label>標題<input name="title" required></label>
-          <label>摘要<textarea name="summary" rows="2"></textarea></label>
-          <label>擁有單位<input name="owner_unit_id" value="IT Service Desk" required></label>
-          <label>分類<input name="category"></label>
-          <label>生效日<input name="effective_at" type="date" required></label>
-          <label>下次檢視日<input name="review_due_at" type="date" required></label>
-          <label>變更原因<textarea name="change_reason" rows="2" required></textarea></label>
-          <label>適用範圍
-            <select name="audience_type">
-              <option value="ALL_EMPLOYEES">全體員工</option>
-              <option value="RESTRICTED_GROUPS">特定群組</option>
-            </select>
-          </label>
-          <label class="full">Markdown 內容
-            <textarea name="markdown_content" rows="14" required># 範例標題
-
-## 正文（canonical）
-
-請在此撰寫知識內容。</textarea>
-          </label>
-          <button type="submit">建立草稿</button>
-        </form>
-      </section>
-
-      <section id="view-audit" class="view">
-        <h2>稽核紀錄</h2>
-        <div id="auditList" class="panel"></div>
-      </section>
-    </main>
-
-    <div id="toast" class="toast hidden"></div>
-    <script src="/static/app.js"></script>
+    <script type="module" src="/static/js/main.js"></script>
   </body>
 </html>
