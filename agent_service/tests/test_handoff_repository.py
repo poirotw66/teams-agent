@@ -108,6 +108,43 @@ async def test_expired_case_restores_ai_routing_and_keeps_record() -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_repository_allows_supplement_phase_transitions() -> None:
+    repository = InMemoryHandoffRepository(clock=lambda: NOW)
+    case = await repository.create_case(make_case())
+    case = await repository.transition(
+        case.caseId,
+        HandoffStatus.OFFERED,
+        HandoffStatus.SUMMARY_REVIEW,
+        case.version,
+    )
+    case = await repository.transition(
+        case.caseId,
+        HandoffStatus.SUMMARY_REVIEW,
+        HandoffStatus.AWAITING_SUPPLEMENT,
+        case.version,
+    )
+    updated = CaseSummary(
+        issue=case.summary.issue,
+        userNeed=case.summary.userNeed,
+        conversationHighlights=["待確認補充：錯誤碼 500"],
+        unresolvedReason=case.summary.unresolvedReason,
+        requestedOutcome=case.summary.requestedOutcome,
+        generatedAt=NOW,
+        version=case.summary.version + 1,
+    )
+    case = await repository.update_summary(case.caseId, updated, case.version)
+    case = await repository.transition(
+        case.caseId,
+        HandoffStatus.AWAITING_SUPPLEMENT,
+        HandoffStatus.SUMMARY_REVIEW,
+        case.version,
+    )
+
+    assert case.status == HandoffStatus.SUMMARY_REVIEW
+    assert case.summary.conversationHighlights == ["待確認補充：錯誤碼 500"]
+
+
+@pytest.mark.asyncio
 async def test_only_original_requester_can_close() -> None:
     repository = InMemoryHandoffRepository(clock=lambda: NOW)
     case = await repository.create_case(make_case())

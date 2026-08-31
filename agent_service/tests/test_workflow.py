@@ -337,10 +337,21 @@ class FakeHandoffRouter:
         case_status: str,
         **_kwargs,
     ) -> HandoffAction:
+        from agent_service.confirmation import TicketIntent, classify_ticket_intent
         from agent_service.handoff_flow import _protocol_close_command
 
         if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
             return HandoffAction.CLOSE
+        if case_status == "DEMO_ACTIVE":
+            if (
+                self.actions
+                and self.actions[0] is HandoffAction.CREATE_TICKET
+                and classify_ticket_intent(message) is TicketIntent.CREATE
+            ):
+                return self.actions.pop(0)
+            return HandoffAction.HUMAN_MESSAGE
+        if case_status not in {"SUMMARY_REVIEW", "AWAITING_SUPPLEMENT"}:
+            return HandoffAction.UNKNOWN
         if not self.actions:
             return HandoffAction.UNKNOWN
         return self.actions.pop(0)
@@ -561,16 +572,159 @@ async def test_handoff_summary_changes_only_after_explicit_supplement_action(
 
     await workflow.respond(make_request(sap_issue.description))
     prompt = await workflow.respond(make_request("繼續補充"))
+    after_prompt = await repository.get_active_case("tenant-1", "conv-1", "user-1")
     supplemented = await workflow.respond(make_request("錯誤碼 CR-1001"))
     active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
 
     assert prompt.answer.startswith("請繼續補充問題")
+    assert after_prompt is not None
+    assert after_prompt.status == HandoffStatus.AWAITING_SUPPLEMENT
     assert "問題：SAP Crystal Reports 授權到期無法開啟" in supplemented.answer
-    assert "使用者需求：錯誤碼 CR-1001" in supplemented.answer
+    assert "待確認補充：錯誤碼 CR-1001" in supplemented.answer
     assert active is not None and active.status == HandoffStatus.SUMMARY_REVIEW
-    assert active.summary.conversationHighlights == ["錯誤碼 CR-1001"]
+    assert active.summary.conversationHighlights == ["待確認補充：錯誤碼 CR-1001"]
     assert extractor_model.calls == 1
     assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_illegal_supplement_in_summary_review_keeps_case_summary(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(
+            responses={
+                sap_issue.description: KnowledgeResult(
+                    found=False, answer="", backend="HYBRID"
+                )
+            }
+        ),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.SUPPLEMENT]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    retried = await workflow.respond(make_request("錯誤碼 CR-1001"))
+    stored = await repository.get_case(active.caseId)
+
+    assert retried.answer == offered.answer
+    assert stored is not None and stored.status == HandoffStatus.SUMMARY_REVIEW
+    assert stored.summary.conversationHighlights == []
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_revise_issue_after_handoff_offer_reruns_rag(tmp_path: Path) -> None:
+    unlock_issue = issue(description="大洲系統無法解鎖")
+    click_issue = issue(description="大洲系統無法點選")
+    knowledge = FakeKnowledgeService(
+        responses={
+            unlock_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            click_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依大洲功能無法點選排查步驟處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unlock_issue], [click_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.REVISE_ISSUE]),
+        extractor_by_message={click_issue.description: [click_issue]},
+    )
+
+    offered = await workflow.respond(make_request(unlock_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(click_issue.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請依大洲功能無法點選排查步驟處理" in answered.answer
+    assert "大洲系統無法解鎖" not in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert offered.answer.startswith("目前無法從企業知識庫找到可確認的答案")
+    assert knowledge.calls == [unlock_issue.description, click_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_cancel_clears_awaiting_supplement_for_next_question(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
+    knowledge = FakeKnowledgeService(
+        responses={
+            sap_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依 VPN 密碼解鎖流程處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter(
+            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.CANCEL]
+        ),
+        extractor_by_message={vpn_issue.description: [vpn_issue]},
+    )
+
+    await workflow.respond(make_request(sap_issue.description))
+    await workflow.respond(make_request("繼續補充"))
+    awaiting = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert awaiting is not None and awaiting.status == HandoffStatus.AWAITING_SUPPLEMENT
+
+    await workflow.respond(make_request("取消"))
+    assert await repository.get_active_case("tenant-1", "conv-1", "user-1") is None
+
+    answered = await workflow.respond(make_request(vpn_issue.description))
+    assert "請依 VPN 密碼解鎖流程處理" in answered.answer
+    assert knowledge.calls == [sap_issue.description, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_greeting_skips_extractor_and_rag(tmp_path: Path) -> None:
+    from agent_service.supervisor import ConversationSupervisorDecision
+
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="不應被使用")]],
+        supervisor_by_message={
+            "你好": ConversationSupervisorDecision(
+                intent="GREETING",
+                requestedAction="ANSWER",
+                confidence=0.95,
+            )
+        },
+    )
+
+    response = await workflow.respond(make_request("你好"))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert "你好！我是 IT 助手" in response.answer
 
 
 @pytest.mark.asyncio

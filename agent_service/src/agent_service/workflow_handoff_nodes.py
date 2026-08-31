@@ -26,9 +26,12 @@ from .handoff_flow import (
     DEMO_STARTED_MESSAGE,
     SUMMARY_SUPPLEMENT_MESSAGE,
     HandoffAction,
+    HandoffResumeReason,
+    agentic_supplement_summary,
     deterministic_summary,
     offer_message,
     offer_message_from_summary_text,
+    validate_handoff_action,
 )
 from .response_builder import build_response
 from .ticket import (
@@ -40,6 +43,10 @@ from .ticket import (
 from .workflow_helpers import AgentState
 
 logger = logging.getLogger(__name__)
+
+_REVIEW_STATUSES = frozenset(
+    {HandoffStatus.SUMMARY_REVIEW, HandoffStatus.AWAITING_SUPPLEMENT}
+)
 
 
 class HandoffWorkflowMixin:
@@ -101,7 +108,7 @@ class HandoffWorkflowMixin:
         )
         active = await self.handoff_repository.transition(
             case.caseId,
-            HandoffStatus.SUMMARY_REVIEW,
+            case.status,
             HandoffStatus.DEMO_ACTIVE,
             case.version,
         )
@@ -110,7 +117,7 @@ class HandoffWorkflowMixin:
             "handoff.accepted",
             ActorType.USER,
             requester_id,
-            {"fromStatus": "SUMMARY_REVIEW", "toStatus": "DEMO_ACTIVE"},
+            {"fromStatus": case.status.value, "toStatus": "DEMO_ACTIVE"},
         )
         return active
 
@@ -247,6 +254,7 @@ class HandoffWorkflowMixin:
         )
         if case is None or case.status not in {
             HandoffStatus.SUMMARY_REVIEW,
+            HandoffStatus.AWAITING_SUPPLEMENT,
             HandoffStatus.DEMO_ACTIVE,
         }:
             return case
@@ -350,7 +358,7 @@ class HandoffWorkflowMixin:
         from_status: HandoffStatus,
         to_status: HandoffStatus,
     ) -> dict:
-        if from_status is HandoffStatus.SUMMARY_REVIEW:
+        if from_status in _REVIEW_STATUSES:
             confirmed = case.summary.model_copy(
                 update={
                     "confirmedAt": datetime.now(timezone.utc),
@@ -420,6 +428,88 @@ class HandoffWorkflowMixin:
             "final_response": "派工單建立失敗。你仍可回覆「聯絡線上客服」或「取消」。",
         }
 
+    async def _supersede_handoff_for_resume(
+        self,
+        state: AgentState,
+        case: HandoffCase,
+        *,
+        requester_id: str,
+        ticket_intent: TicketIntent,
+        resume_reason: HandoffResumeReason,
+    ) -> dict:
+        cancelled = await self.handoff_repository.transition(
+            case.caseId,
+            case.status,
+            HandoffStatus.CANCELLED,
+            case.version,
+        )
+        await self._append_handoff_event(
+            cancelled,
+            "handoff.superseded",
+            ActorType.USER,
+            requester_id,
+            {
+                "fromStatus": case.status.value,
+                "toStatus": "CANCELLED",
+                "reason": resume_reason.lower(),
+            },
+        )
+        return {
+            "handoff_handled": False,
+            "handoff_case": cancelled,
+            "handoff_resume_reason": resume_reason,
+            "ticket_intent": ticket_intent,
+        }
+
+    async def _apply_handoff_supplement(
+        self,
+        state: AgentState,
+        case: HandoffCase,
+        *,
+        requester_id: str,
+    ) -> dict:
+        request = state["request"]
+        draft = await agentic_supplement_summary(
+            getattr(self.handoff_router, "_model", None),
+            issue=case.summary.issue,
+            user_need=case.summary.userNeed,
+            conversation_highlights=case.summary.conversationHighlights,
+            attempted_solutions=case.summary.attemptedSolutions,
+            supplement_message=request.message.text,
+            execution_context=state.get("execution_context"),
+        )
+        updated_summary = CaseSummary(
+            issue=draft.issue,
+            userNeed=draft.user_need,
+            conversationHighlights=draft.conversation_highlights,
+            attemptedSolutions=draft.attempted_solutions,
+            unresolvedReason=draft.unresolved_reason,
+            requestedOutcome=draft.requested_outcome,
+            generatedAt=draft.generated_at,
+            version=case.summary.version + 1,
+        )
+        case = await self.handoff_repository.update_summary(
+            case.caseId, updated_summary, case.version
+        )
+        if case.status is HandoffStatus.AWAITING_SUPPLEMENT:
+            case = await self.handoff_repository.transition(
+                case.caseId,
+                HandoffStatus.AWAITING_SUPPLEMENT,
+                HandoffStatus.SUMMARY_REVIEW,
+                case.version,
+            )
+        await self._append_handoff_event(
+            case,
+            "handoff.summary_supplemented",
+            ActorType.USER,
+            requester_id,
+        )
+        return {
+            "handoff_handled": True,
+            "handoff_case": case,
+            "final_response": offer_message(draft),
+        }
+
     async def _route_handoff(self, state: AgentState) -> dict:
         replay = await self._replay_deduped_ticket(state)
         if replay is not None:
@@ -438,6 +528,7 @@ class HandoffWorkflowMixin:
 
         if case is not None and case.status in {
             HandoffStatus.SUMMARY_REVIEW,
+            HandoffStatus.AWAITING_SUPPLEMENT,
             HandoffStatus.DEMO_ACTIVE,
         }:
             supersede_reason: str | None = None
@@ -475,6 +566,7 @@ class HandoffWorkflowMixin:
             conversation_turns=self._handoff_conversation_turns(state["conversation"]),
             execution_context=state.get("execution_context"),
         )
+        action = validate_handoff_action(case.status.value, action)
 
         if case.status == HandoffStatus.DEMO_ACTIVE:
             if action is HandoffAction.CLOSE:
@@ -510,13 +602,12 @@ class HandoffWorkflowMixin:
                 "final_response": DEMO_MESSAGE_SAVED,
             }
 
-        if case.status != HandoffStatus.SUMMARY_REVIEW:
+        if case.status not in _REVIEW_STATUSES:
             return {"handoff_handled": False, "handoff_case": case}
 
         if action is HandoffAction.UNKNOWN:
-            # A missing or failed semantic model must not cancel an unresolved
-            # case or reinterpret the current turn as a new issue. Keep the
-            # case in review and render its available next actions again.
+            # A missing, failed, or illegal semantic action must not cancel an
+            # unresolved case or reinterpret the current turn as a new issue.
             return {
                 "handoff_handled": True,
                 "handoff_case": case,
@@ -541,6 +632,20 @@ class HandoffWorkflowMixin:
                 "final_response": CANCELLED_MESSAGE,
             }
         if action is HandoffAction.REQUEST_SUPPLEMENT:
+            if case.status is HandoffStatus.SUMMARY_REVIEW:
+                case = await self.handoff_repository.transition(
+                    case.caseId,
+                    HandoffStatus.SUMMARY_REVIEW,
+                    HandoffStatus.AWAITING_SUPPLEMENT,
+                    case.version,
+                )
+                await self._append_handoff_event(
+                    case,
+                    "handoff.supplement_requested",
+                    ActorType.USER,
+                    requester_id,
+                    {"fromStatus": "SUMMARY_REVIEW", "toStatus": "AWAITING_SUPPLEMENT"},
+                )
             return {
                 "handoff_handled": True,
                 "handoff_case": case,
@@ -558,73 +663,36 @@ class HandoffWorkflowMixin:
                 state,
                 case=case,
                 requester_id=requester_id,
-                from_status=HandoffStatus.SUMMARY_REVIEW,
+                from_status=case.status,
                 to_status=HandoffStatus.ROUTED_TO_TICKET,
             )
-
-        if action is not HandoffAction.SUPPLEMENT:
-            cancelled = await self.handoff_repository.transition(
-                case.caseId,
-                HandoffStatus.SUMMARY_REVIEW,
-                HandoffStatus.CANCELLED,
-                case.version,
+        if action is HandoffAction.NEW_ISSUE:
+            return await self._supersede_handoff_for_resume(
+                state,
+                case,
+                requester_id=requester_id,
+                ticket_intent=ticket_intent,
+                resume_reason="NEW_ISSUE",
             )
-            await self._append_handoff_event(
-                cancelled,
-                "handoff.superseded",
-                ActorType.USER,
-                requester_id,
-                {
-                    "fromStatus": "SUMMARY_REVIEW",
-                    "toStatus": "CANCELLED",
-                    "reason": action.value.lower(),
-                },
+        if action is HandoffAction.REVISE_ISSUE:
+            return await self._supersede_handoff_for_resume(
+                state,
+                case,
+                requester_id=requester_id,
+                ticket_intent=ticket_intent,
+                resume_reason="REVISED_ISSUE",
             )
-            return {
-                "handoff_handled": False,
-                "handoff_case": cancelled,
-                "handoff_superseded_new_issue": action is HandoffAction.NEW_ISSUE,
-                "ticket_intent": ticket_intent,
-            }
+        if action is HandoffAction.SUPPLEMENT:
+            return await self._apply_handoff_supplement(
+                state, case, requester_id=requester_id
+            )
 
-        draft = deterministic_summary(
-            current_message=request.message.text,
-            issue_descriptions=[case.summary.issue],
-            conversation_highlights=[
-                *case.summary.conversationHighlights,
-                request.message.text,
-            ],
-            attempted_solutions=case.summary.attemptedSolutions,
-        )
-        updated_summary = CaseSummary(
-            issue=draft.issue,
-            userNeed=draft.user_need,
-            conversationHighlights=draft.conversation_highlights,
-            attemptedSolutions=draft.attempted_solutions,
-            unresolvedReason=draft.unresolved_reason,
-            requestedOutcome=draft.requested_outcome,
-            generatedAt=draft.generated_at,
-            version=case.summary.version + 1,
-        )
-        case = await self.handoff_repository.update_summary(
-            case.caseId, updated_summary, case.version
-        )
-        await self._append_handoff_event(
-            case,
-            "handoff.summary_supplemented",
-            ActorType.USER,
-            requester_id,
-        )
-        return {
-            "handoff_handled": True,
-            "handoff_case": case,
-            "final_response": offer_message(draft),
-        }
+        return {"handoff_handled": False, "handoff_case": case}
 
     async def _evaluate_handoff(self, state: AgentState) -> dict:
         if self.handoff_repository is None:
             return {"handoff_handled": False}
-        if state.get("handoff_superseded_new_issue"):
+        if state.get("handoff_resume_reason") in {"NEW_ISSUE", "REVISED_ISSUE"}:
             return {"handoff_handled": False}
         issue_results = state.get("issue_results", [])
         if any(

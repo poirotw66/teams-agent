@@ -120,6 +120,18 @@ def test_need_more_info_caps_at_two_questions():
     assert "2. Q2" in built.text
 
 
+def test_greeting_issue_renders_short_reply():
+    issue = make_issue(
+        id=1,
+        description="你好",
+        isIT=False,
+        readiness="GREETING",
+        route="GREETING",
+    )
+    built = build_response(issues=[issue], results=[], settings=make_settings())
+    assert built.text == "你好！我是 IT 助手，有系統或設備問題都可以告訴我。"
+
+
 def test_all_non_it_with_empty_topic_uses_default_scope_message():
     issue = make_issue(
         id=1,

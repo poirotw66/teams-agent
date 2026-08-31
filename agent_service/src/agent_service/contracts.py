@@ -54,10 +54,10 @@ class AgentImage(StrictModel):
 # --- Issue domain model (spec §4.3, §6) -----------------------------------
 
 # Readiness: whether an issue has enough information to be routed.
-Readiness = Literal["READY", "NEED_MORE_INFO", "NOT_IT"]
+Readiness = Literal["READY", "NEED_MORE_INFO", "NOT_IT", "GREETING"]
 
 # Route: the high-level handling path chosen by the Issue Extractor.
-Route = Literal["FAQ", "KNOWLEDGE", "TICKET", "NOT_IT"]
+Route = Literal["FAQ", "KNOWLEDGE", "TICKET", "NOT_IT", "GREETING"]
 
 # IssueResultType: outcome of processing a single issue (spec §4.3).
 IssueResultType = Literal[

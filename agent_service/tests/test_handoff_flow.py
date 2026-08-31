@@ -11,6 +11,8 @@ from agent_service.handoff_flow import (
     generate_summary_with_fallback,
     offer_message,
     routing_target_for_status,
+    supplement_summary_deterministic_fallback,
+    validate_handoff_action,
 )
 
 
@@ -30,6 +32,45 @@ class FakeStructuredModel:
                 return outer.decision
 
         return Handle()
+
+
+@pytest.mark.asyncio
+async def test_agentic_router_revise_issue_in_awaiting_supplement() -> None:
+    model = FakeStructuredModel(HandoffRouteDecision(action="REVISE_ISSUE"))
+    router = AgenticHandoffRouter(model)
+
+    action = await router.decide(
+        message="其實不是解鎖，是不能點",
+        case_status="AWAITING_SUPPLEMENT",
+        case_summary="問題：大洲系統無法解鎖",
+    )
+
+    assert action is HandoffAction.REVISE_ISSUE
+
+
+def test_validate_handoff_action_rejects_supplement_outside_awaiting_phase() -> None:
+    assert (
+        validate_handoff_action("SUMMARY_REVIEW", HandoffAction.SUPPLEMENT)
+        is HandoffAction.UNKNOWN
+    )
+    assert (
+        validate_handoff_action("AWAITING_SUPPLEMENT", HandoffAction.SUPPLEMENT)
+        is HandoffAction.SUPPLEMENT
+    )
+
+
+def test_supplement_fallback_preserves_issue_and_marks_pending_confirmation() -> None:
+    draft = supplement_summary_deterministic_fallback(
+        issue="大洲系統無法解鎖",
+        user_need="需要解鎖大洲",
+        conversation_highlights=["已重開機"],
+        attempted_solutions=[],
+        supplement_message="錯誤碼 E-42",
+    )
+
+    assert draft.issue == "大洲系統無法解鎖"
+    assert draft.user_need == "需要解鎖大洲"
+    assert draft.conversation_highlights[-1] == "待確認補充：錯誤碼 E-42"
 
 
 @pytest.mark.asyncio
@@ -159,6 +200,7 @@ async def test_summary_generator_failure_uses_deterministic_fallback() -> None:
         (None, RoutingTarget.AI_AGENT),
         ("OFFERED", RoutingTarget.AI_AGENT),
         ("SUMMARY_REVIEW", RoutingTarget.AI_AGENT),
+        ("AWAITING_SUPPLEMENT", RoutingTarget.AI_AGENT),
         ("DEMO_ACTIVE", RoutingTarget.HUMAN_DEMO),
         ("CLOSED", RoutingTarget.AI_AGENT),
         ("ROUTED_TO_TICKET", RoutingTarget.AI_AGENT),

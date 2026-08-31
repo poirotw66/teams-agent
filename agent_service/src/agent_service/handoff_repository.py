@@ -238,7 +238,11 @@ class FirestoreHandoffRepository:
         from .handoff import HandoffStatus, InvalidHandoffTransitionError, utc_now
 
         def mutate(case):
-            if case.status not in {HandoffStatus.OFFERED, HandoffStatus.SUMMARY_REVIEW}:
+            if case.status not in {
+                HandoffStatus.OFFERED,
+                HandoffStatus.SUMMARY_REVIEW,
+                HandoffStatus.AWAITING_SUPPLEMENT,
+            }:
                 raise InvalidHandoffTransitionError("summary cannot be updated")
             return case.model_copy(
                 update={"summary": summary, "updatedAt": utc_now(), "version": case.version + 1}
@@ -255,7 +259,20 @@ class FirestoreHandoffRepository:
             allowed = {
                 "OFFERED": {"SUMMARY_REVIEW", "CANCELLED", "FAILED", "EXPIRED"},
                 "SUMMARY_REVIEW": {
-                    "DEMO_ACTIVE", "CANCELLED", "FAILED", "EXPIRED", "ROUTED_TO_TICKET"
+                    "AWAITING_SUPPLEMENT",
+                    "DEMO_ACTIVE",
+                    "CANCELLED",
+                    "FAILED",
+                    "EXPIRED",
+                    "ROUTED_TO_TICKET",
+                },
+                "AWAITING_SUPPLEMENT": {
+                    "SUMMARY_REVIEW",
+                    "DEMO_ACTIVE",
+                    "CANCELLED",
+                    "FAILED",
+                    "EXPIRED",
+                    "ROUTED_TO_TICKET",
                 },
                 "DEMO_ACTIVE": {"CLOSED", "FAILED", "EXPIRED", "ROUTED_TO_TICKET"},
             }

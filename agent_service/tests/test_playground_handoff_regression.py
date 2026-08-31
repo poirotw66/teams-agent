@@ -184,7 +184,6 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     handoff_router = tw.FakeHandoffRouter(
         [
             HandoffAction.CONTACT_HUMAN,
-            HandoffAction.SUPPLEMENT,
             HandoffAction.CREATE_TICKET,
             HandoffAction.CREATE_TICKET,
         ]

@@ -89,6 +89,21 @@ def assistant_scope_issue(*, issue_id: int = 1) -> Issue:
     )
 
 
+def greeting_issue_from_message(text: str, *, issue_id: int = 1) -> Issue:
+    """Build a GREETING issue from the user's current turn without an extractor LLM call."""
+    description = sanitize_description(text.strip())[:4000]
+    return Issue(
+        id=issue_id,
+        description=description,
+        isIT=False,
+        readiness="GREETING",
+        route="GREETING",
+        missingInfo=[],
+        faqKey=None,
+        ticketAction=None,
+    )
+
+
 class AgentState(TypedDict, total=False):
     """Workflow state (spec §5.2), plus a few documented workflow-only fields.
 
@@ -133,7 +148,7 @@ class AgentState(TypedDict, total=False):
     force_ticket_offer: bool
     handoff_case: HandoffCase
     handoff_handled: bool
-    handoff_superseded_new_issue: bool
+    handoff_resume_reason: str
     supervisor_decision: ConversationSupervisorDecision
     skip_issue_pipeline: bool
 

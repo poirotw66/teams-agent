@@ -22,6 +22,7 @@ from .workflow_helpers import (
     _recent_ticket_contexts,
     _requests_ticket_offer,
     assistant_scope_issue,
+    greeting_issue_from_message,
     non_it_issue_from_message,
 )
 
@@ -56,6 +57,14 @@ class ClarificationWorkflowMixin:
                 **routing,
                 "skip_issue_pipeline": True,
                 "issues": [non_it_issue_from_message(request.message.text)],
+                "it_issues": [],
+                "issue_results": [],
+            }
+        if decision.intent == "GREETING":
+            return {
+                **routing,
+                "skip_issue_pipeline": True,
+                "issues": [greeting_issue_from_message(request.message.text)],
                 "it_issues": [],
                 "issue_results": [],
             }
@@ -121,10 +130,11 @@ class ClarificationWorkflowMixin:
         ticket_intent = state.get("ticket_intent")
         if ticket_intent is None:
             ticket_intent = await self._resolve_ticket_intent(state)
-        superseded_new_issue = state.get("handoff_superseded_new_issue", False)
+        superseded_resume = state.get("handoff_resume_reason", "NONE")
+        superseded_handoff = superseded_resume in {"NEW_ISSUE", "REVISED_ISSUE"}
         prior_pending_issues = (
             []
-            if superseded_new_issue
+            if superseded_handoff
             else _pending_clarifications(conversation)
         )
         decision = state.get("supervisor_decision") or ConversationSupervisorDecision()
@@ -132,7 +142,7 @@ class ClarificationWorkflowMixin:
         pending_confirmation = False
         if (
             ticket_intent == TicketIntent.NONE
-            and not superseded_new_issue
+            and not superseded_handoff
             and _has_pending_ticket_offer(conversation)
             and is_pending_ticket_offer_confirmation(request.message.text)
         ):
@@ -141,7 +151,7 @@ class ClarificationWorkflowMixin:
         pending_issues = _pending_offer_issues(conversation) if pending_confirmation else []
         active_offer_contexts = (
             []
-            if superseded_new_issue
+            if superseded_handoff
             else (
                 _recent_ticket_contexts(conversation)
                 if ticket_intent == TicketIntent.NONE
@@ -152,7 +162,7 @@ class ClarificationWorkflowMixin:
         )
         requested_offer_contexts = (
             []
-            if superseded_new_issue
+            if superseded_handoff
             else (
                 _recent_ticket_contexts(conversation)
                 if ticket_intent == TicketIntent.NONE
@@ -193,7 +203,9 @@ class ClarificationWorkflowMixin:
             history = await self.conversation_service.get_history(
                 conversation.conversationId
             )
-            if ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
+            if superseded_resume == "NEW_ISSUE":
+                history = []
+            elif ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
                 conversation
             ):
                 history = []
@@ -207,7 +219,7 @@ class ClarificationWorkflowMixin:
                 execution_context=state.get("execution_context"),
             )
             issues = outcome.issues
-            if superseded_new_issue and decision.intent != "HUMAN_ESCALATION":
+            if superseded_handoff and decision.intent != "HUMAN_ESCALATION":
                 issues = [
                     issue
                     for issue in issues

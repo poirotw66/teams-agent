@@ -27,6 +27,7 @@ def utc_now() -> datetime:
 class HandoffStatus(StrEnum):
     OFFERED = "OFFERED"
     SUMMARY_REVIEW = "SUMMARY_REVIEW"
+    AWAITING_SUPPLEMENT = "AWAITING_SUPPLEMENT"
     DEMO_ACTIVE = "DEMO_ACTIVE"
     CLOSED = "CLOSED"
     CANCELLED = "CANCELLED"
@@ -323,6 +324,7 @@ class InMemoryHandoffRepository:
             if case.status not in {
                 HandoffStatus.OFFERED,
                 HandoffStatus.SUMMARY_REVIEW,
+                HandoffStatus.AWAITING_SUPPLEMENT,
             }:
                 raise InvalidHandoffTransitionError(
                     "summary can only be updated before handoff activation"
@@ -362,6 +364,15 @@ class InMemoryHandoffRepository:
                     HandoffStatus.EXPIRED,
                 },
                 HandoffStatus.SUMMARY_REVIEW: {
+                    HandoffStatus.AWAITING_SUPPLEMENT,
+                    HandoffStatus.DEMO_ACTIVE,
+                    HandoffStatus.CANCELLED,
+                    HandoffStatus.FAILED,
+                    HandoffStatus.EXPIRED,
+                    HandoffStatus.ROUTED_TO_TICKET,
+                },
+                HandoffStatus.AWAITING_SUPPLEMENT: {
+                    HandoffStatus.SUMMARY_REVIEW,
                     HandoffStatus.DEMO_ACTIVE,
                     HandoffStatus.CANCELLED,
                     HandoffStatus.FAILED,

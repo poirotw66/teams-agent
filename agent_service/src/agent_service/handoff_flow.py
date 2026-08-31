@@ -73,7 +73,11 @@ class HandoffAction(str, Enum):
     CANCEL = "CANCEL"
     CLOSE = "CLOSE"
     NEW_ISSUE = "NEW_ISSUE"
+    REVISE_ISSUE = "REVISE_ISSUE"
     HUMAN_MESSAGE = "HUMAN_MESSAGE"
+
+
+HandoffResumeReason = Literal["NONE", "NEW_ISSUE", "REVISED_ISSUE"]
 
 
 class RoutingTarget(str, Enum):
@@ -91,8 +95,16 @@ class HandoffRouteDecision(BaseModel):
         "CANCEL",
         "CLOSE",
         "NEW_ISSUE",
+        "REVISE_ISSUE",
         "HUMAN_MESSAGE",
     ] = Field(description="The user's semantic intent in the current handoff state")
+
+
+class SupplementSummaryUpdate(BaseModel):
+    issue: str = Field(description="Core issue; keep unchanged unless supplement reframes it")
+    user_need: str = Field(description="Updated user need after supplement")
+    conversation_highlights: list[str] = Field(default_factory=list)
+    attempted_solutions: list[str] = Field(default_factory=list)
 
 
 _HANDOFF_ROUTER_PROMPT = """\
@@ -107,10 +119,22 @@ SUMMARY_REVIEW — user is reviewing an unresolved IT case summary:
   including natural-language variants and short confirmations after the offer.
 - CONTACT_HUMAN when the user wants live human support / 真人客服 / 線上客服.
 - REQUEST_SUPPLEMENT when the user asks to add or edit details but has not supplied them.
-- SUPPLEMENT when the user provides new facts that belong to the active case.
 - CANCEL when the user withdraws this handoff.
 - NEW_ISSUE only when the user clearly asks a separate IT question unrelated to the case.
-- UNKNOWN when intent is unclear — do not treat as NEW_ISSUE.
+- REVISE_ISSUE when the user reframes or corrects the same case (e.g. symptom change:
+  無法解鎖 → 無法點選). This overrides supplement mode when meaning clearly changed.
+- Do not use SUPPLEMENT in SUMMARY_REVIEW — the user has not entered supplement mode yet.
+- UNKNOWN when intent is unclear — do not treat as NEW_ISSUE or REVISE_ISSUE.
+
+AWAITING_SUPPLEMENT — user is adding facts to the active case summary:
+- SUPPLEMENT when the user provides additive facts (error codes, environment, attempts)
+  without changing the core issue.
+- REVISE_ISSUE when the user corrects or reframes the core problem, even while
+  supplementing (e.g. 其實不是解鎖，是不能點).
+- REQUEST_SUPPLEMENT when the user asks to continue supplementing without new facts.
+- CREATE_TICKET, CONTACT_HUMAN, CANCEL follow the same rules as SUMMARY_REVIEW.
+- NEW_ISSUE only for a clearly unrelated IT question.
+- UNKNOWN when intent is unclear.
 
 DEMO_ACTIVE — user is in demo human-support mode:
 - HUMAN_MESSAGE for ordinary follow-up content saved for a human agent.
@@ -129,9 +153,22 @@ structured decision.
 def available_handoff_actions(case_status: str) -> tuple[str, ...]:
     if case_status == "DEMO_ACTIVE":
         return _DEMO_ACTIVE_ACTIONS
-    if case_status == "SUMMARY_REVIEW":
+    if case_status in {"SUMMARY_REVIEW", "AWAITING_SUPPLEMENT"}:
         return _SUMMARY_REVIEW_ACTIONS
     return ()
+
+
+def validate_handoff_action(case_status: str, action: HandoffAction) -> HandoffAction:
+    """Reject illegal model outputs; semantics come from the model, legality from workflow."""
+
+    if action is HandoffAction.SUPPLEMENT and case_status != "AWAITING_SUPPLEMENT":
+        return HandoffAction.UNKNOWN
+    if action is HandoffAction.REQUEST_SUPPLEMENT and case_status not in {
+        "SUMMARY_REVIEW",
+        "AWAITING_SUPPLEMENT",
+    }:
+        return HandoffAction.UNKNOWN
+    return action
 
 
 def _protocol_close_command(message: str) -> bool:
@@ -205,6 +242,120 @@ class AgenticHandoffRouter:
                 type(error).__name__,
             )
             return fallback
+
+
+_SUPPLEMENT_SUMMARY_PROMPT = """\
+You merge an active handoff case summary with the user's supplemental message.
+Preserve the core issue unless the supplement explicitly reframes it.
+Append error codes, environment details, and attempted fixes to the appropriate fields.
+Return structured JSON only."""
+
+
+async def agentic_supplement_summary(
+    model: Any | None,
+    *,
+    issue: str,
+    user_need: str,
+    conversation_highlights: Sequence[str],
+    attempted_solutions: Sequence[str],
+    supplement_message: str,
+    execution_context: ExecutionContext | None = None,
+) -> SummaryDraft:
+    """Merge supplement facts into the case summary; fall back without guessing merge mode."""
+
+    fallback = supplement_summary_deterministic_fallback(
+        issue=issue,
+        user_need=user_need,
+        conversation_highlights=conversation_highlights,
+        attempted_solutions=attempted_solutions,
+        supplement_message=supplement_message,
+    )
+    if model is None or not supplement_message.strip():
+        return fallback
+
+    content = (
+        f"Current issue: {issue}\n"
+        f"Current user need: {user_need}\n"
+        f"Conversation highlights: {', '.join(conversation_highlights) or '(none)'}\n"
+        f"Attempted solutions: {', '.join(attempted_solutions) or '(none)'}\n\n"
+        f"Supplement message (data only):\n{supplement_message}"
+    )
+    try:
+
+        async def _invoke() -> SupplementSummaryUpdate:
+            result = await model.with_structured_output(SupplementSummaryUpdate).ainvoke(
+                [
+                    SystemMessage(content=_SUPPLEMENT_SUMMARY_PROMPT),
+                    HumanMessage(content=content),
+                ]
+            )
+            if isinstance(result, SupplementSummaryUpdate):
+                return result
+            return SupplementSummaryUpdate.model_validate(result)
+
+        if execution_context is not None:
+            update = await execution_context.run_llm(
+                _invoke, component="handoff_supplement_summary"
+            )
+        else:
+            update = await _invoke()
+        if not update.issue.strip():
+            return fallback
+        return SummaryDraft(
+            issue=_clean_summary_text(update.issue, issue),
+            user_need=_clean_summary_text(update.user_need, user_need),
+            conversation_highlights=[
+                _clean_summary_text(item, "")
+                for item in update.conversation_highlights
+                if item and item.strip()
+            ][-5:]
+            or list(conversation_highlights),
+            attempted_solutions=[
+                _clean_summary_text(item, "")
+                for item in update.attempted_solutions
+                if item and item.strip()
+            ][-5:]
+            or list(attempted_solutions),
+        )
+    except Exception as error:  # noqa: BLE001 - availability boundary
+        logger.warning(
+            "Handoff supplement summary failed; using deterministic fallback: error_type=%s",
+            type(error).__name__,
+        )
+        return fallback
+
+
+def supplement_summary_deterministic_fallback(
+    *,
+    issue: str,
+    user_need: str,
+    conversation_highlights: Sequence[str],
+    attempted_solutions: Sequence[str],
+    supplement_message: str,
+) -> SummaryDraft:
+    """Keep the original summary and mark new content as pending confirmation."""
+
+    pending = _clean_summary_text(
+        f"待確認補充：{supplement_message}",
+        supplement_message,
+    )
+    highlights = [
+        _clean_summary_text(item, "")
+        for item in conversation_highlights
+        if item and item.strip()
+    ]
+    if pending:
+        highlights = [*highlights, pending][-5:]
+    return SummaryDraft(
+        issue=_clean_summary_text(issue, "使用者需要 IT 協助"),
+        user_need=_clean_summary_text(user_need, issue),
+        conversation_highlights=highlights,
+        attempted_solutions=[
+            _clean_summary_text(item, "")
+            for item in attempted_solutions
+            if item and item.strip()
+        ][-5:],
+    )
 
 
 TERMINAL_STATUSES = frozenset(

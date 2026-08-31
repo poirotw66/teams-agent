@@ -142,7 +142,7 @@ class AgentWorkflow(
             "prior_pending_issues": [],
             "force_ticket_offer": False,
             "handoff_handled": False,
-            "handoff_superseded_new_issue": False,
+            "handoff_resume_reason": "NONE",
         }
 
     async def run(

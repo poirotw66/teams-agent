@@ -19,6 +19,7 @@ SupervisorIntent = Literal[
     "TICKET_CREATE",
     "HUMAN_ESCALATION",
     "ASSISTANT_META",
+    "GREETING",
     "NON_IT",
     "UNKNOWN",
 ]
@@ -50,7 +51,8 @@ Return structured JSON only. This is the single routing decision for the user's 
 Classify intent:
 - IT_SUPPORT: company systems, devices, accounts, permissions, software, errors, or follow-up
   details for a pending IT clarification.
-- NON_IT: greetings, small talk, food/weather/general knowledge, or anything clearly outside IT.
+- GREETING: greetings, thanks, or brief courtesy (你好, 早安, 謝謝) without an IT question.
+- NON_IT: food/weather/general knowledge, or anything clearly outside IT (not mere greetings).
 - ASSISTANT_META: questions about what this assistant can do or its scope.
 - HUMAN_ESCALATION: contact live/ human support without describing a new IT issue.
 - TICKET_QUERY: list or check the user's existing dispatch tickets (派工單/工單).
