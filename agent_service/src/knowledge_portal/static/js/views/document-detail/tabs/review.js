@@ -48,11 +48,11 @@ export function renderReviewTab(detail, cases, runsByCase) {
       <div class="compare-grid">
         <div class="panel">
           <h3>正式版本內容</h3>
-          <pre class="content-preview">${escapeHtml(publishedBody ? publishedBody.slice(0, 800) : "（首次送審，無正式版本）")}</pre>
+          <pre class="content-preview content-preview--full">${escapeHtml(publishedBody || "（首次送審，無正式版本）")}</pre>
         </div>
         <div class="panel">
           <h3>草稿版本內容</h3>
-          <pre class="content-preview">${escapeHtml(draftBody.slice(0, 800) || "（無內容）")}</pre>
+          <pre class="content-preview content-preview--full">${escapeHtml(draftBody || "（無內容）")}</pre>
         </div>
       </div>
       ${can("APPROVE", detail.allowed_actions) || can("REJECT", detail.allowed_actions) ? `

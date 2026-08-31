@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { ROLE_LABELS } from "./labels.js";
 import { applyDemoPersona, getSession, syncFromDashboard, updateSession } from "./session.js";
 import { navigate, startRouter } from "./router.js";
-import { escapeHtml } from "./ui.js";
+import { escapeHtml, renderViewForbidden } from "./ui.js";
 import { renderAuditView } from "./views/audit.js";
 import { renderCreateView } from "./views/create.js";
 import { renderDocumentDetailView } from "./views/document-detail.js";
@@ -58,6 +58,7 @@ function renderIdentityShell() {
       body.querySelector("#demoRole")?.addEventListener("change", (event) => {
         applyDemoPersona(event.target.value);
         renderIdentityShell();
+        applyNavVisibility();
       });
       body.querySelector("#applyDemoIdentity")?.addEventListener("click", () => {
         updateSession({
@@ -70,6 +71,13 @@ function renderIdentityShell() {
       });
     }
   }
+}
+
+function applyNavVisibility() {
+  const visible = new Set(getSession().visibleNav || []);
+  document.querySelectorAll("[data-nav-item]").forEach((node) => {
+    node.classList.toggle("hidden", !visible.has(node.dataset.navItem));
+  });
 }
 
 function setActiveNav(segments) {
@@ -89,6 +97,7 @@ async function renderRoute({ segments, query, app }) {
     const dashboard = await renderWorkView(app);
     syncFromDashboard(dashboard);
     renderIdentityShell();
+    applyNavVisibility();
     return;
   }
   if (segments[0] === "knowledge" && segments[1] === "new") {
@@ -109,6 +118,17 @@ async function renderRoute({ segments, query, app }) {
     return;
   }
   if (segments[0] === "audit") {
+    if (!getSession().visibleNav?.includes("audit")) {
+      app.innerHTML = `
+        <section class="page">
+          <header class="page-header"><h2>稽核紀錄</h2></header>
+          ${renderViewForbidden("audit")}
+        </section>`;
+      app.querySelector("[data-route]")?.addEventListener("click", (event) => {
+        navigate(event.currentTarget.dataset.route);
+      });
+      return;
+    }
     await renderAuditView(app);
     return;
   }
@@ -124,8 +144,10 @@ async function bootstrap() {
     const dashboard = await api("/api/dashboard");
     syncFromDashboard(dashboard);
     renderIdentityShell();
+    applyNavVisibility();
   } catch {
     renderIdentityShell();
+    applyNavVisibility();
   }
   startRouter(async (context) => {
     await renderRoute(context);

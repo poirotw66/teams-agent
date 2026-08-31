@@ -359,6 +359,7 @@ class DashboardSummary(StrictModel):
     actor_role: str = ""
     home_route: str = "#/work"
     work_queues: list[WorkQueueItem] = Field(default_factory=list)
+    visible_nav: list[str] = Field(default_factory=lambda: ["work", "knowledge", "reviews"])
 
 
 def utc_now() -> datetime:

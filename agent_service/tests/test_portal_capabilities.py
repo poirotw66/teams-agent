@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from knowledge_portal.api import create_app
 from knowledge_portal.capabilities import compute_allowed_actions, compute_next_action
 from knowledge_portal.models import ReviewRecord
-from knowledge_portal.rbac import ensure_can_publish, ensure_can_review
+from knowledge_portal.rbac import ensure_can_publish, ensure_can_review, ensure_can_view_audit
 from datetime import datetime, timezone
 
 from knowledge_portal.models import (
@@ -243,3 +243,59 @@ def test_auditor_cannot_decide_review_via_api(portal_headers) -> None:
         headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
     )
     assert response.status_code == 403
+
+
+def test_contributor_cannot_list_audit_events(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/audit-events",
+        headers=portal_headers(role="CONTRIBUTOR", user_id="contributor.demo"),
+    )
+    assert response.status_code == 403
+
+
+def test_manager_can_list_audit_events(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get("/api/audit-events", headers=portal_headers(role="MANAGER"))
+    assert response.status_code == 200
+
+
+def test_dashboard_visible_nav_excludes_audit_for_contributor(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/dashboard",
+        headers=portal_headers(role="CONTRIBUTOR", user_id="contributor.demo"),
+    )
+    assert "audit" not in response.json()["visible_nav"]
+
+
+def test_dashboard_visible_nav_includes_audit_for_auditor(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/dashboard",
+        headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
+    )
+    body = response.json()
+    assert "audit" in body["visible_nav"]
+    assert "reviews" not in body["visible_nav"]
+
+
+def test_contributor_cannot_view_audit_via_rbac_helper() -> None:
+    with pytest.raises(Exception, match="permission to view audit"):
+        ensure_can_view_audit(_actor("CONTRIBUTOR"))

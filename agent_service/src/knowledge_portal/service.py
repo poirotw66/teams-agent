@@ -23,6 +23,7 @@ from .models import (
     UpdateDraftRequest,
     ValidationSummary,
 )
+from .rbac import ensure_can_view_audit
 from .repository import PortalRepository
 from .services.context import PortalServiceContext
 from .services.dashboard_service import DashboardService
@@ -173,6 +174,7 @@ class PortalService:
         return await self._releases.list_releases(actor)
 
     async def list_audit(self, actor: PortalActor, *, limit: int = 100):
+        ensure_can_view_audit(actor)
         return await self._ctx.repository.list_audit_events(limit=limit)
 
     async def add_test_case(

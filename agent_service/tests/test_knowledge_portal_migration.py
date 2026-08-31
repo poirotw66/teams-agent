@@ -133,5 +133,5 @@ Weekdays 09:00-18:00.
     )
 
     service_b = PortalService(settings, build_repository(settings))
-    active_release_id = await service_b._repository.get_active_release_id()
+    active_release_id = await service_b._ctx.repository.get_active_release_id()
     assert active_release_id == "release-0001"

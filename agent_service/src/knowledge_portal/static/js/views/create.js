@@ -9,17 +9,24 @@ const STEPS = [
   { id: 3, label: "正文內容" },
 ];
 
+function parseAudienceGroupIds(value) {
+  return (value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function renderStepHeader(currentStep) {
   return `
     <div class="create-steps" aria-label="建立步驟">
       ${STEPS.map((step) => `
-        <div class="create-step ${step.id === currentStep ? "active" : ""}">
+        <div class="create-step ${step.id === currentStep ? "active" : ""}"${step.id === currentStep ? ' aria-current="step"' : ""}>
           步驟 ${step.id} · ${step.label}
         </div>`).join("")}
     </div>`;
 }
 
-function renderStepPanel(step) {
+function renderStepPanel(step, formValues) {
   if (step === 1) {
     return `
       <div class="panel form-grid">
@@ -35,16 +42,21 @@ function renderStepPanel(step) {
       </div>`;
   }
   if (step === 2) {
+    const restricted = formValues.audience_type === "RESTRICTED_GROUPS";
     return `
       <div class="panel form-grid">
         <label>生效日<input name="effective_at" type="date" required></label>
         <label>下次檢視日<input name="review_due_at" type="date" required></label>
         <label class="full">變更原因<textarea name="change_reason" rows="2" required></textarea></label>
         <label>適用對象
-          <select name="audience_type">
-            <option value="ALL_EMPLOYEES">全體員工</option>
-            <option value="RESTRICTED_GROUPS">特定群組</option>
+          <select name="audience_type" id="createAudienceType">
+            <option value="ALL_EMPLOYEES" ${formValues.audience_type !== "RESTRICTED_GROUPS" ? "selected" : ""}>全體員工</option>
+            <option value="RESTRICTED_GROUPS" ${formValues.audience_type === "RESTRICTED_GROUPS" ? "selected" : ""}>特定群組</option>
           </select>
+        </label>
+        <label class="full ${restricted ? "" : "hidden"}" id="createAudienceGroupsField">
+          特定群組（逗號分隔，至少一個）
+          <input name="audience_group_ids" value="${escapeHtml(formValues.audience_group_ids || "")}" ${restricted ? "required" : ""}>
         </label>
       </div>`;
   }
@@ -60,9 +72,42 @@ function renderStepPanel(step) {
     </div>`;
 }
 
+function validateStepTwo(formValues) {
+  if (!formValues.effective_at || !formValues.review_due_at || !formValues.change_reason?.trim()) {
+    showToast("請完成治理與適用欄位", true);
+    return false;
+  }
+  if (
+    formValues.audience_type === "RESTRICTED_GROUPS"
+    && !parseAudienceGroupIds(formValues.audience_group_ids).length
+  ) {
+    showToast("選擇特定群組時，請至少輸入一個群組", true);
+    return false;
+  }
+  return true;
+}
+
+function buildCreatePayload(formValues) {
+  const audienceGroupIds = parseAudienceGroupIds(formValues.audience_group_ids);
+  return {
+    title: formValues.title,
+    summary: formValues.summary || "",
+    category: formValues.category || "",
+    owner_unit_id: formValues.owner_unit_id,
+    business_contact: "",
+    audience_type: formValues.audience_type || "ALL_EMPLOYEES",
+    audience_group_ids: audienceGroupIds,
+    effective_at: formValues.effective_at,
+    review_due_at: formValues.review_due_at,
+    change_summary: "Initial draft",
+    change_reason: formValues.change_reason,
+    markdown_content: formValues.markdown_content,
+  };
+}
+
 export async function renderCreateView(app) {
   let currentStep = 1;
-  const formValues = {};
+  const formValues = { audience_type: "ALL_EMPLOYEES" };
 
   function render() {
     app.innerHTML = `
@@ -76,7 +121,7 @@ export async function renderCreateView(app) {
         </header>
         ${renderStepHeader(currentStep)}
         <form id="createForm">
-          ${renderStepPanel(currentStep)}
+          ${renderStepPanel(currentStep, formValues)}
           <div class="form-actions">
             ${currentStep > 1 ? fluentButton("上一步", { appearance: "outline", dataset: { prev: "true" } }) : ""}
             ${currentStep < 3
@@ -92,6 +137,12 @@ export async function renderCreateView(app) {
       if (form[key]) form[key].value = value;
     });
 
+    app.querySelector("#createAudienceType")?.addEventListener("change", (event) => {
+      formValues.audience_type = event.target.value;
+      Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
+      render();
+    });
+
     app.querySelector("[data-prev]")?.addEventListener("click", (event) => {
       event.preventDefault();
       Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
@@ -105,8 +156,7 @@ export async function renderCreateView(app) {
         showToast("請先填寫標題", true);
         return;
       }
-      if (currentStep === 2 && (!formValues.effective_at || !formValues.review_due_at || !formValues.change_reason?.trim())) {
-        showToast("請完成治理與適用欄位", true);
+      if (currentStep === 2 && !validateStepTwo(formValues)) {
         return;
       }
       currentStep += 1;
@@ -139,10 +189,15 @@ export async function renderCreateView(app) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
+      if (!validateStepTwo(formValues)) {
+        currentStep = 2;
+        render();
+        return;
+      }
       try {
         const created = await api("/api/documents", {
           method: "POST",
-          body: JSON.stringify(formValues),
+          body: JSON.stringify(buildCreatePayload(formValues)),
         });
         showToast("草稿已建立");
         navigate(`#/knowledge/${created.document.document_id}/content`);

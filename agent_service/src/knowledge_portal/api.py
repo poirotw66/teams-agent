@@ -451,7 +451,10 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        return await service.list_audit(actor, limit=limit)
+        try:
+            return await service.list_audit(actor, limit=limit)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.get("/api/documents/{document_id}/test-cases")
     async def list_test_cases(

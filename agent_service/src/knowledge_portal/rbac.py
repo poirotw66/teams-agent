@@ -18,6 +18,7 @@ OPERATIONAL_ROLE_RANK = {
 
 REVIEW_ROLES: frozenset[PortalRole] = frozenset({"REVIEWER", "MANAGER", "PLATFORM"})
 PUBLISH_ROLES: frozenset[PortalRole] = frozenset({"MANAGER", "PLATFORM"})
+AUDIT_ROLES: frozenset[PortalRole] = frozenset({"AUDITOR", "MANAGER", "PLATFORM"})
 
 
 def require_role(actor: PortalActor, *allowed: PortalRole) -> None:
@@ -85,6 +86,15 @@ def ensure_can_review(
 def ensure_can_publish(actor: PortalActor) -> None:
     if actor.role not in PUBLISH_ROLES:
         raise PortalPermissionError("You do not have permission to publish documents.")
+
+
+def can_view_audit(actor: PortalActor) -> bool:
+    return actor.role in AUDIT_ROLES
+
+
+def ensure_can_view_audit(actor: PortalActor) -> None:
+    if not can_view_audit(actor):
+        raise PortalPermissionError("You do not have permission to view audit events.")
 
 
 def ensure_can_remove_document(

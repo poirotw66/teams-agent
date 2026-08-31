@@ -26,6 +26,7 @@ class DashboardService:
                 "actor_role": actor.role,
                 "home_route": self._home_route_for_role(actor),
                 "work_queues": work_queues,
+                "visible_nav": self._visible_nav_for_role(actor),
             }
         )
 
@@ -92,3 +93,11 @@ class DashboardService:
         if actor.role == "AUDITOR":
             return "#/audit"
         return "#/work"
+
+    def _visible_nav_for_role(self, actor: PortalActor) -> list[str]:
+        nav = ["work", "knowledge"]
+        if actor.role in {"REVIEWER", "MANAGER", "PLATFORM"}:
+            nav.append("reviews")
+        if actor.role in {"AUDITOR", "MANAGER", "PLATFORM"}:
+            nav.append("audit")
+        return nav

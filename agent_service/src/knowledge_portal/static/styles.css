@@ -513,13 +513,21 @@ fluent-text-area {
   .command-bar { flex-direction: column; align-items: stretch; }
   .data-table th:nth-child(3),
   .data-table td:nth-child(3) { display: none; }
-  .compare-grid { grid-template-columns: 1fr; }
+  .compare-grid,
+  .review-workspace .compare-grid { grid-template-columns: 1fr; }
 }
 
 .review-workspace .compare-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.content-preview--full {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .review-alert {

@@ -11,6 +11,7 @@ const state = {
   relaxedWorkflow: true,
   minTestCasesForReview: 0,
   homeRoute: "#/work",
+  visibleNav: ["work", "knowledge", "reviews", "audit"],
   userId: "manager.demo",
   userName: "知識管理者",
   role: "MANAGER",
@@ -25,12 +26,24 @@ export function updateSession(patch) {
   Object.assign(state, patch);
 }
 
+export function visibleNavForRole(role) {
+  const nav = ["work", "knowledge"];
+  if (["REVIEWER", "MANAGER", "PLATFORM"].includes(role)) {
+    nav.push("reviews");
+  }
+  if (["AUDITOR", "MANAGER", "PLATFORM"].includes(role)) {
+    nav.push("audit");
+  }
+  return nav;
+}
+
 export function applyDemoPersona(role) {
   const persona = DEMO_PERSONAS[role];
   if (!persona) return;
   state.userId = persona.userId;
   state.userName = persona.userName;
   state.role = role;
+  state.visibleNav = visibleNavForRole(role);
 }
 
 export function identityHeaders(includeJsonContentType = true) {
@@ -52,6 +65,7 @@ export function syncFromDashboard(dashboard) {
   state.demoMode = dashboard.demo_mode !== false;
   state.portalProfile = dashboard.portal_profile || "DEMO";
   state.homeRoute = dashboard.home_route || "#/work";
+  state.visibleNav = dashboard.visible_nav || visibleNavForRole(state.role);
   if (dashboard.actor_role) {
     state.role = dashboard.actor_role;
   }
