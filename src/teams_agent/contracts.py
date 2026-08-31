@@ -183,6 +183,9 @@ class AgentResponse:
     correlationId: str | None = None
     issueResults: list[IssueResult] = field(default_factory=list)
     feedbackEnabled: bool = False
+    estimatedCostUsd: float | None = None
+    estimatedCostTwd: float | None = None
+    costComplete: bool | None = None
 
     @classmethod
     def from_payload(
@@ -262,6 +265,22 @@ class AgentResponse:
         if not isinstance(feedback_enabled, bool):
             feedback_enabled = False
 
+        estimated_cost_usd = payload.get("estimatedCostUsd")
+        if estimated_cost_usd is not None and not isinstance(estimated_cost_usd, (int, float)):
+            estimated_cost_usd = None
+        elif isinstance(estimated_cost_usd, (int, float)):
+            estimated_cost_usd = float(estimated_cost_usd)
+
+        estimated_cost_twd = payload.get("estimatedCostTwd")
+        if estimated_cost_twd is not None and not isinstance(estimated_cost_twd, (int, float)):
+            estimated_cost_twd = None
+        elif isinstance(estimated_cost_twd, (int, float)):
+            estimated_cost_twd = float(estimated_cost_twd)
+
+        cost_complete = payload.get("costComplete")
+        if cost_complete is not None and not isinstance(cost_complete, bool):
+            cost_complete = None
+
         issue_results: list[IssueResult] = []
         raw_issue_results = payload.get("issueResults", [])
         if isinstance(raw_issue_results, list):
@@ -291,17 +310,35 @@ class AgentResponse:
             correlationId=correlation_id,
             issueResults=issue_results,
             feedbackEnabled=feedback_enabled,
+            estimatedCostUsd=estimated_cost_usd,
+            estimatedCostTwd=estimated_cost_twd,
+            costComplete=cost_complete,
         )
 
 
-def format_agent_response(response: AgentResponse) -> str:
-    if not response.citations:
-        return response.answer
+def format_turn_cost_line(response: AgentResponse) -> str | None:
+    """Return a subtle cost footer when the Agent Service included cost metadata."""
+    if response.costComplete is None:
+        return None
+    if response.estimatedCostUsd is not None and response.estimatedCostTwd is not None:
+        return (
+            f"_預估成本：${response.estimatedCostUsd:.8f} USD / "
+            f"${response.estimatedCostTwd:.3f} TWD_"
+        )
+    return "_預估成本：無法估算（費率或用量資料不完整）_"
 
-    sources = "\n".join(
-        f"- [{citation.title}]({citation.url})"
-        if citation.url
-        else f"- {citation.title}"
-        for citation in response.citations
-    )
-    return f"{response.answer}\n\n**來源**\n{sources}"
+
+def format_agent_response(response: AgentResponse) -> str:
+    parts = [response.answer]
+    if response.citations:
+        sources = "\n".join(
+            f"- [{citation.title}]({citation.url})"
+            if citation.url
+            else f"- {citation.title}"
+            for citation in response.citations
+        )
+        parts.append(f"**來源**\n{sources}")
+    cost_line = format_turn_cost_line(response)
+    if cost_line:
+        parts.append(cost_line)
+    return "\n\n".join(parts)

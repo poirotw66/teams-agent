@@ -252,6 +252,9 @@ def test_agent_response_backward_compatible_defaults() -> None:
     assert response.correlationId is None
     assert response.issueResults == []
     assert response.feedbackEnabled is False
+    assert response.estimatedCostUsd is None
+    assert response.estimatedCostTwd is None
+    assert response.costComplete is None
 
 
 def test_agent_response_new_fields_round_trip() -> None:

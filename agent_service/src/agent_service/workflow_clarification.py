@@ -100,6 +100,7 @@ class ClarificationWorkflowMixin:
             correlation_id=state["correlation_id"],
             request_id=request.requestId,
             tenant_id=request.conversation.tenantId,
+            team_id=request.conversation.teamId,
             knowledge_backend=knowledge_backend,
         )
         supervisor_decision = await self.supervisor.decide(

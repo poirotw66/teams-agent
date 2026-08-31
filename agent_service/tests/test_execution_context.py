@@ -10,6 +10,18 @@ from agent_service.execution_context import (
     RequestOperationTimedOut,
 )
 from agent_service.llm_call_counter import LlmCallCounter
+from agent_service.usage_events import UsageEventCollector
+
+
+def _collector() -> UsageEventCollector:
+    return UsageEventCollector(
+        environment="test",
+        request_id="req-1",
+        correlation_id="corr-1",
+        tenant_id="tenant-1",
+        team_id=None,
+        knowledge_backend="HYBRID",
+    )
 
 
 def _context(*, deadline: datetime | None = None, model_budget: int = 3) -> ExecutionContext:
@@ -17,8 +29,11 @@ def _context(*, deadline: datetime | None = None, model_budget: int = 3) -> Exec
         correlation_id="corr-1",
         request_id="req-1",
         tenant_id="tenant-1",
+        team_id=None,
+        environment="test",
         idempotency_key="tenant-1::req-1",
         model_budget=model_budget,
+        usage_collector=_collector(),
         llm_calls=LlmCallCounter(),
         deadline=deadline,
     )
@@ -70,6 +85,7 @@ async def test_run_llm_rejects_expired_deadline_before_operation() -> None:
         await context.run_llm(_invoke, component="test_component")
 
     assert context.llm_calls.count == 0
+    assert context.usage_collector.events() == ()
 
 
 @pytest.mark.asyncio
@@ -84,6 +100,10 @@ async def test_run_llm_times_out_slow_operation() -> None:
         await context.run_llm(slow, component="slow_component")
 
     assert context.llm_calls.count == 1
+    events = context.usage_collector.events()
+    assert len(events) == 1
+    assert events[0].component == "slow_component"
+    assert events[0].status == "TIMEOUT"
 
 
 @pytest.mark.asyncio
@@ -113,3 +133,17 @@ async def test_run_llm_reserves_budget_before_slow_operation_completes() -> None
     assert await first == "done"
     await second
     assert context.llm_calls.count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_llm_records_success_event_with_component() -> None:
+    context = _context()
+
+    async def _invoke() -> str:
+        return "ok"
+
+    assert await context.run_llm(_invoke, component="conversation_supervisor") == "ok"
+    events = context.usage_collector.events()
+    assert len(events) == 1
+    assert events[0].component == "conversation_supervisor"
+    assert events[0].status == "SUCCESS"

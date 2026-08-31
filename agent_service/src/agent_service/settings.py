@@ -71,6 +71,7 @@ class RagSettings:
     knowledge_backend_state_collection: str = "runtime_config"
     knowledge_backend_admin_enabled: bool = True
     knowledge_evaluation_channels: frozenset[str] = frozenset({"playground", "msteams-web"})
+    deployment_environment: str = "dev"
 
     # --- Ticket Service (spec §11) ---
     ticket_service_mode: str = "DISABLED"
@@ -105,6 +106,10 @@ class RagSettings:
 
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
+
+    # --- Cost visibility (Phase 1 observability) ---
+    show_turn_cost: bool = True
+    usd_twd_exchange_rate: float = 31.70
 
     # --- Knowledge release (portal-published immutable index) ---
     knowledge_release_mode: str = "AUTO"
@@ -174,6 +179,11 @@ class RagSettings:
             ),
             knowledge_evaluation_channels=_csv_env("KNOWLEDGE_EVALUATION_CHANNELS")
             or frozenset({"playground", "msteams-web"}),
+            deployment_environment=(
+                _str_env("AGENT_DEPLOYMENT_ENV")
+                or _str_env("RAG_DEPLOYMENT_ENV")
+                or "dev"
+            ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
@@ -217,6 +227,8 @@ class RagSettings:
             handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 730),
             faq_path=faq_path.expanduser().resolve(),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
+            show_turn_cost=_bool_env("SHOW_TURN_COST", True),
+            usd_twd_exchange_rate=_float_env("USD_TWD_EXCHANGE_RATE", 31.70),
             knowledge_release_mode=(
                 _str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO"
             ).upper(),
@@ -337,3 +349,9 @@ class RagSettings:
             raise ValueError(
                 "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."
             )
+        if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
+            raise ValueError(
+                "AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod."
+            )
+        if self.usd_twd_exchange_rate <= 0:
+            raise ValueError("USD_TWD_EXCHANGE_RATE must be greater than 0.")

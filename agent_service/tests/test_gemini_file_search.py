@@ -24,6 +24,7 @@ from agent_service.gemini_file_search import (
     GeminiFileSearchKnowledgeService,
 )
 from agent_service.llm_call_counter import LlmCallCounter
+from agent_service.usage_events import UsageEventCollector
 
 # --- fake response plumbing -------------------------------------------------
 
@@ -156,8 +157,18 @@ async def test_execution_context_budget_exceeded_returns_budget_backend() -> Non
         correlation_id="corr-1",
         request_id="req-1",
         tenant_id="tenant-1",
+        team_id=None,
+        environment="test",
         idempotency_key="tenant-1::req-1",
         model_budget=1,
+        usage_collector=UsageEventCollector(
+            environment="test",
+            request_id="req-1",
+            correlation_id="corr-1",
+            tenant_id="tenant-1",
+            team_id=None,
+            knowledge_backend="GEMINI_FILE_SEARCH",
+        ),
         llm_calls=LlmCallCounter(count=1),
     )
 

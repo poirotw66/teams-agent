@@ -31,7 +31,13 @@ from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
 from .ticket_dedupe import build_ticket_request_dedupe
-from .usage import build_usage_report
+from .usage import build_usage_report, convert_usd_to_twd
+from .usage_events import (
+    RequestCostSummary,
+    build_request_cost_summary,
+    derive_request_outcome,
+    log_request_cost,
+)
 from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -269,7 +275,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         state: dict,
         usage_metadata: dict,
         started_at: float,
-    ) -> None:
+    ) -> RequestCostSummary | None:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
         _log_chat_request(payload, state, elapsed_ms=elapsed_ms, error_type=None)
         usage_fields = build_usage_report(usage_metadata).log_fields()
@@ -286,8 +292,38 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             usage_fields["estimated_cost_usd"],
             usage_fields,
         )
+        execution_context = state.get("execution_context")
+        counter = state.get("llm_call_counter")
+        if execution_context is None:
+            return None
+        summary = build_request_cost_summary(
+            execution_context.usage_collector,
+            langchain_usage=usage_metadata,
+            outcome=derive_request_outcome(state),
+            elapsed_ms=elapsed_ms,
+            llm_call_count=counter.count if counter else 0,
+            embedding_model=resolved_settings.embedding_model,
+        )
+        log_request_cost(summary)
+        return summary
 
-    def _build_response(state: dict, correlation_id: str) -> AgentResponse:
+    def _build_response(
+        state: dict,
+        correlation_id: str,
+        *,
+        cost_summary: RequestCostSummary | None = None,
+    ) -> AgentResponse:
+        estimated_cost_usd: float | None = None
+        estimated_cost_twd: float | None = None
+        cost_complete: bool | None = None
+        if resolved_settings.show_turn_cost:
+            cost_complete = cost_summary.cost_complete if cost_summary else False
+            if cost_summary and cost_summary.estimated_cost_usd is not None:
+                estimated_cost_usd = round(cost_summary.estimated_cost_usd, 8)
+                estimated_cost_twd = convert_usd_to_twd(
+                    estimated_cost_usd,
+                    resolved_settings.usd_twd_exchange_rate,
+                )
         return AgentResponse(
             answer=state.get("final_response", ""),
             traceId=correlation_id,
@@ -296,6 +332,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             images=state.get("images", []),
             issueResults=state.get("issue_results", []),
             feedbackEnabled=state.get("feedback_enabled", False),
+            estimatedCostUsd=estimated_cost_usd,
+            estimatedCostTwd=estimated_cost_twd,
+            costComplete=cost_complete,
         )
 
     @app.post(
@@ -323,8 +362,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
             ) from error
 
-        _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
-        return _build_response(state, correlation_id)
+        cost_summary = _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+        return _build_response(state, correlation_id, cost_summary=cost_summary)
 
     @app.post(
         "/agent/chat/stream",
@@ -391,10 +430,14 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 )
                 return
 
-            _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+            cost_summary = _log_chat_success(
+                payload, correlation_id, state, usage_metadata, started_at
+            )
             yield _sse(
                 "response",
-                _build_response(state, correlation_id).model_dump(mode="json"),
+                _build_response(
+                    state, correlation_id, cost_summary=cost_summary
+                ).model_dump(mode="json"),
             )
 
         return StreamingResponse(

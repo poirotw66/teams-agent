@@ -163,6 +163,33 @@ def test_chat_stream_emits_stages_then_the_same_answer_as_chat(tmp_path: Path) -
     assert final["answer"] == plain.json()["answer"]
     assert final["citations"] == plain.json()["citations"]
     assert final["feedbackEnabled"] == plain.json()["feedbackEnabled"]
+    assert final.get("costComplete") == plain.json().get("costComplete")
+    assert final.get("estimatedCostUsd") == plain.json().get("estimatedCostUsd")
+
+
+def test_chat_includes_turn_cost_by_default(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post("/agent/chat", json=CHAT_PAYLOAD)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["costComplete"] is True
+    assert isinstance(body["estimatedCostUsd"], float)
+    assert body["estimatedCostUsd"] >= 0
+    assert isinstance(body["estimatedCostTwd"], float)
+    assert body["estimatedCostTwd"] >= 0
+
+
+def test_chat_omits_turn_cost_when_disabled(tmp_path: Path) -> None:
+    settings = replace(make_settings(tmp_path), show_turn_cost=False)
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/agent/chat", json=CHAT_PAYLOAD)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["estimatedCostUsd"] is None
+    assert body["estimatedCostTwd"] is None
+    assert body["costComplete"] is None
 
 
 def test_chat_stream_rejects_a_disallowed_tenant_before_streaming(tmp_path: Path) -> None:

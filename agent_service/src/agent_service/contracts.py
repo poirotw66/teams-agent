@@ -120,6 +120,9 @@ class AgentResponse(StrictModel):
     correlationId: str | None = None
     issueResults: list[IssueResult] = Field(default_factory=list)
     feedbackEnabled: bool = False
+    estimatedCostUsd: float | None = None
+    estimatedCostTwd: float | None = None
+    costComplete: bool | None = None
 
 
 # --- User / conversation context (spec §10, §11.4, §12) -------------------

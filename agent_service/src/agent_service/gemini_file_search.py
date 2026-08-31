@@ -29,6 +29,7 @@ from .execution_context import (
 from .file_search_acl import filter_for
 from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
+from .usage_events import extract_file_search_usage_from_result
 from .knowledge import answer_indicates_insufficient_information
 from .llm_call_counter import LlmCallCounter
 
@@ -235,7 +236,10 @@ class GeminiFileSearchKnowledgeService:
         try:
             if execution_context is not None:
                 response = await execution_context.run_llm(
-                    _generate, component="gemini_file_search"
+                    _generate,
+                    component="gemini_file_search",
+                    model=self.model,
+                    usage_from_result=extract_file_search_usage_from_result,
                 )
             else:
                 if call_counter is not None:

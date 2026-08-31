@@ -10,6 +10,8 @@ from langchain_core.messages import AIMessage
 from agent_service.contracts import UserContext
 from agent_service.documents import DocumentChunk, DocumentImage
 from agent_service.execution_context import ExecutionContext
+from agent_service.llm_call_counter import LlmCallCounter
+from agent_service.usage_events import UsageEventCollector
 from agent_service.knowledge import (
     HybridKnowledgeService,
     KnowledgeService,
@@ -17,7 +19,6 @@ from agent_service.knowledge import (
     RewrittenQuery,
     query_lexically_matches_results,
 )
-from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.settings import RagSettings
 
@@ -415,8 +416,18 @@ async def test_execution_context_routes_knowledge_llm_calls(tmp_path: Path) -> N
         correlation_id="corr-1",
         request_id="req-1",
         tenant_id="tenant-1",
+        team_id=None,
+        environment="test",
         idempotency_key="tenant-1::req-1",
         model_budget=4,
+        usage_collector=UsageEventCollector(
+            environment="test",
+            request_id="req-1",
+            correlation_id="corr-1",
+            tenant_id="tenant-1",
+            team_id=None,
+            knowledge_backend="HYBRID",
+        ),
         llm_calls=LlmCallCounter(),
         deadline=datetime.now(UTC) + timedelta(seconds=5),
     )
@@ -442,8 +453,18 @@ async def test_budget_exhaustion_on_generate_returns_budget_exceeded_backend(
         correlation_id="corr-1",
         request_id="req-1",
         tenant_id="tenant-1",
+        team_id=None,
+        environment="test",
         idempotency_key="tenant-1::req-1",
         model_budget=1,
+        usage_collector=UsageEventCollector(
+            environment="test",
+            request_id="req-1",
+            correlation_id="corr-1",
+            tenant_id="tenant-1",
+            team_id=None,
+            knowledge_backend="HYBRID",
+        ),
         llm_calls=LlmCallCounter(),
         deadline=datetime.now(UTC) + timedelta(seconds=5),
     )
@@ -469,8 +490,18 @@ async def test_rewrite_skipped_when_budget_cannot_cover_full_path(tmp_path: Path
         correlation_id="corr-1",
         request_id="req-1",
         tenant_id="tenant-1",
+        team_id=None,
+        environment="test",
         idempotency_key="tenant-1::req-1",
         model_budget=3,
+        usage_collector=UsageEventCollector(
+            environment="test",
+            request_id="req-1",
+            correlation_id="corr-1",
+            tenant_id="tenant-1",
+            team_id=None,
+            knowledge_backend="HYBRID",
+        ),
         llm_calls=LlmCallCounter(),
         deadline=datetime.now(UTC) + timedelta(seconds=5),
     )

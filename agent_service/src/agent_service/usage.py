@@ -11,12 +11,24 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-# Input / output USD per 1M tokens. Embeddings use input only (output=0).
-# Source: Google AI Gemini API pricing, fetched 2026-07.
+# Bump when _MODEL_RATES_USD changes so historical usage events stay priced consistently.
+PRICING_VERSION = "2026-08-31"
+
+# Input / output USD per 1M tokens (Standard paid tier). Embeddings use input only (output=0).
+#
+# Primary source (queried 2026-08-31):
+#   https://ai.google.dev/gemini-api/docs/pricing
+#
+# gemini-3.7-flash is not yet listed on that page; intro Standard rates
+# ($0.75 in / $3.75 out through 2026-12-31) from:
+#   https://blog.google/innovation-and-ai/models-and-research/gemini-models/introducing-gemini-3-7-flash/
+#
+# OpenAI chat/embedding rates below are approximate PoC references, not re-verified on 2026-08-31.
 _MODEL_RATES_USD: dict[str, tuple[float, float]] = {
+    "gemini-3.7-flash": (0.75, 3.75),
+    "gemini-3.6-flash": (1.50, 7.50),
+    "gemini-3.5-flash": (1.50, 9.00),
     "gemini-3.5-flash-lite": (0.30, 2.50),
-    "gemini-3.5-flash": (0.30, 2.50),
-    "gemini-3.7-flash": (0.30, 2.50),
     "gemini-3.1-flash-lite": (0.25, 1.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-2.5-flash": (0.30, 2.50),
@@ -116,6 +128,11 @@ def estimate_cost_usd(
         return None
     input_price, output_price = rate
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
+
+
+def convert_usd_to_twd(amount_usd: float, exchange_rate: float) -> float:
+    """Convert a USD amount to TWD for user-facing cost display."""
+    return round(amount_usd * exchange_rate, 3)
 
 
 def build_usage_report(

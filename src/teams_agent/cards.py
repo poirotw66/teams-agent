@@ -1,6 +1,6 @@
 from microsoft_teams.api import Attachment, MessageActivityInput
 
-from .contracts import AgentResponse, format_agent_response
+from .contracts import AgentResponse, format_agent_response, format_turn_cost_line
 from .media import build_asset_url
 from .settings import AgentSettings
 
@@ -22,6 +22,19 @@ FEEDBACK_ACTION_MARKER = "teamsAgentFeedback"
 # single-issue, so `1` is a reasonable default; this is a deliberate
 # degrade-gracefully choice, not a guess at real issue data.
 _DEFAULT_FEEDBACK_ISSUE_ID = 1
+
+
+def _cost_body_block(response: AgentResponse) -> dict[str, object] | None:
+    cost_line = format_turn_cost_line(response)
+    if not cost_line:
+        return None
+    return {
+        "type": "TextBlock",
+        "text": cost_line,
+        "wrap": True,
+        "spacing": "Medium",
+        "isSubtle": True,
+    }
 
 
 def _feedback_issue_ids(response: AgentResponse) -> list[int]:
@@ -193,5 +206,9 @@ def build_agent_activity(
         body.extend(
             _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
         )
+
+    cost_block = _cost_body_block(response)
+    if cost_block is not None:
+        body.append(cost_block)
 
     return _card_activity(response, body)
