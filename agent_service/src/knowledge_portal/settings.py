@@ -46,13 +46,24 @@ class PortalSettings:
         default_owner_unit_id = os.environ.get(
             "KNOWLEDGE_PORTAL_DEFAULT_OWNER_UNIT", "IT Service Desk"
         )
+        state_path = Path(
+            os.environ.get(
+                "KNOWLEDGE_PORTAL_STATE_PATH",
+                data_dir / "portal_state" / "portal_state.json",
+            )
+        ).expanduser().resolve()
+        repository_mode_raw = os.environ.get("KNOWLEDGE_PORTAL_REPOSITORY_MODE")
+        if repository_mode_raw:
+            repository_mode = repository_mode_raw.upper()
+        elif state_path.exists():
+            repository_mode = "FILE"
+        else:
+            repository_mode = "MEMORY"
         return cls(
             host=os.environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
             port=int(os.environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
             service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", ""),
-            repository_mode=os.environ.get(
-                "KNOWLEDGE_PORTAL_REPOSITORY_MODE", "MEMORY"
-            ).upper(),
+            repository_mode=repository_mode,
             firestore_project_id=os.environ.get("GCP_PROJECT_ID")
             or os.environ.get("KNOWLEDGE_PORTAL_FIRESTORE_PROJECT"),
             firestore_database_id=os.environ.get(
@@ -136,10 +147,5 @@ class PortalSettings:
             agent_api_url=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL"),
             agent_api_token=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
             or os.environ.get("AGENT_SERVICE_TOKEN"),
-            state_path=Path(
-                os.environ.get(
-                    "KNOWLEDGE_PORTAL_STATE_PATH",
-                    data_dir / "portal_state" / "portal_state.json",
-                )
-            ).expanduser().resolve(),
+            state_path=state_path,
         )

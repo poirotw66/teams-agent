@@ -3,11 +3,17 @@ const state = {
   selectedDocumentId: null,
 };
 
+function encodePortalHeaderValue(value) {
+  return encodeURIComponent(value);
+}
+
 function identityHeaders() {
   return {
     "Content-Type": "application/json",
     "X-Portal-User-Id": document.getElementById("userId").value.trim(),
-    "X-Portal-User-Name": document.getElementById("userName").value.trim(),
+    "X-Portal-User-Name": encodePortalHeaderValue(
+      document.getElementById("userName").value.trim(),
+    ),
     "X-Portal-Role": document.getElementById("userRole").value,
     "X-Portal-Owner-Units": "IT Service Desk",
   };
@@ -43,7 +49,11 @@ function switchView(viewName) {
 
 async function loadDashboard() {
   const dashboard = await api("/api/dashboard");
+  const totalDocs = state.documents.length;
+  const publishedDocs = state.documents.filter((doc) => doc.status === "PUBLISHED").length;
   document.getElementById("dashboardCards").innerHTML = `
+    <div class="card"><span>知識文件</span><strong>${totalDocs}</strong></div>
+    <div class="card"><span>已發布</span><strong>${publishedDocs}</strong></div>
     <div class="card"><span>我的草稿</span><strong>${dashboard.my_drafts}</strong></div>
     <div class="card"><span>待審核</span><strong>${dashboard.pending_review}</strong></div>
     <div class="card"><span>發布失敗</span><strong>${dashboard.publish_failed}</strong></div>
@@ -82,6 +92,38 @@ function renderIssues(issues = []) {
     <li class="issue ${issue.severity.toLowerCase()}">
       [${issue.severity}] ${issue.message}
     </li>`).join("")}</ul>`;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function stripFrontMatter(content) {
+  if (!content || !content.trimStart().startsWith("---")) return content || "";
+  const end = content.indexOf("---", 3);
+  if (end === -1) return content;
+  return content.slice(end + 3).trim();
+}
+
+function renderPublishedDetail(document, published) {
+  if (!published) {
+    return "<p>尚無正式版本內容。</p>";
+  }
+  const body = stripFrontMatter(published.canonical_content || "");
+  const preview = body.length > 1200 ? `${body.slice(0, 1200)}\n…` : body;
+  const audience = document.audience_type === "ALL_EMPLOYEES"
+    ? "全體員工"
+    : (document.audience_group_ids || []).join(", ") || "特定群組";
+  return `
+    <h4>正式版本</h4>
+    <p>版本 ${published.version_number} · 生效 ${published.effective_at} · 下次檢視 ${published.review_due_at}</p>
+    <p>擁有單位：${escapeHtml(document.owner_unit_id)} · 適用範圍：${escapeHtml(audience)}</p>
+    ${document.summary ? `<p>${escapeHtml(document.summary)}</p>` : ""}
+    <pre class="content-preview">${escapeHtml(preview)}</pre>
+  `;
 }
 
 async function loadTestCases(documentId) {
@@ -137,13 +179,16 @@ async function openDocument(documentId) {
   const detail = await api(`/api/documents/${documentId}`);
   state.selectedDocumentId = documentId;
   const draft = detail.draft_version;
+  const published = detail.published_version;
   const { cases, runsByCase } = draft ? await loadTestCases(documentId) : { cases: [], runsByCase: {} };
   const panel = document.getElementById("documentDetail");
   panel.classList.remove("hidden");
   panel.innerHTML = `
-    <h3>${detail.document.title}</h3>
+    <h3>${escapeHtml(detail.document.title)}</h3>
     <p>狀態：<span class="status ${detail.document.status}">${detail.document.status}</span></p>
+    ${published ? renderPublishedDetail(detail.document, published) : ""}
     ${draft ? `
+      <h4>草稿</h4>
       <p>草稿版本：${draft.version_id}</p>
       <div>${renderIssues(draft.validation_summary?.issues || [])}</div>
       <div class="actions">
@@ -154,7 +199,7 @@ async function openDocument(documentId) {
       </div>
       <h4>測試室</h4>
       <div id="testCaseList">${renderTestCases(cases, runsByCase)}</div>
-    ` : "<p>目前沒有可編輯草稿。</p>"}
+    ` : "<p class=\"muted\">目前沒有可編輯草稿。若要更新內容，請到「新增／更新」建立新版本流程。</p>"}
     ${detail.open_review ? `<p>待審核 review：${detail.open_review.review_id}</p>
       <div class="actions">
         <button data-action="approve">核准</button>
@@ -183,6 +228,7 @@ async function openDocument(documentId) {
       }
     });
   });
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function handleDocumentAction(documentId, action, detail) {
@@ -288,5 +334,23 @@ document.getElementById("createForm").addEventListener("submit", async (event) =
   }
 });
 
-loadDashboard();
-loadDocuments();
+async function initPortal() {
+  const list = document.getElementById("documentList");
+  const cards = document.getElementById("dashboardCards");
+  const baseUrl = document.getElementById("portalBaseUrl");
+  if (baseUrl) baseUrl.textContent = window.location.origin;
+  try {
+    await loadDocuments();
+    await loadDashboard();
+    if (state.documents.length > 0) {
+      switchView("library");
+    }
+  } catch (error) {
+    const message = `無法載入知識庫：${error.message}`;
+    showToast(message, true);
+    if (cards) cards.innerHTML = `<p class="issue blocking">${message}</p>`;
+    if (list) list.innerHTML = `<p class="issue blocking">${message}</p>`;
+  }
+}
+
+initPortal();

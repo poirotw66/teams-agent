@@ -32,15 +32,26 @@ Install Entra auth extras: `uv sync --extra portal`
 
 Optional bearer auth: set `KNOWLEDGE_PORTAL_TOKEN`.
 
-## Bootstrap release-0001
+## Sync local knowledge (recommended)
 
-Import existing Markdown under `data/sources/` (or `data/sources.sample/`) and activate `release-0001`:
+If you already maintain the classic local corpus (`data/sources` + `rag-index`), sync it into the portal instead of maintaining a second index:
 
 ```bash
-./scripts/bootstrap_knowledge_release_0001.sh
+./scripts/sync_local_knowledge.sh
 ```
 
-Uses `KNOWLEDGE_PORTAL_REPOSITORY_MODE=FILE` by default so portal state persists under `data/portal_state/portal_state.json`.
+This command:
+
+1. Uses existing `data/index/chunks.json` when present (or runs `rag-index` with `--reindex`)
+2. Upserts portal documents from `data/sources/*.md`
+3. Copies the bundled index into `data/releases/release-0001/index/chunks.json`
+4. Activates `release-0001`
+
+For local Agent / Playground, prefer `KNOWLEDGE_RELEASE_MODE=AUTO` (default): portal release when active, otherwise the bundled index you already had.
+
+## Bootstrap release-0001
+
+`./scripts/bootstrap_knowledge_release_0001.sh` is an alias of `sync_local_knowledge.sh`.
 
 ## Phase 1 MVP included
 

@@ -600,10 +600,28 @@ class PortalService:
         sources_dir: Path,
         correlation_id: str,
         release_id: str = "release-0001",
+        bundled_index_path: Path | None = None,
     ) -> ReleaseRecord:
         return await self._migration.bootstrap_release_0001(
             actor=actor,
             sources_dir=sources_dir,
+            correlation_id=correlation_id,
+            release_id=release_id,
+            bundled_index_path=bundled_index_path,
+        )
+
+    async def sync_from_local_corpus(
+        self,
+        actor: PortalActor,
+        sources_dir: Path,
+        correlation_id: str,
+        bundled_index_path: Path | None = None,
+        release_id: str = "release-0001",
+    ) -> ReleaseRecord:
+        return await self._migration.sync_from_local_corpus(
+            actor=actor,
+            sources_dir=sources_dir,
+            bundled_index_path=bundled_index_path,
             correlation_id=correlation_id,
             release_id=release_id,
         )

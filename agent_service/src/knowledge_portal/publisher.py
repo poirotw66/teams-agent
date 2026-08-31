@@ -33,6 +33,7 @@ class ReleasePublisher:
         published_versions: list[KnowledgeVersionRecord],
         created_by: str,
         previous_release_id: str | None,
+        bundled_index_path: Path | None = None,
     ) -> ReleaseRecord:
         if not published_versions:
             raise ReleaseBuildError("Cannot publish an empty knowledge release.")
@@ -80,23 +81,31 @@ class ReleasePublisher:
 
         index_path = release_dir / "index" / "chunks.json"
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_root = Path(temp_dir)
-            temp_sources = temp_root / "sources"
-            temp_sources.mkdir(parents=True, exist_ok=True)
-            for source_file in sources_dir.glob("*.md"):
-                shutil.copy2(source_file, temp_sources / source_file.name)
-            chunks = load_source_chunks(
-                temp_root,
-                self._settings.chunk_size,
-                self._settings.chunk_overlap,
+        if bundled_index_path is not None and bundled_index_path.is_file():
+            shutil.copy2(bundled_index_path, index_path)
+            logger.info(
+                "Copied bundled knowledge index into release %s from %s",
+                release_id,
+                bundled_index_path,
             )
-            if not chunks:
-                raise ReleaseBuildError("Release build produced zero searchable segments.")
-            index = HybridIndex(chunks, self._settings.embedding_model)
-            if self._settings.embedding_model:
-                index.add_embeddings()
-            index.save(index_path)
+        else:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_root = Path(temp_dir)
+                temp_sources = temp_root / "sources"
+                temp_sources.mkdir(parents=True, exist_ok=True)
+                for source_file in sources_dir.glob("*.md"):
+                    shutil.copy2(source_file, temp_sources / source_file.name)
+                chunks = load_source_chunks(
+                    temp_root,
+                    self._settings.chunk_size,
+                    self._settings.chunk_overlap,
+                )
+                if not chunks:
+                    raise ReleaseBuildError("Release build produced zero searchable segments.")
+                index = HybridIndex(chunks, self._settings.embedding_model)
+                if self._settings.embedding_model:
+                    index.add_embeddings()
+                index.save(index_path)
 
         manifest_path = release_dir / "manifest.json"
         manifest_path.write_text(

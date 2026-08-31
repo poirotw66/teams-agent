@@ -82,6 +82,7 @@ class KnowledgeMigrationService:
         correlation_id: str,
         release_id: str = "release-0001",
         change_reason: str = "Baseline import from existing Markdown corpus.",
+        bundled_index_path: Path | None = None,
     ) -> ReleaseRecord:
         require_minimum_role(actor, "PLATFORM")
         if not sources_dir.is_dir():
@@ -90,7 +91,7 @@ class KnowledgeMigrationService:
         source_files = sorted(
             path
             for path in sources_dir.glob("*.md")
-            if path.name.upper() != "README.MD"
+            if not path.name.upper().startswith("README")
         )
         if not source_files:
             raise ValueError(f"No Markdown sources found in {sources_dir}")
@@ -176,6 +177,7 @@ class KnowledgeMigrationService:
                 published_versions=published_versions,
                 created_by=actor.user_id,
                 previous_release_id=await self._repository.get_active_release_id(),
+                bundled_index_path=bundled_index_path,
             )
         except ReleaseBuildError as exc:
             raise ValueError(str(exc)) from exc
@@ -201,13 +203,35 @@ class KnowledgeMigrationService:
                 event_id=new_id("audit"),
                 actor_id=actor.user_id,
                 actor_role=actor.role,
-                action="release.bootstrap",
+                action="release.sync" if bundled_index_path else "release.bootstrap",
                 target_type="release",
                 target_id=release.release_id,
                 correlation_id=correlation_id,
                 reason=change_reason,
                 occurred_at=now,
-                metadata={"sourceCount": len(source_files), "sourcesDir": str(sources_dir)},
+                metadata={
+                    "sourceCount": len(source_files),
+                    "sourcesDir": str(sources_dir),
+                    "bundledIndexPath": str(bundled_index_path) if bundled_index_path else None,
+                },
             )
         )
         return release
+
+    async def sync_from_local_corpus(
+        self,
+        *,
+        actor: PortalActor,
+        sources_dir: Path,
+        bundled_index_path: Path | None,
+        correlation_id: str,
+        release_id: str = "release-0001",
+    ) -> ReleaseRecord:
+        return await self.bootstrap_release_0001(
+            actor=actor,
+            sources_dir=sources_dir,
+            correlation_id=correlation_id,
+            release_id=release_id,
+            change_reason="Synced portal release from local sources and bundled index.",
+            bundled_index_path=bundled_index_path,
+        )

@@ -66,6 +66,34 @@ async def test_bootstrap_release_0001_creates_active_release(
 
 
 @pytest.mark.asyncio
+async def test_sync_from_local_corpus_copies_bundled_index(
+    portal_service: tuple[PortalService, PortalSettings],
+) -> None:
+    service, settings = portal_service
+    sources = settings.data_dir / "sources"
+    bundled = settings.data_dir / "index" / "chunks.json"
+    bundled.parent.mkdir(parents=True, exist_ok=True)
+    bundled.write_text(
+        '{"version":1,"embeddingModel":"test","chunks":[{"chunk_id":"c1","title":"VPN 密碼被鎖定","source_path":"sources/vpn-lockout.md","content":"test","classification":"internal","allowed_groups":[],"images":[]}]}',
+        encoding="utf-8",
+    )
+    actor = PortalActor(
+        user_id="platform.demo",
+        display_name="Platform Demo",
+        role="PLATFORM",
+        owner_unit_ids=["IT Service Desk"],
+    )
+    await service.sync_from_local_corpus(
+        actor,
+        sources,
+        correlation_id=uuid.uuid4().hex,
+        bundled_index_path=bundled,
+    )
+    release_index = settings.release_artifact_dir / "release-0001" / "index" / "chunks.json"
+    assert release_index.read_text(encoding="utf-8") == bundled.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_release_0001_persists_file_repository(tmp_path: Path) -> None:
     sources = tmp_path / "sources"
     sources.mkdir()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
 
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 class PortalAuthError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+def decode_portal_header_value(value: str) -> str:
+    """Decode percent-encoded portal header values from browser fetch()."""
+    return unquote(value)
 
 
 def _header_actor(
@@ -109,7 +115,7 @@ def resolve_portal_actor(
     ]
     return _header_actor(
         user_id=header_user_id,
-        display_name=header_user_name,
+        display_name=decode_portal_header_value(header_user_name),
         role=header_role or "CONTRIBUTOR",
         owner_units=owner_units,
     )
