@@ -35,6 +35,13 @@ export function renderLoading(message = "載入中…") {
   return `<div class="loading-state" role="status">${escapeHtml(message)}</div>`;
 }
 
+export function renderSkeleton(rows = 4) {
+  return `
+    <div class="skeleton-wrap" aria-hidden="true">
+      ${Array.from({ length: rows }, () => '<div class="skeleton-row"></div>').join("")}
+    </div>`;
+}
+
 export function renderError(message, retryLabel = "重試") {
   return `
     <div class="error-state" role="alert">

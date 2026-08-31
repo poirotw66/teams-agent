@@ -417,7 +417,26 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-top: 1px solid var(--border);
 }
 
-@media (max-width: 900px) {
+.editor-sections .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.skeleton-wrap { display: grid; gap: 0.65rem; }
+.skeleton-row {
+  height: 52px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, #edebe9 25%, #f3f2f1 50%, #edebe9 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.role-subtitle { margin: 0.25rem 0 0; }
   .detail-layout { grid-template-columns: 1fr; }
   .action-panel { position: static; }
   .app-header { flex-direction: column; align-items: stretch; }

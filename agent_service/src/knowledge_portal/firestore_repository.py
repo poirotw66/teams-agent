@@ -201,13 +201,33 @@ class FirestorePortalRepository:
         active_release = (
             await self.get_release(active_release_id) if active_release_id else None
         )
+        from datetime import date, timedelta
+
+        today = date.today()
+        horizon = today + timedelta(days=30)
+        due_soon_count = 0
+        for document in documents:
+            if document.status != "PUBLISHED" or not document.current_published_version_id:
+                continue
+            version = await self.get_version(document.current_published_version_id)
+            if version is None:
+                continue
+            try:
+                due = date.fromisoformat(version.review_due_at)
+            except ValueError:
+                continue
+            if today <= due <= horizon:
+                due_soon_count += 1
         return DashboardSummary(
             my_drafts=sum(1 for item in documents if item.status == "DRAFT"),
+            my_changes_requested=sum(
+                1 for item in documents if item.status == "CHANGES_REQUESTED"
+            ),
             pending_review=len(pending_reviews),
             publish_failed=sum(
                 1 for item in documents if item.status == "PUBLISH_FAILED"
             ),
-            review_due_soon=0,
+            review_due_soon=due_soon_count,
             active_release_id=active_release_id,
             active_release_activated_at=active_release.activated_at
             if active_release

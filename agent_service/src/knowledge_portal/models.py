@@ -346,6 +346,7 @@ class PendingReviewListResponse(StrictModel):
 
 class DashboardSummary(StrictModel):
     my_drafts: int
+    my_changes_requested: int = 0
     pending_review: int
     publish_failed: int
     review_due_soon: int
@@ -355,6 +356,8 @@ class DashboardSummary(StrictModel):
     min_test_cases_for_review: int = 0
     demo_mode: bool = True
     portal_profile: Literal["DEMO", "GOVERNED"] = "DEMO"
+    actor_role: str = ""
+    home_route: str = "#/work"
     work_queues: list[WorkQueueItem] = Field(default_factory=list)
 
 

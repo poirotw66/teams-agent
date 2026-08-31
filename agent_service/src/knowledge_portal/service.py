@@ -115,13 +115,45 @@ class PortalService:
         profile: Literal["DEMO", "GOVERNED"] = (
             "DEMO" if self._settings.demo_mode else "GOVERNED"
         )
-        work_queues = [
+        relaxed = self._settings.effective_relaxed_workflow()
+        work_queues = self._work_queues_for_role(actor, summary)
+        return summary.model_copy(
+            update={
+                "relaxed_workflow": relaxed,
+                "min_test_cases_for_review": 0 if relaxed else 3,
+                "demo_mode": self._settings.demo_mode,
+                "portal_profile": profile,
+                "actor_role": actor.role,
+                "home_route": self._home_route_for_role(actor),
+                "work_queues": work_queues,
+            }
+        )
+
+    def _work_queues_for_role(
+        self, actor: PortalActor, summary: DashboardSummary
+    ) -> list[WorkQueueItem]:
+        contributor_queues = [
             WorkQueueItem(
                 label="我的草稿",
                 count=summary.my_drafts,
                 route="#/knowledge",
                 filter_status="DRAFT",
             ),
+            WorkQueueItem(
+                label="被退回內容",
+                count=summary.my_changes_requested,
+                route="#/knowledge",
+                filter_status="CHANGES_REQUESTED",
+            ),
+        ]
+        reviewer_queues = [
+            WorkQueueItem(
+                label="待審文件",
+                count=summary.pending_review,
+                route="#/reviews",
+            ),
+        ]
+        manager_queues = [
             WorkQueueItem(
                 label="待審文件",
                 count=summary.pending_review,
@@ -137,19 +169,29 @@ class PortalService:
                 label="即將到期",
                 count=summary.review_due_soon,
                 route="#/knowledge",
+                filter_status="PUBLISHED",
             ),
         ]
-        return summary.model_copy(
-            update={
-                "relaxed_workflow": self._settings.relaxed_workflow,
-                "min_test_cases_for_review": (
-                    0 if self._settings.relaxed_workflow else 3
-                ),
-                "demo_mode": self._settings.demo_mode,
-                "portal_profile": profile,
-                "work_queues": work_queues,
-            }
-        )
+        if actor.role == "CONTRIBUTOR":
+            return contributor_queues
+        if actor.role == "REVIEWER":
+            return reviewer_queues
+        if actor.role == "AUDITOR":
+            return [
+                WorkQueueItem(
+                    label="稽核紀錄",
+                    count=0,
+                    route="#/audit",
+                )
+            ]
+        return manager_queues
+
+    def _home_route_for_role(self, actor: PortalActor) -> str:
+        if actor.role == "REVIEWER":
+            return "#/reviews"
+        if actor.role == "AUDITOR":
+            return "#/audit"
+        return "#/work"
 
     async def list_documents(
         self,
@@ -380,7 +422,7 @@ class PortalService:
         detail = await self.get_document(actor, document_id)
         document = detail.document
         ensure_can_edit(actor, document.owner_unit_id, document.created_by)
-        if document.status not in {"DRAFT", "CHANGES_REQUESTED"}:
+        if document.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
             raise ValueError("Only draft documents can be edited.")
         if document.etag != request.etag:
             raise VersionConflictError(document_id)
@@ -389,7 +431,7 @@ class PortalService:
 
         version = await self._repository.get_version(document.draft_version_id)
         ensure_not_found("version", document.draft_version_id, version)
-        if version.status not in {"DRAFT", "CHANGES_REQUESTED"}:
+        if version.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
             raise ValueError("Draft version is locked for editing.")
 
         asset_slug, assets_root = self._validation_context(
@@ -533,7 +575,7 @@ class PortalService:
         )
         if validation.has_blocking:
             raise ValueError(validation)
-        if not self._settings.relaxed_workflow:
+        if not self._settings.effective_relaxed_workflow():
             test_cases = await self._repository.list_test_cases(version.version_id)
             if len(test_cases) < 3:
                 raise ValueError(
@@ -584,7 +626,7 @@ class PortalService:
         ensure_can_review(
             actor,
             review.submitted_by,
-            relaxed_workflow=self._settings.relaxed_workflow,
+            relaxed_workflow=self._settings.effective_relaxed_workflow(),
         )
         version = await self._repository.get_version(review.version_id)
         ensure_not_found("version", review.version_id, version)
@@ -799,7 +841,7 @@ class PortalService:
         ensure_can_remove_document(
             actor,
             document,
-            relaxed_workflow=self._settings.relaxed_workflow,
+            relaxed_workflow=self._settings.effective_relaxed_workflow(),
         )
         if document.current_published_version_id and document.status == "PUBLISHED":
             raise ValueError(

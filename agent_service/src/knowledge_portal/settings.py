@@ -170,3 +170,9 @@ class PortalSettings:
                 os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSETS_PER_VERSION", "20")
             ),
         )
+
+    def effective_relaxed_workflow(self) -> bool:
+        """GOVERNED profile always disables relaxed workflow."""
+        if not self.demo_mode:
+            return False
+        return self.relaxed_workflow

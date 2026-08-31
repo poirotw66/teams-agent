@@ -1,6 +1,15 @@
+import { ROLE_LABELS } from "../labels.js";
 import { api } from "../api.js";
 import { navigate } from "../router.js";
-import { escapeHtml, renderEmptyState, renderError, renderLoading } from "../ui.js";
+import { escapeHtml, renderEmptyState, renderError, renderSkeleton } from "../ui.js";
+
+const ROLE_SUBTITLES = {
+  CONTRIBUTOR: "優先處理你的草稿與被退回內容",
+  REVIEWER: "優先處理待審文件",
+  MANAGER: "監控待審、發布失敗與即將到期文件",
+  PLATFORM: "監控待審、發布失敗與即將到期文件",
+  AUDITOR: "查閱系統操作軌跡",
+};
 
 function queueCard(item) {
   const filter = item.filter_status ? `?status=${encodeURIComponent(item.filter_status)}` : "";
@@ -20,12 +29,18 @@ export async function renderWorkView(app) {
           <h2>待處理事項</h2>
         </div>
       </header>
-      <div id="workContent">${renderLoading()}</div>
+      <div id="workContent">${renderSkeleton(3)}</div>
     </section>`;
 
   const container = app.querySelector("#workContent");
   try {
     const dashboard = await api("/api/dashboard");
+    const role = dashboard.actor_role || "CONTRIBUTOR";
+    const subtitle = ROLE_SUBTITLES[role] || "待處理事項";
+    app.querySelector(".page-header h2").insertAdjacentHTML(
+      "afterend",
+      `<p class="muted role-subtitle">${escapeHtml(subtitle)} · ${escapeHtml(ROLE_LABELS[role] || role)}</p>`,
+    );
     const queues = dashboard.work_queues || [];
     const actionable = queues.filter((item) => item.count > 0);
     if (!actionable.length) {

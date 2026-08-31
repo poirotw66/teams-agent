@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { statusLabel } from "../labels.js";
 import { navigate } from "../router.js";
-import { escapeHtml, renderEmptyState, renderError, renderLoading, renderStatusBadge } from "../ui.js";
+import { escapeHtml, renderEmptyState, renderError, renderSkeleton, renderStatusBadge } from "../ui.js";
 
 function buildQuery(filters) {
   const params = new URLSearchParams();
@@ -91,7 +91,7 @@ export async function renderKnowledgeListView(app, query) {
         </div>
       </header>
       ${renderFilters(filters)}
-      <div id="knowledgeContent">${renderLoading()}</div>
+      <div id="knowledgeContent">${renderSkeleton(5)}</div>
     </section>`;
 
   const container = app.querySelector("#knowledgeContent");
@@ -99,7 +99,7 @@ export async function renderKnowledgeListView(app, query) {
   const statusSelect = app.querySelector("#knowledgeStatus");
 
   async function loadList() {
-    container.innerHTML = renderLoading();
+    container.innerHTML = renderSkeleton(5);
     try {
       const payload = await api(`/api/documents${buildQuery(filters)}`);
       container.innerHTML = renderTable(payload.items || []);

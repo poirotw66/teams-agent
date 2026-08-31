@@ -128,7 +128,7 @@ async function bootstrap() {
     await renderRoute(context);
   });
   if (!window.location.hash) {
-    navigate("#/work");
+    navigate(getSession().homeRoute || "#/work");
   }
 }
 

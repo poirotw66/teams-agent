@@ -84,35 +84,81 @@ function renderContentTab(documentId, detail, draft) {
           <button type="button" class="btn primary" data-action="start-revision">建立新版本草稿</button>` : ""}
       </div>`;
   }
+  const doc = detail.document;
   const body = stripFrontMatter(draft.canonical_content || "");
   const assets = detail.draft_assets?.items || [];
+  const audienceGroups = (doc.audience_group_ids || []).join(", ");
+  const editable = can("EDIT_DRAFT", detail.allowed_actions);
   return `
-    <div class="panel">
-      <h3>草稿內容</h3>
-      ${renderIssues(draft.validation_summary?.issues || [])}
-      <label class="full">Markdown 正文
-        <textarea id="draftMarkdown" rows="14">${escapeHtml(body)}</textarea>
-      </label>
-      <div class="action-row secondary-actions">
-        ${can("EDIT_DRAFT", detail.allowed_actions) ? `<button type="button" class="btn primary" data-action="save-draft">儲存草稿</button>` : ""}
-        ${can("VALIDATE", detail.allowed_actions) ? `<button type="button" class="btn secondary" data-action="validate">重新檢查</button>` : ""}
+    <form id="draftEditorForm" class="editor-sections">
+      <div class="panel">
+        <h3>基本資料</h3>
+        <div class="form-grid">
+          <label>標題
+            <input id="draftTitle" value="${escapeHtml(doc.title)}" ${editable ? "" : "readonly"}>
+          </label>
+          <label>擁有單位
+            <input id="draftOwnerUnit" value="${escapeHtml(doc.owner_unit_id)}" ${editable ? "" : "readonly"}>
+          </label>
+          <label>分類
+            <input id="draftCategory" value="${escapeHtml(doc.category || "")}" ${editable ? "" : "readonly"}>
+          </label>
+          <label>摘要
+            <textarea id="draftSummary" rows="2" ${editable ? "" : "readonly"}>${escapeHtml(doc.summary || "")}</textarea>
+          </label>
+          <label>生效日
+            <input id="draftEffectiveAt" type="date" value="${escapeHtml(draft.effective_at)}" ${editable ? "" : "readonly"}>
+          </label>
+          <label>下次檢視日
+            <input id="draftReviewDueAt" type="date" value="${escapeHtml(draft.review_due_at)}" ${editable ? "" : "readonly"}>
+          </label>
+          <label class="full">變更原因
+            <textarea id="draftChangeReason" rows="2" ${editable ? "" : "readonly"}>${escapeHtml(draft.change_reason || "")}</textarea>
+          </label>
+        </div>
       </div>
-    </div>
-    <div class="panel">
-      <h3>圖片附件</h3>
-      <ul class="asset-list">${assets.length
+      <div class="panel">
+        <h3>適用範圍</h3>
+        <div class="form-grid">
+          <label>Audience
+            <select id="draftAudienceType" data-original="${escapeHtml(doc.audience_type)}" ${editable ? "" : "disabled"}>
+              <option value="ALL_EMPLOYEES" ${doc.audience_type === "ALL_EMPLOYEES" ? "selected" : ""}>全體員工</option>
+              <option value="RESTRICTED_GROUPS" ${doc.audience_type === "RESTRICTED_GROUPS" ? "selected" : ""}>特定群組</option>
+            </select>
+          </label>
+          <label class="full">群組 ID（逗號分隔）
+            <input id="draftAudienceGroups" value="${escapeHtml(audienceGroups)}" ${editable ? "" : "readonly"}>
+          </label>
+        </div>
+        <p class="muted">變更適用範圍可能影響引用權限，儲存前會再次確認。</p>
+      </div>
+      <div class="panel">
+        <h3>內容</h3>
+        ${renderIssues(draft.validation_summary?.issues || [])}
+        <label class="full">Markdown 正文
+          <textarea id="draftMarkdown" rows="14" ${editable ? "" : "readonly"}>${escapeHtml(body)}</textarea>
+        </label>
+        <div class="action-row secondary-actions">
+          ${editable ? `<button type="button" class="btn primary" data-action="save-draft">儲存草稿</button>` : ""}
+          ${can("VALIDATE", detail.allowed_actions) ? `<button type="button" class="btn secondary" data-action="validate">重新檢查</button>` : ""}
+        </div>
+      </div>
+      <div class="panel">
+        <h3>圖片附件</h3>
+        <ul class="asset-list">${assets.length
     ? assets.map((item) => `<li>${escapeHtml(item.filename)} (${item.size_bytes} bytes)</li>`).join("")
     : "<li class=\"muted\">尚未上傳圖片</li>"}</ul>
-      <div id="assetPreviewGrid" class="asset-grid"></div>
-      ${can("EDIT_DRAFT", detail.allowed_actions) ? `
-        <div class="action-row secondary-actions">
-          <label class="btn secondary file-button">
-            上傳圖片
-            <input id="draftAssetUpload" type="file" accept="image/png,image/jpeg,image/gif" multiple hidden>
-          </label>
-          <button type="button" class="btn secondary" data-action="insert-asset-ref">插入圖片 Markdown</button>
-        </div>` : ""}
-    </div>`;
+        <div id="assetPreviewGrid" class="asset-grid"></div>
+        ${editable ? `
+          <div class="action-row secondary-actions">
+            <label class="btn secondary file-button">
+              上傳圖片
+              <input id="draftAssetUpload" type="file" accept="image/png,image/jpeg,image/gif" multiple hidden>
+            </label>
+            <button type="button" class="btn secondary" data-action="insert-asset-ref">插入圖片 Markdown</button>
+          </div>` : ""}
+      </div>
+    </form>`;
 }
 
 function renderTestsTab(cases, runsByCase, detail) {
@@ -291,26 +337,41 @@ async function handleAction(documentId, action, detail) {
   }
   if (action === "save-draft") {
     const markdown = document.getElementById("draftMarkdown")?.value;
-    if (!markdown?.trim()) {
-      showToast("Markdown 內容不可為空", true);
+    const title = document.getElementById("draftTitle")?.value?.trim();
+    if (!markdown?.trim() || !title) {
+      showToast("標題與 Markdown 內容不可為空", true);
       return;
     }
+    const audienceType = document.getElementById("draftAudienceType")?.value;
+    const originalAudience = document.getElementById("draftAudienceType")?.dataset.original;
+    if (audienceType !== originalAudience) {
+      const ok = await confirmDialog(
+        "變更適用範圍",
+        "變更 audience 可能影響引用權限，並可能需要額外審核。確定要繼續？",
+        { confirmLabel: "繼續儲存" },
+      );
+      if (!ok) return;
+    }
+    const audienceGroups = (document.getElementById("draftAudienceGroups")?.value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
     const draftVersion = detail.draft_version;
     await api(`/api/documents/${documentId}/draft`, {
       method: "PUT",
       body: JSON.stringify({
         etag: detail.document.etag,
-        title: detail.document.title,
-        summary: detail.document.summary || "",
-        category: detail.document.category || "",
-        owner_unit_id: detail.document.owner_unit_id,
+        title,
+        summary: document.getElementById("draftSummary")?.value || "",
+        category: document.getElementById("draftCategory")?.value || "",
+        owner_unit_id: document.getElementById("draftOwnerUnit")?.value || detail.document.owner_unit_id,
         business_contact: detail.document.business_contact || "",
-        audience_type: detail.document.audience_type,
-        audience_group_ids: detail.document.audience_group_ids || [],
-        effective_at: draftVersion.effective_at,
-        review_due_at: draftVersion.review_due_at,
+        audience_type: audienceType,
+        audience_group_ids: audienceGroups,
+        effective_at: document.getElementById("draftEffectiveAt")?.value || draftVersion.effective_at,
+        review_due_at: document.getElementById("draftReviewDueAt")?.value || draftVersion.review_due_at,
         change_summary: draftVersion.change_summary || "",
-        change_reason: draftVersion.change_reason || "更新草稿內容",
+        change_reason: document.getElementById("draftChangeReason")?.value || "更新草稿內容",
         markdown_content: markdown,
       }),
     });

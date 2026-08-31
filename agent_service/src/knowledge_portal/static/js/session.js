@@ -10,6 +10,7 @@ const state = {
   portalProfile: "DEMO",
   relaxedWorkflow: true,
   minTestCasesForReview: 0,
+  homeRoute: "#/work",
   userId: "manager.demo",
   userName: "知識管理者",
   role: "MANAGER",
@@ -50,4 +51,8 @@ export function syncFromDashboard(dashboard) {
   state.minTestCasesForReview = dashboard.min_test_cases_for_review ?? 0;
   state.demoMode = dashboard.demo_mode !== false;
   state.portalProfile = dashboard.portal_profile || "DEMO";
+  state.homeRoute = dashboard.home_route || "#/work";
+  if (dashboard.actor_role) {
+    state.role = dashboard.actor_role;
+  }
 }

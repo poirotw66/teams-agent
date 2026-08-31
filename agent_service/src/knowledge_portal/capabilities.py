@@ -62,7 +62,7 @@ def _can(action: str, allowed: list[str]) -> bool:
 
 def _try_review(actor: PortalActor, submitted_by: str, settings: PortalSettings) -> bool:
     try:
-        ensure_can_review(actor, submitted_by, relaxed_workflow=settings.relaxed_workflow)
+        ensure_can_review(actor, submitted_by, relaxed_workflow=settings.effective_relaxed_workflow())
         return True
     except Exception:
         return False
@@ -78,7 +78,7 @@ def _try_publish(actor: PortalActor) -> bool:
 
 def _try_discard(actor: PortalActor, document: KnowledgeDocumentRecord, settings: PortalSettings) -> bool:
     try:
-        ensure_can_remove_document(actor, document, relaxed_workflow=settings.relaxed_workflow)
+        ensure_can_remove_document(actor, document, relaxed_workflow=settings.effective_relaxed_workflow())
         return document.status != "IN_REVIEW" and not (
             document.current_published_version_id and document.status == "PUBLISHED"
         )
