@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { escapeHtml, renderEmptyState, renderError, renderLoading } from "../ui.js";
+import { escapeHtml, handleViewError, renderSkeleton, renderViewEmpty } from "../ui.js";
 
 export async function renderAuditView(app) {
   app.innerHTML = `
@@ -10,14 +10,14 @@ export async function renderAuditView(app) {
           <h2>操作軌跡</h2>
         </div>
       </header>
-      <div id="auditContent">${renderLoading()}</div>
+      <div id="auditContent">${renderSkeleton(6)}</div>
     </section>`;
 
   const container = app.querySelector("#auditContent");
   try {
     const events = await api("/api/audit-events?limit=50");
     if (!events.length) {
-      container.innerHTML = renderEmptyState("尚無稽核紀錄", "系統操作會記錄在此供稽核查閱。");
+      container.innerHTML = renderViewEmpty("audit-empty");
       return;
     }
     container.innerHTML = `
@@ -41,7 +41,10 @@ export async function renderAuditView(app) {
         </table>
       </div>`;
   } catch (error) {
-    container.innerHTML = renderError(error.message);
-    container.querySelector("[data-retry]")?.addEventListener("click", () => renderAuditView(app));
+    handleViewError(error, {
+      view: "audit",
+      container,
+      onRetry: () => renderAuditView(app),
+    });
   }
 }

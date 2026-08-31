@@ -1,3 +1,4 @@
+import { loadFluentComponents } from "./fluent.js";
 import { api } from "./api.js";
 import { ROLE_LABELS } from "./labels.js";
 import { applyDemoPersona, getSession, syncFromDashboard, updateSession } from "./session.js";
@@ -74,10 +75,11 @@ function renderIdentityShell() {
 function setActiveNav(segments) {
   const root = segments[0] || "work";
   document.querySelectorAll("[data-nav]").forEach((node) => {
-    const target = node.dataset.nav;
+    const target = node.getAttribute("data-nav")?.replace("#/", "") || "work";
     const active = target === root;
     node.classList.toggle("active", active);
     node.setAttribute("aria-current", active ? "page" : "false");
+    node.setAttribute("appearance", active ? "accent" : "stealth");
   });
 }
 
@@ -114,6 +116,7 @@ async function renderRoute({ segments, query, app }) {
 }
 
 async function bootstrap() {
+  await loadFluentComponents();
   document.querySelectorAll("[data-nav]").forEach((node) => {
     node.addEventListener("click", () => navigate(node.dataset.nav));
   });

@@ -5,15 +5,18 @@ import { navigate } from "../router.js";
 import {
   confirmDialog,
   escapeHtml,
+  handleViewError,
+  isForbiddenError,
   openDialog,
   promptDialog,
   renderError,
-  renderForbidden,
-  renderLoading,
+  renderSkeleton,
   renderStatusBadge,
+  renderViewForbidden,
   showToast,
   stripFrontMatter,
 } from "../ui.js";
+import { fluentButton } from "../fluent.js";
 
 const TABS = [
   { id: "overview", label: "概覽" },
@@ -536,7 +539,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
       <header class="page-header">
         <div>
           <button type="button" class="btn text" data-back>← 返回知識庫</button>
-          <div id="detailHeader">${renderLoading()}</div>
+          <div id="detailHeader">${renderSkeleton(1)}</div>
         </div>
       </header>
       <div class="detail-layout">
@@ -547,7 +550,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
                 ${item.label}
               </button>`).join("")}
           </nav>
-          <div id="detailTabContent">${renderLoading()}</div>
+          <div id="detailTabContent">${renderSkeleton(3)}</div>
         </div>
         <div id="detailActionPanel"></div>
       </div>
@@ -578,15 +581,22 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
       await hydrateAssetPreviews(documentId, detail.draft_assets.items);
     }
   } catch (error) {
-    if (error.status === 403) {
-      app.querySelector("#detailTabContent").innerHTML = renderForbidden();
+    if (isForbiddenError(error)) {
+      app.querySelector("#detailTabContent").innerHTML = renderViewForbidden("document");
+      app.querySelector("#detailActionPanel").innerHTML = "";
+      app.querySelector("#detailTabContent [data-route]")?.addEventListener("click", (event) => {
+        navigate(event.currentTarget.dataset.route);
+      });
       return;
     }
     if (error.status === 404) {
       app.querySelector("#detailTabContent").innerHTML = renderError("找不到這份文件。");
       return;
     }
-    app.querySelector("#detailTabContent").innerHTML = renderError(error.message);
-    app.querySelector("[data-retry]")?.addEventListener("click", () => renderDocumentDetailView(app, documentId, tab));
+    handleViewError(error, {
+      view: "document",
+      container: app.querySelector("#detailTabContent"),
+      onRetry: () => renderDocumentDetailView(app, documentId, tab),
+    });
   }
 }

@@ -7,32 +7,34 @@
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
-    <div id="demoBanner" class="demo-banner hidden" role="status"></div>
-    <header class="app-header">
-      <div class="brand">
-        <p class="eyebrow">Teams IT 智能助手</p>
-        <h1>知識營運介面</h1>
-        <span id="profileBadge" class="profile-badge"></span>
-      </div>
-      <div id="identityChip" class="identity-chip-wrap"></div>
-    </header>
+    <fluent-design-system-provider use-default-config class="app-root">
+      <div id="demoBanner" class="demo-banner hidden" role="status"></div>
+      <header class="app-header">
+        <div class="brand">
+          <p class="eyebrow">Teams IT 智能助手</p>
+          <h1>知識營運介面</h1>
+          <fluent-badge id="profileBadge" appearance="neutral"></fluent-badge>
+        </div>
+        <div id="identityChip" class="identity-chip-wrap"></div>
+      </header>
 
-    <details id="demoControls" class="demo-controls hidden">
-      <summary>Demo 身分設定</summary>
-      <div class="demo-controls-body"></div>
-    </details>
+      <details id="demoControls" class="demo-controls hidden">
+        <summary>Demo 身分設定</summary>
+        <div class="demo-controls-body"></div>
+      </details>
 
-    <nav class="app-nav" aria-label="主要導覽">
-      <button type="button" data-nav="#/work">我的工作</button>
-      <button type="button" data-nav="#/knowledge">知識庫</button>
-      <button type="button" data-nav="#/reviews">待審核</button>
-      <button type="button" data-nav="#/audit">稽核紀錄</button>
-    </nav>
+      <nav class="app-nav" aria-label="主要導覽">
+        <fluent-button appearance="stealth" data-nav="#/work">我的工作</fluent-button>
+        <fluent-button appearance="stealth" data-nav="#/knowledge">知識庫</fluent-button>
+        <fluent-button appearance="stealth" data-nav="#/reviews">待審核</fluent-button>
+        <fluent-button appearance="stealth" data-nav="#/audit">稽核紀錄</fluent-button>
+      </nav>
 
-    <main id="app" class="app-main"></main>
+      <main id="app" class="app-main"></main>
 
-    <div id="dialogRoot"></div>
-    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+      <div id="dialogRoot"></div>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </fluent-design-system-provider>
 
     <script type="module" src="/static/js/main.js"></script>
   </body>

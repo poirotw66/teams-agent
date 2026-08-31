@@ -1,7 +1,14 @@
 import { api } from "../api.js";
+import { fluentButton } from "../fluent.js";
 import { statusLabel } from "../labels.js";
 import { navigate } from "../router.js";
-import { escapeHtml, renderEmptyState, renderError, renderSkeleton, renderStatusBadge } from "../ui.js";
+import {
+  escapeHtml,
+  handleViewError,
+  renderSkeleton,
+  renderStatusBadge,
+  renderViewEmpty,
+} from "../ui.js";
 
 function buildQuery(filters) {
   const params = new URLSearchParams();
@@ -17,12 +24,12 @@ function renderFilters(filters) {
     <div class="command-bar">
       <label class="search-field">
         <span class="sr-only">搜尋</span>
-        <input type="search" id="knowledgeSearch" placeholder="搜尋標題或摘要…" value="${escapeHtml(filters.query || "")}">
+        <fluent-search id="knowledgeSearch" placeholder="搜尋標題或摘要…" value="${escapeHtml(filters.query || "")}"></fluent-search>
       </label>
       <label>
         狀態
-        <select id="knowledgeStatus">
-          <option value="">全部</option>
+        <fluent-select id="knowledgeStatus">
+          <fluent-option value="">全部</fluent-option>
           ${Object.entries({
             DRAFT: "草稿",
             IN_REVIEW: "待審核",
@@ -32,16 +39,16 @@ function renderFilters(filters) {
             PUBLISH_FAILED: "發布失敗",
             UNPUBLISHED: "已下架",
           }).map(([value, label]) => `
-            <option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</option>`).join("")}
-        </select>
+            <fluent-option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</fluent-option>`).join("")}
+        </fluent-select>
       </label>
-      <button type="button" class="btn primary" data-route="#/knowledge/new">新增文件</button>
+      ${fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } })}
     </div>`;
 }
 
 function renderTable(items) {
   if (!items.length) {
-    return renderEmptyState("找不到符合條件的文件", "調整搜尋或篩選條件後再試一次。");
+    return "";
   }
   return `
     <div class="table-wrap">
@@ -59,15 +66,15 @@ function renderTable(items) {
           ${items.map((doc) => `
             <tr>
               <td>
-                <button type="button" class="link-button" data-open-doc="${escapeHtml(doc.document_id)}">
+                <fluent-button appearance="stealth" data-open-doc="${escapeHtml(doc.document_id)}">
                   ${escapeHtml(doc.title)}
-                </button>
+                </fluent-button>
               </td>
               <td>${renderStatusBadge(doc.status, statusLabel(doc.status))}</td>
               <td>${escapeHtml(doc.owner_unit_id)}</td>
               <td>${new Date(doc.updated_at).toLocaleString("zh-TW")}</td>
               <td class="table-actions">
-                <button type="button" class="btn secondary btn-sm" data-open-doc="${escapeHtml(doc.document_id)}">查看</button>
+                ${fluentButton("查看", { appearance: "outline", dataset: { "open-doc": doc.document_id } })}
               </td>
             </tr>`).join("")}
         </tbody>
@@ -81,6 +88,7 @@ export async function renderKnowledgeListView(app, query) {
     query: query.get("query") || "",
     owner_unit_id: query.get("owner_unit_id") || "",
   };
+  const hasFilters = Boolean(filters.status || filters.query || filters.owner_unit_id);
 
   app.innerHTML = `
     <section class="page">
@@ -102,26 +110,37 @@ export async function renderKnowledgeListView(app, query) {
     container.innerHTML = renderSkeleton(5);
     try {
       const payload = await api(`/api/documents${buildQuery(filters)}`);
-      container.innerHTML = renderTable(payload.items || []);
+      const items = payload.items || [];
+      if (!items.length) {
+        const emptyKey = hasFilters ? "knowledge-no-results" : "knowledge-empty";
+        const action = hasFilters
+          ? fluentButton("清除篩選", { appearance: "outline", dataset: { route: "#/knowledge" } })
+          : fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } });
+        container.innerHTML = renderViewEmpty(emptyKey, action);
+        container.querySelectorAll("[data-route]").forEach((node) => {
+          node.addEventListener("click", () => navigate(node.dataset.route));
+        });
+        return;
+      }
+      container.innerHTML = renderTable(items);
       container.querySelectorAll("[data-open-doc]").forEach((node) => {
         node.addEventListener("click", () => navigate(`#/knowledge/${node.dataset.openDoc}`));
       });
     } catch (error) {
-      container.innerHTML = renderError(error.message);
-      container.querySelector("[data-retry]")?.addEventListener("click", loadList);
+      handleViewError(error, { view: "knowledge", container, onRetry: loadList });
     }
   }
 
   function applyFilters() {
-    filters.query = searchInput.value.trim();
-    filters.status = statusSelect.value;
+    filters.query = searchInput?.value?.trim?.() || searchInput?.currentValue || "";
+    filters.status = statusSelect?.value || "";
     navigate(`#/knowledge${buildQuery(filters)}`);
   }
 
-  searchInput.addEventListener("keydown", (event) => {
+  searchInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") applyFilters();
   });
-  statusSelect.addEventListener("change", applyFilters);
+  statusSelect?.addEventListener("change", applyFilters);
   app.querySelectorAll("[data-route]").forEach((node) => {
     node.addEventListener("click", () => navigate(node.dataset.route));
   });

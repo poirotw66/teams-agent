@@ -417,6 +417,69 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-top: 1px solid var(--border);
 }
 
+.app-root {
+  display: block;
+  min-height: 100vh;
+  background: var(--neutral-layer-1, #faf9f8);
+  color: var(--neutral-foreground-rest, #242424);
+}
+
+fluent-button.active,
+fluent-button[aria-current="page"] {
+  font-weight: 600;
+}
+
+.state-panel {
+  background: var(--neutral-layer-1, #fff);
+  border: 1px solid var(--neutral-stroke-rest, #edebe9);
+  border-radius: var(--control-corner-radius, 4px);
+  padding: 2rem 1.25rem;
+  text-align: center;
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.08));
+}
+
+.state-panel h3 { margin: 0.5rem 0; }
+.state-icon { font-size: 1.75rem; }
+.state-contact { margin-top: 0.75rem; }
+
+.forbidden-state {
+  border-color: #f1bbbc;
+  background: #fdf3f4;
+}
+
+.error-state fluent-button,
+.empty-state fluent-button,
+.forbidden-state fluent-button {
+  margin-top: 1rem;
+}
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+}
+
+fluent-dialog.dialog {
+  width: min(520px, 100%);
+}
+
+fluent-badge.status-badge {
+  vertical-align: middle;
+}
+
+fluent-search,
+fluent-select,
+fluent-text-field,
+fluent-text-area {
+  width: 100%;
+}
+
+.profile-badge { margin-top: 0.35rem; }
+
 .editor-sections .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1,7 +1,14 @@
-import { ROLE_LABELS } from "../labels.js";
 import { api } from "../api.js";
+import { fluentButton } from "../fluent.js";
+import { ROLE_LABELS } from "../labels.js";
 import { navigate } from "../router.js";
-import { escapeHtml, renderEmptyState, renderError, renderSkeleton } from "../ui.js";
+import {
+  escapeHtml,
+  handleViewError,
+  isForbiddenError,
+  renderSkeleton,
+  renderViewEmpty,
+} from "../ui.js";
 
 const ROLE_SUBTITLES = {
   CONTRIBUTOR: "優先處理你的草稿與被退回內容",
@@ -44,10 +51,9 @@ export async function renderWorkView(app) {
     const queues = dashboard.work_queues || [];
     const actionable = queues.filter((item) => item.count > 0);
     if (!actionable.length) {
-      container.innerHTML = renderEmptyState(
-        "目前沒有急迫事項",
-        "你可以到知識庫瀏覽文件，或建立新的草稿。",
-        `<button type="button" class="btn primary" data-route="#/knowledge/new">新增文件</button>`,
+      container.innerHTML = renderViewEmpty(
+        "work-clear",
+        fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } }),
       );
     } else {
       container.innerHTML = `
@@ -61,8 +67,12 @@ export async function renderWorkView(app) {
     });
     return dashboard;
   } catch (error) {
-    container.innerHTML = renderError(error.message);
-    container.querySelector("[data-retry]")?.addEventListener("click", () => renderWorkView(app));
-    throw error;
+    handleViewError(error, {
+      view: "work",
+      container,
+      onRetry: () => renderWorkView(app),
+    });
+    if (!isForbiddenError(error)) throw error;
+    return null;
   }
 }
