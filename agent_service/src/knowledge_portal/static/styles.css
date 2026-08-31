@@ -103,16 +103,6 @@ body {
   border: 0;
 }
 
-.demo-banner {
-  background: var(--warning-soft);
-  color: var(--warning);
-  text-align: center;
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  border-bottom: 1px solid color-mix(in srgb, var(--warning) 25%, var(--border));
-}
-
 .app-root {
   display: block;
   min-height: 100dvh;
@@ -283,28 +273,6 @@ body {
   background:
     radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--accent) 6%, transparent), transparent),
     var(--bg);
-}
-
-.demo-controls {
-  margin: 0.85rem 1.5rem 0;
-  background: var(--warning-soft);
-  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
-  border-radius: var(--radius);
-  padding: 0.55rem 0.85rem;
-}
-
-.demo-controls summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: var(--warning);
-}
-
-.demo-controls-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.75rem;
 }
 
 .app-main {

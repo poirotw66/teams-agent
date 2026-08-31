@@ -1,9 +1,10 @@
-const DEMO_PERSONAS = {
-  CONTRIBUTOR: { userId: "contributor.demo", userName: "知識貢獻者" },
-  REVIEWER: { userId: "reviewer.demo", userName: "知識審核者" },
-  MANAGER: { userId: "manager.demo", userName: "知識管理者" },
-  PLATFORM: { userId: "platform.demo", userName: "平台管理者" },
+const DEMO_IDENTITY = {
+  userId: "demo.admin",
+  userName: "Demo 管理者",
+  role: "PLATFORM",
 };
+
+const ALL_NAV = ["work", "knowledge", "reviews", "audit", "releases"];
 
 const state = {
   demoMode: true,
@@ -11,10 +12,10 @@ const state = {
   relaxedWorkflow: true,
   minTestCasesForReview: 0,
   homeRoute: "#/work",
-  visibleNav: ["work", "knowledge", "reviews", "audit"],
-  userId: "manager.demo",
-  userName: "知識管理者",
-  role: "MANAGER",
+  visibleNav: [...ALL_NAV],
+  userId: DEMO_IDENTITY.userId,
+  userName: DEMO_IDENTITY.userName,
+  role: DEMO_IDENTITY.role,
   ownerUnits: "IT Service Desk",
 };
 
@@ -24,6 +25,10 @@ export function getSession() {
 
 export function updateSession(patch) {
   Object.assign(state, patch);
+  if (state.demoMode) {
+    state.role = DEMO_IDENTITY.role;
+    state.visibleNav = [...ALL_NAV];
+  }
 }
 
 export function visibleNavForRole(role) {
@@ -40,20 +45,11 @@ export function visibleNavForRole(role) {
   return nav;
 }
 
-export function applyDemoPersona(role) {
-  const persona = DEMO_PERSONAS[role];
-  if (!persona) return;
-  state.userId = persona.userId;
-  state.userName = persona.userName;
-  state.role = role;
-  state.visibleNav = visibleNavForRole(role);
-}
-
 export function identityHeaders(includeJsonContentType = true) {
   const headers = {
     "X-Portal-User-Id": state.userId.trim(),
     "X-Portal-User-Name": encodeURIComponent(state.userName.trim()),
-    "X-Portal-Role": state.role,
+    "X-Portal-Role": state.demoMode ? DEMO_IDENTITY.role : state.role,
     "X-Portal-Owner-Units": state.ownerUnits,
   };
   if (includeJsonContentType) {
@@ -68,6 +64,11 @@ export function syncFromDashboard(dashboard) {
   state.demoMode = dashboard.demo_mode !== false;
   state.portalProfile = dashboard.portal_profile || "DEMO";
   state.homeRoute = dashboard.home_route || "#/work";
+  if (state.demoMode) {
+    state.role = DEMO_IDENTITY.role;
+    state.visibleNav = [...ALL_NAV];
+    return;
+  }
   state.visibleNav = dashboard.visible_nav || visibleNavForRole(state.role);
   if (dashboard.actor_role) {
     state.role = dashboard.actor_role;
