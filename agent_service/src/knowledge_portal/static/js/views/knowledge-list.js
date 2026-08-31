@@ -1,4 +1,5 @@
 import { api } from "../api.js";
+import { can } from "../capabilities.js";
 import { fluentButton } from "../fluent.js";
 import { statusLabel } from "../labels.js";
 import { navigate } from "../router.js";
@@ -42,7 +43,7 @@ function renderFilters(filters) {
             <fluent-option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</fluent-option>`).join("")}
         </fluent-select>
       </label>
-      ${fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } })}
+      ${can("create_document") ? fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } }) : ""}
     </div>`;
 }
 
@@ -114,7 +115,9 @@ export async function renderKnowledgeListView(app, query) {
         const emptyKey = hasFilters ? "knowledge-no-results" : "knowledge-empty";
         const action = hasFilters
           ? fluentButton("清除篩選", { appearance: "outline", dataset: { route: "#/knowledge" } })
-          : fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } });
+          : (can("create_document")
+            ? fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } })
+            : "");
         container.innerHTML = renderViewEmpty(emptyKey, action);
         container.querySelectorAll("[data-route]").forEach((node) => {
           node.addEventListener("click", () => navigate(node.dataset.route));

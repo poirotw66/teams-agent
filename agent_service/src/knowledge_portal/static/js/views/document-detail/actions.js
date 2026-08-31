@@ -7,6 +7,7 @@ import {
   promptDialog,
   showToast,
 } from "../../ui.js?v=20260831e";
+import { captureDraftBaseline } from "./editor-state.js";
 
 export async function handleAction(documentId, action, detail) {
   if (action === "validate") {
@@ -87,6 +88,7 @@ export async function handleAction(documentId, action, detail) {
         markdown_content: markdown,
       }),
     });
+    captureDraftBaseline();
     showToast("草稿已儲存");
   }
   if (action === "insert-asset-ref") {

@@ -1,19 +1,60 @@
 import { api } from "../api.js";
-import { getSession } from "../session.js";
+import { can } from "../capabilities.js";
 import { handleConflictError } from "../errors.js";
-import { escapeHtml, handleViewError, promptDialog, showToast } from "../ui.js?v=20260831e";
+import { escapeHtml, handleViewError, openDialog, promptDialog, showToast } from "../ui.js?v=20260831e";
 
-function canManageReleases() {
-  return ["MANAGER", "PLATFORM"].includes(getSession().role);
-}
+const RELEASE_STATUS_LABELS = {
+  ACTIVE: "使用中",
+  ROLLED_BACK: "已取代",
+  BUILDING: "建立中",
+  READY: "待啟用",
+  FAILED: "失敗",
+};
 
 function formatWhen(value) {
   if (!value) return "未設定";
   return new Date(value).toLocaleString("zh-TW");
 }
 
+function releaseStatusLabel(status) {
+  return RELEASE_STATUS_LABELS[status] || status;
+}
+
+function changeTypeLabel(type) {
+  return { ADDED: "新增", REMOVED: "移除", UPDATED: "更新" }[type] || type;
+}
+
+function renderCompareSummary(compare) {
+  if (!compare.changes.length) {
+    return "<p>此版本與目前正式版本的文件清單相同。</p>";
+  }
+  const rows = compare.changes.map((item) => `
+    <tr>
+      <td>${escapeHtml(changeTypeLabel(item.change_type))}</td>
+      <td>${escapeHtml(item.title)}</td>
+    </tr>`).join("");
+  const warnings = [];
+  if (compare.target_is_older) {
+    warnings.push("<p><strong>注意：</strong>此版本早於目前使用中的版本，回復後 Teams 可能缺少較新的知識內容。</p>");
+  }
+  if (compare.document_count_delta !== 0) {
+    const deltaText = compare.document_count_delta > 0
+      ? `將增加 ${compare.document_count_delta} 份文件`
+      : `將減少 ${Math.abs(compare.document_count_delta)} 份文件`;
+    warnings.push(`<p>${escapeHtml(deltaText)}。</p>`);
+  }
+  return `
+    ${warnings.join("")}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>變更</th><th>文件</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 export async function renderReleasesView(app) {
-  if (!getSession().visibleNav?.includes("releases")) {
+  if (!can("list_releases")) {
     app.innerHTML = `
       <section class="page">
         <header class="page-header"><h2>發布紀錄</h2></header>
@@ -62,13 +103,13 @@ export async function renderReleasesView(app) {
             ${releases.map((item) => `
               <tr>
                 <td>${escapeHtml(item.release_id)}${item.release_id === activeId ? " <span class=\"muted\">（使用中）</span>" : ""}</td>
-                <td>${escapeHtml(item.status)}</td>
+                <td>${escapeHtml(releaseStatusLabel(item.status))}</td>
                 <td>${item.manifest?.length || 0}</td>
                 <td>${formatWhen(item.created_at)}</td>
                 <td>${formatWhen(item.activated_at)}</td>
                 <td>
-                  ${canManageReleases() && item.release_id !== activeId ? `
-                    <button type="button" class="btn secondary btn-sm" data-rollback="${escapeHtml(item.release_id)}">切換至此版本</button>` : ""}
+                  ${can("manage_releases") && item.release_id !== activeId ? `
+                    <button type="button" class="btn secondary btn-sm" data-rollback="${escapeHtml(item.release_id)}">查看差異並切換</button>` : ""}
                 </td>
               </tr>`).join("")}
           </tbody>
@@ -78,17 +119,37 @@ export async function renderReleasesView(app) {
       <div class="panel">
         <p class="muted">目前使用中：${escapeHtml(activeId || "（無）")}</p>
         ${rows}
-        <p class="muted">切換版本會更新 Teams 引用的正式知識索引，請確認後再操作。</p>
+        <p class="muted">切換版本會更新 Teams 引用的正式知識索引。請先查看差異，確認後再執行。</p>
       </div>`;
 
     container.querySelectorAll("[data-rollback]").forEach((button) => {
       button.addEventListener("click", async () => {
         const releaseId = button.dataset.rollback;
-        const reason = await promptDialog("切換發布版本", "請說明原因", {
-          defaultValue: `切換至 ${releaseId}`,
-        });
-        if (reason === null) return;
         try {
+          const compare = await api(`/api/releases/compare?target_release_id=${encodeURIComponent(releaseId)}`);
+          const preview = await openDialog({
+            title: "確認切換發布版本",
+            bodyHtml: `
+              <p>你即將切換至 <strong>${escapeHtml(releaseId)}</strong>。</p>
+              ${renderCompareSummary(compare)}`,
+            confirmLabel: "繼續",
+            cancelLabel: "取消",
+          });
+          if (!preview) return;
+
+          const reason = await promptDialog("切換發布版本", "請說明切換原因", {
+            defaultValue: `切換至 ${releaseId}`,
+          });
+          if (reason === null) return;
+
+          const confirmed = await openDialog({
+            title: "最終確認",
+            bodyHtml: `<p>此操作會立即更新 Teams 使用的正式知識版本。確定要切換至 <strong>${escapeHtml(releaseId)}</strong> 嗎？</p>`,
+            confirmLabel: "執行切換",
+            danger: true,
+          });
+          if (!confirmed) return;
+
           await api("/api/releases/rollback", {
             method: "POST",
             body: JSON.stringify({ release_id: releaseId, reason }),

@@ -1,19 +1,18 @@
+import { clearDirtyChecker, confirmLeaveIfDirty } from "../../dirty-state.js";
 import { navigate } from "../../router.js";
-import { confirmDialog } from "../../ui.js?v=20260831e";
 import { clearDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 
 let pendingTabFocus = null;
 
 async function goToTab(documentId, activeTab, targetTab) {
   if (activeTab === "content" && targetTab !== "content" && isDraftEditorDirty()) {
-    const ok = await confirmDialog(
-      "尚未儲存",
+    const ok = await confirmLeaveIfDirty(
       "內容與附件有未儲存的變更。離開此分頁將捨棄這些變更。確定要離開？",
-      { confirmLabel: "離開", danger: true },
     );
     if (!ok) return;
   }
   clearDraftBaseline();
+  clearDirtyChecker();
   navigate(`#/knowledge/${documentId}/${targetTab}`);
 }
 

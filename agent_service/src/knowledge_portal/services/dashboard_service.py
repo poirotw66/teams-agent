@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from ..role_capabilities import role_capabilities
 from ..models import DashboardSummary, PortalActor, WorkQueueItem
 from .context import PortalServiceContext
 
@@ -27,6 +28,7 @@ class DashboardService:
                 "home_route": self._home_route_for_role(actor),
                 "work_queues": work_queues,
                 "visible_nav": self._visible_nav_for_role(actor),
+                "capabilities": role_capabilities(actor),
             }
         )
 

@@ -30,6 +30,7 @@ from ..models import (
     utc_now,
 )
 from ..rbac import ensure_can_edit, ensure_can_remove_document, ensure_document_visible, ensure_not_found
+from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
 from ..repository import PortalNotFoundError, VersionConflictError, new_id
 from ..validation import (
     build_front_matter_markdown,
@@ -115,6 +116,7 @@ class DocumentService:
         request: CreateDocumentRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
+        ensure_can_create_document(actor)
         document_id = new_id("doc")
         version_id = new_id("ver")
         asset_slug = slug_from_title(request.title)
@@ -406,7 +408,10 @@ class DocumentService:
         )
         return test_case
 
-    def import_markdown(self, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
+    def import_markdown(
+        self, actor: PortalActor, raw: str, *, filename: str | None = None
+    ) -> ImportMarkdownResponse:
+        ensure_can_import_markdown(actor)
         parsed = parse_markdown_import(
             raw,
             default_owner_unit_id=self._settings.default_owner_unit_id,
@@ -414,7 +419,7 @@ class DocumentService:
         )
         warnings: list[str] = []
         if raw.lstrip().startswith("---"):
-            warnings.append("Front matter was parsed into metadata fields.")
+            warnings.append("已解析文件開頭的 metadata 欄位。")
         return ImportMarkdownResponse(
             title=str(parsed["title"]),
             owner_unit_id=str(parsed["owner_unit_id"]),

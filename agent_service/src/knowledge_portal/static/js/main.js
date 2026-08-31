@@ -1,5 +1,7 @@
 import { loadFluentComponents } from "./fluent.js";
 import { api } from "./api.js";
+import { can } from "./capabilities.js";
+import { installBeforeUnloadGuard } from "./dirty-state.js";
 import { ROLE_LABELS } from "./labels.js";
 import { getSession, syncFromDashboard } from "./session.js";
 import { navigate, startRouter } from "./router.js";
@@ -62,6 +64,22 @@ async function renderRoute({ segments, query, app }) {
     return;
   }
   if (segments[0] === "knowledge" && segments[1] === "new") {
+    if (!can("create_document")) {
+      app.innerHTML = `
+        <section class="page">
+          <header class="page-header"><h2>新增知識文件</h2></header>
+          ${renderViewForbidden("knowledge", {
+            title: "無法新增文件",
+            message: "你的角色目前不能建立知識文件。",
+            actionLabel: "返回知識庫",
+            actionRoute: "#/knowledge",
+          })}
+        </section>`;
+      app.querySelector("[data-route]")?.addEventListener("click", (event) => {
+        navigate(event.currentTarget.dataset.route);
+      });
+      return;
+    }
     await renderCreateView(app);
     return;
   }
@@ -75,11 +93,22 @@ async function renderRoute({ segments, query, app }) {
     return;
   }
   if (segments[0] === "reviews") {
+    if (!can("list_pending_reviews")) {
+      app.innerHTML = `
+        <section class="page">
+          <header class="page-header"><h2>待審清單</h2></header>
+          ${renderViewForbidden("reviews")}
+        </section>`;
+      app.querySelector("[data-route]")?.addEventListener("click", (event) => {
+        navigate(event.currentTarget.dataset.route);
+      });
+      return;
+    }
     await renderReviewsView(app);
     return;
   }
   if (segments[0] === "audit") {
-    if (!getSession().visibleNav?.includes("audit")) {
+    if (!can("view_audit")) {
       app.innerHTML = `
         <section class="page">
           <header class="page-header"><h2>稽核紀錄</h2></header>
@@ -94,12 +123,20 @@ async function renderRoute({ segments, query, app }) {
     return;
   }
   if (segments[0] === "releases") {
-    if (!getSession().visibleNav?.includes("releases")) {
+    if (!can("list_releases")) {
       app.innerHTML = `
         <section class="page">
           <header class="page-header"><h2>發布紀錄</h2></header>
-          ${renderViewForbidden("audit")}
+          ${renderViewForbidden("audit", {
+            title: "無法查看發布紀錄",
+            message: "發布紀錄僅供管理者或平台管理者查閱。",
+            actionLabel: "返回我的工作",
+            actionRoute: "#/work",
+          })}
         </section>`;
+      app.querySelector("[data-route]")?.addEventListener("click", (event) => {
+        navigate(event.currentTarget.dataset.route);
+      });
       return;
     }
     await renderReleasesView(app);
@@ -110,6 +147,7 @@ async function renderRoute({ segments, query, app }) {
 
 async function bootstrap() {
   await loadFluentComponents();
+  installBeforeUnloadGuard();
   document.querySelector(".skip-link")?.addEventListener("click", () => {
     requestAnimationFrame(() => document.getElementById("app")?.focus());
   });

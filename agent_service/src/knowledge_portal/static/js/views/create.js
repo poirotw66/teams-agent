@@ -1,4 +1,5 @@
 import { api, apiForm } from "../api.js";
+import { clearDirtyChecker, registerDirtyChecker } from "../dirty-state.js";
 import { fluentButton } from "../fluent.js";
 import { navigate } from "../router.js";
 import { escapeHtml, showToast } from "../ui.js?v=20260831e";
@@ -14,6 +15,18 @@ function parseAudienceGroupIds(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+let createBaseline = null;
+
+function readCreateFormSnapshot() {
+  const form = document.getElementById("createForm");
+  if (!form) return "";
+  return JSON.stringify(Object.fromEntries(new FormData(form).entries()));
+}
+
+function syncCreateDirtyGuard() {
+  registerDirtyChecker(() => createBaseline !== null && readCreateFormSnapshot() !== createBaseline);
 }
 
 function renderStepHeader(currentStep) {
@@ -106,6 +119,8 @@ function buildCreatePayload(formValues) {
 }
 
 export async function renderCreateView(app) {
+  clearDirtyChecker();
+  createBaseline = null;
   let currentStep = 1;
   const formValues = {
     audience_type: "ALL_EMPLOYEES",
@@ -213,11 +228,18 @@ export async function renderCreateView(app) {
           body: JSON.stringify(buildCreatePayload(formValues)),
         });
         showToast("草稿已建立");
+        clearDirtyChecker();
+        createBaseline = null;
         navigate(`#/knowledge/${created.document.document_id}/content`);
       } catch (error) {
         showToast(error.message, true);
       }
     });
+
+    createBaseline = readCreateFormSnapshot();
+    syncCreateDirtyGuard();
+    form.addEventListener("input", syncCreateDirtyGuard);
+    form.addEventListener("change", syncCreateDirtyGuard);
   }
 
   render();

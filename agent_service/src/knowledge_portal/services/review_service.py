@@ -17,6 +17,7 @@ from ..rbac import (
     ensure_document_visible,
     ensure_not_found,
 )
+from ..role_capabilities import ensure_can_list_pending_reviews
 from ..repository import VersionConflictError, new_id
 from ..validation import validate_draft
 from .context import PortalServiceContext
@@ -31,6 +32,7 @@ class ReviewService:
     async def list_pending_reviews(
         self, actor: PortalActor
     ) -> PendingReviewListResponse:
+        ensure_can_list_pending_reviews(actor)
         reviews = await self._ctx.repository.list_pending_reviews(actor)
         items: list[PendingReviewItem] = []
         for review in reviews:

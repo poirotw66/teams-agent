@@ -173,6 +173,13 @@ class PortalService:
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
         return await self._releases.list_releases(actor)
 
+    async def compare_releases(
+        self, actor: PortalActor, *, target_release_id: str
+    ):
+        return await self._releases.compare_releases(
+            actor, target_release_id=target_release_id
+        )
+
     async def list_audit(self, actor: PortalActor, *, limit: int = 100):
         ensure_can_view_audit(actor)
         return await self._ctx.repository.list_audit_events(limit=limit)
@@ -188,8 +195,8 @@ class PortalService:
             actor, document_id, request, correlation_id
         )
 
-    def import_markdown(self, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
-        return self._documents.import_markdown(raw, filename=filename)
+    def import_markdown(self, actor: PortalActor, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
+        return self._documents.import_markdown(actor, raw, filename=filename)
 
     async def list_draft_assets(
         self, actor: PortalActor, document_id: str

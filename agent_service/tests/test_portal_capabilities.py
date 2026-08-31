@@ -299,3 +299,72 @@ def test_dashboard_visible_nav_includes_audit_for_auditor(portal_headers) -> Non
 def test_contributor_cannot_view_audit_via_rbac_helper() -> None:
     with pytest.raises(Exception, match="permission to view audit"):
         ensure_can_view_audit(_actor("CONTRIBUTOR"))
+
+
+def test_auditor_cannot_create_document_via_api(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.post(
+        "/api/documents",
+        json={
+            "title": "Should fail",
+            "summary": "",
+            "category": "",
+            "owner_unit_id": "IT Service Desk",
+            "business_contact": "",
+            "audience_type": "ALL_EMPLOYEES",
+            "audience_group_ids": [],
+            "effective_at": "2026-08-01",
+            "review_due_at": "2026-12-01",
+            "change_summary": "Initial",
+            "change_reason": "Initial",
+            "markdown_content": "# Should fail",
+        },
+        headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
+    )
+    assert response.status_code == 403
+
+
+def test_auditor_cannot_list_pending_reviews(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/reviews/pending",
+        headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
+    )
+    assert response.status_code == 403
+
+
+def test_reviewer_cannot_list_releases(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/releases",
+        headers=portal_headers(role="REVIEWER", user_id="reviewer.demo"),
+    )
+    assert response.status_code == 403
+
+
+def test_dashboard_includes_capabilities(portal_headers) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    client = TestClient(create_app(settings))
+
+    response = client.get(
+        "/api/dashboard",
+        headers=portal_headers(role="AUDITOR", user_id="auditor.demo"),
+    )
+    body = response.json()
+    assert body["capabilities"]["create_document"] is False
+    assert body["capabilities"]["view_audit"] is True
+    assert body["capabilities"]["list_releases"] is False

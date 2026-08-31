@@ -172,7 +172,10 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         _: None = Depends(authorize),
     ):
         raw = (await file.read()).decode("utf-8")
-        return service.import_markdown(raw, filename=file.filename)
+        try:
+            return service.import_markdown(actor, raw, filename=file.filename)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.post("/api/documents/{document_id}/start-revision")
     async def start_revision(
@@ -305,7 +308,10 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        return await service.list_pending_reviews(actor)
+        try:
+            return await service.list_pending_reviews(actor)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.post("/api/documents/{document_id}/discard-draft")
     async def discard_draft(
@@ -451,7 +457,23 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        return await service.list_releases(actor)
+        try:
+            return await service.list_releases(actor)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/releases/compare")
+    async def compare_releases(
+        target_release_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.compare_releases(
+                actor, target_release_id=target_release_id
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.get("/api/audit-events")
     async def list_audit(

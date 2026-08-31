@@ -9,6 +9,8 @@ from ..models import (
     KnowledgeVersionRecord,
     PortalActor,
     PublishRequest,
+    ReleaseCompareResponse,
+    ReleaseDocumentChange,
     ReleaseRecord,
     RemoveDocumentRequest,
     RollbackRequest,
@@ -16,6 +18,7 @@ from ..models import (
 )
 from ..publisher import ReleaseBuildError
 from ..rbac import ensure_can_publish, ensure_can_remove_document, ensure_not_found
+from ..role_capabilities import ensure_can_list_releases
 from ..repository import new_id
 from .context import PortalServiceContext
 from .document_service import DocumentService
@@ -157,6 +160,8 @@ class ReleaseService:
         ensure_can_publish(actor)
         target = await self._ctx.repository.get_release(request.release_id)
         ensure_not_found("release", request.release_id, target)
+        previous_active_id = await self._ctx.repository.get_active_release_id()
+        await self._deactivate_other_releases(target.release_id)
         await self._ctx.repository.set_active_release_id(target.release_id)
         write_active_release_pointer(
             self._ctx.settings.release_artifact_dir,
@@ -173,11 +178,75 @@ class ReleaseService:
             target_id=target.release_id,
             correlation_id=correlation_id,
             reason=request.reason,
+            metadata={"previousReleaseId": previous_active_id},
         )
         return rolled_back
 
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
+        ensure_can_list_releases(actor)
         return await self._ctx.repository.list_releases()
+
+    async def compare_releases(
+        self,
+        actor: PortalActor,
+        *,
+        target_release_id: str,
+    ) -> ReleaseCompareResponse:
+        ensure_can_list_releases(actor)
+        target = await self._ctx.repository.get_release(target_release_id)
+        ensure_not_found("release", target_release_id, target)
+        current_id = await self._ctx.repository.get_active_release_id()
+        current = await self._ctx.repository.get_release(current_id) if current_id else None
+
+        current_manifest = {
+            entry.document_id: entry for entry in (current.manifest if current else [])
+        }
+        target_manifest = {entry.document_id: entry for entry in target.manifest}
+
+        changes: list[ReleaseDocumentChange] = []
+        for doc_id, entry in target_manifest.items():
+            current_entry = current_manifest.get(doc_id)
+            if current_entry is None:
+                changes.append(
+                    ReleaseDocumentChange(
+                        document_id=doc_id,
+                        title=entry.title,
+                        change_type="ADDED",
+                        target_version_id=entry.version_id,
+                    )
+                )
+            elif current_entry.version_id != entry.version_id:
+                changes.append(
+                    ReleaseDocumentChange(
+                        document_id=doc_id,
+                        title=entry.title,
+                        change_type="UPDATED",
+                        current_version_id=current_entry.version_id,
+                        target_version_id=entry.version_id,
+                    )
+                )
+        for doc_id, entry in current_manifest.items():
+            if doc_id not in target_manifest:
+                changes.append(
+                    ReleaseDocumentChange(
+                        document_id=doc_id,
+                        title=entry.title,
+                        change_type="REMOVED",
+                        current_version_id=entry.version_id,
+                    )
+                )
+
+        target_is_older = False
+        if current is not None and current.created_at and target.created_at:
+            target_is_older = target.created_at < current.created_at
+
+        return ReleaseCompareResponse(
+            current_release_id=current_id,
+            target_release_id=target_release_id,
+            target_is_older=target_is_older,
+            document_count_delta=len(target.manifest) - len(current_manifest),
+            changes=changes,
+        )
 
     async def _collect_active_published_versions(
         self,
@@ -251,6 +320,7 @@ class ReleaseService:
                 "approved_by": actor.user_id,
             }
         )
+        await self._deactivate_other_releases(release.release_id)
         await self._ctx.repository.save_release(release)
         await self._ctx.repository.set_active_release_id(release.release_id)
         write_active_release_pointer(
@@ -267,3 +337,13 @@ class ReleaseService:
             metadata=metadata or {},
         )
         return release
+
+    async def _deactivate_other_releases(self, active_release_id: str) -> None:
+        for item in await self._ctx.repository.list_releases():
+            if item.release_id == active_release_id:
+                continue
+            if item.status != "ACTIVE":
+                continue
+            await self._ctx.repository.save_release(
+                item.model_copy(update={"status": "ROLLED_BACK"})
+            )

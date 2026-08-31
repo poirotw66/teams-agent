@@ -183,7 +183,7 @@ class InMemoryPortalRepository:
         return None
 
     async def list_pending_reviews(self, actor: PortalActor) -> list[ReviewRecord]:
-        if actor.role not in {"REVIEWER", "MANAGER", "PLATFORM", "AUDITOR"}:
+        if actor.role not in {"REVIEWER", "MANAGER", "PLATFORM"}:
             return []
         return [
             review

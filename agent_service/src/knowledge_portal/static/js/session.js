@@ -17,10 +17,23 @@ const state = {
   userName: DEMO_IDENTITY.userName,
   role: DEMO_IDENTITY.role,
   ownerUnits: "IT Service Desk",
+  capabilities: {
+    create_document: true,
+    import_markdown: true,
+    list_pending_reviews: true,
+    decide_review: true,
+    publish: true,
+    list_releases: true,
+    manage_releases: true,
+    view_audit: true,
+  },
 };
 
 export function getSession() {
-  return { ...state };
+  return {
+    ...state,
+    capabilities: { ...state.capabilities },
+  };
 }
 
 export function updateSession(patch) {
@@ -67,10 +80,14 @@ export function syncFromDashboard(dashboard) {
   if (state.demoMode) {
     state.role = DEMO_IDENTITY.role;
     state.visibleNav = [...ALL_NAV];
+    state.capabilities = { ...state.capabilities };
     return;
   }
   state.visibleNav = dashboard.visible_nav || visibleNavForRole(state.role);
   if (dashboard.actor_role) {
     state.role = dashboard.actor_role;
+  }
+  if (dashboard.capabilities) {
+    state.capabilities = dashboard.capabilities;
   }
 }

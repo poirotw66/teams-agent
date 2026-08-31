@@ -1,4 +1,5 @@
 import { api, revokeAssetPreviewUrls } from "../../api.js";
+import { clearDirtyChecker, registerDirtyChecker } from "../../dirty-state.js";
 import { navigate } from "../../router.js";
 import {
   escapeHtml,
@@ -10,7 +11,7 @@ import {
   renderViewForbidden,
 } from "../../ui.js?v=20260831e";
 import { hydrateAssetPreviews, loadTestData } from "./data.js";
-import { captureDraftBaseline } from "./editor-state.js";
+import { captureDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";
 import { renderContentTab } from "./tabs/content.js";
 import { renderOverviewTab } from "./tabs/overview.js";
@@ -31,6 +32,7 @@ function renderTabContent(tab, documentId, detail, cases, runsByCase) {
 
 export async function renderDocumentDetailView(app, documentId, tab = "overview") {
   revokeAssetPreviewUrls();
+  clearDirtyChecker();
   app.innerHTML = `
     <section class="page detail-page">
       <header class="page-header">
@@ -100,9 +102,12 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
     wireActions(app, documentId, detail, refresh);
     if (tab === "content") {
       captureDraftBaseline();
+      registerDirtyChecker(isDraftEditorDirty);
       if (detail.draft_assets?.items?.length) {
         await hydrateAssetPreviews(documentId, detail.draft_assets.items);
       }
+    } else {
+      clearDirtyChecker();
     }
   } catch (error) {
     if (isForbiddenError(error)) {

@@ -344,6 +344,33 @@ class PendingReviewListResponse(StrictModel):
     total: int
 
 
+class RoleCapabilities(StrictModel):
+    create_document: bool = False
+    import_markdown: bool = False
+    list_pending_reviews: bool = False
+    decide_review: bool = False
+    publish: bool = False
+    list_releases: bool = False
+    manage_releases: bool = False
+    view_audit: bool = False
+
+
+class ReleaseDocumentChange(StrictModel):
+    document_id: str
+    title: str
+    change_type: Literal["ADDED", "REMOVED", "UPDATED"]
+    current_version_id: str | None = None
+    target_version_id: str | None = None
+
+
+class ReleaseCompareResponse(StrictModel):
+    current_release_id: str | None
+    target_release_id: str
+    target_is_older: bool = False
+    document_count_delta: int = 0
+    changes: list[ReleaseDocumentChange] = Field(default_factory=list)
+
+
 class DashboardSummary(StrictModel):
     my_drafts: int
     my_changes_requested: int = 0
@@ -360,6 +387,7 @@ class DashboardSummary(StrictModel):
     home_route: str = "#/work"
     work_queues: list[WorkQueueItem] = Field(default_factory=list)
     visible_nav: list[str] = Field(default_factory=lambda: ["work", "knowledge", "reviews"])
+    capabilities: RoleCapabilities = Field(default_factory=RoleCapabilities)
 
 
 def utc_now() -> datetime:
