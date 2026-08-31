@@ -17,6 +17,7 @@ import { renderReviewTab } from "./tabs/review.js";
 import { renderTestsTab } from "./tabs/tests.js";
 import { renderVersionsTab } from "./tabs/versions.js";
 import { wireActions } from "./wiring.js";
+import { focusPendingTab, wireTabList } from "./tabs.js";
 
 function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   if (tab === "overview") return renderOverviewTab(detail);
@@ -39,7 +40,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
       <div class="detail-layout">
         <div class="detail-main">
           <nav id="detailTabs" class="tab-nav" role="tablist" aria-label="文件分頁"></nav>
-          <div id="detailTabContent" role="tabpanel" aria-live="polite">${renderSkeleton(3)}</div>
+          <div id="detailTabContent" role="tabpanel" aria-live="polite" tabindex="0">${renderSkeleton(3)}</div>
         </div>
         <div id="detailActionPanel"></div>
       </div>
@@ -67,9 +68,13 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
         data-tab="${item.id}"
       >${item.label}</button>`).join("");
 
-    app.querySelectorAll("[data-tab]").forEach((node) => {
-      node.addEventListener("click", () => navigate(`#/knowledge/${documentId}/${node.dataset.tab}`));
-    });
+    const tabNav = app.querySelector("#detailTabs");
+    wireTabList(tabNav, documentId, tab);
+    focusPendingTab();
+
+    const tabPanel = app.querySelector("#detailTabContent");
+    tabPanel.id = "detailTabContent";
+    tabPanel.setAttribute("aria-labelledby", `tab-${tab}`);
 
     app.querySelector("#detailHeader").innerHTML = `
       <h2>${escapeHtml(detail.document.title)}</h2>

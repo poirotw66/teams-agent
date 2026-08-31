@@ -18,12 +18,12 @@ function parseAudienceGroupIds(value) {
 
 function renderStepHeader(currentStep) {
   return `
-    <div class="create-steps" aria-label="建立步驟">
+    <ol class="create-steps" aria-label="建立步驟">
       ${STEPS.map((step) => `
-        <div class="create-step ${step.id === currentStep ? "active" : ""}"${step.id === currentStep ? ' aria-current="step"' : ""}>
+        <li class="create-step ${step.id === currentStep ? "active" : ""}"${step.id === currentStep ? ' aria-current="step"' : ""}>
           步驟 ${step.id} · ${step.label}
-        </div>`).join("")}
-    </div>`;
+        </li>`).join("")}
+    </ol>`;
 }
 
 function renderStepPanel(step, formValues) {

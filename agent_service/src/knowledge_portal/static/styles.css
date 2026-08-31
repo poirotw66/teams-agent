@@ -29,6 +29,26 @@ body {
 }
 
 .hidden { display: none !important; }
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0.75rem;
+  z-index: 1000;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -499,6 +519,13 @@ fluent-text-area {
   100% { background-position: -200% 0; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-row {
+    animation: none;
+    background: #edebe9;
+  }
+}
+
 .role-subtitle { margin: 0.25rem 0 0; }
 
 @media (max-width: 900px) {
@@ -544,7 +571,9 @@ fluent-text-area {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-bottom: 1rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
 }
 
 .create-step {
@@ -563,4 +592,18 @@ fluent-text-area {
 .tab[aria-selected="true"] {
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.app-main:focus {
+  outline: none;
+}
+
+.app-main:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
 }

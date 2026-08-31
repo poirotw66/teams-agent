@@ -137,6 +137,9 @@ async function renderRoute({ segments, query, app }) {
 
 async function bootstrap() {
   await loadFluentComponents();
+  document.querySelector(".skip-link")?.addEventListener("click", () => {
+    requestAnimationFrame(() => document.getElementById("app")?.focus());
+  });
   document.querySelectorAll("[data-nav]").forEach((node) => {
     node.addEventListener("click", () => navigate(node.dataset.nav));
   });
