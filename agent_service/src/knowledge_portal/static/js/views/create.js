@@ -34,7 +34,7 @@ function renderStepPanel(step, formValues) {
           匯入文件（可選）
           <input id="importMarkdownFile" type="file" accept=".md,text/markdown">
         </label>
-        <p class="muted full">匯入後會自動填入標題與內容。</p>
+        <p class="muted full">匯入後會自動填入標題、適用範圍與內容。</p>
         <label>標題<input name="title" required></label>
         <label>摘要<textarea name="summary" rows="2"></textarea></label>
         <label>擁有單位<input name="owner_unit_id" value="IT Service Desk" required></label>
@@ -175,9 +175,15 @@ export async function renderCreateView(app) {
           owner_unit_id: imported.owner_unit_id,
           effective_at: imported.effective_at,
           review_due_at: imported.review_due_at,
+          audience_type: imported.audience_type || "ALL_EMPLOYEES",
+          audience_group_ids: (imported.audience_group_ids || []).join(", "),
           markdown_content: imported.markdown_content,
         });
-        showToast(imported.warnings?.length ? imported.warnings.join(" ") : "已匯入文件");
+        const warnings = [...(imported.warnings || [])];
+        if (imported.audience_type === "RESTRICTED_GROUPS") {
+          warnings.push("已保留匯入文件的特定群組設定。");
+        }
+        showToast(warnings.length ? warnings.join(" ") : "已匯入文件");
         render();
       } catch (error) {
         showToast(error.message, true);

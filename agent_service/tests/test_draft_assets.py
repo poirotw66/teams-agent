@@ -122,6 +122,32 @@ Body text.
     assert body["asset_slug"] == "VPN Guide"
 
 
+def test_import_markdown_preserves_restricted_audience(draft_asset_client: TestClient) -> None:
+    raw = """---
+title: HR Policy
+owner: IT Service Desk
+effectiveDate: 2026-01-01
+reviewDate: 2026-12-31
+audience:
+  - hr-team
+  - managers
+---
+
+# HR Policy
+
+Restricted body.
+"""
+    response = draft_asset_client.post(
+        "/api/documents/import-markdown",
+        files={"file": ("hr.md", raw.encode("utf-8"), "text/markdown")},
+        headers=portal_headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["audience_type"] == "RESTRICTED_GROUPS"
+    assert body["audience_group_ids"] == ["hr-team", "managers"]
+
+
 def test_upload_and_list_draft_assets(draft_asset_client: TestClient) -> None:
     document_id = _create_document(draft_asset_client)
     png_bytes = (

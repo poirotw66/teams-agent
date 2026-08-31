@@ -45,15 +45,19 @@ function actionSlug(action) {
 export function renderActionPanel(detail) {
   const actions = detail.allowed_actions || [];
   const primary = detail.next_action;
+  const hasReviewTab = getVisibleTabs(detail).some((item) => item.id === "review");
   const buttons = [];
   if (primary && can(primary, actions)) {
-    const slug = primary === "EDIT_DRAFT" ? "edit-draft" : actionSlug(primary);
-    buttons.push(`<button type="button" class="btn primary" data-action="${slug}">${escapeHtml(nextActionLabel(primary))}</button>`);
+    const reviewDecision = primary === "APPROVE" || primary === "REJECT";
+    if (!(hasReviewTab && reviewDecision)) {
+      const slug = primary === "EDIT_DRAFT" ? "edit-draft" : actionSlug(primary);
+      buttons.push(`<button type="button" class="btn primary" data-action="${slug}">${escapeHtml(nextActionLabel(primary))}</button>`);
+    }
   }
-  if (can("APPROVE", actions) && primary !== "APPROVE") {
+  if (!hasReviewTab && can("APPROVE", actions) && primary !== "APPROVE") {
     buttons.push(`<button type="button" class="btn primary" data-action="approve">核准</button>`);
   }
-  if (can("REJECT", actions) && primary !== "REJECT") {
+  if (!hasReviewTab && can("REJECT", actions) && primary !== "REJECT") {
     buttons.push(`<button type="button" class="btn secondary" data-action="reject">退回修改</button>`);
   }
   if (can("PUBLISH", actions) && primary !== "PUBLISH") {

@@ -1,4 +1,5 @@
 import { audienceLabel, testResultLabel } from "../../../labels.js";
+import { renderLineDiffHtml } from "../../../diff.js";
 import { escapeHtml, stripFrontMatter } from "../../../ui.js";
 import { can, renderIssues } from "../shared.js";
 
@@ -45,6 +46,12 @@ export function renderReviewTab(detail, cases, runsByCase) {
         <h3>問答測試結果</h3>
         <ul class="issue-list">${testRows}</ul>
       </div>
+      ${publishedBody ? `
+        <div class="panel">
+          <h3>內容變更摘要</h3>
+          <p class="muted">以下列出與正式版本不同的段落；完整內容請見下方並排檢視。</p>
+          ${renderLineDiffHtml(publishedBody, draftBody)}
+        </div>` : ""}
       <div class="compare-grid">
         <div class="panel">
           <h3>正式版本內容</h3>
