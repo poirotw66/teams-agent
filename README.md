@@ -246,6 +246,38 @@ START_TUNNEL=false ./start.sh
 `Ctrl+C` stops all child processes started by the script. If `3978` or `8000` is already occupied by an old process,
 the script stops first and tells you which service to close manually.
 
+`start.sh` also launches the local Agents Playground with the knowledge-backend selector.
+For Gemini File Search it first respects shell environment variables and
+`agent_service/.env` values for `GEMINI_FILE_SEARCH_STORE`, `GOOGLE_API_KEY`
+(or `GEMINI_API_KEY`). If the store is unset, it uses the same store as the
+existing Cloud Run deployment. When no local API key is available but `gcloud`
+is authenticated, the script securely loads the existing Secret Manager value
+into the Agent child process without printing it. If that is unavailable, it
+warns and keeps HYBRID running. You can also configure it explicitly:
+
+```bash
+GEMINI_FILE_SEARCH_STORE=fileSearchStores/helpdeskstore-1p3gu83qot1s \
+GOOGLE_API_KEY=<secret> \
+./start.sh
+```
+
+When that Google key is available and neither the shell nor
+`agent_service/.env` sets `RAG_MODEL`, the script enables
+`google_genai:gemini-3.5-flash-lite` as the local agentic model. This gives
+the issue extractor, relevance grader, and handoff semantic router a model;
+it does not rewrite `.env`, and any explicit `RAG_MODEL` wins. Without a
+Google key, the no-external-model extractive-local mode remains available.
+
+When the shared legacy store lacks ACL metadata that can be matched to the
+local Playground identity, the no-tunnel Playground defaults to no metadata
+filter, matching the existing Cloud Run configuration. A shell
+`GEMINI_FILE_SEARCH_ENFORCE_ACL` setting always wins. If
+`agent_service/.env` leaves the store blank, its copied template value of
+`true` is treated as a placeholder so the legacy fallback can actually query;
+to enforce filtering locally, explicitly set `true` in the shell, or set both
+the store and ACL value in `.env`. If `START_TUNNEL=true` is enabled without
+an explicit setting, the safe default remains `true`.
+
 Without Teams, Azure, or devtunnel, you can still run one full conversation round (including the message the Bot would send):
 
 ```bash
@@ -781,6 +813,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `MAX_HISTORY_MESSAGES` | `10` | Max history messages loaded into workflow context, range 0–50 |
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | Rounds treated as “recent conversation,” range 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | Start a new conversation after timeout, range 1–168 |
+| `CONVERSATION_RETENTION_DAYS` | `730` | Firestore message retention; separate from the 24-hour conversation timeout |
 | `MAX_LLM_CALLS_PER_REQUEST` | `5` | Max LLM calls per request, range 1–20 |
 | `MAX_RETRIEVAL_REWRITES` | same as `RAG_MAX_REWRITES` (default 1) | Range 0–3; independent of `RAG_MAX_REWRITES` but defaults to it |
 | `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH` (spike-only; see above) |
@@ -794,6 +827,11 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `CONVERSATION_FIRESTORE_PROJECT` | empty (resolved via ADC) | `FIRESTORE` mode only; set only when pointing at another project |
 | `CONVERSATION_FIRESTORE_DATABASE` | empty (`(default)`) | `FIRESTORE` mode only; set only when using a named database |
 | `CONVERSATION_FIRESTORE_COLLECTION` | `conversations` | `FIRESTORE` mode only; root collection name; must not contain `/` |
+| `HANDOFF_REPOSITORY_MODE` | `MEMORY` | `MEMORY` \| `FILE` \| `FIRESTORE`; Cloud Run must use `FIRESTORE` |
+| `HANDOFF_STORE_PATH` | `<RAG_DATA_DIR>/handoffs` | Local persistence path in `FILE` mode |
+| `HANDOFF_FIRESTORE_COLLECTION` | `handoffs` | Root collection for Handoff cases; audit events use `<name>_events` |
+| `HANDOFF_DEMO_TIMEOUT_HOURS` | `24` | Demo session timeout; expiration restores AI routing without deleting the case |
+| `HANDOFF_RETENTION_DAYS` | `730` | Case/summary/audit retention period, separate from session timeout |
 | `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ config file path |
 | `FEEDBACK_ENABLED` | `true` | Whether to enable `POST /feedback` and Teams 👍 / 👎 buttons |
 

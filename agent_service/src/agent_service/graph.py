@@ -37,6 +37,13 @@ from .settings import RagSettings
 from .usage import UsageReport, build_usage_report, estimate_text_tokens
 
 
+def build_chat_model(model_name: str | None) -> BaseChatModel | None:
+    """Return a LangChain chat model, or ``None`` when no model is configured."""
+    if not model_name:
+        return None
+    return init_chat_model(model_name)
+
+
 class RouteDecision(BaseModel):
     route: Literal["retrieve", "direct"] = Field(
         description="retrieve for internal support knowledge, direct only for greetings"
@@ -113,7 +120,7 @@ class RagAgent:
         self.settings = settings
         self.index = index
         self.model = model or (
-            init_chat_model(settings.model) if settings.model else None
+            build_chat_model(settings.model) if settings.model else None
         )
         self.knowledge: KnowledgeService = knowledge or HybridKnowledgeService(
             settings, index, self.model

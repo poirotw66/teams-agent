@@ -2,6 +2,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_service.api import create_app
@@ -91,6 +92,21 @@ def test_knowledge_backend_control_reports_unconfigured_gemini(tmp_path: Path) -
     assert "GEMINI_FILE_SEARCH_STORE" in switched.json()["detail"]
 
 
+def test_startup_refuses_rag_acl_requirement_without_enforcement(tmp_path: Path) -> None:
+    settings = replace(
+        make_settings(tmp_path),
+        gemini_file_search_store="fileSearchStores/example",
+        rag_require_file_search_acl=True,
+        gemini_file_search_enforce_acl=False,
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="GEMINI_FILE_SEARCH_ENFORCE_ACL=false"),
+        TestClient(create_app(settings)),
+    ):
+        pass
+
+
 def parse_sse(body: str) -> list[tuple[str, dict]]:
     """Parse an SSE body into (event, data) pairs."""
     events: list[tuple[str, dict]] = []
@@ -147,6 +163,33 @@ def test_chat_stream_emits_stages_then_the_same_answer_as_chat(tmp_path: Path) -
     assert final["answer"] == plain.json()["answer"]
     assert final["citations"] == plain.json()["citations"]
     assert final["feedbackEnabled"] == plain.json()["feedbackEnabled"]
+    assert final.get("costComplete") == plain.json().get("costComplete")
+    assert final.get("estimatedCostUsd") == plain.json().get("estimatedCostUsd")
+
+
+def test_chat_includes_turn_cost_by_default(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post("/agent/chat", json=CHAT_PAYLOAD)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["costComplete"] is True
+    assert isinstance(body["estimatedCostUsd"], float)
+    assert body["estimatedCostUsd"] >= 0
+    assert isinstance(body["estimatedCostTwd"], float)
+    assert body["estimatedCostTwd"] >= 0
+
+
+def test_chat_omits_turn_cost_when_disabled(tmp_path: Path) -> None:
+    settings = replace(make_settings(tmp_path), show_turn_cost=False)
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/agent/chat", json=CHAT_PAYLOAD)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["estimatedCostUsd"] is None
+    assert body["estimatedCostTwd"] is None
+    assert body["costComplete"] is None
 
 
 def test_chat_stream_rejects_a_disallowed_tenant_before_streaming(tmp_path: Path) -> None:

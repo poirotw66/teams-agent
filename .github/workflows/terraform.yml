@@ -1,0 +1,86 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "infra/environments/**"
+      - "infra/scripts/**"
+      - "infra/DEPLOYER_IAM.md"
+      - "deploy/release-gcp.sh"
+      - "deploy/deploy-gcp.sh"
+      - ".gitattributes"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - "infra/environments/**"
+      - "infra/scripts/**"
+      - "infra/DEPLOYER_IAM.md"
+      - "deploy/release-gcp.sh"
+      - "deploy/deploy-gcp.sh"
+      - ".gitattributes"
+      - ".github/workflows/terraform.yml"
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+jobs:
+  shell-scripts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject CRLF in shell scripts
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            if grep -q $'\r' "$script"; then
+              echo "CRLF line endings found in $script" >&2
+              exit 1
+            fi
+          done < <(find . -name '*.sh' -print0)
+
+      - name: bash syntax check
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find . -name '*.sh' -print0)
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          find . -name '*.sh' -print0 | xargs -0 shellcheck
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Provider lock consistency (no credentials)
+        run: |
+          terraform init -backend=false -lockfile=readonly
+          cp .terraform.lock.hcl .terraform.lock.hcl.expected
+          terraform providers lock \
+            -platform=linux_amd64 \
+            -platform=linux_arm64 \
+            -platform=darwin_amd64 \
+            -platform=darwin_arm64
+          diff -u .terraform.lock.hcl.expected .terraform.lock.hcl
+
+      - name: terraform validate
+        run: terraform validate

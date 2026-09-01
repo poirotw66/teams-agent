@@ -136,7 +136,8 @@ class FakeDocumentReference:
     def id(self) -> str:
         return self._path.rsplit("/", 1)[-1]
 
-    async def get(self) -> FakeDocumentSnapshot:
+    async def get(self, transaction=None) -> FakeDocumentSnapshot:
+        _ = transaction
         self._store.reads += 1
         return FakeDocumentSnapshot(self.id, self._store.read(self._path))
 
@@ -148,6 +149,34 @@ class FakeDocumentReference:
 
     def collection(self, collection_id: str) -> FakeCollectionReference:
         return FakeCollectionReference(self._store, f"{self._path}/{collection_id}")
+
+
+class FakeTransaction:
+    """Minimal Firestore transaction stand-in for repository tests."""
+
+    def __init__(self, store: FakeFirestoreClient) -> None:
+        self._store = store
+        self._writes: list[tuple[str, dict[str, Any], bool]] = []
+        self._deletes: list[str] = []
+
+    async def get(self, ref: FakeDocumentReference, transaction=None) -> FakeDocumentSnapshot:
+        _ = transaction
+        return await ref.get()
+
+    def set(self, ref: FakeDocumentReference, data: dict[str, Any], merge: bool = False) -> None:
+        self._writes.append((ref._path, copy.deepcopy(data), merge))
+
+    def delete(self, ref: FakeDocumentReference) -> None:
+        self._deletes.append(ref._path)
+
+    def commit(self) -> None:
+        for path, data, merge in self._writes:
+            if merge:
+                existing = self._store.read(path) or {}
+                data = {**existing, **data}
+            self._store.write(path, data)
+        for path in self._deletes:
+            self._store._documents.pop(path, None)
 
 
 class FakeFirestoreClient:
@@ -164,6 +193,9 @@ class FakeFirestoreClient:
 
     def collection(self, collection_id: str) -> FakeCollectionReference:
         return FakeCollectionReference(self, collection_id)
+
+    def transaction(self) -> FakeTransaction:
+        return FakeTransaction(self)
 
     # -- store internals used by the reference classes ------------------
 

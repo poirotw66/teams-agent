@@ -5,13 +5,17 @@
 > **架構規則（§2.1／§22）**：不得在無壓測數據時，以語言重寫作為第一優先效能方案。
 > §16 的優化順序把「調整 runtime」排在最後——在前八項都做完並量測之後。
 
+> **2026-08-29 更新**：LangGraph 已改為**每輪必經 `ConversationSupervisor` LLM** 再路由。
+> 2026-08-06 的 LLM 呼叫次數／成本數字（含 A/B harness 的 2.17 次／US$0.00106）**不再能代表現況**。
+> 下方 §5 為 supervisor-first 架構的重跑基準；§3 的 Cloud Run 延遲量測仍有效（瓶頸仍在模型與冷啟動，不在 Python runtime）。
+
 ---
 
 ## 1. §16 優化順序（依序執行，勿跳號）
 
 | # | 手段 | 本階段狀態 |
 |---|---|---|
-| 1 | 減少不必要的 LLM 呼叫 | ✅ FAQ 走純查表不呼叫 LLM（§7.3）；Response Builder 不呼叫 LLM（§5.3）；`MAX_LLM_CALLS_PER_REQUEST` 上限由共用的 `LlmCallCounter` 強制 |
+| 1 | 減少不必要的 LLM 呼叫 | ⚠️ **已重基準（2026-08-29）**：每輪固定 +1 次 Supervisor LLM；NON_IT／ASSISTANT_META 仍略過 Issue Extractor；FAQ 與 Response Builder 仍不呼叫 LLM |
 | 2 | 使用 deterministic formatter | ✅ `response_builder.py`，並有靜態測試防止未來重新引入 LLM |
 | 3 | 限制多 Issue 數量 | ✅ `MAX_ISSUES_PER_MESSAGE=3` |
 | 4 | 限制 Query Rewrite 次數 | ✅ `MAX_RETRIEVAL_REWRITES=1` |
@@ -21,13 +25,16 @@
 | 8 | 調整外部服務 timeout | 部分：`TICKET_SERVICE_TIMEOUT_SECONDS`、`AGENT_API_TIMEOUT_SECONDS` 已可調 |
 | 9 | 根據壓測結果決定是否需要 runtime 調整 | ❌ **不需要**——數據顯示延遲由 LLM 呼叫主導，非 Python 開銷（見 §4） |
 
-第 1 項的效果可在實測中觀察到：一則同時包含 FAQ 命中與非 IT 問題的訊息，`llm_call_count=1`——FAQ 路徑完全不耗用模型呼叫。
+第 1 項在 2026-08-06 的效果（FAQ 路徑 `llm_call_count=1`）已被 supervisor-first 架構取代；請改看 §5 的分情境 LLM 次數表。
 
-## 2. 方法
+Harness：
 
-Harness：`scripts/load_test.py`，兩種模式。
+| 腳本 | 用途 |
+|---|---|
+| `scripts/load_test.py` | 併發延遲（dry-run 或 Cloud Run） |
+| `scripts/agent_turn_benchmark.py` | **Supervisor-first** 分情境 LLM 次數／估算成本（2026-08-29 新增） |
 
-### dry-run（不耗 API 額度）
+### dry-run（不耗 chat 額度，embedding 仍可能呼叫 API）
 
 以 `httpx.ASGITransport` 在行程內驅動 FastAPI app，chat model 以固定樁替換。
 **注意：embedding 仍是真實 API 呼叫**（檢索需要），因此 dry-run 延遲並非純框架開銷。
@@ -76,14 +83,14 @@ cd agent_service
 
 **解讀限制**：chat model 為樁，故此數字反映的是 **FastAPI + LangGraph workflow + 真實 embedding 檢索** 的開銷，**不含 LLM 生成延遲**。真實端到端延遲請參考 A/B 報告中的 P95 3.31 s（含完整 LLM 呼叫）。
 
-### 3.2 真實端到端延遲（取自 A/B harness 實測）
+### 3.2 真實端到端延遲（取自 A/B harness 實測，**2026-08-06，LLM 路徑已過時**）
 
-| 指標 | 數值 |
-|---|---|
-| P50 | 2.35 s |
-| P95 | 3.31 s |
-| 平均 LLM 呼叫／查詢 | 2.17 |
-| 平均成本／查詢 | US$0.00106 |
+| 指標 | 數值 | 備註 |
+|---|---|---|
+| P50 | 2.35 s | 仍可參考框架＋模型延遲量級 |
+| P95 | 3.31 s | 同上 |
+| 平均 LLM 呼叫／查詢 | ~~2.17~~ | **已被 §5 取代**（當時無 per-turn Supervisor） |
+| 平均成本／查詢 | ~~US$0.00106~~ | **已被 §5 取代** |
 
 ### 3.3 Cloud Run 正式壓測（已執行 2026-08-06）
 
@@ -132,5 +139,69 @@ cd agent_service
    最大 12.18 秒全來自冷啟動。若要壓低尾端延遲，優先手段是設定
    `--min-instances`（例如 1–2）讓服務不從零起跳，其次才是調整 `--concurrency`
    與 CPU/記憶體。這些都在語言重寫（第 9 項）之前。
-4. **已知未量測**：未測到飽和點（未探至錯誤率上升的併發量）；未測 Teams Adapter
-   端到端（本次只壓 Agent Service）；`--min-instances` 的實際改善幅度未驗證。
+5. **Supervisor-first 成本／LLM 次數請以 §5 為準**（2026-08-29 重跑）。Cloud Run
+   延遲結論（§3.3、§4）仍成立：瓶頸在模型與冷啟動，不在 Python runtime。
+6. **已知未量測**：未測到飽和點；未測 Teams Adapter 端到端；`--min-instances`
+   改善幅度未驗證；§5 成本為 stub＋token 啟發式，待以正式環境 usage log 交叉驗證。
+
+## 5. Supervisor-first 重基準（2026-08-29）
+
+**背景**：移除 keyword fast path 後，每輪使用者訊息在 `load_conversation` 先呼叫
+`ConversationSupervisor`（計入 `llm_call_count`），再決定是否進入 Issue Extractor／Handoff。
+
+**Harness**：`scripts/agent_turn_benchmark.py`（行程內 stub model + 真實 index retrieval；
+不消耗 chat API 額度）。原始輸出：`outputs/agent-turn-benchmark-20260829T172725Z/results.json`。
+
+### 5.1 分情境 LLM 呼叫次數
+
+| 情境 | 測試句 | LLM 次數 | 組成（Supervisor / Extractor / Knowledge） |
+|---|---|---:|---|
+| 閒聊問候 | `你好` | **1** | 1 / 0 / 0 |
+| 閒聊非 IT | `午餐呢` | **1** | 1 / 0 / 0 |
+| 助手能力 | `你能回答什麼問題` | **1** | 1 / 0 / 0 |
+| 澄清追問 | `VPN 打不開` | **2** | 1 / 1 / 0 |
+| 知識命中 | `VPN 密碼鎖住怎麼辦` | **4** | 1 / 1 / 2 |
+| 查無／Handoff 前 | `SAP Crystal Reports 授權到期無法開啟` | **4** | 1 / 1 / 2 |
+| IT＋非 IT 混合 | `VPN 無法登入，另外今天午餐吃什麼？` | **4** | 1 / 1 / 2 |
+
+七情境平均 **2.43 次／輪**（2026-08-06 A/B 混合平均 2.17 次／查詢，**+0.26**）。
+閒聊從「可能 2–3 次」降為穩定 **1 次**；IT 知識路徑維持 **4 次**（Supervisor 固定 +1）。
+
+### 5.2 估算成本（gemini-3.5-flash-lite 費率，token 啟發式）
+
+| 情境 | 估算 US$/輪 |
+|---|---:|
+| 閒聊／助手能力（1 次 LLM） | ~0.00042 |
+| 澄清（2 次 LLM） | ~0.00138 |
+| 知識／Handoff 前（4 次 LLM） | ~0.00283 |
+| **七情境平均** | **~0.00159** |
+
+相較 2026-08-06 混合平均 US$0.00106，**約 +50%**（主要來自每輪固定 Supervisor；
+閒聊路徑反而更便宜）。正式上線成本請以 §15.2 結構化日誌的 `estimated_cost_usd` 為準。
+
+### 5.3 dry-run 併發重跑（stub model，2026-08-29）
+
+```bash
+cd agent_service
+.venv/bin/python ../scripts/load_test.py --dry-run --concurrency 8 --requests 24
+```
+
+原始輸出：`outputs/load-test-20260829T172637Z/results.json`
+
+| 指標 | 2026-08-06 | 2026-08-29 | 備註 |
+|---|---:|---:|---|
+| P50 延遲 | 0.856 s | **0.338 s** | stub 已覆蓋 Supervisor／Handoff schema |
+| P95 延遲 | 1.066 s | **1.443 s** | embedding I/O 波動；仍不含真實模型延遲 |
+| 平均 LLM 次數／請求 | 1.33（Cloud Run 真實） | **8.17**（dry-run stub 混合查詢集） | 計數方式不同，勿直接對照 |
+
+## 6. 相依套件維護排程（2026-08-29）
+
+以下警告**目前不影響測試通過**，但應排入維護：
+
+| 來源 | 警告 | 建議 |
+|---|---|---|
+| `microsoft_teams` SDK | `BotClient` deprecated | 追蹤 Teams SDK 下個 major；Adapter 改用新 client API |
+| Starlette / FastAPI TestClient | `httpx` TestClient deprecated，建議 `httpx2` | 測試套件遷移至 `httpx2` 或 ASGI 直連 |
+| Playground（Node） | `util._extend` deprecated（DEP0060） | 升級 transitive dependency 或鎖定已修版本 |
+
+---

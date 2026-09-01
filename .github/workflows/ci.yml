@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  teams-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Ruff
+        run: uv run ruff check src tests
+      - name: Pytest
+        run: uv run pytest -q
+
+  agent-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent_service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev
+      - name: Ruff
+        run: uv run ruff check src tests
+      - name: Pytest
+        run: uv run pytest -q
+
+  playground:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: playground_service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: playground_service/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Test
+        run: npm test

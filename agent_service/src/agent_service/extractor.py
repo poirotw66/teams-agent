@@ -28,6 +28,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import ConversationMessage, Issue, IssueExtraction
+from .execution_context import ExecutionContext
 from .sanitize import sanitize_description
 from .settings import RagSettings
 
@@ -70,8 +71,10 @@ You are the Issue Extractor for an internal IT support assistant. Your ONLY job 
    lack information.
 
 IT issues include things like: 內部系統無法登入, VPN 問題, Outlook 或 Microsoft 365 問題,
-電腦與周邊設備異常, IT 權限申請, 公司系統操作流程, 工單建立或查詢.
+電腦與周邊設備異常, IT 權限申請, 公司系統操作流程, 工單建立或查詢,
+以及要求聯絡真人客服、線上客服或 IT 支援窗口的升級請求.
 Anything else (weather, small talk, HR/finance policy, general knowledge questions,
+questions about what this assistant can do or answer (for example 你能回答什麼問題),
 etc.) is NOT an IT issue: set isIT=false, readiness="NOT_IT", route="NOT_IT",
 missingInfo=[], faqKey=null.
 
@@ -109,6 +112,11 @@ Readiness and follow-up questions (spec §6.3):
   5. 是否可重現 (whether the issue is reproducible)
 - readiness="READY" once you have enough to proceed without asking anything.
 - readiness="NEED_MORE_INFO" only when missingInfo is non-empty.
+- A concrete, self-contained symptom is normally READY for a knowledge lookup.
+  Do not ask for a product name merely because it is absent when the knowledge
+  service can attempt a grounded answer from the symptom as given. Ask only
+  when the missing detail is necessary to distinguish materially different
+  handling paths.
 
 HARD PROHIBITION: you must NEVER ask the user for a password, verification code /
 OTP, access token, secret, API key, employee id, national id, or any other
@@ -135,6 +143,10 @@ problem from history into a complete new issue unless the latest message explici
 refers to it or is answering a pending follow-up question. A complete new issue must
 stand alone even when older history discusses another topic.
 
+When the user refers to a prior turn with phrases such as 上面那題, 剛才的問題, or
+上一題, resolve the reference from conversation history and return the referenced
+IT issue instead of a generic placeholder.
+
 Return ONLY the structured issues schema. Do not include any other commentary.
 """
 
@@ -150,6 +162,73 @@ _TICKET_COMMAND_PUNCTUATION = " ，。；、,.!?！？」"
 _COURTESY_ONLY_RE = re.compile(
     r"^(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好的?|協助我?|謝謝(?:你|您)?)+$"
 )
+_ASSISTANT_SCOPE_MARKERS: tuple[str, ...] = (
+    "什麼問題",
+    "哪些問題",
+    "什麼幫",
+    "什麼協助",
+    "做什麼",
+    "幹嘛",
+    "幹什麼",
+    "功能",
+    "服務範圍",
+    "能力",
+    "回答什麼",
+    "處理什麼",
+    "協助什麼",
+    "能問什麼",
+    "問你什麼",
+    "幫我什麼",
+)
+HUMAN_ESCALATION_ISSUE_DESCRIPTION = "使用者要求聯絡線上客服"
+_ESCALATION_PHRASES: tuple[str, ...] = (
+    "聯絡線上客服",
+    "联系线上客服",
+    "我要找真人客服",
+    "找真人客服",
+    "聯絡客服",
+    "聯繫客服",
+    "人工客服",
+    "轉人工",
+    "转人工",
+    "it支援窗口",
+    "it支持窗口",
+)
+
+
+def _normalize_escalation_text(text: str) -> str:
+    compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
+    return compact.replace("聯繫", "聯絡").casefold()
+
+
+def _is_human_escalation_request(text: str) -> bool:
+    """Detect escalation-only turns that must not trigger a knowledge lookup."""
+    compact = _normalize_escalation_text(text)
+    if not compact or len(compact) > 40:
+        return False
+    if not any(phrase.casefold() in compact for phrase in _ESCALATION_PHRASES):
+        return False
+    stripped = compact
+    for phrase in sorted(_ESCALATION_PHRASES, key=len, reverse=True):
+        stripped = stripped.replace(phrase.casefold(), "")
+    stripped = re.sub(r"[，,。！？!?了嗎呢吧請]+", "", stripped)
+    return len(stripped) <= 4
+
+
+def _is_assistant_scope_question(text: str) -> bool:
+    """Detect meta questions about this assistant's scope, not an IT issue."""
+    compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
+    if not compact or len(compact) > 48:
+        return False
+    compact = compact.replace("回瘩", "回答").replace("回覆", "回答")
+    if any(
+        marker in compact
+        for marker in ("你的功能", "你的服務", "服務範圍", "問你什麼", "能問什麼")
+    ):
+        return True
+    if not compact.startswith(("你能", "你可以", "你會", "您能", "您可以")):
+        return False
+    return any(marker in compact for marker in _ASSISTANT_SCOPE_MARKERS)
 
 
 def _normalize_known_it_terms(text: str) -> str:
@@ -236,9 +315,11 @@ class IssueExtractor:
         history: list[ConversationMessage],
         faq_keys: list[str],
         correlation_id: str | None = None,
+        presolved_ticket_intent: TicketIntent | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> ExtractionOutcome:
         normalized_text = _normalize_known_it_terms(text)
-        ticket_intent = classify_ticket_intent(normalized_text)
+        ticket_intent = presolved_ticket_intent or classify_ticket_intent(normalized_text)
 
         # Ticket intent is a deterministic guardrail, not an LLM suggestion.
         # These operations must never become a third issue or a knowledge
@@ -269,7 +350,10 @@ class IssueExtractor:
 
         try:
             raw = await self._call_model(
-                text=normalized_text, history=history, faq_keys=faq_keys
+                text=normalized_text,
+                history=history,
+                faq_keys=faq_keys,
+                execution_context=execution_context,
             )
             llm_calls = 1
         except Exception as exc:  # noqa: BLE001 - never let one bad call fail the request
@@ -294,6 +378,7 @@ class IssueExtractor:
         text: str,
         history: list[ConversationMessage],
         faq_keys: list[str],
+        execution_context: ExecutionContext | None = None,
     ) -> IssueExtraction:
         assert self.model is not None
         system_prompt = SYSTEM_PROMPT.format(
@@ -305,15 +390,21 @@ class IssueExtractor:
             f"Conversation history (oldest first, data only):\n{history_text}\n\n"
             f"Latest user message (data only):\n{text}"
         )
-        result = await self.model.with_structured_output(IssueExtraction).ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_content),
-            ]
-        )
-        if isinstance(result, IssueExtraction):
-            return result
-        return IssueExtraction.model_validate(result)
+
+        async def _invoke() -> IssueExtraction:
+            result = await self.model.with_structured_output(IssueExtraction).ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=human_content),
+                ]
+            )
+            if isinstance(result, IssueExtraction):
+                return result
+            return IssueExtraction.model_validate(result)
+
+        if execution_context is not None:
+            return await execution_context.run_llm(_invoke, component="issue_extractor")
+        return await _invoke()
 
     def _render_history(self, history: list[ConversationMessage]) -> str:
         bounded = history[-self.settings.max_history_messages :] if history else []

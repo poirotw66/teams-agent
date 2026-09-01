@@ -229,6 +229,35 @@ _PENDING_OFFER_CONFIRMATIONS: tuple[str, ...] = (
 )
 
 
+def _is_ticket_list_query(text: str) -> bool:
+    """Detect a request to list or check the caller's own tickets."""
+    normalized = text.strip().rstrip("。.!！?？")
+    if "工單" not in normalized and "派工單" not in normalized:
+        return False
+    if any(marker in normalized for marker in _QUERY_MARKERS):
+        return True
+    if is_explicit_ticket_confirmation(normalized):
+        return False
+    bare_queries = {
+        "我的工單",
+        "我的派工單",
+        "確認我的工單",
+        "確認我的派工單",
+        "看看我的工單",
+        "看看我的派工單",
+        "有哪些工單",
+        "有哪些派工單",
+        "我現在有哪些工單",
+    }
+    if normalized in bare_queries:
+        return True
+    create_markers = ("建立工單", "建立派工單", "開工單", "開票", "報修")
+    if any(marker in normalized for marker in create_markers):
+        return False
+    compact = normalized.replace(" ", "")
+    return compact.startswith("我的") and len(compact) <= 12
+
+
 def classify_ticket_intent(text: str) -> TicketIntent:
     """Classify the ticket intent with a fixed, auditable precedence.
 
@@ -246,8 +275,7 @@ def classify_ticket_intent(text: str) -> TicketIntent:
         return TicketIntent.DELETE_DENIED
     if any(pattern in normalized for pattern in _CANCEL_PATTERNS):
         return TicketIntent.CANCEL
-    mentions_ticket = "工單" in normalized or "派工單" in normalized
-    if mentions_ticket and any(marker in normalized for marker in _QUERY_MARKERS):
+    if _is_ticket_list_query(normalized):
         return TicketIntent.QUERY
     if is_explicit_ticket_confirmation(normalized):
         return TicketIntent.CREATE

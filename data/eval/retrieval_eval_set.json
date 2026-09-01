@@ -259,13 +259,14 @@
     },
     {
       "id": "hq-ip-phone-transfer",
-      "categories": ["answerable"],
+      "categories": ["answerable", "image"],
       "query": "總公司IP話機要怎麼把電話轉接給別的分機？",
       "expectedFound": true,
       "expectedSourceTitles": ["總公司IP話機操作"],
       "expectedKeywords": ["Transfer"],
+      "expectedImagePaths": ["總公司IP話機操作/p02.png"],
       "groups": [],
-      "notes": "Doc 第1頁 轉接/轉出手機/三方會談表: 直接轉接 -> 通話中 -> Transfer -> 分機號 -> 掛斷."
+      "notes": "Doc 第1頁 轉接/轉出手機/三方會談表 cites text chunk; panel image is on page 2 and should supplement from the same document."
     },
     {
       "id": "no-answer-parental-leave",

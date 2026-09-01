@@ -26,6 +26,35 @@ def make_message_activity(**overrides) -> MessageActivity:
     return MessageActivity.model_validate(payload)
 
 
+def test_agent_request_reads_evaluation_knowledge_backend_from_channel_data() -> None:
+    activity = make_message_activity(
+        channelId="playground",
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "evaluationKnowledgeBackend": "GEMINI_FILE_SEARCH",
+        },
+    )
+
+    request = AgentRequest.from_activity(activity, "VPN 問題")
+    payload = request.to_payload()
+
+    assert request.channel == "playground"
+    assert payload["evaluationKnowledgeBackend"] == "GEMINI_FILE_SEARCH"
+
+
+def test_agent_request_ignores_invalid_evaluation_knowledge_backend() -> None:
+    activity = make_message_activity(
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "evaluationKnowledgeBackend": "PINECONE",
+        },
+    )
+
+    payload = AgentRequest.from_activity(activity, "hello").to_payload()
+
+    assert payload["evaluationKnowledgeBackend"] is None
+
+
 def test_agent_request_extracts_teams_context() -> None:
     activity = make_message_activity(
         channelData={
@@ -118,6 +147,49 @@ def test_agent_response_formats_citations() -> None:
     assert response.images[0].path == "大州/p01.png"
     assert "**來源**" in formatted
     assert "[API Key 申請流程](https://internal.example/docs/api-key)" in formatted
+
+
+def test_format_agent_response_includes_turn_cost_footer() -> None:
+    response = AgentResponse(
+        answer="請重新登入 Microsoft 365 帳號。",
+        traceId="trace-1",
+        estimatedCostUsd=0.00064050,
+        estimatedCostTwd=0.020,
+        costComplete=True,
+    )
+
+    formatted = format_agent_response(response)
+
+    assert formatted.endswith("_預估成本：$0.00064050 USD / $0.020 TWD_")
+
+
+def test_format_agent_response_shows_incomplete_cost_notice() -> None:
+    response = AgentResponse(
+        answer="請重新登入 Microsoft 365 帳號。",
+        traceId="trace-1",
+        estimatedCostUsd=None,
+        costComplete=False,
+    )
+
+    formatted = format_agent_response(response)
+
+    assert "無法估算" in formatted
+
+
+def test_agent_response_from_payload_reads_turn_cost_fields() -> None:
+    response = AgentResponse.from_payload(
+        {
+            "answer": "ok",
+            "estimatedCostUsd": 0.00042,
+            "estimatedCostTwd": 0.013,
+            "costComplete": True,
+        },
+        fallback_trace_id="request-1",
+    )
+
+    assert response.estimatedCostUsd == 0.00042
+    assert response.estimatedCostTwd == 0.013
+    assert response.costComplete is True
 
 
 def test_agent_response_rejects_unsafe_image_path() -> None:

@@ -6,6 +6,7 @@ from agent_service.documents import (
     DocumentMetadata,
     chunk_markdown,
     clean_markdown,
+    load_source_chunks,
     parse_front_matter,
 )
 
@@ -278,3 +279,15 @@ def test_document_chunk_from_dict_loads_old_index_without_metadata_key() -> None
     chunk = DocumentChunk.from_dict(legacy_payload)
 
     assert chunk.metadata is None
+
+
+def test_load_source_chunks_skips_readme(tmp_path: Path) -> None:
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    (sources / "README.md").write_text("# Sample README\n\nDo not index me.", encoding="utf-8")
+    (sources / "vpn.md").write_text("# VPN\n\nVPN help.", encoding="utf-8")
+
+    chunks = load_source_chunks(tmp_path, chunk_size=200, overlap=20)
+
+    assert all("README" not in chunk.source_path for chunk in chunks)
+    assert any("vpn.md" in chunk.source_path for chunk in chunks)

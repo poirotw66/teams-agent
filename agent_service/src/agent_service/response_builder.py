@@ -71,6 +71,8 @@ ALL_NON_IT_MESSAGE = (
     "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
 )
 
+GREETING_MESSAGE = "你好！我是 IT 助手，有系統或設備問題都可以告訴我。"
+
 # Result types that trigger the feedback prompt (spec §14: "每次 FAQ 或
 # Knowledge 回答後").
 _FEEDBACK_ELIGIBLE_RESULT_TYPES = frozenset({"FAQ_ANSWERED", "KNOWLEDGE_ANSWERED"})
@@ -145,7 +147,11 @@ def _render_not_it(issue: Issue) -> str:
 
 
 def _render_all_not_it(issues: list[Issue]) -> str:
-    topics = list(dict.fromkeys(_safe_description(issue) for issue in issues))
+    topics = [
+        topic
+        for topic in dict.fromkeys(_safe_description(issue) for issue in issues)
+        if topic.strip()
+    ]
     if not topics:
         return ALL_NON_IT_MESSAGE
     quoted_topics = "、".join(f"「{topic}」" for topic in topics)
@@ -304,6 +310,14 @@ def build_response(
     """
     ordered_issues = sorted(issues, key=lambda issue: issue.id)
     results_by_issue_id = {result.issueId: result for result in results}
+
+    if ordered_issues and all(issue.route == "GREETING" for issue in ordered_issues):
+        return BuiltResponse(
+            text=GREETING_MESSAGE,
+            citations=[],
+            images=[],
+            feedback_enabled=False,
+        )
 
     if ordered_issues and all(not issue.isIT for issue in ordered_issues):
         return BuiltResponse(

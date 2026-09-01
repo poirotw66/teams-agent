@@ -13,13 +13,18 @@ import pytest
 from agent_service.contracts import Ticket, TicketDraft, TicketItem
 from agent_service.settings import RagSettings
 from agent_service.ticket import (
+    AgenticTicketItemSelector,
     DisabledTicketService,
     HttpTicketService,
+    TicketCatalogError,
+    TicketItemSelectionDecision,
     TicketServiceDisabledError,
     TicketServiceError,
     TicketServiceTimeout,
     UntrustedRequesterError,
     build_ticket_service,
+    handoff_ticket_item_fallback,
+    parse_ticket_items_payload,
 )
 
 SECRET_TOKEN = "super-secret-ticket-token"
@@ -42,6 +47,24 @@ def _trusted_draft(**overrides) -> TicketDraft:
 def _client_with_handler(handler) -> httpx.AsyncClient:
     transport = httpx.MockTransport(handler)
     return httpx.AsyncClient(transport=transport, base_url="https://ticket.internal")
+
+
+class FakeCatalogModel:
+    def __init__(self, result: TicketItemSelectionDecision | Exception) -> None:
+        self.result = result
+        self.schemas = []
+
+    def with_structured_output(self, schema):
+        self.schemas.append(schema)
+        outer = self
+
+        class Handle:
+            async def ainvoke(self, _messages):
+                if isinstance(outer.result, Exception):
+                    raise outer.result
+                return outer.result
+
+        return Handle()
 
 
 # --- DISABLED mode -----------------------------------------------------
@@ -237,10 +260,34 @@ async def test_get_ticket_items_parses_catalog() -> None:
         assert request.url.path == "/ticket-items"
         return httpx.Response(
             200,
-            json=[
-                {"id": "item-vpn", "name": "VPN"},
-                {"id": "item-laptop", "name": "Laptop"},
-            ],
+            json={
+                "Code": "000000",
+                "Msg": "successful",
+                "Data": {
+                    "items": [
+                        {
+                            "id": "network",
+                            "level": 1,
+                            "name": "系統服務",
+                            "children": [
+                                {
+                                    "id": "network-service",
+                                    "level": 2,
+                                    "name": "網路服務",
+                                    "children": [
+                                        {
+                                            "id": "item-vpn",
+                                            "level": 3,
+                                            "name": "VPN 無法連線",
+                                            "children": [],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                },
+            },
         )
 
     client = _client_with_handler(handler)
@@ -249,9 +296,100 @@ async def test_get_ticket_items_parses_catalog() -> None:
     items = await service.get_ticket_items()
 
     assert items == [
-        TicketItem(id="item-vpn", name="VPN"),
-        TicketItem(id="item-laptop", name="Laptop"),
+        TicketItem(
+            id="item-vpn",
+            name="VPN 無法連線",
+            level=3,
+            path=["系統服務", "網路服務", "VPN 無法連線"],
+        )
     ]
+
+
+def test_ticket_catalog_keeps_legacy_flat_array_compatible() -> None:
+    assert parse_ticket_items_payload([{"id": "legacy", "name": "General"}]) == [
+        TicketItem(id="legacy", name="General", level=1, path=["General"])
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"Code": "999999", "Msg": "failed", "Data": None},
+        {"Code": "000000", "Msg": "successful"},
+        {"Code": "000000", "Data": {"items": "not-an-array"}},
+        {"Code": "000000", "Data": {"items": [{"id": "x", "name": "X", "children": {}}]}},
+    ],
+)
+def test_ticket_catalog_rejects_unsuccessful_or_malformed_payload(payload) -> None:
+    with pytest.raises(TicketCatalogError):
+        parse_ticket_items_payload(payload)
+
+
+def test_handoff_ticket_item_fallback_prefers_system_function() -> None:
+    items = [
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+        TicketItem(id="item-system-function", name="系統功能異常", level=3),
+    ]
+
+    selected = handoff_ticket_item_fallback(items)
+
+    assert selected is not None
+    assert selected.id == "item-system-function"
+
+
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_returns_valid_backend_catalog_id() -> None:
+    items = [
+        TicketItem(id="system-function", name="系統功能異常", level=3),
+        TicketItem(id="vpn", name="VPN 無法連線", level=3),
+    ]
+    model = FakeCatalogModel(
+        TicketItemSelectionDecision(
+            ticket_item_id="system-function",
+            confidence="HIGH",
+            needs_clarification=False,
+        )
+    )
+
+    selection = await AgenticTicketItemSelector(model).select(
+        items=items,
+        issue_description="SAP Crystal Reports 授權到期無法開啟",
+    )
+
+    assert selection.item is items[0]
+    assert selection.reason == "selected"
+    assert model.schemas == [TicketItemSelectionDecision]
+
+
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_rejects_hallucinated_catalog_id() -> None:
+    items = [TicketItem(id="vpn", name="VPN 無法連線", level=3)]
+    model = FakeCatalogModel(
+        TicketItemSelectionDecision(
+            ticket_item_id="invented-id",
+            confidence="HIGH",
+            needs_clarification=False,
+        )
+    )
+
+    selection = await AgenticTicketItemSelector(model).select(
+        items=items,
+        issue_description="任何問題",
+    )
+
+    assert selection.item is None
+    assert selection.reason == "invalid_catalog_id"
+
+
+@pytest.mark.asyncio
+async def test_agentic_ticket_selector_model_unavailable_returns_none() -> None:
+    selection = await AgenticTicketItemSelector(None).select(
+        items=[TicketItem(id="vpn", name="VPN 無法連線", level=3)],
+        issue_description="任何問題",
+    )
+
+    assert selection.item is None
+    assert selection.reason == "model_unavailable"
 
 
 # --- error handling --------------------------------------------------------

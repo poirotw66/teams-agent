@@ -111,6 +111,7 @@ class FileSearchDocumentRegistry:
 
         slug_to_source: dict[str, str] = {}
         records_by_filename: dict[str, _DocumentRecord] = {}
+        records_by_title: dict[str, _DocumentRecord] = {}
         for source_path in source_order:
             slug = cls.slug_for(source_path)
             if slug in slug_to_source:
@@ -134,9 +135,14 @@ class FileSearchDocumentRegistry:
             )
             registry._by_slug[slug] = record
             records_by_filename[Path(source_path).name] = record
+            records_by_title[title] = record
 
         for alias, filename in _LEGACY_FILE_SEARCH_ALIASES.items():
             record = records_by_filename.get(filename)
+            if record is None:
+                # Portal releases hash source filenames (doc-*.md) while the
+                # helpdesk File Search store still uses legacy ASCII slugs.
+                record = records_by_title.get(Path(filename).stem)
             if record is not None:
                 registry._by_slug[alias] = record
         return registry

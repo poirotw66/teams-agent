@@ -51,7 +51,7 @@ Cloud Run 部署、Teams 端圖片渲染、壓測），改以實測紀錄佐證�
 | 19 | 每次請求具有 Correlation ID | ✅ | `test_acceptance_19_every_request_has_a_correlation_id`；全鏈路傳遞且不在 node 間重新產生（§15.1） |
 | 20 | 回答後可收集使用者回饋 | ✅ | `test_acceptance_20_feedback_can_be_collected_after_an_answer`；Teams 端 👍/👎 Adaptive Card 由 `tests/test_cards.py` 覆蓋 |
 | 21 | 具備安全、錯誤與 Prompt Injection 測試 | ✅ | `tests/test_security.py`（618 行）全數通過，0 xfail；詳見 [`security-test-report.md`](security-test-report.md) |
-| 22 | 現有 Python 架構通過定義的效能測試 | ⚠️ | [`performance-test-report.md`](performance-test-report.md)：結論為延遲由 LLM 呼叫主導而非 Python 開銷，**不需重寫 runtime**。限制：concurrency 尚未探至飽和點，建議設 `--min-instances` 消除冷啟動尾延遲 |
+| 22 | 現有 Python 架構通過定義的效能測試 | ⚠️ | [`performance-test-report.md`](performance-test-report.md) §3.3：Cloud Run 穩態 P95 4.03s、零錯誤（2026-08-06）。**2026-08-29 §5** 重跑 LLM 次數／成本（Supervisor-first）。Runtime 不需重寫；待補 concurrency 飽和點與 `--min-instances` |
 
 ### 不列入 POC 必要驗收的項目（§19 後段）
 

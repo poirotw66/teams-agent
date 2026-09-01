@@ -1,11 +1,17 @@
 import pytest
 
 from agent_service.usage import (
+    PRICING_VERSION,
     build_usage_report,
+    convert_usd_to_twd,
     estimate_cost_usd,
     estimate_text_tokens,
     normalize_model_name,
 )
+
+
+def test_pricing_version_is_set() -> None:
+    assert PRICING_VERSION == "2026-08-31"
 
 
 def test_normalize_model_name_strips_provider_prefix() -> None:
@@ -21,10 +27,32 @@ def test_estimate_text_tokens_counts_cjk_and_latin() -> None:
     assert estimate_text_tokens("hello") == 2
 
 
+def test_convert_usd_to_twd_uses_three_decimal_places() -> None:
+    assert convert_usd_to_twd(0.00064050, 31.70) == 0.020
+
+
 def test_estimate_cost_usd_for_known_flash_lite() -> None:
     cost = estimate_cost_usd("gemini-3.5-flash-lite", input_tokens=1_000_000, output_tokens=1_000_000)
 
     assert cost == 0.30 + 2.50
+
+
+def test_estimate_cost_usd_for_gemini_3_5_flash() -> None:
+    cost = estimate_cost_usd("gemini-3.5-flash", input_tokens=1_000_000, output_tokens=1_000_000)
+
+    assert cost == 1.50 + 9.00
+
+
+def test_estimate_cost_usd_for_gemini_3_6_flash() -> None:
+    cost = estimate_cost_usd("gemini-3.6-flash", input_tokens=1_000_000, output_tokens=1_000_000)
+
+    assert cost == 1.50 + 7.50
+
+
+def test_estimate_cost_usd_for_gemini_3_7_flash_intro_pricing() -> None:
+    cost = estimate_cost_usd("gemini-3.7-flash", input_tokens=1_000_000, output_tokens=1_000_000)
+
+    assert cost == 0.75 + 3.75
 
 
 def test_build_usage_report_sums_llm_and_embedding() -> None:

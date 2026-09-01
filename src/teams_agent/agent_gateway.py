@@ -75,7 +75,13 @@ async def aiohttp_stream_transport(
     escapes non-ASCII in its JSON, which would hide the bug; this must not
     depend on that.
     """
-    timeout = ClientTimeout(total=None, sock_connect=timeout_seconds, sock_read=timeout_seconds)
+    timeout = ClientTimeout(
+        total=None,
+        sock_connect=timeout_seconds,
+        # LangGraph nodes can run several LLM calls before the next SSE stage;
+        # keep the stream alive longer than the non-streaming request budget.
+        sock_read=max(timeout_seconds * 2, 60.0),
+    )
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     async with (
         ClientSession(timeout=timeout) as session,

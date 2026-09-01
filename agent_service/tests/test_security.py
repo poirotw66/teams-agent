@@ -576,7 +576,7 @@ class _RecordingTicketService:
     async def get_ticket_items(self, *, correlation_id=None):
         return [TicketItem(id="item-1", name="General Support")]
 
-    async def create_ticket(self, draft, *, correlation_id=None):  # pragma: no cover
+    async def create_ticket(self, draft, *, correlation_id=None, idempotency_key=None):  # pragma: no cover
         raise AssertionError("create_ticket should not be called in a query-only test")
 
     async def list_tickets_by_requester(self, requester_id, *, correlation_id=None):

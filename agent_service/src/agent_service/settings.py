@@ -38,6 +38,7 @@ class RagSettings:
     index_path: Path
     auto_build_index: bool = True
     model: str | None = None
+    agent_model: str | None = None
     embedding_model: str | None = None
     top_k: int = 4
     min_score: float = 0.08
@@ -56,7 +57,8 @@ class RagSettings:
     max_history_messages: int = 10
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
-    max_llm_calls_per_request: int = 5
+    conversation_retention_days: int = 730
+    max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
 
     # --- Knowledge Service (spec §8) ---
@@ -64,14 +66,23 @@ class RagSettings:
     gemini_file_search_store: str | None = None
     gemini_file_search_model: str = "gemini-2.5-flash"
     gemini_file_search_enforce_acl: bool = True
+    rag_require_file_search_acl: bool = False
     knowledge_backend_state_mode: str = "MEMORY"
     knowledge_backend_state_collection: str = "runtime_config"
+    knowledge_backend_admin_enabled: bool = True
+    knowledge_evaluation_channels: frozenset[str] = frozenset({"playground", "msteams-web"})
+    deployment_environment: str = "dev"
 
     # --- Ticket Service (spec §11) ---
     ticket_service_mode: str = "DISABLED"
     ticket_service_base_url: str | None = None
     ticket_service_token: str | None = None
     ticket_service_timeout_seconds: float = 10.0
+    ticket_request_dedupe_mode: str = "MEMORY"
+    ticket_request_dedupe_collection: str = "ticket_request_ledger"
+    ticket_request_dedupe_retention_days: int = 30
+    ticket_request_dedupe_firestore_project: str | None = None
+    ticket_request_dedupe_firestore_database: str | None = None
 
     # --- Conversation Repository (spec §10) ---
     conversation_repository_mode: str = "MEMORY"
@@ -83,8 +94,27 @@ class RagSettings:
     conversation_firestore_collection: str = "conversations"
     faq_path: Path | None = None
 
+    # --- Human handoff (phase 2) ---
+    handoff_repository_mode: str = "MEMORY"
+    handoff_store_path: Path | None = None
+    # FIRESTORE mode follows the same ADC conventions as conversations.
+    handoff_firestore_project: str | None = None
+    handoff_firestore_database: str | None = None
+    handoff_firestore_collection: str = "handoffs"
+    handoff_demo_timeout_hours: int = 24
+    handoff_retention_days: int = 730
+
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
+
+    # --- Cost visibility (Phase 1 observability) ---
+    show_turn_cost: bool = True
+    usd_twd_exchange_rate: float = 31.70
+
+    # --- Knowledge release (portal-published immutable index) ---
+    knowledge_release_mode: str = "AUTO"
+    knowledge_release_dir: Path | None = None
+    knowledge_active_release_id: str | None = None
 
     @classmethod
     def from_env(cls) -> "RagSettings":
@@ -96,6 +126,9 @@ class RagSettings:
         conversation_store_path = Path(
             environ.get("CONVERSATION_STORE_PATH", data_dir / "conversations")
         )
+        handoff_store_path = Path(
+            environ.get("HANDOFF_STORE_PATH", data_dir / "handoffs")
+        )
         faq_path = Path(environ.get("FAQ_PATH", data_dir / "faq.json"))
 
         settings = cls(
@@ -103,6 +136,7 @@ class RagSettings:
             index_path=index_path.expanduser().resolve(),
             auto_build_index=_bool_env("RAG_AUTO_BUILD_INDEX", True),
             model=environ.get("RAG_MODEL", "").strip() or None,
+            agent_model=environ.get("AGENT_MODEL", "").strip() or None,
             embedding_model=environ.get("RAG_EMBEDDING_MODEL", "").strip() or None,
             top_k=int(environ.get("RAG_TOP_K", "4")),
             min_score=float(environ.get("RAG_MIN_SCORE", "0.08")),
@@ -119,7 +153,8 @@ class RagSettings:
             max_history_messages=_int_env("MAX_HISTORY_MESSAGES", 10),
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
-            max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 5),
+            conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 730),
+            max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
             max_retrieval_rewrites=_int_env(
                 "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
             ),
@@ -132,17 +167,43 @@ class RagSettings:
             gemini_file_search_enforce_acl=_bool_env(
                 "GEMINI_FILE_SEARCH_ENFORCE_ACL", True
             ),
+            rag_require_file_search_acl=_bool_env("RAG_REQUIRE_FILE_SEARCH_ACL", False),
             knowledge_backend_state_mode=(
                 _str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"
             ),
             knowledge_backend_state_collection=(
                 _str_env("KNOWLEDGE_BACKEND_STATE_COLLECTION") or "runtime_config"
             ),
+            knowledge_backend_admin_enabled=_bool_env(
+                "KNOWLEDGE_BACKEND_ADMIN_ENABLED", True
+            ),
+            knowledge_evaluation_channels=_csv_env("KNOWLEDGE_EVALUATION_CHANNELS")
+            or frozenset({"playground", "msteams-web"}),
+            deployment_environment=(
+                _str_env("AGENT_DEPLOYMENT_ENV")
+                or _str_env("RAG_DEPLOYMENT_ENV")
+                or "dev"
+            ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
             ticket_service_token=_str_env("TICKET_SERVICE_TOKEN"),
             ticket_service_timeout_seconds=_float_env("TICKET_SERVICE_TIMEOUT_SECONDS", 10.0),
+            ticket_request_dedupe_mode=(
+                _str_env("TICKET_REQUEST_DEDUPE_MODE") or "MEMORY"
+            ),
+            ticket_request_dedupe_collection=(
+                _str_env("TICKET_REQUEST_DEDUPE_COLLECTION") or "ticket_request_ledger"
+            ),
+            ticket_request_dedupe_retention_days=_int_env(
+                "TICKET_REQUEST_DEDUPE_RETENTION_DAYS", 30
+            ),
+            ticket_request_dedupe_firestore_project=_str_env(
+                "TICKET_REQUEST_DEDUPE_FIRESTORE_PROJECT"
+            ),
+            ticket_request_dedupe_firestore_database=_str_env(
+                "TICKET_REQUEST_DEDUPE_FIRESTORE_DATABASE"
+            ),
             conversation_repository_mode=environ.get(
                 "CONVERSATION_REPOSITORY_MODE", "MEMORY"
             ).strip()
@@ -153,8 +214,31 @@ class RagSettings:
             conversation_firestore_collection=(
                 _str_env("CONVERSATION_FIRESTORE_COLLECTION") or "conversations"
             ),
+            handoff_repository_mode=(
+                _str_env("HANDOFF_REPOSITORY_MODE") or "MEMORY"
+            ),
+            handoff_store_path=handoff_store_path.expanduser().resolve(),
+            handoff_firestore_project=_str_env("HANDOFF_FIRESTORE_PROJECT"),
+            handoff_firestore_database=_str_env("HANDOFF_FIRESTORE_DATABASE"),
+            handoff_firestore_collection=(
+                _str_env("HANDOFF_FIRESTORE_COLLECTION") or "handoffs"
+            ),
+            handoff_demo_timeout_hours=_int_env("HANDOFF_DEMO_TIMEOUT_HOURS", 24),
+            handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 730),
             faq_path=faq_path.expanduser().resolve(),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
+            show_turn_cost=_bool_env("SHOW_TURN_COST", True),
+            usd_twd_exchange_rate=_float_env("USD_TWD_EXCHANGE_RATE", 31.70),
+            knowledge_release_mode=(
+                _str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO"
+            ).upper(),
+            knowledge_release_dir=Path(
+                environ.get(
+                    "KNOWLEDGE_RELEASE_DIR",
+                    data_dir / "releases",
+                )
+            ).expanduser().resolve(),
+            knowledge_active_release_id=_str_env("KNOWLEDGE_ACTIVE_RELEASE_ID"),
         )
         settings.validate()
         return settings
@@ -185,6 +269,8 @@ class RagSettings:
             raise ValueError("MAX_CLARIFICATION_ROUNDS must be between 1 and 3.")
         if not 1 <= self.conversation_timeout_hours <= 168:
             raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
+        if self.conversation_retention_days < 1:
+            raise ValueError("CONVERSATION_RETENTION_DAYS must be at least 1.")
         if not 1 <= self.max_llm_calls_per_request <= 20:
             raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
         if not 0 <= self.max_retrieval_rewrites <= 3:
@@ -193,6 +279,15 @@ class RagSettings:
         if self.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
             raise ValueError(
                 "KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH."
+            )
+        if (
+            self.rag_require_file_search_acl
+            and self.gemini_file_search_store
+            and not self.gemini_file_search_enforce_acl
+        ):
+            raise ValueError(
+                "RAG_REQUIRE_FILE_SEARCH_ACL=true requires GEMINI_FILE_SEARCH_ENFORCE_ACL=true "
+                "when GEMINI_FILE_SEARCH_STORE is configured."
             )
         if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
             raise ValueError(
@@ -214,6 +309,18 @@ class RagSettings:
                 raise ValueError("TICKET_SERVICE_BASE_URL must be an http(s) URL.")
         if not 1 <= self.ticket_service_timeout_seconds <= 60:
             raise ValueError("TICKET_SERVICE_TIMEOUT_SECONDS must be between 1 and 60.")
+        if self.ticket_request_dedupe_mode not in {"MEMORY", "FIRESTORE"}:
+            raise ValueError(
+                "TICKET_REQUEST_DEDUPE_MODE must be one of MEMORY or FIRESTORE."
+            )
+        if not self.ticket_request_dedupe_collection.strip():
+            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not be blank.")
+        if "/" in self.ticket_request_dedupe_collection:
+            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not contain '/'.")
+        if not 1 <= self.ticket_request_dedupe_retention_days <= 365:
+            raise ValueError(
+                "TICKET_REQUEST_DEDUPE_RETENTION_DAYS must be between 1 and 365."
+            )
 
         if self.conversation_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
             raise ValueError(
@@ -225,3 +332,26 @@ class RagSettings:
         # runtime write failure into a startup failure.
         if "/" in self.conversation_firestore_collection:
             raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not contain '/'.")
+
+        if self.handoff_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
+            raise ValueError(
+                "HANDOFF_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE."
+            )
+        if not self.handoff_firestore_collection.strip():
+            raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not be blank.")
+        if "/" in self.handoff_firestore_collection:
+            raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not contain '/'.")
+        if self.handoff_demo_timeout_hours < 1:
+            raise ValueError("HANDOFF_DEMO_TIMEOUT_HOURS must be at least 1.")
+        if self.handoff_retention_days < 1:
+            raise ValueError("HANDOFF_RETENTION_DAYS must be at least 1.")
+        if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
+            raise ValueError(
+                "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."
+            )
+        if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
+            raise ValueError(
+                "AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod."
+            )
+        if self.usd_twd_exchange_rate <= 0:
+            raise ValueError("USD_TWD_EXCHANGE_RATE must be greater than 0.")

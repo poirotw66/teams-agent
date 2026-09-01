@@ -334,6 +334,8 @@ def load_source_chunks(
     metadata = load_metadata(data_dir)
     chunks: list[DocumentChunk] = []
     for source_path in sorted(sources_dir.glob("*.md")):
+        if source_path.name.upper() == "README.MD":
+            continue
         relative_path = source_path.relative_to(data_dir).as_posix()
         chunks.extend(
             chunk_markdown(

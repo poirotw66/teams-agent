@@ -1,0 +1,7 @@
+# Do not copy this file directly — use an environment-specific example:
+#
+#   POC import:  cp ../environments/poc/terraform.tfvars.example terraform.tfvars
+#   New test:    cp ../environments/test/terraform.tfvars.example terraform.tfvars
+#
+# New projects must pin agent_image and adapter_image (commit SHA or digest).
+# allow_latest_image_tags=true is import-only for the existing POC.

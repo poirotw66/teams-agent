@@ -122,6 +122,8 @@ production) — never pass these as plain `--set-env-vars`:
 `deploy-gcp.sh` sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
 `TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
 `CONVERSATION_FIRESTORE_COLLECTION=conversations` and
+`HANDOFF_REPOSITORY_MODE=FIRESTORE`, `HANDOFF_FIRESTORE_COLLECTION=handoffs`,
+`HANDOFF_DEMO_TIMEOUT_HOURS=24`, `HANDOFF_RETENTION_DAYS=730` and
 `FEEDBACK_ENABLED=true` explicitly on the Agent Cloud Run service. Most of
 these match the code defaults in
 `agent_service/src/agent_service/settings.py` and are stated anyway so the
@@ -159,6 +161,7 @@ wrong here for two independent reasons:
 | `gcloud services enable firestore.googleapis.com` | Turns the API on |
 | `gcloud firestore databases create` | Creates the native-mode database (skipped if it already exists) |
 | `gcloud firestore fields ttls update expiresAt` | Enables the TTL policy on `conversations`, `conversations_keys` and the `messages` collection group |
+| `gcloud firestore fields ttls update retentionExpiresAt` | Enables the separate 730-day retention TTL on `handoffs` and `handoffs_events`; `sessionExpiresAt` remains application-controlled |
 | `roles/datastore.user` on the **Agent SA** | Read/write on Firestore documents. The Adapter SA gets nothing — it never touches conversation data |
 
 Overridable via env when running the script: `GCP_FIRESTORE_DATABASE`
@@ -333,6 +336,42 @@ measured evidence (spec §18's performance test):
 - **Scale-to-zero**: both services deploy with `--min=0 --max=3`. Raise
   `--max` only after observing sustained concurrency near the current
   limit; `--min=0` is intentional for a POC to avoid idle cost.
+
+## Infrastructure as Code (Terraform)
+
+Long-lived GCP resources (APIs, Artifact Registry, service accounts, IAM,
+Secret Manager containers, Firestore, Cloud Run shape) are described in
+[`../infra/terraform/`](../infra/terraform/README.md).
+
+After import reaches a zero-diff plan, split operations as follows:
+
+```text
+terraform apply  → infrastructure + non-secret env + IAM
+release-gcp.sh   → immutable image build + Cloud Run image update only
+smoke test       → /readyz, Agent IAM, Teams E2E
+```
+
+Do not run `deploy-gcp.sh` when `TERRAFORM_MANAGED=1` on a Terraform-managed project —
+it still mutates IAM, secrets, CPU, memory, scaling, timeout, and all env vars. Use
+[`release-gcp.sh`](./release-gcp.sh) instead. Secret **values** stay outside Terraform state.
+
+Deployer / CI identities: [`../infra/DEPLOYER_IAM.md`](../infra/DEPLOYER_IAM.md).
+
+### Release only (Terraform-managed projects)
+
+```bash
+export GCP_PROJECT_ID=your-project-id
+export TERRAFORM_MANAGED=1   # blocks accidental deploy-gcp.sh
+./deploy/release-gcp.sh      # build SHA-tagged images, update Cloud Run image only
+```
+
+Optional: `RELEASE_GIT_SHA=abc1234 ./deploy/release-gcp.sh` to override the tag.
+
+Build and push only (greenfield step 3, before Cloud Run exists):
+
+```bash
+BUILD_ONLY=1 ./deploy/release-gcp.sh
+```
 
 ## Mock Ticket API 驗收環境
 

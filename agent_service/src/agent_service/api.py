@@ -22,13 +22,22 @@ from .contracts import (
 from .conversation import ConversationService, build_repository
 from .extractor import IssueExtractor
 from .faq import FaqService
-from .graph import RagAgent
+from .graph import RagAgent, build_chat_model
+from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
+from .knowledge_release import resolve_knowledge_index
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
-from .usage import build_usage_report
+from .ticket_dedupe import build_ticket_request_dedupe
+from .usage import build_usage_report, convert_usd_to_twd
+from .usage_events import (
+    RequestCostSummary,
+    build_request_cost_summary,
+    derive_request_outcome,
+    log_request_cost,
+)
 from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -57,15 +66,16 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if not resolved_settings.index_path.exists():
-            if not resolved_settings.auto_build_index:
-                raise FileNotFoundError(
-                    f"RAG index not found: {resolved_settings.index_path}"
-                )
+        resolved_index = resolve_knowledge_index(resolved_settings)
+        if resolved_index.source == "auto_build" and not resolved_index.index_path.exists():
             index = build_index(resolved_settings)
+        elif not resolved_index.index_path.exists():
+            raise FileNotFoundError(
+                f"Knowledge index not found: {resolved_index.index_path}"
+            )
         else:
             index = HybridIndex.load(
-                resolved_settings.index_path,
+                resolved_index.index_path,
                 resolved_settings.embedding_model,
             )
 
@@ -74,6 +84,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         # LangGraph workflow below (spec §5) is what /agent/chat runs.
         agent = RagAgent(resolved_settings, index)
 
+        rag_model = build_chat_model(resolved_settings.model)
+        agent_model = build_chat_model(
+            resolved_settings.agent_model or resolved_settings.model
+        )
+
         # Build every §5 collaborator ONCE here (not per request):
         # FAQ / Conversation / Ticket / Knowledge services + the Issue
         # Extractor, then wire them into a single AgentWorkflow instance.
@@ -81,10 +96,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         conversation_service = ConversationService(
             build_repository(resolved_settings), resolved_settings
         )
+        handoff_repository = build_handoff_repository(resolved_settings)
         ticket_service = build_ticket_service(resolved_settings)
         hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
         knowledge_services = {
-            "HYBRID": build_knowledge_service(hybrid_settings, index, agent.model)
+            "HYBRID": build_knowledge_service(hybrid_settings, index, rag_model)
         }
         unavailable_backends: dict[str, str] = {}
         if resolved_settings.gemini_file_search_store:
@@ -92,7 +108,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
             )
             knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
-                gemini_settings, index, agent.model
+                gemini_settings, index, rag_model
             )
         else:
             unavailable_backends["GEMINI_FILE_SEARCH"] = (
@@ -103,8 +119,19 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             resolved_settings.knowledge_service_mode,
             unavailable_backends,
             build_backend_state_store(resolved_settings),
+            resolved_settings,
         )
-        extractor = IssueExtractor(resolved_settings, agent.model)
+        extractor = IssueExtractor(resolved_settings, agent_model)
+        ticket_request_dedupe = build_ticket_request_dedupe(resolved_settings)
+        if (
+            resolved_settings.rag_require_file_search_acl
+            and resolved_settings.gemini_file_search_store
+            and not resolved_settings.gemini_file_search_enforce_acl
+        ):
+            raise RuntimeError(
+                "Refusing to start with GEMINI_FILE_SEARCH_ENFORCE_ACL=false while "
+                "RAG_REQUIRE_FILE_SEARCH_ACL=true."
+            )
         workflow = AgentWorkflow(
             resolved_settings,
             extractor=extractor,
@@ -112,16 +139,25 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             knowledge_service=knowledge_router,
             conversation_service=conversation_service,
             ticket_service=ticket_service,
+            handoff_repository=handoff_repository,
+            ticket_request_dedupe=ticket_request_dedupe,
         )
 
         app.state.index = index
+        app.state.knowledge_index_path = resolved_index.index_path
+        app.state.knowledge_release_id = resolved_index.release_id
+        app.state.knowledge_index_source = resolved_index.source
         app.state.agent = agent
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
+        app.state.handoff_repository = handoff_repository
         logger.info(
-            "Agentic RAG ready: chunks=%s model=%s embeddings=%s "
+            "Agentic RAG ready: chunks=%s agent_model=%s rag_model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",
             len(index.chunks),
+            resolved_settings.agent_model
+            or resolved_settings.model
+            or "extractive-local",
             resolved_settings.model or "extractive-local",
             resolved_settings.embedding_model or "sparse-only",
             resolved_settings.knowledge_service_mode,
@@ -149,12 +185,24 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             "status": "ready",
             "chunks": len(index.chunks),
             "model": resolved_settings.model or "extractive-local",
+            "agentModel": (
+                resolved_settings.agent_model
+                or resolved_settings.model
+                or "extractive-local"
+            ),
             "retrieval": (
                 "hybrid"
                 if resolved_settings.embedding_model
                 else "chinese-bm25"
             ),
             "knowledgeBackend": await request.app.state.knowledge_router.active_backend(),
+            "knowledgeIndexSource": getattr(
+                request.app.state, "knowledge_index_source", "bundled_index"
+            ),
+            "knowledgeReleaseId": getattr(request.app.state, "knowledge_release_id", None),
+            "knowledgeIndexPath": str(
+                getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
+            ),
         }
 
     @app.get(
@@ -172,6 +220,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
     async def set_knowledge_backend(
         payload: KnowledgeBackendUpdate, request: Request
     ) -> dict[str, object]:
+        if not resolved_settings.knowledge_backend_admin_enabled:
+            raise HTTPException(
+                status_code=403,
+                detail="Knowledge backend switching is disabled in this environment.",
+            )
         router: KnowledgeBackendRouter = request.app.state.knowledge_router
         try:
             await router.select(payload.backend)
@@ -222,7 +275,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         state: dict,
         usage_metadata: dict,
         started_at: float,
-    ) -> None:
+    ) -> RequestCostSummary | None:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
         _log_chat_request(payload, state, elapsed_ms=elapsed_ms, error_type=None)
         usage_fields = build_usage_report(usage_metadata).log_fields()
@@ -239,8 +292,38 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             usage_fields["estimated_cost_usd"],
             usage_fields,
         )
+        execution_context = state.get("execution_context")
+        counter = state.get("llm_call_counter")
+        if execution_context is None:
+            return None
+        summary = build_request_cost_summary(
+            execution_context.usage_collector,
+            langchain_usage=usage_metadata,
+            outcome=derive_request_outcome(state),
+            elapsed_ms=elapsed_ms,
+            llm_call_count=counter.count if counter else 0,
+            embedding_model=resolved_settings.embedding_model,
+        )
+        log_request_cost(summary)
+        return summary
 
-    def _build_response(state: dict, correlation_id: str) -> AgentResponse:
+    def _build_response(
+        state: dict,
+        correlation_id: str,
+        *,
+        cost_summary: RequestCostSummary | None = None,
+    ) -> AgentResponse:
+        estimated_cost_usd: float | None = None
+        estimated_cost_twd: float | None = None
+        cost_complete: bool | None = None
+        if resolved_settings.show_turn_cost:
+            cost_complete = cost_summary.cost_complete if cost_summary else False
+            if cost_summary and cost_summary.estimated_cost_usd is not None:
+                estimated_cost_usd = round(cost_summary.estimated_cost_usd, 8)
+                estimated_cost_twd = convert_usd_to_twd(
+                    estimated_cost_usd,
+                    resolved_settings.usd_twd_exchange_rate,
+                )
         return AgentResponse(
             answer=state.get("final_response", ""),
             traceId=correlation_id,
@@ -249,6 +332,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             images=state.get("images", []),
             issueResults=state.get("issue_results", []),
             feedbackEnabled=state.get("feedback_enabled", False),
+            estimatedCostUsd=estimated_cost_usd,
+            estimatedCostTwd=estimated_cost_twd,
+            costComplete=cost_complete,
         )
 
     @app.post(
@@ -276,8 +362,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
             ) from error
 
-        _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
-        return _build_response(state, correlation_id)
+        cost_summary = _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+        return _build_response(state, correlation_id, cost_summary=cost_summary)
 
     @app.post(
         "/agent/chat/stream",
@@ -344,10 +430,14 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 )
                 return
 
-            _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+            cost_summary = _log_chat_success(
+                payload, correlation_id, state, usage_metadata, started_at
+            )
             yield _sse(
                 "response",
-                _build_response(state, correlation_id).model_dump(mode="json"),
+                _build_response(
+                    state, correlation_id, cost_summary=cost_summary
+                ).model_dump(mode="json"),
             )
 
         return StreamingResponse(

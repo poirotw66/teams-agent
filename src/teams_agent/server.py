@@ -71,12 +71,12 @@ class DualInboundTokenValidator:
     ) -> dict[str, Any]:
         try:
             return await self._primary.validate_token(raw_token, service_url, scope)
-        except Exception as primary_error:
+        except Exception as primary_error:  # noqa: BLE001 - try alternate issuer
             try:
                 return await self._secondary.validate_token(
                     raw_token, service_url, scope
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - preserve primary issuer failure
                 raise primary_error from None
 
 

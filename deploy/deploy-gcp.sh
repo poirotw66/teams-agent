@@ -2,7 +2,6 @@
 
 set -Eeuo pipefail
 
-PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ID="${GCP_PROJECT_ID:-itr-aimasteryhub-lab}"
 REGION="${GCP_REGION:-asia-east1}"
 REPOSITORY="${GCP_ARTIFACT_REPOSITORY:-teams-agent}"
@@ -27,9 +26,17 @@ ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
 FIRESTORE_DATABASE="${GCP_FIRESTORE_DATABASE:-(default)}"
 FIRESTORE_LOCATION="${GCP_FIRESTORE_LOCATION:-${REGION}}"
 FIRESTORE_COLLECTION="${GCP_FIRESTORE_COLLECTION:-conversations}"
+HANDOFF_FIRESTORE_COLLECTION="${GCP_HANDOFF_FIRESTORE_COLLECTION:-handoffs}"
 KNOWLEDGE_BACKEND_STATE_COLLECTION="${GCP_KNOWLEDGE_BACKEND_STATE_COLLECTION:-runtime_config}"
 GEMINI_FILE_SEARCH_STORE="${GEMINI_FILE_SEARCH_STORE:-fileSearchStores/helpdeskstore-1p3gu83qot1s}"
 GEMINI_FILE_SEARCH_MODEL="${GEMINI_FILE_SEARCH_MODEL:-gemini-2.5-flash}"
+# Production defaults fail closed once File Search store metadata is migrated.
+GEMINI_FILE_SEARCH_ENFORCE_ACL="${GEMINI_FILE_SEARCH_ENFORCE_ACL:-true}"
+RAG_REQUIRE_FILE_SEARCH_ACL="${RAG_REQUIRE_FILE_SEARCH_ACL:-true}"
+# Playground backend switching must not mutate the shared production runtime config.
+KNOWLEDGE_BACKEND_ADMIN_ENABLED="${KNOWLEDGE_BACKEND_ADMIN_ENABLED:-false}"
+TICKET_REQUEST_DEDUPE_MODE="${TICKET_REQUEST_DEDUPE_MODE:-FIRESTORE}"
+TICKET_REQUEST_DEDUPE_COLLECTION="${TICKET_REQUEST_DEDUPE_COLLECTION:-ticket_request_ledger}"
 
 log() {
   printf '[deploy] %s\n' "$*"
@@ -39,6 +46,12 @@ fail() {
   printf '[deploy] ERROR: %s\n' "$*" >&2
   exit 1
 }
+
+if [[ "${TERRAFORM_MANAGED:-0}" == "1" ]]; then
+  fail "Project is Terraform-managed. Run infra/terraform apply for shape, inject secrets separately, then deploy/release-gcp.sh for images. Unset TERRAFORM_MANAGED only if you intentionally want a full legacy deploy."
+fi
+
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 env_value() {
   local file="$1"
@@ -101,6 +114,7 @@ BOT_CLIENT_SECRET_VALUE="${BOT_CLIENT_SECRET_VALUE:-$(env_value .env CLIENT_SECR
 BOT_TENANT_ID="${BOT_TENANT_ID:-$(env_value .env TENANT_ID)}"
 ASSET_SIGNING_KEY_VALUE="$(env_value .env RAG_ASSET_SIGNING_KEY)"
 RAG_MODEL="$(env_value agent_service/.env RAG_MODEL)"
+AGENT_MODEL="$(env_value agent_service/.env AGENT_MODEL)"
 RAG_EMBEDDING_MODEL="$(env_value agent_service/.env RAG_EMBEDDING_MODEL)"
 RAG_ALLOWED_TENANTS="$(env_value agent_service/.env RAG_ALLOWED_TENANTS)"
 
@@ -149,11 +163,11 @@ if ! gcloud firestore databases describe \
     --project="${PROJECT_ID}" >/dev/null
 fi
 
-# Spec §10.2: conversations expire after CONVERSATION_TIMEOUT_HOURS. The
-# Agent Service writes `expiresAt` on every document it creates; these TTL
-# policies are what actually deletes them, so the store does not grow
-# without bound. `messages` is the subcollection under each conversation,
-# addressed as its own collection group.
+# Conversation sessions roll over after CONVERSATION_TIMEOUT_HOURS, while the
+# Agent Service writes `expiresAt` using CONVERSATION_RETENTION_DAYS. These TTL
+# policies delete retained data later so the store does not grow without
+# bound. `messages` is the subcollection under each conversation, addressed
+# as its own collection group.
 #
 # TTL is a retention mechanism, NOT the timeout mechanism: collection lags
 # by up to ~24h, and the Agent Service re-checks lastActivityAt on every
@@ -167,6 +181,20 @@ for collection_group in "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}_keys"
     --async \
     --quiet >/dev/null 2>&1 \
     || log "警告：無法設定 ${collection_group} 的 TTL policy，請手動確認"
+done
+
+# Phase 2: Handoff session timeout is enforced by the application through
+# sessionExpiresAt. Firestore TTL only applies the separate 730-day retention
+# policy to case and audit-event documents.
+for collection_group in "${HANDOFF_FIRESTORE_COLLECTION}" "${HANDOFF_FIRESTORE_COLLECTION}_events"; do
+  gcloud firestore fields ttls update retentionExpiresAt \
+    --collection-group="${collection_group}" \
+    --database="${FIRESTORE_DATABASE}" \
+    --project="${PROJECT_ID}" \
+    --enable-ttl \
+    --async \
+    --quiet >/dev/null 2>&1 \
+    || log "警告：無法設定 ${collection_group} 的 Handoff TTL policy，請手動確認"
 done
 
 # roles/datastore.user covers Firestore document read/write for the Agent
@@ -214,7 +242,7 @@ gcloud run deploy "${AGENT_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE},GEMINI_FILE_SEARCH_MODEL=${GEMINI_FILE_SEARCH_MODEL},GEMINI_FILE_SEARCH_ENFORCE_ACL=false,KNOWLEDGE_BACKEND_STATE_MODE=FIRESTORE,KNOWLEDGE_BACKEND_STATE_COLLECTION=${KNOWLEDGE_BACKEND_STATE_COLLECTION},TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},FEEDBACK_ENABLED=true" \
+  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},AGENT_MODEL=${AGENT_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE},GEMINI_FILE_SEARCH_MODEL=${GEMINI_FILE_SEARCH_MODEL},GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL},RAG_REQUIRE_FILE_SEARCH_ACL=${RAG_REQUIRE_FILE_SEARCH_ACL},KNOWLEDGE_BACKEND_STATE_MODE=FIRESTORE,KNOWLEDGE_BACKEND_STATE_COLLECTION=${KNOWLEDGE_BACKEND_STATE_COLLECTION},KNOWLEDGE_BACKEND_ADMIN_ENABLED=${KNOWLEDGE_BACKEND_ADMIN_ENABLED},TICKET_REQUEST_DEDUPE_MODE=${TICKET_REQUEST_DEDUPE_MODE},TICKET_REQUEST_DEDUPE_COLLECTION=${TICKET_REQUEST_DEDUPE_COLLECTION},TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},CONVERSATION_RETENTION_DAYS=730,HANDOFF_REPOSITORY_MODE=FIRESTORE,HANDOFF_FIRESTORE_COLLECTION=${HANDOFF_FIRESTORE_COLLECTION},HANDOFF_DEMO_TIMEOUT_HOURS=24,HANDOFF_RETENTION_DAYS=730,FEEDBACK_ENABLED=true" \
   --set-secrets="GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
   # KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
   # FEEDBACK_ENABLED above are set explicitly so this deploy is

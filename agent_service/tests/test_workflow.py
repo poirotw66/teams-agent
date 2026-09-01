@@ -11,11 +11,13 @@ trusted identity, one-per-turn), LLM budget degradation, and the follow-up
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from agent_service.confirmation import TicketIntent, classify_ticket_intent
 from agent_service.contracts import (
     AgentRequest,
     ConversationIdentity,
@@ -29,13 +31,19 @@ from agent_service.contracts import (
     UserIdentity,
 )
 from agent_service.conversation import ConversationService, InMemoryConversationRepository
-from agent_service.extractor import IssueExtractor
+from agent_service.extractor import IssueExtractor, _is_generic_ticket_request
 from agent_service.faq import FaqRepository, FaqService
+from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
+from agent_service.handoff_flow import HandoffAction
 from agent_service.settings import RagSettings
-from agent_service.ticket import TicketServiceDisabledError
+from agent_service.supervisor import ConversationSupervisorDecision
+from agent_service.ticket import TicketItemSelection, TicketServiceDisabledError
+from agent_service.ticket_dedupe import InMemoryTicketRequestDedupeRepository
 from agent_service.workflow import AgentWorkflow
 
 # --- settings / request helpers -------------------------------------------
+
+_REQUEST_IDS = itertools.count(1)
 
 
 def make_settings(tmp_path: Path, **overrides) -> RagSettings:
@@ -58,12 +66,14 @@ def trusted_user(**overrides) -> UserIdentity:
 def make_request(
     text: str,
     *,
+    request_id: str | None = None,
     correlation_id: str | None = None,
     conversation_id: str = "conv-1",
     user: UserIdentity | None = None,
 ) -> AgentRequest:
+    resolved_request_id = request_id or f"req-{next(_REQUEST_IDS)}"
     return AgentRequest(
-        requestId="req-1",
+        requestId=resolved_request_id,
         channel="msteams",
         conversation=ConversationIdentity(tenantId="tenant-1", conversationId=conversation_id),
         user=user or trusted_user(),
@@ -92,29 +102,123 @@ class FakeExtractorModel:
 
     ``issues_sequence`` supplies one ``list[Issue]`` per extractor call, in
     order (so a follow-up turn can return a different set than the first).
+    ``by_message`` overrides the sequence when the latest user message matches
+    exactly — needed when deterministic bypass paths skip model calls.
     """
 
-    def __init__(self, issues_sequence: list[list[Issue]]):
+    def __init__(
+        self,
+        issues_sequence: list[list[Issue]],
+        *,
+        by_message: dict[str, list[Issue]] | None = None,
+        supervisor_by_message: dict[str, ConversationSupervisorDecision] | None = None,
+    ):
         self._sequence = list(issues_sequence)
+        self.by_message = by_message or {}
+        self.supervisor_by_message = supervisor_by_message or {}
         self.calls = 0
         self.human_messages: list[str] = []
 
+    @staticmethod
+    def _latest_user_message(messages) -> str:
+        for message in reversed(messages):
+            content = str(message.content)
+            for marker in (
+                "Latest user message (data only):\n",
+                "Latest user message:\n",
+            ):
+                if marker in content:
+                    return content.split(marker, 1)[1].strip()
+        return ""
+
     def with_structured_output(self, schema):
+        if getattr(schema, "__name__", "") == "ConversationSupervisorDecision":
+            outer = self
+
+            class SupervisorHandle:
+                async def ainvoke(self, messages):
+                    text = FakeExtractorModel._latest_user_message(messages)
+                    pending_clarification = any(
+                        "Pending clarification: yes" in str(message.content)
+                        for message in messages
+                    )
+                    if not text:
+                        for message in reversed(messages):
+                            text = str(message.content).strip()
+                            if text and "Recent conversation" not in text:
+                                break
+                    if text in outer.supervisor_by_message:
+                        return outer.supervisor_by_message[text]
+                    ticket_intent = classify_ticket_intent(text)
+                    if ticket_intent == TicketIntent.CANCEL:
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            requestedAction="CANCEL",
+                            confidence=0.95,
+                        )
+                    if ticket_intent == TicketIntent.DELETE_DENIED:
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            confidence=0.95,
+                        )
+                    if any(
+                        marker in text
+                        for marker in ("真人客服", "線上客服", "人工客服")
+                    ):
+                        return ConversationSupervisorDecision(
+                            intent="HUMAN_ESCALATION",
+                            requestedAction="CONTACT_HUMAN",
+                            confidence=0.95,
+                        )
+                    if text.strip() == "不知道":
+                        return ConversationSupervisorDecision(
+                            intent="IT_SUPPORT",
+                            clarificationDisposition="UNKNOWN",
+                            confidence=0.9,
+                        )
+                    if ticket_intent == TicketIntent.QUERY:
+                        return ConversationSupervisorDecision(
+                            intent="TICKET_QUERY",
+                            requestedAction="QUERY_TICKETS",
+                            confidence=0.95,
+                        )
+                    if _is_generic_ticket_request(text) or ticket_intent == TicketIntent.CREATE:
+                        return ConversationSupervisorDecision(
+                            intent="TICKET_CREATE",
+                            requestedAction="CREATE_TICKET",
+                            confidence=0.95,
+                        )
+                    if outer._sequence and not pending_clarification:
+                        batch = outer._sequence[0]
+                        if batch and all(not issue.isIT for issue in batch):
+                            outer._sequence.pop(0)
+                            return ConversationSupervisorDecision(
+                                intent="NON_IT",
+                                confidence=0.9,
+                            )
+                    return ConversationSupervisorDecision(
+                        intent="IT_SUPPORT",
+                        confidence=0.8,
+                    )
+
+            return SupervisorHandle()
+
         assert schema is IssueExtraction
-        self.calls += 1
-        issues = self._sequence.pop(0) if self._sequence else []
-        recorder: list = []
-        handle = _StructuredHandle(IssueExtraction(issues=issues), recorder)
-        # Peek at the human message content on ainvoke via a thin wrapper.
-        outer_ainvoke = handle.ainvoke
+        outer = self
 
-        async def ainvoke(messages):
-            for message in messages:
-                self.human_messages.append(str(message.content))
-            return await outer_ainvoke(messages)
+        class Handle:
+            async def ainvoke(self, messages):
+                outer.calls += 1
+                for message in messages:
+                    outer.human_messages.append(str(message.content))
+                text = FakeExtractorModel._latest_user_message(messages)
+                if text in outer.by_message:
+                    issues = outer.by_message[text]
+                else:
+                    issues = outer._sequence.pop(0) if outer._sequence else []
+                return IssueExtraction(issues=issues)
 
-        handle.ainvoke = ainvoke  # type: ignore[method-assign]
-        return handle
+        return Handle()
 
 
 class FakeKnowledgeService:
@@ -130,7 +234,7 @@ class FakeKnowledgeService:
         self.calls: list[str] = []
         self.received_correlation_ids: list[str | None] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None):
+    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
         self.calls.append(query)
         self.received_correlation_ids.append(correlation_id)
         if call_counter is not None:
@@ -145,7 +249,7 @@ class SelectiveFailKnowledgeService:
         self.fail_marker = fail_marker
         self.calls: list[str] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None):
+    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
         self.calls.append(query)
         if call_counter is not None:
             call_counter.increment()
@@ -186,7 +290,7 @@ class FakeTicketService:
     async def get_ticket_items(self, *, correlation_id=None):
         return self.items
 
-    async def create_ticket(self, draft, *, correlation_id=None):
+    async def create_ticket(self, draft, *, correlation_id=None, idempotency_key=None):
         self.created.append((draft, correlation_id))
         ticket = Ticket(
             id=f"TCK-{len(self.created)}",
@@ -212,7 +316,7 @@ class DisabledFakeTicketService:
     async def get_ticket_items(self, *, correlation_id=None):
         raise TicketServiceDisabledError()
 
-    async def create_ticket(self, draft, *, correlation_id=None):
+    async def create_ticket(self, draft, *, correlation_id=None, idempotency_key=None):
         raise TicketServiceDisabledError()
 
     async def list_tickets_by_requester(self, requester_id, *, correlation_id=None):
@@ -220,6 +324,51 @@ class DisabledFakeTicketService:
 
     async def get_ticket(self, ticket_id, requester_id, *, correlation_id=None):
         raise TicketServiceDisabledError()
+
+
+class FakeHandoffRouter:
+    def __init__(self, actions: list[HandoffAction]) -> None:
+        self.actions = list(actions)
+
+    async def decide(
+        self,
+        *,
+        message: str,
+        case_status: str,
+        **_kwargs,
+    ) -> HandoffAction:
+        from agent_service.confirmation import TicketIntent, classify_ticket_intent
+        from agent_service.handoff_flow import _protocol_close_command
+
+        if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
+            return HandoffAction.CLOSE
+        if case_status == "DEMO_ACTIVE":
+            if (
+                self.actions
+                and self.actions[0] is HandoffAction.CREATE_TICKET
+                and classify_ticket_intent(message) is TicketIntent.CREATE
+            ):
+                return self.actions.pop(0)
+            return HandoffAction.HUMAN_MESSAGE
+        if case_status not in {"SUMMARY_REVIEW", "AWAITING_SUPPLEMENT"}:
+            return HandoffAction.UNKNOWN
+        if not self.actions:
+            return HandoffAction.UNKNOWN
+        return self.actions.pop(0)
+
+
+class FakeTicketItemSelector:
+    """Test double for the model-driven catalog selector."""
+
+    def __init__(self, item_id: str | None = None, reason: str = "selected") -> None:
+        self.item_id = item_id
+        self.reason = reason
+
+    async def select(self, *, items, issue_description, execution_context=None):
+        selected = next((item for item in items if item.id == self.item_id), None)
+        if self.item_id is None and self.reason == "selected":
+            selected = items[0] if items else None
+        return TicketItemSelection(item=selected, reason=self.reason)
 
 
 def make_conversation_service(settings: RagSettings) -> ConversationService:
@@ -252,9 +401,19 @@ def build_workflow(
     faq_service: FaqService | None = None,
     settings_overrides: dict | None = None,
     conversation_service: ConversationService | None = None,
+    handoff_repository=None,
+    handoff_router=None,
+    ticket_item_selector=None,
+    ticket_request_dedupe=None,
+    extractor_by_message: dict[str, list[Issue]] | None = None,
+    supervisor_by_message: dict | None = None,
 ):
     settings = make_settings(tmp_path, **(settings_overrides or {}))
-    extractor_model = FakeExtractorModel(issues_sequence)
+    extractor_model = FakeExtractorModel(
+        issues_sequence,
+        by_message=extractor_by_message,
+        supervisor_by_message=supervisor_by_message,
+    )
     extractor = IssueExtractor(settings, model=extractor_model)
     faq = faq_service or FaqService(FaqRepository([]))
     knowledge_service = knowledge or FakeKnowledgeService()
@@ -267,6 +426,11 @@ def build_workflow(
         knowledge_service=knowledge_service,
         conversation_service=conv_service,
         ticket_service=ticket,
+        handoff_repository=handoff_repository,
+        handoff_router=handoff_router,
+        ticket_item_selector=ticket_item_selector or FakeTicketItemSelector(),
+        ticket_request_dedupe=ticket_request_dedupe
+        or InMemoryTicketRequestDedupeRepository(),
     )
     return workflow, extractor_model, knowledge_service, ticket, conv_service, settings
 
@@ -349,6 +513,251 @@ async def test_faq_miss_falls_back_to_knowledge(tmp_path: Path) -> None:
     assert knowledge.calls == ["某個問題"]
 
 
+@pytest.mark.asyncio
+async def test_new_question_supersedes_handoff_review_and_returns_to_ai(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
+    knowledge = FakeKnowledgeService(
+        responses={
+            sap_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依 VPN 密碼解鎖流程處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.NEW_ISSUE]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(vpn_issue.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請依 VPN 密碼解鎖流程處理" in answered.answer
+    assert "SAP Crystal Reports" not in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert offered.answer.startswith("目前無法從企業知識庫找到可確認的答案")
+    assert knowledge.calls == [sap_issue.description, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_handoff_summary_changes_only_after_explicit_supplement_action(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter(
+            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.SUPPLEMENT]
+        ),
+    )
+
+    await workflow.respond(make_request(sap_issue.description))
+    prompt = await workflow.respond(make_request("繼續補充"))
+    after_prompt = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    supplemented = await workflow.respond(make_request("錯誤碼 CR-1001"))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+
+    assert prompt.answer.startswith("請繼續補充問題")
+    assert after_prompt is not None
+    assert after_prompt.status == HandoffStatus.AWAITING_SUPPLEMENT
+    assert "問題：SAP Crystal Reports 授權到期無法開啟" in supplemented.answer
+    assert "待確認補充：錯誤碼 CR-1001" in supplemented.answer
+    assert active is not None and active.status == HandoffStatus.SUMMARY_REVIEW
+    assert active.summary.conversationHighlights == ["待確認補充：錯誤碼 CR-1001"]
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_illegal_supplement_in_summary_review_keeps_case_summary(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(
+            responses={
+                sap_issue.description: KnowledgeResult(
+                    found=False, answer="", backend="HYBRID"
+                )
+            }
+        ),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.SUPPLEMENT]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    retried = await workflow.respond(make_request("錯誤碼 CR-1001"))
+    stored = await repository.get_case(active.caseId)
+
+    assert retried.answer == offered.answer
+    assert stored is not None and stored.status == HandoffStatus.SUMMARY_REVIEW
+    assert stored.summary.conversationHighlights == []
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_revise_issue_after_handoff_offer_reruns_rag(tmp_path: Path) -> None:
+    unlock_issue = issue(description="大洲系統無法解鎖")
+    click_issue = issue(description="大洲系統無法點選")
+    knowledge = FakeKnowledgeService(
+        responses={
+            unlock_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            click_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依大洲功能無法點選排查步驟處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[unlock_issue], [click_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.REVISE_ISSUE]),
+        extractor_by_message={click_issue.description: [click_issue]},
+    )
+
+    offered = await workflow.respond(make_request(unlock_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(click_issue.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請依大洲功能無法點選排查步驟處理" in answered.answer
+    assert "大洲系統無法解鎖" not in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert offered.answer.startswith("目前無法從企業知識庫找到可確認的答案")
+    assert knowledge.calls == [unlock_issue.description, click_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_cancel_clears_awaiting_supplement_for_next_question(
+    tmp_path: Path,
+) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
+    knowledge = FakeKnowledgeService(
+        responses={
+            sap_issue.description: KnowledgeResult(
+                found=False, answer="", backend="HYBRID"
+            ),
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依 VPN 密碼解鎖流程處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    repository = InMemoryHandoffRepository()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter(
+            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.CANCEL]
+        ),
+        extractor_by_message={vpn_issue.description: [vpn_issue]},
+    )
+
+    await workflow.respond(make_request(sap_issue.description))
+    await workflow.respond(make_request("繼續補充"))
+    awaiting = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert awaiting is not None and awaiting.status == HandoffStatus.AWAITING_SUPPLEMENT
+
+    await workflow.respond(make_request("取消"))
+    assert await repository.get_active_case("tenant-1", "conv-1", "user-1") is None
+
+    answered = await workflow.respond(make_request(vpn_issue.description))
+    assert "請依 VPN 密碼解鎖流程處理" in answered.answer
+    assert knowledge.calls == [sap_issue.description, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_greeting_skips_extractor_and_rag(tmp_path: Path) -> None:
+    from agent_service.supervisor import ConversationSupervisorDecision
+
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="不應被使用")]],
+        supervisor_by_message={
+            "你好": ConversationSupervisorDecision(
+                intent="GREETING",
+                requestedAction="ANSWER",
+                confidence=0.95,
+            )
+        },
+    )
+
+    response = await workflow.respond(make_request("你好"))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert "你好！我是 IT 助手" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_unknown_handoff_action_keeps_summary_review_case(tmp_path: Path) -> None:
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    repository = InMemoryHandoffRepository()
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue]],
+        knowledge=FakeKnowledgeService(
+            responses={
+                sap_issue.description: KnowledgeResult(
+                    found=False, answer="", backend="HYBRID"
+                )
+            }
+        ),
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.UNKNOWN]),
+    )
+
+    offered = await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    retried = await workflow.respond(make_request("意圖不明的文字"))
+    stored = await repository.get_case(active.caseId)
+
+    assert retried.answer == offered.answer
+    assert stored is not None and stored.status == HandoffStatus.SUMMARY_REVIEW
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [sap_issue.description]
+
+
 @pytest.mark.parametrize("text", ["有哪些派工單", "有哪些工單"])
 @pytest.mark.asyncio
 async def test_ticket_list_queries_current_users_dispatch_tickets_not_faq(
@@ -363,8 +772,8 @@ async def test_ticket_list_queries_current_users_dispatch_tickets_not_faq(
     ]
     workflow, extractor_model, knowledge, _ticket, *_ = build_workflow(
         tmp_path,
-        # This would produce an FAQ response if the deterministic ticket
-        # query guardrail did not intercept the message first.
+        # This would produce an FAQ response if the agentic ticket-query
+        # decision did not intercept the message first.
         issues_sequence=[[issue(route="FAQ", faqKey="TICKET_FAQ")]],
         faq_service=faq,
         ticket_service=ticket_service,
@@ -404,11 +813,13 @@ async def test_all_non_it_issues(tmp_path: Path) -> None:
         issue(id=1, description="天氣", isIT=False, readiness="NOT_IT", route="NOT_IT"),
         issue(id=2, description="午餐", isIT=False, readiness="NOT_IT", route="NOT_IT"),
     ]
-    workflow, *_ = build_workflow(tmp_path, issues_sequence=[issues])
+    workflow, extractor_model, *_ = build_workflow(tmp_path, issues_sequence=[issues])
 
     response = await workflow.respond(make_request("今天天氣如何？午餐吃什麼？"))
 
-    assert "「天氣」、「午餐」不屬於公司 IT 支援範圍" in response.answer
+    assert extractor_model.calls == 0
+    assert "不屬於公司 IT 支援範圍" in response.answer
+    assert "今天天氣如何" in response.answer
     assert response.issueResults == []
 
 
@@ -453,7 +864,10 @@ async def test_ticket_not_created_without_explicit_confirmation(tmp_path: Path) 
     it_issue = issue(id=1, description="VPN 一直斷線", route="TICKET")
     ticket_service = FakeTicketService()
     workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector("item-vpn"),
     )
 
     response = await workflow.respond(make_request("可能要報修"))
@@ -615,8 +1029,15 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
 ) -> None:
     it_issue = issue(id=1, description="VPN 一直斷線", route="TICKET")
     ticket_service = FakeTicketService()
+    ticket_service.items = [
+        TicketItem(id="item-power", name="電腦無法開機", level=3),
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+    ]
     workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[it_issue]], ticket_service=ticket_service
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector("item-vpn"),
     )
 
     offered = await workflow.respond(
@@ -629,10 +1050,39 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     assert "是否需要協助建立派工單" in offered.answer
     assert "查無相關資訊" not in offered.answer
     assert len(ticket_service.created) == 1
+    assert ticket_service.created[0][0].ticketItemId == "item-vpn"
     result = response.issueResults[0]
     assert result.resultType == "TICKET_CREATED"
     assert result.ticketId
     assert "已為你建立派工單" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_ticket_is_not_created_when_catalog_match_is_ambiguous(
+    tmp_path: Path,
+) -> None:
+    ticket_service = FakeTicketService()
+    ticket_service.items = [
+        TicketItem(id="item-power", name="電腦無法開機", level=3),
+        TicketItem(id="item-vpn", name="VPN 無法連線", level=3),
+    ]
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[
+            [issue(description="印表機不能用", route="TICKET")],
+        ],
+        ticket_service=ticket_service,
+        ticket_item_selector=FakeTicketItemSelector(
+            item_id=None, reason="needs_clarification"
+        ),
+    )
+
+    await workflow.respond(make_request("印表機不能用，請幫我建立工單"))
+    response = await workflow.respond(make_request("是"))
+
+    assert response.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert "目前無法從可用派工單類別判定" in response.answer
+    assert ticket_service.created == []
 
 
 @pytest.mark.asyncio
@@ -946,7 +1396,7 @@ async def test_llm_budget_cap_degrades_remaining_issues(tmp_path: Path) -> None:
 
     response = await workflow.respond(make_request("三個問題"))
 
-    # The extractor call alone already consumes the budget (1), so no
+    # The supervisor call alone already consumes the budget (1), so no
     # knowledge-service call should ever happen.
     assert knowledge.calls == []
     assert all(r.resultType == "NO_KNOWLEDGE" for r in response.issueResults)

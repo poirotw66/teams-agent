@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 from urllib.parse import quote
 
 from langchain_core.language_models import BaseChatModel
@@ -32,8 +33,20 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
-from .retrieval import HybridIndex, SearchResult
+from .execution_context import (
+    ExecutionContext,
+    RequestDeadlineExceeded,
+    RequestModelBudgetExceeded,
+    RequestOperationTimedOut,
+)
+from .llm_call_counter import LlmCallCounter
+from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
+
+KnowledgeLLM = TypeVar("KnowledgeLLM")
+
+# rewrite + post-rewrite relevance grade + grounded answer generation
+_KNOWLEDGE_REWRITE_PATH_SLOTS = 3
 
 # --- Prompts (verbatim from graph.py; tuned for Traditional Chinese) -------
 
@@ -96,6 +109,94 @@ _INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
 _KNOWLEDGE_GAP_PATTERN = re.compile(
     r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)"
 )
+# ponytail: without an LLM grader, BM25 alone over-matches the sample corpus.
+# Require distinctive query tokens to overlap the retrieved text before accepting
+# a hit; upgrade path is enabling RAG_MODEL relevance grading.
+_GENERIC_LEXICAL_TOKENS = frozenset(
+    {
+        "vpn",
+        "it",
+        "ai",
+        "bot",
+        "teams",
+        "agent",
+        "demo",
+        "test",
+        "help",
+        "cancel",
+        "close",
+        "請",
+        "協",
+        "助",
+        "幫",
+        "我",
+        "要",
+        "想",
+        "問",
+        "查",
+        "詢",
+        "怎",
+        "麼",
+        "如",
+        "何",
+        "為",
+        "什",
+        "可",
+        "以",
+        "不",
+        "能",
+        "無",
+        "法",
+        "有",
+        "沒",
+        "是",
+        "的",
+        "了",
+        "嗎",
+        "呢",
+        "在",
+        "和",
+        "或",
+        "及",
+        "與",
+        "開",
+        "建",
+        "立",
+        "工",
+        "單",
+        "派",
+        "取",
+        "消",
+        "公",
+        "司",
+        "內",
+        "部",
+        "企",
+        "業",
+        "知",
+        "識",
+        "庫",
+        "測",
+        "試",
+        "問題",
+        "資訊",
+        "系統",
+        "無法",
+        "怎麼",
+        "如何",
+        "請問",
+        "協助",
+        "建立",
+        "開工",
+        "工單",
+        "派工",
+        "取消",
+    }
+)
+_OFFLINE_RELEVANCE_MIN_OVERLAP = 2
+_OFFLINE_RELEVANCE_MIN_RATIO = 0.34
+_OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
+_SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
 
 
 class RelevanceDecision(BaseModel):
@@ -108,6 +209,67 @@ class RewrittenQuery(BaseModel):
 
 def message_text(message: BaseMessage) -> str:
     return str(message.text).strip()
+
+
+def _distinctive_query_tokens(query: str) -> set[str]:
+    tokens: set[str] = set()
+    for token in tokenize(query):
+        if token in _GENERIC_LEXICAL_TOKENS:
+            continue
+        if re.fullmatch(r"[a-z0-9_./:-]+", token):
+            if len(token) >= 2:
+                tokens.add(token)
+            continue
+        if len(token) >= 2:
+            tokens.add(token)
+            continue
+        if re.fullmatch(r"[\u3400-\u9fff]", token):
+            tokens.add(token)
+    return tokens
+
+
+def _primary_distinctive_tokens(query: str) -> set[str]:
+    primary: set[str] = set()
+    for token in _distinctive_query_tokens(query):
+        if re.fullmatch(r"[a-z0-9_./:-]+", token):
+            primary.add(token)
+            continue
+        if len(token) >= 2 and not all(character in _SUBJECT_CHAR_STOP for character in token):
+            primary.add(token)
+    return primary
+
+
+def query_lexically_matches_results(
+    query: str, results: list[SearchResult]
+) -> bool:
+    """Conservative offline relevance guard when no LLM grader is configured."""
+    if not results:
+        return False
+
+    distinctive = _distinctive_query_tokens(query)
+    primary = _primary_distinctive_tokens(query)
+    if not distinctive or not primary:
+        return False
+
+    document_tokens: set[str] = set()
+    for result in results[:3]:
+        document_tokens.update(
+            tokenize(f"{result.chunk.title}\n{result.chunk.content}")
+        )
+    if not primary & document_tokens:
+        return False
+
+    overlap = distinctive & document_tokens
+    if len(distinctive) == 1:
+        token = next(iter(distinctive))
+        return token in document_tokens and results[0].score >= _OFFLINE_SINGLE_TOKEN_MIN_SCORE
+
+    overlap_count = len(overlap)
+    overlap_ratio = overlap_count / len(distinctive)
+    return (
+        overlap_count >= _OFFLINE_RELEVANCE_MIN_OVERLAP
+        and overlap_ratio >= _OFFLINE_RELEVANCE_MIN_RATIO
+    )
 
 
 def answer_indicates_insufficient_information(answer: str) -> bool:
@@ -139,35 +301,9 @@ class KnowledgeService(Protocol):
         user_context: UserContext,
         *,
         correlation_id: str | None = None,
+        call_counter: LlmCallCounter | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult: ...
-
-
-@dataclass
-class LlmCallCounter:
-    """Tracks how many LLM calls a single ``search()`` invocation made.
-
-    Design: an injectable counter object (rather than a bare int returned
-    alongside ``KnowledgeResult``) so that:
-
-    - ``KnowledgeResult`` (owned by contracts.py, spec §8.1) stays exactly as
-      specified — no extra field bolted on for an internal cost concern.
-    - a caller that wants to enforce ``settings.max_llm_calls_per_request``
-      across *multiple* knowledge calls (or across knowledge + issue
-      extraction + rewrite, per spec §16) can pass one shared counter in and
-      read/reset it, rather than summing per-call return values by hand.
-    - tests can assert call counts without threading a second return value
-      through every call site.
-
-    ``HybridKnowledgeService.search`` accepts an optional counter; if none is
-    given it creates its own and exposes the final count via
-    ``last_llm_call_count`` for simple callers that just want to know after
-    the fact.
-    """
-
-    count: int = 0
-
-    def increment(self) -> None:
-        self.count += 1
 
 
 @dataclass(frozen=True)
@@ -198,26 +334,65 @@ class HybridKnowledgeService:
         *,
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult:
-        counter = call_counter or LlmCallCounter()
+        counter = (
+            execution_context.llm_calls
+            if execution_context is not None
+            else (call_counter or LlmCallCounter())
+        )
         groups = set(user_context.groups)
 
         state = _RetrievalState(query=query)
         state = await self._retrieve(state, groups)
 
-        while True:
-            if await self._documents_are_relevant(state, counter):
-                result = await self._generate(state, counter)
-                self.last_llm_call_count = counter.count
-                return result
-            if state.attempt < self.settings.max_retrieval_rewrites and self.model:
-                state = await self._rewrite(state, counter)
-                state = await self._retrieve(state, groups)
-                continue
-            break
+        try:
+            while True:
+                if await self._documents_are_relevant(
+                    state, counter, execution_context=execution_context
+                ):
+                    result = await self._generate(
+                        state, counter, execution_context=execution_context
+                    )
+                    self.last_llm_call_count = counter.count
+                    return result
+                if state.attempt < self.settings.max_retrieval_rewrites and self.model:
+                    if execution_context is not None:
+                        try:
+                            execution_context.ensure_budget_slots(
+                                _KNOWLEDGE_REWRITE_PATH_SLOTS
+                            )
+                        except RequestModelBudgetExceeded:
+                            self.last_llm_call_count = counter.count
+                            return self._limit_result("BUDGET_EXCEEDED")
+                    state = await self._rewrite(
+                        state, counter, execution_context=execution_context
+                    )
+                    state = await self._retrieve(state, groups)
+                    continue
+                break
+        except RequestModelBudgetExceeded:
+            self.last_llm_call_count = counter.count
+            return self._limit_result("BUDGET_EXCEEDED")
+        except (RequestDeadlineExceeded, RequestOperationTimedOut):
+            self.last_llm_call_count = counter.count
+            return self._limit_result("DEADLINE_EXCEEDED")
 
         self.last_llm_call_count = counter.count
         return self._no_answer()
+
+    async def _invoke_llm(
+        self,
+        operation: Callable[[], Awaitable[KnowledgeLLM]],
+        *,
+        component: str,
+        execution_context: ExecutionContext | None,
+        counter: LlmCallCounter,
+    ) -> KnowledgeLLM:
+        if execution_context is not None:
+            return await execution_context.run_llm(operation, component=component)
+        counter.increment()
+        return await operation()
 
     # --- retrieval -----------------------------------------------------
 
@@ -233,36 +408,61 @@ class HybridKnowledgeService:
         return _RetrievalState(query=state.query, results=results, attempt=state.attempt)
 
     async def _documents_are_relevant(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> bool:
         results = state.results
         if not results or results[0].score < self.settings.min_score:
             return False
         if not self.model:
-            return True
+            return query_lexically_matches_results(state.query, results)
 
         context = "\n\n".join(
             f"[{result.chunk.title}]\n{result.chunk.content}"
             for result in results[:3]
         )
-        counter.increment()
-        decision = await self.model.with_structured_output(
-            RelevanceDecision
-        ).ainvoke(
-            [
-                HumanMessage(
-                    content=GRADE_PROMPT.format(question=state.query, context=context)
-                )
-            ]
+
+        async def _grade() -> RelevanceDecision:
+            return await self.model.with_structured_output(
+                RelevanceDecision
+            ).ainvoke(
+                [
+                    HumanMessage(
+                        content=GRADE_PROMPT.format(
+                            question=state.query, context=context
+                        )
+                    )
+                ]
+            )
+
+        decision = await self._invoke_llm(
+            _grade,
+            component="knowledge_relevance",
+            execution_context=execution_context,
+            counter=counter,
         )
         return decision.relevant
 
     async def _rewrite(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> _RetrievalState:
-        counter.increment()
-        decision = await self.model.with_structured_output(RewrittenQuery).ainvoke(
-            [HumanMessage(content=REWRITE_PROMPT.format(question=state.query))]
+        async def _invoke_rewrite() -> RewrittenQuery:
+            return await self.model.with_structured_output(RewrittenQuery).ainvoke(
+                [HumanMessage(content=REWRITE_PROMPT.format(question=state.query))]
+            )
+
+        decision = await self._invoke_llm(
+            _invoke_rewrite,
+            component="knowledge_rewrite",
+            execution_context=execution_context,
+            counter=counter,
         )
         return _RetrievalState(
             query=decision.query.strip(),
@@ -296,7 +496,7 @@ class HybridKnowledgeService:
             citations.append(self._citation_for(result))
         return citations
 
-    def _images_for(self, results: list[SearchResult]) -> list[AgentImage]:
+    def _collect_images(self, results: list[SearchResult]) -> list[AgentImage]:
         images: list[AgentImage] = []
         seen: set[str] = set()
         for result in results:
@@ -316,10 +516,34 @@ class HybridKnowledgeService:
                     return images
         return images
 
+    def _images_for(self, cited_results: list[SearchResult]) -> list[AgentImage]:
+        """Attach chunk images from citations, then same-document siblings when needed.
+
+        Multi-page docs often split procedural text and panel diagrams across chunks.
+        When the cited chunk has no images, include images from other chunks of the
+        same source document so answers referencing soft keys can still show visuals.
+        """
+        images = self._collect_images(cited_results)
+        if images:
+            return images
+        cited_paths = {result.chunk.source_path for result in cited_results}
+        if not cited_paths:
+            return []
+        sibling_results = [
+            SearchResult(chunk=chunk, score=0.0, sparse_score=0.0)
+            for chunk in self.index.chunks
+            if chunk.source_path in cited_paths and chunk.images
+        ]
+        return self._collect_images(sibling_results)
+
     # --- answer generation -----------------------------------------------
 
     async def _generate(
-        self, state: _RetrievalState, counter: LlmCallCounter
+        self,
+        state: _RetrievalState,
+        counter: LlmCallCounter,
+        *,
+        execution_context: ExecutionContext | None = None,
     ) -> KnowledgeResult:
         results = state.results
         if not self.model:
@@ -341,19 +565,29 @@ class HybridKnowledgeService:
             f"[S{index}] {result.chunk.title}\n{result.chunk.content}"
             for index, result in enumerate(results, start=1)
         )
-        counter.increment()
-        response = await self.model.ainvoke(
-            [
-                SystemMessage(
-                    content=ANSWER_PROMPT.format(question=state.query, context=context)
-                ),
-                HumanMessage(
-                    content=(
-                        f"使用者原始問題：{state.query}\n"
-                        "請根據上述已授權知識內容直接回答。"
-                    )
-                ),
-            ]
+
+        async def _invoke_answer() -> BaseMessage:
+            return await self.model.ainvoke(
+                [
+                    SystemMessage(
+                        content=ANSWER_PROMPT.format(
+                            question=state.query, context=context
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"使用者原始問題：{state.query}\n"
+                            "請根據上述已授權知識內容直接回答。"
+                        )
+                    ),
+                ]
+            )
+
+        response = await self._invoke_llm(
+            _invoke_answer,
+            component="knowledge_generate",
+            execution_context=execution_context,
+            counter=counter,
         )
         answer = message_text(response)
         cited_indexes = {
@@ -375,6 +609,15 @@ class HybridKnowledgeService:
             sources=self._unique_citations(cited_results),
             images=self._images_for(cited_results),
             backend="HYBRID",
+        )
+
+    def _limit_result(self, backend: str) -> KnowledgeResult:
+        return KnowledgeResult(
+            found=False,
+            answer="",
+            sources=[],
+            images=[],
+            backend=backend,
         )
 
     def _no_answer(self) -> KnowledgeResult:

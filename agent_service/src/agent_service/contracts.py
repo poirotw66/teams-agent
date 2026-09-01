@@ -35,6 +35,7 @@ class AgentRequest(StrictModel):
     user: UserIdentity
     message: MessageContent
     correlationId: str | None = None
+    evaluationKnowledgeBackend: Literal["HYBRID", "GEMINI_FILE_SEARCH"] | None = None
 
 
 class Citation(StrictModel):
@@ -53,10 +54,10 @@ class AgentImage(StrictModel):
 # --- Issue domain model (spec §4.3, §6) -----------------------------------
 
 # Readiness: whether an issue has enough information to be routed.
-Readiness = Literal["READY", "NEED_MORE_INFO", "NOT_IT"]
+Readiness = Literal["READY", "NEED_MORE_INFO", "NOT_IT", "GREETING"]
 
 # Route: the high-level handling path chosen by the Issue Extractor.
-Route = Literal["FAQ", "KNOWLEDGE", "TICKET", "NOT_IT"]
+Route = Literal["FAQ", "KNOWLEDGE", "TICKET", "NOT_IT", "GREETING"]
 
 # IssueResultType: outcome of processing a single issue (spec §4.3).
 IssueResultType = Literal[
@@ -119,6 +120,9 @@ class AgentResponse(StrictModel):
     correlationId: str | None = None
     issueResults: list[IssueResult] = Field(default_factory=list)
     feedbackEnabled: bool = False
+    estimatedCostUsd: float | None = None
+    estimatedCostTwd: float | None = None
+    costComplete: bool | None = None
 
 
 # --- User / conversation context (spec §10, §11.4, §12) -------------------
@@ -209,6 +213,8 @@ class FaqEntry(StrictModel):
 class TicketItem(StrictModel):
     id: str
     name: str
+    level: int = Field(default=1, ge=1)
+    path: list[str] = Field(default_factory=list)
 
 
 class Ticket(StrictModel):
