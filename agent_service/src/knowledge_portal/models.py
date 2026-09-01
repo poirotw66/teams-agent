@@ -330,6 +330,15 @@ class WorkQueueItem(StrictModel):
     filter_status: str | None = None
 
 
+class PendingReviewTestSummary(StrictModel):
+    total: int = 0
+    executed: int = 0
+    pass_count: int = 0
+    needs_review_count: int = 0
+    fail_count: int = 0
+    meets_minimum: bool = False
+
+
 class PendingReviewItem(StrictModel):
     review_id: str
     document_id: str
@@ -337,6 +346,11 @@ class PendingReviewItem(StrictModel):
     submitted_by: str
     submitted_at: datetime
     status_label: str = "待審核"
+    owner_unit_id: str = ""
+    change_reason: str = ""
+    audience_label: str = ""
+    audience_changed: bool = False
+    test_summary: PendingReviewTestSummary = Field(default_factory=PendingReviewTestSummary)
 
 
 class PendingReviewListResponse(StrictModel):

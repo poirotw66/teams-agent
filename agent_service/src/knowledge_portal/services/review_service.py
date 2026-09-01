@@ -19,6 +19,7 @@ from ..rbac import (
 )
 from ..role_capabilities import ensure_can_list_pending_reviews
 from ..repository import VersionConflictError, new_id
+from ..review_context import build_pending_review_context
 from ..validation import validate_draft
 from .context import PortalServiceContext
 from .document_service import DocumentService
@@ -45,6 +46,12 @@ class ReviewService:
                 )
             except PortalPermissionError:
                 continue
+            context = await build_pending_review_context(
+                self._ctx.repository,
+                document,
+                review.version_id,
+                self._ctx.settings,
+            )
             items.append(
                 PendingReviewItem(
                     review_id=review.review_id,
@@ -52,6 +59,11 @@ class ReviewService:
                     document_title=document.title,
                     submitted_by=review.submitted_by,
                     submitted_at=review.submitted_at,
+                    owner_unit_id=str(context["owner_unit_id"]),
+                    change_reason=str(context["change_reason"]),
+                    audience_label=str(context["audience_label"]),
+                    audience_changed=bool(context["audience_changed"]),
+                    test_summary=context["test_summary"],  # type: ignore[arg-type]
                 )
             )
         return PendingReviewListResponse(items=items, total=len(items))

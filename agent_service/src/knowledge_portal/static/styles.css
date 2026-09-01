@@ -1008,6 +1008,10 @@ fluent-text-area {
   list-style: none;
 }
 
+.create-steps--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .create-step {
   position: relative;
   padding: 0.85rem 1rem;
@@ -1126,10 +1130,100 @@ fluent-text-area {
 
 @media (max-width: 640px) {
   .command-bar { flex-direction: column; align-items: stretch; }
-  .create-steps { grid-template-columns: 1fr; }
+  .create-steps,
+  .create-steps--four { grid-template-columns: 1fr; }
   .compare-grid,
   .review-workspace .compare-grid { grid-template-columns: 1fr; }
 
   .data-table th:nth-child(3),
   .data-table td:nth-child(3) { display: none; }
+
+  .reviews-table th:nth-child(4),
+  .reviews-table td:nth-child(4),
+  .reviews-table th:nth-child(5),
+  .reviews-table td:nth-child(5) { display: none; }
+}
+
+.readiness-panel {
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.readiness-panel.readiness-ok {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: var(--success-soft);
+}
+
+.readiness-panel.readiness-warn {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: var(--warning-soft);
+}
+
+.readiness-header {
+  margin-bottom: 0.35rem;
+  font-size: 1rem;
+}
+
+.readiness-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.85rem 0 0;
+}
+
+.readiness-stats div {
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid var(--border);
+}
+
+@media (prefers-color-scheme: dark) {
+  .readiness-stats div {
+    background: rgba(0, 0, 0, 0.12);
+  }
+}
+
+.readiness-stats dt {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.readiness-stats dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.review-alert-inline {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+}
+
+.confirm-summary .confirm-meta {
+  margin-top: 0.5rem;
+}
+
+.confirm-preview {
+  margin-top: 1.25rem;
+}
+
+.confirm-preview h3 {
+  margin: 0 0 0.65rem;
+  font-size: 0.9375rem;
+  font-weight: 650;
 }

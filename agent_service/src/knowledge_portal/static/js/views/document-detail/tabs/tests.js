@@ -19,11 +19,66 @@ function renderRunDetails(run) {
   return `<div class="test-run-detail">${parts.join("")}</div>`;
 }
 
+export function computeTestReadiness(cases, runsByCase, session) {
+  const minRequired = session.relaxedWorkflow ? 0 : (session.minTestCasesForReview || 3);
+  let passCount = 0;
+  let needsReviewCount = 0;
+  let failCount = 0;
+  let executed = 0;
+
+  for (const item of cases) {
+    const run = runsByCase[item.test_case_id];
+    if (!run) continue;
+    executed += 1;
+    if (run.status === "PASS") passCount += 1;
+    else if (run.status === "NEEDS_REVIEW") needsReviewCount += 1;
+    else if (run.status === "FAIL") failCount += 1;
+  }
+
+  const meetsMinimum = cases.length >= minRequired;
+  const allExecuted = cases.length > 0 && executed === cases.length;
+  const readyForReview = session.relaxedWorkflow
+    ? true
+    : meetsMinimum && allExecuted && failCount === 0;
+
+  return {
+    minRequired,
+    total: cases.length,
+    executed,
+    passCount,
+    needsReviewCount,
+    failCount,
+    meetsMinimum,
+    allExecuted,
+    readyForReview,
+  };
+}
+
+function renderReadinessPanel(readiness, session) {
+  const statusClass = readiness.readyForReview ? "readiness-ok" : "readiness-warn";
+  const statusText = readiness.readyForReview ? "可送審" : "尚未就緒";
+  const minLine = session.relaxedWorkflow
+    ? "Demo 環境：測試題為選填。"
+    : `送審前至少 ${readiness.minRequired} 題測試（目前 ${readiness.total}/${readiness.minRequired}）。`;
+
+  return `
+    <div class="readiness-panel ${statusClass}" role="status">
+      <div class="readiness-header">
+        <strong>測試就緒狀態：${escapeHtml(statusText)}</strong>
+      </div>
+      <p class="muted">${escapeHtml(minLine)}</p>
+      <dl class="readiness-stats">
+        <div><dt>已執行</dt><dd>${readiness.executed}/${readiness.total}</dd></div>
+        <div><dt>可回答</dt><dd>${readiness.passCount}</dd></div>
+        <div><dt>需要確認</dt><dd>${readiness.needsReviewCount}</dd></div>
+        <div><dt>無法回答</dt><dd>${readiness.failCount}</dd></div>
+      </dl>
+    </div>`;
+}
+
 export function renderTestsTab(cases, runsByCase, detail) {
   const session = getSession();
-  const hint = session.relaxedWorkflow
-    ? "<p class=\"muted\">測試問題為選填，可直接送審。</p>"
-    : `<p class="muted">送審前至少 ${session.minTestCasesForReview} 題測試問題（目前 ${cases.length}/${session.minTestCasesForReview}）。</p>`;
+  const readiness = computeTestReadiness(cases, runsByCase, session);
   const rows = !cases.length
     ? "<p class=\"muted\">尚未建立測試問題。</p>"
     : cases.map((item) => {
@@ -42,11 +97,14 @@ export function renderTestsTab(cases, runsByCase, detail) {
             <button type="button" class="btn secondary btn-sm" data-run-test="${escapeHtml(item.test_case_id)}">執行</button>` : ""}
         </div>`;
     }).join("");
+
+  const canManage = can("MANAGE_TESTS", detail.allowed_actions);
   return `
-    ${hint}
+    ${renderReadinessPanel(readiness, session)}
     <div class="action-row secondary-actions">
-      ${can("MANAGE_TESTS", detail.allowed_actions) ? `
+      ${canManage ? `
         <button type="button" class="btn secondary" data-action="add-test">新增測試問題</button>
+        <button type="button" class="btn secondary" data-action="run-all-tests" ${cases.length ? "" : "disabled"}>全部執行</button>
         <button type="button" class="btn secondary" data-action="draft-search">進階診斷</button>` : ""}
     </div>
     <div class="panel">${rows}</div>`;

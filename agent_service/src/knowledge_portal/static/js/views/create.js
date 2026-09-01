@@ -1,6 +1,7 @@
 import { api, apiForm } from "../api.js";
 import { clearDirtyChecker, registerDirtyChecker } from "../dirty-state.js";
 import { fluentButton } from "../fluent.js";
+import { audienceLabel } from "../labels.js";
 import { navigate } from "../router.js";
 import { escapeHtml, showToast } from "../ui.js?v=20260831e";
 
@@ -8,7 +9,10 @@ const STEPS = [
   { id: 1, label: "基本資料" },
   { id: 2, label: "治理與適用" },
   { id: 3, label: "正文內容" },
+  { id: 4, label: "確認摘要" },
 ];
+
+const TOTAL_STEPS = STEPS.length;
 
 function parseAudienceGroupIds(value) {
   return (value || "")
@@ -31,12 +35,38 @@ function syncCreateDirtyGuard() {
 
 function renderStepHeader(currentStep) {
   return `
-    <ol class="create-steps" aria-label="建立步驟">
+    <ol class="create-steps create-steps--four" aria-label="建立步驟">
       ${STEPS.map((step) => `
         <li class="create-step ${step.id === currentStep ? "active" : ""}"${step.id === currentStep ? ' aria-current="step"' : ""}>
           步驟 ${step.id} · ${step.label}
         </li>`).join("")}
     </ol>`;
+}
+
+function renderConfirmPanel(formValues) {
+  const groupIds = parseAudienceGroupIds(formValues.audience_group_ids);
+  const audience = audienceLabel(formValues.audience_type || "ALL_EMPLOYEES", groupIds);
+  const bodyPreview = (formValues.markdown_content || "").trim();
+  const previewText = bodyPreview.length > 280 ? `${bodyPreview.slice(0, 280)}...` : bodyPreview;
+
+  return `
+    <div class="panel confirm-summary">
+      <p class="muted">請確認以下資訊無誤，再建立草稿。建立後仍可繼續編輯。</p>
+      <dl class="meta-list confirm-meta">
+        <div><dt>標題</dt><dd>${escapeHtml(formValues.title || "")}</dd></div>
+        <div><dt>擁有單位</dt><dd>${escapeHtml(formValues.owner_unit_id || "")}</dd></div>
+        <div><dt>分類</dt><dd>${escapeHtml(formValues.category || "未分類")}</dd></div>
+        <div><dt>摘要</dt><dd>${escapeHtml(formValues.summary || "未填")}</dd></div>
+        <div><dt>生效日</dt><dd>${escapeHtml(formValues.effective_at || "")}</dd></div>
+        <div><dt>下次檢視日</dt><dd>${escapeHtml(formValues.review_due_at || "")}</dd></div>
+        <div><dt>適用對象</dt><dd>${escapeHtml(audience)}</dd></div>
+        <div><dt>變更原因</dt><dd>${escapeHtml(formValues.change_reason || "")}</dd></div>
+      </dl>
+      <div class="confirm-preview">
+        <h3>正文預覽</h3>
+        <pre class="content-preview">${escapeHtml(previewText || "（空白）")}</pre>
+      </div>
+    </div>`;
 }
 
 function renderStepPanel(step, formValues) {
@@ -73,16 +103,19 @@ function renderStepPanel(step, formValues) {
         </label>
       </div>`;
   }
-  return `
-    <div class="panel">
-      <label class="full">正文內容
-        <textarea name="markdown_content" rows="14" required># 範例標題
+  if (step === 3) {
+    return `
+      <div class="panel">
+        <label class="full">正文內容
+          <textarea name="markdown_content" rows="14" required># 範例標題
 
 ## 正文
 
 請在此撰寫知識內容。</textarea>
-      </label>
-    </div>`;
+        </label>
+      </div>`;
+  }
+  return renderConfirmPanel(formValues);
 }
 
 function validateStepTwo(formValues) {
@@ -95,6 +128,14 @@ function validateStepTwo(formValues) {
     && !parseAudienceGroupIds(formValues.audience_group_ids).length
   ) {
     showToast("選擇特定群組時，請至少輸入一個群組", true);
+    return false;
+  }
+  return true;
+}
+
+function validateStepThree(formValues) {
+  if (!formValues.markdown_content?.trim()) {
+    showToast("請填寫正文內容", true);
     return false;
   }
   return true;
@@ -118,6 +159,17 @@ function buildCreatePayload(formValues) {
   };
 }
 
+async function submitCreate(formValues) {
+  const created = await api("/api/documents", {
+    method: "POST",
+    body: JSON.stringify(buildCreatePayload(formValues)),
+  });
+  showToast("草稿已建立");
+  clearDirtyChecker();
+  createBaseline = null;
+  navigate(`#/knowledge/${created.document.document_id}/content`);
+}
+
 export async function renderCreateView(app) {
   clearDirtyChecker();
   createBaseline = null;
@@ -128,6 +180,7 @@ export async function renderCreateView(app) {
   };
 
   function render() {
+    const isConfirmStep = currentStep === TOTAL_STEPS;
     app.innerHTML = `
       <section class="page">
         <header class="page-header">
@@ -141,7 +194,7 @@ export async function renderCreateView(app) {
           ${renderStepPanel(currentStep, formValues)}
           <div class="form-actions">
             ${currentStep > 1 ? fluentButton("上一步", { appearance: "outline", dataset: { prev: "true" } }) : ""}
-            ${currentStep < 3
+            ${!isConfirmStep
     ? fluentButton("下一步", { appearance: "accent", dataset: { next: "true" } })
     : fluentButton("建立草稿", { appearance: "accent", type: "submit" })}
           </div>
@@ -162,10 +215,13 @@ export async function renderCreateView(app) {
 
     app.querySelector("[data-prev]")?.addEventListener("click", (event) => {
       event.preventDefault();
-      Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
+      if (!isConfirmStep) {
+        Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
+      }
       currentStep -= 1;
       render();
     });
+
     app.querySelector("[data-next]")?.addEventListener("click", (event) => {
       event.preventDefault();
       Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
@@ -174,6 +230,9 @@ export async function renderCreateView(app) {
         return;
       }
       if (currentStep === 2 && !validateStepTwo(formValues)) {
+        return;
+      }
+      if (currentStep === 3 && !validateStepThree(formValues)) {
         return;
       }
       currentStep += 1;
@@ -216,30 +275,28 @@ export async function renderCreateView(app) {
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
-      if (!validateStepTwo(formValues)) {
-        currentStep = 2;
+      if (!isConfirmStep) return;
+      if (!validateStepTwo(formValues) || !validateStepThree(formValues)) {
+        currentStep = validateStepThree(formValues) ? 2 : 3;
         render();
         return;
       }
       try {
-        const created = await api("/api/documents", {
-          method: "POST",
-          body: JSON.stringify(buildCreatePayload(formValues)),
-        });
-        showToast("草稿已建立");
-        clearDirtyChecker();
-        createBaseline = null;
-        navigate(`#/knowledge/${created.document.document_id}/content`);
+        await submitCreate(formValues);
       } catch (error) {
         showToast(error.message, true);
       }
     });
 
-    createBaseline = readCreateFormSnapshot();
-    syncCreateDirtyGuard();
-    form.addEventListener("input", syncCreateDirtyGuard);
-    form.addEventListener("change", syncCreateDirtyGuard);
+    if (!isConfirmStep) {
+      createBaseline = readCreateFormSnapshot();
+      syncCreateDirtyGuard();
+      form.addEventListener("input", syncCreateDirtyGuard);
+      form.addEventListener("change", syncCreateDirtyGuard);
+    } else {
+      clearDirtyChecker();
+      createBaseline = null;
+    }
   }
 
   render();

@@ -326,3 +326,75 @@ def test_unpublish_document_rebuilds_release(portal_client: TestClient, tmp_path
     assert unpublish.status_code == 200
     body = unpublish.json()
     assert body["document"]["status"] == "UNPUBLISHED"
+
+
+def test_pending_reviews_include_review_context(tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "demo_mode", False)
+    object.__setattr__(settings, "relaxed_workflow", True)
+    client = TestClient(create_app(settings))
+
+    contributor_headers = {
+        "X-Portal-User-Id": "author.one",
+        "X-Portal-User-Name": "Author One",
+        "X-Portal-Role": "CONTRIBUTOR",
+        "X-Portal-Owner-Units": "IT Service Desk",
+    }
+    reviewer_headers = {
+        "X-Portal-User-Id": "reviewer.one",
+        "X-Portal-User-Name": "Reviewer One",
+        "X-Portal-Role": "REVIEWER",
+        "X-Portal-Owner-Units": "IT Service Desk",
+    }
+
+    payload = sample_document_payload()
+    payload["change_reason"] = "更新 VPN 登入指引"
+    create = client.post(
+        "/api/documents",
+        json=payload,
+        headers=contributor_headers,
+    )
+    assert create.status_code == 200
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    test_case_ids: list[str] = []
+    for index in range(3):
+        test_case = client.post(
+            f"/api/documents/{document_id}/test-cases",
+            json={"question": f"VPN 問題 {index}", "simulated_audience": [], "notes": ""},
+            headers=contributor_headers,
+        )
+        assert test_case.status_code == 200
+        test_case_ids.append(test_case.json()["test_case_id"])
+
+    for test_case_id in test_case_ids[:2]:
+        run = client.post(
+            f"/api/documents/{document_id}/test-cases/{test_case_id}/run",
+            headers=contributor_headers,
+        )
+        assert run.status_code == 200
+
+    submit = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready for review"},
+        headers=contributor_headers,
+    )
+    assert submit.status_code == 200
+
+    pending = client.get("/api/reviews/pending", headers=reviewer_headers)
+    assert pending.status_code == 200
+    items = pending.json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    assert item["document_id"] == document_id
+    assert item["owner_unit_id"] == "IT Service Desk"
+    assert item["change_reason"] == "更新 VPN 登入指引"
+    assert item["audience_label"] == "全體員工"
+    assert item["audience_changed"] is False
+    summary = item["test_summary"]
+    assert summary["total"] == 3
+    assert summary["executed"] == 2
+    assert summary["meets_minimum"] is True
