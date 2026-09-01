@@ -106,6 +106,14 @@ gcloud auth list --filter=status:ACTIVE --format='value(account)' \
   | grep -q . || fail "請先執行 gcloud auth login --update-adc"
 
 GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GOOGLE_API_KEY)"
+if [[ -z "${GOOGLE_API_KEY_VALUE}" ]]; then
+  GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GEMINI_API_KEY)"
+fi
+if [[ -z "${GOOGLE_API_KEY_VALUE}" ]]; then
+  GOOGLE_API_KEY_VALUE="$(gcloud secrets versions access latest \
+    --secret="${GOOGLE_API_SECRET}" \
+    --project="${PROJECT_ID}" 2>/dev/null || true)"
+fi
 BOT_CLIENT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID)"
 BOT_CLIENT_SECRET_VALUE="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET)"
 BOT_TENANT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID)"
@@ -118,7 +126,7 @@ AGENT_MODEL="$(env_value agent_service/.env AGENT_MODEL)"
 RAG_EMBEDDING_MODEL="$(env_value agent_service/.env RAG_EMBEDDING_MODEL)"
 RAG_ALLOWED_TENANTS="$(env_value agent_service/.env RAG_ALLOWED_TENANTS)"
 
-require_value "${GOOGLE_API_KEY_VALUE}" "agent_service/.env GOOGLE_API_KEY"
+require_value "${GOOGLE_API_KEY_VALUE}" "agent_service/.env GOOGLE_API_KEY or GEMINI_API_KEY (or Secret Manager ${GOOGLE_API_SECRET})"
 require_value "${BOT_CLIENT_ID}" ".env CLIENT_ID"
 require_value "${BOT_CLIENT_SECRET_VALUE}" ".env CLIENT_SECRET"
 require_value "${BOT_TENANT_ID}" ".env TENANT_ID"
