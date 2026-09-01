@@ -444,7 +444,7 @@ if [[ "${START_PLAYGROUND}" == "true" ]]; then
     cd "${PLAYGROUND_SERVICE_DIR}"
     # Playground UI only knows msteams/emulator/directline/webchat; gateway still
     # rewrites outbound activities to channelId=playground for agent evaluation.
-    env "${playground_env[@]}" exec node server.js
+    exec env "${playground_env[@]}" node server.js
   ) &
   CHILD_PIDS+=("$!")
 
