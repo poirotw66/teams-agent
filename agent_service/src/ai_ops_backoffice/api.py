@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from agent_service.operations.access import CAPABILITIES
 from .auth import BackofficeAuthError, resolve_actor
 from .services.phase2_registry import FaqRecord, Phase2Registry, QualityCaseRecord, SyncJobRecord
 from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
+from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
 from .settings import BackofficeSettings
 
@@ -26,6 +27,8 @@ class ExportRequest(BaseModel):
     export_type: str = Field(default="operations_summary")
     reason: str = Field(min_length=3)
     days: int = Field(default=30, ge=1, le=186)
+    export_format: str = Field(default="json")
+    preset: str | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -88,6 +91,16 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         if not actor.has_capability(capability):
             raise HTTPException(status_code=403, detail="Forbidden.")
 
+    async def audit_read(actor, action: str, target_id: str, after: dict[str, object] | None = None) -> None:
+        await record_query_audit(
+            query_service.audit_store,
+            actor=actor,
+            action=action,
+            target_id=target_id,
+            environment=query_service.environment,
+            after=after,
+        )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         resolved_settings.ops_store_path.mkdir(parents=True, exist_ok=True)
@@ -118,43 +131,86 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.get("/api/operations/summary")
     async def operations_summary(
         days: int = Query(default=7, ge=1, le=186),
+        preset: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.summary.read")
-        return await query_service.operations_summary(days=days)
+        result = await query_service.operations_summary(actor, preset=preset, days=days)
+        await audit_read(actor, "query.operations_summary", "operations_summary", after={"days": days, "preset": preset})
+        return result
 
     @app.get("/api/conversations")
     async def conversations(
         days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
         cursor: str | None = None,
+        actor_ref: str | None = None,
+        issue_type_id: str | None = None,
+        route: str | None = None,
+        conversation_id: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
-        return await query_service.list_conversations(days=days, cursor=cursor)
+        result = await query_service.list_conversations(
+            actor,
+            preset=preset,
+            days=days,
+            cursor=cursor,
+            actor_ref=actor_ref,
+            issue_type_id=issue_type_id,
+            route=route,
+            conversation_id=conversation_id,
+        )
+        await audit_read(actor, "query.conversations", "conversations")
+        return result
 
     @app.get("/api/conversations/{conversation_id}")
     async def conversation_detail(conversation_id: str, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
-        detail = await query_service.conversation_detail(conversation_id)
+        detail = await query_service.conversation_detail(actor, conversation_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="Conversation not found.")
+        await audit_read(actor, "query.conversation_detail", conversation_id)
         return detail
 
     @app.get("/api/issues/summary")
     async def issues_summary(
         days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.issues.read")
-        return await query_service.issues_summary(days=days)
+        result = await query_service.issues_summary(actor, preset=preset, days=days)
+        await audit_read(actor, "query.issues_summary", "issues_summary")
+        return result
+
+    @app.get("/api/routes/summary")
+    async def routes_summary(
+        days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
+        issue_type_id: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.issues.read")
+        result = await query_service.routes_summary(
+            actor,
+            preset=preset,
+            days=days,
+            issue_type_id=issue_type_id,
+        )
+        await audit_read(actor, "query.routes_summary", "routes_summary")
+        return result
 
     @app.get("/api/costs/summary")
     async def costs_summary(
         days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.cost.read")
-        return await query_service.costs_summary(days=days)
+        result = await query_service.costs_summary(actor, preset=preset, days=days)
+        await audit_read(actor, "query.costs_summary", "costs_summary")
+        return result
 
     @app.get("/api/health/summary")
     async def health_summary(actor=Depends(current_actor)) -> dict[str, object]:
@@ -177,6 +233,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.get("/api/feedback")
     async def feedback_list(
         days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
         rating: str | None = None,
         reason: str | None = None,
         resolved_status: str | None = Query(default=None, alias="resolved"),
@@ -185,6 +242,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     ) -> dict[str, object]:
         require_capability(actor, "ops.feedback.read")
         return await query_service.list_feedback(
+            actor,
+            preset=preset,
             days=days,
             rating=rating,
             reason=reason,
@@ -196,10 +255,23 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def knowledge_performance(
         document_id: str,
         days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.knowledge.read")
-        return await query_service.document_performance(document_id, days=days)
+        return await query_service.document_performance(
+            actor,
+            document_id,
+            preset=preset,
+            days=days,
+        )
+
+    @app.post("/api/admin/retention/purge")
+    async def purge_retention(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        result = await query_service.purge_expired_events()
+        await audit_read(actor, "retention.purge", "operational_events", after=result)
+        return result
 
     @app.post("/api/exports")
     async def create_export(payload: ExportRequest, actor=Depends(current_actor)) -> dict[str, object]:
@@ -209,6 +281,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             export_type=payload.export_type,
             reason=payload.reason,
             days=payload.days,
+            export_format=payload.export_format,
+            preset=payload.preset,
         )
 
     @app.get("/api/exports/{job_id}")

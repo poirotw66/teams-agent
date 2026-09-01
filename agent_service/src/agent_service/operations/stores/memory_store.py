@@ -35,3 +35,13 @@ class MemoryOperationalStore:
     async def count_by_type(self, event_type: str) -> int:
         with self._lock:
             return sum(1 for event in self._events if event.event_type == event_type)
+
+    async def purge_expired(self) -> int:
+        from ..retention import purge_expired_events
+
+        with self._lock:
+            kept, removed = purge_expired_events(self._events)
+            if removed:
+                self._events = kept
+                self._seen_event_ids = {event.event_id for event in kept}
+            return removed

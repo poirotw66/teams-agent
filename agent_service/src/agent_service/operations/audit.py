@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 from typing import Protocol
 
+from .audit_stores import FileAuditStore, FirestoreAuditStore, MemoryAuditStore
 from .contracts import AuditEventRecord, utc_now
 from .masking import redact_secrets
+from .settings import OpsSettings
 
 
 class AuditStore(Protocol):
@@ -16,26 +18,6 @@ class AuditStore(Protocol):
         limit: int = 50,
         cursor: str | None = None,
     ) -> tuple[list[AuditEventRecord], str | None]: ...
-
-
-class MemoryAuditStore:
-    def __init__(self) -> None:
-        self._events: list[AuditEventRecord] = []
-
-    async def append(self, event: AuditEventRecord) -> None:
-        self._events.append(event)
-
-    async def list_events(
-        self,
-        *,
-        limit: int = 50,
-        cursor: str | None = None,
-    ) -> tuple[list[AuditEventRecord], str | None]:
-        start = int(cursor or "0")
-        page = self._events[start : start + limit]
-        next_index = start + len(page)
-        next_cursor = str(next_index) if next_index < len(self._events) else None
-        return page, next_cursor
 
 
 def build_audit_event(
@@ -67,3 +49,18 @@ def build_audit_event(
         occurred_at=utc_now(),
         environment=environment,  # type: ignore[arg-type]
     )
+
+
+def build_audit_store(
+    settings: OpsSettings,
+) -> MemoryAuditStore | FileAuditStore | FirestoreAuditStore:
+    mode = settings.audit_store_mode.upper()
+    if mode == "FILE":
+        audit_path = settings.store_path.parent / "audit"
+        return FileAuditStore(audit_path)
+    if mode == "FIRESTORE":
+        from .stores.firestore_store import build_firestore_client
+
+        client = build_firestore_client(settings.firestore_project, settings.firestore_database)
+        return FirestoreAuditStore(client, settings.audit_firestore_collection)
+    return MemoryAuditStore()

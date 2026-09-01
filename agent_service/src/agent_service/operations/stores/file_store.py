@@ -43,3 +43,16 @@ class FileOperationalStore(MemoryOperationalStore):
         if inserted:
             self._persist(event)
         return inserted
+
+    async def purge_expired(self) -> int:
+        removed = await super().purge_expired()
+        if removed:
+            self._events_file.write_text(
+                "\n".join(event.model_dump_json() for event in self._events) + "\n",
+                encoding="utf-8",
+            )
+            self._index_file.write_text(
+                json.dumps(sorted(self._seen_event_ids), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        return removed

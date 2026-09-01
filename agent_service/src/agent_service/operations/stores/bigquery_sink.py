@@ -23,7 +23,7 @@ class BigQueryEventSink:
             errors = self._client.insert_rows_json(self._table_id, [row])
             if errors:
                 logger.warning("BigQuery insert errors: %s", errors)
-        except Exception:  # noqa: BLE001 - analytics sink is best-effort
+        except Exception:
             logger.exception("BigQuery sink failed for event_id=%s", event.event_id)
 
 

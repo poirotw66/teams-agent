@@ -145,7 +145,48 @@ td {
   color: var(--muted);
 }
 
-a.button-link {
+a.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.modal {
+  width: min(960px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--panel);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 1rem;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filter-bar select,
+.filter-bar input,
+.filter-bar button {
+  padding: 0.4rem 0.6rem;
+}
+
+.button-link {
+  display: inline-block;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  text-decoration: none;
+}
   display: inline-block;
   margin-top: 0.5rem;
   padding: 0.5rem 0.75rem;

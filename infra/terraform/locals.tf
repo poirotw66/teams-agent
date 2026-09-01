@@ -15,6 +15,11 @@ locals {
     ? "${local.artifact_registry_path}/${var.adapter_service_name}:latest"
     : null
   )
+  backoffice_image = var.backoffice_image != "" ? var.backoffice_image : (
+    var.allow_latest_image_tags
+    ? "${local.artifact_registry_path}/${var.backoffice_service_name}:latest"
+    : null
+  )
 
   required_apis = toset([
     "run.googleapis.com",
@@ -23,6 +28,7 @@ locals {
     "secretmanager.googleapis.com",
     "iamcredentials.googleapis.com",
     "firestore.googleapis.com",
+    "bigquery.googleapis.com",
   ])
 
   agent_env = {
@@ -56,6 +62,27 @@ locals {
     KNOWLEDGE_RELEASE_MODE             = var.knowledge_release_mode
     KNOWLEDGE_RELEASE_DIR              = var.knowledge_release_dir
     FEEDBACK_ENABLED                   = "true"
+    OPS_EVENTS_ENABLED                 = "true"
+    OPS_STORE_MODE                     = "FIRESTORE"
+    OPS_AUDIT_STORE_MODE               = "FIRESTORE"
+    OPS_FIRESTORE_COLLECTION           = var.ops_events_collection
+    OPS_AUDIT_FIRESTORE_COLLECTION     = var.ops_audit_collection
+    OPS_BIGQUERY_ENABLED               = "true"
+    OPS_BIGQUERY_DATASET               = var.ops_bigquery_dataset
+    OPS_BIGQUERY_TABLE                 = var.ops_bigquery_table
+  }
+
+  backoffice_env = {
+    AI_OPS_BACKOFFICE_PORT             = "8080"
+    AI_OPS_BACKOFFICE_AUTH_MODE        = "HEADER"
+    OPS_STORE_MODE                     = "FIRESTORE"
+    OPS_AUDIT_STORE_MODE               = "FIRESTORE"
+    OPS_FIRESTORE_COLLECTION           = var.ops_events_collection
+    OPS_AUDIT_FIRESTORE_COLLECTION     = var.ops_audit_collection
+    KNOWLEDGE_PORTAL_PUBLIC_URL        = var.adapter_public_base_url != "" ? var.adapter_public_base_url : ""
+    KNOWLEDGE_PORTAL_AGENT_API_URL     = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
+    TEAMS_ADAPTER_URL                  = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
+    RAG_DATA_DIR                       = "/app/data"
   }
 
   adapter_env = {
@@ -78,8 +105,8 @@ resource "terraform_data" "image_policy" {
 
   lifecycle {
     precondition {
-      condition     = local.agent_image != null && local.adapter_image != null
-      error_message = "Set agent_image and adapter_image to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
+      condition     = local.agent_image != null && local.adapter_image != null && local.backoffice_image != null
+      error_message = "Set agent_image, adapter_image, and backoffice_image to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
     }
 
     precondition {
@@ -90,7 +117,8 @@ resource "terraform_data" "image_policy" {
     precondition {
       condition = !var.allow_latest_image_tags || (
         (var.agent_image == "" || endswith(var.agent_image, ":latest")) &&
-        (var.adapter_image == "" || endswith(var.adapter_image, ":latest"))
+        (var.adapter_image == "" || endswith(var.adapter_image, ":latest")) &&
+        (var.backoffice_image == "" || endswith(var.backoffice_image, ":latest"))
       )
       error_message = "When allow_latest_image_tags=true, omit images or use :latest explicitly for import workflows only."
     }

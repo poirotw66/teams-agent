@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
+
+import httpx
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore
@@ -15,11 +17,13 @@ from agent_service.operations.contracts import (
     utc_now,
 )
 from agent_service.operations.runtime import build_ops_runtime
+from agent_service.operations.scope import filter_events_by_scope
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 
 from ..settings import BackofficeSettings
 from .export_service import ExportJobService
+from .periods import ResolvedPeriod, event_in_period, resolve_period
 
 
 class BackofficeQueryService:
@@ -33,12 +37,16 @@ class BackofficeQueryService:
             taxonomy_path=settings.ops_taxonomy_path,
             metrics_path=settings.ops_metrics_path,
             classification_rules_path=settings.ops_classification_rules_path,
+            audit_store_mode=settings.ops_audit_store_mode,
         )
         runtime = build_ops_runtime(ops_settings)
         if runtime is None:
             raise RuntimeError("Operational events are disabled.")
         self._runtime = runtime
+        self._environment = ops_settings.environment
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
+        self._event_cache: list[OperationalEvent] | None = None
+        self._event_cache_at: datetime | None = None
         self.export_jobs = ExportJobService(
             audit_store=self._runtime.audit_store,
             store_path=settings.ops_store_path.parent / "exports",
@@ -53,7 +61,20 @@ class BackofficeQueryService:
     def audit_store(self) -> AuditStore:
         return self._runtime.audit_store
 
-    async def _events(self) -> list[OperationalEvent]:
+    @property
+    def environment(self) -> str:
+        return self._environment
+
+    async def _events(self, *, force_refresh: bool = False) -> list[OperationalEvent]:
+        cache_ttl = timedelta(seconds=30)
+        now = utc_now()
+        if (
+            not force_refresh
+            and self._event_cache is not None
+            and self._event_cache_at is not None
+            and now - self._event_cache_at < cache_ttl
+        ):
+            return list(self._event_cache)
         events: list[OperationalEvent] = []
         cursor: str | None = None
         while True:
@@ -61,21 +82,47 @@ class BackofficeQueryService:
             events.extend(page)
             if cursor is None:
                 break
+        self._event_cache = events
+        self._event_cache_at = now
         return events
 
-    def _in_period(self, event: OperationalEvent, *, days: int) -> bool:
-        cutoff = utc_now() - timedelta(days=days)
-        occurred = event.occurred_at
-        if occurred.tzinfo is None:
-            occurred = occurred.replace(tzinfo=UTC)
-        return occurred >= cutoff
+    def _invalidate_cache(self) -> None:
+        self._event_cache = None
+        self._event_cache_at = None
 
-    async def operations_summary(self, *, days: int = 7) -> dict[str, Any]:
-        events = [event for event in await self._events() if self._in_period(event, days=days)]
+    async def _scoped_events(
+        self,
+        actor: ActorContext,
+        period: ResolvedPeriod,
+    ) -> list[OperationalEvent]:
+        events = await self._events()
+        in_period = [event for event in events if event_in_period(event.occurred_at, period)]
+        return filter_events_by_scope(in_period, actor, self.taxonomy)
+
+    async def purge_expired_events(self) -> dict[str, int]:
+        purge = getattr(self._runtime.store, "purge_expired", None)
+        if purge is None:
+            return {"removed": 0}
+        removed = await purge()
+        self._invalidate_cache()
+        return {"removed": removed}
+
+    async def operations_summary(
+        self,
+        actor: ActorContext,
+        *,
+        preset: str | None = None,
+        days: int = 7,
+    ) -> dict[str, Any]:
+        period = resolve_period(preset=preset, days=days)
+        events = await self._scoped_events(actor, period)
         turns = [event for event in events if event.event_type == "turn.received"]
         issues = [event for event in events if event.event_type == "issue.extracted"]
         faq_hits = [event for event in events if event.event_type == "faq.answered"]
         knowledge_hits = [event for event in events if event.event_type == "knowledge.answered"]
+        handoffs = [event for event in events if event.event_type.startswith("handoff.")]
+        tickets = [event for event in events if event.event_type == "ticket.created"]
+        feedback = [event for event in events if event.event_type == "feedback.recorded"]
         usage_events = [event for event in events if event.event_type == "usage.recorded"]
         conversations = {event.conversation_id for event in turns if event.conversation_id}
         actors = {event.actor_ref for event in turns if event.actor_ref}
@@ -84,14 +131,18 @@ class BackofficeQueryService:
             for event in issues
             if event.issue_type_id
         )
-        total_cost = sum(
-            float(event.payload.get("estimatedCostUsd") or 0)
+        cost_values = [
+            float(event.payload["estimatedCostUsd"])
             for event in usage_events
             if event.payload.get("estimatedCostUsd") is not None
-        )
+        ]
         cost_complete = sum(1 for event in usage_events if event.payload.get("costComplete"))
+        turn_count = len(turns) or 1
         return {
-            "periodDays": days,
+            "periodDays": period.days,
+            "periodPreset": period.preset,
+            "periodStart": period.start_at.isoformat(),
+            "periodEnd": period.end_at.isoformat(),
             "timezone": DEFAULT_TIMEZONE,
             "metricsDefinitionVersion": METRICS_DEFINITION_VERSION,
             "updatedAt": utc_now().isoformat(),
@@ -105,20 +156,35 @@ class BackofficeQueryService:
             ],
             "faqAnswerCount": len(faq_hits),
             "knowledgeAnswerCount": len(knowledge_hits),
-            "estimatedCostUsd": round(total_cost, 6),
-            "costCoverage": round(cost_complete / len(usage_events), 4)
-            if usage_events
-            else 0.0,
+            "handoffCount": len(handoffs),
+            "ticketCount": len(tickets),
+            "positiveFeedbackCount": sum(
+                1 for event in feedback if event.payload.get("rating") == "UP"
+            ),
+            "negativeFeedbackCount": sum(
+                1 for event in feedback if event.payload.get("rating") == "DOWN"
+            ),
+            "estimatedCostUsd": round(sum(cost_values), 6),
+            "costCoverage": round(cost_complete / len(usage_events), 4) if usage_events else 0.0,
+            "handoffRate": round(len(handoffs) / turn_count, 4),
+            "ticketRate": round(len(tickets) / turn_count, 4),
         }
 
     async def list_conversations(
         self,
+        actor: ActorContext,
         *,
+        preset: str | None = None,
         days: int = 30,
         limit: int = 25,
         cursor: str | None = None,
+        actor_ref: str | None = None,
+        issue_type_id: str | None = None,
+        route: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
-        events = [event for event in await self._events() if self._in_period(event, days=days)]
+        period = resolve_period(preset=preset, days=days)
+        events = await self._scoped_events(actor, period)
         grouped: dict[str, list[OperationalEvent]] = defaultdict(list)
         for event in events:
             if event.conversation_id:
@@ -128,35 +194,67 @@ class BackofficeQueryService:
             key=lambda cid: max(item.occurred_at for item in grouped[cid]),
             reverse=True,
         )
+        filtered_ids: list[str] = []
+        for cid in conversation_ids:
+            if conversation_id and cid != conversation_id:
+                continue
+            conv_events = grouped[cid]
+            if actor_ref and not any(event.actor_ref == actor_ref for event in conv_events):
+                continue
+            if issue_type_id and not any(
+                event.issue_type_id == issue_type_id for event in conv_events
+            ):
+                continue
+            if route and not any(
+                event.event_type == "route.selected"
+                and str(event.payload.get("route")) == route
+                for event in conv_events
+            ):
+                continue
+            filtered_ids.append(cid)
         start = int(cursor or "0")
-        page_ids = conversation_ids[start : start + limit]
+        page_ids = filtered_ids[start : start + limit]
         items = []
-        for conversation_id in page_ids:
-            conv_events = grouped[conversation_id]
+        for conv_id in page_ids:
+            conv_events = grouped[conv_id]
             turns = [event for event in conv_events if event.event_type == "turn.received"]
             latest = max(conv_events, key=lambda item: item.occurred_at)
+            routes = {
+                str(event.payload.get("route"))
+                for event in conv_events
+                if event.event_type == "route.selected" and event.payload.get("route")
+            }
             items.append(
                 {
-                    "conversationId": conversation_id,
+                    "conversationId": conv_id,
                     "turnCount": len(turns),
                     "lastOccurredAt": latest.occurred_at.isoformat(),
                     "actorRef": latest.actor_ref,
                     "channelScope": latest.channel_scope,
+                    "routes": sorted(routes),
                 }
             )
         next_index = start + len(page_ids)
         return {
             "items": items,
-            "nextCursor": str(next_index) if next_index < len(conversation_ids) else None,
-            "hasMore": next_index < len(conversation_ids),
+            "nextCursor": str(next_index) if next_index < len(filtered_ids) else None,
+            "hasMore": next_index < len(filtered_ids),
         }
 
-    async def conversation_detail(self, conversation_id: str) -> dict[str, Any] | None:
-        events = [
-            event
-            for event in await self._events()
-            if event.conversation_id == conversation_id
-        ]
+    async def conversation_detail(
+        self,
+        actor: ActorContext,
+        conversation_id: str,
+    ) -> dict[str, Any] | None:
+        events = filter_events_by_scope(
+            [
+                event
+                for event in await self._events()
+                if event.conversation_id == conversation_id
+            ],
+            actor,
+            self.taxonomy,
+        )
         if not events:
             return None
         events.sort(key=lambda item: item.occurred_at)
@@ -189,11 +287,18 @@ class BackofficeQueryService:
             "turns": turns,
         }
 
-    async def issues_summary(self, *, days: int = 30) -> dict[str, Any]:
+    async def issues_summary(
+        self,
+        actor: ActorContext,
+        *,
+        preset: str | None = None,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        period = resolve_period(preset=preset, days=days)
         events = [
             event
-            for event in await self._events()
-            if self._in_period(event, days=days) and event.event_type == "issue.extracted"
+            for event in await self._scoped_events(actor, period)
+            if event.event_type == "issue.extracted"
         ]
         counts = Counter(event.issue_type_id or "other.unclassified" for event in events)
         total = sum(counts.values()) or 1
@@ -209,43 +314,148 @@ class BackofficeQueryService:
                 }
             )
         return {
-            "periodDays": days,
+            "periodDays": period.days,
+            "periodPreset": period.preset,
             "taxonomyVersion": self.taxonomy.version,
             "items": items,
             "unclassifiedCount": counts.get("other.unclassified", 0),
         }
 
-    async def costs_summary(self, *, days: int = 30) -> dict[str, Any]:
-        events = [
+    async def routes_summary(
+        self,
+        actor: ActorContext,
+        *,
+        preset: str | None = None,
+        days: int = 30,
+        issue_type_id: str | None = None,
+    ) -> dict[str, Any]:
+        period = resolve_period(preset=preset, days=days)
+        events = await self._scoped_events(actor, period)
+        route_events = [
             event
-            for event in await self._events()
-            if self._in_period(event, days=days) and event.event_type == "usage.recorded"
+            for event in events
+            if event.event_type == "route.selected"
+            and (issue_type_id is None or event.issue_type_id == issue_type_id)
         ]
-        by_day: dict[str, float] = defaultdict(float)
-        for event in events:
-            day = event.occurred_at.date().isoformat()
-            by_day[day] += float(event.payload.get("estimatedCostUsd") or 0)
+        route_counts = Counter(str(event.payload.get("route") or "UNKNOWN") for event in route_events)
+        by_issue: dict[str, Counter[str]] = defaultdict(Counter)
+        for event in route_events:
+            key = event.issue_type_id or "other.unclassified"
+            by_issue[key][str(event.payload.get("route") or "UNKNOWN")] += 1
+        issue_items = []
+        for issue_id, routes in by_issue.items():
+            record = self.taxonomy.get(issue_id)
+            issue_items.append(
+                {
+                    "issueTypeId": issue_id,
+                    "displayName": record.display_name if record else issue_id,
+                    "routes": [
+                        {"route": route, "count": count}
+                        for route, count in routes.most_common()
+                    ],
+                }
+            )
         return {
-            "periodDays": days,
-            "totalEstimatedCostUsd": round(sum(by_day.values()), 6),
-            "byDay": [{"date": day, "estimatedCostUsd": round(value, 6)} for day, value in sorted(by_day.items())],
-            "eventCount": len(events),
+            "periodDays": period.days,
+            "periodPreset": period.preset,
+            "routeDistribution": [
+                {"route": route, "count": count} for route, count in route_counts.most_common()
+            ],
+            "byIssueType": issue_items,
         }
 
+    async def costs_summary(
+        self,
+        actor: ActorContext,
+        *,
+        preset: str | None = None,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        period = resolve_period(preset=preset, days=days)
+        events = [
+            event
+            for event in await self._scoped_events(actor, period)
+            if event.event_type == "usage.recorded"
+        ]
+        by_day: dict[str, float] = defaultdict(float)
+        by_model: Counter[str] = Counter()
+        by_backend: Counter[str] = Counter()
+        input_tokens = 0
+        output_tokens = 0
+        missing_cost_count = 0
+        for event in events:
+            day = event.occurred_at.date().isoformat()
+            cost = event.payload.get("estimatedCostUsd")
+            if cost is None:
+                missing_cost_count += 1
+            else:
+                by_day[day] += float(cost)
+            model = str(event.payload.get("model") or event.payload.get("knowledgeBackend") or "unknown")
+            by_model[model] += 1 if cost is not None else 0
+            backend = str(event.payload.get("knowledgeBackend") or "unknown")
+            by_backend[backend] += 1
+            input_tokens += int(event.payload.get("inputTokens") or 0)
+            output_tokens += int(event.payload.get("outputTokens") or 0)
+        known_total = round(sum(by_day.values()), 6)
+        return {
+            "periodDays": period.days,
+            "periodPreset": period.preset,
+            "totalEstimatedCostUsd": known_total,
+            "missingCostEventCount": missing_cost_count,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "llmCallCount": sum(int(event.payload.get("llmCallCount") or 0) for event in events),
+            "byDay": [
+                {"date": day, "estimatedCostUsd": round(value, 6)}
+                for day, value in sorted(by_day.items())
+            ],
+            "byModel": [
+                {"model": model, "eventCount": count} for model, count in by_model.most_common()
+            ],
+            "byBackend": [
+                {"backend": backend, "eventCount": count}
+                for backend, count in by_backend.most_common()
+            ],
+            "eventCount": len(events),
+            "pricingVersion": self._metrics.get("pricingVersion", "v1"),
+        }
+
+    async def _probe_url(self, url: str | None, path: str = "/healthz") -> dict[str, str]:
+        if not url:
+            return {"status": "UNKNOWN", "note": "URL not configured."}
+        target = f"{url.rstrip('/')}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(target)
+            if response.status_code < 400:
+                return {"status": "READY", "note": f"HTTP {response.status_code}"}
+            return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
+        except httpx.HTTPError as exc:
+            return {"status": "DOWN", "note": str(exc)}
+
     async def health_summary(self) -> dict[str, Any]:
+        agent = await self._probe_url(self._settings.agent_api_url)
+        portal = await self._probe_url(self._settings.knowledge_portal_url)
+        adapter = await self._probe_url(self._settings.adapter_api_url)
         return {
             "components": [
-                {"id": "teams-adapter", "status": "UNKNOWN", "note": "Configure monitoring integration."},
-                {"id": "agent-service", "status": "READY" if self._settings.agent_api_url else "UNKNOWN"},
-                {"id": "analytics-store", "status": "READY", "mode": self._settings.ops_store_mode},
-                {"id": "knowledge-portal", "status": "READY", "url": self._settings.knowledge_portal_url},
+                {"id": "teams-adapter", **adapter},
+                {"id": "agent-service", **agent},
+                {
+                    "id": "analytics-store",
+                    "status": "READY",
+                    "note": f"mode={self._settings.ops_store_mode}",
+                },
+                {"id": "knowledge-portal", **portal},
             ],
             "updatedAt": utc_now().isoformat(),
         }
 
     async def list_feedback(
         self,
+        actor: ActorContext,
         *,
+        preset: str | None = None,
         days: int = 30,
         rating: str | None = None,
         reason: str | None = None,
@@ -253,7 +463,16 @@ class BackofficeQueryService:
         handoff: bool | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        feedback_events, conversation_cache = await self._list_feedback_with_cache(days=days)
+        period = resolve_period(preset=preset, days=days)
+        all_events = await self._scoped_events(actor, period)
+        conversation_cache: dict[str, list[OperationalEvent]] = {}
+        for event in all_events:
+            if not event.conversation_id:
+                continue
+            conversation_cache.setdefault(event.conversation_id, []).append(event)
+        feedback_events = [
+            event for event in all_events if event.event_type == "feedback.recorded"
+        ]
         if rating:
             feedback_events = [
                 event for event in feedback_events if event.payload.get("rating") == rating
@@ -317,7 +536,6 @@ class BackofficeQueryService:
             }
 
         conv_events = conversation_cache.get(conversation_id, [])
-
         scoped = [
             event
             for event in conv_events
@@ -339,9 +557,12 @@ class BackofficeQueryService:
                 payload_issue_id = event.payload.get("issueId")
                 if issue_id is None or payload_issue_id == issue_id:
                     issue_extracted = event
-            if event.event_type == "issue.classified":
-                if issue_extracted and event.issue_occurrence_id == issue_extracted.issue_occurrence_id:
-                    issue_classified = event
+            if (
+                event.event_type == "issue.classified"
+                and issue_extracted
+                and event.issue_occurrence_id == issue_extracted.issue_occurrence_id
+            ):
+                issue_classified = event
             if event.event_type == "faq.answered":
                 faq_key = event.payload.get("faqKey") or faq_key
             if event.event_type in {"knowledge.retrieved", "knowledge.answered"}:
@@ -384,25 +605,16 @@ class BackofficeQueryService:
             "handoffStatus": handoff_status,
         }
 
-    async def _list_feedback_with_cache(self, *, days: int) -> tuple[list[OperationalEvent], dict[str, list[OperationalEvent]]]:
-        all_events = [event for event in await self._events() if self._in_period(event, days=days)]
-        conversation_cache: dict[str, list[OperationalEvent]] = {}
-        for event in all_events:
-            if not event.conversation_id:
-                continue
-            conversation_cache.setdefault(event.conversation_id, []).append(event)
-        feedback_events = [
-            event for event in all_events if event.event_type == "feedback.recorded"
-        ]
-        return feedback_events, conversation_cache
-
     async def document_performance(
         self,
+        actor: ActorContext,
         document_id: str,
         *,
+        preset: str | None = None,
         days: int = 30,
     ) -> dict[str, Any]:
-        events = [event for event in await self._events() if self._in_period(event, days=days)]
+        period = resolve_period(preset=preset, days=days)
+        events = await self._scoped_events(actor, period)
         hits = [
             event
             for event in events
@@ -416,11 +628,7 @@ class BackofficeQueryService:
                 )
             )
         ]
-        hit_conversations = {
-            event.conversation_id
-            for event in hits
-            if event.conversation_id
-        }
+        hit_conversations = {event.conversation_id for event in hits if event.conversation_id}
         feedback_events = [
             event
             for event in events
@@ -451,7 +659,8 @@ class BackofficeQueryService:
             )
         return {
             "documentId": document_id,
-            "periodDays": days,
+            "periodDays": period.days,
+            "periodPreset": period.preset,
             "hitCount": len(hits),
             "conversationCount": len(hit_conversations),
             "positiveFeedbackCount": up,
@@ -481,16 +690,20 @@ class BackofficeQueryService:
         export_type: str,
         reason: str,
         days: int,
+        export_format: str = "json",
+        preset: str | None = None,
     ) -> dict[str, Any]:
         async def runner() -> dict[str, Any]:
             if export_type == "operations_summary":
-                return await self.operations_summary(days=days)
+                return await self.operations_summary(actor, preset=preset, days=days)
             if export_type == "issues_summary":
-                return await self.issues_summary(days=days)
+                return await self.issues_summary(actor, preset=preset, days=days)
             if export_type == "costs_summary":
-                return await self.costs_summary(days=days)
+                return await self.costs_summary(actor, preset=preset, days=days)
             if export_type == "feedback":
-                return await self.list_feedback(days=days)
+                return await self.list_feedback(actor, preset=preset, days=days)
+            if export_type == "routes_summary":
+                return await self.routes_summary(actor, preset=preset, days=days)
             raise ValueError(f"Unsupported export type: {export_type}")
 
         job = await self.export_jobs.create_job(
@@ -499,11 +712,13 @@ class BackofficeQueryService:
             reason=reason,
             days=days,
             runner=runner,
+            export_format=export_format,
         )
         return {
             "jobId": job.job_id,
             "status": job.status,
             "exportType": job.export_type,
+            "exportFormat": job.export_format,
             "expiresAt": job.expires_at,
         }
 
@@ -515,8 +730,11 @@ class BackofficeQueryService:
             "jobId": job.job_id,
             "status": job.status,
             "exportType": job.export_type,
+            "exportFormat": job.export_format,
             "result": job.result,
+            "downloadContent": job.download_content,
             "error": job.error,
             "expiresAt": job.expires_at,
             "completedAt": job.completed_at,
         }
+

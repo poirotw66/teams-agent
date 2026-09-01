@@ -4,6 +4,12 @@ resource "google_project_iam_member" "agent_firestore" {
   member  = "serviceAccount:${google_service_account.agent.email}"
 }
 
+resource "google_project_iam_member" "agent_bigquery" {
+  project = var.project_id
+  role    = "roles/bigquery.dataEditor"
+  member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
 resource "google_cloud_run_v2_service_iam_member" "adapter_invokes_agent" {
   count = local.deploy_cloud_run ? 1 : 0
 

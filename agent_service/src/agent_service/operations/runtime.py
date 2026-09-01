@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .audit import MemoryAuditStore
+from .audit import AuditStore, build_audit_store
 from .classification import IssueClassifier
 from .emitter import OperationalEventEmitter
 from .ingestion import EventIngestionService
@@ -20,7 +20,7 @@ class OpsRuntime:
         ingestion: EventIngestionService,
         emitter: OperationalEventEmitter,
         taxonomy: TaxonomyRepository,
-        audit_store: MemoryAuditStore,
+        audit_store: AuditStore,
         store: CompositeOperationalStore | MemoryOperationalStore | FileOperationalStore,
     ) -> None:
         self.settings = settings
@@ -59,7 +59,7 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
     else:
         store = primary
     ingestion = EventIngestionService(store, resolved)
-    audit_store = MemoryAuditStore()
+    audit_store = build_audit_store(resolved)
     emitter = OperationalEventEmitter(ingestion, taxonomy, classifier, resolved)
     return OpsRuntime(
         settings=resolved,

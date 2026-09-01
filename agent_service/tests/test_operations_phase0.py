@@ -156,6 +156,34 @@ def test_event_ingestion_is_idempotent() -> None:
     asyncio.run(run())
 
 
+def test_operations_phase0_scope_filter() -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.contracts import OperationalEvent, utc_now
+    from agent_service.operations.scope import filter_events_by_scope
+    from agent_service.operations.taxonomy import TaxonomyRepository
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    taxonomy = TaxonomyRepository(data_dir / "ops" / "issue_taxonomy_v1.json")
+    actor = ActorContext(
+        user_id="analyst.demo",
+        display_name="Analyst",
+        role="ANALYST",
+        owner_unit_ids=("Other Unit",),
+    )
+    events = [
+        OperationalEvent(
+            event_id="evt-1",
+            event_type="issue.extracted",
+            occurred_at=utc_now(),
+            correlation_id="corr-1",
+            issue_type_id="vpn.connection_failed",
+            payload={},
+        )
+    ]
+    scoped = filter_events_by_scope(events, actor, taxonomy)
+    assert scoped == []
+
+
 def test_masking_redacts_email_and_credentials() -> None:
     from agent_service.operations.masking import mask_text, pseudonymous_actor_id
 

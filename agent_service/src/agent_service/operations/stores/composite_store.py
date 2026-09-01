@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 
 from ..contracts import OperationalEvent
 
+logger = logging.getLogger(__name__)
 
 class OperationalStore(Protocol):
     async def append(self, event: OperationalEvent) -> bool: ...
@@ -36,7 +38,8 @@ class CompositeOperationalStore:
                     result = append(event)
                     if hasattr(result, "__await__"):
                         await result
-                except Exception:  # noqa: BLE001 - sinks are best-effort
+                except Exception as exc:  # noqa: BLE001 - sinks are best-effort
+                    logger.warning("Operational event sink failed: %s", exc)
                     continue
         return inserted
 

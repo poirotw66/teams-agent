@@ -83,6 +83,16 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             payload={"classificationSource": "MODEL"},
         ),
         OperationalEvent(
+            event_id=f"{occurrence_id}:route.selected",
+            event_type="route.selected",
+            occurred_at=now,
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            turn_id=turn_id,
+            issue_type_id="vpn.connection_failed",
+            payload={"route": "KNOWLEDGE"},
+        ),
+        OperationalEvent(
             event_id=f"{occurrence_id}:knowledge.retrieved:1",
             event_type="knowledge.retrieved",
             occurred_at=now,
@@ -134,8 +144,10 @@ def backoffice_client(tmp_path: Path) -> TestClient:
         ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
         ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
         ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
         knowledge_portal_url="http://127.0.0.1:8091",
         agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
         default_owner_unit_id="IT Service Desk",
         entra_tenant_id=None,
         entra_client_id=None,
@@ -158,8 +170,10 @@ def seeded_backoffice_client(tmp_path: Path) -> TestClient:
         ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
         ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
         ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
         knowledge_portal_url="http://127.0.0.1:8091",
         agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
         default_owner_unit_id="IT Service Desk",
         entra_tenant_id=None,
         entra_client_id=None,
@@ -246,7 +260,7 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
     from datetime import timedelta
 
     from agent_service.operations.access import ActorContext
-    from agent_service.operations.audit import MemoryAuditStore
+    from agent_service.operations.audit_stores import MemoryAuditStore
     from ai_ops_backoffice.services.export_service import ExportJob, ExportJobService
 
     actor = ActorContext(
@@ -264,6 +278,7 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
     service._jobs["job-expired"] = ExportJob(
         job_id="job-expired",
         export_type="operations_summary",
+        export_format="json",
         status="COMPLETED",
         reason="test",
         requested_by="owner.demo",
@@ -283,6 +298,42 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
     job = asyncio.run(run())
     assert job is not None
     assert job.status == "EXPIRED"
+
+
+def test_routes_summary(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/routes/summary?days=30", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["routeDistribution"][0]["route"] == "KNOWLEDGE"
+
+
+def test_query_audit_recorded(seeded_backoffice_client: TestClient) -> None:
+    seeded_backoffice_client.get("/api/operations/summary?days=7", headers=headers())
+    audit = seeded_backoffice_client.get("/api/audit-events", headers=headers("AUDITOR"))
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert "query.operations_summary" in actions
+
+
+def test_file_audit_store_persists(tmp_path: Path) -> None:
+    from agent_service.operations.audit import build_audit_event
+    from agent_service.operations.audit_stores import FileAuditStore
+
+    store = FileAuditStore(tmp_path / "audit")
+    event = build_audit_event(
+        actor_id="owner.demo",
+        actor_role="SERVICE_OWNER",
+        action="export.create",
+        target_type="export_job",
+        target_id="job-1",
+    )
+
+    async def run() -> None:
+        await store.append(event)
+        page, _ = await store.list_events(limit=10)
+        assert len(page) == 1
+
+    asyncio.run(run())
+    assert (tmp_path / "audit" / "audit_events.jsonl").is_file()
 
 
 def test_export_audit_on_download(backoffice_client: TestClient) -> None:

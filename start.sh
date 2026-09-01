@@ -430,6 +430,7 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
     export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
     export RAG_DATA_DIR="${PROJECT_DIR}/data"
     export OPS_STORE_MODE=FILE
+    export OPS_AUDIT_STORE_MODE=FILE
     exec uv run ai-ops-backoffice
   ) &
   CHILD_PIDS+=("$!")

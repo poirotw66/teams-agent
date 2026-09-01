@@ -16,8 +16,10 @@ class BackofficeSettings:
     ops_taxonomy_path: Path
     ops_metrics_path: Path
     ops_classification_rules_path: Path
+    ops_audit_store_mode: str
     knowledge_portal_url: str
     agent_api_url: str | None
+    adapter_api_url: str | None
     default_owner_unit_id: str
     entra_tenant_id: str | None
     entra_client_id: str | None
@@ -43,11 +45,16 @@ class BackofficeSettings:
             ops_classification_rules_path=Path(
                 os.environ.get("OPS_CLASSIFICATION_RULES_PATH", ops_dir / "issue_classification_rules.json")
             ).expanduser().resolve(),
+            ops_audit_store_mode=(
+                os.environ.get("OPS_AUDIT_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
             knowledge_portal_url=os.environ.get(
                 "KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"
             ),
             agent_api_url=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL")
             or os.environ.get("AGENT_API_URL"),
+            adapter_api_url=os.environ.get("TEAMS_ADAPTER_URL")
+            or os.environ.get("ADAPTER_API_URL"),
             default_owner_unit_id=os.environ.get(
                 "AI_OPS_DEFAULT_OWNER_UNIT", "IT Service Desk"
             ),

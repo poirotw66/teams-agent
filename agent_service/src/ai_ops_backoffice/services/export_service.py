@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Literal
+from typing import Any, Literal
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
 from agent_service.operations.contracts import utc_now
-from agent_service.operations.settings import OpsSettings
+
+from .export_format import flatten_for_csv
 
 ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
 
@@ -20,6 +22,7 @@ ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
 class ExportJob:
     job_id: str
     export_type: str
+    export_format: str
     status: ExportJobStatus
     reason: str
     requested_by: str
@@ -29,6 +32,7 @@ class ExportJob:
     expires_at: str
     completed_at: str | None = None
     result: dict[str, Any] | None = None
+    download_content: str | None = None
     error: str | None = None
 
 
@@ -54,7 +58,9 @@ class ExportJobService:
             return
         payload = json.loads(self._jobs_file.read_text(encoding="utf-8"))
         for item in payload:
-            job = ExportJob(**item)
+            defaults = {"export_format": "json", "download_content": None}
+            merged = {**defaults, **item}
+            job = ExportJob(**merged)
             self._jobs[job.job_id] = job
 
     def _persist(self) -> None:
@@ -71,12 +77,14 @@ class ExportJobService:
         reason: str,
         days: int,
         runner: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
+        export_format: str = "json",
     ) -> ExportJob:
         job_id = str(uuid.uuid4())
         now = utc_now()
         job = ExportJob(
             job_id=job_id,
             export_type=export_type,
+            export_format=export_format,
             status="QUEUED",
             reason=reason,
             requested_by=actor.user_id,
@@ -107,6 +115,10 @@ class ExportJobService:
                 job = self._jobs[job_id]
                 job.status = "COMPLETED"
                 job.result = result
+                if job.export_format == "csv":
+                    job.download_content = flatten_for_csv(result)
+                else:
+                    job.download_content = json.dumps(result, ensure_ascii=False, indent=2)
                 job.completed_at = utc_now().isoformat()
                 self._persist()
         except Exception as exc:  # noqa: BLE001

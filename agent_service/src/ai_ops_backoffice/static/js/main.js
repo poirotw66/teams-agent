@@ -4,11 +4,11 @@ const routes = {
   overview: renderOverview,
   conversations: renderConversations,
   issues: renderIssues,
+  routes: renderRoutes,
   costs: renderCosts,
   health: renderHealth,
   knowledge: renderKnowledge,
   quality: renderQuality,
-  governance: renderGovernance,
   audit: renderAudit,
 };
 
@@ -16,13 +16,47 @@ const navItems = [
   ["overview", "營運總覽"],
   ["conversations", "對話紀錄"],
   ["issues", "Issue 分析"],
+  ["routes", "路由來源"],
   ["costs", "成本分析"],
   ["health", "系統健康度"],
   ["knowledge", "知識營運"],
   ["quality", "品質改善"],
-  ["governance", "AI 治理"],
   ["audit", "稽核紀錄"],
 ];
+
+function periodSelect(current = "7d") {
+  const select = el("select", "");
+  select.innerHTML = `
+    <option value="today">今天</option>
+    <option value="7d">最近 7 天</option>
+    <option value="30d">最近 30 天</option>
+    <option value="6m">最近 6 個月</option>
+  `;
+  select.value = current;
+  return select;
+}
+
+function showConversationModal(detail) {
+  const root = document.getElementById("modal-root");
+  root.hidden = false;
+  root.replaceChildren();
+  const modal = el("section", "modal");
+  const close = el("button", "", "關閉");
+  close.addEventListener("click", () => {
+    root.hidden = true;
+    root.replaceChildren();
+  });
+  modal.append(el("h2", "", `Conversation ${detail.conversationId}`), close);
+  for (const turn of detail.turns || []) {
+    const block = el("div", "panel");
+    block.append(el("h3", "", turn.occurredAt));
+    block.append(el("p", "", turn.messageMasked || ""));
+    const events = el("pre", "", JSON.stringify(turn.events, null, 2));
+    block.append(events);
+    modal.append(block);
+  }
+  root.append(modal);
+}
 
 let capabilities = null;
 
@@ -50,10 +84,18 @@ function renderNav(active) {
 async function renderOverview() {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
+  const preset = document.getElementById("overview-preset")?.value || "7d";
   try {
-    const data = await api("/api/operations/summary?days=7");
+    const data = await api(`/api/operations/summary?preset=${encodeURIComponent(preset)}`);
     const panel = el("section", "panel");
-    panel.append(el("h2", "", "最近 7 天"));
+    const filterBar = el("div", "filter-bar");
+    const select = periodSelect(preset);
+    select.id = "overview-preset";
+    const apply = el("button", "", "套用期間");
+    apply.addEventListener("click", () => renderOverview());
+    filterBar.append(select, apply);
+    panel.append(filterBar);
+    panel.append(el("h2", "", `營運總覽（${data.periodPreset}）`));
     const grid = el("div", "grid");
     grid.append(
       metric("Conversation", data.conversationCount),
@@ -62,6 +104,9 @@ async function renderOverview() {
       metric("Issue", data.issueOccurrenceCount),
       metric("Knowledge 回答", data.knowledgeAnswerCount),
       metric("FAQ 回答", data.faqAnswerCount),
+      metric("Handoff", data.handoffCount),
+      metric("Ticket", data.ticketCount),
+      metric("負評", data.negativeFeedbackCount),
       metric("估算成本 USD", data.estimatedCostUsd),
       metric("成本完整率", data.costCoverage),
     );
@@ -106,12 +151,36 @@ async function renderConversations() {
       link.addEventListener("click", async (event) => {
         event.preventDefault();
         const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}`);
-        alert(JSON.stringify(detail, null, 2));
+        showConversationModal(detail);
       });
       row.append(el("td", "", "").append(link));
       row.append(el("td", "", String(item.turnCount)));
       row.append(el("td", "", item.actorRef || "-"));
       row.append(el("td", "", item.lastOccurredAt));
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+  }
+}
+
+async function renderRoutes() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const data = await api("/api/routes/summary?preset=30d");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "路由來源分析"));
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>Route</th><th>Count</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of data.routeDistribution || []) {
+      const row = el("tr");
+      row.append(el("td", "", item.route));
+      row.append(el("td", "", String(item.count)));
       body.append(row);
     }
     table.append(body);
@@ -158,6 +227,8 @@ async function renderCosts() {
     const panel = el("section", "panel");
     panel.append(el("h2", "", "成本分析"));
     panel.append(metric("Total USD", data.totalEstimatedCostUsd));
+    panel.append(el("p", "", `缺少成本資料事件：${data.missingCostEventCount}`));
+    panel.append(el("p", "", `Input tokens：${data.inputTokens}｜Output tokens：${data.outputTokens}`));
     const table = el("table");
     table.innerHTML = "<thead><tr><th>Date</th><th>Estimated USD</th></tr></thead>";
     const body = el("tbody");
@@ -352,7 +423,7 @@ async function renderQuality() {
           const detail = await api(
             `/api/conversations/${encodeURIComponent(item.conversationId)}`,
           );
-          alert(JSON.stringify({ feedback: item, conversation: detail }, null, 2));
+          showConversationModal({ ...detail, conversationId: item.conversationId });
         });
         row.append(el("td", "", "").append(convLink));
         row.append(el("td", "", item.reason ?? "-"));
@@ -363,7 +434,7 @@ async function renderQuality() {
     }
     const exportPanel = el("section", "panel");
     exportPanel.append(el("h3", "", "非同步匯出"));
-    const button = el("button", "", "建立營運摘要匯出");
+    const button = el("button", "", "建立 CSV 營運摘要匯出");
     button.addEventListener("click", async () => {
       const created = await api("/api/exports", {
         method: "POST",
@@ -372,11 +443,16 @@ async function renderQuality() {
           export_type: "operations_summary",
           reason: "UAT export",
           days: 7,
+          export_format: "csv",
+          preset: "7d",
         }),
       });
-      exportPanel.append(el("pre", "", JSON.stringify(created, null, 2)));
       const job = await pollExport(created.jobId);
-      exportPanel.append(el("pre", "", JSON.stringify(job, null, 2)));
+      if (job.downloadContent) {
+        exportPanel.append(el("pre", "", job.downloadContent.slice(0, 2000)));
+      } else {
+        exportPanel.append(el("pre", "", JSON.stringify(job, null, 2)));
+      }
     });
     exportPanel.append(button);
     app.replaceChildren(panel, exportPanel);
@@ -394,21 +470,6 @@ async function pollExport(jobId) {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   return { jobId, status: "RUNNING" };
-}
-
-async function renderGovernance() {
-  const app = document.getElementById("app");
-  app.replaceChildren(el("div", "empty", "載入中…"));
-  try {
-    const prompts = await api("/api/prompts");
-    const flags = await api("/api/feature-flags");
-    const panel = el("section", "panel");
-    panel.append(el("h2", "", "AI 治理（Phase 3 scaffold）"));
-    panel.append(el("pre", "", JSON.stringify({ prompts, flags }, null, 2)));
-    app.replaceChildren(panel);
-  } catch (error) {
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
-  }
 }
 
 async function renderAudit() {
