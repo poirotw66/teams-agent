@@ -27,4 +27,4 @@ terraform apply -input=false -var="deployment_phase=activate" "$@"
 printf '\nActivate complete. Next:\n'
 printf '  1. Set adapter_public_base_url in terraform.tfvars if needed\n'
 printf '  2. terraform apply -var="deployment_phase=activate" (or re-run this script)\n'
-printf '%s\n' '  3. curl "$(terraform output -raw adapter_url)/readyz"'
+printf '%s\n' "  3. curl \"\$(terraform output -raw adapter_url)/readyz\""

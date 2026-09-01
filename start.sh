@@ -363,30 +363,35 @@ fi
 
 if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   log "啟動 Mock Ticket Service：http://127.0.0.1:${MOCK_TICKET_PORT}"
-  start_background bash -c '
-    cd "$1"
-    MOCK_TICKET_PORT="$2" exec uv run python -m teams_agent.mock_ticket_service
-  ' _ "${PROJECT_DIR}" "${MOCK_TICKET_PORT}"
+  start_background bash -c "
+    cd \"\$1\"
+    MOCK_TICKET_PORT=\"\$2\" exec uv run python -m teams_agent.mock_ticket_service
+  " _ "${PROJECT_DIR}" "${MOCK_TICKET_PORT}"
   wait_for_url "Mock Ticket Service" "http://127.0.0.1:${MOCK_TICKET_PORT}/healthz" 20
 fi
 
 log "啟動 LangGraph Agent Service：http://127.0.0.1:${RAG_PORT}"
+agent_env=(
+  "PORT=${RAG_PORT}"
+  "GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE_VALUE}"
+  "GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE}"
+  "GOOGLE_API_KEY=${GOOGLE_API_KEY_VALUE}"
+  "RAG_MODEL=${RAG_MODEL_VALUE}"
+  "AGENT_MODEL=${AGENT_MODEL_VALUE}"
+)
+if [[ "${START_MOCK_TICKET}" == "true" ]]; then
+  agent_env+=(
+    "TICKET_SERVICE_MODE=HTTP"
+    "TICKET_SERVICE_BASE_URL=http://127.0.0.1:${MOCK_TICKET_PORT}"
+  )
+fi
 (
   cd "${AGENT_SERVICE_DIR}"
-  export PORT="${RAG_PORT}"
-  export GEMINI_FILE_SEARCH_STORE="${GEMINI_FILE_SEARCH_STORE_VALUE}"
-  export GEMINI_FILE_SEARCH_ENFORCE_ACL="${GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE}"
-  export GOOGLE_API_KEY="${GOOGLE_API_KEY_VALUE}"
-  export RAG_MODEL="${RAG_MODEL_VALUE}"
-  export AGENT_MODEL="${AGENT_MODEL_VALUE}"
-  if [[ "${START_MOCK_TICKET}" == "true" ]]; then
-    export TICKET_SERVICE_MODE=HTTP
-    export TICKET_SERVICE_BASE_URL="http://127.0.0.1:${MOCK_TICKET_PORT}"
-  fi
   if [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" ]]; then
-    exec uv run --extra spike rag-agent
+    env "${agent_env[@]}" uv run --extra spike rag-agent
+  else
+    env "${agent_env[@]}" uv run rag-agent
   fi
-  exec uv run rag-agent
 ) &
 CHILD_PIDS+=("$!")
 wait_for_url "Agent Service" "http://127.0.0.1:${RAG_PORT}/readyz" 45
@@ -408,37 +413,38 @@ if [[ "${START_PORTAL}" == "true" ]]; then
 fi
 
 log "啟動 Teams Adapter：http://127.0.0.1:${TEAMS_PORT}"
-start_background bash -c '
-  cd "$1"
-  export PORT="$2"
+start_background bash -c "
+  cd \"\$1\"
+  export PORT=\"\$2\"
   export AGENT_MODE=api
-  export AGENT_API_URL="http://127.0.0.1:$3/agent/chat"
-  export BOT_PUBLIC_BASE_URL="http://127.0.0.1:$2"
+  export AGENT_API_URL=\"http://127.0.0.1:\$3/agent/chat\"
+  export BOT_PUBLIC_BASE_URL=\"http://127.0.0.1:\$2\"
   export DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
-  export PLAYGROUND_TEST_USER_EMAIL="$4"
+  export PLAYGROUND_TEST_USER_EMAIL=\"\$4\"
   exec uv run teams-agent
-' _ "${PROJECT_DIR}" "${TEAMS_PORT}" "${RAG_PORT}" "${PLAYGROUND_TEST_USER_EMAIL}"
+" _ "${PROJECT_DIR}" "${TEAMS_PORT}" "${RAG_PORT}" "${PLAYGROUND_TEST_USER_EMAIL}"
 wait_for_url "Teams Adapter" "http://127.0.0.1:${TEAMS_PORT}/readyz" 45
 
 if [[ "${START_PLAYGROUND}" == "true" ]]; then
-  AGENT_SERVICE_TOKEN_VALUE="$(env_value "${AGENT_SERVICE_DIR}/.env" "AGENT_SERVICE_TOKEN")"
   PLAYGROUND_SESSION_SECRET_VALUE="${SESSION_SECRET:-$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')}"
   PLAYGROUND_URL="http://127.0.0.1:${PLAYGROUND_PORT}"
 
   log "啟動自訂 Agents Playground（含知識引擎選擇器）：${PLAYGROUND_URL}"
+  playground_env=(
+    "PORT=${PLAYGROUND_PORT}"
+    "PLAYGROUND_INTERNAL_PORT=${PLAYGROUND_INTERNAL_PORT}"
+    "PLAYGROUND_PASSWORD=${PLAYGROUND_PASSWORD_VALUE}"
+    "SESSION_SECRET=${PLAYGROUND_SESSION_SECRET_VALUE}"
+    "BOT_ENDPOINT=http://127.0.0.1:${PLAYGROUND_PORT}/_adapter/api/messages"
+    "ADAPTER_TARGET_URL=http://127.0.0.1:${TEAMS_PORT}"
+    "PLAYGROUND_PUBLIC_BASE_URL=${PLAYGROUND_URL}"
+    "DEFAULT_CHANNEL_ID=msteams"
+  )
   (
     cd "${PLAYGROUND_SERVICE_DIR}"
-    export PORT="${PLAYGROUND_PORT}"
-    export PLAYGROUND_INTERNAL_PORT
-    export PLAYGROUND_PASSWORD="${PLAYGROUND_PASSWORD_VALUE}"
-    export SESSION_SECRET="${PLAYGROUND_SESSION_SECRET_VALUE}"
-    export BOT_ENDPOINT="http://127.0.0.1:${PLAYGROUND_PORT}/_adapter/api/messages"
-    export ADAPTER_TARGET_URL="http://127.0.0.1:${TEAMS_PORT}"
-    export PLAYGROUND_PUBLIC_BASE_URL="${PLAYGROUND_URL}"
     # Playground UI only knows msteams/emulator/directline/webchat; gateway still
     # rewrites outbound activities to channelId=playground for agent evaluation.
-    export DEFAULT_CHANNEL_ID=msteams
-    exec node server.js
+    env "${playground_env[@]}" exec node server.js
   ) &
   CHILD_PIDS+=("$!")
 
