@@ -10,11 +10,13 @@ TEAMS_PORT="${PORT:-3978}"
 RAG_PORT="${RAG_PORT:-8000}"
 MOCK_TICKET_PORT="${MOCK_TICKET_PORT:-8090}"
 PORTAL_PORT="${KNOWLEDGE_PORTAL_PORT:-8091}"
+AI_OPS_PORT="${AI_OPS_BACKOFFICE_PORT:-8092}"
 PLAYGROUND_PORT="${PLAYGROUND_PORT:-3979}"
 PLAYGROUND_INTERNAL_PORT="${PLAYGROUND_INTERNAL_PORT:-56150}"
 
 START_MOCK_TICKET="${START_MOCK_TICKET:-true}"
 START_PORTAL="${START_PORTAL:-true}"
+START_BACKOFFICE="${START_AI_OPS_BACKOFFICE:-true}"
 START_PLAYGROUND="${START_PLAYGROUND:-true}"
 START_TUNNEL="${START_TUNNEL:-false}"
 OPEN_PLAYGROUND="${OPEN_PLAYGROUND:-true}"
@@ -68,7 +70,7 @@ is_project_service_process() {
   local command
   command="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
   [[ "${command}" == *"${PROJECT_DIR}"* ]] \
-    && [[ "${command}" =~ (teams-agent|rag-agent|mock_ticket_service|knowledge.portal|knowledge_portal|agentsplayground|playground_service/server.js) ]]
+    && [[ "${command}" =~ (teams-agent|rag-agent|mock_ticket_service|knowledge.portal|knowledge_portal|ai-ops-backoffice|ai_ops_backoffice|agentsplayground|playground_service/server.js) ]]
 }
 
 prepare_port() {
@@ -346,6 +348,10 @@ if [[ "${START_PORTAL}" == "true" ]]; then
   require_free_port "Knowledge Portal" "${PORTAL_PORT}"
 fi
 
+if [[ "${START_BACKOFFICE}" == "true" ]]; then
+  require_free_port "AI Ops Backoffice" "${AI_OPS_PORT}"
+fi
+
 if [[ "${START_PLAYGROUND}" == "true" ]]; then
   require_command node
   require_command npm
@@ -373,6 +379,9 @@ fi
 log "啟動 LangGraph Agent Service：http://127.0.0.1:${RAG_PORT}"
 agent_env=(
   "PORT=${RAG_PORT}"
+  "RAG_DATA_DIR=${PROJECT_DIR}/data"
+  "OPS_EVENTS_ENABLED=true"
+  "OPS_STORE_MODE=FILE"
   "GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE_VALUE}"
   "GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE}"
   "GOOGLE_API_KEY=${GOOGLE_API_KEY_VALUE}"
@@ -410,6 +419,21 @@ if [[ "${START_PORTAL}" == "true" ]]; then
   ) &
   CHILD_PIDS+=("$!")
   wait_for_url "Knowledge Portal" "http://127.0.0.1:${PORTAL_PORT}/" 45
+fi
+
+if [[ "${START_BACKOFFICE}" == "true" ]]; then
+  log "啟動 AI Ops Backoffice：http://127.0.0.1:${AI_OPS_PORT}/"
+  (
+    cd "${AGENT_SERVICE_DIR}"
+    export AI_OPS_BACKOFFICE_PORT="${AI_OPS_PORT}"
+    export KNOWLEDGE_PORTAL_PUBLIC_URL="http://127.0.0.1:${PORTAL_PORT}"
+    export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
+    export RAG_DATA_DIR="${PROJECT_DIR}/data"
+    export OPS_STORE_MODE=FILE
+    exec uv run ai-ops-backoffice
+  ) &
+  CHILD_PIDS+=("$!")
+  wait_for_url "AI Ops Backoffice" "http://127.0.0.1:${AI_OPS_PORT}/healthz" 45
 fi
 
 log "啟動 Teams Adapter：http://127.0.0.1:${TEAMS_PORT}"
@@ -481,6 +505,10 @@ fi
 
 if [[ "${START_PORTAL}" == "true" ]]; then
   printf '[start] Knowledge Portal：http://127.0.0.1:%s/\n' "${PORTAL_PORT}"
+fi
+
+if [[ "${START_BACKOFFICE}" == "true" ]]; then
+  printf '[start] AI Ops Backoffice：http://127.0.0.1:%s/\n' "${AI_OPS_PORT}"
 fi
 
 log "所有服務已啟動。按 Ctrl+C 可一起停止。"

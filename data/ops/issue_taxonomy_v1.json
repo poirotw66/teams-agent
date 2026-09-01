@@ -1,0 +1,391 @@
+{
+  "taxonomy_version": "v1",
+  "generated_at": "2026-09-01T00:00:00Z",
+  "issue_types": [
+    {
+      "issue_type_id": "vpn.connection_failed",
+      "display_name": "VPN 無法連線",
+      "description": "VPN 用戶端無法建立連線或連線中斷。",
+      "parent_issue_type_id": "network.vpn",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "vpn.account_locked",
+      "display_name": "VPN 帳號鎖定",
+      "description": "VPN 帳號因密碼錯誤或政策被鎖定。",
+      "parent_issue_type_id": "network.vpn",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "vpn.password_expired",
+      "display_name": "VPN 密碼過期",
+      "description": "VPN 密碼到期需重設。",
+      "parent_issue_type_id": "network.vpn",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "network.vpn",
+      "display_name": "VPN",
+      "description": "虛擬私人網路相關問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "network.wifi_access",
+      "display_name": "Wi-Fi 連線",
+      "description": "辦公室或訪客 Wi-Fi 連線問題。",
+      "parent_issue_type_id": "network.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "network.internet_slow",
+      "display_name": "網路速度異常",
+      "description": "網路連線緩慢或不穩。",
+      "parent_issue_type_id": "network.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "network.general",
+      "display_name": "網路",
+      "description": "一般網路連線問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "email.outlook_sync",
+      "display_name": "Outlook 同步問題",
+      "description": "Outlook 無法收發或同步郵件。",
+      "parent_issue_type_id": "email.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "email.password_reset",
+      "display_name": "信箱密碼重設",
+      "description": "信箱或 M365 密碼重設流程。",
+      "parent_issue_type_id": "email.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "email.mailbox_full",
+      "display_name": "信箱容量不足",
+      "description": "信箱已滿導致無法收信。",
+      "parent_issue_type_id": "email.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "email.general",
+      "display_name": "電子郵件",
+      "description": "一般郵件與 Exchange 問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "password.account_locked",
+      "display_name": "帳號鎖定",
+      "description": "Windows 或 AD 帳號被鎖定。",
+      "parent_issue_type_id": "access.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "password.reset_procedure",
+      "display_name": "密碼重設",
+      "description": "密碼重設或首次登入問題。",
+      "parent_issue_type_id": "access.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "access.entra_mfa",
+      "display_name": "MFA 驗證",
+      "description": "多因素驗證註冊或驗證失敗。",
+      "parent_issue_type_id": "access.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "access.shared_drive",
+      "display_name": "共用資料夾權限",
+      "description": "共用磁碟或 SharePoint 存取權限。",
+      "parent_issue_type_id": "access.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "access.application_permission",
+      "display_name": "應用程式權限",
+      "description": "內部系統或 SaaS 應用存取申請。",
+      "parent_issue_type_id": "access.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "access.general",
+      "display_name": "存取權限",
+      "description": "帳號、權限與身分驗證問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "software.install_request",
+      "display_name": "軟體安裝申請",
+      "description": "安裝或解除安裝軟體。",
+      "parent_issue_type_id": "software.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "software.license_activation",
+      "display_name": "授權啟用",
+      "description": "Office 或其他軟體授權啟用。",
+      "parent_issue_type_id": "software.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "software.cannot_open",
+      "display_name": "軟體無法開啟",
+      "description": "應用程式啟動失敗或當機。",
+      "parent_issue_type_id": "software.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "software.general",
+      "display_name": "軟體",
+      "description": "一般軟體使用問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "hardware.laptop_issue",
+      "display_name": "筆電硬體",
+      "description": "筆電硬體故障或異常。",
+      "parent_issue_type_id": "hardware.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "hardware.printer_issue",
+      "display_name": "印表機",
+      "description": "印表機列印或連線問題。",
+      "parent_issue_type_id": "hardware.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "hardware.monitor_issue",
+      "display_name": "螢幕／週邊",
+      "description": "螢幕、鍵盤、滑鼠等週邊設備。",
+      "parent_issue_type_id": "hardware.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "hardware.general",
+      "display_name": "硬體",
+      "description": "一般硬體設備問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "phone.teams_call_quality",
+      "display_name": "Teams 通話品質",
+      "description": "Teams 語音或視訊通話品質問題。",
+      "parent_issue_type_id": "phone.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "phone.softphone_setup",
+      "display_name": "軟體電話設定",
+      "description": "軟體電話或 Teams Phone 設定。",
+      "parent_issue_type_id": "phone.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "phone.general",
+      "display_name": "電話／通訊",
+      "description": "電話與通訊相關問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "security.phishing_report",
+      "display_name": "釣魚信回報",
+      "description": "疑似釣魚或惡意郵件回報。",
+      "parent_issue_type_id": "security.general",
+      "owner_unit_id": "Information Security",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "security.suspicious_email",
+      "display_name": "可疑郵件",
+      "description": "可疑連結或附件相關諮詢。",
+      "parent_issue_type_id": "security.general",
+      "owner_unit_id": "Information Security",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "security.general",
+      "display_name": "資安",
+      "description": "資安事件與安全諮詢。",
+      "owner_unit_id": "Information Security",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "remote.desktop_access",
+      "display_name": "遠端桌面",
+      "description": "遠端桌面或 VDI 連線問題。",
+      "parent_issue_type_id": "remote.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "remote.general",
+      "display_name": "遠端工作",
+      "description": "遠端工作相關問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "mobile.device_enrollment",
+      "display_name": "行動裝置註冊",
+      "description": "手機或平板 Intune 註冊。",
+      "parent_issue_type_id": "mobile.general",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "mobile.general",
+      "display_name": "行動裝置",
+      "description": "行動裝置管理相關問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "other.unclassified",
+      "display_name": "未分類",
+      "description": "尚未對應到正式 Issue Type 的問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    }
+  ]
+}

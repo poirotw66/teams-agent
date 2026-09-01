@@ -1,0 +1,13 @@
+{
+  "metrics_definition_version": "v1",
+  "timezone": "Asia/Taipei",
+  "definitions": {
+    "conversation_count": "Distinct conversation_id with at least one turn.received event in period.",
+    "turn_count": "Count of turn.received events in period.",
+    "active_user_count": "Distinct actor_ref with at least one turn.received event in period.",
+    "issue_occurrence_count": "Count of issue.extracted events in period.",
+    "knowledge_hit_rate": "knowledge.answered / issue.extracted where route was KNOWLEDGE.",
+    "faq_hit_rate": "faq.answered / issue.extracted where route was FAQ.",
+    "estimated_cost_usd": "Sum of usage.recorded.estimatedCostUsd; missing usage is excluded from numerator and denominator coverage."
+  }
+}

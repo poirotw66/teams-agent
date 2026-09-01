@@ -9,14 +9,8 @@ devTools/
 .DS_Store
 agent_service/.venv/
 outputs/
-data/
-# data/: `data/` used to be ignored wholesale. That is wrong for anything
-# under it that is *configuration* rather than corpus/build output, because
-# git cannot "un-ignore" a file under a directory pattern like `data/`
-# (see `git help gitignore`, "It is not possible to re-include a file if a
-# parent directory of that file is excluded"). So instead of one blanket
-# `data/` rule, ignore each regeneratable/runtime subtree individually and
-# let everything else under data/ (currently: faq.json, eval/) be tracked.
+# data/: ignore regeneratable/runtime subtrees individually so config under
+# data/ (faq.json, eval/, ops/*.json) can be tracked.
 #
 # Ignored (not reproducible from a clean clone on purpose, or runtime
 # state that must never be committed):
@@ -30,6 +24,8 @@ data/
 #   data/portal_drafts/  draft image bundles uploaded via Knowledge Portal
 #   data/portal_state/   Portal FILE-mode repository state
 #   data/releases/       published release artifacts built by the Portal
+#   data/ops/events/     operational event FILE-mode store
+#   data/ops/exports/    async export job artifacts
 #
 # Tracked (small, hand-curated configuration/fixtures the service's
 # behavior depends on — spec §7.2 FAQ config, §18.7 A/B/eval fixtures):
@@ -42,6 +38,8 @@ data/conversations/
 data/portal_drafts/
 data/portal_state/
 data/releases/
+data/ops/events/
+data/ops/exports/
 
 # Terraform local state and secrets (see infra/terraform/README.md)
 **/.terraform/

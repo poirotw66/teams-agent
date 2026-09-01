@@ -38,6 +38,7 @@ from .usage_events import (
     derive_request_outcome,
     log_request_cost,
 )
+from .operations.runtime import OpsRuntime, build_ops_runtime
 from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,14 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
         app.state.handoff_repository = handoff_repository
+        ops_runtime = build_ops_runtime()
+        app.state.ops_runtime = ops_runtime
+        if ops_runtime is not None:
+            logger.info(
+                "Operational events enabled: store=%s taxonomy=%s",
+                ops_runtime.settings.store_mode,
+                ops_runtime.taxonomy.version,
+            )
         logger.info(
             "Agentic RAG ready: chunks=%s agent_model=%s rag_model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",
@@ -275,6 +284,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         state: dict,
         usage_metadata: dict,
         started_at: float,
+        *,
+        ops_runtime: OpsRuntime | None = None,
+        knowledge_release_id: str | None = None,
     ) -> RequestCostSummary | None:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
         _log_chat_request(payload, state, elapsed_ms=elapsed_ms, error_type=None)
@@ -305,6 +317,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             embedding_model=resolved_settings.embedding_model,
         )
         log_request_cost(summary)
+        if ops_runtime is not None:
+            enriched = dict(state)
+            if knowledge_release_id:
+                enriched["knowledge_release_id"] = knowledge_release_id
+            ops_runtime.emitter.schedule_turn(payload, enriched, cost_summary=summary)
         return summary
 
     def _build_response(
@@ -362,7 +379,15 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
             ) from error
 
-        cost_summary = _log_chat_success(payload, correlation_id, state, usage_metadata, started_at)
+        cost_summary = _log_chat_success(
+            payload,
+            correlation_id,
+            state,
+            usage_metadata,
+            started_at,
+            ops_runtime=getattr(request.app.state, "ops_runtime", None),
+            knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+        )
         return _build_response(state, correlation_id, cost_summary=cost_summary)
 
     @app.post(
@@ -431,7 +456,13 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 return
 
             cost_summary = _log_chat_success(
-                payload, correlation_id, state, usage_metadata, started_at
+                payload,
+                correlation_id,
+                state,
+                usage_metadata,
+                started_at,
+                ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
             )
             yield _sse(
                 "response",
@@ -455,22 +486,21 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         "/feedback",
         dependencies=[Depends(authorize)],
     )
-    async def feedback(payload: FeedbackRequest) -> dict[str, str]:
-        # Spec §14/§3.3: POC scope does not require a persistent feedback
-        # store. We log it in structured form so it can be tailed/exported
-        # for the FAQ/RAG solve-rate analysis §14 describes; a real store
-        # (e.g. a BigQuery sink or a feedback table) would read this same
-        # structured log, or this handler could write to it directly,
-        # without any other part of the system changing.
+    async def feedback(payload: FeedbackRequest, request: Request) -> dict[str, str]:
         logger.info(
             "Feedback recorded: correlation_id=%s conversation_id=%s issue_id=%s "
-            "rating=%s user_id=%s",
+            "rating=%s user_id=%s reason=%s resolved=%s",
             payload.correlationId,
             payload.conversationId,
             payload.issueId,
             payload.rating,
             payload.userId,
+            payload.reason,
+            payload.resolvedStatus,
         )
+        ops_runtime = getattr(request.app.state, "ops_runtime", None)
+        if ops_runtime is not None:
+            ops_runtime.emitter.schedule_feedback(payload)
         return {"status": "recorded"}
 
     @app.post(

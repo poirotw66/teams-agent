@@ -1,0 +1,72 @@
+{
+  "faq_key_mapping": {
+    "PASSWORD_RESET": {
+      "issue_type_id": "password.reset_procedure",
+      "source": "FAQ_MAPPING"
+    },
+    "VPN_HELP": {
+      "issue_type_id": "vpn.connection_failed",
+      "source": "FAQ_MAPPING"
+    },
+    "GITLAB_UNLOCK": {
+      "issue_type_id": "password.account_locked",
+      "source": "FAQ_MAPPING"
+    },
+    "TICKET_HOWTO": {
+      "issue_type_id": "software.general",
+      "source": "FAQ_MAPPING"
+    }
+  },
+  "keyword_rules": [
+    {
+      "keywords": ["vpn", "連線", "連不上"],
+      "issue_type_id": "vpn.connection_failed",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["vpn", "鎖定", "locked"],
+      "issue_type_id": "vpn.account_locked",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["密碼", "password", "重設", "reset"],
+      "issue_type_id": "password.reset_procedure",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["帳號", "鎖定", "locked"],
+      "issue_type_id": "password.account_locked",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["outlook", "郵件", "email", "信箱"],
+      "issue_type_id": "email.outlook_sync",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["wifi", "wi-fi", "無線"],
+      "issue_type_id": "network.wifi_access",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["印表機", "printer", "列印"],
+      "issue_type_id": "hardware.printer_issue",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["teams", "通話", "視訊"],
+      "issue_type_id": "phone.teams_call_quality",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["釣魚", "phishing", "可疑"],
+      "issue_type_id": "security.phishing_report",
+      "source": "MODEL"
+    },
+    {
+      "keywords": ["gitlab"],
+      "issue_type_id": "password.account_locked",
+      "source": "MODEL"
+    }
+  ]
+}

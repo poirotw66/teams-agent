@@ -244,6 +244,8 @@ class FeedbackRequest(StrictModel):
     issueId: int | None = None
     rating: Literal["UP", "DOWN"]
     userId: str | None = None
+    reason: str | None = None
+    resolvedStatus: Literal["YES", "NO", "UNKNOWN"] | None = None
 
 
 class SearchRequest(StrictModel):

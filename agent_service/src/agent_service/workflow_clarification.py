@@ -118,6 +118,7 @@ class ClarificationWorkflowMixin:
         return {
             "user": user,
             "conversation": conversation,
+            "conversation_started": len(conversation.messages) == 0,
             "execution_context": execution_context,
             "llm_call_counter": execution_context.llm_calls,
             "supervisor_decision": supervisor_decision,

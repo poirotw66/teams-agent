@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import hmac
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from agent_service.operations.access import CAPABILITIES
+
+from .auth import BackofficeAuthError, resolve_actor
+from .services.phase2_registry import FaqRecord, Phase2Registry, QualityCaseRecord, SyncJobRecord
+from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
+from .services.query_service import BackofficeQueryService
+from .settings import BackofficeSettings
+
+logger = logging.getLogger(__name__)
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+class ExportRequest(BaseModel):
+    export_type: str = Field(default="operations_summary")
+    reason: str = Field(min_length=3)
+    days: int = Field(default=30, ge=1, le=186)
+
+
+class FaqCreateRequest(BaseModel):
+    faq_key: str
+    question: str
+    answer: str
+    owner_unit_id: str = "IT Service Desk"
+
+
+class QualityCaseCreateRequest(BaseModel):
+    title: str
+    case_type: str
+    owner_unit_id: str = "IT Service Desk"
+
+
+class SyncJobCreateRequest(BaseModel):
+    scope_type: str
+    reason: str = Field(min_length=3)
+
+
+class PromptCandidateRequest(BaseModel):
+    prompt_id: str
+    change_reason: str
+    template_summary: str
+
+
+def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
+    resolved_settings = settings or BackofficeSettings.from_env()
+    query_service = BackofficeQueryService(resolved_settings)
+    phase2 = Phase2Registry()
+    phase3 = Phase3Registry()
+
+    def authorize(authorization: str | None = Header(default=None)) -> None:
+        expected = resolved_settings.service_token
+        if not expected:
+            return
+        scheme, _, token = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
+            raise HTTPException(status_code=401, detail="Invalid service token.")
+
+    def current_actor(
+        x_backoffice_user_id: str | None = Header(default=None, alias="X-Backoffice-User-Id"),
+        x_backoffice_user_name: str | None = Header(default=None, alias="X-Backoffice-User-Name"),
+        x_backoffice_role: str | None = Header(default="ANALYST", alias="X-Backoffice-Role"),
+        x_backoffice_owner_units: str | None = Header(default="", alias="X-Backoffice-Owner-Units"),
+    ):
+        try:
+            return resolve_actor(
+                auth_mode=resolved_settings.auth_mode,
+                header_user_id=x_backoffice_user_id,
+                header_user_name=x_backoffice_user_name,
+                header_role=x_backoffice_role,
+                header_owner_units=x_backoffice_owner_units,
+                default_owner_unit_id=resolved_settings.default_owner_unit_id,
+            )
+        except BackofficeAuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    def require_capability(actor, capability: str) -> None:
+        if not actor.has_capability(capability):
+            raise HTTPException(status_code=403, detail="Forbidden.")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        resolved_settings.ops_store_path.mkdir(parents=True, exist_ok=True)
+        yield
+
+    app = FastAPI(title="AI Operations Backoffice", lifespan=lifespan)
+
+    @app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/capabilities")
+    async def capabilities(actor=Depends(current_actor)) -> dict[str, object]:
+        return {
+            "role": actor.role,
+            "capabilities": sorted(CAPABILITIES.get(actor.role, frozenset())),
+            "knowledgePortalUrl": resolved_settings.knowledge_portal_url,
+        }
+
+    @app.get("/api/taxonomy")
+    async def taxonomy(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.issues.read")
+        return {
+            "taxonomyVersion": query_service.taxonomy.version,
+            "items": [item.model_dump() for item in query_service.taxonomy.list_active()],
+        }
+
+    @app.get("/api/operations/summary")
+    async def operations_summary(
+        days: int = Query(default=7, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.summary.read")
+        return await query_service.operations_summary(days=days)
+
+    @app.get("/api/conversations")
+    async def conversations(
+        days: int = Query(default=30, ge=1, le=186),
+        cursor: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.conversations.read")
+        return await query_service.list_conversations(days=days, cursor=cursor)
+
+    @app.get("/api/conversations/{conversation_id}")
+    async def conversation_detail(conversation_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.conversations.read")
+        detail = await query_service.conversation_detail(conversation_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+        return detail
+
+    @app.get("/api/issues/summary")
+    async def issues_summary(
+        days: int = Query(default=30, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.issues.read")
+        return await query_service.issues_summary(days=days)
+
+    @app.get("/api/costs/summary")
+    async def costs_summary(
+        days: int = Query(default=30, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.cost.read")
+        return await query_service.costs_summary(days=days)
+
+    @app.get("/api/health/summary")
+    async def health_summary(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.health.read")
+        return await query_service.health_summary()
+
+    @app.get("/api/audit-events")
+    async def audit_events(
+        cursor: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.audit.read")
+        items, next_cursor = await query_service.audit_store.list_events(cursor=cursor)
+        return {
+            "items": [item.model_dump(mode="json") for item in items],
+            "nextCursor": next_cursor,
+            "hasMore": next_cursor is not None,
+        }
+
+    @app.get("/api/feedback")
+    async def feedback_list(
+        days: int = Query(default=30, ge=1, le=186),
+        rating: str | None = None,
+        reason: str | None = None,
+        resolved_status: str | None = Query(default=None, alias="resolved"),
+        handoff: bool | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.feedback.read")
+        return await query_service.list_feedback(
+            days=days,
+            rating=rating,
+            reason=reason,
+            resolved_status=resolved_status,
+            handoff=handoff,
+        )
+
+    @app.get("/api/knowledge/{document_id}/performance")
+    async def knowledge_performance(
+        document_id: str,
+        days: int = Query(default=30, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.knowledge.read")
+        return await query_service.document_performance(document_id, days=days)
+
+    @app.post("/api/exports")
+    async def create_export(payload: ExportRequest, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.exports.create")
+        return await query_service.create_export_job(
+            actor=actor,
+            export_type=payload.export_type,
+            reason=payload.reason,
+            days=payload.days,
+        )
+
+    @app.get("/api/exports/{job_id}")
+    async def get_export(job_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.exports.read")
+        job = await query_service.get_export_job(job_id, actor=actor)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Export job not found.")
+        await query_service.export_jobs.record_download(job_id, actor=actor)
+        return job
+
+    # Phase 2 scaffold
+    @app.get("/api/faqs")
+    async def list_faqs(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.faq.write")
+        return {"items": phase2.list_faqs()}
+
+    @app.post("/api/faqs")
+    async def create_faq(payload: FaqCreateRequest, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.faq.write")
+        import uuid
+
+        record = FaqRecord(
+            faq_id=str(uuid.uuid4()),
+            faq_key=payload.faq_key,
+            question=payload.question,
+            answer=payload.answer,
+            owner_unit_id=payload.owner_unit_id,
+        )
+        phase2.faqs.append(record)
+        return {"faq": record.model_dump()}
+
+    @app.get("/api/quality-cases")
+    async def list_quality_cases(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        return {"items": phase2.list_quality_cases()}
+
+    @app.post("/api/quality-cases")
+    async def create_quality_case(
+        payload: QualityCaseCreateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        import uuid
+
+        record = QualityCaseRecord(
+            case_id=str(uuid.uuid4()),
+            title=payload.title,
+            case_type=payload.case_type,
+            owner_unit_id=payload.owner_unit_id,
+        )
+        phase2.quality_cases.append(record)
+        return {"case": record.model_dump()}
+
+    @app.get("/api/sync-jobs")
+    async def list_sync_jobs(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.knowledge.read")
+        return {"items": phase2.list_sync_jobs()}
+
+    @app.post("/api/sync-jobs")
+    async def create_sync_job(payload: SyncJobCreateRequest, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.knowledge.read")
+        import uuid
+
+        record = SyncJobRecord(
+            job_id=str(uuid.uuid4()),
+            scope_type=payload.scope_type,
+            reason=payload.reason,
+        )
+        phase2.sync_jobs.append(record)
+        return {"job": record.model_dump()}
+
+    # Phase 3 scaffold
+    @app.get("/api/prompts")
+    async def list_prompts(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        return {"items": phase3.list_prompts()}
+
+    @app.post("/api/prompts/candidates")
+    async def create_prompt_candidate(
+        payload: PromptCandidateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        import hashlib
+        import uuid
+
+        content_hash = hashlib.sha256(payload.template_summary.encode("utf-8")).hexdigest()
+        record = PromptVersionRecord(
+            prompt_id=payload.prompt_id,
+            version=str(uuid.uuid4())[:8],
+            status="CANDIDATE",
+            content_hash=content_hash,
+            change_reason=payload.change_reason,
+        )
+        phase3.prompts.append(record)
+        return {"prompt": record.model_dump()}
+
+    @app.get("/api/feature-flags")
+    async def list_feature_flags(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        return {"items": phase3.list_feature_flags()}
+
+    @app.post("/api/feature-flags/candidates")
+    async def create_feature_flag(payload: FeatureFlagRecord, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        phase3.feature_flags.append(payload)
+        return {"flag": payload.model_dump()}
+
+    @app.get("/")
+    async def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    return app
+
+
+app = create_app()
