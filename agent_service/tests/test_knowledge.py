@@ -10,8 +10,6 @@ from langchain_core.messages import AIMessage
 from agent_service.contracts import UserContext
 from agent_service.documents import DocumentChunk, DocumentImage
 from agent_service.execution_context import ExecutionContext
-from agent_service.llm_call_counter import LlmCallCounter
-from agent_service.usage_events import UsageEventCollector
 from agent_service.knowledge import (
     HybridKnowledgeService,
     KnowledgeService,
@@ -19,8 +17,10 @@ from agent_service.knowledge import (
     RewrittenQuery,
     query_lexically_matches_results,
 )
+from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.settings import RagSettings
+from agent_service.usage_events import UsageEventCollector
 
 
 def make_settings(tmp_path: Path, **overrides) -> RagSettings:

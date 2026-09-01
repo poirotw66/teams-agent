@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from knowledge_portal.api import create_app
-from knowledge_portal.models import PortalActor
 from knowledge_portal.settings import PortalSettings
 
 

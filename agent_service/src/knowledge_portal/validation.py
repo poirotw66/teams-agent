@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 from agent_service.documents import chunk_markdown, parse_front_matter
 
+from .draft_assets import validate_asset_bundle
 from .models import (
     AudienceType,
     ParsePreview,
@@ -13,7 +15,6 @@ from .models import (
     ValidationIssue,
     ValidationSummary,
 )
-from .draft_assets import validate_asset_bundle
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(api[_-]?key|client[_-]?secret|password|passwd|token)\b\s*[:=]\s*\S+"),
@@ -203,7 +204,7 @@ def validate_draft(
             add(code, severity, message, "markdown_content")
 
     if review_due:
-        days = (review_due - date.today()).days
+        days = (review_due - datetime.now(UTC).date()).days
         if days < 0:
             add(
                 "REVIEW_OVERDUE",
@@ -256,8 +257,8 @@ def build_front_matter_markdown(
 
 
 def estimate_retrieval_segments(markdown_content: str, title: str, chunk_size: int, overlap: int) -> int:
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir) / "draft.md"
@@ -269,6 +270,6 @@ def estimate_retrieval_segments(markdown_content: str, title: str, chunk_size: i
                 chunk_size=chunk_size,
                 overlap=overlap,
             )
-        except Exception:
+        except (OSError, ValueError):
             return 0
         return len(chunks)

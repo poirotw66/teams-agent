@@ -204,9 +204,7 @@ class ClarificationWorkflowMixin:
             history = await self.conversation_service.get_history(
                 conversation.conversationId
             )
-            if superseded_resume == "NEW_ISSUE":
-                history = []
-            elif ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
+            if superseded_resume == "NEW_ISSUE" or ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
                 conversation
             ):
                 history = []

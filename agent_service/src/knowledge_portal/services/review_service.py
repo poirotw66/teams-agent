@@ -17,9 +17,9 @@ from ..rbac import (
     ensure_document_visible,
     ensure_not_found,
 )
-from ..role_capabilities import ensure_can_list_pending_reviews
 from ..repository import VersionConflictError, new_id
 from ..review_context import build_pending_review_context
+from ..role_capabilities import ensure_can_list_pending_reviews
 from ..validation import validate_draft
 from .context import PortalServiceContext
 from .document_service import DocumentService

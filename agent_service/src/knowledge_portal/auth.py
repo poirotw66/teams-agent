@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 from urllib.parse import unquote
 
 import httpx
 
-from .draft_retrieval import DraftSearchResult, search_draft_version
-from .models import KnowledgeVersionRecord, PortalActor, PortalRole
+from .draft_retrieval import DraftSearchResult
+from .models import PortalActor, PortalRole
 from .settings import PortalSettings
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ def _header_actor(
 
 
 def _role_from_claims(claims: dict[str, Any], settings: PortalSettings) -> PortalRole:
-    token_roles = set(str(item) for item in claims.get("roles") or [])
+    token_roles = {str(item) for item in claims.get("roles") or []}
     for role_name, configured in (
         ("PLATFORM", settings.entra_platform_roles),
         ("MANAGER", settings.entra_manager_roles),
@@ -68,7 +67,7 @@ def _validate_entra_token(token: str, settings: PortalSettings) -> PortalActor:
 
     issuer = f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0"
     jwks_url = f"https://login.microsoftonline.com/{settings.entra_tenant_id}/discovery/v2.0/keys"
-    jwk_client = PyJWKClient(jwks_url)
+    jwks_client = PyJWKClient(jwks_url)
     signing_key = jwks_client.get_signing_key_from_jwt(token)
     claims = jwt.decode(
         token,

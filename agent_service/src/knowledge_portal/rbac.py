@@ -111,14 +111,13 @@ def ensure_can_remove_document(
         raise PortalPermissionError("Only managers can unpublish published documents.")
     if relaxed_workflow and can_edit_document(
         actor, document.owner_unit_id, document.created_by
-    ):
-        if document.status in {
-            "DRAFT",
-            "CHANGES_REQUESTED",
-            "APPROVED",
-            "PUBLISH_FAILED",
-        }:
-            return
+    ) and document.status in {
+        "DRAFT",
+        "CHANGES_REQUESTED",
+        "APPROVED",
+        "PUBLISH_FAILED",
+    }:
+        return
     raise PortalPermissionError("You do not have permission to remove this document.")
 
 

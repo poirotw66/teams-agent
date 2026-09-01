@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .models import KnowledgeDocumentRecord, KnowledgeVersionRecord, PortalActor, ReviewRecord
 from .rbac import (
+    PortalPermissionError,
     can_edit_document,
     can_view_document,
     ensure_can_publish,
@@ -64,7 +65,7 @@ def _try_review(actor: PortalActor, submitted_by: str, settings: PortalSettings)
     try:
         ensure_can_review(actor, submitted_by, relaxed_workflow=settings.effective_relaxed_workflow())
         return True
-    except Exception:
+    except PortalPermissionError:
         return False
 
 
@@ -72,7 +73,7 @@ def _try_publish(actor: PortalActor) -> bool:
     try:
         ensure_can_publish(actor)
         return True
-    except Exception:
+    except PortalPermissionError:
         return False
 
 
@@ -82,7 +83,7 @@ def _try_discard(actor: PortalActor, document: KnowledgeDocumentRecord, settings
         return document.status != "IN_REVIEW" and not (
             document.current_published_version_id and document.status == "PUBLISHED"
         )
-    except Exception:
+    except PortalPermissionError:
         return False
 
 
@@ -108,9 +109,12 @@ def compute_allowed_actions(
 
     actions: list[PortalAction] = ["VIEW"]
 
-    if draft_version and can_edit_document(actor, document.owner_unit_id, document.created_by):
-        if document.status in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
-            actions.extend(["EDIT_DRAFT", "VALIDATE", "MANAGE_TESTS"])
+    if (
+        draft_version
+        and can_edit_document(actor, document.owner_unit_id, document.created_by)
+        and document.status in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}
+    ):
+        actions.extend(["EDIT_DRAFT", "VALIDATE", "MANAGE_TESTS"])
 
     if (
         draft_version

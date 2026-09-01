@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
-from .file_search_usage import FileSearchUsage, estimate_cost as estimate_file_search_cost
+from .file_search_usage import FileSearchUsage
+from .file_search_usage import estimate_cost as estimate_file_search_cost
 from .usage import (
     PRICING_VERSION,
     build_usage_report,
@@ -43,7 +44,7 @@ def infer_provider(model: str | None) -> str | None:
     if not model:
         return None
     normalized = normalize_model_name(model).lower()
-    if normalized.startswith("gpt-") or normalized.startswith("text-embedding-"):
+    if normalized.startswith(("gpt-", "text-embedding-")):
         return "openai"
     if "gemini" in normalized or normalized.startswith("embedding"):
         return "google"

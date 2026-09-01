@@ -29,9 +29,9 @@ from .execution_context import (
 from .file_search_acl import filter_for
 from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
-from .usage_events import extract_file_search_usage_from_result
 from .knowledge import answer_indicates_insufficient_information
 from .llm_call_counter import LlmCallCounter
+from .usage_events import extract_file_search_usage_from_result
 
 logger = logging.getLogger(__name__)
 

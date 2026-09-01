@@ -29,9 +29,14 @@ from ..models import (
     new_etag,
     utc_now,
 )
-from ..rbac import ensure_can_edit, ensure_can_remove_document, ensure_document_visible, ensure_not_found
-from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
+from ..rbac import (
+    ensure_can_edit,
+    ensure_can_remove_document,
+    ensure_document_visible,
+    ensure_not_found,
+)
 from ..repository import PortalNotFoundError, VersionConflictError, new_id
+from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
 from ..validation import (
     build_front_matter_markdown,
     build_parse_preview,
@@ -462,7 +467,7 @@ class DocumentService:
         uploads: list[tuple[str, bytes]],
         correlation_id: str,
     ) -> DraftAssetListResponse:
-        document, version = await self._require_editable_draft(actor, document_id)
+        _document, version = await self._require_editable_draft(actor, document_id)
         store = DraftAssetStore(self._settings)
         slug = version.asset_slug or slug_from_title(version.title)
         if not version.asset_slug:

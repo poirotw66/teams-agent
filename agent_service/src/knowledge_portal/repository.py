@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
 
 from .models import (
@@ -14,7 +14,6 @@ from .models import (
     ReviewRecord,
     TestCaseRecord,
     TestRunRecord,
-    utc_now,
 )
 
 
@@ -89,7 +88,7 @@ def count_review_due_soon(
     *,
     version_lookup,
 ) -> int:
-    today = date.today()
+    today = datetime.now(UTC).date()
     horizon = today + timedelta(days=30)
     count = 0
     for document in documents:

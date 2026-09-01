@@ -201,9 +201,9 @@ class FirestorePortalRepository:
         active_release = (
             await self.get_release(active_release_id) if active_release_id else None
         )
-        from datetime import date, timedelta
+        from datetime import UTC, date, datetime, timedelta
 
-        today = date.today()
+        today = datetime.now(UTC).date()
         horizon = today + timedelta(days=30)
         due_soon_count = 0
         for document in documents:

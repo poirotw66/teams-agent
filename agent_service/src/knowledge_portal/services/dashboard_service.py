@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ..role_capabilities import role_capabilities
 from ..models import DashboardSummary, PortalActor, WorkQueueItem
+from ..role_capabilities import role_capabilities
 from .context import PortalServiceContext
 
 

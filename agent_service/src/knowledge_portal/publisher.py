@@ -13,7 +13,7 @@ from agent_service.retrieval import HybridIndex
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now
 from .settings import PortalSettings
-from .validation import build_front_matter_markdown, content_hash
+from .validation import build_front_matter_markdown
 
 logger = logging.getLogger(__name__)
 

@@ -89,13 +89,7 @@ def referenced_asset_filenames(markdown_content: str, asset_slug: str) -> set[st
         if "://" in target_path or target_path.startswith("data:"):
             continue
         normalized = target_path.replace("\\", "/")
-        prefix = f"../assets/{asset_slug}/"
-        if normalized.startswith(prefix):
-            filenames.add(Path(normalized).name)
-        elif normalized.startswith("assets/"):
-            filenames.add(Path(normalized).name)
-        else:
-            filenames.add(Path(normalized).name)
+        filenames.add(Path(normalized).name)
     return filenames
 
 
@@ -309,7 +303,7 @@ def resolve_local_asset_path(
             continue
         resolved = (source_path.parent / target_path).resolve()
         try:
-            relative = resolved.relative_to(assets_root.resolve())
+            resolved.relative_to(assets_root.resolve())
         except ValueError:
             expected = assets_root / asset_slug / Path(target_path).name
             if expected.is_file():

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agent_service.documents import parse_front_matter
 
+from .draft_assets import slug_from_title
 from .models import (
     AudienceType,
     AuditEventRecord,
@@ -20,7 +21,6 @@ from .publisher import ReleaseBuildError, ReleasePublisher
 from .rbac import require_minimum_role
 from .repository import new_id
 from .settings import PortalSettings
-from .draft_assets import slug_from_title
 from .validation import (
     build_front_matter_markdown,
     build_parse_preview,

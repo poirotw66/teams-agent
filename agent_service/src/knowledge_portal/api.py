@@ -13,9 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from .auth import PortalAuthError, draft_search_response, resolve_portal_actor
 from .draft_assets import slug_from_title
 from .models import (
+    BootstrapReleaseRequest,
     CreateDocumentRequest,
     CreateTestCaseRequest,
-    BootstrapReleaseRequest,
     DraftSearchRequest,
     PortalActor,
     PortalErrorCode,

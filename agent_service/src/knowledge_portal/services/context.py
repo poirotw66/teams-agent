@@ -18,7 +18,6 @@ from ..models import (
     KnowledgeVersionRecord,
     PortalActor,
     ReviewRecord,
-    new_etag,
     utc_now,
 )
 from ..publisher import ReleasePublisher

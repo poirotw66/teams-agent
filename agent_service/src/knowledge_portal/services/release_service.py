@@ -17,9 +17,9 @@ from ..models import (
     utc_now,
 )
 from ..publisher import ReleaseBuildError
-from ..rbac import ensure_can_publish, ensure_can_remove_document, ensure_not_found
-from ..role_capabilities import ensure_can_list_releases
+from ..rbac import ensure_can_publish, ensure_not_found
 from ..repository import new_id
+from ..role_capabilities import ensure_can_list_releases
 from .context import PortalServiceContext
 from .document_service import DocumentService
 
