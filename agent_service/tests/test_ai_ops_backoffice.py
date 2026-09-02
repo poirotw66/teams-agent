@@ -148,6 +148,7 @@ def backoffice_client(tmp_path: Path) -> TestClient:
         knowledge_portal_url="http://127.0.0.1:8091",
         agent_api_url="http://127.0.0.1:8000",
         adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
         default_owner_unit_id="IT Service Desk",
         entra_tenant_id=None,
         entra_client_id=None,
@@ -174,6 +175,7 @@ def seeded_backoffice_client(tmp_path: Path) -> TestClient:
         knowledge_portal_url="http://127.0.0.1:8091",
         agent_api_url="http://127.0.0.1:8000",
         adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
         default_owner_unit_id="IT Service Desk",
         entra_tenant_id=None,
         entra_client_id=None,
@@ -347,8 +349,103 @@ def test_export_audit_on_download(backoffice_client: TestClient) -> None:
         fetched = backoffice_client.get(f"/api/exports/{job_id}", headers=headers())
         if fetched.json()["status"] == "COMPLETED":
             break
+    download = backoffice_client.get(f"/api/exports/{job_id}/download", headers=headers())
+    assert download.status_code == 200
     audit = backoffice_client.get("/api/audit-events", headers=headers("AUDITOR"))
     assert audit.status_code == 200
     actions = {item["action"] for item in audit.json()["items"]}
     assert "export.create" in actions
     assert "export.download" in actions
+
+
+def test_export_download_returns_csv_attachment(backoffice_client: TestClient) -> None:
+    created = backoffice_client.post(
+        "/api/exports",
+        headers=headers(),
+        json={
+            "export_type": "operations_summary",
+            "reason": "CSV download test",
+            "days": 7,
+            "export_format": "csv",
+            "preset": "7d",
+        },
+    )
+    job_id = created.json()["jobId"]
+    for _ in range(20):
+        fetched = backoffice_client.get(f"/api/exports/{job_id}", headers=headers())
+        if fetched.json()["status"] == "COMPLETED":
+            break
+    download = backoffice_client.get(f"/api/exports/{job_id}/download", headers=headers())
+    assert download.status_code == 200
+    assert "text/csv" in download.headers.get("content-type", "")
+    assert "attachment" in download.headers.get("content-disposition", "")
+
+
+def test_header_auth_blocked_outside_dev(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT_DEPLOYMENT_ENV", "prod")
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    client = TestClient(create_app(settings))
+    response = client.get("/api/operations/summary", headers=headers())
+    assert response.status_code == 401
+
+
+def test_entra_auth_accepts_bearer_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import base64
+    import json
+
+    monkeypatch.setenv("AI_OPS_ENTRA_VALIDATE_JWT", "false")
+    payload = {
+        "oid": "entra-user-1",
+        "name": "Entra User",
+        "roles": ["AI_OPS_SERVICE_OWNER"],
+        "owner_units": "IT Service Desk",
+    }
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8").rstrip("=")
+    token = f"header.{encoded}.signature"
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="ENTRA",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id="tenant-demo",
+        entra_client_id="client-demo",
+    )
+    client = TestClient(create_app(settings))
+    response = client.get(
+        "/api/capabilities",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["role"] == "SERVICE_OWNER"

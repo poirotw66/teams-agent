@@ -84,7 +84,7 @@ class ActorContext:
         if self.role in {"SYSTEM_ADMIN", "AI_ADMIN", "AUDITOR"}:
             return True
         if not owner_unit_id:
-            return True
+            return False
         if not self.owner_unit_ids:
-            return True
+            return False
         return owner_unit_id in self.owner_unit_ids

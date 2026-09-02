@@ -184,6 +184,57 @@ def test_operations_phase0_scope_filter() -> None:
     assert scoped == []
 
 
+def test_scope_inherits_conversation_events_without_issue_type() -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.contracts import OperationalEvent, utc_now
+    from agent_service.operations.scope import filter_events_by_scope
+    from agent_service.operations.taxonomy import TaxonomyRepository
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    taxonomy = TaxonomyRepository(data_dir / "ops" / "issue_taxonomy_v1.json")
+    actor = ActorContext(
+        user_id="analyst.demo",
+        display_name="Analyst",
+        role="ANALYST",
+        owner_unit_ids=("IT Service Desk",),
+    )
+    now = utc_now()
+    events = [
+        OperationalEvent(
+            event_id="issue-1",
+            event_type="issue.extracted",
+            occurred_at=now,
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            issue_type_id="vpn.connection_failed",
+            payload={},
+        ),
+        OperationalEvent(
+            event_id="turn-1",
+            event_type="turn.received",
+            occurred_at=now,
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            turn_id="turn-1",
+            payload={"messageMasked": "hello"},
+        ),
+        OperationalEvent(
+            event_id="turn-orphan",
+            event_type="turn.received",
+            occurred_at=now,
+            conversation_id="conv-2",
+            correlation_id="corr-2",
+            turn_id="turn-2",
+            payload={"messageMasked": "secret"},
+        ),
+    ]
+    scoped = filter_events_by_scope(events, actor, taxonomy)
+    scoped_ids = {event.event_id for event in scoped}
+    assert "turn-1" in scoped_ids
+    assert "issue-1" in scoped_ids
+    assert "turn-orphan" not in scoped_ids
+
+
 def test_masking_redacts_email_and_credentials() -> None:
     from agent_service.operations.masking import mask_text, pseudonymous_actor_id
 

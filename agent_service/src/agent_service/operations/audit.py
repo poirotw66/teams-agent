@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from .audit_stores import FileAuditStore, FirestoreAuditStore, MemoryAuditStore
@@ -33,7 +34,9 @@ def build_audit_event(
     result: str = "SUCCESS",
     correlation_id: str | None = None,
     environment: str = "dev",
+    retention_expires_at: datetime | None = None,
 ) -> AuditEventRecord:
+    expires_at = retention_expires_at or (utc_now() + timedelta(days=1095))
     return AuditEventRecord(
         audit_id=str(uuid.uuid4()),
         actor_id=actor_id,
@@ -48,6 +51,7 @@ def build_audit_event(
         correlation_id=correlation_id,
         occurred_at=utc_now(),
         environment=environment,  # type: ignore[arg-type]
+        retention_expires_at=expires_at,
     )
 
 

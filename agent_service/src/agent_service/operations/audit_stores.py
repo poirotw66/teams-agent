@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +64,12 @@ class FirestoreAuditStore:
         snapshot = await document.get()
         if snapshot.exists:
             return
-        await document.set(event.model_dump(mode="json"))
+        payload = event.model_dump()
+        for key in ("occurred_at", "retention_expires_at"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                payload[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        await document.set(payload)
 
     async def list_events(
         self,

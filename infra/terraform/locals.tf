@@ -73,16 +73,16 @@ locals {
   }
 
   backoffice_env = {
-    AI_OPS_BACKOFFICE_PORT             = "8080"
-    AI_OPS_BACKOFFICE_AUTH_MODE        = "HEADER"
-    OPS_STORE_MODE                     = "FIRESTORE"
-    OPS_AUDIT_STORE_MODE               = "FIRESTORE"
-    OPS_FIRESTORE_COLLECTION           = var.ops_events_collection
-    OPS_AUDIT_FIRESTORE_COLLECTION     = var.ops_audit_collection
-    KNOWLEDGE_PORTAL_PUBLIC_URL        = var.adapter_public_base_url != "" ? var.adapter_public_base_url : ""
-    KNOWLEDGE_PORTAL_AGENT_API_URL     = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
-    TEAMS_ADAPTER_URL                  = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
-    RAG_DATA_DIR                       = "/app/data"
+    AI_OPS_BACKOFFICE_PORT         = "8080"
+    AI_OPS_BACKOFFICE_AUTH_MODE    = "HEADER"
+    OPS_STORE_MODE                 = "FIRESTORE"
+    OPS_AUDIT_STORE_MODE           = "FIRESTORE"
+    OPS_FIRESTORE_COLLECTION       = var.ops_events_collection
+    OPS_AUDIT_FIRESTORE_COLLECTION = var.ops_audit_collection
+    KNOWLEDGE_PORTAL_PUBLIC_URL    = var.adapter_public_base_url != "" ? var.adapter_public_base_url : ""
+    KNOWLEDGE_PORTAL_AGENT_API_URL = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
+    TEAMS_ADAPTER_URL              = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
+    RAG_DATA_DIR                   = "/app/data"
   }
 
   adapter_env = {

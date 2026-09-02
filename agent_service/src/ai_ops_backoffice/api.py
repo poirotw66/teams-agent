@@ -6,13 +6,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent_service.operations.access import CAPABILITIES
 
-from .auth import BackofficeAuthError, resolve_actor
+from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
 from .services.phase2_registry import FaqRecord, Phase2Registry, QualityCaseRecord, SyncJobRecord
 from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
 from .services.query_audit import record_query_audit
@@ -29,6 +29,8 @@ class ExportRequest(BaseModel):
     days: int = Field(default=30, ge=1, le=186)
     export_format: str = Field(default="json")
     preset: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -70,6 +72,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Invalid service token.")
 
     def current_actor(
+        authorization: str | None = Header(default=None),
         x_backoffice_user_id: str | None = Header(default=None, alias="X-Backoffice-User-Id"),
         x_backoffice_user_name: str | None = Header(default=None, alias="X-Backoffice-User-Name"),
         x_backoffice_role: str | None = Header(default="ANALYST", alias="X-Backoffice-Role"),
@@ -78,11 +81,14 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         try:
             return resolve_actor(
                 auth_mode=resolved_settings.auth_mode,
+                authorization=authorization,
                 header_user_id=x_backoffice_user_id,
                 header_user_name=x_backoffice_user_name,
                 header_role=x_backoffice_role,
                 header_owner_units=x_backoffice_owner_units,
                 default_owner_unit_id=resolved_settings.default_owner_unit_id,
+                entra_tenant_id=resolved_settings.entra_tenant_id,
+                entra_client_id=resolved_settings.entra_client_id,
             )
         except BackofficeAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -112,12 +118,22 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/auth/config")
+    async def auth_config() -> dict[str, object]:
+        return {
+            "authMode": resolved_settings.auth_mode,
+            "headerAuthAllowed": (
+                resolved_settings.auth_mode != "ENTRA" and header_auth_allowed()
+            ),
+        }
+
     @app.get("/api/capabilities")
     async def capabilities(actor=Depends(current_actor)) -> dict[str, object]:
         return {
             "role": actor.role,
             "capabilities": sorted(CAPABILITIES.get(actor.role, frozenset())),
             "knowledgePortalUrl": resolved_settings.knowledge_portal_url,
+            "authMode": resolved_settings.auth_mode,
         }
 
     @app.get("/api/taxonomy")
@@ -132,11 +148,24 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def operations_summary(
         days: int = Query(default=7, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.summary.read")
-        result = await query_service.operations_summary(actor, preset=preset, days=days)
-        await audit_read(actor, "query.operations_summary", "operations_summary", after={"days": days, "preset": preset})
+        result = await query_service.operations_summary(
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        await audit_read(
+            actor,
+            "query.operations_summary",
+            "operations_summary",
+            after={"days": days, "preset": preset, "startDate": start_date, "endDate": end_date},
+        )
         return result
 
     @app.get("/api/conversations")
@@ -177,10 +206,18 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def issues_summary(
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.issues.read")
-        result = await query_service.issues_summary(actor, preset=preset, days=days)
+        result = await query_service.issues_summary(
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         await audit_read(actor, "query.issues_summary", "issues_summary")
         return result
 
@@ -188,6 +225,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def routes_summary(
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         issue_type_id: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -196,6 +235,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             actor,
             preset=preset,
             days=days,
+            start_date=start_date,
+            end_date=end_date,
             issue_type_id=issue_type_id,
         )
         await audit_read(actor, "query.routes_summary", "routes_summary")
@@ -205,10 +246,18 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def costs_summary(
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.cost.read")
-        result = await query_service.costs_summary(actor, preset=preset, days=days)
+        result = await query_service.costs_summary(
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         await audit_read(actor, "query.costs_summary", "costs_summary")
         return result
 
@@ -283,6 +332,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             days=payload.days,
             export_format=payload.export_format,
             preset=payload.preset,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
         )
 
     @app.get("/api/exports/{job_id}")
@@ -291,8 +342,28 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         job = await query_service.get_export_job(job_id, actor=actor)
         if job is None:
             raise HTTPException(status_code=404, detail="Export job not found.")
-        await query_service.export_jobs.record_download(job_id, actor=actor)
         return job
+
+    @app.get("/api/exports/{job_id}/download")
+    async def download_export(job_id: str, actor=Depends(current_actor)) -> Response:
+        require_capability(actor, "ops.exports.read")
+        job = await query_service.get_export_job(job_id, actor=actor)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Export job not found.")
+        if job["status"] != "COMPLETED":
+            raise HTTPException(status_code=409, detail="Export job is not completed.")
+        content = job.get("downloadContent")
+        if not content:
+            raise HTTPException(status_code=404, detail="Export content is not available.")
+        export_format = str(job.get("exportFormat") or "json")
+        media_type = "text/csv" if export_format == "csv" else "application/json"
+        filename = f"{job_id}.{export_format}"
+        await query_service.export_jobs.record_download(job_id, actor=actor)
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     # Phase 2 scaffold
     @app.get("/api/faqs")

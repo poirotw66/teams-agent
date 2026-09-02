@@ -105,6 +105,7 @@ class AuditEventRecord(StrictModel):
     occurred_at: datetime
     environment: Environment = "dev"
     retention_policy: str = "audit-default"
+    retention_expires_at: datetime | None = None
 
 
 class CursorPage(StrictModel):

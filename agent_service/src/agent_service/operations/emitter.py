@@ -256,22 +256,31 @@ class OperationalEventEmitter:
             events.extend(self._handoff_events(state, base=base))
 
         if cost_summary is not None:
+            usage_payload = {
+                "outcome": cost_summary.outcome,
+                "totalTokens": cost_summary.total_tokens,
+                "inputTokens": cost_summary.input_tokens,
+                "outputTokens": cost_summary.output_tokens,
+                "estimatedCostUsd": cost_summary.estimated_cost_usd,
+                "costComplete": cost_summary.cost_complete,
+                "llmCallCount": cost_summary.llm_call_count,
+                "knowledgeBackend": cost_summary.knowledge_backend,
+                "pricingVersion": cost_summary.pricing_version,
+            }
+            execution_context = state.get("execution_context")
+            collector = getattr(execution_context, "usage_collector", None)
+            if collector is not None:
+                llm_events = [item for item in collector.events() if item.model]
+                if llm_events:
+                    usage_payload["model"] = llm_events[0].model
+                    usage_payload["provider"] = llm_events[0].provider
             events.append(
                 OperationalEvent(
                     event_id=f"{correlation_id}:usage.recorded",
                     event_type="usage.recorded",
                     occurred_at=utc_now(),
                     data_classification="INTERNAL",
-                    payload={
-                        "outcome": cost_summary.outcome,
-                        "totalTokens": cost_summary.total_tokens,
-                        "inputTokens": cost_summary.input_tokens,
-                        "outputTokens": cost_summary.output_tokens,
-                        "estimatedCostUsd": cost_summary.estimated_cost_usd,
-                        "costComplete": cost_summary.cost_complete,
-                        "llmCallCount": cost_summary.llm_call_count,
-                        "knowledgeBackend": cost_summary.knowledge_backend,
-                    },
+                    payload=usage_payload,
                     **base,
                 )
             )

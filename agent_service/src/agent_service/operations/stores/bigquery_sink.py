@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -17,8 +16,15 @@ class BigQueryEventSink:
         self._table_id = f"{dataset}.{table}"
 
     async def append(self, event: OperationalEvent) -> None:
-        row = event.model_dump(mode="json")
-        row["payload_json"] = json.dumps(row.pop("payload", {}), ensure_ascii=False)
+        row = {
+            "event_id": event.event_id,
+            "event_type": event.event_type,
+            "occurred_at": event.occurred_at.isoformat(),
+            "conversation_id": event.conversation_id,
+            "correlation_id": event.correlation_id,
+            "issue_type_id": event.issue_type_id,
+            "payload": event.payload,
+        }
         try:
             errors = self._client.insert_rows_json(self._table_id, [row])
             if errors:

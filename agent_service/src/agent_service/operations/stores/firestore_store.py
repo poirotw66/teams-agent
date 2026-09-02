@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from ..contracts import OperationalEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _firestore_document(event: OperationalEvent) -> dict[str, Any]:
+    payload = event.model_dump()
+    for key in ("occurred_at", "ingested_at", "retention_expires_at"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            payload[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return payload
 
 
 class FirestoreOperationalStore:
@@ -19,7 +29,7 @@ class FirestoreOperationalStore:
         snapshot = await document.get()
         if snapshot.exists:
             return False
-        await document.set(event.model_dump(mode="json"))
+        await document.set(_firestore_document(event))
         return True
 
     async def list_events(

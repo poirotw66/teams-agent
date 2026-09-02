@@ -1,4 +1,4 @@
-import { api, el, metric, DEFAULT_HEADERS } from "./api.js";
+import { api, el, metric, ensureAuth, downloadText } from "./api.js";
 
 const routes = {
   overview: renderOverview,
@@ -61,10 +61,12 @@ function showConversationModal(detail) {
 let capabilities = null;
 
 async function boot() {
+  const authConfig = await fetch("/api/auth/config").then((response) => response.json());
+  await ensureAuth(authConfig);
   capabilities = await api("/api/capabilities");
   renderNav("overview");
   document.getElementById("meta-panel").textContent =
-    `角色：${capabilities.role}｜資料更新：即時讀取本機 Analytics Store`;
+    `角色：${capabilities.role}｜驗證：${capabilities.authMode}｜資料更新：即時讀取 Analytics Store`;
 }
 
 function renderNav(active) {
@@ -438,7 +440,7 @@ async function renderQuality() {
     button.addEventListener("click", async () => {
       const created = await api("/api/exports", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...DEFAULT_HEADERS },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           export_type: "operations_summary",
           reason: "UAT export",
@@ -448,8 +450,10 @@ async function renderQuality() {
         }),
       });
       const job = await pollExport(created.jobId);
-      if (job.downloadContent) {
-        exportPanel.append(el("pre", "", job.downloadContent.slice(0, 2000)));
+      if (job.status === "COMPLETED") {
+        const content = await api(`/api/exports/${encodeURIComponent(created.jobId)}/download`);
+        downloadText(`operations-summary-${created.jobId}.csv`, content, "text/csv");
+        exportPanel.append(el("p", "", "CSV 匯出已下載。"));
       } else {
         exportPanel.append(el("pre", "", JSON.stringify(job, null, 2)));
       }

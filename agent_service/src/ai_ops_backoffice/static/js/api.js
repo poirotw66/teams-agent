@@ -1,22 +1,51 @@
-const DEFAULT_HEADERS = {
-  "X-Backoffice-User-Id": "ops.analyst.demo",
-  "X-Backoffice-User-Name": "Ops Analyst Demo",
-  "X-Backoffice-Role": "SERVICE_OWNER",
-  "X-Backoffice-Owner-Units": "IT Service Desk",
-};
+const AUTH_STORAGE_KEY = "ai_ops_backoffice_auth";
 
-export { DEFAULT_HEADERS };
+function loadAuthHeaders() {
+  const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function saveAuthHeaders(headers) {
+  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(headers));
+}
+
+export function authHeaders() {
+  const stored = loadAuthHeaders();
+  if (stored.bearerToken) {
+    return { Authorization: `Bearer ${stored.bearerToken}` };
+  }
+  return {
+    "X-Backoffice-User-Id": stored.userId || "",
+    "X-Backoffice-User-Name": stored.userName || "",
+    "X-Backoffice-Role": stored.role || "ANALYST",
+    "X-Backoffice-Owner-Units": stored.ownerUnits || "",
+  };
+}
 
 export async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
-    headers: { ...DEFAULT_HEADERS, ...(options.headers || {}) },
+    headers: { ...authHeaders(), ...(options.headers || {}) },
   });
+  if (response.status === 401) {
+    throw new Error("UNAUTHORIZED");
+  }
   if (response.status === 403) {
     throw new Error("FORBIDDEN");
   }
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("text/csv")) {
+    return response.text();
   }
   return response.json();
 }
@@ -33,4 +62,49 @@ export function metric(label, value) {
   wrap.append(el("div", "metric-label", label));
   wrap.append(el("div", "metric-value", String(value)));
   return wrap;
+}
+
+export async function ensureAuth(authConfig) {
+  const mode = (authConfig?.authMode || "HEADER").toUpperCase();
+  if (mode === "ENTRA") {
+    const stored = loadAuthHeaders();
+    if (stored.bearerToken) {
+      return;
+    }
+    const token = window.prompt("請輸入 Entra Bearer Token");
+    if (!token) {
+      throw new Error("UNAUTHORIZED");
+    }
+    saveAuthHeaders({ bearerToken: token.trim() });
+    return;
+  }
+  if (authConfig?.headerAuthAllowed === false) {
+    throw new Error("UNAUTHORIZED");
+  }
+  const stored = loadAuthHeaders();
+  if (stored.userId) {
+    return;
+  }
+  const userId = window.prompt("Dev User Id", "ops.analyst.demo");
+  const role = window.prompt("Dev Role", "SERVICE_OWNER");
+  const ownerUnits = window.prompt("Owner Units", "IT Service Desk");
+  if (!userId) {
+    throw new Error("UNAUTHORIZED");
+  }
+  saveAuthHeaders({
+    userId,
+    userName: userId,
+    role: role || "ANALYST",
+    ownerUnits: ownerUnits || "IT Service Desk",
+  });
+}
+
+export function downloadText(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }

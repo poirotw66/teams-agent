@@ -90,6 +90,21 @@ class BackofficeQueryService:
         self._event_cache = None
         self._event_cache_at = None
 
+    def _resolve_period(
+        self,
+        *,
+        preset: str | None = None,
+        days: int = 7,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> ResolvedPeriod:
+        return resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     async def _scoped_events(
         self,
         actor: ActorContext,
@@ -113,8 +128,15 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 7,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         events = await self._scoped_events(actor, period)
         turns = [event for event in events if event.event_type == "turn.received"]
         issues = [event for event in events if event.event_type == "issue.extracted"]
@@ -183,7 +205,7 @@ class BackofficeQueryService:
         route: str | None = None,
         conversation_id: str | None = None,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(preset=preset, days=days)
         events = await self._scoped_events(actor, period)
         grouped: dict[str, list[OperationalEvent]] = defaultdict(list)
         for event in events:
@@ -293,8 +315,15 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 30,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         events = [
             event
             for event in await self._scoped_events(actor, period)
@@ -327,9 +356,16 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 30,
+        start_date: str | None = None,
+        end_date: str | None = None,
         issue_type_id: str | None = None,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         events = await self._scoped_events(actor, period)
         route_events = [
             event
@@ -370,8 +406,15 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 30,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         events = [
             event
             for event in await self._scoped_events(actor, period)
@@ -379,10 +422,12 @@ class BackofficeQueryService:
         ]
         by_day: dict[str, float] = defaultdict(float)
         by_model: Counter[str] = Counter()
+        by_provider: Counter[str] = Counter()
         by_backend: Counter[str] = Counter()
         input_tokens = 0
         output_tokens = 0
         missing_cost_count = 0
+        pricing_versions: Counter[str] = Counter()
         for event in events:
             day = event.occurred_at.date().isoformat()
             cost = event.payload.get("estimatedCostUsd")
@@ -390,12 +435,16 @@ class BackofficeQueryService:
                 missing_cost_count += 1
             else:
                 by_day[day] += float(cost)
-            model = str(event.payload.get("model") or event.payload.get("knowledgeBackend") or "unknown")
-            by_model[model] += 1 if cost is not None else 0
+            model = str(event.payload.get("model") or "unknown")
+            provider = str(event.payload.get("provider") or "unknown")
+            by_model[model] += 1
+            by_provider[provider] += 1
             backend = str(event.payload.get("knowledgeBackend") or "unknown")
             by_backend[backend] += 1
             input_tokens += int(event.payload.get("inputTokens") or 0)
             output_tokens += int(event.payload.get("outputTokens") or 0)
+            pricing_version = str(event.payload.get("pricingVersion") or "unknown")
+            pricing_versions[pricing_version] += 1
         known_total = round(sum(by_day.values()), 6)
         return {
             "periodDays": period.days,
@@ -412,12 +461,20 @@ class BackofficeQueryService:
             "byModel": [
                 {"model": model, "eventCount": count} for model, count in by_model.most_common()
             ],
+            "byProvider": [
+                {"provider": provider, "eventCount": count}
+                for provider, count in by_provider.most_common()
+            ],
             "byBackend": [
                 {"backend": backend, "eventCount": count}
                 for backend, count in by_backend.most_common()
             ],
             "eventCount": len(events),
             "pricingVersion": self._metrics.get("pricingVersion", "v1"),
+            "pricingVersionsObserved": [
+                {"pricingVersion": version, "eventCount": count}
+                for version, count in pricing_versions.most_common()
+            ],
         }
 
     async def _probe_url(self, url: str | None, path: str = "/healthz") -> dict[str, str]:
@@ -433,20 +490,66 @@ class BackofficeQueryService:
         except httpx.HTTPError as exc:
             return {"status": "DOWN", "note": str(exc)}
 
+    async def _probe_agent_functional(self, url: str | None) -> dict[str, str]:
+        if not url:
+            return {"status": "UNKNOWN", "note": "Agent API URL not configured."}
+        target = f"{url.rstrip('/')}/healthz"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(target)
+            if response.status_code >= 400:
+                return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
+            payload = response.json()
+            retrieval = str(payload.get("retrieval") or "")
+            chunks = int(payload.get("chunks") or 0)
+            if retrieval and chunks > 0:
+                return {
+                    "status": "READY",
+                    "note": f"retrieval={retrieval}, chunks={chunks}",
+                }
+            return {"status": "DEGRADED", "note": "Agent health ok but retrieval index is empty."}
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            return {"status": "DOWN", "note": str(exc)}
+
+    async def _probe_retrieval_search(self, url: str | None) -> dict[str, str]:
+        if not url:
+            return {"status": "UNKNOWN", "note": "Agent API URL not configured."}
+        target = f"{url.rstrip('/')}/retrieval/search"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.post(
+                    target,
+                    json={"query": "vpn", "limit": 1, "groups": []},
+                )
+            if response.status_code == 401:
+                return {"status": "READY", "note": "Retrieval endpoint reachable (auth required)."}
+            if response.status_code >= 400:
+                return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
+            hits = response.json().get("hits") or []
+            return {"status": "READY", "note": f"hits={len(hits)}"}
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            return {"status": "DOWN", "note": str(exc)}
+
     async def health_summary(self) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
+        agent_functional = await self._probe_agent_functional(self._settings.agent_api_url)
+        retrieval = await self._probe_retrieval_search(self._settings.agent_api_url)
         portal = await self._probe_url(self._settings.knowledge_portal_url)
         adapter = await self._probe_url(self._settings.adapter_api_url)
+        ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
         return {
             "components": [
                 {"id": "teams-adapter", **adapter},
                 {"id": "agent-service", **agent},
+                {"id": "agent-retrieval-index", **agent_functional},
+                {"id": "agent-retrieval-search", **retrieval},
                 {
                     "id": "analytics-store",
                     "status": "READY",
                     "note": f"mode={self._settings.ops_store_mode}",
                 },
                 {"id": "knowledge-portal", **portal},
+                {"id": "ticket-service", **ticket},
             ],
             "updatedAt": utc_now().isoformat(),
         }
@@ -457,13 +560,20 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 30,
+        start_date: str | None = None,
+        end_date: str | None = None,
         rating: str | None = None,
         reason: str | None = None,
         resolved_status: str | None = None,
         handoff: bool | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         all_events = await self._scoped_events(actor, period)
         conversation_cache: dict[str, list[OperationalEvent]] = {}
         for event in all_events:
@@ -613,7 +723,7 @@ class BackofficeQueryService:
         preset: str | None = None,
         days: int = 30,
     ) -> dict[str, Any]:
-        period = resolve_period(preset=preset, days=days)
+        period = self._resolve_period(preset=preset, days=days)
         events = await self._scoped_events(actor, period)
         hits = [
             event
@@ -692,18 +802,27 @@ class BackofficeQueryService:
         days: int,
         export_format: str = "json",
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
+        period_kwargs = {
+            "preset": preset,
+            "days": days,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
         async def runner() -> dict[str, Any]:
             if export_type == "operations_summary":
-                return await self.operations_summary(actor, preset=preset, days=days)
+                return await self.operations_summary(actor, **period_kwargs)
             if export_type == "issues_summary":
-                return await self.issues_summary(actor, preset=preset, days=days)
+                return await self.issues_summary(actor, **period_kwargs)
             if export_type == "costs_summary":
-                return await self.costs_summary(actor, preset=preset, days=days)
+                return await self.costs_summary(actor, **period_kwargs)
             if export_type == "feedback":
-                return await self.list_feedback(actor, preset=preset, days=days)
+                return await self.list_feedback(actor, **period_kwargs)
             if export_type == "routes_summary":
-                return await self.routes_summary(actor, preset=preset, days=days)
+                return await self.routes_summary(actor, **period_kwargs)
             raise ValueError(f"Unsupported export type: {export_type}")
 
         job = await self.export_jobs.create_job(
