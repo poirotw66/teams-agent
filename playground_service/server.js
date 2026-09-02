@@ -146,23 +146,93 @@ function readForm(req) {
   });
 }
 
+async function resetPlaygroundConversation(playgroundTarget) {
+  const base = playgroundTarget.replace(/\/$/, "");
+  const configResponse = await fetch(`${base}/_internal/v1/config`, { signal: AbortSignal.timeout(5000) });
+  if (!configResponse.ok) {
+    throw new Error(`playground config failed (${configResponse.status})`);
+  }
+  const config = await configResponse.json();
+  const personalChatId = config?.personalChat?.id;
+  if (!personalChatId) {
+    throw new Error("playground config missing personalChat.id");
+  }
+
+  const createResponse = await fetch(`${base}/v3/conversations`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!createResponse.ok) {
+    throw new Error(`playground create conversation failed (${createResponse.status})`);
+  }
+  const created = await createResponse.json();
+  const conversationId = created?.id;
+  if (!conversationId) {
+    throw new Error("playground create conversation returned no id");
+  }
+
+  const linkResponse = await fetch(`${base}/_debug/conversation/addDirectLineConversationLink`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ directLineConversationId: conversationId, conversationId: personalChatId }),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!linkResponse.ok) {
+    throw new Error(`playground conversation link failed (${linkResponse.status})`);
+  }
+
+  return { personalChatId, conversationId };
+}
+
+function buildSessionCookie(token, secureCookie) {
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; HttpOnly;${secureCookie ? " Secure;" : ""} SameSite=Lax`;
+}
+
+function rotateSessionCookie(req, state, sessionSecret, secureCookie) {
+  const oldToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  const backend = oldToken ? state.sessionBackends.get(oldToken) : undefined;
+  const token = signSession(sessionSecret);
+  if (backend) {
+    state.sessionBackends.set(token, backend);
+  }
+  return buildSessionCookie(token, secureCookie);
+}
+
+async function handleNewConversationRequest(req, res, state, sessionSecret, secureCookie, playgroundTarget) {
+  try {
+    const created = await resetPlaygroundConversation(playgroundTarget);
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "set-cookie": rotateSessionCookie(req, state, sessionSecret, secureCookie),
+      ...securityHeaders(),
+    });
+    res.end(JSON.stringify({ ok: true, conversationId: created.conversationId }));
+  } catch (error) {
+    res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
+    res.end(JSON.stringify({ detail: error instanceof Error ? error.message : "無法重設 Playground 對話" }));
+  }
+}
+
 function knowledgeControlScript() {
   return `"use strict";
 (function () {
   const host = document.createElement("aside");
   host.id = "knowledge-backend-control";
-  host.innerHTML = '<strong>知識後端</strong><select aria-label="知識後端"></select><button type="button">套用</button><span role="status">載入中…</span>';
+  host.innerHTML = '<strong>知識後端</strong><select aria-label="知識後端"></select><button type="button" data-action="apply">套用</button><button type="button" data-action="reset">新對話</button><span role="status">載入中…</span>';
   const warning = document.createElement("aside");
   warning.id = "multi-window-warning";
   warning.setAttribute("role", "note");
-  warning.textContent = "⚠ 多視窗提示：Playground 會將回覆同步顯示於所有已開啟視窗。測試時請只使用一個視窗，避免對話互相影響。";
+  warning.textContent = "⚠ 多視窗提示：Playground 會將回覆同步顯示於所有已開啟視窗。測試時請只使用一個視窗，避免對話互相影響。刷新頁面不會重設 Bot 對話；請按「新對話」。";
   const style = document.createElement("style");
-  style.textContent = '#knowledge-backend-control{position:fixed;z-index:2147483647;top:10px;right:16px;display:flex;gap:8px;align-items:center;padding:9px 12px;border:1px solid #d1d1d1;border-radius:8px;background:#fff;box-shadow:0 4px 14px #0002;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424}#knowledge-backend-control select,#knowledge-backend-control button{font:inherit;padding:5px 8px;border:1px solid #8a8886;border-radius:5px;background:#fff}#knowledge-backend-control button{border-color:#5b5fc7;background:#5b5fc7;color:#fff;cursor:pointer}#knowledge-backend-control button:disabled{opacity:.55;cursor:wait}#knowledge-backend-control span{max-width:230px;color:#616161}#multi-window-warning{position:fixed;z-index:2147483646;top:62px;right:16px;box-sizing:border-box;max-width:min(560px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d83b01;border-radius:8px;background:#fff4ce;box-shadow:0 4px 14px #0002;color:#5c2d00;font:600 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}';
+  style.textContent = '#knowledge-backend-control{position:fixed;z-index:2147483647;top:10px;right:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:min(720px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d1d1d1;border-radius:8px;background:#fff;box-shadow:0 4px 14px #0002;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424}#knowledge-backend-control select,#knowledge-backend-control button{font:inherit;padding:5px 8px;border:1px solid #8a8886;border-radius:5px;background:#fff}#knowledge-backend-control button[data-action="apply"],#knowledge-backend-control button[data-action="reset"]{border-color:#5b5fc7;background:#5b5fc7;color:#fff;cursor:pointer}#knowledge-backend-control button[data-action="reset"]{border-color:#8a8886;background:#fff;color:#242424}#knowledge-backend-control button:disabled{opacity:.55;cursor:wait}#knowledge-backend-control span{max-width:230px;color:#616161}#multi-window-warning{position:fixed;z-index:2147483646;top:62px;right:16px;box-sizing:border-box;max-width:min(560px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d83b01;border-radius:8px;background:#fff4ce;box-shadow:0 4px 14px #0002;color:#5c2d00;font:600 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}';
   document.head.appendChild(style);
   document.body.appendChild(host);
   document.body.appendChild(warning);
   const select = host.querySelector("select");
-  const button = host.querySelector("button");
+  const applyButton = host.querySelector('[data-action="apply"]');
+  const resetButton = host.querySelector('[data-action="reset"]');
   const status = host.querySelector("span");
 
   function render(data) {
@@ -185,12 +255,14 @@ function knowledgeControlScript() {
       render(await response.json());
     } catch (error) {
       status.textContent = "無法讀取後端狀態";
-      button.disabled = true;
+      applyButton.disabled = true;
+      resetButton.disabled = true;
     }
   }
 
-  button.addEventListener("click", async function () {
-    button.disabled = true;
+  applyButton.addEventListener("click", async function () {
+    applyButton.disabled = true;
+    resetButton.disabled = true;
     status.textContent = "切換中…";
     try {
       const response = await fetch("/api/knowledge-backend", {
@@ -204,7 +276,28 @@ function knowledgeControlScript() {
     } catch (error) {
       status.textContent = error.message || "切換失敗";
     } finally {
-      button.disabled = false;
+      applyButton.disabled = false;
+      resetButton.disabled = false;
+    }
+  });
+
+  resetButton.addEventListener("click", async function () {
+    applyButton.disabled = true;
+    resetButton.disabled = true;
+    status.textContent = "重設對話中…";
+    try {
+      const response = await fetch("/api/new-conversation", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "重設失敗");
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (_error) {}
+      window.location.assign("/");
+    } catch (error) {
+      status.textContent = error.message || "重設失敗";
+      applyButton.disabled = false;
+      resetButton.disabled = false;
     }
   });
   load();
@@ -574,6 +667,18 @@ function createGateway({
       return;
     }
 
+    if (url.pathname === "/api/new-conversation" && req.method === "POST") {
+      await handleNewConversationRequest(
+        req,
+        res,
+        knowledgeState,
+        sessionSecret,
+        secureCookie,
+        target,
+      );
+      return;
+    }
+
     if (url.pathname === "/" && req.method === "GET") {
       await proxyIndex(res, target);
       return;
@@ -675,6 +780,7 @@ module.exports = {
   createGateway,
   isPublicAssetPath,
   parseCookies,
+  resetPlaygroundConversation,
   safeEqual,
   signSession,
   verifySession,

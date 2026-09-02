@@ -164,6 +164,8 @@ test("authenticated UI uses session-scoped knowledge backend control", async () 
     assert.match(controlScriptText, /multi-window-warning/);
     assert.match(controlScriptText, /Playground 會將回覆同步顯示/);
     assert.match(controlScriptText, /測試時請只使用一個視窗/);
+    assert.match(controlScriptText, /新對話/);
+    assert.match(controlScriptText, /\/api\/new-conversation/);
 
     const status = await fetch(`${baseUrl}/api/knowledge-backend`, { headers: { cookie } });
     assert.equal((await status.json()).activeBackend, "HYBRID");
@@ -261,5 +263,68 @@ test("adapter proxy injects evaluation backend without browser session cookie", 
     await close(gateway);
     await close(upstream);
     await close(adapter);
+  }
+});
+
+test("new conversation resets playground direct line conversation and rotates session", async () => {
+  let createCount = 0;
+  let linkBody = null;
+  const upstream = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    if (req.url === "/_internal/v1/config" && req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ personalChat: { id: "personal-chat-1", name: "Personal" } }));
+      return;
+    }
+    if (req.url === "/v3/conversations" && req.method === "POST") {
+      createCount += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: `conv-${createCount}` }));
+      return;
+    }
+    if (req.url === "/_debug/conversation/addDirectLineConversationLink" && req.method === "POST") {
+      linkBody = JSON.parse(body);
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    res.writeHead(404);
+    res.end("not found");
+  });
+  const upstreamPort = await listen(upstream);
+  const gateway = createGateway({
+    password: "test-password",
+    sessionSecret: "a sufficiently long test session secret",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    adapterTarget: `http://127.0.0.1:${upstreamPort}`,
+  });
+  const gatewayPort = await listen(gateway);
+  const baseUrl = `http://127.0.0.1:${gatewayPort}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "password=test-password",
+    });
+    const cookie = login.headers.get("set-cookie").split(";", 1)[0];
+
+    const reset = await fetch(`${baseUrl}/api/new-conversation`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    assert.equal(reset.status, 200);
+    assert.deepEqual(await reset.json(), { ok: true, conversationId: "conv-1" });
+    assert.equal(createCount, 1);
+    assert.deepEqual(linkBody, {
+      conversationId: "personal-chat-1",
+      directLineConversationId: "conv-1",
+    });
+    assert.match(reset.headers.get("set-cookie"), /playground_session=/);
+  } finally {
+    await close(gateway);
+    await close(upstream);
   }
 });
