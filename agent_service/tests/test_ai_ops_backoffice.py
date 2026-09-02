@@ -54,6 +54,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             conversation_id="conv-1",
             correlation_id="corr-1",
             turn_id=turn_id,
+            actor_ref="user-demo-vpn-001",
             payload={"messageMasked": "VPN 連線失敗"},
         ),
         OperationalEvent(
@@ -107,6 +108,21 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             },
         ),
         OperationalEvent(
+            event_id=f"{occurrence_id}:knowledge.answered",
+            event_type="knowledge.answered",
+            occurred_at=now,
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            turn_id=turn_id,
+            issue_type_id="vpn.connection_failed",
+            payload={
+                "resultType": "KNOWLEDGE_ANSWERED",
+                "answerMasked": "請確認 VPN 密碼未鎖定後再試一次。",
+                "documentId": "vpn-password-lockout",
+                "releaseId": "release-2025-09-01",
+            },
+        ),
+        OperationalEvent(
             event_id="corr-1:feedback:1:DOWN",
             event_type="feedback.recorded",
             occurred_at=now + timedelta(minutes=1),
@@ -126,6 +142,23 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             conversation_id="conv-1",
             correlation_id="corr-1",
             payload={"status": "OFFERED"},
+        ),
+        OperationalEvent(
+            event_id="corr-1:usage:1",
+            event_type="usage.recorded",
+            occurred_at=now + timedelta(minutes=3),
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            issue_type_id="vpn.connection_failed",
+            payload={
+                "model": "gpt-4.1",
+                "provider": "openai",
+                "inputTokens": 120,
+                "outputTokens": 45,
+                "estimatedCostUsd": 0.0025,
+                "pricingVersion": "v1",
+                "llmCallCount": 1,
+            },
         ),
     ]
     await ingestion.ingest_many(events)
@@ -449,3 +482,392 @@ def test_entra_auth_accepts_bearer_token(monkeypatch: pytest.MonkeyPatch, tmp_pa
     )
     assert response.status_code == 200
     assert response.json()["role"] == "SERVICE_OWNER"
+
+
+def test_issue_routes_endpoint(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get(
+        "/api/issues/vpn.connection_failed/routes?days=30",
+        headers=headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["issueTypeId"] == "vpn.connection_failed"
+    assert body["routes"]
+
+
+def test_export_audit_fail_closed(tmp_path: Path) -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.audit_errors import AuditWriteError
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_service import ExportJobService
+
+    class FailingAuditStore(MemoryAuditStore):
+        async def append(self, event) -> None:
+            raise RuntimeError("audit unavailable")
+
+    actor = ActorContext(
+        user_id="owner.demo",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+    )
+    service = ExportJobService(
+        audit_store=FailingAuditStore(),
+        store_path=tmp_path / "exports",
+        environment="dev",
+    )
+
+    async def runner() -> dict[str, object]:
+        return {"conversationCount": 0}
+
+    import asyncio
+
+    with pytest.raises(AuditWriteError):
+        asyncio.run(
+            service.create_job(
+                actor=actor,
+                export_type="operations_summary",
+                reason="fail closed test",
+                days=7,
+                runner=runner,
+            )
+        )
+
+
+def test_export_rate_limiter_blocks_excess_requests() -> None:
+    from ai_ops_backoffice.services.rate_limit import ExportRateLimiter, RateLimitExceeded
+
+    limiter = ExportRateLimiter(max_exports_per_hour=1)
+    limiter.check("owner.demo")
+    with pytest.raises(RateLimitExceeded):
+        limiter.check("owner.demo")
+
+
+def test_reconciliation_matches_seeded_summary(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get(
+        "/api/admin/reconciliation/operations-summary?days=30",
+        headers=headers("SYSTEM_ADMIN"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["allMatch"] is True
+    assert body["eventCount"] >= 1
+    assert all(item["match"] for item in body["checks"])
+
+
+def test_costs_summary_groups_by_route_and_issue(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/costs/summary?days=30", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalEstimatedCostUsd"] == 0.0025
+    assert body["byRoute"][0]["route"] == "KNOWLEDGE"
+    assert body["byRoute"][0]["estimatedCostUsd"] == 0.0025
+    assert body["byIssueType"][0]["issueTypeId"] == "vpn.connection_failed"
+    assert body["byIssueType"][0]["estimatedCostUsd"] == 0.0025
+
+
+def test_issues_summary_includes_hierarchy(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/issues/summary?days=30", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hierarchy"]
+    assert body["trends"]
+    vpn_issue = next(
+        item for item in body["items"] if item["issueTypeId"] == "vpn.connection_failed"
+    )
+    assert vpn_issue["negativeFeedbackRate"] == 1.0
+    assert vpn_issue["handoffRate"] >= 1.0
+    assert vpn_issue["estimatedCostUsd"] == 0.0025
+
+
+def test_costs_summary_includes_twd(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/costs/summary?days=30", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalEstimatedCostTwd"] > 0
+    assert body["usdTwdExchangeRate"] == 31.70
+
+
+def test_conversation_detail_includes_correlation_and_masking(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    response = seeded_backoffice_client.get("/api/conversations/conv-1", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    turn = body["turns"][0]
+    assert turn["correlationId"] == "corr-1"
+    assert turn["masked"] is True
+    assert turn["issueTypeId"] == "vpn.connection_failed"
+    assert turn["route"] == "KNOWLEDGE"
+    assert turn["model"] == "gpt-4.1"
+    assert turn["resultType"] == "KNOWLEDGE_ANSWERED"
+    assert turn["answerMasked"]
+    assert turn["feedbackRating"] == "DOWN"
+    assert turn["resolvedStatus"] == "UNRESOLVED"
+    assert turn["handoffStatus"] == "OFFERED"
+    assert turn["resultType"] == "KNOWLEDGE_ANSWERED"
+    assert turn["answerMasked"] == "請確認 VPN 密碼未鎖定後再試一次。"
+    assert "vpn-password-lockout" in turn["documentIds"]
+
+
+def test_conversation_unmask_requires_capability_and_reason(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    forbidden = seeded_backoffice_client.get(
+        "/api/conversations/conv-1",
+        headers=headers("SERVICE_OWNER"),
+        params={"unmask_reason": "incident review"},
+    )
+    assert forbidden.status_code == 403
+
+    short_reason = seeded_backoffice_client.get(
+        "/api/conversations/conv-1",
+        headers=headers("KNOWLEDGE_ADMIN"),
+        params={"unmask_reason": "ab"},
+    )
+    assert short_reason.status_code == 400
+
+    authorized = seeded_backoffice_client.get(
+        "/api/conversations/conv-1",
+        headers=headers("KNOWLEDGE_ADMIN"),
+        params={"unmask_reason": "incident review"},
+    )
+    assert authorized.status_code == 200
+    body = authorized.json()
+    assert body["unmaskAuthorized"] is True
+    assert body["turns"][0]["masked"] is False
+
+    audit = seeded_backoffice_client.get("/api/audit-events", headers=headers("AUDITOR"))
+    assert audit.status_code == 200
+    actions = {item["action"] for item in audit.json()["items"]}
+    assert "query.conversation_unmasked" in actions
+
+
+def test_capabilities_hide_restricted_nav_for_service_owner(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    response = seeded_backoffice_client.get("/api/capabilities", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert "ops.health.read" not in body["capabilities"]
+    assert "ops.audit.read" not in body["capabilities"]
+    assert "ops.knowledge.read" not in body["capabilities"]
+
+
+def test_xlsx_export_job_download(seeded_backoffice_client: TestClient) -> None:
+    created = seeded_backoffice_client.post(
+        "/api/exports",
+        headers=headers(),
+        json={
+            "export_type": "costs_summary",
+            "reason": "UAT xlsx export",
+            "days": 30,
+            "export_format": "xlsx",
+        },
+    )
+    assert created.status_code == 200
+    job_id = created.json()["jobId"]
+    for _ in range(20):
+        fetched = seeded_backoffice_client.get(f"/api/exports/{job_id}", headers=headers())
+        assert fetched.status_code == 200
+        if fetched.json()["status"] == "COMPLETED":
+            break
+    assert fetched.json()["status"] == "COMPLETED"
+    assert "exportMetadata" in fetched.json()["result"]
+    download = seeded_backoffice_client.get(
+        f"/api/exports/{job_id}/download",
+        headers=headers(),
+    )
+    assert download.status_code == 200
+    assert download.content.startswith(b"PK")
+    assert (
+        download.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+def test_operations_summary_includes_data_freshness(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/operations/summary?days=30", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["latestEventAt"] is not None
+    assert body["dataFreshnessMinutes"] is not None
+
+
+def test_reconciliation_costs_and_issues_match(seeded_backoffice_client: TestClient) -> None:
+    costs = seeded_backoffice_client.get(
+        "/api/admin/reconciliation/costs-summary?days=30",
+        headers=headers("SYSTEM_ADMIN"),
+    )
+    assert costs.status_code == 200
+    assert costs.json()["allMatch"] is True
+
+    issues = seeded_backoffice_client.get(
+        "/api/admin/reconciliation/issues-summary?days=30",
+        headers=headers("SYSTEM_ADMIN"),
+    )
+    assert issues.status_code == 200
+    assert issues.json()["allMatch"] is True
+
+
+def test_admin_retention_purge_removes_expired_events(tmp_path: Path) -> None:
+    import asyncio
+
+    from agent_service.operations.contracts import OperationalEvent, utc_now
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    store_path = tmp_path / "events"
+    asyncio.run(_seed_sample_events(store_path, data_dir))
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="FILE",
+        ops_store_path=store_path,
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    client = TestClient(create_app(settings))
+    ingestion = EventIngestionService(
+        FileOperationalStore(store_path),
+        _ops_settings(data_dir, store_path),
+    )
+    now = utc_now()
+
+    async def add_expired_event() -> None:
+        await ingestion.ingest(
+            OperationalEvent(
+                event_id="expired-turn",
+                event_type="turn.received",
+                occurred_at=now,
+                correlation_id="corr-expired",
+                retention_expires_at=now - timedelta(seconds=1),
+                payload={"messageMasked": "expired"},
+            )
+        )
+
+    asyncio.run(add_expired_event())
+    forbidden = client.post("/api/admin/retention/purge", headers=headers())
+    assert forbidden.status_code == 403
+
+    response = client.post("/api/admin/retention/purge", headers=headers("SYSTEM_ADMIN"))
+    assert response.status_code == 200
+    assert response.json()["removed"] >= 1
+
+
+def test_query_audit_fail_closed(tmp_path: Path) -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.audit_errors import AuditWriteError
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.query_audit import record_query_audit
+
+    class FailingAuditStore(MemoryAuditStore):
+        async def append(self, event) -> None:
+            raise RuntimeError("audit unavailable")
+
+    actor = ActorContext(
+        user_id="owner.demo",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+    )
+
+    async def run() -> None:
+        await record_query_audit(
+            FailingAuditStore(),
+            actor=actor,
+            action="query.operations_summary",
+            target_id="operations_summary",
+            environment="dev",
+        )
+
+    with pytest.raises(AuditWriteError):
+        asyncio.run(run())
+
+
+def test_conversations_filter_by_handoff(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get(
+        "/api/conversations?days=30&handoff=true",
+        headers=headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"]
+    assert body["items"][0]["conversationId"] == "conv-1"
+
+
+def test_metrics_definitions_endpoint(seeded_backoffice_client: TestClient) -> None:
+    response = seeded_backoffice_client.get("/api/metrics/definitions", headers=headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["definitions"]["conversation_count"]
+    assert body["metricsDefinitionVersion"] == "v1"
+
+
+def test_export_rejects_invalid_format(backoffice_client: TestClient) -> None:
+    response = backoffice_client.post(
+        "/api/exports",
+        headers=headers(),
+        json={
+            "export_type": "operations_summary",
+            "reason": "invalid format test",
+            "days": 7,
+            "export_format": "pdf",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_health_summary_simulated_anomalies(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        simulate_health_anomalies=True,
+    )
+    client = TestClient(create_app(settings))
+    response = client.get("/api/health/summary", headers=headers("SYSTEM_ADMIN"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["simulatedAnomalies"] is True
+    statuses = {item["id"]: item["status"] for item in body["components"]}
+    assert statuses["agent-service"] == "DEGRADED"
+    assert statuses["agent-retrieval-search"] == "DOWN"
+    assert statuses["ticket-service"] == "DOWN"
+
+
+def test_operations_summary_rejects_excessive_custom_period(
+    backoffice_client: TestClient,
+) -> None:
+    response = backoffice_client.get(
+        "/api/operations/summary"
+        "?start_date=2020-01-01T00:00:00%2B00:00"
+        "&end_date=2026-01-01T00:00:00%2B00:00",
+        headers=headers(),
+    )
+    assert response.status_code == 400

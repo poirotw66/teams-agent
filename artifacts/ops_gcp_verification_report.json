@@ -1,0 +1,44 @@
+{
+  "project": "itr-aimasteryhub-lab",
+  "database": null,
+  "dataset": "ai_ops_analytics",
+  "passed": true,
+  "failureCount": 0,
+  "checks": [
+    {
+      "name": "firestore append is idempotent on first write",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "firestore append rejects duplicate event_id",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "firestore period-filtered list returns written event",
+      "passed": true,
+      "detail": "count=1"
+    },
+    {
+      "name": "firestore retention_expires_at round-trips",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "firestore audit retention_expires_at is persisted",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "second firestore client sees first client's event",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "bigquery sink row is queryable",
+      "passed": true,
+      "detail": ""
+    }
+  ]
+}

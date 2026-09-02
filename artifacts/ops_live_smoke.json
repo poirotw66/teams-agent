@@ -1,0 +1,33 @@
+{
+  "baseUrl": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app",
+  "generatedAt": "2026-09-02T07:41:41.110908+00:00",
+  "passed": true,
+  "failureCount": 0,
+  "checks": [
+    {
+      "name": "ui root responds",
+      "passed": true,
+      "detail": "status=200 <!DOCTYPE html>\r\n<html lang=\"zh-Hant\">\r\n  <head>\r\n    <meta charset=\"utf-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\r\n    <title>AI \u8cc7\u8a0a\u5ba2\u670d\u71df\u904b\u5f8c\u53f0</title>\r\n    <link re"
+    },
+    {
+      "name": "capabilities endpoint",
+      "passed": true,
+      "detail": "status=200 capabilities=7"
+    },
+    {
+      "name": "operations summary",
+      "passed": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "health summary",
+      "passed": true,
+      "detail": "status=200 components=7"
+    },
+    {
+      "name": "metrics definitions",
+      "passed": true,
+      "detail": "status=200 definitions=12"
+    }
+  ]
+}

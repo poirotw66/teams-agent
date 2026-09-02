@@ -10,6 +10,7 @@ bot_tenant_id = "REPLACE_WITH_ENTRA_TENANT_ID"
 # Import-only escape hatch while images stay on :latest in live POC.
 allow_latest_image_tags = true
 deployment_phase        = "full"
+backoffice_auth_mode    = "HEADER"  # LAB import; use ENTRA for production
 
 # Required for zero-diff import against the existing Adapter deployment:
 # adapter_public_base_url = "https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app"

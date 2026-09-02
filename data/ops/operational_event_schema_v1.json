@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-02T00:00:00Z",
+  "description": "Operational Event schema v1 data dictionary for AI Ops analytics.",
+  "sourceOfTruth": "agent_service/src/agent_service/operations/contracts.py",
+  "envelopeFields": [
+    {
+      "name": "event_id",
+      "type": "string",
+      "required": true,
+      "description": "Globally unique idempotent key for the event."
+    },
+    {
+      "name": "event_type",
+      "type": "OperationalEventType",
+      "required": true,
+      "description": "Immutable event name from the Phase 0 taxonomy."
+    },
+    {
+      "name": "schema_version",
+      "type": "integer",
+      "required": true,
+      "description": "Envelope schema version. Current value is 1."
+    },
+    {
+      "name": "occurred_at",
+      "type": "timestamp",
+      "required": true,
+      "description": "Business time when the fact happened."
+    },
+    {
+      "name": "correlation_id",
+      "type": "string",
+      "required": true,
+      "description": "Join key across conversation, issue, route, feedback, and cost."
+    },
+    {
+      "name": "conversation_id",
+      "type": "string",
+      "required": false,
+      "description": "Pseudonymous conversation identifier."
+    },
+    {
+      "name": "turn_id",
+      "type": "string",
+      "required": false,
+      "description": "Turn identifier within a conversation."
+    },
+    {
+      "name": "issue_type_id",
+      "type": "string",
+      "required": false,
+      "description": "Issue taxonomy id when the event is issue-scoped."
+    },
+    {
+      "name": "actor_ref",
+      "type": "string",
+      "required": false,
+      "description": "Pseudonymous actor reference. Never raw PII."
+    },
+    {
+      "name": "data_classification",
+      "type": "PUBLIC|INTERNAL|CONFIDENTIAL|RESTRICTED",
+      "required": true,
+      "description": "Drives masking and export policy."
+    },
+    {
+      "name": "masking_policy_version",
+      "type": "string",
+      "required": true,
+      "description": "Masking rules version applied before persistence."
+    },
+    {
+      "name": "retention_expires_at",
+      "type": "timestamp",
+      "required": false,
+      "description": "Firestore TTL field for operational events."
+    },
+    {
+      "name": "payload",
+      "type": "object",
+      "required": true,
+      "description": "Event-specific masked fields. Must not contain credentials."
+    }
+  ],
+  "eventTypes": [
+    "conversation.started",
+    "turn.received",
+    "issue.extracted",
+    "issue.classified",
+    "route.selected",
+    "faq.answered",
+    "knowledge.retrieved",
+    "knowledge.answered",
+    "answer.completed",
+    "feedback.recorded",
+    "handoff.offered",
+    "handoff.started",
+    "handoff.completed",
+    "handoff.cancelled",
+    "ticket.created",
+    "ticket.failed",
+    "usage.recorded",
+    "request.failed",
+    "knowledge.release.activated",
+    "config.changed"
+  ],
+  "idempotency": {
+    "key": "event_id",
+    "rule": "Duplicate event_id writes must not change analytics counts."
+  },
+  "stores": {
+    "operational": "Firestore collection operational_events",
+    "analytics": "BigQuery ai_ops_analytics.operational_events",
+    "audit": "Firestore collection audit_events"
+  }
+}

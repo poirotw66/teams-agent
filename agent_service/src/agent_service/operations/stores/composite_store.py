@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Protocol
 
 from ..contracts import OperationalEvent
 
 logger = logging.getLogger(__name__)
+
 
 class OperationalStore(Protocol):
     async def append(self, event: OperationalEvent) -> bool: ...
@@ -15,6 +17,8 @@ class OperationalStore(Protocol):
         *,
         limit: int = 100,
         cursor: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]: ...
 
 
@@ -48,5 +52,12 @@ class CompositeOperationalStore:
         *,
         limit: int = 100,
         cursor: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]:
-        return await self._primary.list_events(limit=limit, cursor=cursor)
+        return await self._primary.list_events(
+            limit=limit,
+            cursor=cursor,
+            since=since,
+            until=until,
+        )

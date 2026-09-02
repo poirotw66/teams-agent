@@ -198,6 +198,15 @@ class PortalService:
     def import_markdown(self, actor: PortalActor, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
         return self._documents.import_markdown(actor, raw, filename=filename)
 
+    def import_pdf(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+    ):
+        return self._documents.import_pdf(actor, payload, filename=filename)
+
     async def list_draft_assets(
         self, actor: PortalActor, document_id: str
     ) -> DraftAssetListResponse:

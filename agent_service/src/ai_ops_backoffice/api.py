@@ -6,21 +6,30 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent_service.operations.access import CAPABILITIES
+from agent_service.operations.audit_errors import AuditWriteError
 
 from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
+from .services.periods import PeriodPolicyError
 from .services.phase2_registry import FaqRecord, Phase2Registry, QualityCaseRecord, SyncJobRecord
 from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
 from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
+from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
+from .services.reconciliation import (
+    reconcile_costs_summary,
+    reconcile_issues_summary,
+    reconcile_operations_summary,
+)
 from .settings import BackofficeSettings
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+ALLOWED_EXPORT_FORMATS = frozenset({"json", "csv", "xlsx"})
 
 
 class ExportRequest(BaseModel):
@@ -60,6 +69,7 @@ class PromptCandidateRequest(BaseModel):
 def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     query_service = BackofficeQueryService(resolved_settings)
+    export_rate_limiter = ExportRateLimiter()
     phase2 = Phase2Registry()
     phase3 = Phase3Registry()
 
@@ -114,6 +124,18 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
 
     app = FastAPI(title="AI Operations Backoffice", lifespan=lifespan)
 
+    @app.exception_handler(PeriodPolicyError)
+    async def period_policy_handler(_request, exc: PeriodPolicyError) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(_request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(status_code=429, content={"detail": str(exc)})
+
+    @app.exception_handler(AuditWriteError)
+    async def audit_write_handler(_request, exc: AuditWriteError) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -144,6 +166,11 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             "items": [item.model_dump() for item in query_service.taxonomy.list_active()],
         }
 
+    @app.get("/api/metrics/definitions")
+    async def metrics_definitions(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.summary.read")
+        return query_service.metrics_definitions()
+
     @app.get("/api/operations/summary")
     async def operations_summary(
         days: int = Query(default=7, ge=1, le=186),
@@ -172,11 +199,16 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def conversations(
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         cursor: str | None = None,
         actor_ref: str | None = None,
         issue_type_id: str | None = None,
         route: str | None = None,
         conversation_id: str | None = None,
+        model: str | None = None,
+        has_feedback: bool | None = None,
+        handoff: bool | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
@@ -184,22 +216,49 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             actor,
             preset=preset,
             days=days,
+            start_date=start_date,
+            end_date=end_date,
             cursor=cursor,
             actor_ref=actor_ref,
             issue_type_id=issue_type_id,
             route=route,
             conversation_id=conversation_id,
+            model=model,
+            has_feedback=has_feedback,
+            handoff=handoff,
         )
         await audit_read(actor, "query.conversations", "conversations")
         return result
 
     @app.get("/api/conversations/{conversation_id}")
-    async def conversation_detail(conversation_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+    async def conversation_detail(
+        conversation_id: str,
+        unmask_reason: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
-        detail = await query_service.conversation_detail(actor, conversation_id)
+        if unmask_reason and not actor.has_capability("ops.conversations.unmasked"):
+            raise HTTPException(status_code=403, detail="Unmasked conversation access is forbidden.")
+        if unmask_reason and len(unmask_reason.strip()) < 3:
+            raise HTTPException(status_code=400, detail="unmask_reason must be at least 3 characters.")
+        detail = await query_service.conversation_detail(
+            actor,
+            conversation_id,
+            unmask_reason=unmask_reason,
+        )
         if detail is None:
             raise HTTPException(status_code=404, detail="Conversation not found.")
-        await audit_read(actor, "query.conversation_detail", conversation_id)
+        action = (
+            "query.conversation_unmasked"
+            if detail.get("unmaskAuthorized")
+            else "query.conversation_detail"
+        )
+        await audit_read(
+            actor,
+            action,
+            conversation_id,
+            after={"unmaskReason": unmask_reason} if unmask_reason else None,
+        )
         return detail
 
     @app.get("/api/issues/summary")
@@ -219,6 +278,27 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             end_date=end_date,
         )
         await audit_read(actor, "query.issues_summary", "issues_summary")
+        return result
+
+    @app.get("/api/issues/{issue_type_id}/routes")
+    async def issue_routes(
+        issue_type_id: str,
+        days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.issues.read")
+        result = await query_service.issue_routes(
+            actor,
+            issue_type_id,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        await audit_read(actor, "query.issue_routes", issue_type_id)
         return result
 
     @app.get("/api/routes/summary")
@@ -283,6 +363,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def feedback_list(
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         rating: str | None = None,
         reason: str | None = None,
         resolved_status: str | None = Query(default=None, alias="resolved"),
@@ -294,11 +376,88 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             actor,
             preset=preset,
             days=days,
+            start_date=start_date,
+            end_date=end_date,
             rating=rating,
             reason=reason,
             resolved_status=resolved_status,
             handoff=handoff,
         )
+
+    @app.get("/api/admin/reconciliation/operations-summary")
+    async def reconciliation_operations_summary(
+        days: int = Query(default=7, ge=1, le=186),
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        result = await reconcile_operations_summary(
+            query_service,
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        await audit_read(
+            actor,
+            "reconciliation.operations_summary",
+            "operations_summary",
+            after={"allMatch": result["allMatch"]},
+        )
+        return result
+
+    @app.get("/api/admin/reconciliation/costs-summary")
+    async def reconciliation_costs_summary(
+        days: int = Query(default=7, ge=1, le=186),
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        result = await reconcile_costs_summary(
+            query_service,
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        await audit_read(
+            actor,
+            "reconciliation.costs_summary",
+            "costs_summary",
+            after={"allMatch": result["allMatch"]},
+        )
+        return result
+
+    @app.get("/api/admin/reconciliation/issues-summary")
+    async def reconciliation_issues_summary(
+        days: int = Query(default=7, ge=1, le=186),
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        result = await reconcile_issues_summary(
+            query_service,
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        await audit_read(
+            actor,
+            "reconciliation.issues_summary",
+            "issues_summary",
+            after={"allMatch": result["allMatch"]},
+        )
+        return result
 
     @app.get("/api/knowledge/{document_id}/performance")
     async def knowledge_performance(
@@ -325,15 +484,21 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.post("/api/exports")
     async def create_export(payload: ExportRequest, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.exports.create")
+        if payload.export_format not in ALLOWED_EXPORT_FORMATS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported export format: {payload.export_format}",
+            )
+        export_rate_limiter.check(actor.user_id)
         return await query_service.create_export_job(
-            actor=actor,
-            export_type=payload.export_type,
-            reason=payload.reason,
-            days=payload.days,
-            export_format=payload.export_format,
-            preset=payload.preset,
-            start_date=payload.start_date,
-            end_date=payload.end_date,
+                actor=actor,
+                export_type=payload.export_type,
+                reason=payload.reason,
+                days=payload.days,
+                export_format=payload.export_format,
+                preset=payload.preset,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
         )
 
     @app.get("/api/exports/{job_id}")
@@ -347,16 +512,22 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.get("/api/exports/{job_id}/download")
     async def download_export(job_id: str, actor=Depends(current_actor)) -> Response:
         require_capability(actor, "ops.exports.read")
-        job = await query_service.get_export_job(job_id, actor=actor)
+        job = await query_service.export_jobs.get_job(job_id, actor=actor)
         if job is None:
             raise HTTPException(status_code=404, detail="Export job not found.")
-        if job["status"] != "COMPLETED":
+        if job.status != "COMPLETED":
             raise HTTPException(status_code=409, detail="Export job is not completed.")
-        content = job.get("downloadContent")
-        if not content:
+        export_format = job.export_format or "json"
+        if job.download_bytes is not None:
+            content = job.download_bytes
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        elif job.download_content:
+            content = job.download_content
+            media_type = "text/csv" if export_format == "csv" else "application/json"
+        else:
             raise HTTPException(status_code=404, detail="Export content is not available.")
-        export_format = str(job.get("exportFormat") or "json")
-        media_type = "text/csv" if export_format == "csv" else "application/json"
         filename = f"{job_id}.{export_format}"
         await query_service.export_jobs.record_download(job_id, actor=actor)
         return Response(

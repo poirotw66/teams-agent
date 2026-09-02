@@ -1,0 +1,27 @@
+[
+  {
+    "event_id": "sample:turn.received",
+    "event_type": "turn.received",
+    "occurred_at": "2025-09-01T10:00:00+00:00",
+    "conversation_id": "conv-sample-1",
+    "correlation_id": "corr-sample-1",
+    "turn_id": "turn-sample-1",
+    "actor_ref": "user-sample-1",
+    "payload": {
+      "messageMasked": "Sample VPN question"
+    }
+  },
+  {
+    "event_id": "sample:issue.extracted",
+    "event_type": "issue.extracted",
+    "occurred_at": "2025-09-01T10:00:01+00:00",
+    "conversation_id": "conv-sample-1",
+    "correlation_id": "corr-sample-1",
+    "turn_id": "turn-sample-1",
+    "issue_type_id": "vpn.connection_failed",
+    "payload": {
+      "issueId": 1,
+      "descriptionMasked": "Sample VPN question"
+    }
+  }
+]

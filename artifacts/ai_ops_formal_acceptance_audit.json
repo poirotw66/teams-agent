@@ -1,0 +1,208 @@
+{
+  "generatedAt": "2026-09-02T07:41:45.097848+00:00",
+  "automatedVerificationPassed": true,
+  "formalAcceptanceComplete": true,
+  "pendingManualSignOffs": [],
+  "phase0AcceptanceCriteria": [
+    {
+      "id": "P0-14.1",
+      "description": "Turn events linkable by ID",
+      "status": "automated",
+      "evidence": "tests/test_operations_integrations.py"
+    },
+    {
+      "id": "P0-14.2",
+      "description": "Duplicate eventId does not increase counts",
+      "status": "automated",
+      "evidence": "tests/test_operations_phase0.py"
+    },
+    {
+      "id": "P0-14.3",
+      "description": "Metric definitions document KPI calculations",
+      "status": "automated",
+      "evidence": "data/ops/metrics_definitions_v1.json"
+    },
+    {
+      "id": "P0-14.4",
+      "description": "20-50 active issue types with owner",
+      "status": "automated",
+      "evidence": "scripts/ops_deliverables_verify.py"
+    },
+    {
+      "id": "P0-14.5",
+      "description": "Unclassified issues route to other.unclassified",
+      "status": "automated",
+      "evidence": "data/ops/issue_taxonomy_v1.json"
+    },
+    {
+      "id": "P0-14.6",
+      "description": "Unauthorized roles cannot access unmasked data",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_actor_ref_conversation_lookup"
+    },
+    {
+      "id": "P0-14.7",
+      "description": "Credentials excluded from analytics and audit",
+      "status": "automated",
+      "evidence": "tests/test_operations_phase0.py::test_masking_redacts_email_and_credentials"
+    },
+    {
+      "id": "P0-14.8",
+      "description": "TTL purge removes expired records only",
+      "status": "automated",
+      "evidence": "tests/test_operations_phase0.py::test_purge_expired_events_removes_only_expired_records"
+    },
+    {
+      "id": "P0-14.9",
+      "description": "High-risk operations fail closed on audit write failure",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice.py::test_export_audit_fail_closed"
+    },
+    {
+      "id": "P0-14.10",
+      "description": "Environment and Terraform state isolation",
+      "status": "automated",
+      "evidence": "infra/ai-ops-environment-inventory.json; artifacts/terraform-ai-ops-plan-evidence.txt"
+    }
+  ],
+  "phase1AcceptanceCriteria": [
+    {
+      "id": "12.1",
+      "description": "Conversation counts reconcile with deduplicated raw events",
+      "status": "automated",
+      "evidence": "scripts/ops_daily_reconciliation.py"
+    },
+    {
+      "id": "12.2",
+      "description": "Model token/cost traceable to pricing version; unknown price not shown as zero",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_missing_cost_not_counted_as_zero"
+    },
+    {
+      "id": "12.3",
+      "description": "Authorized actor lookup within six months; unauthorized users masked or 403",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_actor_ref_conversation_lookup"
+    },
+    {
+      "id": "12.4",
+      "description": "Conversation traceability to issue, route, documents, feedback, handoff",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    },
+    {
+      "id": "12.5",
+      "description": "Issue dashboard supports day/week/month/six-month/custom periods",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_period_presets_supported"
+    },
+    {
+      "id": "12.6",
+      "description": "Document page shows hits, feedback, issues, and conversations",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    },
+    {
+      "id": "12.7",
+      "description": "Markdown/PDF governance publish and index status E2E",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_portal_governance_integration.py::test_portal_publish_surfaces_in_backoffice_governance; tests/test_ai_ops_portal_governance_integration.py::test_portal_pdf_publish_surfaces_in_backoffice_governance; tests/test_knowledge_portal.py::test_pdf_publish_workflow"
+    },
+    {
+      "id": "12.8",
+      "description": "Health summary detects simulated LLM/RAG/Ticket anomalies",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_health_detects_simulated_anomalies"
+    },
+    {
+      "id": "12.9",
+      "description": "Exports enforce same permissions/masking and write audit events",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_export_records_audit_and_metadata"
+    },
+    {
+      "id": "12.10",
+      "description": "Dashboard KPIs drill down or link to metric definitions",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    }
+  ],
+  "phase0DefinitionOfDone": [
+    {
+      "id": "P0-17.1",
+      "description": "BU/IT/Security approve metrics and governance",
+      "status": "manual",
+      "evidence": "artifacts/ai_ops_signoff_checklist.json"
+    },
+    {
+      "id": "P0-17.2",
+      "description": "Taxonomy usable by agent mapping",
+      "status": "automated",
+      "evidence": "data/ops/issue_classification_rules.json"
+    },
+    {
+      "id": "P0-17.3",
+      "description": "Schema-valid idempotent events on key paths",
+      "status": "automated",
+      "evidence": "scripts/ops_gcp_verification.py"
+    },
+    {
+      "id": "P0-17.4",
+      "description": "Storage, TTL, masking, auth, audit tests pass",
+      "status": "automated",
+      "evidence": "tests/test_operations_phase0.py; tests/test_ai_ops_backoffice.py"
+    },
+    {
+      "id": "P0-17.5",
+      "description": "Terraform plan and inventory handoff ready",
+      "status": "automated",
+      "evidence": "infra/terraform/INVENTORY.md"
+    },
+    {
+      "id": "P0-17.6",
+      "description": "Phase 1 built on Phase 0 contracts without redefinition",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py"
+    }
+  ],
+  "phase1DefinitionOfDone": [
+    {
+      "id": "P1-15.1",
+      "description": "Phase 1 metrics reconcile with Phase 0 definitions",
+      "status": "automated",
+      "evidence": "scripts/ops_daily_reconciliation.py"
+    },
+    {
+      "id": "P1-15.2",
+      "description": "Role, scope, masking, export security tests pass",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py"
+    },
+    {
+      "id": "P1-15.3",
+      "description": "UI loading/empty/error/forbidden states",
+      "status": "automated",
+      "evidence": "src/ai_ops_backoffice/static/js/main.js"
+    },
+    {
+      "id": "P1-15.4",
+      "description": "Markdown/PDF governance E2E UAT",
+      "status": "manual",
+      "evidence": "signOffItems/knowledge-portal-governance"
+    },
+    {
+      "id": "P1-15.5",
+      "description": "Monitoring and runbook in place",
+      "status": "automated",
+      "evidence": "docs/ai-ops-backoffice-runbook.md; infra/terraform/ai_ops_monitoring.tf"
+    },
+    {
+      "id": "P1-15.6",
+      "description": "BU 15-minute negative-feedback drill-down",
+      "status": "automated",
+      "evidence": "scripts/ops_bu_walkthrough.py"
+    }
+  ],
+  "blockingItems": [],
+  "closeOutCommand": "cd agent_service && uv run python ../scripts/ops_uat_handoff.py --gcp-project itr-aimasteryhub-lab --live-url https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app --require-signoff"
+}

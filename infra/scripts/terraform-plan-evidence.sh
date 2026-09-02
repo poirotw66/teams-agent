@@ -5,20 +5,28 @@
 #   ./infra/scripts/terraform-plan-evidence.sh [backend-config] [output-file]
 #
 # Example (POC import verification):
-#   ./infra/scripts/terraform-plan-evidence.sh infra/environments/poc/backend.hcl handoff-plan-evidence.txt
+#   ./infra/scripts/terraform-plan-evidence.sh infra/environments/poc/backend.hcl artifacts/terraform-plan-evidence.txt
 
 set -Eeuo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 TERRAFORM_DIR="${REPO_ROOT}/infra/terraform"
 BACKEND_CONFIG="${REPO_ROOT}/infra/environments/poc/backend.hcl"
-OUTPUT_FILE="${REPO_ROOT}/handoff-plan-evidence.txt"
+OUTPUT_FILE="${REPO_ROOT}/artifacts/terraform-plan-evidence.txt"
 if [[ $# -gt 0 ]]; then
-  BACKEND_CONFIG="$1"
+  if [[ "$1" = /* ]]; then
+    BACKEND_CONFIG="$1"
+  else
+    BACKEND_CONFIG="${REPO_ROOT}/$1"
+  fi
   shift
 fi
 if [[ $# -gt 0 ]]; then
-  OUTPUT_FILE="$1"
+  if [[ "$1" = /* ]]; then
+    OUTPUT_FILE="$1"
+  else
+    OUTPUT_FILE="${REPO_ROOT}/$1"
+  fi
   shift
 fi
 
@@ -31,7 +39,10 @@ terraform init -backend-config="${BACKEND_CONFIG}" -input=false >/dev/null
 PLAN_FILE="$(mktemp "${TMPDIR:-/tmp}/tfplan.XXXXXX")"
 trap 'rm -f "${PLAN_FILE}"' EXIT
 
-terraform plan -input=false -no-color -out="${PLAN_FILE}"
+terraform plan -input=false -no-color -out="${PLAN_FILE}" \
+  -var-file="${REPO_ROOT}/infra/environments/poc/terraform.tfvars.example" \
+  -var='bot_client_id=11111111-1111-1111-1111-111111111111' \
+  -var='bot_tenant_id=22222222-2222-2222-2222-222222222222'
 terraform show -no-color "${PLAN_FILE}" \
   | sed -E \
     -e 's/(client_id[[:space:]]*=[[:space:]]*")[^"]*/\1<redacted>/g' \

@@ -1,0 +1,76 @@
+{
+  "inventoryVersion": "v1",
+  "updatedAt": "2026-09-02",
+  "environments": [
+    {
+      "name": "lab",
+      "gcpProjectId": "itr-aimasteryhub-lab",
+      "region": "asia-east1",
+      "deploymentPhase": "full",
+      "terraformBackend": "infra/environments/poc/backend.hcl",
+      "terraformStateBucket": "itr-aimasteryhub-lab-terraform-state",
+      "services": {
+        "backoffice": "teams-ai-ops-backoffice",
+        "backofficeUrl": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app",
+        "agent": "teams-rag-agent",
+        "adapter": "teams-agent-adapter"
+      },
+      "terraform": {
+        "stateBucket": "itr-aimasteryhub-lab-terraform-state",
+        "managedResources": [
+          "google_service_account.agent",
+          "google_service_account.adapter",
+          "google_service_account.backoffice",
+          "google_secret_manager_secret.google_api_key",
+          "google_secret_manager_secret.bot_client_secret",
+          "google_secret_manager_secret.asset_signing_key",
+          "google_artifact_registry_repository.teams_agent",
+          "google_bigquery_dataset.ai_ops",
+          "google_bigquery_dataset.ai_ops_logs",
+          "google_bigquery_table.operational_events",
+          "google_firestore_field.conversations_expires_at_ttl",
+          "google_firestore_field.ops_events_retention_ttl",
+          "google_firestore_field.ops_audit_retention_ttl",
+          "google_firestore_index.ops_events_by_issue_and_time",
+          "google_logging_project_sink.backoffice_logs",
+          "google_cloud_run_v2_service.agent",
+          "google_cloud_run_v2_service.adapter",
+          "google_cloud_run_v2_service.backoffice",
+          "google_monitoring_dashboard.ai_ops",
+          "google_monitoring_alert_policy.backoffice_5xx"
+        ],
+        "pendingPlan": "0 add, 0 change, 0 destroy (verified 2026-09-02)",
+        "backofficeDeployMethod": "terraform:google_cloud_run_v2_service.backoffice (imported live revision)"
+      },
+      "dataStores": {
+        "opsEventsCollection": "operational_events",
+        "opsAuditCollection": "audit_events",
+        "bigqueryDataset": "ai_ops_analytics",
+        "bigqueryTable": "operational_events",
+        "logsDataset": "ai_ops_logs"
+      },
+      "eventIngestion": {
+        "primaryPath": "application_events",
+        "description": "Operational events are written by the agent/backoffice ingestion pipeline to Firestore and BigQuery.",
+        "logSink": [
+          "terraform:google_logging_project_sink.backoffice_logs",
+          "terraform:google_logging_project_sink.agent_logs"
+        ]
+      },
+      "verification": {
+        "gcpScript": "scripts/ops_gcp_verification.py",
+        "uatHandoffScript": "scripts/ops_uat_handoff.py",
+        "dailyReconciliationScript": "scripts/ops_daily_reconciliation.py",
+        "deliverablesVerifyScript": "scripts/ops_deliverables_verify.py",
+        "labDemoSeedScript": "scripts/ops_seed_lab_demo.py",
+        "liveSmokeScript": "scripts/ops_live_smoke.py",
+        "buWalkthroughScript": "scripts/ops_bu_walkthrough.py",
+        "signoffChecklistScript": "scripts/ops_signoff_checklist.py",
+        "signoffEvidenceScript": "scripts/ops_signoff_evidence.py",
+        "formalAcceptanceAuditScript": "scripts/ops_formal_acceptance_audit.py",
+        "runbook": "docs/ai-ops-backoffice-runbook.md",
+        "acceptanceReport": "artifacts/ai_ops_uat_acceptance_report.json"
+      }
+    }
+  ]
+}

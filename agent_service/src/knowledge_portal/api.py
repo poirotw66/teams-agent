@@ -27,6 +27,7 @@ from .models import (
     UpdateDraftRequest,
     ValidationSummary,
 )
+from .pdf_text import ScannedPdfError
 from .rbac import PortalPermissionError
 from .repository import PortalNotFoundError, VersionConflictError, build_repository
 from .service import PortalService
@@ -116,6 +117,14 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                     "issues": [issue.model_dump(mode="json") for issue in exc.issues],
                 },
             )
+        if isinstance(exc, ScannedPdfError):
+            return HTTPException(
+                status_code=422,
+                detail={
+                    "code": PortalErrorCode.VALIDATION_FAILED.value,
+                    "message": str(exc),
+                },
+            )
         if isinstance(exc, ValueError):
             message = str(exc)
             if hasattr(exc, "args") and exc.args and isinstance(exc.args[0], ValidationSummary):
@@ -164,6 +173,18 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
             owner_unit_id=owner_unit_id,
             query=query,
         )
+
+    @app.post("/api/documents/import-pdf")
+    async def import_pdf(
+        file: UploadFile = File(...),
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        payload = await file.read()
+        try:
+            return service.import_pdf(actor, payload, filename=file.filename)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.post("/api/documents/import-markdown")
     async def import_markdown(

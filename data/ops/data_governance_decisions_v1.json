@@ -1,0 +1,36 @@
+{
+  "decisionsVersion": "v1",
+  "generatedAt": "2026-09-02T00:00:00Z",
+  "description": "Phase 0 data classification, masking, retention, and export policy decisions.",
+  "classification": {
+    "defaultOperationalClassification": "INTERNAL",
+    "pseudonymousActorRef": true,
+    "credentialInAnalytics": "forbidden",
+    "credentialInAudit": "forbidden",
+    "credentialInApplicationLogs": "forbidden"
+  },
+  "masking": {
+    "policyVersion": "v1",
+    "defaultConversationView": "masked",
+    "unmaskRequiresCapability": "ops.conversations.unmasked",
+    "unmaskRequiresReason": true,
+    "exportUsesSameMaskingAsUi": true,
+    "csvFormulaInjectionProtection": true
+  },
+  "retention": {
+    "operationalEventsDays": 365,
+    "transcriptDays": 365,
+    "auditEventsDays": 1095,
+    "exportJobHours": 24,
+    "purgeMechanism": "Firestore TTL on retention_expires_at plus admin purge API"
+  },
+  "auth": {
+    "labAuthMode": "HEADER",
+    "productionAuthMode": "ENTRA",
+    "labNote": "itr-aimasteryhub-lab uses HEADER auth for UAT; production requires Entra SSO."
+  },
+  "environments": {
+    "stateIsolation": "Separate Terraform backends per environment",
+    "inventory": "infra/ai-ops-environment-inventory.json"
+  }
+}

@@ -24,6 +24,8 @@ class BackofficeSettings:
     default_owner_unit_id: str
     entra_tenant_id: str | None
     entra_client_id: str | None
+    gcp_project_id: str | None = None
+    simulate_health_anomalies: bool = False
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -64,4 +66,11 @@ class BackofficeSettings:
             or os.environ.get("ENTRA_TENANT_ID"),
             entra_client_id=os.environ.get("AI_OPS_ENTRA_CLIENT_ID")
             or os.environ.get("ENTRA_CLIENT_ID"),
+            gcp_project_id=os.environ.get("AI_OPS_GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCP_PROJECT"),
+            simulate_health_anomalies=os.environ.get(
+                "AI_OPS_SIMULATE_HEALTH_ANOMALIES", ""
+            ).lower()
+            in {"1", "true", "yes"},
         )

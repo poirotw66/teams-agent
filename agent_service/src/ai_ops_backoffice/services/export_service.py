@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import uuid
 from collections.abc import Callable, Coroutine
@@ -11,9 +12,10 @@ from typing import Any, Literal
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
+from agent_service.operations.audit_errors import AuditWriteError
 from agent_service.operations.contracts import utc_now
 
-from .export_format import flatten_for_csv
+from .export_format import flatten_for_csv, flatten_for_xlsx
 
 ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
 
@@ -33,6 +35,7 @@ class ExportJob:
     completed_at: str | None = None
     result: dict[str, Any] | None = None
     download_content: str | None = None
+    download_bytes: bytes | None = None
     error: str | None = None
 
 
@@ -53,19 +56,36 @@ class ExportJobService:
         self._jobs_file = self._store_path / "export_jobs.json"
         self._load()
 
+    def _serialize_job(self, job: ExportJob) -> dict[str, Any]:
+        payload = job.__dict__.copy()
+        download_bytes = payload.pop("download_bytes", None)
+        if download_bytes is not None:
+            payload["download_bytes_b64"] = base64.b64encode(download_bytes).decode("ascii")
+        return payload
+
+    def _deserialize_job(self, item: dict[str, Any]) -> ExportJob:
+        defaults = {"export_format": "json", "download_content": None, "download_bytes": None}
+        merged = {**defaults, **item}
+        encoded = merged.pop("download_bytes_b64", None)
+        if encoded:
+            merged["download_bytes"] = base64.b64decode(encoded)
+        return ExportJob(**merged)
+
     def _load(self) -> None:
         if not self._jobs_file.is_file():
             return
         payload = json.loads(self._jobs_file.read_text(encoding="utf-8"))
         for item in payload:
-            defaults = {"export_format": "json", "download_content": None}
-            merged = {**defaults, **item}
-            job = ExportJob(**merged)
+            job = self._deserialize_job(item)
             self._jobs[job.job_id] = job
 
     def _persist(self) -> None:
         self._jobs_file.write_text(
-            json.dumps([job.__dict__ for job in self._jobs.values()], ensure_ascii=False, indent=2),
+            json.dumps(
+                [self._serialize_job(job) for job in self._jobs.values()],
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
@@ -96,7 +116,13 @@ class ExportJobService:
         async with self._lock:
             self._jobs[job_id] = job
             self._persist()
-        await self._audit(actor, "export.create", job_id, after={"exportType": export_type, "days": days})
+        try:
+            await self._audit(actor, "export.create", job_id, after={"exportType": export_type, "days": days})
+        except AuditWriteError:
+            async with self._lock:
+                self._jobs.pop(job_id, None)
+                self._persist()
+            raise
         asyncio.create_task(self._run_job(job_id, runner))
         return job
 
@@ -117,8 +143,13 @@ class ExportJobService:
                 job.result = result
                 if job.export_format == "csv":
                     job.download_content = flatten_for_csv(result)
+                    job.download_bytes = None
+                elif job.export_format == "xlsx":
+                    job.download_bytes = flatten_for_xlsx(result)
+                    job.download_content = None
                 else:
                     job.download_content = json.dumps(result, ensure_ascii=False, indent=2)
+                    job.download_bytes = None
                 job.completed_at = utc_now().isoformat()
                 self._persist()
         except Exception as exc:  # noqa: BLE001
@@ -153,14 +184,17 @@ class ExportJobService:
         *,
         after: dict[str, object] | None = None,
     ) -> None:
-        await self._audit_store.append(
-            build_audit_event(
-                actor_id=actor.user_id,
-                actor_role=actor.role,
-                action=action,
-                target_type="export_job",
-                target_id=job_id,
-                after=after,
-                environment=self._environment,
+        try:
+            await self._audit_store.append(
+                build_audit_event(
+                    actor_id=actor.user_id,
+                    actor_role=actor.role,
+                    action=action,
+                    target_type="export_job",
+                    target_id=job_id,
+                    after=after,
+                    environment=self._environment,
+                )
             )
-        )
+        except Exception as exc:
+            raise AuditWriteError(f"Audit write failed for {action}.") from exc

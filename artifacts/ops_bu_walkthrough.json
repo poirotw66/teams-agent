@@ -1,0 +1,39 @@
+{
+  "baseUrl": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app",
+  "generatedAt": "2026-09-02T07:41:44.724125+00:00",
+  "spec": "Phase 1 §15 BU acceptance task",
+  "passed": true,
+  "failureCount": 0,
+  "steps": [
+    {
+      "name": "list negative feedback",
+      "passed": true,
+      "detail": "conversationId=lab-demo-v1:conv-1"
+    },
+    {
+      "name": "open conversation detail",
+      "passed": true,
+      "detail": "turns=1"
+    },
+    {
+      "name": "trace links issue and documents",
+      "passed": true,
+      "detail": "issue=vpn.connection_failed documents=['vpn-password-lockout']"
+    },
+    {
+      "name": "drill into issue routes",
+      "passed": true,
+      "detail": "routes=1"
+    },
+    {
+      "name": "open source document performance",
+      "passed": true,
+      "detail": "hitCount=2 governance=unavailable"
+    },
+    {
+      "name": "KPI definitions available for drill-down",
+      "passed": true,
+      "detail": "definitions=12"
+    }
+  ]
+}

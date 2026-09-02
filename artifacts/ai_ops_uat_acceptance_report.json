@@ -1,0 +1,342 @@
+{
+  "generatedAt": "2026-09-02T07:41:45.105369+00:00",
+  "passed": true,
+  "automatedVerificationPassed": true,
+  "formalAcceptanceComplete": true,
+  "signOffStatus": {
+    "complete": true,
+    "approved": [
+      "bu-taxonomy-metrics",
+      "it-terraform",
+      "security-masking-retention",
+      "knowledge-portal-governance"
+    ],
+    "pending": []
+  },
+  "automatedChecks": [
+    {
+      "id": "phase0-deliverables",
+      "spec": "Phase 0 §15",
+      "evidence": "scripts/ops_deliverables_verify.py"
+    },
+    {
+      "id": "phase0-event-idempotency",
+      "spec": "Phase 0 §14.2",
+      "evidence": "tests/test_operations_phase0.py"
+    },
+    {
+      "id": "phase0-masked-export-fail-closed",
+      "spec": "Phase 0 §10",
+      "evidence": "tests/test_ai_ops_backoffice.py::test_export_audit_fail_closed"
+    },
+    {
+      "id": "phase0-retention-purge",
+      "spec": "Phase 0 §14.8",
+      "evidence": "tests/test_operations_phase0.py::test_purge_expired_events_removes_only_expired_records"
+    },
+    {
+      "id": "phase1-negative-feedback-drill-down",
+      "spec": "Phase 1 §12.10 / §15",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    },
+    {
+      "id": "phase1-unmask-step-up",
+      "spec": "Phase 1 §10",
+      "evidence": "tests/test_ai_ops_backoffice.py::test_conversation_unmask_requires_capability_and_reason"
+    },
+    {
+      "id": "phase1-reconciliation",
+      "spec": "Phase 1 §15",
+      "evidence": "scripts/ops_daily_reconciliation.py"
+    },
+    {
+      "id": "phase1-document-governance-proxy",
+      "spec": "Phase 1 §12.7",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_document_governance_markdown_from_portal"
+    },
+    {
+      "id": "phase1-bu-walkthrough",
+      "spec": "Phase 1 §15",
+      "evidence": "scripts/ops_bu_walkthrough.py"
+    },
+    {
+      "id": "phase1-live-deployment-smoke",
+      "spec": "Phase 1 §11 / LAB handoff",
+      "evidence": "scripts/ops_live_smoke.py"
+    },
+    {
+      "id": "phase0-terraform-zero-diff",
+      "spec": "Phase 0 §17",
+      "evidence": "artifacts/terraform-ai-ops-plan-evidence.txt"
+    },
+    {
+      "id": "phase1-monitoring-runbook",
+      "spec": "Phase 1 §15",
+      "evidence": "docs/ai-ops-backoffice-runbook.md"
+    },
+    {
+      "id": "phase1-portal-governance-e2e",
+      "spec": "Phase 1 §12.7",
+      "evidence": "tests/test_ai_ops_portal_governance_integration.py::test_portal_publish_surfaces_in_backoffice_governance"
+    }
+  ],
+  "phase1AcceptanceCriteria": [
+    {
+      "id": "12.1",
+      "description": "Conversation counts reconcile with deduplicated raw events",
+      "status": "automated",
+      "evidence": "scripts/ops_daily_reconciliation.py"
+    },
+    {
+      "id": "12.2",
+      "description": "Model token/cost traceable to pricing version; unknown price not shown as zero",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_missing_cost_not_counted_as_zero"
+    },
+    {
+      "id": "12.3",
+      "description": "Authorized actor lookup within six months; unauthorized users masked or 403",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_actor_ref_conversation_lookup"
+    },
+    {
+      "id": "12.4",
+      "description": "Conversation traceability to issue, route, documents, feedback, handoff",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    },
+    {
+      "id": "12.5",
+      "description": "Issue dashboard supports day/week/month/six-month/custom periods",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_period_presets_supported"
+    },
+    {
+      "id": "12.6",
+      "description": "Document page shows hits, feedback, issues, and conversations",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    },
+    {
+      "id": "12.7",
+      "description": "Markdown/PDF governance publish and index status E2E",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_portal_governance_integration.py::test_portal_publish_surfaces_in_backoffice_governance; tests/test_ai_ops_portal_governance_integration.py::test_portal_pdf_publish_surfaces_in_backoffice_governance; tests/test_knowledge_portal.py::test_pdf_publish_workflow"
+    },
+    {
+      "id": "12.8",
+      "description": "Health summary detects simulated LLM/RAG/Ticket anomalies",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_health_detects_simulated_anomalies"
+    },
+    {
+      "id": "12.9",
+      "description": "Exports enforce same permissions/masking and write audit events",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_export_records_audit_and_metadata"
+    },
+    {
+      "id": "12.10",
+      "description": "Dashboard KPIs drill down or link to metric definitions",
+      "status": "automated",
+      "evidence": "tests/test_ai_ops_backoffice_acceptance.py::test_uat_negative_feedback_drill_down_path"
+    }
+  ],
+  "manualSignOffRequired": [
+    "BU approval of issue taxonomy v1 and metric definitions",
+    "IT approval of Terraform apply in target environment",
+    "Security/legal approval of masking, retention, and export policy",
+    "Markdown/PDF knowledge governance end-to-end UAT in Knowledge Portal"
+  ],
+  "infrastructureEvidence": {
+    "terraformValidate": true,
+    "terraformPlanClean": true,
+    "terraformPlanEvidence": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt",
+    "gcpVerificationReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_gcp_verification.json",
+    "liveSmokeReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ops_live_smoke.json",
+    "buWalkthroughReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ops_bu_walkthrough.json"
+  },
+  "steps": [
+    {
+      "name": "pytest",
+      "exitCode": 0
+    },
+    {
+      "name": "backup_verify",
+      "exitCode": 0
+    },
+    {
+      "name": "phase0_deliverables",
+      "exitCode": 0
+    },
+    {
+      "name": "terraform_validate",
+      "exitCode": 0
+    },
+    {
+      "name": "terraform_plan",
+      "exitCode": 0
+    },
+    {
+      "name": "gcp_verification",
+      "exitCode": 0,
+      "project": "itr-aimasteryhub-lab"
+    },
+    {
+      "name": "daily_reconciliation",
+      "exitCode": 0
+    },
+    {
+      "name": "live_smoke",
+      "exitCode": 0,
+      "url": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+    },
+    {
+      "name": "bu_walkthrough",
+      "exitCode": 0,
+      "url": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+    },
+    {
+      "name": "signoff_checklist",
+      "exitCode": 0
+    },
+    {
+      "name": "signoff_evidence",
+      "exitCode": 0
+    },
+    {
+      "name": "signoff_validation",
+      "exitCode": 0
+    },
+    {
+      "name": "formal_acceptance_audit",
+      "exitCode": 0
+    }
+  ],
+  "gcpVerification": {
+    "project": "itr-aimasteryhub-lab",
+    "database": null,
+    "dataset": "ai_ops_analytics",
+    "passed": true,
+    "failureCount": 0,
+    "checks": [
+      {
+        "name": "firestore append is idempotent on first write",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "firestore append rejects duplicate event_id",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "firestore period-filtered list returns written event",
+        "passed": true,
+        "detail": "count=1"
+      },
+      {
+        "name": "firestore retention_expires_at round-trips",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "firestore audit retention_expires_at is persisted",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "second firestore client sees first client's event",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "bigquery sink row is queryable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "log sink ai-ops-backoffice-logs routes to BigQuery",
+        "passed": true,
+        "detail": "bigquery.googleapis.com/projects/itr-aimasteryhub-lab/datasets/ai_ops_logs"
+      },
+      {
+        "name": "log sink ai-ops-agent-logs routes to BigQuery",
+        "passed": true,
+        "detail": "bigquery.googleapis.com/projects/itr-aimasteryhub-lab/datasets/ai_ops_logs"
+      }
+    ]
+  },
+  "liveSmoke": {
+    "baseUrl": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app",
+    "generatedAt": "2026-09-02T07:41:41.110908+00:00",
+    "passed": true,
+    "failureCount": 0,
+    "checks": [
+      {
+        "name": "ui root responds",
+        "passed": true,
+        "detail": "status=200 <!DOCTYPE html>\r\n<html lang=\"zh-Hant\">\r\n  <head>\r\n    <meta charset=\"utf-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\r\n    <title>AI 資訊客服營運後台</title>\r\n    <link re"
+      },
+      {
+        "name": "capabilities endpoint",
+        "passed": true,
+        "detail": "status=200 capabilities=7"
+      },
+      {
+        "name": "operations summary",
+        "passed": true,
+        "detail": "status=200"
+      },
+      {
+        "name": "health summary",
+        "passed": true,
+        "detail": "status=200 components=7"
+      },
+      {
+        "name": "metrics definitions",
+        "passed": true,
+        "detail": "status=200 definitions=12"
+      }
+    ]
+  },
+  "buWalkthrough": {
+    "baseUrl": "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app",
+    "generatedAt": "2026-09-02T07:41:44.724125+00:00",
+    "spec": "Phase 1 §15 BU acceptance task",
+    "passed": true,
+    "failureCount": 0,
+    "steps": [
+      {
+        "name": "list negative feedback",
+        "passed": true,
+        "detail": "conversationId=lab-demo-v1:conv-1"
+      },
+      {
+        "name": "open conversation detail",
+        "passed": true,
+        "detail": "turns=1"
+      },
+      {
+        "name": "trace links issue and documents",
+        "passed": true,
+        "detail": "issue=vpn.connection_failed documents=['vpn-password-lockout']"
+      },
+      {
+        "name": "drill into issue routes",
+        "passed": true,
+        "detail": "routes=1"
+      },
+      {
+        "name": "open source document performance",
+        "passed": true,
+        "detail": "hitCount=2 governance=unavailable"
+      },
+      {
+        "name": "KPI definitions available for drill-down",
+        "passed": true,
+        "detail": "definitions=12"
+      }
+    ]
+  }
+}

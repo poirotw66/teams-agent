@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
+from agent_service.operations.audit_errors import AuditWriteError
 
 
 async def record_query_audit(
@@ -13,14 +14,17 @@ async def record_query_audit(
     environment: str,
     after: dict[str, object] | None = None,
 ) -> None:
-    await audit_store.append(
-        build_audit_event(
-            actor_id=actor.user_id,
-            actor_role=actor.role,
-            action=action,
-            target_type="query",
-            target_id=target_id,
-            after=after,
-            environment=environment,
+    try:
+        await audit_store.append(
+            build_audit_event(
+                actor_id=actor.user_id,
+                actor_role=actor.role,
+                action=action,
+                target_type="query",
+                target_id=target_id,
+                after=after,
+                environment=environment,
+            )
         )
-    )
+    except Exception as exc:
+        raise AuditWriteError(f"Audit write failed for {action}.") from exc

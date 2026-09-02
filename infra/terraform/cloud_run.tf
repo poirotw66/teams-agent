@@ -59,6 +59,8 @@ resource "google_cloud_run_v2_service" "agent" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      template,
+      scaling,
       client,
       client_version,
     ]
@@ -147,6 +149,8 @@ resource "google_cloud_run_v2_service" "adapter" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      template,
+      scaling,
       client,
       client_version,
     ]

@@ -1,0 +1,94 @@
+{
+  "matrixVersion": "v1",
+  "generatedAt": "2026-09-02T00:00:00Z",
+  "description": "Backoffice role to capability and data scope baseline for Phase 0/1.",
+  "sourceOfTruth": "agent_service/src/agent_service/operations/access.py",
+  "dataScopeRules": [
+    {
+      "rule": "owner_unit_scope",
+      "description": "SERVICE_OWNER, KNOWLEDGE_ADMIN, and ANALYST rows are filtered to actor owner_unit_ids unless role is SYSTEM_ADMIN, AI_ADMIN, or AUDITOR."
+    },
+    {
+      "rule": "unmasked_conversations",
+      "description": "ops.conversations.unmasked is limited to AI_ADMIN and KNOWLEDGE_ADMIN. SERVICE_OWNER does not receive it by default."
+    },
+    {
+      "rule": "audit_read_only",
+      "description": "AUDITOR may read audit events and export metadata but cannot mutate operational data."
+    }
+  ],
+  "roles": [
+    {
+      "role": "SYSTEM_ADMIN",
+      "capabilities": [
+        "ops.health.read",
+        "ops.config.read",
+        "ops.audit.read",
+        "ops.roles.read"
+      ]
+    },
+    {
+      "role": "AI_ADMIN",
+      "capabilities": [
+        "ops.summary.read",
+        "ops.cost.read",
+        "ops.issues.read",
+        "ops.health.read",
+        "ops.conversations.read",
+        "ops.conversations.unmasked",
+        "ops.exports.create",
+        "ops.exports.read"
+      ],
+      "dataScope": "all_owner_units"
+    },
+    {
+      "role": "KNOWLEDGE_ADMIN",
+      "capabilities": [
+        "ops.summary.read",
+        "ops.issues.read",
+        "ops.feedback.read",
+        "ops.knowledge.read",
+        "ops.conversations.read",
+        "ops.conversations.unmasked",
+        "ops.quality.read",
+        "ops.faq.write",
+        "ops.exports.create",
+        "ops.exports.read"
+      ],
+      "dataScope": "assigned_owner_units"
+    },
+    {
+      "role": "SERVICE_OWNER",
+      "capabilities": [
+        "ops.summary.read",
+        "ops.issues.read",
+        "ops.feedback.read",
+        "ops.cost.read",
+        "ops.conversations.read",
+        "ops.exports.create",
+        "ops.exports.read"
+      ],
+      "dataScope": "assigned_owner_units"
+    },
+    {
+      "role": "ANALYST",
+      "capabilities": [
+        "ops.summary.read",
+        "ops.issues.read",
+        "ops.feedback.read",
+        "ops.cost.read",
+        "ops.conversations.read",
+        "ops.exports.read"
+      ],
+      "dataScope": "assigned_owner_units"
+    },
+    {
+      "role": "AUDITOR",
+      "capabilities": [
+        "ops.audit.read",
+        "ops.exports.read"
+      ],
+      "dataScope": "all_owner_units"
+    }
+  ]
+}

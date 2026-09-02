@@ -119,7 +119,8 @@ td {
 
 .empty,
 .error,
-.forbidden {
+.forbidden,
+.warning {
   padding: 1rem;
   border-radius: 10px;
 }
@@ -137,6 +138,12 @@ td {
 .forbidden {
   background: #fffaeb;
   color: #b54708;
+}
+
+.warning {
+  background: #fffaeb;
+  color: #b54708;
+  border: 1px solid #fecdca;
 }
 
 .meta-panel {
@@ -170,6 +177,7 @@ a.modal-backdrop {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  align-items: center;
 }
 
 .filter-bar select,
@@ -178,20 +186,33 @@ a.modal-backdrop {
   padding: 0.4rem 0.6rem;
 }
 
-.button-link {
-  display: inline-block;
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  background: var(--accent);
-  color: white;
-  text-decoration: none;
-}
+.button-link,
+.drill-link {
   display: inline-block;
   margin-top: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.35rem 0.65rem;
   border-radius: 8px;
   background: var(--accent);
   color: white;
   text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.drill-link {
+  margin-top: 0;
+  margin-right: 0.35rem;
+}
+
+.issue-tree {
+  list-style: none;
+  padding-left: 0;
+}
+
+.issue-tree ul {
+  list-style: none;
+  padding-left: 1.25rem;
+}
+
+.issue-tree li {
+  margin: 0.35rem 0;
 }

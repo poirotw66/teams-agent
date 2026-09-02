@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from threading import Lock
 
 from ..contracts import OperationalEvent
@@ -19,17 +20,33 @@ class MemoryOperationalStore:
             self._events.append(event)
             return True
 
+    def _filter_events(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[OperationalEvent]:
+        filtered = self._events
+        if since is not None:
+            filtered = [event for event in filtered if event.occurred_at >= since]
+        if until is not None:
+            filtered = [event for event in filtered if event.occurred_at <= until]
+        return filtered
+
     async def list_events(
         self,
         *,
         limit: int = 100,
         cursor: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]:
         with self._lock:
+            filtered = self._filter_events(since=since, until=until)
             start = int(cursor or "0")
-            page = self._events[start : start + limit]
+            page = filtered[start : start + limit]
             next_index = start + len(page)
-            next_cursor = str(next_index) if next_index < len(self._events) else None
+            next_cursor = str(next_index) if next_index < len(filtered) else None
             return list(page), next_cursor
 
     async def count_by_type(self, event_type: str) -> int:

@@ -328,12 +328,13 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         state: dict,
         correlation_id: str,
         *,
+        channel: str,
         cost_summary: RequestCostSummary | None = None,
     ) -> AgentResponse:
         estimated_cost_usd: float | None = None
         estimated_cost_twd: float | None = None
         cost_complete: bool | None = None
-        if resolved_settings.show_turn_cost:
+        if resolved_settings.should_show_turn_cost(channel):
             cost_complete = cost_summary.cost_complete if cost_summary else False
             if cost_summary and cost_summary.estimated_cost_usd is not None:
                 estimated_cost_usd = round(cost_summary.estimated_cost_usd, 8)
@@ -388,7 +389,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             ops_runtime=getattr(request.app.state, "ops_runtime", None),
             knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
         )
-        return _build_response(state, correlation_id, cost_summary=cost_summary)
+        return _build_response(
+            state, correlation_id, channel=payload.channel, cost_summary=cost_summary
+        )
 
     @app.post(
         "/agent/chat/stream",
@@ -467,7 +470,10 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             yield _sse(
                 "response",
                 _build_response(
-                    state, correlation_id, cost_summary=cost_summary
+                    state,
+                    correlation_id,
+                    channel=payload.channel,
+                    cost_summary=cost_summary,
                 ).model_dump(mode="json"),
             )
 

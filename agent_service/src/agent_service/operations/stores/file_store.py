@@ -45,6 +45,10 @@ class FileOperationalStore(MemoryOperationalStore):
         return inserted
 
     async def purge_expired(self) -> int:
+        if self._events_file.is_file():
+            self._events = []
+            self._seen_event_ids = set()
+            self._load()
         removed = await super().purge_expired()
         if removed:
             self._events_file.write_text(

@@ -15,6 +15,12 @@ class ResolvedPeriod:
     explicit_range: bool = False
 
 
+class PeriodPolicyError(ValueError):
+    pass
+
+
+MAX_PERIOD_DAYS = 186
+
 PRESET_DAYS = {
     "today": 1,
     "7d": 7,
@@ -32,6 +38,13 @@ def _parse_iso_datetime(value: str) -> datetime:
     return parsed
 
 
+def _validate_span_days(resolved_days: int) -> None:
+    if resolved_days > MAX_PERIOD_DAYS:
+        raise PeriodPolicyError(
+            f"Query period exceeds the maximum of {MAX_PERIOD_DAYS} days."
+        )
+
+
 def resolve_period(
     *,
     preset: str | None = None,
@@ -43,6 +56,9 @@ def resolve_period(
         start_at = _parse_iso_datetime(start_date)
         end_at = _parse_iso_datetime(end_date) if end_date else utc_now()
         resolved_days = max(1, int((end_at - start_at).total_seconds() // 86400) + 1)
+        _validate_span_days(resolved_days)
+        if end_at < start_at:
+            raise PeriodPolicyError("end_date must be on or after start_date.")
         return ResolvedPeriod(
             days=resolved_days,
             preset="custom",
@@ -58,6 +74,7 @@ def resolve_period(
     else:
         resolved_days = days if days is not None else 7
         label = "custom"
+    _validate_span_days(resolved_days)
     end_at = utc_now()
     start_at = end_at - timedelta(days=resolved_days)
     return ResolvedPeriod(

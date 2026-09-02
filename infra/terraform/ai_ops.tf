@@ -67,6 +67,12 @@ resource "google_bigquery_table" "operational_events" {
   project    = var.project_id
   table_id   = var.ops_bigquery_table
 
+  time_partitioning {
+    type  = "DAY"
+    field = "occurred_at"
+    expiration_ms = 31536000000
+  }
+
   schema = jsonencode([
     { name = "event_id", type = "STRING", mode = "REQUIRED" },
     { name = "event_type", type = "STRING", mode = "REQUIRED" },
@@ -94,6 +100,22 @@ resource "google_firestore_field" "ops_audit_retention_ttl" {
   field      = "retention_expires_at"
 
   ttl_config {}
+}
+
+resource "google_firestore_index" "ops_events_by_issue_and_time" {
+  project    = var.project_id
+  database   = google_firestore_database.default.name
+  collection = var.ops_events_collection
+
+  fields {
+    field_path = "issue_type_id"
+    order      = "ASCENDING"
+  }
+
+  fields {
+    field_path = "occurred_at"
+    order      = "DESCENDING"
+  }
 }
 
 resource "google_cloud_run_v2_service" "backoffice" {
@@ -147,6 +169,8 @@ resource "google_cloud_run_v2_service" "backoffice" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      template,
+      scaling,
       client,
       client_version,
     ]

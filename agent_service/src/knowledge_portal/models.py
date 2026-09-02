@@ -104,7 +104,7 @@ class KnowledgeVersionRecord(StrictModel):
     version_id: str
     document_id: str
     version_number: int
-    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD"] = "MARKDOWN_PASTE"
+    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
     content_hash: str
     canonical_content: str
     change_summary: str = ""
@@ -212,6 +212,7 @@ class CreateDocumentRequest(StrictModel):
     change_summary: str = Field(default="", max_length=512)
     change_reason: str = Field(min_length=1, max_length=2000)
     markdown_content: str = Field(min_length=1)
+    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
 
     @field_validator("audience_group_ids")
     @classmethod
@@ -293,6 +294,20 @@ class AssetRefSuggestion(StrictModel):
     asset_slug: str
     filename: str
     markdown: str
+
+
+class ImportPdfResponse(StrictModel):
+    title: str
+    owner_unit_id: str
+    effective_at: str
+    review_due_at: str
+    audience_type: AudienceType
+    audience_group_ids: list[str] = Field(default_factory=list)
+    markdown_content: str
+    asset_slug: str
+    page_count: int
+    source_type: Literal["PDF"] = "PDF"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ImportMarkdownResponse(StrictModel):

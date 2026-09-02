@@ -28,6 +28,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.issues.read",
             "ops.health.read",
             "ops.conversations.read",
+            "ops.conversations.unmasked",
             "ops.exports.create",
             "ops.exports.read",
         }
@@ -39,6 +40,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.feedback.read",
             "ops.knowledge.read",
             "ops.conversations.read",
+            "ops.conversations.unmasked",
             "ops.quality.read",
             "ops.faq.write",
             "ops.exports.create",

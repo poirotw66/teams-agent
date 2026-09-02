@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -23,7 +24,7 @@ class BigQueryEventSink:
             "conversation_id": event.conversation_id,
             "correlation_id": event.correlation_id,
             "issue_type_id": event.issue_type_id,
-            "payload": event.payload,
+            "payload": json.dumps(event.payload, ensure_ascii=False),
         }
         try:
             errors = self._client.insert_rows_json(self._table_id, [row])

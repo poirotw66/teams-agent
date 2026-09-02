@@ -192,6 +192,38 @@ def test_chat_omits_turn_cost_when_disabled(tmp_path: Path) -> None:
     assert body["costComplete"] is None
 
 
+def test_playground_omits_turn_cost_by_default_but_still_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    logged: list[object] = []
+
+    def _capture(summary: object) -> None:
+        logged.append(summary)
+
+    monkeypatch.setattr("agent_service.api.log_request_cost", _capture)
+    payload = {**CHAT_PAYLOAD, "channel": "playground"}
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post("/agent/chat", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["estimatedCostUsd"] is None
+    assert body["estimatedCostTwd"] is None
+    assert body["costComplete"] is None
+    assert len(logged) == 1
+    assert logged[0].estimated_cost_usd is not None
+
+
+def test_playground_shows_turn_cost_when_enabled(tmp_path: Path) -> None:
+    settings = replace(make_settings(tmp_path), show_turn_cost_playground=True)
+    payload = {**CHAT_PAYLOAD, "channel": "playground"}
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/agent/chat", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["costComplete"] is True
+    assert isinstance(body["estimatedCostUsd"], float)
+
+
 def test_chat_stream_rejects_a_disallowed_tenant_before_streaming(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     settings = replace(settings, allowed_tenants=("tenant-allowed",))

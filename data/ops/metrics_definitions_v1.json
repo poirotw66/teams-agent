@@ -1,6 +1,8 @@
 {
   "metrics_definition_version": "v1",
+  "pricingVersion": "v1",
   "timezone": "Asia/Taipei",
+  "usdTwdExchangeRate": 31.70,
   "definitions": {
     "conversation_count": "Distinct conversation_id with at least one turn.received event in period.",
     "turn_count": "Count of turn.received events in period.",
@@ -8,6 +10,11 @@
     "issue_occurrence_count": "Count of issue.extracted events in period.",
     "knowledge_hit_rate": "knowledge.answered / issue.extracted where route was KNOWLEDGE.",
     "faq_hit_rate": "faq.answered / issue.extracted where route was FAQ.",
-    "estimated_cost_usd": "Sum of usage.recorded.estimatedCostUsd; missing usage is excluded from numerator and denominator coverage."
+    "no_answer_count": "answer.completed events with resultType NO_KNOWLEDGE or FAILED.",
+    "clarification_count": "answer.completed events with resultType NEED_MORE_INFO.",
+    "estimated_cost_usd": "Sum of usage.recorded.estimatedCostUsd; missing usage is excluded from numerator and denominator coverage.",
+    "error_rate": "request.failed count divided by turn count.",
+    "p50_latency_ms": "50th percentile of usage.recorded.elapsedMs in period.",
+    "p95_latency_ms": "95th percentile of usage.recorded.elapsedMs in period."
   }
 }

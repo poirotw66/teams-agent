@@ -18,6 +18,7 @@ from ..models import (
     DocumentListResponse,
     DraftAssetListResponse,
     ImportMarkdownResponse,
+    ImportPdfResponse,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
@@ -37,6 +38,7 @@ from ..rbac import (
 )
 from ..repository import PortalNotFoundError, VersionConflictError, new_id
 from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
+from ..pdf_text import ScannedPdfError, extract_text_pdf, pdf_text_to_markdown
 from ..validation import (
     build_front_matter_markdown,
     build_parse_preview,
@@ -162,6 +164,7 @@ class DocumentService:
             version_id=version_id,
             document_id=document_id,
             version_number=1,
+            source_type=request.source_type,
             content_hash=digest,
             canonical_content=canonical,
             change_summary=request.change_summary,
@@ -435,6 +438,31 @@ class DocumentService:
             markdown_content=str(parsed["markdown_content"]),
             asset_slug=str(parsed["asset_slug"]),
             warnings=warnings,
+        )
+
+    def import_pdf(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+    ) -> ImportPdfResponse:
+        ensure_can_import_markdown(actor)
+        text, page_count = extract_text_pdf(payload)
+        stem = Path(filename or "document.pdf").stem.strip() or "PDF Document"
+        markdown_content = pdf_text_to_markdown(text, stem)
+        today = utc_now().date().isoformat()
+        return ImportPdfResponse(
+            title=stem,
+            owner_unit_id=self._settings.default_owner_unit_id,
+            effective_at=today,
+            review_due_at=today,
+            audience_type="ALL_EMPLOYEES",
+            audience_group_ids=[],
+            markdown_content=markdown_content,
+            asset_slug=slug_from_title(stem),
+            page_count=page_count,
+            warnings=["已從文字型 PDF 擷取內容並轉為 Markdown 草稿。"],
         )
 
     async def _require_editable_draft(

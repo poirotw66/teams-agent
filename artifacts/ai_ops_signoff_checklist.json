@@ -1,0 +1,77 @@
+{
+  "checklistVersion": "v1",
+  "generatedAt": "2026-09-02T07:41:44.811149+00:00",
+  "specReferences": [
+    "docs/ai-ops-backoffice-phase-0-foundation-spec.md §17",
+    "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md §15"
+  ],
+  "automatedEvidence": {
+    "uatAcceptanceReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_uat_acceptance_report.json",
+    "terraformPlanEvidence": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt",
+    "gcpVerificationReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_gcp_verification.json",
+    "buWalkthroughReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ops_bu_walkthrough.json",
+    "runbook": "/Users/cfh00896102/Github/teams-agent/docs/ai-ops-backoffice-runbook.md",
+    "environmentInventory": "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json"
+  },
+  "signOffItems": [
+    {
+      "id": "bu-taxonomy-metrics",
+      "role": "BU",
+      "description": "Approve issue taxonomy v1 and metric definitions",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:54.855889+00:00",
+      "notes": "LAB 自驗：已確認 taxonomy 與 KPI 口徑。",
+      "reviewArtifacts": [
+        "/Users/cfh00896102/Github/teams-agent/data/ops/issue_taxonomy_v1.json",
+        "/Users/cfh00896102/Github/teams-agent/data/ops/metrics_definitions_v1.json",
+        "/Users/cfh00896102/Github/teams-agent/data/ops/issue_classification_rules.json",
+        "scripts/ops_deliverables_verify.py"
+      ]
+    },
+    {
+      "id": "it-terraform",
+      "role": "IT",
+      "description": "Approve Terraform state and zero-diff plan in target environment",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:54.939131+00:00",
+      "notes": "LAB 自驗：已確認 Terraform zero-diff 與環境 inventory。",
+      "reviewArtifacts": [
+        "infra/terraform/INVENTORY.md",
+        "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json",
+        "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt"
+      ]
+    },
+    {
+      "id": "security-masking-retention",
+      "role": "Security/Legal",
+      "description": "Approve masking, retention, export, and audit policy",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:55.025582+00:00",
+      "notes": "LAB 自驗：已確認遮罩、保存、匯出與 Audit 政策。",
+      "reviewArtifacts": [
+        "/Users/cfh00896102/Github/teams-agent/data/ops/data_governance_decisions_v1.json",
+        "/Users/cfh00896102/Github/teams-agent/data/ops/role_capability_matrix_v1.json",
+        "agent_service/tests/test_ai_ops_backoffice.py::test_export_audit_fail_closed",
+        "agent_service/tests/test_ai_ops_backoffice.py::test_conversation_unmask_requires_capability_and_reason",
+        "agent_service/tests/test_operations_phase0.py::test_purge_expired_events_removes_only_expired_records"
+      ]
+    },
+    {
+      "id": "knowledge-portal-governance",
+      "role": "BU/Knowledge Admin",
+      "description": "Complete Knowledge Portal markdown and text PDF publish UAT (§12.7)",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:55.113805+00:00",
+      "notes": "LAB 自驗：Markdown 與 text PDF 治理 UAT 已確認（含自動化測試）。",
+      "reviewArtifacts": [
+        "agent_service/tests/test_ai_ops_portal_governance_integration.py",
+        "agent_service/tests/test_knowledge_portal.py::test_pdf_publish_workflow",
+        "agent_service/tests/test_knowledge_portal.py::test_import_text_pdf"
+      ]
+    }
+  ]
+}

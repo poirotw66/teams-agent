@@ -212,3 +212,20 @@ variable "knowledge_release_dir" {
   type        = string
   default     = "/app/data/releases"
 }
+
+variable "backoffice_auth_mode" {
+  description = "Backoffice auth mode: ENTRA for production, HEADER for POC only."
+  type        = string
+  default     = "ENTRA"
+
+  validation {
+    condition     = contains(["ENTRA", "HEADER"], var.backoffice_auth_mode)
+    error_message = "backoffice_auth_mode must be ENTRA or HEADER."
+  }
+}
+
+variable "ai_ops_entra_client_id" {
+  description = "Entra app registration client ID for AI Ops Backoffice. Defaults to bot_client_id when empty."
+  type        = string
+  default     = ""
+}

@@ -29,6 +29,8 @@ locals {
     "iamcredentials.googleapis.com",
     "firestore.googleapis.com",
     "bigquery.googleapis.com",
+    "monitoring.googleapis.com",
+    "logging.googleapis.com",
   ])
 
   agent_env = {
@@ -62,6 +64,8 @@ locals {
     KNOWLEDGE_RELEASE_MODE             = var.knowledge_release_mode
     KNOWLEDGE_RELEASE_DIR              = var.knowledge_release_dir
     FEEDBACK_ENABLED                   = "true"
+    SHOW_TURN_COST                     = "true"
+    SHOW_TURN_COST_PLAYGROUND          = "false"
     OPS_EVENTS_ENABLED                 = "true"
     OPS_STORE_MODE                     = "FIRESTORE"
     OPS_AUDIT_STORE_MODE               = "FIRESTORE"
@@ -74,11 +78,18 @@ locals {
 
   backoffice_env = {
     AI_OPS_BACKOFFICE_PORT         = "8080"
-    AI_OPS_BACKOFFICE_AUTH_MODE    = "HEADER"
+    AI_OPS_BACKOFFICE_AUTH_MODE    = var.backoffice_auth_mode
+    AI_OPS_ENTRA_TENANT_ID         = var.bot_tenant_id
+    AI_OPS_ENTRA_CLIENT_ID         = var.ai_ops_entra_client_id != "" ? var.ai_ops_entra_client_id : var.bot_client_id
+    AGENT_DEPLOYMENT_ENV           = var.deployment_phase == "full" ? "poc" : var.deployment_phase
     OPS_STORE_MODE                 = "FIRESTORE"
     OPS_AUDIT_STORE_MODE           = "FIRESTORE"
     OPS_FIRESTORE_COLLECTION       = var.ops_events_collection
     OPS_AUDIT_FIRESTORE_COLLECTION = var.ops_audit_collection
+    OPS_BIGQUERY_ENABLED           = "false"
+    OPS_FIRESTORE_PROJECT          = var.project_id
+    GCP_PROJECT_ID                 = var.project_id
+    AI_OPS_GCP_PROJECT             = var.project_id
     KNOWLEDGE_PORTAL_PUBLIC_URL    = var.adapter_public_base_url != "" ? var.adapter_public_base_url : ""
     KNOWLEDGE_PORTAL_AGENT_API_URL = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
     TEAMS_ADAPTER_URL              = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""

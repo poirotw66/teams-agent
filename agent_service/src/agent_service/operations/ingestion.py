@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from .contracts import OperationalEvent, utc_now
@@ -15,6 +16,8 @@ class OperationalStore(Protocol):
         *,
         limit: int = 100,
         cursor: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]: ...
 
 

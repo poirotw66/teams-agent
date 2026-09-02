@@ -109,6 +109,9 @@ class RagSettings:
 
     # --- Cost visibility (Phase 1 observability) ---
     show_turn_cost: bool = True
+    # Playground channel hides per-turn cost in the user-facing response by default;
+    # request_cost logs and usage.recorded ops events still capture cost metadata.
+    show_turn_cost_playground: bool = False
     usd_twd_exchange_rate: float = 31.70
 
     # --- Knowledge release (portal-published immutable index) ---
@@ -228,6 +231,7 @@ class RagSettings:
             faq_path=faq_path.expanduser().resolve(),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
             show_turn_cost=_bool_env("SHOW_TURN_COST", True),
+            show_turn_cost_playground=_bool_env("SHOW_TURN_COST_PLAYGROUND", False),
             usd_twd_exchange_rate=_float_env("USD_TWD_EXCHANGE_RATE", 31.70),
             knowledge_release_mode=(
                 _str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO"
@@ -242,6 +246,11 @@ class RagSettings:
         )
         settings.validate()
         return settings
+
+    def should_show_turn_cost(self, channel: str) -> bool:
+        if channel == "playground":
+            return self.show_turn_cost_playground
+        return self.show_turn_cost
 
     def validate(self) -> None:
         if self.top_k < 1 or self.top_k > 20:

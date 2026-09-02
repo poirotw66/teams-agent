@@ -37,8 +37,14 @@ class FirestoreOperationalStore:
         *,
         limit: int = 100,
         cursor: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]:
         query = self._collection.order_by("occurred_at")
+        if since is not None:
+            query = query.where("occurred_at", ">=", since)
+        if until is not None:
+            query = query.where("occurred_at", "<=", until)
         if cursor:
             cursor_doc = await self._collection.document(cursor).get()
             if cursor_doc.exists:

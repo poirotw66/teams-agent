@@ -1,0 +1,137 @@
+{
+  "generatedAt": "2026-09-02T07:41:44.953056+00:00",
+  "specReferences": [
+    "docs/ai-ops-backoffice-phase-0-foundation-spec.md §17",
+    "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md §15"
+  ],
+  "uatHandoff": {
+    "passed": true,
+    "generatedAt": "2026-09-02T04:46:40.800410+00:00",
+    "failedSteps": [],
+    "phase1CriteriaAutomated": true
+  },
+  "terraform": {
+    "planClean": true,
+    "evidencePath": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt"
+  },
+  "signOffItems": [
+    {
+      "id": "bu-taxonomy-metrics",
+      "role": "BU",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:54.855889+00:00",
+      "artifactChecks": [
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/issue_taxonomy_v1.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/data/ops/issue_taxonomy_v1.json"
+        },
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/metrics_definitions_v1.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/data/ops/metrics_definitions_v1.json"
+        },
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/issue_classification_rules.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/data/ops/issue_classification_rules.json"
+        },
+        {
+          "reference": "scripts/ops_deliverables_verify.py",
+          "exists": true,
+          "resolvedPath": "scripts/ops_deliverables_verify.py"
+        }
+      ]
+    },
+    {
+      "id": "it-terraform",
+      "role": "IT",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:54.939131+00:00",
+      "artifactChecks": [
+        {
+          "reference": "infra/terraform/INVENTORY.md",
+          "exists": true,
+          "resolvedPath": "infra/terraform/INVENTORY.md"
+        },
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json"
+        },
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt"
+        }
+      ]
+    },
+    {
+      "id": "security-masking-retention",
+      "role": "Security/Legal",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:55.025582+00:00",
+      "artifactChecks": [
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/data_governance_decisions_v1.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/data/ops/data_governance_decisions_v1.json"
+        },
+        {
+          "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/role_capability_matrix_v1.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/data/ops/role_capability_matrix_v1.json"
+        },
+        {
+          "reference": "agent_service/tests/test_ai_ops_backoffice.py::test_export_audit_fail_closed",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_ai_ops_backoffice.py"
+        },
+        {
+          "reference": "agent_service/tests/test_ai_ops_backoffice.py::test_conversation_unmask_requires_capability_and_reason",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_ai_ops_backoffice.py"
+        },
+        {
+          "reference": "agent_service/tests/test_operations_phase0.py::test_purge_expired_events_removes_only_expired_records",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_operations_phase0.py"
+        }
+      ]
+    },
+    {
+      "id": "knowledge-portal-governance",
+      "role": "BU/Knowledge Admin",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-02T07:40:55.113805+00:00",
+      "artifactChecks": [
+        {
+          "reference": "agent_service/tests/test_ai_ops_portal_governance_integration.py",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_ai_ops_portal_governance_integration.py"
+        },
+        {
+          "reference": "agent_service/tests/test_knowledge_portal.py::test_pdf_publish_workflow",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_knowledge_portal.py"
+        },
+        {
+          "reference": "agent_service/tests/test_knowledge_portal.py::test_import_text_pdf",
+          "exists": true,
+          "resolvedPath": "agent_service/tests/test_knowledge_portal.py"
+        }
+      ]
+    }
+  ],
+  "nextSteps": [
+    "Review each signOffItem artifactChecks list with the named role owner.",
+    "Record approval: python scripts/ops_signoff_approve.py --item <id> --by \"Name\"",
+    "Validate: python scripts/ops_signoff_checklist.py --validate artifacts/ai_ops_signoff_checklist.json",
+    "Close: uv run python ../scripts/ops_uat_handoff.py --require-signoff (from agent_service)"
+  ],
+  "deliverablesVerifyPassed": true
+}

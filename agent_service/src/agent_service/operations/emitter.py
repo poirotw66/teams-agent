@@ -8,7 +8,7 @@ from typing import Any
 from ..contracts import AgentRequest, FeedbackRequest, Issue, IssueResult
 from ..usage_events import RequestCostSummary
 from .classification import IssueClassifier
-from .contracts import OperationalEvent, utc_now
+from .contracts import MASKING_POLICY_VERSION, OperationalEvent, utc_now
 from .ingestion import EventIngestionService
 from .masking import mask_text, pseudonymous_actor_id
 from .settings import OpsSettings
@@ -155,6 +155,7 @@ class OperationalEventEmitter:
                 payload={
                     "messageMasked": masked_message.text,
                     "messageWasMasked": masked_message.was_masked,
+                    "maskingPolicyVersion": MASKING_POLICY_VERSION,
                     "locale": payload.message.locale,
                 },
                 **base,
@@ -266,6 +267,7 @@ class OperationalEventEmitter:
                 "llmCallCount": cost_summary.llm_call_count,
                 "knowledgeBackend": cost_summary.knowledge_backend,
                 "pricingVersion": cost_summary.pricing_version,
+                "elapsedMs": round(cost_summary.elapsed_ms, 1),
             }
             execution_context = state.get("execution_context")
             collector = getattr(execution_context, "usage_collector", None)
@@ -334,6 +336,10 @@ class OperationalEventEmitter:
             "resultType": result.resultType,
             "backend": result.backend,
         }
+        if result.answer:
+            masked_answer = mask_text(result.answer)
+            payload_body["answerMasked"] = masked_answer.text
+            payload_body["answerWasMasked"] = masked_answer.was_masked
 
         if result.resultType == "FAQ_ANSWERED":
             event_type = "faq.answered"

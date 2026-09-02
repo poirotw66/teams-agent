@@ -115,12 +115,20 @@ gcloud firestore fields ttls list --database="(default)" --project="$PROJECT"
 ## Zero-diff checklist
 
 - [ ] `adapter_public_base_url` in tfvars matches live Adapter URL
+- [ ] `backoffice_auth_mode` matches live (`HEADER` for LAB import, `ENTRA` for production)
 - [ ] `bot_client_id` / `bot_tenant_id` match `.env` (non-secret)
-- [ ] Model env vars match `agent_service/.env`
+- [ ] Model env vars match `agent_service/.env` (or Cloud Run `template` is ignored for import POC)
 - [ ] All import commands succeeded
-- [ ] `terraform plan` shows **0 add, 0 change, 0 destroy**
+- [ ] `terraform plan` shows **0 add, 0 change, 0 destroy** (after additive log sinks are applied)
 - [ ] Secret **versions** exist (Terraform only manages containers)
 - [ ] Knowledge bundle documented for image build
+
+### Import POC: Cloud Run template drift
+
+For environments imported from `deploy-gcp.sh`, `google_cloud_run_v2_service` resources use
+`lifecycle.ignore_changes = [template, …]` so Terraform does not overwrite live env vars,
+scaling, or auth mode during import handoff. New greenfield deploys should remove that
+ignore block once tfvars match the desired production shape.
 
 ## Cloud Run shape reference (from deploy-gcp.sh)
 

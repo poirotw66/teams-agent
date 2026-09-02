@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,8 @@ def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path
     assert "issue.classified" in types
     assert "handoff.offered" in types
     assert "conversation.started" in types
+    turn_received = next(event for event in events if event.event_type == "turn.received")
+    assert turn_received.payload.get("maskingPolicyVersion") == "v1"
 
 
 class _FakeConversation:
@@ -275,3 +278,142 @@ def test_composite_store_writes_primary_and_sink() -> None:
 
     asyncio.run(run())
     assert len(sink_events) == 1
+
+
+def test_purge_expired_events_removes_only_expired_records() -> None:
+    from agent_service.operations.contracts import OperationalEvent, utc_now
+    from agent_service.operations.retention import purge_expired_events
+    from agent_service.operations.stores.memory_store import MemoryOperationalStore
+
+    now = utc_now()
+    events = [
+        OperationalEvent(
+            event_id="active",
+            event_type="turn.received",
+            occurred_at=now,
+            correlation_id="corr-active",
+            retention_expires_at=now + timedelta(days=1),
+            payload={"messageMasked": "active"},
+        ),
+        OperationalEvent(
+            event_id="expired",
+            event_type="turn.received",
+            occurred_at=now,
+            correlation_id="corr-expired",
+            retention_expires_at=now - timedelta(seconds=1),
+            payload={"messageMasked": "expired"},
+        ),
+    ]
+
+    kept, removed = purge_expired_events(events)
+    assert removed == 1
+    assert [event.event_id for event in kept] == ["active"]
+
+    async def run_store_purge() -> int:
+        store = MemoryOperationalStore()
+        for event in events:
+            await store.append(event)
+        return await store.purge_expired()
+
+    import asyncio
+
+    assert asyncio.run(run_store_purge()) == 1
+
+
+def test_phase0_deliverable_artifacts_exist(ops_paths: tuple[Path, Path, Path]) -> None:
+    """Phase 0 §15: required data dictionary and governance artifacts are present."""
+    data_dir = ops_paths[0].parent
+    required = [
+        "operational_event_schema_v1.json",
+        "role_capability_matrix_v1.json",
+        "data_governance_decisions_v1.json",
+    ]
+    for name in required:
+        assert (data_dir / name).is_file(), f"missing deliverable: {name}"
+
+
+def test_role_capability_matrix_matches_code() -> None:
+    import json
+
+    from agent_service.operations.access import CAPABILITIES
+
+    data_dir = Path(__file__).resolve().parents[2] / "data" / "ops"
+    matrix = json.loads((data_dir / "role_capability_matrix_v1.json").read_text(encoding="utf-8"))
+    for role_entry in matrix["roles"]:
+        role = role_entry["role"]
+        expected = set(CAPABILITIES[role])
+        actual = set(role_entry["capabilities"])
+        assert actual == expected, f"matrix drift for role {role}"
+
+
+def test_signoff_checklist_sync_preserves_approvals(tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "ops_signoff_checklist.py"
+    checklist_path = tmp_path / "ai_ops_signoff_checklist.json"
+
+    subprocess.run(
+        [sys.executable, str(script), "--write", str(checklist_path)],
+        cwd=repo_root,
+        check=True,
+    )
+    payload = json.loads(checklist_path.read_text(encoding="utf-8"))
+    payload["signOffItems"][0]["status"] = "approved"
+    payload["signOffItems"][0]["approvedBy"] = "bu.reviewer"
+    payload["signOffItems"][0]["approvedAt"] = "2026-09-02T00:00:00+00:00"
+    checklist_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    subprocess.run(
+        [sys.executable, str(script), "--sync", str(checklist_path)],
+        cwd=repo_root,
+        check=True,
+    )
+    synced = json.loads(checklist_path.read_text(encoding="utf-8"))
+    first_item = synced["signOffItems"][0]
+    assert first_item["status"] == "approved"
+    assert first_item["approvedBy"] == "bu.reviewer"
+    assert first_item["approvedAt"] == "2026-09-02T00:00:00+00:00"
+    assert "reviewArtifacts" in first_item
+
+
+def test_signoff_approve_records_approval(tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts/ops_signoff_checklist.py"
+    approve_script = repo_root / "scripts/ops_signoff_approve.py"
+    checklist_path = tmp_path / "ai_ops_signoff_checklist.json"
+
+    subprocess.run(
+        [sys.executable, str(script), "--write", str(checklist_path)],
+        cwd=repo_root,
+        check=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            str(approve_script),
+            "--checklist",
+            str(checklist_path),
+            "--item",
+            "it-terraform",
+            "--by",
+            "it.reviewer",
+            "--at",
+            "2026-09-02T01:00:00+00:00",
+            "--notes",
+            "Zero-diff plan verified.",
+        ],
+        cwd=repo_root,
+        check=True,
+    )
+    payload = json.loads(checklist_path.read_text(encoding="utf-8"))
+    item = next(entry for entry in payload["signOffItems"] if entry["id"] == "it-terraform")
+    assert item["status"] == "approved"
+    assert item["approvedBy"] == "it.reviewer"
+    assert item["notes"] == "Zero-diff plan verified."

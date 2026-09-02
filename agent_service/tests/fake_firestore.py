@@ -48,6 +48,18 @@ class FakeQuery:
         self._order_by: str | None = None
         self._descending = False
         self._limit: int | None = None
+        self._filters: list[tuple[str, str, Any]] = []
+        self._start_after_snapshot: FakeDocumentSnapshot | None = None
+
+    def where(self, field_path: str, op: str, value: Any) -> FakeQuery:
+        if op not in {">=", "<=", "==", ">", "<"}:
+            raise FakeFirestoreError(f"Unsupported where operator: {op!r}")
+        self._filters.append((field_path, op, value))
+        return self
+
+    def start_after(self, snapshot: FakeDocumentSnapshot) -> FakeQuery:
+        self._start_after_snapshot = snapshot
+        return self
 
     def order_by(self, field_path: str, direction: str = "ASCENDING") -> FakeQuery:
         if direction not in {"ASCENDING", "DESCENDING"}:
@@ -79,16 +91,65 @@ class FakeQuery:
             return None
         return document[self._order_by]
 
+    def _matches_filters(self, document: dict) -> bool:
+        for field_path, op, value in self._filters:
+            actual = document.get(field_path)
+            if actual is None:
+                return False
+            if op == ">=" and not (actual >= value):
+                return False
+            if op == "<=" and not (actual <= value):
+                return False
+            if op == "==" and actual != value:
+                return False
+            if op == ">" and not (actual > value):
+                return False
+            if op == "<" and not (actual < value):
+                return False
+        return True
+
+    def _after_cursor(self, doc_id: str, document: dict) -> bool:
+        if self._start_after_snapshot is None:
+            return True
+        cursor_id = self._start_after_snapshot.id
+        cursor_doc = self._collection.raw_document(cursor_id)
+        if cursor_doc is None:
+            return True
+        if self._order_by is None or self._order_by == "__name__":
+            return doc_id > cursor_id
+        order_field = self._order_by
+        cursor_value = cursor_doc.get(order_field)
+        current_value = document.get(order_field)
+        if cursor_value is None or current_value is None:
+            return doc_id > cursor_id
+        if current_value == cursor_value:
+            return doc_id > cursor_id
+        if self._descending:
+            return current_value < cursor_value
+        return current_value > cursor_value
+
     async def stream(self):
         doc_ids = list(self._collection.document_ids())
+        filtered_ids: list[str] = []
+        for doc_id in doc_ids:
+            document = self._collection.raw_document(doc_id)
+            if document is None:
+                continue
+            if not self._matches_filters(document):
+                continue
+            if not self._after_cursor(doc_id, document):
+                continue
+            filtered_ids.append(doc_id)
         if self._order_by is not None:
-            keyed = [
-                (self._sort_value(doc_id), doc_id)
-                for doc_id in doc_ids
-                if self._sort_value(doc_id) is not None
-            ]
+            keyed = []
+            for doc_id in filtered_ids:
+                sort_value = self._sort_value(doc_id)
+                if sort_value is not None:
+                    keyed.append((sort_value, doc_id))
             keyed.sort(key=lambda pair: pair[0], reverse=self._descending)
             doc_ids = [doc_id for _, doc_id in keyed]
+        else:
+            doc_ids = filtered_ids
         if self._limit is not None:
             doc_ids = doc_ids[: self._limit]
         for doc_id in doc_ids:
@@ -119,6 +180,9 @@ class FakeCollectionReference:
 
     def order_by(self, field_path: str, direction: str = "ASCENDING") -> FakeQuery:
         return FakeQuery(self).order_by(field_path, direction)
+
+    def where(self, field_path: str, op: str, value: Any) -> FakeQuery:
+        return FakeQuery(self).where(field_path, op, value)
 
     def limit(self, count: int) -> FakeQuery:
         return FakeQuery(self).limit(count)

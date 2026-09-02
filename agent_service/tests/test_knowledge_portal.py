@@ -121,6 +121,102 @@ def test_draft_search_endpoint(portal_client: TestClient) -> None:
     assert body["matchedDraft"] is True
 
 
+from pdf_test_helpers import build_text_pdf_bytes
+
+
+def _text_pdf_bytes(text: str) -> bytes:
+    return build_text_pdf_bytes(text)
+
+
+def test_import_text_pdf(portal_client: TestClient) -> None:
+    response = portal_client.post(
+        "/api/documents/import-pdf",
+        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN login troubleshooting steps"), "application/pdf")},
+        headers=portal_headers(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_type"] == "PDF"
+    assert body["page_count"] == 1
+    assert "VPN" in body["markdown_content"]
+
+
+def test_import_scanned_pdf_is_rejected(portal_client: TestClient) -> None:
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    buffer = BytesIO()
+    writer.write(buffer)
+    response = portal_client.post(
+        "/api/documents/import-pdf",
+        files={"file": ("scan.pdf", buffer.getvalue(), "application/pdf")},
+        headers=portal_headers(),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
+
+
+def test_pdf_publish_workflow(portal_client: TestClient, tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "require_dual_approval", False)
+    object.__setattr__(settings, "relaxed_workflow", True)
+    client = TestClient(create_app(settings))
+
+    imported = client.post(
+        "/api/documents/import-pdf",
+        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN password reset guide"), "application/pdf")},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert imported.status_code == 200
+    payload = sample_document_payload()
+    payload["title"] = imported.json()["title"]
+    payload["markdown_content"] = imported.json()["markdown_content"]
+    payload["change_reason"] = "Import text PDF"
+
+    create = client.post(
+        "/api/documents",
+        json={**payload, "source_type": "PDF"},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert create.status_code == 200
+    document_id = create.json()["document"]["document_id"]
+    etag = create.json()["document"]["etag"]
+
+    submit = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready"},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    review_id = submit.json()["open_review"]["review_id"]
+    client.post(
+        f"/api/reviews/{review_id}/decision",
+        json={"decision": "APPROVED", "comment": "ok", "policy_exceptions": []},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER"),
+    )
+    version_id = detail.json()["draft_version"]["version_id"]
+    publish = client.post(
+        f"/api/documents/{document_id}/publish",
+        json={"version_id": version_id, "reason": "Go live"},
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert publish.status_code == 200
+    published_version = client.get(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER"),
+    ).json()["published_version"]
+    assert published_version["source_type"] == "PDF"
+
+
 def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
