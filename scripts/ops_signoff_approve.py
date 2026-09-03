@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record a manual sign-off approval on the formal acceptance checklist.
+"""Record a local review marker; this never creates a formal approval.
 
 Usage:
     python scripts/ops_signoff_approve.py \\
@@ -17,6 +17,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ops_acceptance_evidence import read_json, write_json
+
 
 def approve_item(
     checklist_path: Path,
@@ -26,7 +28,7 @@ def approve_item(
     approved_at: str,
     notes: str,
 ) -> dict[str, object]:
-    payload = json.loads(checklist_path.read_text(encoding="utf-8"))
+    payload = read_json(checklist_path)
     items = payload.get("signOffItems")
     if not isinstance(items, list):
         raise ValueError("signOffItems must be a list")
@@ -50,12 +52,12 @@ def approve_item(
         raise ValueError(f"Unknown sign-off item '{item_id}'. Known items: {', '.join(known)}")
 
     payload["generatedAt"] = datetime.now(timezone.utc).isoformat()
-    checklist_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(checklist_path, payload, allow_local_update=True)
     return payload
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Record AI Ops formal acceptance sign-off approval.")
+    parser = argparse.ArgumentParser(description="Record an unverified local AI Ops review marker.")
     parser.add_argument("--checklist", required=True, help="Path to sign-off checklist JSON.")
     parser.add_argument("--item", required=True, help="Sign-off item id to approve.")
     parser.add_argument("--by", required=True, help="Approver display name or email.")
@@ -85,7 +87,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(f"Approved sign-off item '{args.item}' for {args.by.strip()}.")
+    print(f"Recorded unverified local review '{args.item}' for {args.by.strip()}; not formal approval.")
     return 0
 
 

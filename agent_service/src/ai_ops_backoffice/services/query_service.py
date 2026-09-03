@@ -26,6 +26,13 @@ from ..settings import BackofficeSettings
 from .export_format import wrap_export_payload
 from .export_service import ExportJobService
 from .periods import ResolvedPeriod, event_in_period, resolve_period
+from .usage_projection import (
+    UsageDimensions,
+    confirmed_zero_call,
+    known_cost_total,
+    project_usage,
+    usage_breakdown,
+)
 
 
 def _percentile(values: list[float], ratio: float) -> float | None:
@@ -355,7 +362,8 @@ class BackofficeQueryService:
         handoffs = [event for event in events if event.event_type.startswith("handoff.")]
         tickets = [event for event in events if event.event_type == "ticket.created"]
         feedback = [event for event in events if event.event_type == "feedback.recorded"]
-        usage_events = [event for event in events if event.event_type == "usage.recorded"]
+        usage_projection = project_usage(events)
+        usage_events = list(usage_projection.request_events)
         failed_requests = [event for event in events if event.event_type == "request.failed"]
         answer_events = [
             event
@@ -369,15 +377,18 @@ class BackofficeQueryService:
             for event in issues
             if event.issue_type_id
         )
-        cost_values = [
-            float(event.payload["estimatedCostUsd"])
+        cost_complete = sum(
+            1
             for event in usage_events
-            if event.payload.get("estimatedCostUsd") is not None
-        ]
-        cost_complete = sum(1 for event in usage_events if event.payload.get("costComplete"))
+            if event.payload.get("costComplete") is True
+            or (
+                event.payload.get("costComplete") is None
+                and event.payload.get("estimatedCostUsd") is not None
+            )
+        )
         latencies = [
             float(event.payload["elapsedMs"])
-            for event in usage_events
+            for event in usage_projection.request_latency_events
             if event.payload.get("elapsedMs") is not None
         ]
         total_tokens = sum(int(event.payload.get("totalTokens") or 0) for event in usage_events)
@@ -440,7 +451,7 @@ class BackofficeQueryService:
             ),
             "resolvedFeedbackCount": resolved_count,
             "totalTokens": total_tokens,
-            "estimatedCostUsd": round(sum(cost_values), 6),
+            "estimatedCostUsd": known_cost_total(usage_events),
             "costCoverage": round(cost_complete / len(usage_events), 4) if usage_events else 0.0,
             "handoffRate": round(len(handoffs) / turn_count, 4),
             "ticketRate": round(len(tickets) / turn_count, 4),
@@ -639,8 +650,7 @@ class BackofficeQueryService:
         issue_costs: dict[str, float] = defaultdict(float)
         for event in all_events:
             issue_type_id = event.issue_type_id or correlation_to_issue.get(
-                event.correlation_id or "",
-                "",
+                event.correlation_id or "", "",
             )
             if not issue_type_id:
                 continue
@@ -648,10 +658,12 @@ class BackofficeQueryService:
                 issue_feedback_down[issue_type_id] += 1
             if event.event_type.startswith("handoff."):
                 issue_handoffs[issue_type_id] += 1
-            if event.event_type == "usage.recorded":
-                cost = event.payload.get("estimatedCostUsd")
-                if cost is not None:
-                    issue_costs[issue_type_id] += float(cost)
+        usage_dimensions = UsageDimensions(all_events)
+        for event in project_usage(all_events).detail_events:
+            _, issue_type_id = usage_dimensions.resolve(event)
+            cost = event.payload.get("estimatedCostUsd")
+            if issue_type_id != "unknown" and cost is not None:
+                issue_costs[issue_type_id] += float(cost)
         counts = Counter(event.issue_type_id or "other.unclassified" for event in events)
         total = sum(counts.values()) or 1
         by_day: dict[str, Counter[str]] = defaultdict(Counter)
@@ -792,20 +804,9 @@ class BackofficeQueryService:
             end_date=end_date,
         )
         all_events = await self._scoped_events(actor, period)
-        route_by_correlation: dict[str, str] = {}
-        issue_by_correlation: dict[str, str] = {}
-        for event in all_events:
-            correlation_id = event.correlation_id
-            if not correlation_id:
-                continue
-            if event.event_type == "route.selected":
-                route_by_correlation[correlation_id] = str(event.payload.get("route") or "UNKNOWN")
-            if event.event_type in {"issue.extracted", "issue.classified"} and event.issue_type_id:
-                issue_by_correlation[correlation_id] = event.issue_type_id
-        events = [event for event in all_events if event.event_type == "usage.recorded"]
+        usage_dimensions = UsageDimensions(all_events)
+        events = list(project_usage(all_events).detail_events)
         by_day: dict[str, float] = defaultdict(float)
-        by_model: Counter[str] = Counter()
-        by_provider: Counter[str] = Counter()
         by_backend: Counter[str] = Counter()
         by_route_cost: dict[str, float] = defaultdict(float)
         by_issue_cost: dict[str, float] = defaultdict(float)
@@ -818,20 +819,15 @@ class BackofficeQueryService:
         for event in events:
             day = event.occurred_at.date().isoformat()
             cost = event.payload.get("estimatedCostUsd")
-            correlation_id = event.correlation_id or ""
-            route = route_by_correlation.get(correlation_id, "unknown")
-            issue_type_id = issue_by_correlation.get(correlation_id, "unknown")
+            route, issue_type_id = usage_dimensions.resolve(event)
             if cost is None:
-                missing_cost_count += 1
+                if not confirmed_zero_call(event):
+                    missing_cost_count += 1
             else:
                 cost_value = float(cost)
                 by_day[day] += cost_value
                 by_route_cost[route] += cost_value
                 by_issue_cost[issue_type_id] += cost_value
-            model = str(event.payload.get("model") or "unknown")
-            provider = str(event.payload.get("provider") or "unknown")
-            by_model[model] += 1
-            by_provider[provider] += 1
             backend = str(event.payload.get("knowledgeBackend") or "unknown")
             by_backend[backend] += 1
             input_tokens += int(event.payload.get("inputTokens") or 0)
@@ -840,13 +836,15 @@ class BackofficeQueryService:
             tool_context_tokens += int(event.payload.get("toolContextTokens") or 0)
             pricing_version = str(event.payload.get("pricingVersion") or "unknown")
             pricing_versions[pricing_version] += 1
-        known_total = round(sum(by_day.values()), 6)
+        known_total = known_cost_total(events)
         exchange_rate = float(self._metrics.get("usdTwdExchangeRate", 31.70))
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
             "totalEstimatedCostUsd": known_total,
-            "totalEstimatedCostTwd": convert_usd_to_twd(known_total, exchange_rate),
+            "totalEstimatedCostTwd": (
+                convert_usd_to_twd(known_total, exchange_rate) if known_total is not None else None
+            ),
             "usdTwdExchangeRate": exchange_rate,
             "missingCostEventCount": missing_cost_count,
             "inputTokens": input_tokens,
@@ -858,13 +856,9 @@ class BackofficeQueryService:
                 {"date": day, "estimatedCostUsd": round(value, 6)}
                 for day, value in sorted(by_day.items())
             ],
-            "byModel": [
-                {"model": model, "eventCount": count} for model, count in by_model.most_common()
-            ],
-            "byProvider": [
-                {"provider": provider, "eventCount": count}
-                for provider, count in by_provider.most_common()
-            ],
+            "byModel": usage_breakdown(events, "model"),
+            "byProvider": usage_breakdown(events, "provider"),
+            "byComponent": usage_breakdown(events, "component"),
             "byBackend": [
                 {"backend": backend, "eventCount": count}
                 for backend, count in by_backend.most_common()

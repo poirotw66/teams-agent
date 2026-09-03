@@ -30,6 +30,12 @@ variable "ops_bigquery_table" {
   default = "operational_events"
 }
 
+variable "ops_bigquery_deduplicated_view" {
+  description = "Read-model view that selects one latest row per immutable operational event ID."
+  type        = string
+  default     = "operational_events_deduplicated"
+}
+
 variable "backoffice_image" {
   description = "Immutable Backoffice container image."
   type        = string
@@ -48,24 +54,26 @@ resource "google_project_iam_member" "backoffice_firestore" {
   member  = "serviceAccount:${google_service_account.backoffice.email}"
 }
 
-resource "google_project_iam_member" "backoffice_bigquery" {
-  project = var.project_id
-  role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.backoffice.email}"
-}
-
 resource "google_bigquery_dataset" "ai_ops" {
   depends_on = [google_project_service.required]
 
   dataset_id = var.ops_bigquery_dataset
   project    = var.project_id
   location   = var.region
+
+  labels = {
+    environment = var.environment_name
+    managed_by  = "terraform"
+    data_domain = "ai_ops"
+  }
 }
 
 resource "google_bigquery_table" "operational_events" {
   dataset_id = google_bigquery_dataset.ai_ops.dataset_id
   project    = var.project_id
   table_id   = var.ops_bigquery_table
+
+  require_partition_filter = true
 
   time_partitioning {
     type  = "DAY"
@@ -74,14 +82,66 @@ resource "google_bigquery_table" "operational_events" {
   }
 
   schema = jsonencode([
-    { name = "event_id", type = "STRING", mode = "REQUIRED" },
+    { name = "event_id", type = "STRING", mode = "REQUIRED", description = "UUID idempotency key; retries reuse this value." },
     { name = "event_type", type = "STRING", mode = "REQUIRED" },
+    { name = "schema_version", type = "INTEGER", mode = "REQUIRED" },
     { name = "occurred_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "ingested_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "environment", type = "STRING", mode = "REQUIRED" },
+    { name = "tenant_id", type = "STRING", mode = "NULLABLE" },
+    { name = "team_id", type = "STRING", mode = "NULLABLE" },
+    { name = "channel_scope", type = "STRING", mode = "NULLABLE" },
     { name = "conversation_id", type = "STRING", mode = "NULLABLE" },
-    { name = "correlation_id", type = "STRING", mode = "NULLABLE" },
+    { name = "turn_id", type = "STRING", mode = "NULLABLE" },
+    { name = "request_id", type = "STRING", mode = "NULLABLE" },
+    { name = "correlation_id", type = "STRING", mode = "REQUIRED" },
+    { name = "issue_occurrence_id", type = "STRING", mode = "NULLABLE" },
     { name = "issue_type_id", type = "STRING", mode = "NULLABLE" },
+    { name = "taxonomy_version", type = "STRING", mode = "NULLABLE" },
+    { name = "actor_ref", type = "STRING", mode = "NULLABLE", description = "Pseudonymous actor reference only; never an email dashboard key." },
+    { name = "data_classification", type = "STRING", mode = "REQUIRED" },
+    { name = "masking_policy_version", type = "STRING", mode = "NULLABLE" },
+    { name = "retention_expires_at", type = "TIMESTAMP", mode = "REQUIRED" },
     { name = "payload", type = "JSON", mode = "NULLABLE" },
   ])
+
+  clustering = ["environment", "tenant_id", "event_type", "correlation_id"]
+}
+
+resource "google_bigquery_table" "operational_events_deduplicated" {
+  dataset_id = google_bigquery_dataset.ai_ops.dataset_id
+  project    = var.project_id
+  table_id   = var.ops_bigquery_deduplicated_view
+
+  view {
+    use_legacy_sql = false
+    query = <<-SQL
+      SELECT * EXCEPT (event_row_number)
+      FROM (
+        SELECT
+          events.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY event_id
+            ORDER BY ingested_at DESC, occurred_at DESC
+          ) AS event_row_number
+        FROM `${var.project_id}.${var.ops_bigquery_dataset}.${var.ops_bigquery_table}` AS events
+      )
+      WHERE event_row_number = 1
+    SQL
+  }
+}
+
+resource "google_project_iam_member" "backoffice_bigquery_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.backoffice.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "backoffice_ai_ops_reader" {
+  project    = var.project_id
+  dataset_id = google_bigquery_dataset.ai_ops.dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.backoffice.email}"
 }
 
 resource "google_firestore_field" "ops_events_retention_ttl" {
@@ -169,8 +229,6 @@ resource "google_cloud_run_v2_service" "backoffice" {
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
-      template,
-      scaling,
       client,
       client_version,
     ]

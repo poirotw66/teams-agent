@@ -2,44 +2,68 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
+from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import unquote, urlsplit, urlunsplit
 
-from ..contracts import AgentRequest, FeedbackRequest, Issue, IssueResult
+from ..contracts import AgentRequest, FeedbackRequest, IssueResult
 from ..usage_events import RequestCostSummary
 from .classification import IssueClassifier
-from .contracts import MASKING_POLICY_VERSION, OperationalEvent, utc_now
+from .contracts import MASKING_POLICY_VERSION, OperationalEvent
+from .event_identity import (
+    LogicalRequestIdentity,
+    conversation_started_event_id,
+    event_fingerprint,
+    feedback_submission_event_id,
+    required_utc,
+)
 from .ingestion import EventIngestionService
 from .masking import mask_text, pseudonymous_actor_id
 from .settings import OpsSettings
 from .taxonomy import TaxonomyRepository
+from .usage_attribution import call_occurred_at, call_usage_payload, request_summary_payload
 
 logger = logging.getLogger(__name__)
 
 
-def _channel_scope(channel: str) -> str:
+class OperationalEventReplayConflict(ValueError):
+    """A replay changed previously observed immutable facts."""
 
+
+def _channel_scope(channel: str) -> str:
     if channel in {"playground", "msteams-web"}:
         return "playground"
-
     if channel.endswith("-channel"):
         return "channel"
-
     return "personal"
 
 
-def _handoff_event_type(status: str) -> str:
-
-    mapping = {
-        "OFFERED": "handoff.offered",
-        "CLOSED": "handoff.completed",
-        "CANCELLED": "handoff.cancelled",
-        "FAILED": "handoff.cancelled",
-        "EXPIRED": "handoff.cancelled",
-        "ROUTED_TO_TICKET": "handoff.completed",
-    }
-
-    return mapping.get(status, "handoff.started")
+def _safe_source(source_path: str | None) -> tuple[str | None, str | None]:
+    """Sanitize before deriving identifiers: slugification erases secret markers."""
+    if not source_path:
+        return None, None
+    decoded = source_path
+    for _ in range(4):
+        expanded = unquote(decoded)
+        if expanded == decoded:
+            break
+        decoded = expanded
+    else:
+        return "[REDACTED_SOURCE]", None
+    masked = mask_text(decoded)
+    if masked.was_masked:
+        return masked.text, None
+    try:
+        parts = urlsplit(decoded)
+        if parts.username is not None or parts.password is not None:
+            return "[REDACTED_SOURCE]", None
+    except ValueError:
+        return "[REDACTED_SOURCE]", None
+    # Query strings/fragments may carry signed access credentials even when a
+    # free-text detector does not recognize the provider's parameter names.
+    path = parts.path
+    safe_path = urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+    return safe_path, IssueClassifier.document_id_from_source_path(path)
 
 
 class OperationalEventEmitter:
@@ -50,394 +74,292 @@ class OperationalEventEmitter:
         classifier: IssueClassifier,
         settings: OpsSettings,
     ) -> None:
-
         self._ingestion = ingestion
-
         self._taxonomy = taxonomy
-
         self._classifier = classifier
-
         self._settings = settings
+        # Local conflict detection only. Persistent compare-and-create belongs
+        # to the delivery/store integration; no old payload is substituted here.
+        self._request_fingerprints: dict[str, str] = {}
+        self._event_fingerprints: dict[str, str] = {}
+        self._call_manifests: dict[str, set[str]] = {}
+        self._final_usage: dict[str, str] = {}
+
+    @staticmethod
+    def _occurred_at(state: dict[str, Any], conversation: object | None) -> datetime:
+        if state.get("operational_occurred_at") is not None:
+            return required_utc(state["operational_occurred_at"], "operational_occurred_at")
+        # Correlation alone is not unique. Require the producer to identify the
+        # actual persisted user message; lastActivityAt may belong to a prior turn.
+        message = state.get("operational_user_message")
+        if message is not None:
+            return required_utc(getattr(message, "createdAt", None), "user message createdAt")
+        raise ValueError("operational_occurred_at or operational_user_message is required")
+
+    def _assert_immutable(
+        self,
+        request_key: str,
+        request_fact: object,
+        events: list[OperationalEvent],
+        *,
+        call_ids: set[str] | None = None,
+        usage_fact: object = None,
+        final_usage: bool = False,
+    ) -> None:
+        request_hash = event_fingerprint(request_fact)
+        if self._request_fingerprints.get(request_key, request_hash) != request_hash:
+            raise OperationalEventReplayConflict("logical request replay changed immutable facts")
+        proposed = {}
+        for event in events:
+            fingerprint = event_fingerprint(event)
+            if event.event_id in proposed:
+                raise OperationalEventReplayConflict("duplicate event identity within emission")
+            if self._event_fingerprints.get(event.event_id, fingerprint) != fingerprint:
+                raise OperationalEventReplayConflict("event replay changed immutable payload")
+            proposed[event.event_id] = fingerprint
+        usage_hash = event_fingerprint(usage_fact)
+        if call_ids is not None:
+            if not self._call_manifests.get(request_key, set()).issubset(call_ids):
+                raise OperationalEventReplayConflict("replay removed collector facts")
+            if self._final_usage.get(request_key, usage_hash) != usage_hash:
+                raise OperationalEventReplayConflict("replay changed finalized usage")
+        # Commit only after the entire batch validates; a rejected build cannot
+        # poison future retries or register half a batch.
+        self._request_fingerprints[request_key] = request_hash
+        self._event_fingerprints.update(proposed)
+        if call_ids is not None:
+            self._call_manifests[request_key] = call_ids
+        if final_usage:
+            self._final_usage[request_key] = usage_hash
 
     async def emit_turn(
-        self,
-        payload: AgentRequest,
-        state: dict[str, Any],
-        *,
+        self, payload: AgentRequest, state: dict[str, Any], *,
         cost_summary: RequestCostSummary | None,
     ) -> None:
-
-        events = self.build_turn_events(payload, state, cost_summary=cost_summary)
-
-        await self._ingestion.ingest_many(events)
+        await self._ingestion.ingest_many(
+            self.build_turn_events(payload, state, cost_summary=cost_summary)
+        )
 
     def schedule_turn(
-        self,
-        payload: AgentRequest,
-        state: dict[str, Any],
-        *,
+        self, payload: AgentRequest, state: dict[str, Any], *,
         cost_summary: RequestCostSummary | None,
     ) -> None:
+        # Build synchronously to validate provenance and freeze the completed
+        # fact image before a caller can mutate the collector/state.
+        events = self.build_turn_events(payload, state, cost_summary=cost_summary)
+        asyncio.create_task(self._ingestion.ingest_many(events))
 
-        asyncio.create_task(self.emit_turn(payload, state, cost_summary=cost_summary))
-
-    async def emit_feedback(self, payload: FeedbackRequest) -> None:
-
+    def build_feedback_event(
+        self, payload: FeedbackRequest, *,
+        tenant_id: str, feedback_id: str, occurred_at: datetime,
+        request_id: str | None = None,
+    ) -> OperationalEvent:
+        if not tenant_id or not feedback_id:
+            raise ValueError("trusted tenant_id and feedback_id are required")
+        timestamp = required_utc(occurred_at, "feedback occurred_at")
+        identity = LogicalRequestIdentity(tenant_id, payload.conversationId, request_id) if request_id else None
         event = OperationalEvent(
-            event_id=f"{payload.correlationId}:feedback:{payload.issueId or 'none'}:{payload.rating}",
+            event_id=feedback_submission_event_id(tenant_id, feedback_id),
             event_type="feedback.recorded",
-            occurred_at=utc_now(),
-            environment=self._settings.environment,  # type: ignore[arg-type]
+            occurred_at=timestamp,
+            retention_expires_at=timestamp + timedelta(days=self._settings.default_retention_days),
+            environment=self._settings.environment,
+            tenant_id=tenant_id,
             conversation_id=payload.conversationId,
+            request_id=request_id,
+            turn_id=identity.value if identity else None,
+            issue_occurrence_id=(
+                identity.issue_occurrence_id(payload.issueId)
+                if identity and payload.issueId is not None else None
+            ),
             correlation_id=payload.correlationId,
             actor_ref=pseudonymous_actor_id(payload.userId),
             data_classification="CONFIDENTIAL",
             payload={
                 "rating": payload.rating,
                 "issueId": payload.issueId,
-                "reason": payload.reason,
+                "reason": mask_text(payload.reason).text if payload.reason else None,
                 "resolvedStatus": payload.resolvedStatus,
             },
         )
+        self._assert_immutable(event.event_id, payload.model_dump(mode="json"), [event])
+        return event
 
-        await self._ingestion.ingest(event)
+    async def emit_feedback(self, payload: FeedbackRequest, **provenance: Any) -> None:
+        await self._ingestion.ingest(self.build_feedback_event(payload, **provenance))
 
-    def schedule_feedback(self, payload: FeedbackRequest) -> None:
-
-        asyncio.create_task(self.emit_feedback(payload))
+    def schedule_feedback(self, payload: FeedbackRequest, **provenance: Any) -> None:
+        event = self.build_feedback_event(payload, **provenance)
+        asyncio.create_task(self._ingestion.ingest(event))
 
     def build_turn_events(
-        self,
-        payload: AgentRequest,
-        state: dict[str, Any],
-        *,
+        self, payload: AgentRequest, state: dict[str, Any], *,
         cost_summary: RequestCostSummary | None,
     ) -> list[OperationalEvent]:
-
-        correlation_id = str(
-            state.get("correlation_id") or payload.correlationId or payload.requestId
-        )
-
+        correlation_id = str(state.get("correlation_id") or payload.correlationId or payload.requestId)
         conversation = state.get("conversation")
-
-        conversation_id = (
-            getattr(conversation, "conversationId", None) or payload.conversation.conversationId
-        )
-
-        turn_id = str(uuid.uuid4())
-
-        actor_ref = pseudonymous_actor_id(payload.user.entraObjectId or payload.user.teamsUserId)
-
-        masked_message = mask_text(payload.message.text)
-
-        environment = self._settings.environment  # type: ignore[assignment]
-
-        release_id = state.get("knowledge_release_id")
-
+        conversation_id = getattr(conversation, "conversationId", None) or payload.conversation.conversationId
+        identity = LogicalRequestIdentity(payload.conversation.tenantId, conversation_id, payload.requestId)
+        occurred_at = self._occurred_at(state, conversation)
         base = {
-            "environment": environment,
+            "environment": self._settings.environment,
             "tenant_id": payload.conversation.tenantId,
             "team_id": payload.conversation.teamId,
             "channel_scope": _channel_scope(payload.channel),
             "conversation_id": conversation_id,
-            "turn_id": turn_id,
+            "turn_id": identity.value,
             "request_id": payload.requestId,
             "correlation_id": correlation_id,
-            "actor_ref": actor_ref,
+            "actor_ref": pseudonymous_actor_id(payload.user.entraObjectId or payload.user.teamsUserId),
         }
-
-        events: list[OperationalEvent] = [
-            OperationalEvent(
-                event_id=f"{correlation_id}:turn.received",
-                event_type="turn.received",
-                occurred_at=utc_now(),
-                data_classification="CONFIDENTIAL",
-                payload={
-                    "messageMasked": masked_message.text,
-                    "messageWasMasked": masked_message.was_masked,
-                    "maskingPolicyVersion": MASKING_POLICY_VERSION,
-                    "locale": payload.message.locale,
-                },
-                **base,
-            )
-        ]
-
-        if conversation_id and state.get("conversation_started") is True:
-            events.append(
-                OperationalEvent(
-                    event_id=f"{conversation_id}:conversation.started",
-                    event_type="conversation.started",
-                    occurred_at=utc_now(),
-                    data_classification="INTERNAL",
-                    payload={},
-                    **base,
-                )
-            )
-
-        issues: list[Issue] = state.get("issues") or []
-
-        issue_results: list[IssueResult] = state.get("issue_results") or []
-
-        results_by_issue = {result.issueId: result for result in issue_results}
-
-        for issue in issues:
-            occurrence_id = f"{turn_id}:issue:{issue.id}"
-
-            masked_description = mask_text(issue.description)
-
-            classification = self._classifier.classify(
-                issue.description,
-                route=issue.route,
-                faq_key=issue.faqKey,
-            )
-
-            events.extend(
-                [
-                    OperationalEvent(
-                        event_id=f"{occurrence_id}:issue.extracted",
-                        event_type="issue.extracted",
-                        occurred_at=utc_now(),
-                        issue_occurrence_id=occurrence_id,
-                        issue_type_id=classification.issue_type_id,
-                        taxonomy_version=self._taxonomy.version,
-                        payload={
-                            "issueId": issue.id,
-                            "descriptionMasked": masked_description.text,
-                            "descriptionRawLength": len(issue.description),
-                            "readiness": issue.readiness,
-                            "route": issue.route,
-                            "faqKey": issue.faqKey,
-                        },
-                        **base,
-                    ),
-                    OperationalEvent(
-                        event_id=f"{occurrence_id}:issue.classified",
-                        event_type="issue.classified",
-                        occurred_at=utc_now(),
-                        issue_occurrence_id=occurrence_id,
-                        issue_type_id=classification.issue_type_id,
-                        taxonomy_version=self._taxonomy.version,
-                        payload={
-                            "classificationSource": classification.classification_source,
-                            "confidenceStatus": classification.confidence_status,
-                            "normalizedDescription": classification.normalized_description,
-                            "issueId": issue.id,
-                            "faqKey": issue.faqKey,
-                            "descriptionRawLength": len(issue.description),
-                        },
-                        **base,
-                    ),
-                    OperationalEvent(
-                        event_id=f"{occurrence_id}:route.selected",
-                        event_type="route.selected",
-                        occurred_at=utc_now(),
-                        issue_occurrence_id=occurrence_id,
-                        issue_type_id=classification.issue_type_id,
-                        taxonomy_version=self._taxonomy.version,
-                        payload={"route": issue.route},
-                        **base,
-                    ),
-                ]
-            )
-
-            result = results_by_issue.get(issue.id)
-
-            if result is not None:
-                events.extend(
-                    self._result_events(
-                        result,
-                        occurrence_id=occurrence_id,
-                        issue_type_id=classification.issue_type_id,
-                        release_id=release_id,
-                        base=base,
-                    )
-                )
-
-        if state.get("handoff_handled"):
-            events.extend(self._handoff_events(state, base=base))
-
-        if cost_summary is not None:
-            usage_payload = {
-                "outcome": cost_summary.outcome,
-                "totalTokens": cost_summary.total_tokens,
-                "inputTokens": cost_summary.input_tokens,
-                "outputTokens": cost_summary.output_tokens,
-                "estimatedCostUsd": cost_summary.estimated_cost_usd,
-                "costComplete": cost_summary.cost_complete,
-                "llmCallCount": cost_summary.llm_call_count,
-                "knowledgeBackend": cost_summary.knowledge_backend,
-                "pricingVersion": cost_summary.pricing_version,
-                "elapsedMs": round(cost_summary.elapsed_ms, 1),
-            }
-            execution_context = state.get("execution_context")
-            collector = getattr(execution_context, "usage_collector", None)
-            if collector is not None:
-                llm_events = [item for item in collector.events() if item.model]
-                if llm_events:
-                    usage_payload["model"] = llm_events[0].model
-                    usage_payload["provider"] = llm_events[0].provider
-            events.append(
-                OperationalEvent(
-                    event_id=f"{correlation_id}:usage.recorded",
-                    event_type="usage.recorded",
-                    occurred_at=utc_now(),
-                    data_classification="INTERNAL",
-                    payload=usage_payload,
-                    **base,
-                )
-            )
-
-        if cost_summary is not None and cost_summary.outcome == "handoff":
-            pass
-
-        return events
-
-    def _result_events(
-        self,
-        result: IssueResult,
-        *,
-        occurrence_id: str,
-        issue_type_id: str,
-        release_id: str | None,
-        base: dict[str, object],
-    ) -> list[OperationalEvent]:
-
         events: list[OperationalEvent] = []
 
-        if result.resultType == "TICKET_CREATED":
-            events.append(
-                OperationalEvent(
-                    event_id=f"{occurrence_id}:ticket.created",
-                    event_type="ticket.created",
-                    occurred_at=utc_now(),
-                    issue_occurrence_id=occurrence_id,
-                    issue_type_id=issue_type_id,
-                    payload={"ticketId": result.ticketId, "backend": result.backend},
-                    **base,
-                )
+        def add(kind: str, body: dict[str, Any], *parts: object, **fields: Any) -> None:
+            timestamp = fields.pop("occurred_at", occurred_at)
+            events.append(OperationalEvent(
+                **base, event_id=identity.event_id(kind, *parts), event_type=kind,
+                occurred_at=timestamp,
+                retention_expires_at=timestamp + timedelta(days=self._settings.default_retention_days),
+                payload=body, **fields,
+            ))
+
+        masked = mask_text(payload.message.text)
+        add("turn.received", {
+            "messageMasked": masked.text, "messageWasMasked": masked.was_masked,
+            "locale": payload.message.locale, "maskingPolicyVersion": MASKING_POLICY_VERSION,
+        }, data_classification="CONFIDENTIAL")
+        if conversation_id and state.get("conversation_started") is True:
+            started_at = required_utc(
+                getattr(conversation, "startedAt", None) or state.get("operational_conversation_started_at"),
+                "conversation startedAt",
             )
-
-        elif result.resultType == "FAILED" and result.ticketId:
-            events.append(
-                OperationalEvent(
-                    event_id=f"{occurrence_id}:ticket.failed",
-                    event_type="ticket.failed",
-                    occurred_at=utc_now(),
-                    issue_occurrence_id=occurrence_id,
-                    issue_type_id=issue_type_id,
-                    payload={"error": result.error, "backend": result.backend},
-                    **base,
-                )
+            # A lifecycle fact has no request, actor, team, or correlation from
+            # whichever turn happens to re-deliver it.
+            lifecycle_id = conversation_started_event_id(
+                tenant_id=payload.conversation.tenantId, conversation_id=conversation_id,
             )
+            events.append(OperationalEvent(
+                event_id=lifecycle_id, event_type="conversation.started",
+                environment=self._settings.environment, tenant_id=payload.conversation.tenantId,
+                conversation_id=conversation_id, correlation_id=lifecycle_id,
+                occurred_at=started_at,
+                retention_expires_at=started_at + timedelta(days=self._settings.default_retention_days),
+                payload={},
+            ))
+        issues = state.get("issues") or []
+        results = state.get("issue_results") or []
+        if len({i.id for i in issues}) != len(issues) or len({r.issueId for r in results}) != len(results):
+            raise OperationalEventReplayConflict("duplicate issue/result identity")
+        results_by_issue = {r.issueId: r for r in results}
+        for issue in issues:
+            occurrence = identity.issue_occurrence_id(issue.id)
+            classification = self._classifier.classify(
+                issue.description, route=issue.route, faq_key=issue.faqKey,
+            )
+            fields = {
+                "issue_occurrence_id": occurrence, "issue_type_id": classification.issue_type_id,
+                "taxonomy_version": self._taxonomy.version,
+            }
+            add("issue.extracted", {
+                "issueId": issue.id, "descriptionMasked": mask_text(issue.description).text,
+                "descriptionRawLength": len(issue.description), "readiness": issue.readiness,
+                "route": issue.route, "faqKey": issue.faqKey,
+            }, occurrence, **fields)
+            add("issue.classified", {
+                "issueId": issue.id, "classificationSource": classification.classification_source,
+                "confidenceStatus": classification.confidence_status,
+                "normalizedDescription": mask_text(classification.normalized_description).text,
+                "faqKey": issue.faqKey, "descriptionRawLength": len(issue.description),
+            }, occurrence, **fields)
+            add("route.selected", {"route": issue.route}, occurrence, **fields)
+            result = results_by_issue.get(issue.id)
+            if result:
+                for kind, body, suffix in self._result_payloads(result, state.get("knowledge_release_id")):
+                    add(kind, body, occurrence, suffix, **fields)
+        if state.get("handoff_handled"):
+            case = state.get("handoff_case")
+            status = getattr(case, "status", "OFFERED")
+            status = status.value if hasattr(status, "value") else str(status)
+            kind = {
+                "OFFERED": "handoff.offered", "CLOSED": "handoff.completed",
+                "CANCELLED": "handoff.cancelled", "FAILED": "handoff.cancelled",
+                "EXPIRED": "handoff.cancelled", "ROUTED_TO_TICKET": "handoff.completed",
+            }.get(status, "handoff.started")
+            add(kind, {
+                "caseId": getattr(case, "caseId", None), "status": status,
+                "providerMode": getattr(case, "providerMode", None),
+            }, getattr(case, "caseId", None), status, data_classification="CONFIDENTIAL")
 
-        event_type = "answer.completed"
-
-        payload_body: dict[str, object] = {
-            "resultType": result.resultType,
-            "backend": result.backend,
+        collector = getattr(state.get("execution_context"), "usage_collector", None)
+        calls = tuple(collector.events()) if collector is not None else ()
+        for call in calls:
+            self._validate_usage_scope(call, payload, correlation_id)
+            add("usage.recorded", call_usage_payload(call), "call", call.event_id,
+                occurred_at=call_occurred_at(call))
+        if cost_summary is not None:
+            self._validate_usage_scope(cost_summary, payload, correlation_id)
+            add("usage.recorded", request_summary_payload(cost_summary, calls), "request-summary")
+        # Hash raw inputs transiently so even two credentials that mask to the
+        # same marker conflict. Only digests are retained, never these inputs.
+        request_fact = {
+            "message": payload.message.text, "locale": payload.message.locale,
+            "actor": [payload.user.entraObjectId, payload.user.teamsUserId],
+            "channel": payload.channel, "team": payload.conversation.teamId,
+            "issues": [i.model_dump(mode="json") for i in issues],
+            "results": [r.model_dump(mode="json") for r in results],
+            "handoff": state.get("handoff_handled"),
+            "release": state.get("knowledge_release_id"),
         }
-        if result.answer:
-            masked_answer = mask_text(result.answer)
-            payload_body["answerMasked"] = masked_answer.text
-            payload_body["answerWasMasked"] = masked_answer.was_masked
-
-        if result.resultType == "FAQ_ANSWERED":
-            event_type = "faq.answered"
-
-            payload_body["faqKey"] = getattr(result, "faqKey", None)
-
-        elif result.resultType == "KNOWLEDGE_ANSWERED":
-            citations = []
-
-            for index, source in enumerate(result.sources or [], start=1):
-                document_id = IssueClassifier.document_id_from_source_path(source.url)
-
-                citations.append(
-                    {
-                        "rank": index,
-                        "title": source.title,
-                        "chunkId": source.chunkId,
-                        "documentId": document_id,
-                        "sourcePath": source.url,
-                    }
-                )
-
-                events.append(
-                    OperationalEvent(
-                        event_id=f"{occurrence_id}:knowledge.retrieved:{index}",
-                        event_type="knowledge.retrieved",
-                        occurred_at=utc_now(),
-                        issue_occurrence_id=occurrence_id,
-                        issue_type_id=issue_type_id,
-                        payload={
-                            "rank": index,
-                            "chunkId": source.chunkId,
-                            "documentId": document_id,
-                            "title": source.title,
-                            "sourcePath": source.url,
-                            "releaseId": release_id,
-                        },
-                        **base,
-                    )
-                )
-
-            event_type = "knowledge.answered"
-
-            payload_body["citations"] = citations
-
-            payload_body["releaseId"] = release_id
-
-            payload_body["sourceCount"] = len(citations)
-
-        events.append(
-            OperationalEvent(
-                event_id=f"{occurrence_id}:{event_type}",
-                event_type=event_type,  # type: ignore[arg-type]
-                occurred_at=utc_now(),
-                issue_occurrence_id=occurrence_id,
-                issue_type_id=issue_type_id,
-                payload=payload_body,
-                **base,
-            )
+        usage_fact = {
+            "calls": sorted([event_fingerprint(c.to_log_dict()) for c in calls]),
+            "summary": cost_summary.to_log_dict() if cost_summary else None,
+        }
+        self._assert_immutable(
+            identity.value, request_fact, events,
+            call_ids={c.event_id for c in calls}, usage_fact=usage_fact,
+            final_usage=cost_summary is not None,
         )
-
         return events
 
-    def _handoff_events(
-        self, state: dict[str, Any], *, base: dict[str, object]
-    ) -> list[OperationalEvent]:
+    def _validate_usage_scope(self, usage: Any, request: AgentRequest, correlation_id: str) -> None:
+        if (usage.request_id, usage.tenant_id, usage.team_id, usage.environment, usage.correlation_id) != (
+            request.requestId, request.conversation.tenantId, request.conversation.teamId,
+            self._settings.environment, correlation_id,
+        ):
+            raise OperationalEventReplayConflict("collector/summary provenance does not match request")
 
-        handoff_case = state.get("handoff_case")
-
-        if handoff_case is None:
-            return [
-                OperationalEvent(
-                    event_id=f"{base['correlation_id']}:handoff.offered",
-                    event_type="handoff.offered",
-                    occurred_at=utc_now(),
-                    data_classification="CONFIDENTIAL",
-                    payload={"reason": "handoff_handled"},
-                    **base,
-                )
-            ]
-
-        status = getattr(handoff_case, "status", "OFFERED")
-
-        status_value = status.value if hasattr(status, "value") else str(status)
-
-        event_type = _handoff_event_type(status_value)  # type: ignore[arg-type]
-
-        return [
-            OperationalEvent(
-                event_id=f"{getattr(handoff_case, 'caseId', base['correlation_id'])}:{event_type}",
-                event_type=event_type,
-                occurred_at=utc_now(),
-                data_classification="CONFIDENTIAL",
-                payload={
-                    "caseId": getattr(handoff_case, "caseId", None),
-                    "status": status_value,
-                    "providerMode": getattr(handoff_case, "providerMode", None),
-                },
-                **base,
-            )
-        ]
+    @staticmethod
+    def _result_payloads(
+        result: IssueResult, release_id: str | None,
+    ) -> list[tuple[str, dict[str, Any], object]]:
+        events: list[tuple[str, dict[str, Any], object]] = []
+        if result.resultType == "TICKET_CREATED":
+            events.append(("ticket.created", {"ticketId": result.ticketId, "backend": result.backend}, None))
+        elif result.resultType == "FAILED" and result.ticketId:
+            events.append(("ticket.failed", {
+                "error": mask_text(result.error).text if result.error else None,
+                "backend": result.backend,
+            }, None))
+        kind = "answer.completed"
+        body: dict[str, Any] = {"resultType": result.resultType, "backend": result.backend}
+        if result.answer:
+            answer = mask_text(result.answer)
+            body.update(answerMasked=answer.text, answerWasMasked=answer.was_masked)
+        if result.resultType == "FAQ_ANSWERED":
+            kind = "faq.answered"
+            body["faqKey"] = getattr(result, "faqKey", None)
+        elif result.resultType == "KNOWLEDGE_ANSWERED":
+            kind = "knowledge.answered"
+            citations = []
+            for rank, source in enumerate(result.sources, 1):
+                source_path, document_id = _safe_source(source.url)
+                citation = {
+                    "rank": rank, "title": mask_text(source.title).text,
+                    "chunkId": mask_text(source.chunkId).text if source.chunkId else None,
+                    "documentId": document_id, "sourcePath": source_path,
+                }
+                citations.append(citation)
+                events.append(("knowledge.retrieved", {**citation, "releaseId": release_id}, rank))
+            body.update(citations=citations, releaseId=release_id, sourceCount=len(citations))
+        events.append((kind, body, None))
+        return events

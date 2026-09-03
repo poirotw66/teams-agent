@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SCHEMA_VERSION = 1
 METRICS_DEFINITION_VERSION = "v1"
-MASKING_POLICY_VERSION = "v1"
+MASKING_POLICY_VERSION = "v2"
 DEFAULT_TIMEZONE = "Asia/Taipei"
 
 Environment = Literal["dev", "test", "poc", "prod"]

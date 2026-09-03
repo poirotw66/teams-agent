@@ -1,6 +1,8 @@
 {
   "inventoryVersion": "v1",
   "updatedAt": "2026-09-02",
+  "verificationStatus": "historical-record-only",
+  "verificationNotice": "The listed lab details and reported plan are historical handoff evidence from 2026-09-02, not verification performed by this Phase 0 infrastructure review.",
   "environments": [
     {
       "name": "lab",
@@ -39,8 +41,8 @@
           "google_monitoring_dashboard.ai_ops",
           "google_monitoring_alert_policy.backoffice_5xx"
         ],
-        "pendingPlan": "0 add, 0 change, 0 destroy (verified 2026-09-02)",
-        "backofficeDeployMethod": "terraform:google_cloud_run_v2_service.backoffice (imported live revision)"
+        "historicalPlanEvidence": "0 add, 0 change, 0 destroy (reported as verified 2026-09-02; template/scaling were then ignored and this is not current ownership evidence)",
+        "historicalBackofficeDeployMethod": "terraform:google_cloud_run_v2_service.backoffice (reported imported live revision; not revalidated)"
       },
       "dataStores": {
         "opsEventsCollection": "operational_events",

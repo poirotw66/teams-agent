@@ -3,6 +3,16 @@ output "deployment_phase" {
   value       = var.deployment_phase
 }
 
+output "environment_name" {
+  description = "Runtime/data-governance environment, independent from Terraform bootstrap phase."
+  value       = var.environment_name
+}
+
+output "knowledge_portal_public_url" {
+  description = "Configured Knowledge Portal URL, or null when the Portal has not been deployed/configured."
+  value       = var.knowledge_portal_public_url != "" ? var.knowledge_portal_public_url : null
+}
+
 output "agent_url" {
   description = "HTTPS URL of the private LangGraph Agent Cloud Run service."
   value       = try(google_cloud_run_v2_service.agent[0].uri, null)

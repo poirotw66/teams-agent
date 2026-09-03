@@ -1,0 +1,18 @@
+# Template only. It does not assert that this project or any resources exist.
+project_id       = "your-prod-project-id"
+region           = "asia-east1"
+environment_name = "prod"
+
+bot_client_id = "REPLACE_WITH_ENTRA_CLIENT_ID"
+bot_tenant_id = "REPLACE_WITH_ENTRA_TENANT_ID"
+
+backoffice_auth_mode    = "ENTRA"
+allow_latest_image_tags = false
+deployment_phase        = "prepare"
+
+# Production policy defaults: keep explicit values in the reviewed tfvars.
+conversation_retention_days = 365
+handoff_retention_days      = 365
+
+# Set only after the separately deployed Portal has an approved HTTPS endpoint.
+# knowledge_portal_public_url = "https://knowledge-portal.example.com"

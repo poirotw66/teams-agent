@@ -34,6 +34,14 @@ class OpsSettings:
     bigquery_table: str
     audit_store_mode: str
     audit_firestore_collection: str
+    delivery_enabled: bool = True
+    delivery_firestore_collection: str = "operational_delivery_outbox"
+    delivery_lease_seconds: float = 30.0
+    delivery_timeout_seconds: float = 20.0
+    delivery_retry_base_seconds: float = 1.0
+    delivery_retry_max_seconds: float = 300.0
+    delivery_poll_seconds: float = 1.0
+    delivery_batch_size: int = 100
 
     @classmethod
     def from_env(cls, data_dir: Path | None = None) -> OpsSettings:
@@ -71,4 +79,18 @@ class OpsSettings:
             bigquery_table=environ.get("OPS_BIGQUERY_TABLE", "operational_events"),
             audit_store_mode=(environ.get("OPS_AUDIT_STORE_MODE", "MEMORY") or "MEMORY").upper(),
             audit_firestore_collection=environ.get("OPS_AUDIT_FIRESTORE_COLLECTION", "audit_events"),
+            delivery_enabled=_bool_env("OPS_DELIVERY_ENABLED", True),
+            delivery_firestore_collection=environ.get(
+                "OPS_DELIVERY_FIRESTORE_COLLECTION", "operational_delivery_outbox"
+            ),
+            delivery_lease_seconds=float(environ.get("OPS_DELIVERY_LEASE_SECONDS", "30")),
+            delivery_timeout_seconds=float(environ.get("OPS_DELIVERY_TIMEOUT_SECONDS", "20")),
+            delivery_retry_base_seconds=float(
+                environ.get("OPS_DELIVERY_RETRY_BASE_SECONDS", "1")
+            ),
+            delivery_retry_max_seconds=float(
+                environ.get("OPS_DELIVERY_RETRY_MAX_SECONDS", "300")
+            ),
+            delivery_poll_seconds=float(environ.get("OPS_DELIVERY_POLL_SECONDS", "1")),
+            delivery_batch_size=int(environ.get("OPS_DELIVERY_BATCH_SIZE", "100")),
         )

@@ -3,6 +3,7 @@
 
 project_id = "itr-aimasteryhub-lab"
 region     = "asia-east1"
+environment_name = "poc"
 
 bot_client_id = "REPLACE_WITH_ENTRA_CLIENT_ID"
 bot_tenant_id = "REPLACE_WITH_ENTRA_TENANT_ID"
@@ -14,6 +15,10 @@ backoffice_auth_mode    = "HEADER"  # LAB import; use ENTRA for production
 
 # Required for zero-diff import against the existing Adapter deployment:
 # adapter_public_base_url = "https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app"
+
+# This is a separately deployed Knowledge Portal URL. It is deliberately not
+# inferred from the Teams Adapter URL. Leave empty until a real portal exists.
+# knowledge_portal_public_url = "https://knowledge-portal.example.com"
 
 # Optional explicit pins during import (otherwise :latest via allow_latest_image_tags):
 # agent_image   = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-rag-agent:latest"

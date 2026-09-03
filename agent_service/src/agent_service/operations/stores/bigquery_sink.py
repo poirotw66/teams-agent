@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import asyncio
 import json
-import logging
 from typing import Any
 
 from ..contracts import OperationalEvent
+from ..delivery.journal import DeliveryError
 
-logger = logging.getLogger(__name__)
+class BigQueryDeliveryError(DeliveryError):
+    """Sanitized typed failure. Raw SDK errors and rows must not escape or be logged."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
 
 
 class BigQueryEventSink:
-    """Best-effort analytics sink; failures must not block request handling."""
+    """At-least-once sink using event_id as BigQuery's best-effort insert ID.
+
+    Durable exactly-once analytics requires a downstream unique read model or
+    event_id MERGE; BigQuery streaming de-duplication has a limited time window.
+    """
 
     def __init__(self, client: Any, dataset: str, table: str) -> None:
         self._client = client
@@ -27,11 +36,14 @@ class BigQueryEventSink:
             "payload": json.dumps(event.payload, ensure_ascii=False),
         }
         try:
-            errors = self._client.insert_rows_json(self._table_id, [row])
-            if errors:
-                logger.warning("BigQuery insert errors: %s", errors)
+            errors = await asyncio.to_thread(
+                self._client.insert_rows_json,
+                self._table_id, [row], row_ids=[event.event_id],
+            )
         except Exception:
-            logger.exception("BigQuery sink failed for event_id=%s", event.event_id)
+            raise BigQueryDeliveryError("bigquery_sdk_failure") from None
+        if errors:
+            raise BigQueryDeliveryError("bigquery_row_rejected")
 
 
 def build_bigquery_client(project: str | None) -> Any:

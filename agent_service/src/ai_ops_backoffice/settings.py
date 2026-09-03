@@ -26,6 +26,16 @@ class BackofficeSettings:
     entra_client_id: str | None
     gcp_project_id: str | None = None
     simulate_health_anomalies: bool = False
+    # Export jobs deliberately have their own persistence and artifact knobs.
+    # They must not silently inherit the operational-event store in production.
+    export_job_store_mode: str = "FILE"
+    export_job_collection: str = "ai_ops_export_jobs"
+    export_content_backend: str = "FILE"
+    export_content_path: Path | None = None
+    export_gcs_bucket: str | None = None
+    export_ttl_seconds: int = 86400
+    export_worker_lease_seconds: int = 60
+    export_worker_max_attempts: int = 3
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -73,4 +83,24 @@ class BackofficeSettings:
                 "AI_OPS_SIMULATE_HEALTH_ANOMALIES", ""
             ).lower()
             in {"1", "true", "yes"},
+            export_job_store_mode=(
+                os.environ.get("AI_OPS_EXPORT_JOB_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            export_job_collection=os.environ.get(
+                "AI_OPS_EXPORT_JOB_COLLECTION", "ai_ops_export_jobs"
+            ),
+            export_content_backend=(
+                os.environ.get("AI_OPS_EXPORT_CONTENT_BACKEND", "FILE") or "FILE"
+            ).upper(),
+            export_content_path=Path(
+                os.environ.get("AI_OPS_EXPORT_CONTENT_PATH", ops_dir / "exports" / "content")
+            ).expanduser().resolve(),
+            export_gcs_bucket=os.environ.get("AI_OPS_EXPORT_GCS_BUCKET") or None,
+            export_ttl_seconds=int(os.environ.get("AI_OPS_EXPORT_TTL_SECONDS", "86400")),
+            export_worker_lease_seconds=int(
+                os.environ.get("AI_OPS_EXPORT_WORKER_LEASE_SECONDS", "60")
+            ),
+            export_worker_max_attempts=int(
+                os.environ.get("AI_OPS_EXPORT_WORKER_MAX_ATTEMPTS", "3")
+            ),
         )

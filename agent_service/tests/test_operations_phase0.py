@@ -89,7 +89,7 @@ def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path
     assert "handoff.offered" in types
     assert "conversation.started" in types
     turn_received = next(event for event in events if event.event_type == "turn.received")
-    assert turn_received.payload.get("maskingPolicyVersion") == "v1"
+    assert turn_received.payload.get("maskingPolicyVersion") == "v2"
 
 
 class _FakeConversation:

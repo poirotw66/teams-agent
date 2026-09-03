@@ -1,0 +1,14 @@
+# Template only. It does not assert that this project or any resources exist.
+project_id       = "your-dev-project-id"
+region           = "asia-east1"
+environment_name = "dev"
+
+bot_client_id = "00000000-0000-0000-0000-000000000000"
+bot_tenant_id = "00000000-0000-0000-0000-000000000000"
+
+allow_latest_image_tags = false
+deployment_phase        = "prepare"
+
+# For a retention-TTL exercise only, a dev value may be shorter than 365 days.
+# conversation_retention_days = 30
+# handoff_retention_days      = 30

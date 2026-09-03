@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build a reviewer evidence packet for formal AI Ops acceptance sign-off.
 
 Usage:
@@ -10,16 +9,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
-import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+
+from ops_acceptance_evidence import UTC, formal_acceptance_errors, read_json, validate_acceptance_evidence, write_json
 
 
 def _read_json(path: Path) -> dict[str, object] | None:
     if not path.is_file():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_json(path)
 
 
 def _resolve_artifact_path(repo_root: Path, reference: str) -> Path | None:
@@ -43,31 +42,21 @@ def _artifact_exists(repo_root: Path, reference: str) -> bool:
 
 def _uat_summary(repo_root: Path) -> dict[str, object]:
     report = _read_json(repo_root / "artifacts/ai_ops_uat_acceptance_report.json") or {}
-    steps = report.get("steps", [])
-    failed_steps = [
-        step.get("name")
-        for step in steps
-        if isinstance(step, dict) and step.get("exitCode") not in (0, None)
-    ]
+    evidence = report.get("acceptanceEvidence")
     return {
-        "passed": bool(report.get("passed")),
-        "generatedAt": report.get("generatedAt"),
-        "failedSteps": failed_steps,
-        "phase1CriteriaAutomated": all(
-            item.get("status") == "automated"
-            for item in report.get("phase1AcceptanceCriteria", [])
-            if isinstance(item, dict)
-        ),
+        "classification": evidence.get("classification") if isinstance(evidence, dict) else "LEGACY_UNCLASSIFIED",
+        "technicalEvidenceErrors": validate_acceptance_evidence(evidence),
+        "legacyReportedPassed": report.get("automatedVerificationPassed", report.get("passed")),
     }
 
 
 def _terraform_summary(repo_root: Path) -> dict[str, object]:
     evidence = repo_root / "artifacts/terraform-ai-ops-plan-evidence.txt"
     if not evidence.is_file():
-        return {"planClean": False, "detail": "missing plan evidence"}
+        return {"legacyCleanPatternFound": False, "detail": "missing plan evidence"}
     text = evidence.read_text(encoding="utf-8")
     return {
-        "planClean": "No changes." in text,
+        "legacyCleanPatternFound": "No changes." in text,
         "evidencePath": str(evidence),
     }
 
@@ -100,15 +89,16 @@ def build_evidence_packet(repo_root: Path) -> dict[str, object]:
                 {
                     "id": item.get("id"),
                     "role": item.get("role"),
-                    "status": item.get("status"),
+                    "legacyReviewStatus": item.get("status"),
                     "approvedBy": item.get("approvedBy"),
                     "approvedAt": item.get("approvedAt"),
+                    "trustStatus": "UNVERIFIED_LEGACY",
                     "artifactChecks": artifact_checks,
                 }
             )
 
     return {
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "specReferences": [
             "docs/ai-ops-backoffice-phase-0-foundation-spec.md §17",
             "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md §15",
@@ -116,11 +106,11 @@ def build_evidence_packet(repo_root: Path) -> dict[str, object]:
         "uatHandoff": _uat_summary(repo_root),
         "terraform": _terraform_summary(repo_root),
         "signOffItems": sign_off_status,
+        "formalAcceptanceErrors": formal_acceptance_errors(checklist, _read_json(repo_root / "artifacts/ai_ops_uat_acceptance_report.json") or {}),
         "nextSteps": [
-            "Review each signOffItem artifactChecks list with the named role owner.",
-            "Record approval: python scripts/ops_signoff_approve.py --item <id> --by \"Name\"",
-            "Validate: python scripts/ops_signoff_checklist.py --validate artifacts/ai_ops_signoff_checklist.json",
-            "Close: uv run python ../scripts/ops_uat_handoff.py --require-signoff (from agent_service)",
+            "Use this packet as LAB review material, not as formal approval evidence.",
+            "Record formal approvals in the approved external authority system for the exact v2 target.",
+            "Validate only with the executed v2 UAT report and a trusted read-only verifier.",
         ],
     }
 
@@ -135,14 +125,7 @@ def main() -> int:
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
 
-    deliverables_exit = subprocess.run(
-        [sys.executable, str(repo_root / "scripts/ops_deliverables_verify.py")],
-        cwd=repo_root,
-        check=False,
-    ).returncode
-
     packet = build_evidence_packet(repo_root)
-    packet["deliverablesVerifyPassed"] = deliverables_exit == 0
 
     text = json.dumps(packet, indent=2, ensure_ascii=False)
     if args.report:
@@ -153,27 +136,8 @@ def main() -> int:
     else:
         print(text)
 
-    failed = 0
-    if not packet["terraform"].get("planClean"):
-        failed += 1
-    if not packet["deliverablesVerifyPassed"]:
-        failed += 1
-    missing_artifacts = any(
-        not check.get("exists")
-        for item in packet["signOffItems"]
-        for check in item.get("artifactChecks", [])
-        if isinstance(check, dict)
-    )
-    if missing_artifacts:
-        failed += 1
-    pending = [
-        item["id"]
-        for item in packet["signOffItems"]
-        if item.get("status") != "approved"
-    ]
-    if pending:
-        print(f"\nPending manual sign-offs: {', '.join(str(item) for item in pending)}")
-    return 1 if failed else 0
+    print("Evidence packet generated; formal approval remains pending until trusted verification succeeds.")
+    return 0
 
 
 if __name__ == "__main__":

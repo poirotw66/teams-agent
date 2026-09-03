@@ -14,6 +14,17 @@ variable "region" {
   default     = "asia-east1"
 }
 
+variable "environment_name" {
+  description = "Runtime and data-governance environment. This is independent from deployment_phase and must be one of dev, test, poc, or prod."
+  type        = string
+  default     = "poc"
+
+  validation {
+    condition     = contains(["dev", "test", "poc", "prod"], var.environment_name)
+    error_message = "environment_name must be dev, test, poc, or prod; deployment workflow values such as prepare, activate, and full are not environments."
+  }
+}
+
 variable "firestore_location_id" {
   description = "Firestore location. Defaults to region when null."
   type        = string
@@ -64,6 +75,28 @@ variable "firestore_conversations_collection" {
 variable "firestore_handoffs_collection" {
   type    = string
   default = "handoffs"
+}
+
+variable "conversation_retention_days" {
+  description = "Default retention for raw conversation detail. Production policy is one year; test environments may use a shorter value to exercise TTL deletion."
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = var.conversation_retention_days > 0 && var.conversation_retention_days <= 365
+    error_message = "conversation_retention_days must be between 1 and 365 days; the policy maximum is one year."
+  }
+}
+
+variable "handoff_retention_days" {
+  description = "Default retention for handoff detail. Production policy is one year; test environments may use a shorter value to exercise TTL deletion."
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = var.handoff_retention_days > 0 && var.handoff_retention_days <= 365
+    error_message = "handoff_retention_days must be between 1 and 365 days; the policy maximum is one year."
+  }
 }
 
 variable "knowledge_backend_state_collection" {
@@ -183,6 +216,17 @@ variable "adapter_public_base_url" {
   description = "Public HTTPS URL of the Adapter Cloud Run service for BOT_PUBLIC_BASE_URL."
   type        = string
   default     = ""
+}
+
+variable "knowledge_portal_public_url" {
+  description = "Optional public HTTPS URL of the separately deployed Knowledge Portal. Leave empty when no portal URL has been configured; it is never inferred from the Teams Adapter URL."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.knowledge_portal_public_url == "" || can(regex("^https://", var.knowledge_portal_public_url))
+    error_message = "knowledge_portal_public_url must be an https URL when set."
+  }
 }
 
 variable "deployment_phase" {

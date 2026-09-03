@@ -7,9 +7,10 @@ from agent_service.operations.access import ActorContext
 
 from .periods import ResolvedPeriod, resolve_period
 from .query_service import BackofficeQueryService
+from .usage_projection import UsageDimensions, confirmed_zero_call, known_cost_total, project_usage
 
 
-def _check(name: str, expected: float, actual: float) -> dict[str, Any]:
+def _check(name: str, expected: float | None, actual: float | None) -> dict[str, Any]:
     return {
         "name": name,
         "fromEvents": expected,
@@ -44,15 +45,10 @@ async def reconcile_operations_summary(
 
     turns = [event for event in events if event.event_type == "turn.received"]
     issues = [event for event in events if event.event_type == "issue.extracted"]
-    usage_events = [event for event in events if event.event_type == "usage.recorded"]
+    usage_events = project_usage(events).request_events
     feedback = [event for event in events if event.event_type == "feedback.recorded"]
     conversations = {event.conversation_id for event in turns if event.conversation_id}
     actors = {event.actor_ref for event in turns if event.actor_ref}
-    cost_values = [
-        float(event.payload["estimatedCostUsd"])
-        for event in usage_events
-        if event.payload.get("estimatedCostUsd") is not None
-    ]
     cost_complete = sum(1 for event in usage_events if event.payload.get("costComplete"))
 
     checks = [
@@ -72,7 +68,7 @@ async def reconcile_operations_summary(
         ),
         _check(
             "estimatedCostUsd",
-            round(sum(cost_values), 6),
+            known_cost_total(usage_events),
             summary["estimatedCostUsd"],
         ),
     ]
@@ -122,36 +118,24 @@ async def reconcile_costs_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    usage_events = [event for event in events if event.event_type == "usage.recorded"]
-    route_by_correlation: dict[str, str] = {}
-    issue_by_correlation: dict[str, str] = {}
-    for event in events:
-        correlation_id = event.correlation_id
-        if not correlation_id:
-            continue
-        if event.event_type == "route.selected":
-            route_by_correlation[correlation_id] = str(event.payload.get("route") or "UNKNOWN")
-        if event.event_type in {"issue.extracted", "issue.classified"} and event.issue_type_id:
-            issue_by_correlation[correlation_id] = event.issue_type_id
-
-    cost_values = [
-        float(event.payload["estimatedCostUsd"])
-        for event in usage_events
-        if event.payload.get("estimatedCostUsd") is not None
-    ]
+    usage_events = project_usage(events).detail_events
+    usage_dimensions = UsageDimensions(events)
     by_route: dict[str, float] = defaultdict(float)
     by_issue: dict[str, float] = defaultdict(float)
     for event in usage_events:
         cost = event.payload.get("estimatedCostUsd")
         if cost is None:
             continue
-        correlation_id = event.correlation_id or ""
-        by_route[route_by_correlation.get(correlation_id, "unknown")] += float(cost)
-        by_issue[issue_by_correlation.get(correlation_id, "unknown")] += float(cost)
+        route, issue_type = usage_dimensions.resolve(event)
+        by_route[route] += float(cost)
+        by_issue[issue_type] += float(cost)
 
     checks = [
-        _check("totalEstimatedCostUsd", round(sum(cost_values), 6), summary["totalEstimatedCostUsd"]),
-        _check("missingCostEventCount", len(usage_events) - len(cost_values), summary["missingCostEventCount"]),
+        _check("totalEstimatedCostUsd", known_cost_total(usage_events), summary["totalEstimatedCostUsd"]),
+        _check("missingCostEventCount", sum(
+            event.payload.get("estimatedCostUsd") is None and not confirmed_zero_call(event)
+            for event in usage_events
+        ), summary["missingCostEventCount"]),
     ]
     for route_item in summary.get("byRoute", []):
         route = str(route_item["route"])

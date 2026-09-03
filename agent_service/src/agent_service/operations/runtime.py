@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from .audit import AuditStore, build_audit_store
 from .classification import IssueClassifier
+from .delivery.file_journal import FileJournal
+from .delivery.firestore_journal import FirestoreJournal
+from .delivery.primary import FileDeliveryPrimary, FirestoreDeliveryPrimary
+from .delivery.worker import DeliveryWorker
 from .emitter import OperationalEventEmitter
 from .ingestion import EventIngestionService
 from .settings import OpsSettings
@@ -29,6 +33,9 @@ class OpsRuntime:
         self.taxonomy = taxonomy
         self.audit_store = audit_store
         self.store = store
+        self.delivery_worker: DeliveryWorker | None = (
+            store.delivery_worker if isinstance(store, CompositeOperationalStore) else None
+        )
 
 
 def _build_primary_store(settings: OpsSettings) -> MemoryOperationalStore | FileOperationalStore | FirestoreOperationalStore:
@@ -48,14 +55,44 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
     classifier = IssueClassifier(taxonomy, resolved.classification_rules_path)
     primary = _build_primary_store(resolved)
     sinks: list[object] = []
+    sink_names: list[str] = []
     if resolved.bigquery_enabled:
         client = build_bigquery_client(resolved.bigquery_project)
         sinks.append(
             BigQueryEventSink(client, resolved.bigquery_dataset, resolved.bigquery_table)
         )
+        sink_names.append(
+            f"bigquery:{resolved.bigquery_project or 'default'}."
+            f"{resolved.bigquery_dataset}.{resolved.bigquery_table}"
+        )
     store: CompositeOperationalStore | MemoryOperationalStore | FileOperationalStore
     if sinks:
-        store = CompositeOperationalStore(primary, sinks)
+        if not resolved.delivery_enabled:
+            raise ValueError("analytics_sink_requires_durable_delivery")
+        if resolved.environment == "prod" and resolved.store_mode != "FIRESTORE":
+            raise ValueError("production_delivery_requires_firestore")
+        if resolved.store_mode == "FIRESTORE":
+            delivery_client = build_firestore_client(
+                resolved.firestore_project, resolved.firestore_database
+            )
+            journal = FirestoreJournal(delivery_client, resolved.delivery_firestore_collection)
+            primary = FirestoreDeliveryPrimary(delivery_client, resolved.firestore_collection)
+        elif resolved.store_mode == "FILE":
+            journal = FileJournal(resolved.store_path / "delivery_outbox.sqlite3")
+            primary = FileDeliveryPrimary(resolved.store_path)
+        elif resolved.store_mode == "MEMORY" and resolved.environment in {"dev", "test"}:
+            journal = FileJournal(None)
+        else:
+            raise ValueError("unsupported_delivery_store_mode")
+        store = CompositeOperationalStore(
+            primary, sinks, journal=journal, sink_names=sink_names, inline_sinks=False,
+            worker_options={
+                "lease_seconds": resolved.delivery_lease_seconds,
+                "timeout_seconds": resolved.delivery_timeout_seconds,
+                "retry_base_seconds": resolved.delivery_retry_base_seconds,
+                "retry_max_seconds": resolved.delivery_retry_max_seconds,
+            },
+        )
     else:
         store = primary
     ingestion = EventIngestionService(store, resolved)

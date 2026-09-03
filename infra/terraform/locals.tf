@@ -56,11 +56,12 @@ locals {
     TICKET_SERVICE_MODE                = "DISABLED"
     CONVERSATION_REPOSITORY_MODE       = "FIRESTORE"
     CONVERSATION_FIRESTORE_COLLECTION  = var.firestore_conversations_collection
-    CONVERSATION_RETENTION_DAYS        = "730"
+    AGENT_DEPLOYMENT_ENV               = var.environment_name
+    CONVERSATION_RETENTION_DAYS        = tostring(var.conversation_retention_days)
     HANDOFF_REPOSITORY_MODE            = "FIRESTORE"
     HANDOFF_FIRESTORE_COLLECTION       = var.firestore_handoffs_collection
     HANDOFF_DEMO_TIMEOUT_HOURS         = "24"
-    HANDOFF_RETENTION_DAYS             = "730"
+    HANDOFF_RETENTION_DAYS             = tostring(var.handoff_retention_days)
     KNOWLEDGE_RELEASE_MODE             = var.knowledge_release_mode
     KNOWLEDGE_RELEASE_DIR              = var.knowledge_release_dir
     FEEDBACK_ENABLED                   = "true"
@@ -81,7 +82,7 @@ locals {
     AI_OPS_BACKOFFICE_AUTH_MODE    = var.backoffice_auth_mode
     AI_OPS_ENTRA_TENANT_ID         = var.bot_tenant_id
     AI_OPS_ENTRA_CLIENT_ID         = var.ai_ops_entra_client_id != "" ? var.ai_ops_entra_client_id : var.bot_client_id
-    AGENT_DEPLOYMENT_ENV           = var.deployment_phase == "full" ? "poc" : var.deployment_phase
+    AGENT_DEPLOYMENT_ENV           = var.environment_name
     OPS_STORE_MODE                 = "FIRESTORE"
     OPS_AUDIT_STORE_MODE           = "FIRESTORE"
     OPS_FIRESTORE_COLLECTION       = var.ops_events_collection
@@ -90,7 +91,8 @@ locals {
     OPS_FIRESTORE_PROJECT          = var.project_id
     GCP_PROJECT_ID                 = var.project_id
     AI_OPS_GCP_PROJECT             = var.project_id
-    KNOWLEDGE_PORTAL_PUBLIC_URL    = var.adapter_public_base_url != "" ? var.adapter_public_base_url : ""
+    KNOWLEDGE_PORTAL_PUBLIC_URL    = var.knowledge_portal_public_url
+    KNOWLEDGE_PORTAL_URL_CONFIGURED = tostring(var.knowledge_portal_public_url != "")
     KNOWLEDGE_PORTAL_AGENT_API_URL = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
     TEAMS_ADAPTER_URL              = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
     RAG_DATA_DIR                   = "/app/data"
@@ -103,6 +105,7 @@ locals {
     AGENT_API_TIMEOUT_SECONDS = "30"
     CLIENT_ID                 = var.bot_client_id
     TENANT_ID                 = var.bot_tenant_id
+    AGENT_DEPLOYMENT_ENV      = var.environment_name
     TEAMS_INBOUND_AUTH_MODE   = "both"
     RAG_ASSET_DIR             = "/app/data/assets"
     RAG_ASSET_URL_TTL_SECONDS = "3600"
@@ -118,6 +121,11 @@ resource "terraform_data" "image_policy" {
     precondition {
       condition     = local.agent_image != null && local.adapter_image != null && local.backoffice_image != null
       error_message = "Set agent_image, adapter_image, and backoffice_image to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
+    }
+
+    precondition {
+      condition     = var.environment_name != "prod" || (var.backoffice_auth_mode == "ENTRA" && !var.allow_latest_image_tags)
+      error_message = "prod requires ENTRA backoffice authentication and immutable image references."
     }
 
     precondition {

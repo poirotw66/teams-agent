@@ -6,7 +6,7 @@ from typing import Protocol
 
 from .audit_stores import FileAuditStore, FirestoreAuditStore, MemoryAuditStore
 from .contracts import AuditEventRecord, utc_now
-from .masking import redact_secrets
+from .masking import mask_text, redact_secrets
 from .settings import OpsSettings
 
 
@@ -46,7 +46,11 @@ def build_audit_event(
         target_id=target_id,
         before=redact_secrets(before) if before else None,
         after=redact_secrets(after) if after else None,
-        reason=reason,
+        # Reason is free text and is persisted alongside before/after, so it
+        # follows the same credential policy.  Actor and target identifiers are
+        # intentionally not transformed: they are required for audit attribution
+        # and are not free-text fields.
+        reason=mask_text(reason).text if reason is not None else None,
         result=result,  # type: ignore[arg-type]
         correlation_id=correlation_id,
         occurred_at=utc_now(),

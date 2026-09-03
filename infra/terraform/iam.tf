@@ -4,10 +4,18 @@ resource "google_project_iam_member" "agent_firestore" {
   member  = "serviceAccount:${google_service_account.agent.email}"
 }
 
-resource "google_project_iam_member" "agent_bigquery" {
+resource "google_project_iam_member" "agent_bigquery_job_user" {
   project = var.project_id
-  role    = "roles/bigquery.dataEditor"
+  role    = "roles/bigquery.jobUser"
   member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
+resource "google_bigquery_table_iam_member" "agent_operational_events_writer" {
+  project    = var.project_id
+  dataset_id = google_bigquery_dataset.ai_ops.dataset_id
+  table_id   = google_bigquery_table.operational_events.table_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.agent.email}"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "adapter_invokes_agent" {

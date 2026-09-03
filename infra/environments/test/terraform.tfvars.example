@@ -3,6 +3,7 @@
 
 project_id = "your-test-project-id"
 region     = "asia-east1"
+environment_name = "test"
 
 bot_client_id = "00000000-0000-0000-0000-000000000000"
 bot_tenant_id = "00000000-0000-0000-0000-000000000000"
@@ -19,3 +20,7 @@ deployment_phase = "prepare"
 
 # Step 5 — set after activate once Adapter URL is known:
 # adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"
+
+# Optional separately deployed Knowledge Portal URL; empty explicitly means
+# the backoffice must present Portal as unconfigured.
+# knowledge_portal_public_url = "https://knowledge-portal.test.example.com"
