@@ -117,7 +117,7 @@ production hardening 仍需以實際 Firestore/GCS 做多 instance 故障注入�
 | --- | --- |
 | 0 | Taxonomy 治理與修正事件；完整事件契約、可靠投遞及逐呼叫成本；四類資料責任分離；憑證排除、遮罩／保存／TTL；認證、能力及 scope；audit；Terraform、環境隔離、監控、交接及效能；正式治理決策。 |
 | 1 | 全期間篩選與 KPI 下鑽；user/assistant timeline；受保護 transcript 的真正授權解遮罩；成本與 FX；知識 Markdown/PDF 發布及 Portal 真正連線；品質／健康；持久化且請求者綁定的匯出與到期刪除；UI 狀態、效能、真 BU UAT。 |
-| 2 | FAQ domain、API、第一版 UI 與 audience-aware ACTIVE runtime adapter 已接線；尚需 production Firestore cutover／故障注入、edit／rollback UI 與完整驗收、正反例及 taxonomy dataset、品質候選／Case、Gap、可恢復 Sync、Budget Policy、Alert、Notification、Prompt POC，以及完整授權／稽核與回歸。 |
+| 2 | LAB 實作與自驗完成：FAQ immutable lifecycle／edit／rollback／ACTIVE runtime／版本命中歸因、examples dataset、Quality Candidate／Case／Gap／Cluster、Case → FAQ → OBSERVING、checkpoint Sync、Budget／Alert／Notification、唯讀 Active Prompt 與 immutable Candidate POC 均具 API、UI、權限、Audit 及 FILE／Firestore 路徑。Canonical suite 985 passed。尚待 production Firestore 故障注入、真實通知 provider、部署與人工 UAT，不冒稱 production 正式核准。 |
 | 3 | Prompt/model/flag registry 及不可變版本；可重現 eval manifest 与硬性安全 gate；獨立核准、黏性 canary、原子啟用、fallback/rollback；provider allowlist 與 secret ref；權限治理與撤權；audit、資料治理及受限全域搜尋；UI、監控與正式核准。 |
 
 原始規格：

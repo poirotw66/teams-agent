@@ -240,6 +240,176 @@ def headers(role: str = "SERVICE_OWNER") -> dict[str, str]:
     }
 
 
+def test_budget_policy_evaluates_scoped_usage_and_manages_alert(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    created = seeded_backoffice_client.post(
+        "/api/budget-policies",
+        headers=headers(),
+        json={
+            "scope_type": "PERSONAL",
+            "scope_id": "user-demo-vpn-001",
+            "period": "DAILY",
+            "measure": "TWD",
+            "warning_threshold": 0.01,
+            "critical_threshold": 0.05,
+            "owner_unit_id": "IT Service Desk",
+            "notification_target_ids": ["notification-center"],
+        },
+    )
+    assert created.status_code == 200
+    policy = created.json()["policy"]
+
+    evaluated = seeded_backoffice_client.post(
+        f"/api/budget-policies/{policy['policy_id']}/evaluate",
+        headers=headers(),
+    )
+    assert evaluated.status_code == 200
+    assert evaluated.json()["usage"]["actualValue"] == 0.079
+    alert = evaluated.json()["alert"]
+    assert alert["severity"] == "CRITICAL"
+    assert alert["pricing_version"] == "v1"
+
+    alerts = seeded_backoffice_client.get("/api/alerts", headers=headers()).json()["items"]
+    assert alerts[0]["deliveries"][0]["status"] == "SENT"
+    acknowledged = seeded_backoffice_client.post(
+        f"/api/alerts/{alert['alert_id']}/acknowledge",
+        headers=headers(),
+        json={"expected_etag": alert["etag"], "reason": "owner reviewing usage"},
+    )
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["alert"]["status"] == "ACKNOWLEDGED"
+
+
+def test_prompt_poc_generates_candidate_without_activation(
+    backoffice_client: TestClient,
+) -> None:
+    system_headers = headers("SYSTEM_ADMIN")
+    created_example = backoffice_client.post(
+        "/api/examples/manual",
+        headers=system_headers,
+        json={
+            "text": "VPN 無法連線",
+            "expected_issue_type_id": "vpn.connection_failed",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+        },
+    ).json()["example"]
+    verified = backoffice_client.post(
+        f"/api/examples/{created_example['example_id']}/review",
+        headers=system_headers,
+        json={"expected_etag": 1, "approve": True, "reason": "verified for prompt POC"},
+    ).json()["example"]
+    ai_headers = headers("AI_ADMIN")
+    active_response = backoffice_client.get("/api/prompts/active", headers=ai_headers)
+    assert active_response.status_code == 200
+    active = active_response.json()["prompt"]
+    assert active["status"] == "ACTIVE"
+    assert "content" in active
+    taxonomy_version = backoffice_client.get("/api/taxonomy", headers=ai_headers).json()[
+        "taxonomyVersion"
+    ]
+    now = utc_now()
+    generated = backoffice_client.post(
+        "/api/prompts/candidates",
+        headers={**ai_headers, "X-Correlation-Id": "prompt-poc-1"},
+        json={
+            "active_prompt_version": active["version"],
+            "dataset_version": verified["dataset_version"],
+            "taxonomy_version": taxonomy_version,
+            "data_range_start": (now - timedelta(days=1)).isoformat(),
+            "data_range_end": (now + timedelta(days=1)).isoformat(),
+            "masking_policy_version": "mask-v1",
+        },
+    )
+    assert generated.status_code == 200
+    candidate = generated.json()["candidate"]
+    assert candidate["status"] == "CANDIDATE"
+    comparison = backoffice_client.get(
+        f"/api/prompts/candidates/{candidate['candidate_id']}/compare",
+        headers=ai_headers,
+    )
+    assert comparison.json()["activeUnchanged"] is True
+    assert backoffice_client.post(
+        f"/api/prompts/candidates/{candidate['candidate_id']}/activate",
+        headers=system_headers,
+    ).status_code == 404
+    assert backoffice_client.get(
+        "/api/prompts/active", headers=headers("ANALYST")
+    ).status_code == 403
+
+
+def test_quality_case_faq_publication_enters_observation(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    writer_headers = headers("KNOWLEDGE_ADMIN")
+    refreshed = seeded_backoffice_client.post(
+        "/api/quality-candidates/refresh", headers=writer_headers, json={"days": 30}
+    ).json()
+    candidate = next(item for item in refreshed["items"] if item["issue_type_id"])
+    quality_case = seeded_backoffice_client.post(
+        "/api/quality-candidates/merge",
+        headers=writer_headers,
+        json={
+            "candidate_ids": [candidate["candidate_id"]], "title": "Improve VPN FAQ",
+            "description": "Publish governed answer", "priority": "HIGH",
+        },
+    ).json()["case"]
+    for status in ("TRIAGED", "IN_PROGRESS"):
+        quality_case = seeded_backoffice_client.post(
+            f"/api/quality-cases/{quality_case['case_id']}/transition",
+            headers=writer_headers,
+            json={
+                "expected_etag": quality_case["etag"], "status": status,
+                "reason": "start improvement", "resolution_type": None,
+            },
+        ).json()["case"]
+    drafted = seeded_backoffice_client.post(
+        f"/api/quality-cases/{quality_case['case_id']}/faq-draft",
+        headers=writer_headers,
+        json={
+            "expected_case_etag": quality_case["etag"], "faq_key": "VPN_CASE_OBSERVE",
+            "question": "VPN 無法連線怎麼辦？", "answer": "請重新連線 VPN。",
+            "category": "VPN", "keywords": ["vpn", "連線"],
+            "business_contact": "IT Service Desk", "audience_type": "ALL",
+        },
+    ).json()
+    faq_id = drafted["faq"]["faq_id"]
+    version_id = drafted["version"]["version_id"]
+    for etag, kind, utterance in (
+        (1, "POSITIVE", "VPN 無法連線"),
+        (2, "NEGATIVE", "我要重設薪資系統密碼"),
+    ):
+        response = seeded_backoffice_client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/tests",
+            headers=writer_headers,
+            json={"expected_etag": etag, "kind": kind, "utterance": utterance},
+        )
+        assert response.status_code == 200
+    assert seeded_backoffice_client.post(
+        f"/api/faqs/{faq_id}/versions/{version_id}/submit",
+        headers=writer_headers, json={"expected_etag": 3},
+    ).status_code == 200
+    admin_headers = {**headers("SYSTEM_ADMIN"), "X-Backoffice-User-Id": "justin"}
+    assert seeded_backoffice_client.post(
+        f"/api/faqs/{faq_id}/versions/{version_id}/review",
+        headers=admin_headers,
+        json={"expected_etag": 4, "approve": True, "reason": "content verified"},
+    ).status_code == 200
+    activated = seeded_backoffice_client.post(
+        f"/api/faqs/{faq_id}/versions/{version_id}/activate",
+        headers=admin_headers,
+        json={"expected_etag": 5, "reason": "publish improvement"},
+    )
+    assert activated.status_code == 200
+    assert activated.json()["observingCases"][0]["status"] == "OBSERVING"
+    observed = seeded_backoffice_client.get(
+        f"/api/quality-cases/{quality_case['case_id']}", headers=writer_headers
+    ).json()["case"]
+    assert observed["faq_ids"] == [faq_id]
+    assert observed["observation_baseline"] is not None
+
+
 def test_phase2_faq_api_lifecycle_persists_and_enforces_governance(tmp_path: Path) -> None:
     data_dir = Path(__file__).resolve().parents[2] / "data"
     settings = BackofficeSettings(
@@ -365,6 +535,73 @@ def test_phase2_faq_api_lifecycle_persists_and_enforces_governance(tmp_path: Pat
         assert activated.status_code == 200
         assert activated.json()["faq"]["status"] == "ACTIVE"
 
+        edited_payload = {
+            **payload,
+            "answer": "請重新啟動 VPN；若仍失敗請聯絡 IT Service Desk。",
+            "expected_etag": 6,
+        }
+        edited = client.put(
+            f"/api/faqs/{faq_id}",
+            json=edited_payload,
+            headers=writer_headers,
+        )
+        assert edited.status_code == 200
+        second_version_id = edited.json()["version"]["version_id"]
+        assert second_version_id != version_id
+        etag = edited.json()["faq"]["etag"]
+        for kind, utterance in (
+            ("POSITIVE", "公司 VPN 一直失敗"),
+            ("NEGATIVE", "公司信箱密碼過期"),
+        ):
+            test_result = client.post(
+                f"/api/faqs/{faq_id}/versions/{second_version_id}/tests",
+                json={
+                    "expected_etag": etag,
+                    "kind": kind,
+                    "utterance": utterance,
+                    "expected_audience_group_ids": ["employees"],
+                },
+                headers=writer_headers,
+            )
+            assert test_result.status_code == 200
+            etag = test_result.json()["faq"]["etag"]
+        second_submitted = client.post(
+            f"/api/faqs/{faq_id}/versions/{second_version_id}/submit",
+            json={"expected_etag": etag},
+            headers=writer_headers,
+        )
+        assert second_submitted.status_code == 200
+        second_reviewed = client.post(
+            f"/api/faqs/{faq_id}/versions/{second_version_id}/review",
+            json={
+                "expected_etag": second_submitted.json()["faq"]["etag"],
+                "approve": True,
+                "reason": "v2 正反例與內容已確認",
+            },
+            headers=admin_headers,
+        )
+        assert second_reviewed.status_code == 200
+        second_activated = client.post(
+            f"/api/faqs/{faq_id}/versions/{second_version_id}/activate",
+            json={
+                "expected_etag": second_reviewed.json()["faq"]["etag"],
+                "reason": "發布 v2",
+            },
+            headers=admin_headers,
+        )
+        assert second_activated.status_code == 200
+        rolled_back = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/rollback",
+            json={
+                "expected_etag": second_activated.json()["faq"]["etag"],
+                "reason": "v2 regression",
+            },
+            headers=admin_headers,
+        )
+        assert rolled_back.status_code == 200
+        assert rolled_back.json()["faq"]["published_version_id"] == version_id
+        assert rolled_back.json()["version"]["status"] == "ACTIVE"
+
         other_scope = {**writer_headers, "X-Backoffice-Owner-Units": "Finance"}
         assert client.get(f"/api/faqs/{faq_id}", headers=other_scope).status_code == 403
         assert client.get("/api/faqs", headers=other_scope).json()["items"] == []
@@ -373,15 +610,399 @@ def test_phase2_faq_api_lifecycle_persists_and_enforces_governance(tmp_path: Pat
         detail = restarted.get(f"/api/faqs/{faq_id}", headers=admin_headers)
         assert detail.status_code == 200
         assert detail.json()["faq"]["status"] == "ACTIVE"
-        assert len(detail.json()["tests"]) == 2
-        assert len(detail.json()["audit"]) == 6
+        assert detail.json()["faq"]["published_version_id"] == version_id
+        assert len(detail.json()["versions"]) == 2
+        assert len(detail.json()["tests"]) == 4
+        assert len(detail.json()["audit"]) == 13
         disabled = restarted.post(
             f"/api/faqs/{faq_id}/disable",
-            json={"expected_etag": 6, "reason": "內容暫停使用"},
+            json={"expected_etag": 13, "reason": "內容暫停使用"},
             headers=admin_headers,
         )
         assert disabled.status_code == 200
         assert disabled.json()["faq"]["status"] == "DISABLED"
+
+
+def test_phase2_examples_api_derives_source_and_persists(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        faq_store_path=tmp_path / "phase2" / "faqs.json",
+        example_store_path=tmp_path / "phase2" / "examples.json",
+    )
+    writer_headers = {
+        **headers("KNOWLEDGE_ADMIN"),
+        "X-Backoffice-User-Id": "example.writer",
+    }
+    admin_headers = {
+        **headers("SYSTEM_ADMIN"),
+        "X-Backoffice-User-Id": "justin",
+    }
+    faq_payload = {
+        "faq_key": "EXAMPLE_SOURCE_FAQ",
+        "question": "VPN 無法連線怎麼辦？",
+        "answer": "重新啟動 VPN。",
+        "category": "VPN",
+        "keywords": ["vpn"],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": ["vpn.connection_failed"],
+        "audience_type": "ALL",
+    }
+    example_payload = {
+        "text": "VPN user@example.com 無法連線",
+        "expected_issue_type_id": "vpn.connection_failed",
+        "expected_route": "FAQ",
+        "label": "POSITIVE",
+    }
+
+    with TestClient(create_app(settings)) as client:
+        faq_created = client.post("/api/faqs", json=faq_payload, headers=writer_headers)
+        assert faq_created.status_code == 200
+        faq_id = faq_created.json()["faq"]["faq_id"]
+        version_id = faq_created.json()["version"]["version_id"]
+        unknown_version = client.post(
+            f"/api/faqs/{faq_id}/versions/unknown/examples",
+            json=example_payload,
+            headers=writer_headers,
+        )
+        assert unknown_version.status_code == 404
+        forged_owner = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/examples",
+            json={**example_payload, "owner_unit_id": "Finance"},
+            headers=writer_headers,
+        )
+        assert forged_owner.status_code == 422
+        created = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/examples",
+            json=example_payload,
+            headers={**writer_headers, "Idempotency-Key": "example-create-1"},
+        )
+        assert created.status_code == 200
+        example = created.json()["example"]
+        example_id = example["example_id"]
+        assert example["owner_unit_id"] == "IT Service Desk"
+        assert example["source_version_id"] == version_id
+        assert "user@example.com" not in example["text"]
+        denied = client.post(
+            f"/api/examples/{example_id}/review",
+            json={"expected_etag": 1, "approve": True, "reason": "checked"},
+            headers=writer_headers,
+        )
+        assert denied.status_code == 403
+        verified = client.post(
+            f"/api/examples/{example_id}/review",
+            json={"expected_etag": 1, "approve": True, "reason": "Justin final approval"},
+            headers=admin_headers,
+        )
+        assert verified.status_code == 200
+        assert verified.json()["example"]["status"] == "VERIFIED"
+
+    with TestClient(create_app(settings)) as restarted:
+        detail = restarted.get(f"/api/examples/{example_id}", headers=admin_headers)
+        assert detail.status_code == 200
+        assert detail.json()["example"]["status"] == "VERIFIED"
+        assert len(detail.json()["audit"]) == 2
+
+
+def test_phase2_document_example_uses_scoped_inventory(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        example_store_path=tmp_path / "phase2" / "examples.json",
+    )
+    inventory = {
+        "items": [
+            {
+                "documentId": "vpn-guide",
+                "ownerUnitId": "IT Service Desk",
+                "currentPublishedVersionId": "version-7",
+                "draftVersionId": "version-8",
+            }
+        ],
+        "portalStatus": "available",
+    }
+    payload = {
+        "text": "VPN 指引沒有涵蓋錯誤 720",
+        "expected_issue_type_id": "vpn.connection_failed",
+        "expected_route": "KNOWLEDGE",
+        "label": "NEGATIVE",
+        "reason": "文件有內容缺口",
+    }
+    with patch.object(
+        BackofficeQueryService,
+        "list_documents",
+        new=AsyncMock(return_value=inventory),
+    ):
+        with TestClient(create_app(settings)) as client:
+            invalid = client.post(
+                "/api/knowledge/vpn-guide/versions/version-6/examples",
+                json=payload,
+                headers=headers("KNOWLEDGE_ADMIN"),
+            )
+            assert invalid.status_code == 404
+            created = client.post(
+                "/api/knowledge/vpn-guide/versions/version-7/examples",
+                json=payload,
+                headers=headers("KNOWLEDGE_ADMIN"),
+            )
+            assert created.status_code == 200
+            example = created.json()["example"]
+            assert example["source_type"] == "DOCUMENT"
+            assert example["source_id"] == "vpn-guide"
+            assert example["source_version_id"] == "version-7"
+            assert example["owner_unit_id"] == "IT Service Desk"
+
+    with patch.object(
+        BackofficeQueryService,
+        "list_documents",
+        new=AsyncMock(return_value={"items": [], "portalStatus": "unavailable"}),
+    ):
+        response = TestClient(create_app(settings)).post(
+            "/api/knowledge/vpn-guide/versions/version-7/examples",
+            json=payload,
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+        assert response.status_code == 503
+
+
+def test_phase2_conversation_example_derives_owner_and_correlation(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        example_store_path=tmp_path / "phase2" / "examples.json",
+    )
+    detail = {
+        "conversationId": "conversation-1",
+        "ownerUnitId": "IT Service Desk",
+        "turns": [{"correlationId": "correlation-9"}],
+    }
+    payload = {
+        "text": "VPN 還是連不上",
+        "expected_issue_type_id": "vpn.connection_failed",
+        "expected_route": "HANDOFF",
+        "label": "POSITIVE",
+    }
+    with patch.object(
+        BackofficeQueryService,
+        "conversation_detail",
+        new=AsyncMock(return_value=detail),
+    ):
+        response = TestClient(create_app(settings)).post(
+            "/api/conversations/conversation-1/examples",
+            json=payload,
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+    assert response.status_code == 200
+    example = response.json()["example"]
+    assert example["source_type"] == "CONVERSATION"
+    assert example["owner_unit_id"] == "IT Service Desk"
+    assert example["source_correlation_id"] == "correlation-9"
+
+
+def test_phase2_quality_candidates_merge_case_and_gap_score(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    writer_headers = headers("KNOWLEDGE_ADMIN")
+    owner_headers = headers("SERVICE_OWNER")
+    refreshed = seeded_backoffice_client.post(
+        "/api/quality-candidates/refresh",
+        json={"days": 30},
+        headers=writer_headers,
+    )
+    assert refreshed.status_code == 200
+    candidates = refreshed.json()["items"]
+    assert {item["case_type"] for item in candidates} >= {
+        "NEGATIVE_FEEDBACK",
+        "HANDOFF",
+    }
+    replay = seeded_backoffice_client.post(
+        "/api/quality-candidates/refresh",
+        json={"days": 30},
+        headers=writer_headers,
+    )
+    assert replay.status_code == 200
+    assert replay.json()["total"] == len(candidates)
+
+    generated = seeded_backoffice_client.post(
+        "/api/question-clusters/generate",
+        headers=writer_headers,
+    )
+    assert generated.status_code == 200
+    assert generated.json()["total"] >= 1
+    cluster = generated.json()["items"][0]
+    corrected = seeded_backoffice_client.post(
+        "/api/question-clusters/correct",
+        json={
+            "cluster_ids": [cluster["cluster_id"]],
+            "action": "RENAME",
+            "name": "VPN 改善候選",
+        },
+        headers=writer_headers,
+    )
+    assert corrected.status_code == 200
+    assert corrected.json()["items"][0]["revision"] == 2
+
+    selected = [
+        item["candidate_id"]
+        for item in candidates
+        if item["case_type"] in {"NEGATIVE_FEEDBACK", "HANDOFF"}
+    ]
+    merged = seeded_backoffice_client.post(
+        "/api/quality-candidates/merge",
+        json={
+            "candidate_ids": selected,
+            "title": "改善 VPN 回答與轉人工率",
+            "description": "分析負評與轉人工原因",
+            "priority": "HIGH",
+            "assignee_id": "owner.demo",
+        },
+        headers=writer_headers,
+    )
+    assert merged.status_code == 200
+    quality_case = merged.json()["case"]
+    case_id = quality_case["case_id"]
+    assert quality_case["frequency"] == len(selected)
+
+    etag = quality_case["etag"]
+    for status in ["TRIAGED", "IN_PROGRESS", "OBSERVING"]:
+        transitioned = seeded_backoffice_client.post(
+            f"/api/quality-cases/{case_id}/transition",
+            json={"expected_etag": etag, "status": status, "reason": f"move to {status}"},
+            headers=owner_headers,
+        )
+        assert transitioned.status_code == 200
+        etag = transitioned.json()["case"]["etag"]
+    resolved = seeded_backoffice_client.post(
+        f"/api/quality-cases/{case_id}/transition",
+        json={
+            "expected_etag": etag,
+            "status": "RESOLVED",
+            "reason": "觀察期指標達標",
+            "resolution_type": "FAQ_UPDATED",
+        },
+        headers=owner_headers,
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["case"]["resolved_at"]
+
+    gaps = seeded_backoffice_client.get(
+        "/api/gaps/summary?days=30",
+        headers=owner_headers,
+    )
+    assert gaps.status_code == 200
+    assert gaps.json()["scoreVersion"] == "gap-score-v1"
+    assert gaps.json()["items"]
+    assert set(gaps.json()["items"][0]["components"]) == {
+        "frequency",
+        "noAnswerRate",
+        "negativeFeedbackRate",
+        "handoffRate",
+        "estimatedCostUsd",
+    }
+
+
+def test_phase2_sync_job_fails_closed_and_retries_after_restart(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        sync_store_path=tmp_path / "phase2" / "sync_jobs.json",
+        sync_adapter_url=None,
+    )
+    writer_headers = headers("KNOWLEDGE_ADMIN")
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/sync-jobs",
+            json={"scope_type": "ALL", "scope_ids": [], "reason": "full rebuild"},
+            headers={**writer_headers, "Idempotency-Key": "sync-create-1"},
+        )
+        assert created.status_code == 200
+        job_id = created.json()["job"]["job_id"]
+        detail = client.get(f"/api/sync-jobs/{job_id}", headers=writer_headers)
+        assert detail.status_code == 200
+        assert detail.json()["job"]["status"] == "FAILED"
+        assert detail.json()["job"]["error_summary"] == "SYNC_ADAPTER_UNAVAILABLE"
+        assert [item["action"] for item in detail.json()["audit"]] == [
+            "SYNC_REQUESTED",
+            "SYNC_VALIDATING",
+            "SYNC_FAILED",
+        ]
+
+    with TestClient(create_app(settings)) as restarted:
+        retry = restarted.post(
+            f"/api/sync-jobs/{job_id}/retry",
+            json={"reason": "retry after adapter check"},
+            headers={**writer_headers, "Idempotency-Key": "sync-retry-1"},
+        )
+        assert retry.status_code == 200
+        retry_id = retry.json()["job"]["job_id"]
+        retried = restarted.get(f"/api/sync-jobs/{retry_id}", headers=writer_headers)
+        assert retried.json()["job"]["status"] == "FAILED"
+        assert retried.json()["job"]["retry_of_job_id"] == job_id
 
 
 def test_operations_summary_requires_auth(backoffice_client: TestClient) -> None:

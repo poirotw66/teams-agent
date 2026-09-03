@@ -8,15 +8,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+import httpx
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from agent_service.operations.access import CAPABILITIES
+from agent_service.operations.access import CAPABILITIES, ActorContext
 from agent_service.operations.audit_errors import AuditWriteError
 
 from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
+from .budget_domain import (
+    BudgetService,
+    FileBudgetRepository,
+    FirestoreBudgetRepository,
+)
+from .example_domain import (
+    ExampleService,
+    FileExampleRepository,
+    FirestoreExampleRepository,
+)
 from .faq_domain import (
     FaqAuthorizationError,
     FaqContent,
@@ -30,9 +41,14 @@ from .faq_domain import (
     FileFaqRepository,
     FirestoreFaqRepository,
 )
+from .prompt_domain import FilePromptRepository, FirestorePromptRepository, PromptPocService
+from .quality_domain import (
+    FileQualityRepository,
+    FirestoreQualityRepository,
+    QualityService,
+)
 from .services.periods import PeriodPolicyError
-from .services.phase2_registry import Phase2Registry, QualityCaseRecord, SyncJobRecord
-from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
+from .services.phase3_registry import FeatureFlagRecord, Phase3Registry
 from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
 from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
@@ -42,6 +58,7 @@ from .services.reconciliation import (
     reconcile_operations_summary,
 )
 from .settings import BackofficeSettings
+from .sync_domain import FileSyncRepository, FirestoreSyncRepository, SyncService
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -92,7 +109,9 @@ class FaqCreateRequest(BaseModel):
     review_due_at: datetime | None = None
 
     def to_content(self) -> FaqContent:
-        return FaqContent.model_validate(self.model_dump())
+        return FaqContent.model_validate(
+            self.model_dump(exclude={"expected_etag"})
+        )
 
 
 class FaqEditRequest(FaqCreateRequest):
@@ -121,28 +140,145 @@ class FaqReasonRequest(FaqTransitionRequest):
     reason: str = Field(min_length=1)
 
 
-class QualityCaseCreateRequest(BaseModel):
-    title: str
-    case_type: str
-    owner_unit_id: str = "IT Service Desk"
+class ExampleCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=4000)
+    expected_issue_type_id: str
+    expected_route: Literal["FAQ", "KNOWLEDGE", "TICKET", "HANDOFF"]
+    label: Literal["POSITIVE", "NEGATIVE"]
+    reason: str | None = None
+    source_correlation_id: str | None = None
+
+
+class ExampleUpdateRequest(ExampleCreateRequest):
+    expected_etag: int = Field(ge=1)
+
+
+class ExampleReviewRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    approve: bool
+    reason: str = Field(min_length=1)
+
+
+class ExampleRetireRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    reason: str = Field(min_length=1)
+
+
+class QualityCandidateRefreshRequest(BaseModel):
+    days: int = Field(default=30, ge=1, le=186)
+
+
+class QualityCandidateMergeRequest(BaseModel):
+    candidate_ids: tuple[str, ...] = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=240)
+    description: str = Field(default="", max_length=4000)
+    priority: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "MEDIUM"
+    assignee_id: str | None = None
+    target_due_at: datetime | None = None
+
+
+class QualityCaseUpdateRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=240)
+    description: str = Field(default="", max_length=4000)
+    priority: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "MEDIUM"
+    assignee_id: str | None = None
+    target_due_at: datetime | None = None
+
+
+class QualityCaseTransitionRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    status: Literal[
+        "TRIAGED", "IN_PROGRESS", "WAITING_REVIEW", "OBSERVING",
+        "RESOLVED", "WONT_FIX", "DUPLICATE",
+    ]
+    reason: str | None = None
+    resolution_type: str | None = None
+
+
+class QualityContentLinkRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    faq_id: str | None = None
+    document_id: str | None = None
+
+
+class QualityFaqDraftRequest(BaseModel):
+    expected_case_etag: int = Field(ge=1)
+    faq_key: str
+    question: str
+    answer: str
+    category: str
+    keywords: tuple[str, ...]
+    business_contact: str
+    audience_type: Literal["ALL", "GROUPS"]
+    audience_group_ids: tuple[str, ...] = ()
+    effective_at: datetime | None = None
+    review_due_at: datetime | None = None
+
+
+class QuestionClusterCorrectionRequest(BaseModel):
+    cluster_ids: tuple[str, ...] = Field(min_length=1)
+    action: Literal["RENAME", "ACCEPT", "REJECT", "MERGE", "SPLIT"]
+    name: str | None = None
+    candidate_groups: tuple[tuple[str, ...], ...] = ()
 
 
 class SyncJobCreateRequest(BaseModel):
-    scope_type: str
+    scope_type: Literal["ALL", "FAQ", "DOCUMENT", "FAILED"]
+    scope_ids: tuple[str, ...] = ()
+    reason: str = Field(min_length=3)
+
+
+class SyncJobActionRequest(BaseModel):
+    reason: str = Field(min_length=3)
+    expected_etag: int | None = Field(default=None, ge=1)
+
+
+class BudgetPolicyCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope_type: Literal["PERSONAL", "SERVICE", "TEAM", "TENANT", "GLOBAL"]
+    scope_id: str = Field(min_length=1)
+    period: Literal["DAILY", "MONTHLY"]
+    measure: Literal["TWD", "USD", "TOKEN", "LLM_CALL_COUNT"]
+    warning_threshold: float = Field(gt=0)
+    critical_threshold: float = Field(gt=0)
+    owner_unit_id: str = Field(min_length=1)
+    notification_target_ids: tuple[str, ...]
+
+
+class BudgetPolicyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_etag: int = Field(ge=1)
+    warning_threshold: float = Field(gt=0)
+    critical_threshold: float = Field(gt=0)
+    notification_target_ids: tuple[str, ...]
+
+
+class BudgetPolicyStateRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    enabled: bool
     reason: str = Field(min_length=3)
 
 
 class PromptCandidateRequest(BaseModel):
-    prompt_id: str
-    change_reason: str
-    template_summary: str
+    model_config = ConfigDict(extra="forbid")
+
+    active_prompt_version: str
+    dataset_version: str
+    taxonomy_version: str
+    data_range_start: datetime
+    data_range_end: datetime
+    masking_policy_version: str
 
 
 def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     query_service = BackofficeQueryService(resolved_settings)
     export_rate_limiter = ExportRateLimiter()
-    phase2 = Phase2Registry()
     phase3 = Phase3Registry()
 
     class ActiveFaqTaxonomy:
@@ -167,6 +303,201 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     else:
         raise ValueError(f"Unsupported FAQ store mode: {faq_store_mode}")
     faq_service = FaqDomainService(faq_repository, taxonomy=ActiveFaqTaxonomy())
+
+    example_store_mode = resolved_settings.example_store_mode.upper()
+    if example_store_mode == "FILE":
+        example_store_path = resolved_settings.example_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "examples.json"
+        )
+        example_repository = FileExampleRepository(example_store_path)
+    elif example_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        example_repository = FirestoreExampleRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection_prefix=resolved_settings.example_firestore_collection_prefix,
+        )
+    else:
+        raise ValueError(f"Unsupported example store mode: {example_store_mode}")
+    example_service = ExampleService(example_repository, taxonomy=ActiveFaqTaxonomy())
+
+    quality_store_mode = resolved_settings.quality_store_mode.upper()
+    if quality_store_mode == "FILE":
+        quality_store_path = resolved_settings.quality_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "quality.json"
+        )
+        quality_repository = FileQualityRepository(quality_store_path)
+    elif quality_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        quality_repository = FirestoreQualityRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.quality_firestore_collection,
+        )
+    else:
+        raise ValueError(f"Unsupported quality store mode: {quality_store_mode}")
+    quality_service = QualityService(quality_repository)
+
+    sync_store_mode = resolved_settings.sync_store_mode.upper()
+    if sync_store_mode == "FILE":
+        sync_store_path = resolved_settings.sync_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "sync_jobs.json"
+        )
+        sync_repository = FileSyncRepository(sync_store_path)
+    elif sync_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        sync_repository = FirestoreSyncRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.sync_firestore_collection,
+        )
+    else:
+        raise ValueError(f"Unsupported sync store mode: {sync_store_mode}")
+    sync_service = SyncService(sync_repository)
+    configured_targets: dict[str, str] = {}
+    valid_notification_channels = {"TEAMS", "EMAIL", "NOTIFICATION_CENTER"}
+    for entry in resolved_settings.budget_notification_targets:
+        target_id, separator, channel = entry.partition("=")
+        normalized_channel = channel.strip().upper()
+        if not separator or not target_id.strip() or normalized_channel not in valid_notification_channels:
+            raise ValueError(f"Invalid budget notification target configuration: {entry}")
+        configured_targets[target_id.strip()] = normalized_channel
+    budget_store_mode = resolved_settings.budget_store_mode.upper()
+    if budget_store_mode == "FILE":
+        budget_store_path = resolved_settings.budget_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "budgets.json"
+        )
+        budget_repository = FileBudgetRepository(budget_store_path)
+    elif budget_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        budget_repository = FirestoreBudgetRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.budget_firestore_collection,
+        )
+    else:
+        raise ValueError(f"Unsupported budget store mode: {budget_store_mode}")
+    budget_service = BudgetService(
+        budget_repository,
+        notification_targets=configured_targets,
+    )
+    prompt_store_mode = resolved_settings.prompt_poc_store_mode.upper()
+    if prompt_store_mode == "FILE":
+        prompt_store_path = resolved_settings.prompt_poc_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "prompt_candidates.json"
+        )
+        prompt_repository = FilePromptRepository(prompt_store_path)
+    elif prompt_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        prompt_repository = FirestorePromptRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.prompt_poc_firestore_collection,
+        )
+    else:
+        raise ValueError(f"Unsupported Prompt POC store mode: {prompt_store_mode}")
+    prompt_effective_at = (
+        datetime.fromisoformat(resolved_settings.prompt_active_effective_at.replace("Z", "+00:00"))
+        if resolved_settings.prompt_active_effective_at
+        else None
+    )
+    if prompt_effective_at is not None and prompt_effective_at.utcoffset() is None:
+        raise ValueError("AI_OPS_PROMPT_ACTIVE_EFFECTIVE_AT requires a timezone")
+    prompt_service = PromptPocService(
+        prompt_repository,
+        active_effective_at=prompt_effective_at,
+    )
+    sync_worker = ActorContext(
+        user_id="ai-ops-sync-worker",
+        display_name="AI Ops Sync Worker",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=(),
+    )
+
+    async def run_sync_job(job_id: str) -> None:
+        try:
+            validating = sync_service.set_stage(job_id, status="VALIDATING", actor=sync_worker)
+            job = validating["job"]
+            adapter_url = resolved_settings.sync_adapter_url
+            if not adapter_url:
+                sync_service.set_stage(
+                    job_id,
+                    status="FAILED",
+                    actor=sync_worker,
+                    error_summary="SYNC_ADAPTER_UNAVAILABLE",
+                )
+                return
+            sync_service.set_stage(job_id, status="BUILDING", actor=sync_worker)
+            headers = {}
+            if resolved_settings.service_token:
+                headers["Authorization"] = f"Bearer {resolved_settings.service_token}"
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{adapter_url.rstrip('/')}/api/sync",
+                    headers=headers,
+                    json={
+                        "scopeType": job["scope_type"],
+                        "scopeIds": job["scope_ids"],
+                        "correlationId": job["correlation_id"],
+                        "resumeCheckpoint": job["retry_checkpoint_stage"],
+                    },
+                )
+            if response.status_code >= 400:
+                sync_service.set_stage(
+                    job_id,
+                    status="FAILED",
+                    actor=sync_worker,
+                    error_summary=f"Adapter returned HTTP {response.status_code}",
+                )
+                return
+            result = response.json()
+            if not result.get("targetRelease") or not result.get("indexSettingVersion"):
+                sync_service.set_stage(
+                    job_id,
+                    status="FAILED",
+                    actor=sync_worker,
+                    error_summary="SYNC_RELEASE_EVIDENCE_MISSING",
+                )
+                return
+            sync_service.set_stage(
+                job_id,
+                status="VERIFYING",
+                actor=sync_worker,
+                document_count=int(result.get("documentCount") or 0),
+                warnings=tuple(result.get("warnings") or ()),
+            )
+            sync_service.set_stage(
+                job_id,
+                status="COMPLETED",
+                actor=sync_worker,
+                document_count=int(result.get("documentCount") or 0),
+                warnings=tuple(result.get("warnings") or ()),
+                target_release=result.get("targetRelease"),
+                index_setting_version=result.get("indexSettingVersion"),
+                artifact_uri=result.get("artifactUri"),
+            )
+        except Exception as error:
+            logger.exception("Sync job %s failed", job_id)
+            with suppress(FaqDomainError):
+                sync_service.set_stage(
+                    job_id,
+                    status="FAILED",
+                    actor=sync_worker,
+                    error_summary=type(error).__name__,
+                )
+
+    async def quality_metrics_by_issue(actor: ActorContext) -> dict[str, dict[str, float]]:
+        summary = await query_service.issues_summary(actor, days=30)
+        return {
+            str(item["issueTypeId"]): {
+                "count": float(item["count"]),
+                "noAnswerRate": float(item["noAnswerRate"]),
+                "negativeFeedbackRate": float(item["negativeFeedbackRate"]),
+                "handoffRate": float(item["handoffRate"]),
+                "estimatedCostUsd": float(item["estimatedCostUsd"]),
+            }
+            for item in summary["items"]
+        }
 
     def authorize(authorization: str | None = Header(default=None)) -> None:
         expected = resolved_settings.service_token
@@ -287,6 +618,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         return {
             "role": actor.role,
             "capabilities": sorted(CAPABILITIES.get(actor.role, frozenset())),
+            "ownerUnitIds": list(actor.owner_unit_ids),
             "knowledgePortalUrl": resolved_settings.knowledge_portal_url,
             "authMode": resolved_settings.auth_mode,
         }
@@ -741,8 +1073,13 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             needle = query.casefold()
             items = [
                 item for item in items
-                if needle in item["faq"]["faq_key"].casefold()
-                or needle in item["version"]["content"]["question"].casefold()
+                if any(
+                    needle in value.casefold()
+                    for value in (
+                        item["faq"]["faq_key"],
+                        item["version"]["content"]["question"],
+                    )
+                )
             ]
         return {"items": items, "total": len(items)}
 
@@ -750,6 +1087,16 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def get_faq(faq_id: str, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.faq.read")
         return faq_service.detail(faq_id=faq_id, actor=actor)
+
+    @app.get("/api/faqs/{faq_id}/performance")
+    async def get_faq_performance(
+        faq_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.read")
+        detail = faq_service.detail(faq_id=faq_id, actor=actor)
+        faq_key = detail["faq"]["faq_key"]
+        return await query_service.faq_performance(actor, faq_key=faq_key)
 
     @app.post("/api/faqs")
     async def create_faq(
@@ -858,7 +1205,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.faq.activate")
-        return faq_service.activate(
+        result = faq_service.activate(
             faq_id=faq_id,
             version_id=version_id,
             actor=actor,
@@ -867,6 +1214,38 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             idempotency_key=idempotency_key,
             correlation_id=correlation_id,
         )
+        observing = quality_service.observe_faq(
+            faq_id,
+            baseline_by_issue=await quality_metrics_by_issue(actor),
+            actor=actor,
+        )
+        return {**result, "observingCases": observing["items"]}
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/rollback")
+    async def rollback_faq(
+        faq_id: str,
+        version_id: str,
+        payload: FaqReasonRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.activate")
+        result = faq_service.rollback(
+            faq_id=faq_id,
+            version_id=version_id,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+        observing = quality_service.observe_faq(
+            faq_id,
+            baseline_by_issue=await quality_metrics_by_issue(actor),
+            actor=actor,
+        )
+        return {**result, "observingCases": observing["items"]}
 
     @app.post("/api/faqs/{faq_id}/disable")
     async def disable_faq(
@@ -886,72 +1265,744 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             correlation_id=correlation_id,
         )
 
-    @app.get("/api/quality-cases")
-    async def list_quality_cases(actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.quality.read")
-        return {"items": phase2.list_quality_cases()}
+    # Phase 2 governed quality examples
+    @app.get("/api/examples")
+    async def list_examples(
+        source_type: Literal["FAQ", "DOCUMENT", "CONVERSATION", "MANUAL"] | None = None,
+        source_id: str | None = None,
+        status: Literal["DRAFT", "VERIFIED", "REJECTED", "RETIRED"] | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.read")
+        items = example_service.list_examples(
+            actor=actor,
+            source_type=source_type,
+            source_id=source_id,
+            status=status,
+        )
+        return {"items": items, "total": len(items)}
 
-    @app.post("/api/quality-cases")
-    async def create_quality_case(
-        payload: QualityCaseCreateRequest,
+    @app.get("/api/examples/{example_id}")
+    async def get_example(example_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.examples.read")
+        return example_service.detail(example_id, actor=actor)
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/examples")
+    async def create_faq_example(
+        faq_id: str,
+        version_id: str,
+        payload: ExampleCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.write")
+        faq = faq_service.detail(faq_id=faq_id, actor=actor)
+        source_version = next(
+            (item for item in faq["versions"] if item["version_id"] == version_id),
+            None,
+        )
+        if source_version is None:
+            raise FaqNotFoundError(version_id)
+        return example_service.create(
+            source_type="FAQ",
+            source_id=faq_id,
+            source_version_id=version_id,
+            source_correlation_id=payload.source_correlation_id,
+            owner_unit_id=source_version["content"]["owner_unit_id"],
+            text=payload.text,
+            expected_issue_type_id=payload.expected_issue_type_id,
+            expected_route=payload.expected_route,
+            label=payload.label,
+            reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/examples/manual")
+    async def create_manual_example(
+        payload: ExampleCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.write")
+        return example_service.create(
+            source_type="MANUAL",
+            source_id=f"manual:{actor.user_id}",
+            source_version_id=None,
+            source_correlation_id=payload.source_correlation_id,
+            owner_unit_id=resolved_settings.default_owner_unit_id,
+            text=payload.text,
+            expected_issue_type_id=payload.expected_issue_type_id,
+            expected_route=payload.expected_route,
+            label=payload.label,
+            reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/knowledge/{document_id}/versions/{version_id}/examples")
+    async def create_document_example(
+        document_id: str,
+        version_id: str,
+        payload: ExampleCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.write")
+        inventory = await query_service.list_documents(
+            actor,
+            query=document_id,
+            limit=100,
+        )
+        if inventory.get("portalStatus") != "available":
+            raise HTTPException(status_code=503, detail="Knowledge inventory is unavailable.")
+        source_document = next(
+            (item for item in inventory["items"] if item.get("documentId") == document_id),
+            None,
+        )
+        if source_document is None:
+            raise FaqNotFoundError(document_id)
+        valid_versions = {
+            source_document.get("currentPublishedVersionId"),
+            source_document.get("draftVersionId"),
+        }
+        if version_id not in valid_versions:
+            raise FaqNotFoundError(version_id)
+        owner_unit_id = source_document.get("ownerUnitId")
+        if not owner_unit_id:
+            raise FaqValidationError("document owner unit is unavailable")
+        return example_service.create(
+            source_type="DOCUMENT",
+            source_id=document_id,
+            source_version_id=version_id,
+            source_correlation_id=payload.source_correlation_id,
+            owner_unit_id=owner_unit_id,
+            text=payload.text,
+            expected_issue_type_id=payload.expected_issue_type_id,
+            expected_route=payload.expected_route,
+            label=payload.label,
+            reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/conversations/{conversation_id}/examples")
+    async def create_conversation_example(
+        conversation_id: str,
+        payload: ExampleCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.write")
+        source_conversation = await query_service.conversation_detail(actor, conversation_id)
+        if source_conversation is None:
+            raise FaqNotFoundError(conversation_id)
+        owner_unit_id = source_conversation.get("ownerUnitId")
+        if not owner_unit_id:
+            raise FaqValidationError("conversation owner unit is unavailable or ambiguous")
+        turns = source_conversation.get("turns") or []
+        source_correlation_id = turns[-1].get("correlationId") if turns else None
+        return example_service.create(
+            source_type="CONVERSATION",
+            source_id=conversation_id,
+            source_version_id=None,
+            source_correlation_id=source_correlation_id,
+            owner_unit_id=owner_unit_id,
+            text=payload.text,
+            expected_issue_type_id=payload.expected_issue_type_id,
+            expected_route=payload.expected_route,
+            label=payload.label,
+            reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.put("/api/examples/{example_id}")
+    async def update_example(
+        example_id: str,
+        payload: ExampleUpdateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.write")
+        return example_service.update(
+            example_id,
+            text=payload.text,
+            expected_issue_type_id=payload.expected_issue_type_id,
+            expected_route=payload.expected_route,
+            label=payload.label,
+            reason=payload.reason,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/examples/{example_id}/review")
+    async def review_example(
+        example_id: str,
+        payload: ExampleReviewRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.verify")
+        return example_service.review(
+            example_id,
+            approve=payload.approve,
+            reason=payload.reason,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/examples/{example_id}/retire")
+    async def retire_example(
+        example_id: str,
+        payload: ExampleRetireRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.examples.retire")
+        return example_service.retire(
+            example_id,
+            reason=payload.reason,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.get("/api/quality-cases")
+    async def list_quality_cases(
+        status: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
-        import uuid
+        items = quality_service.list_cases(actor=actor, status=status)
+        return {"items": items, "total": len(items)}
 
-        record = QualityCaseRecord(
-            case_id=str(uuid.uuid4()),
+    @app.get("/api/quality-cases/{case_id}")
+    async def get_quality_case(case_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        return quality_service.case_detail(case_id, actor=actor)
+
+    @app.put("/api/quality-cases/{case_id}")
+    async def update_quality_case(
+        case_id: str,
+        payload: QualityCaseUpdateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        return quality_service.update_case(
+            case_id,
             title=payload.title,
-            case_type=payload.case_type,
-            owner_unit_id=payload.owner_unit_id,
+            description=payload.description,
+            priority=payload.priority,
+            assignee_id=payload.assignee_id,
+            target_due_at=payload.target_due_at,
+            expected_etag=payload.expected_etag,
+            actor=actor,
         )
-        phase2.quality_cases.append(record)
-        return {"case": record.model_dump()}
+
+    @app.post("/api/quality-cases/{case_id}/transition")
+    async def transition_quality_case(
+        case_id: str,
+        payload: QualityCaseTransitionRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        capability = (
+            "ops.quality.resolve"
+            if payload.status in {"RESOLVED", "WONT_FIX", "DUPLICATE"}
+            else "ops.quality.write"
+        )
+        require_capability(actor, capability)
+        return quality_service.transition_case(
+            case_id,
+            status=payload.status,
+            reason=payload.reason,
+            resolution_type=payload.resolution_type,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+        )
+
+    @app.post("/api/quality-cases/{case_id}/content")
+    async def link_quality_case_content(
+        case_id: str,
+        payload: QualityContentLinkRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        case = quality_service.case_detail(case_id, actor=actor)["case"]
+        if payload.faq_id:
+            faq = faq_service.detail(faq_id=payload.faq_id, actor=actor)
+            if faq["versions"][-1]["content"]["owner_unit_id"] != case["owner_unit_id"]:
+                raise FaqValidationError("linked FAQ must belong to the Quality Case owner unit")
+        if payload.document_id:
+            inventory = await query_service.list_documents(
+                actor,
+                query=payload.document_id,
+                limit=100,
+            )
+            document = next(
+                (
+                    item for item in inventory.get("items", [])
+                    if item.get("documentId") == payload.document_id
+                ),
+                None,
+            )
+            if document is None:
+                raise FaqNotFoundError(payload.document_id)
+            if document.get("ownerUnitId") != case["owner_unit_id"]:
+                raise FaqValidationError("linked document must belong to the Quality Case owner unit")
+        return quality_service.link_content(
+            case_id,
+            faq_id=payload.faq_id,
+            document_id=payload.document_id,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+        )
+
+    @app.post("/api/quality-cases/{case_id}/faq-draft")
+    async def create_quality_case_faq_draft(
+        case_id: str,
+        payload: QualityFaqDraftRequest,
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        require_capability(actor, "ops.faq.write")
+        case = quality_service.case_detail(case_id, actor=actor)["case"]
+        if not case["issue_type_id"]:
+            raise FaqValidationError("Quality Case requires an issue type before creating a FAQ")
+        content = FaqContent(
+            faq_key=payload.faq_key,
+            question=payload.question,
+            answer=payload.answer,
+            category=payload.category,
+            keywords=payload.keywords,
+            owner_unit_id=case["owner_unit_id"],
+            business_contact=payload.business_contact,
+            issue_type_ids=(case["issue_type_id"],),
+            audience_type=payload.audience_type,
+            audience_group_ids=payload.audience_group_ids,
+            effective_at=payload.effective_at,
+            review_due_at=payload.review_due_at,
+        )
+        faq_result = faq_service.create(
+            content=content,
+            actor=actor,
+            correlation_id=correlation_id,
+        )
+        linked = quality_service.link_content(
+            case_id,
+            faq_id=faq_result["faq"]["faq_id"],
+            document_id=None,
+            expected_etag=payload.expected_case_etag,
+            actor=actor,
+        )
+        return {**faq_result, "case": linked["case"]}
+
+    @app.post("/api/quality-cases/{case_id}/observation/refresh")
+    async def refresh_quality_case_observation(
+        case_id: str,
+        payload: FaqTransitionRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        case = quality_service.case_detail(case_id, actor=actor)["case"]
+        metrics = (await quality_metrics_by_issue(actor)).get(case["issue_type_id"] or "", {})
+        return quality_service.record_observation(
+            case_id,
+            metrics=metrics,
+            expected_etag=payload.expected_etag,
+            actor=actor,
+        )
+
+    @app.get("/api/quality-candidates")
+    async def list_quality_candidates(
+        status: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        items = quality_service.list_candidates(actor=actor, status=status)
+        return {"items": items, "total": len(items)}
+
+    @app.post("/api/quality-candidates/refresh")
+    async def refresh_quality_candidates(
+        payload: QualityCandidateRefreshRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        seeds = await query_service.quality_candidate_seeds(actor, days=payload.days)
+        for seed in seeds:
+            quality_service.add_candidate(**seed, actor=actor)
+        items = quality_service.list_candidates(actor=actor, status="OPEN")
+        return {"items": items, "total": len(items), "scanned": len(seeds)}
+
+    @app.post("/api/quality-candidates/merge")
+    async def merge_quality_candidates(
+        payload: QualityCandidateMergeRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        return quality_service.merge_candidates(
+            payload.candidate_ids,
+            title=payload.title,
+            description=payload.description,
+            priority=payload.priority,
+            assignee_id=payload.assignee_id,
+            target_due_at=payload.target_due_at,
+            actor=actor,
+        )
+
+    @app.get("/api/gaps/summary")
+    async def gap_summary(
+        days: int = Query(default=30, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        issues = await query_service.issues_summary(actor, days=days)
+        weights = {
+            "frequency": 30.0,
+            "noAnswerRate": 20.0,
+            "negativeFeedbackRate": 25.0,
+            "handoffRate": 15.0,
+            "estimatedCostUsd": 10.0,
+        }
+        items = []
+        max_frequency = max((item["count"] for item in issues["items"]), default=1)
+        max_cost = max((item["estimatedCostUsd"] for item in issues["items"]), default=1) or 1
+        for issue in issues["items"]:
+            components = {
+                "frequency": round(issue["count"] / max_frequency * weights["frequency"], 4),
+                "noAnswerRate": round(issue["noAnswerRate"] * weights["noAnswerRate"], 4),
+                "negativeFeedbackRate": round(
+                    issue["negativeFeedbackRate"] * weights["negativeFeedbackRate"], 4
+                ),
+                "handoffRate": round(issue["handoffRate"] * weights["handoffRate"], 4),
+                "estimatedCostUsd": round(
+                    issue["estimatedCostUsd"] / max_cost * weights["estimatedCostUsd"], 4
+                ),
+            }
+            items.append({**issue, "gapScore": round(sum(components.values()), 4), "components": components})
+        items.sort(key=lambda item: item["gapScore"], reverse=True)
+        return {
+            "scoreVersion": "gap-score-v1",
+            "weights": weights,
+            "taxonomyVersion": issues["taxonomyVersion"],
+            "items": items,
+        }
+
+    @app.get("/api/question-clusters")
+    async def list_question_clusters(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.quality.read")
+        items = quality_service.list_clusters(actor=actor)
+        return {"items": items, "total": len(items)}
+
+    @app.post("/api/question-clusters/generate")
+    async def generate_question_clusters(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        return quality_service.generate_clusters(actor=actor)
+
+    @app.post("/api/question-clusters/correct")
+    async def correct_question_clusters(
+        payload: QuestionClusterCorrectionRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        return quality_service.correct_clusters(
+            payload.cluster_ids,
+            action=payload.action,
+            name=payload.name,
+            candidate_groups=payload.candidate_groups,
+            actor=actor,
+        )
 
     @app.get("/api/sync-jobs")
     async def list_sync_jobs(actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.knowledge.read")
-        return {"items": phase2.list_sync_jobs()}
+        require_capability(actor, "ops.sync.read")
+        items = sync_service.list_jobs(actor=actor)
+        return {"items": items, "total": len(items)}
+
+    @app.get("/api/sync-jobs/{job_id}")
+    async def get_sync_job(job_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.sync.read")
+        return sync_service.detail(job_id, actor=actor)
 
     @app.post("/api/sync-jobs")
-    async def create_sync_job(payload: SyncJobCreateRequest, actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.knowledge.read")
-        import uuid
-
-        record = SyncJobRecord(
-            job_id=str(uuid.uuid4()),
+    async def create_sync_job(
+        payload: SyncJobCreateRequest,
+        background_tasks: BackgroundTasks,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.sync.write")
+        if payload.scope_type in {"FAQ", "DOCUMENT"} and not payload.scope_ids:
+            raise FaqValidationError("selected sync scopes require scope_ids")
+        owner_unit_id = resolved_settings.default_owner_unit_id
+        if payload.scope_type == "FAQ":
+            owners = set()
+            for faq_id in payload.scope_ids:
+                detail = faq_service.detail(faq_id=faq_id, actor=actor)
+                owners.add(detail["versions"][-1]["content"]["owner_unit_id"])
+            if len(owners) != 1:
+                raise FaqValidationError("FAQ sync scope must belong to one owner unit")
+            owner_unit_id = next(iter(owners))
+        elif payload.scope_type == "DOCUMENT":
+            inventory = await query_service.list_documents(actor, limit=100)
+            if inventory.get("portalStatus") != "available":
+                raise HTTPException(status_code=503, detail="Knowledge inventory is unavailable.")
+            selected = [
+                item for item in inventory["items"] if item.get("documentId") in payload.scope_ids
+            ]
+            if len(selected) != len(set(payload.scope_ids)):
+                raise FaqNotFoundError("one or more sync documents were not found")
+            owners = {item.get("ownerUnitId") for item in selected}
+            if None in owners or len(owners) != 1:
+                raise FaqValidationError("document sync scope must belong to one owner unit")
+            owner_unit_id = next(iter(owners))
+        created = sync_service.create(
             scope_type=payload.scope_type,
+            scope_ids=payload.scope_ids,
+            owner_unit_id=owner_unit_id,
             reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
         )
-        phase2.sync_jobs.append(record)
-        return {"job": record.model_dump()}
+        background_tasks.add_task(run_sync_job, created["job"]["job_id"])
+        return created
 
-    # Phase 3 scaffold
-    @app.get("/api/prompts")
-    async def list_prompts(actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.config.read")
-        return {"items": phase3.list_prompts()}
+    @app.post("/api/sync-jobs/{job_id}/retry")
+    async def retry_sync_job(
+        job_id: str,
+        payload: SyncJobActionRequest,
+        background_tasks: BackgroundTasks,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.sync.write")
+        created = sync_service.retry(
+            job_id,
+            reason=payload.reason,
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+        background_tasks.add_task(run_sync_job, created["job"]["job_id"])
+        return created
+
+    @app.post("/api/sync-jobs/{job_id}/cancel")
+    async def cancel_sync_job(
+        job_id: str,
+        payload: SyncJobActionRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.sync.write")
+        if payload.expected_etag is None:
+            raise FaqValidationError("expected_etag is required for cancellation")
+        return sync_service.cancel(
+            job_id,
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            actor=actor,
+        )
+
+    @app.get("/api/budget-policies")
+    async def list_budget_policies(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.budget.read")
+        items = budget_service.list_policies(actor=actor)
+        return {
+            "items": items,
+            "total": len(items),
+            "notificationTargets": sorted(configured_targets),
+        }
+
+    @app.get("/api/budget-policies/{policy_id}")
+    async def get_budget_policy(
+        policy_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.read")
+        return {"policy": budget_service.policy_detail(policy_id, actor=actor)}
+
+    @app.post("/api/budget-policies")
+    async def create_budget_policy(
+        payload: BudgetPolicyCreateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.write")
+        definitions = query_service.metrics_definitions()
+        return budget_service.create_policy(
+            **payload.model_dump(),
+            pricing_version=str(definitions["pricingVersion"]),
+            exchange_rate_version=str(definitions["metricsDefinitionVersion"]),
+            actor=actor,
+        )
+
+    @app.put("/api/budget-policies/{policy_id}")
+    async def update_budget_policy(
+        policy_id: str,
+        payload: BudgetPolicyUpdateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.write")
+        return budget_service.update_policy(policy_id, **payload.model_dump(), actor=actor)
+
+    @app.post("/api/budget-policies/{policy_id}/state")
+    async def set_budget_policy_state(
+        policy_id: str,
+        payload: BudgetPolicyStateRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.write")
+        return budget_service.set_policy_enabled(
+            policy_id,
+            enabled=payload.enabled,
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            actor=actor,
+        )
+
+    @app.post("/api/budget-policies/{policy_id}/evaluate")
+    async def evaluate_budget_policy(
+        policy_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.evaluate")
+        policy = budget_service.policy_detail(policy_id, actor=actor)
+        usage = await query_service.budget_usage(
+            actor,
+            scope_type=str(policy["scope_type"]),
+            scope_id=str(policy["scope_id"]),
+            period_type=str(policy["period"]),
+            measure=str(policy["measure"]),
+        )
+        result = budget_service.evaluate(
+            policy_id,
+            period_key=str(usage["periodKey"]),
+            actual_value=float(usage["actualValue"]),
+            coverage=float(usage["coverage"]),
+            pricing_version=str(usage["pricingVersion"]),
+            exchange_rate_version=str(usage["exchangeRateVersion"]),
+            actor=actor,
+        )
+        return {**result, "usage": usage}
+
+    @app.get("/api/alerts")
+    async def list_alerts(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.alerts.read")
+        items = budget_service.list_alerts(actor=actor)
+        return {"items": items, "total": len(items)}
+
+    @app.get("/api/alerts/{alert_id}")
+    async def get_alert(alert_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.alerts.read")
+        return {"alert": budget_service.alert_detail(alert_id, actor=actor)}
+
+    @app.post("/api/alerts/{alert_id}/acknowledge")
+    async def acknowledge_alert(
+        alert_id: str,
+        payload: FaqReasonRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.alerts.manage")
+        return budget_service.change_alert(
+            alert_id,
+            action="ACKNOWLEDGE",
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            actor=actor,
+        )
+
+    @app.post("/api/alerts/{alert_id}/deliveries/{delivery_id}/retry")
+    async def retry_alert_delivery(
+        alert_id: str,
+        delivery_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.alerts.manage")
+        alert = budget_service.alert_detail(alert_id, actor=actor)
+        if delivery_id not in {item["delivery_id"] for item in alert["deliveries"]}:
+            raise FaqNotFoundError(delivery_id)
+        return budget_service.retry_delivery(delivery_id, actor=actor)
+
+    @app.post("/api/alerts/{alert_id}/resolve")
+    async def resolve_alert(
+        alert_id: str,
+        payload: FaqReasonRequest,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.alerts.manage")
+        return budget_service.change_alert(
+            alert_id,
+            action="RESOLVE",
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            actor=actor,
+        )
+
+    @app.get("/api/prompts/active")
+    async def get_active_prompt(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.prompts.read")
+        return {"prompt": prompt_service.active(actor=actor)}
+
+    @app.get("/api/prompts/candidates")
+    async def list_prompt_candidates(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.prompts.read")
+        items = prompt_service.list_candidates(actor=actor)
+        return {"items": items, "total": len(items)}
+
+    @app.get("/api/prompts/candidates/{candidate_id}")
+    async def get_prompt_candidate(
+        candidate_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.prompts.read")
+        return {"candidate": prompt_service.detail(candidate_id, actor=actor)}
+
+    @app.get("/api/prompts/candidates/{candidate_id}/compare")
+    async def compare_prompt_candidate(
+        candidate_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.prompts.read")
+        return prompt_service.compare(candidate_id, actor=actor)
 
     @app.post("/api/prompts/candidates")
     async def create_prompt_candidate(
         payload: PromptCandidateRequest,
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
-        require_capability(actor, "ops.config.read")
-        import hashlib
-        import uuid
-
-        content_hash = hashlib.sha256(payload.template_summary.encode("utf-8")).hexdigest()
-        record = PromptVersionRecord(
-            prompt_id=payload.prompt_id,
-            version=str(uuid.uuid4())[:8],
-            status="CANDIDATE",
-            content_hash=content_hash,
-            change_reason=payload.change_reason,
+        require_capability(actor, "ops.prompts.candidates.create")
+        if payload.taxonomy_version != query_service.taxonomy.version:
+            raise FaqValidationError("taxonomy version is stale")
+        if payload.masking_policy_version != resolved_settings.prompt_masking_policy_version:
+            raise FaqValidationError("masking policy version is stale")
+        verified_examples = example_service.list_examples(actor=actor, status="VERIFIED")
+        return prompt_service.generate(
+            **payload.model_dump(),
+            verified_examples=verified_examples,
+            correlation_id=correlation_id,
+            actor=actor,
         )
-        phase3.prompts.append(record)
-        return {"prompt": record.model_dump()}
 
+    # Phase 3 scaffold
     @app.get("/api/feature-flags")
     async def list_feature_flags(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.config.read")

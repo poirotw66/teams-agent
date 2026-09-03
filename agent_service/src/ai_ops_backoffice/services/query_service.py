@@ -624,6 +624,12 @@ class BackofficeQueryService:
             and len(unmask_reason.strip()) >= 3
         )
         events.sort(key=lambda item: item.occurred_at)
+        owner_unit_ids = {
+            issue_type.owner_unit_id
+            for event in events
+            if event.issue_type_id
+            if (issue_type := self.taxonomy.get(event.issue_type_id)) is not None
+        }
         turns = []
         for event in events:
             if event.event_type != "turn.received":
@@ -655,6 +661,7 @@ class BackofficeQueryService:
             )
         return {
             "conversationId": conversation_id,
+            "ownerUnitId": next(iter(owner_unit_ids)) if len(owner_unit_ids) == 1 else None,
             "unmaskAuthorized": allow_unmasked,
             "turns": turns,
         }
@@ -684,6 +691,7 @@ class BackofficeQueryService:
                 correlation_to_issue[event.correlation_id] = event.issue_type_id
         issue_feedback_down: Counter[str] = Counter()
         issue_handoffs: Counter[str] = Counter()
+        issue_no_answers: Counter[str] = Counter()
         issue_costs: dict[str, float] = defaultdict(float)
         for event in all_events:
             issue_type_id = event.issue_type_id or correlation_to_issue.get(
@@ -695,6 +703,11 @@ class BackofficeQueryService:
                 issue_feedback_down[issue_type_id] += 1
             if event.event_type.startswith("handoff."):
                 issue_handoffs[issue_type_id] += 1
+            if (
+                event.event_type in {"answer.completed", "faq.answered", "knowledge.answered"}
+                and event.payload.get("resultType") in {"NO_KNOWLEDGE", "FAILED"}
+            ):
+                issue_no_answers[issue_type_id] += 1
         usage_dimensions = UsageDimensions(all_events)
         for event in project_usage(all_events).detail_events:
             _, issue_type_id = usage_dimensions.resolve(event)
@@ -718,6 +731,7 @@ class BackofficeQueryService:
                     "count": count,
                     "share": round(count / total, 4),
                     "negativeFeedbackRate": round(issue_feedback_down[issue_type_id] / count, 4),
+                    "noAnswerRate": round(issue_no_answers[issue_type_id] / count, 4),
                     "handoffRate": round(issue_handoffs[issue_type_id] / count, 4),
                     "estimatedCostUsd": round(issue_costs.get(issue_type_id, 0.0), 6),
                 }
@@ -743,6 +757,77 @@ class BackofficeQueryService:
             ],
             "unclassifiedCount": counts.get("other.unclassified", 0),
         }
+
+    async def quality_candidate_seeds(
+        self,
+        actor: ActorContext,
+        *,
+        days: int = 30,
+    ) -> list[dict[str, Any]]:
+        period = self._resolve_period(days=days)
+        events = await self._scoped_events(actor, period)
+        correlation_to_issue = {
+            event.correlation_id: event.issue_type_id
+            for event in events
+            if event.issue_type_id
+        }
+        seeds = []
+        for event in events:
+            issue_type_id = event.issue_type_id or correlation_to_issue.get(event.correlation_id)
+            issue_type = self.taxonomy.get(issue_type_id) if issue_type_id else None
+            if issue_type is None:
+                continue
+            case_type = None
+            title = None
+            description = ""
+            if (
+                event.event_type in {"answer.completed", "faq.answered", "knowledge.answered"}
+                and event.payload.get("resultType") in {"NO_KNOWLEDGE", "FAILED"}
+            ):
+                case_type = "NO_ANSWER"
+                title = f"{issue_type.display_name} 無答案"
+                description = str(event.payload.get("answerMasked") or event.payload.get("resultType"))
+            elif (
+                event.event_type == "issue.classified"
+                and event.payload.get("confidenceStatus") == "LOW"
+            ):
+                case_type = "LOW_CONFIDENCE"
+                title = f"{issue_type.display_name} 低信心分類"
+                description = str(event.payload.get("normalizedDescription") or "LOW confidence")
+            elif event.event_type == "feedback.recorded" and event.payload.get("rating") == "DOWN":
+                case_type = "NEGATIVE_FEEDBACK"
+                title = f"{issue_type.display_name} 負評"
+                description = str(event.payload.get("reason") or "negative feedback")
+            elif event.event_type.startswith("handoff."):
+                case_type = "HANDOFF"
+                title = f"{issue_type.display_name} 轉人工"
+                description = str(event.payload.get("reason") or event.payload.get("status") or "handoff")
+            if case_type is None:
+                continue
+            seeds.append(
+                {
+                    "source_type": "EVENT",
+                    "case_type": case_type,
+                    "title": title,
+                    "description": description,
+                    "issue_type_id": issue_type_id,
+                    "question_cluster_id": None,
+                    "owner_unit_id": issue_type.owner_unit_id,
+                    "source_event_ids": (event.event_id,),
+                    "conversation_refs": (event.conversation_id,) if event.conversation_id else (),
+                    "faq_ids": tuple(
+                        value for value in (event.payload.get("faqId"), event.payload.get("faqKey")) if value
+                    ),
+                    "document_ids": tuple(
+                        value for value in (event.payload.get("documentId"),) if value
+                    ),
+                    "frequency": 1,
+                    "negative_rate": 1 if case_type == "NEGATIVE_FEEDBACK" else 0,
+                    "handoff_rate": 1 if case_type == "HANDOFF" else 0,
+                    "estimated_cost_impact": 0,
+                }
+            )
+        return seeds
 
     async def routes_summary(
         self,
@@ -907,6 +992,151 @@ class BackofficeQueryService:
             "periodPreset": summary["periodPreset"],
             "periodDays": summary["periodDays"],
             "routes": issue_item["routes"] if issue_item else [],
+        }
+
+    async def budget_usage(
+        self,
+        actor: ActorContext,
+        *,
+        scope_type: str,
+        scope_id: str,
+        period_type: str,
+        measure: str,
+    ) -> dict[str, Any]:
+        period = self._resolve_period(preset="today" if period_type == "DAILY" else "month")
+        scoped_events = await self._scoped_events(actor, period)
+        if scope_type == "PERSONAL":
+            conversation_actors: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+            for event in scoped_events:
+                if event.actor_ref:
+                    conversation_actors[
+                        (event.environment, event.tenant_id, event.conversation_id)
+                    ].add(event.actor_ref)
+            scoped_events = [
+                event
+                for event in scoped_events
+                if event.actor_ref == scope_id
+                or (
+                    not event.actor_ref
+                    and conversation_actors.get(
+                        (event.environment, event.tenant_id, event.conversation_id)
+                    )
+                    == {scope_id}
+                )
+            ]
+        elif scope_type == "SERVICE":
+            scoped_events = [
+                event
+                for event in scoped_events
+                if str(event.payload.get("serviceId") or "") == scope_id
+            ]
+        elif scope_type == "TEAM":
+            scoped_events = [
+                event
+                for event in scoped_events
+                if str(event.payload.get("teamId") or "") == scope_id
+            ]
+        elif scope_type == "TENANT":
+            scoped_events = [event for event in scoped_events if event.tenant_id == scope_id]
+        elif scope_type != "GLOBAL":
+            raise ValueError(f"Unsupported budget scope: {scope_type}")
+        usage_events = list(project_usage(scoped_events).detail_events)
+        complete_cost_events = sum(
+            1
+            for event in usage_events
+            if event.payload.get("estimatedCostUsd") is not None or confirmed_zero_call(event)
+        )
+        coverage = (
+            round(complete_cost_events / len(usage_events), 4) if usage_events else 1.0
+        )
+        known_total = known_cost_total(usage_events) or 0.0
+        if measure == "USD":
+            actual_value = known_total
+        elif measure == "TWD":
+            actual_value = convert_usd_to_twd(
+                known_total,
+                float(self._metrics.get("usdTwdExchangeRate", 31.70)),
+            )
+        elif measure == "TOKEN":
+            actual_value = float(
+                sum(
+                    int(event.payload.get(key) or 0)
+                    for event in usage_events
+                    for key in (
+                        "inputTokens",
+                        "outputTokens",
+                        "embeddingTokens",
+                        "toolContextTokens",
+                    )
+                )
+            )
+            coverage = 1.0
+        elif measure == "LLM_CALL_COUNT":
+            actual_value = float(
+                sum(int(event.payload.get("llmCallCount") or 0) for event in usage_events)
+            )
+            coverage = 1.0
+        else:
+            raise ValueError(f"Unsupported budget measure: {measure}")
+        return {
+            "actualValue": round(actual_value, 6),
+            "coverage": coverage,
+            "periodKey": period.start_at.strftime(
+                "%Y-%m-%d" if period_type == "DAILY" else "%Y-%m"
+            ),
+            "pricingVersion": self._metrics.get("pricingVersion", "v1"),
+            "exchangeRateVersion": self._metrics.get(
+                "exchangeRateVersion",
+                self._metrics.get("metrics_definition_version", METRICS_DEFINITION_VERSION),
+            ),
+        }
+
+    async def faq_performance(
+        self,
+        actor: ActorContext,
+        *,
+        faq_key: str,
+    ) -> dict[str, Any]:
+        events = filter_events_by_scope(await self._events(), actor, self.taxonomy)
+        hits = [
+            event
+            for event in events
+            if event.event_type == "faq.answered" and event.payload.get("faqKey") == faq_key
+        ]
+        by_day: Counter[str] = Counter()
+        by_week: Counter[str] = Counter()
+        by_month: Counter[str] = Counter()
+        by_version: Counter[str] = Counter()
+        for event in hits:
+            occurred = event.occurred_at
+            iso_year, iso_week, _ = occurred.isocalendar()
+            by_day[occurred.date().isoformat()] += 1
+            by_week[f"{iso_year}-W{iso_week:02d}"] += 1
+            by_month[occurred.strftime("%Y-%m")] += 1
+            by_version[str(event.payload.get("faqVersionId") or "legacy-unattributed")] += 1
+        return {
+            "faqKey": faq_key,
+            "totalHitCount": len(hits),
+            "byDay": [{"period": key, "hitCount": value} for key, value in sorted(by_day.items())],
+            "byWeek": [{"period": key, "hitCount": value} for key, value in sorted(by_week.items())],
+            "byMonth": [
+                {"period": key, "hitCount": value} for key, value in sorted(by_month.items())
+            ],
+            "byVersion": [
+                {"versionId": key, "hitCount": value}
+                for key, value in by_version.most_common()
+            ],
+            "recentHits": [
+                {
+                    "occurredAt": event.occurred_at.isoformat(),
+                    "conversationId": event.conversation_id,
+                    "turnId": event.turn_id,
+                    "correlationId": event.correlation_id,
+                    "faqId": event.payload.get("faqId"),
+                    "versionId": event.payload.get("faqVersionId"),
+                }
+                for event in sorted(hits, key=lambda item: item.occurred_at, reverse=True)[:50]
+            ],
         }
 
     async def costs_summary(

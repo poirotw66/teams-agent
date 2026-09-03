@@ -159,6 +159,9 @@ class IssueProcessingWorkflowMixin:
                     resultType="FAQ_ANSWERED",
                     answer=entry.answer,
                     backend="FAQ",
+                    faqId=entry.id,
+                    faqKey=entry.faqKey,
+                    faqVersionId=entry.versionId,
                 )
             # Miss or disabled entry falls back to KNOWLEDGE, never fails.
             return await self._handle_knowledge(

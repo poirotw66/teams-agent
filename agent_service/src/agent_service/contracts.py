@@ -110,6 +110,9 @@ class IssueResult(StrictModel):
     ticketId: str | None = None
     backend: str | None = None
     error: str | None = None
+    faqId: str | None = None
+    faqKey: str | None = None
+    faqVersionId: str | None = None
 
 
 class AgentResponse(StrictModel):
@@ -206,6 +209,7 @@ class FaqEntry(StrictModel):
     faqKey: str
     enabled: bool = True
     answer: str
+    versionId: str | None = None
 
 
 # --- Ticket Service (spec §11) ------------------------------------------

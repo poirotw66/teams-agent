@@ -267,6 +267,7 @@ def test_governed_runtime_maps_active_snapshot_and_enforces_audience() -> None:
     assert service.get("VPN_GROUP", ("contractors",)) is None
     entry = service.get("VPN_GROUP", ("employees",))
     assert entry and entry.id == "faq-1" and entry.answer == "固定群組答案"
+    assert entry.versionId == "version-1"
 
 
 def test_from_settings_governed_file_is_active_only(tmp_path: Path) -> None:

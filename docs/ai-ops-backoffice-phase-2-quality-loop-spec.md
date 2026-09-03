@@ -30,11 +30,11 @@ Phase 2 產生的 Issue 正反例可供 Prompt 候選與離線評測使用。本
 
 ### 1.1 實作進度（2026-09-03）
 
-- FAQ 第一垂直切片已完成：FILE／Firestore repository、不可變版本、owner scope、etag、冪等、Audit、正反例、送審、SYSTEM_ADMIN 核准／退回／啟用／停用，以及 Backoffice 管理介面。
-- 已驗證 FILE restart persistence、Knowledge Admin 與 SYSTEM_ADMIN 職責分離、API lifecycle，以及 390×844 responsive UI；focused suite 為 36 passed。
-- Agent runtime adapter 已完成：`FAQ_RUNTIME_MODE=GOVERNED` 時只讀 immutable ACTIVE versions，沿用 request groups 執行 audience ACL，FILE mode 已驗證同一 instance 無重啟即可看見啟用與停用。production Firestore cutover 與故障注入證據仍待完成。
-- 尚未完成：FAQ edit／rollback UI 與完整 API 驗收、FAQ 命中分析、examples dataset 治理，以及其餘 Quality Case、Gap、Sync、Budget、Alert、Notification、Prompt POC。
-- 本節僅代表第一垂直切片完成，不代表 Phase 2 驗收完成。
+- Phase 2 LAB 實作與自驗完成：FAQ lifecycle／runtime／版本命中歸因、governed examples dataset、Quality Candidate／Case／Gap／Cluster、Case → FAQ → OBSERVING 閉環、可恢復 Sync、Budget Policy／Alert／Notification，以及 Prompt Candidate POC 均已接入 API 與 Backoffice UI。
+- FILE 與 Firestore repository 路徑、owner scope、etag、冪等、不可變版本及 Audit 均保留；Sync retry 保存 checkpoint 並要求 release evidence，個人 Budget 用量由 server 依 actor provenance 計算，通知 receiver 只能使用部署 allowlist，外部 delivery 失敗可持久化 FAILED 並由授權人員重排 PENDING。
+- Prompt POC 僅提供 Active read 與 Candidate generate/list/detail/compare；候選需 VERIFIED dataset manifest、taxonomy/masking version 並通過 schema、secret、injection、長度檢查，沒有 approve／activate／rollback API。
+- Canonical suite：`uv --directory agent_service run --extra dev --extra portal --extra firestore pytest -q`，結果 `986 passed, 1 warning`。Warning 為 Starlette TestClient 的 `httpx` deprecation，非產品失敗。Browser smoke 已涵蓋 desktop 與 390 × 844 mobile 的 Budget／Alert、Prompt、Quality、Knowledge／Sync workspace，無水平溢位。
+- 尚待 production gate：實際 Firestore 多 instance／故障注入、真實 Teams／Email provider delivery、GCP 部署與人工 UAT。這些不得由 LAB 結果冒稱 production resilience 或外部正式核准。
 
 ## 2. 對應 BU 需求
 

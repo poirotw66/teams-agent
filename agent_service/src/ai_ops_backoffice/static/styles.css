@@ -82,6 +82,10 @@ h1 {
   overflow-x: auto;
 }
 
+.panel p {
+  overflow-wrap: anywhere;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

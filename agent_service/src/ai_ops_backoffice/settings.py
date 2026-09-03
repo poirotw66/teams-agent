@@ -40,6 +40,27 @@ class BackofficeSettings:
     faq_store_mode: str = "FILE"
     faq_store_path: Path | None = None
     faq_firestore_collection_prefix: str = "ai_ops_faq"
+    example_store_mode: str = "FILE"
+    example_store_path: Path | None = None
+    example_firestore_collection_prefix: str = "ai_ops_faq"
+    quality_store_mode: str = "FILE"
+    quality_store_path: Path | None = None
+    quality_firestore_collection: str = "ai_ops_quality_state"
+    sync_store_mode: str = "FILE"
+    sync_store_path: Path | None = None
+    sync_firestore_collection: str = "ai_ops_sync_state"
+    sync_adapter_url: str | None = None
+    budget_store_mode: str = "FILE"
+    budget_store_path: Path | None = None
+    budget_firestore_collection: str = "ai_ops_budget_state"
+    budget_notification_targets: tuple[str, ...] = (
+        "notification-center=NOTIFICATION_CENTER",
+    )
+    prompt_poc_store_mode: str = "FILE"
+    prompt_poc_store_path: Path | None = None
+    prompt_poc_firestore_collection: str = "ai_ops_prompt_poc_state"
+    prompt_masking_policy_version: str = "mask-v1"
+    prompt_active_effective_at: str | None = None
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -119,4 +140,73 @@ class BackofficeSettings:
             faq_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"
             ),
+            example_store_mode=(
+                os.environ.get("AI_OPS_EXAMPLE_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            example_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_EXAMPLE_STORE_PATH", ops_dir / "phase2" / "examples.json"
+                )
+            ).expanduser().resolve(),
+            example_firestore_collection_prefix=os.environ.get(
+                "AI_OPS_EXAMPLE_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"
+            ),
+            quality_store_mode=(
+                os.environ.get("AI_OPS_QUALITY_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            quality_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_QUALITY_STORE_PATH", ops_dir / "phase2" / "quality.json"
+                )
+            ).expanduser().resolve(),
+            quality_firestore_collection=os.environ.get(
+                "AI_OPS_QUALITY_FIRESTORE_COLLECTION", "ai_ops_quality_state"
+            ),
+            sync_store_mode=(
+                os.environ.get("AI_OPS_SYNC_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            sync_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_SYNC_STORE_PATH", ops_dir / "phase2" / "sync_jobs.json"
+                )
+            ).expanduser().resolve(),
+            sync_firestore_collection=os.environ.get(
+                "AI_OPS_SYNC_FIRESTORE_COLLECTION", "ai_ops_sync_state"
+            ),
+            sync_adapter_url=os.environ.get("AI_OPS_SYNC_ADAPTER_URL") or None,
+            budget_store_mode=(
+                os.environ.get("AI_OPS_BUDGET_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            budget_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_BUDGET_STORE_PATH", ops_dir / "phase2" / "budgets.json"
+                )
+            ).expanduser().resolve(),
+            budget_firestore_collection=os.environ.get(
+                "AI_OPS_BUDGET_FIRESTORE_COLLECTION", "ai_ops_budget_state"
+            ),
+            budget_notification_targets=tuple(
+                item.strip()
+                for item in os.environ.get(
+                    "AI_OPS_BUDGET_NOTIFICATION_TARGETS",
+                    "notification-center=NOTIFICATION_CENTER",
+                ).split(",")
+                if item.strip()
+            ),
+            prompt_poc_store_mode=(
+                os.environ.get("AI_OPS_PROMPT_POC_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            prompt_poc_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_PROMPT_POC_STORE_PATH",
+                    ops_dir / "phase2" / "prompt_candidates.json",
+                )
+            ).expanduser().resolve(),
+            prompt_poc_firestore_collection=os.environ.get(
+                "AI_OPS_PROMPT_POC_FIRESTORE_COLLECTION", "ai_ops_prompt_poc_state"
+            ),
+            prompt_masking_policy_version=os.environ.get(
+                "AI_OPS_PROMPT_MASKING_POLICY_VERSION", "mask-v1"
+            ),
+            prompt_active_effective_at=os.environ.get("AI_OPS_PROMPT_ACTIVE_EFFECTIVE_AT") or None,
         )

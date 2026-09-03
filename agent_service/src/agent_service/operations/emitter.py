@@ -501,7 +501,11 @@ class OperationalEventEmitter:
             body.update(answerMasked=answer.text, answerWasMasked=answer.was_masked)
         if result.resultType == "FAQ_ANSWERED":
             kind = "faq.answered"
-            body["faqKey"] = getattr(result, "faqKey", None)
+            body.update(
+                faqId=result.faqId,
+                faqKey=result.faqKey,
+                faqVersionId=result.faqVersionId,
+            )
         elif result.resultType == "KNOWLEDGE_ANSWERED":
             kind = "knowledge.answered"
             citations = []

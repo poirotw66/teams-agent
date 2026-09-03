@@ -124,6 +124,7 @@ class GovernedFaqRepository:
             faqKey=snapshot.faq_key,
             enabled=True,
             answer=snapshot.answer,
+            versionId=snapshot.version_id,
         )
 
     def get(

@@ -6,9 +6,12 @@ const routes = {
   issues: renderIssues,
   routes: renderRoutes,
   costs: renderCosts,
+  budgets: renderBudgets,
   health: renderHealth,
   knowledge: renderKnowledge,
+  examples: renderExamples,
   quality: renderQuality,
+  prompts: renderPrompts,
   audit: renderAudit,
 };
 
@@ -18,9 +21,12 @@ const navItems = [
   ["issues", "Issue 分析", "ops.issues.read"],
   ["routes", "路由來源", "ops.issues.read"],
   ["costs", "成本分析", "ops.cost.read"],
+  ["budgets", "預算與告警", "ops.budget.read"],
   ["health", "系統健康度", "ops.health.read"],
   ["knowledge", "知識營運", "ops.knowledge.read"],
+  ["examples", "品質案例集", "ops.examples.read"],
   ["quality", "品質改善", "ops.feedback.read"],
+  ["prompts", "Prompt 候選", "ops.prompts.read"],
   ["audit", "稽核紀錄", "ops.audit.read"],
 ];
 
@@ -834,6 +840,7 @@ async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
   const faqPanel = el("section", "panel");
+  const syncPanel = el("section", "panel");
   panel.append(el("h2", "", "知識營運"));
   panel.append(
     el(
@@ -873,7 +880,7 @@ async function renderKnowledge() {
   filters.append(query, status, submit);
   const result = el("div", "");
   panel.append(filters, result);
-  app.replaceChildren(panel, faqPanel);
+  app.replaceChildren(panel, faqPanel, syncPanel);
 
   async function loadDocuments(cursor = "") {
     result.replaceChildren(el("p", "empty", "載入中…"));
@@ -905,7 +912,121 @@ async function renderKnowledge() {
       exportButton.textContent = "匯出 CSV";
     }
   });
-  await Promise.all([loadDocuments(), renderFaqManagement(faqPanel)]);
+  await Promise.all([
+    loadDocuments(),
+    renderFaqManagement(faqPanel),
+    renderSyncManagement(syncPanel),
+  ]);
+}
+
+async function showSyncDetail(jobId, panel) {
+  try {
+    const detail = await api(`/api/sync-jobs/${encodeURIComponent(jobId)}`);
+    const job = detail.job;
+    const allowed = new Set(capabilities?.capabilities || []);
+    const content = el("div");
+    content.append(
+      el("p", "", `${job.status}｜階段 ${job.current_stage}｜進度 ${job.progress_percent}%｜ETag ${job.etag}`),
+      el("p", "", `範圍：${job.scope_type} ${job.scope_ids.join(", ") || "全部"}`),
+      el("p", "", `文件數：${job.document_count}｜Target release：${job.target_release || "未切換"}`),
+      el("p", "", `Checkpoint：${job.checkpoint_stage || "-"}｜Retry checkpoint：${job.retry_checkpoint_stage || "-"}`),
+    );
+    if (job.error_summary) content.append(el("div", "error", job.error_summary));
+    if (job.warnings.length) content.append(el("p", "warning", job.warnings.join("；")));
+    const actions = el("div", "filter-bar");
+    if (allowed.has("ops.sync.write") && ["FAILED", "CANCELLED"].includes(job.status)) {
+      const retry = el("button", "", "重試");
+      retry.addEventListener("click", async () => {
+        const reason = window.prompt("重試原因");
+        if (!reason?.trim()) return;
+        await api(`/api/sync-jobs/${jobId}/retry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify({ reason: reason.trim() }),
+        });
+        await renderSyncManagement(panel);
+      });
+      actions.append(retry);
+    }
+    if (allowed.has("ops.sync.write") && ["QUEUED", "VALIDATING", "BUILDING", "VERIFYING"].includes(job.status)) {
+      const cancel = el("button", "", "取消");
+      cancel.addEventListener("click", async () => {
+        const reason = window.prompt("取消原因");
+        if (!reason?.trim()) return;
+        await api(`/api/sync-jobs/${jobId}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: reason.trim(), expected_etag: job.etag }),
+        });
+        await renderSyncManagement(panel);
+      });
+      actions.append(cancel);
+    }
+    content.append(actions, el("h3", "", `Audit（${detail.audit.length}）`));
+    for (const event of detail.audit) {
+      content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
+    }
+    showContentModal(`Sync Job ${job.job_id}`, content);
+  } catch (error) {
+    showContentModal("Sync Job", el("div", "error", error.message));
+  }
+}
+
+async function renderSyncManagement(panel) {
+  panel.replaceChildren(el("h2", "", "重新同步 / 索引"), el("p", "empty", "載入中…"));
+  const allowed = new Set(capabilities?.capabilities || []);
+  try {
+    const data = await api("/api/sync-jobs");
+    const actions = el("div", "filter-bar");
+    if (allowed.has("ops.sync.write")) {
+      const create = el("button", "", "建立全量 Sync");
+      create.addEventListener("click", async () => {
+        const reason = window.prompt("Sync 原因");
+        if (!reason?.trim()) return;
+        try {
+          await api("/api/sync-jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+            body: JSON.stringify({ scope_type: "ALL", scope_ids: [], reason: reason.trim() }),
+          });
+          await renderSyncManagement(panel);
+        } catch (error) {
+          showContentModal("建立 Sync 失敗", el("div", "error", error.message));
+        }
+      });
+      actions.append(create);
+    }
+    const result = el("div");
+    if (!(data.items || []).length) {
+      result.append(el("p", "empty", "目前沒有 Sync Job。"));
+    } else {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>時間</th><th>範圍</th><th>狀態</th><th>進度</th><th>錯誤 / 警告</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const job of data.items) {
+        const action = el("td");
+        const detail = el("button", "", "查看");
+        detail.addEventListener("click", () => showSyncDetail(job.job_id, panel));
+        action.append(detail);
+        const progress = `${job.progress_percent}% / ${job.checkpoint_stage || "尚無 checkpoint"}`;
+        const row = el("tr");
+        row.append(
+          el("td", "", job.requested_at),
+          el("td", "", `${job.scope_type} ${job.scope_ids.join(", ")}`),
+          el("td", "", job.status),
+          el("td", "", progress),
+          el("td", "", job.error_summary || job.warnings.join("；") || "-"),
+          action,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      result.append(table);
+    }
+    panel.replaceChildren(el("h2", "", "重新同步 / 索引"), actions, result);
+  } catch (error) {
+    panel.replaceChildren(el("h2", "", "重新同步 / 索引"), el("div", "error", error.message));
+  }
 }
 
 async function renderFaqManagement(panel) {
@@ -998,19 +1119,43 @@ function faqField(label, name, value = "", multiline = false, required = true) {
   return wrap;
 }
 
-function showFaqCreateModal(panel) {
+function buildFaqForm(content = {}) {
   const form = el("form", "form-grid");
   form.append(
-    faqField("FAQ Key", "faq_key"),
-    faqField("問題", "question"),
-    faqField("固定答案", "answer", "", true),
-    faqField("分類", "category"),
-    faqField("關鍵字（逗號分隔）", "keywords"),
-    faqField("Owner Unit", "owner_unit_id", "IT Service Desk"),
-    faqField("Business Contact", "business_contact", "IT Service Desk"),
-    faqField("Issue Type IDs（逗號分隔）", "issue_type_ids"),
-    faqField("Audience Groups（逗號分隔；空白代表 ALL）", "audience_group_ids", "", false, false),
+    faqField("FAQ Key", "faq_key", content.faq_key || ""),
+    faqField("問題", "question", content.question || ""),
+    faqField("固定答案", "answer", content.answer || "", true),
+    faqField("分類", "category", content.category || ""),
+    faqField("關鍵字（逗號分隔）", "keywords", (content.keywords || []).join(",")),
+    faqField("Owner Unit", "owner_unit_id", content.owner_unit_id || "IT Service Desk"),
+    faqField("Business Contact", "business_contact", content.business_contact || "IT Service Desk"),
+    faqField("Issue Type IDs（逗號分隔）", "issue_type_ids", (content.issue_type_ids || []).join(",")),
+    faqField(
+      "Audience Groups（逗號分隔；空白代表 ALL）",
+      "audience_group_ids",
+      (content.audience_group_ids || []).join(","),
+      false,
+      false,
+    ),
   );
+  return form;
+}
+
+function faqPayload(form) {
+  const values = new FormData(form);
+  const split = (name) => String(values.get(name) || "").split(",").map((item) => item.trim()).filter(Boolean);
+  const groups = split("audience_group_ids");
+  return {
+    faq_key: values.get("faq_key"), question: values.get("question"),
+    answer: values.get("answer"), category: values.get("category"),
+    keywords: split("keywords"), owner_unit_id: values.get("owner_unit_id"),
+    business_contact: values.get("business_contact"), issue_type_ids: split("issue_type_ids"),
+    audience_type: groups.length ? "GROUPS" : "ALL", audience_group_ids: groups,
+  };
+}
+
+function showFaqCreateModal(panel) {
+  const form = buildFaqForm();
   const message = el("div");
   const submit = el("button", "", "建立草稿");
   submit.type = "submit";
@@ -1019,20 +1164,11 @@ function showFaqCreateModal(panel) {
     event.preventDefault();
     submit.disabled = true;
     message.replaceChildren();
-    const values = new FormData(form);
-    const split = (name) => String(values.get(name) || "").split(",").map((item) => item.trim()).filter(Boolean);
-    const groups = split("audience_group_ids");
     try {
       const created = await api("/api/faqs", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({
-          faq_key: values.get("faq_key"), question: values.get("question"),
-          answer: values.get("answer"), category: values.get("category"),
-          keywords: split("keywords"), owner_unit_id: values.get("owner_unit_id"),
-          business_contact: values.get("business_contact"), issue_type_ids: split("issue_type_ids"),
-          audience_type: groups.length ? "GROUPS" : "ALL", audience_group_ids: groups,
-        }),
+        body: JSON.stringify(faqPayload(form)),
       });
       document.getElementById("modal-root").hidden = true;
       await renderFaqManagement(panel);
@@ -1046,15 +1182,44 @@ function showFaqCreateModal(panel) {
   showContentModal("新增 FAQ 草稿", form);
 }
 
+function showFaqEditModal(faq, version, panel) {
+  const form = buildFaqForm(version.content);
+  const message = el("div");
+  const submit = el("button", "", "建立新版本");
+  submit.type = "submit";
+  form.append(submit, message);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    message.replaceChildren();
+    try {
+      await api(`/api/faqs/${encodeURIComponent(faq.faq_id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ ...faqPayload(form), expected_etag: faq.etag }),
+      });
+      await renderFaqManagement(panel);
+      await showFaqDetail(faq.faq_id, panel);
+    } catch (error) {
+      message.replaceChildren(el("div", "error", error.message));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  showContentModal(`編輯 FAQ v${version.version_number}`, form);
+}
+
 async function showFaqDetail(faqId, panel) {
   try {
     const detail = await api(`/api/faqs/${encodeURIComponent(faqId)}`);
     const allowed = new Set(capabilities?.capabilities || []);
     const faq = detail.faq;
-    const current = detail.versions.at(-1);
+    const current = detail.versions.find((version) => version.version_id === faq.draft_version_id)
+      || detail.versions.find((version) => version.version_id === faq.published_version_id)
+      || detail.versions.at(-1);
     const content = el("div");
     content.append(
-      el("p", "", `狀態：${faq.status}｜版本：v${current.version_number}｜ETag：${faq.etag}`),
+      el("p", "", `FAQ：${faq.status}｜工作版本：v${current.version_number} ${current.status}｜ETag：${faq.etag}`),
       el("p", "", `問題：${current.content.question}`),
       el("p", "", `答案：${current.content.answer}`),
       el("p", "", `Owner：${current.content.owner_unit_id}｜Issue：${current.content.issue_type_ids.join(", ")}`),
@@ -1073,6 +1238,11 @@ async function showFaqDetail(faqId, panel) {
         showContentModal("FAQ 操作失敗", el("div", "error", error.message));
       }
     };
+    if (allowed.has("ops.faq.write") && current.status !== "IN_REVIEW") {
+      const edit = el("button", "", "建立修訂版本");
+      edit.addEventListener("click", () => showFaqEditModal(faq, current, panel));
+      actions.append(edit);
+    }
     if (allowed.has("ops.faq.write") && ["DRAFT", "CHANGES_REQUESTED"].includes(current.status)) {
       for (const [kind, label] of [["POSITIVE", "新增正例"], ["NEGATIVE", "新增反例"]]) {
         const button = el("button", "", label);
@@ -1123,14 +1293,343 @@ async function showFaqDetail(faqId, panel) {
       ));
       actions.append(disable);
     }
+    const performance = el("button", "", "查看命中成效");
+    performance.addEventListener("click", async () => {
+      try {
+        const data = await api(`/api/faqs/${faqId}/performance`);
+        const result = el("div");
+        result.append(el("p", "", `總命中：${data.totalHitCount}`));
+        const versions = el("table");
+        versions.innerHTML = "<thead><tr><th>Version</th><th>Hits</th></tr></thead>";
+        const versionRows = el("tbody");
+        for (const item of data.byVersion || []) {
+          const row = el("tr");
+          row.append(el("td", "", item.versionId), el("td", "", String(item.hitCount)));
+          versionRows.append(row);
+        }
+        versions.append(versionRows);
+        const recent = el("table");
+        recent.innerHTML = "<thead><tr><th>時間</th><th>Conversation</th><th>Turn</th><th>Version</th></tr></thead>";
+        const recentRows = el("tbody");
+        for (const item of data.recentHits || []) {
+          const row = el("tr");
+          row.append(
+            el("td", "", item.occurredAt), el("td", "", item.conversationId || "-"),
+            el("td", "", item.turnId || "-"), el("td", "", item.versionId || "legacy-unattributed"),
+          );
+          recentRows.append(row);
+        }
+        recent.append(recentRows);
+        result.append(el("h3", "", "版本歸因"), versions, el("h3", "", "最近命中"), recent);
+        showContentModal("FAQ 命中成效", result);
+      } catch (error) {
+        showContentModal("FAQ 命中成效", el("div", "error", error.message));
+      }
+    });
+    actions.append(performance);
     content.append(actions, el("h3", "", `測試案例（${detail.tests.length}）`));
     for (const test of detail.tests) content.append(el("p", "", `${test.kind}｜${test.utterance}`));
+    content.append(el("h3", "", `版本歷史（${detail.versions.length}）`));
+    const versions = el("table");
+    versions.innerHTML = "<thead><tr><th>版本</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
+    const versionRows = el("tbody");
+    for (const version of [...detail.versions].reverse()) {
+      const action = el("td");
+      const canRollback = allowed.has("ops.faq.activate")
+        && version.version_id !== faq.published_version_id
+        && ["SUPERSEDED", "DISABLED"].includes(version.status)
+        && version.approved_by;
+      if (canRollback) {
+        const rollback = el("button", "", "回復此版本");
+        rollback.addEventListener("click", () => {
+          const reason = window.prompt(`請輸入回復 v${version.version_number} 的原因`);
+          if (!reason?.trim()) return;
+          run(`/api/faqs/${faqId}/versions/${version.version_id}/rollback`, {
+            expected_etag: faq.etag,
+            reason: reason.trim(),
+          });
+        });
+        action.append(rollback);
+      } else {
+        action.textContent = version.version_id === faq.published_version_id ? "目前發布" : "-";
+      }
+      const row = el("tr");
+      row.append(
+        el("td", "", `v${version.version_number}`),
+        el("td", "", version.status),
+        el("td", "", version.created_by),
+        action,
+      );
+      versionRows.append(row);
+    }
+    versions.append(versionRows);
+    content.append(versions);
     content.append(el("h3", "", `Audit（${detail.audit.length}）`));
     for (const event of detail.audit) content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
     showContentModal(current.content.question, content);
   } catch (error) {
     showContentModal("FAQ", el("div", "error", error.message));
   }
+}
+
+function exampleSelect(label, name, options, value = "") {
+  const wrap = el("label", "form-field");
+  wrap.append(el("span", "metric-label", label));
+  const select = el("select");
+  select.name = name;
+  for (const [optionValue, optionLabel] of options) {
+    const option = el("option", "", optionLabel);
+    option.value = optionValue;
+    select.append(option);
+  }
+  select.value = value;
+  wrap.append(select);
+  return wrap;
+}
+
+function buildExampleForm(record = null) {
+  const form = el("form", "form-grid");
+  if (!record) {
+    form.append(
+      exampleSelect("來源", "source_type", [
+        ["MANUAL", "手動建立"], ["FAQ", "FAQ 版本"], ["DOCUMENT", "文件版本"],
+      ]),
+      faqField("Source ID", "source_id", "", false, false),
+      faqField("Source Version ID", "source_version_id", "", false, false),
+    );
+  }
+  form.append(
+    faqField("案例文字", "text", record?.text || "", true),
+    faqField("Expected Issue Type ID", "expected_issue_type_id", record?.expected_issue_type_id || ""),
+    exampleSelect("Expected Route", "expected_route", [
+      ["FAQ", "FAQ"], ["KNOWLEDGE", "KNOWLEDGE"],
+      ["TICKET", "TICKET"], ["HANDOFF", "HANDOFF"],
+    ], record?.expected_route || "FAQ"),
+    exampleSelect("標籤", "label", [
+      ["POSITIVE", "正例"], ["NEGATIVE", "反例"],
+    ], record?.label || "POSITIVE"),
+    faqField("原因（反例必填）", "reason", record?.reason || "", true, false),
+  );
+  return form;
+}
+
+function examplePayload(form) {
+  const values = new FormData(form);
+  return {
+    text: values.get("text"),
+    expected_issue_type_id: values.get("expected_issue_type_id"),
+    expected_route: values.get("expected_route"),
+    label: values.get("label"),
+    reason: values.get("reason") || null,
+  };
+}
+
+function showExampleCreateModal() {
+  const form = buildExampleForm();
+  const message = el("div");
+  const submit = el("button", "", "建立草稿");
+  submit.type = "submit";
+  form.append(submit, message);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    message.replaceChildren();
+    const values = new FormData(form);
+    const sourceType = values.get("source_type");
+    const sourceId = String(values.get("source_id") || "").trim();
+    const versionId = String(values.get("source_version_id") || "").trim();
+    let path = "/api/examples/manual";
+    if (["FAQ", "DOCUMENT", "CONVERSATION"].includes(sourceType)) {
+      if (!sourceId || (sourceType !== "CONVERSATION" && !versionId)) {
+        message.replaceChildren(el("div", "error", "來源 ID 必填；FAQ/文件來源也需要 Version ID。"));
+        submit.disabled = false;
+        return;
+      }
+      if (sourceType === "CONVERSATION") {
+        path = `/api/conversations/${encodeURIComponent(sourceId)}/examples`;
+      } else {
+        const prefix = sourceType === "FAQ" ? "/api/faqs" : "/api/knowledge";
+        path = `${prefix}/${encodeURIComponent(sourceId)}/versions/${encodeURIComponent(versionId)}/examples`;
+      }
+    }
+    try {
+      const created = await api(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify(examplePayload(form)),
+      });
+      document.getElementById("modal-root").hidden = true;
+      await renderExamples();
+      await showExampleDetail(created.example.example_id);
+    } catch (error) {
+      message.replaceChildren(el("div", "error", error.message));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  showContentModal("新增品質案例", form);
+}
+
+function showExampleEditModal(record) {
+  const form = buildExampleForm(record);
+  const message = el("div");
+  const submit = el("button", "", "儲存為草稿");
+  submit.type = "submit";
+  form.append(submit, message);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    try {
+      await api(`/api/examples/${encodeURIComponent(record.example_id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ ...examplePayload(form), expected_etag: record.etag }),
+      });
+      await renderExamples();
+      await showExampleDetail(record.example_id);
+    } catch (error) {
+      message.replaceChildren(el("div", "error", error.message));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  showContentModal("編輯品質案例", form);
+}
+
+async function showExampleDetail(exampleId) {
+  try {
+    const detail = await api(`/api/examples/${encodeURIComponent(exampleId)}`);
+    const record = detail.example;
+    const allowed = new Set(capabilities?.capabilities || []);
+    const content = el("div");
+    content.append(
+      el("p", "", `${record.status}｜${record.source_type}:${record.source_id}｜ETag ${record.etag}`),
+      el("p", "", record.text),
+      el("p", "", `Expected：${record.expected_issue_type_id} → ${record.expected_route}`),
+      el("p", "", `標籤：${record.label}｜Owner：${record.owner_unit_id}`),
+    );
+    if (record.reason) content.append(el("p", "", `原因：${record.reason}`));
+    if (record.dataset_version) content.append(el("p", "", `Dataset：${record.dataset_version}`));
+    const actions = el("div", "filter-bar");
+    const run = async (path, payload) => {
+      try {
+        await api(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify(payload),
+        });
+        await renderExamples();
+        await showExampleDetail(exampleId);
+      } catch (error) {
+        showContentModal("案例操作失敗", el("div", "error", error.message));
+      }
+    };
+    if (allowed.has("ops.examples.write") && record.status !== "RETIRED") {
+      const edit = el("button", "", "編輯");
+      edit.addEventListener("click", () => showExampleEditModal(record));
+      actions.append(edit);
+    }
+    if (allowed.has("ops.examples.verify") && ["DRAFT", "REJECTED"].includes(record.status)) {
+      const verify = el("button", "", "驗證通過");
+      verify.addEventListener("click", () => run(`/api/examples/${exampleId}/review`, {
+        expected_etag: record.etag, approve: true, reason: "SYSTEM_ADMIN 已驗證標籤與預期結果",
+      }));
+      const reject = el("button", "", "拒絕");
+      reject.addEventListener("click", () => {
+        const reason = window.prompt("請輸入拒絕原因");
+        if (reason?.trim()) run(`/api/examples/${exampleId}/review`, {
+          expected_etag: record.etag, approve: false, reason: reason.trim(),
+        });
+      });
+      actions.append(verify, reject);
+    }
+    if (allowed.has("ops.examples.retire") && record.status !== "RETIRED") {
+      const retire = el("button", "", "退役");
+      retire.addEventListener("click", () => {
+        const reason = window.prompt("請輸入退役原因");
+        if (reason?.trim()) run(`/api/examples/${exampleId}/retire`, {
+          expected_etag: record.etag, reason: reason.trim(),
+        });
+      });
+      actions.append(retire);
+    }
+    content.append(actions, el("h3", "", `Audit（${detail.audit.length}）`));
+    for (const event of detail.audit) {
+      content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
+    }
+    showContentModal(`品質案例 ${record.example_id}`, content);
+  } catch (error) {
+    showContentModal("品質案例", el("div", "error", error.message));
+  }
+}
+
+async function renderExamples() {
+  const app = document.getElementById("app");
+  const panel = el("section", "panel");
+  const allowed = new Set(capabilities?.capabilities || []);
+  const actions = el("div", "filter-bar");
+  const sourceType = el("select");
+  sourceType.innerHTML = `
+    <option value="">全部來源</option><option value="FAQ">FAQ</option>
+    <option value="DOCUMENT">DOCUMENT</option><option value="CONVERSATION">CONVERSATION</option>
+    <option value="MANUAL">MANUAL</option>`;
+  const status = el("select");
+  status.innerHTML = `
+    <option value="">全部狀態</option><option value="DRAFT">DRAFT</option>
+    <option value="VERIFIED">VERIFIED</option><option value="REJECTED">REJECTED</option>
+    <option value="RETIRED">RETIRED</option>`;
+  const sourceId = el("input");
+  sourceId.placeholder = "Source ID";
+  const apply = el("button", "", "套用篩選");
+  const result = el("div");
+  const summary = el("span", "metric-label");
+  const load = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (sourceType.value) params.set("source_type", sourceType.value);
+      if (status.value) params.set("status", status.value);
+      if (sourceId.value.trim()) params.set("source_id", sourceId.value.trim());
+      const data = await api(`/api/examples?${params}`);
+      result.replaceChildren();
+      summary.textContent = `共 ${data.total || 0} 筆`;
+      if (!(data.items || []).length) {
+        result.append(el("p", "empty", "沒有符合條件的品質案例。"));
+        return;
+      }
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>案例</th><th>來源</th><th>預期</th><th>狀態</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const item of data.items) {
+        const action = el("td");
+        const detail = el("button", "", "查看與處理");
+        detail.addEventListener("click", () => showExampleDetail(item.example_id));
+        action.append(detail);
+        const row = el("tr");
+        row.append(
+          el("td", "", item.text),
+          el("td", "", `${item.source_type}:${item.source_id}`),
+          el("td", "", `${item.expected_issue_type_id} → ${item.expected_route}`),
+          el("td", "", item.status),
+          action,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      result.append(table);
+    } catch (error) {
+      result.replaceChildren(el("div", "error", error.message));
+    }
+  };
+  apply.addEventListener("click", load);
+  if (allowed.has("ops.examples.write")) {
+    const create = el("button", "", "新增案例");
+    create.addEventListener("click", showExampleCreateModal);
+    actions.append(create);
+  }
+  actions.append(sourceType, status, sourceId, apply, summary);
+  panel.append(el("h2", "", "品質案例集"), actions, result);
+  app.replaceChildren(panel);
+  await load();
 }
 
 function renderKnowledgeInventory(data, loadDocuments) {
@@ -1286,6 +1785,575 @@ function renderDocumentPerformance(data) {
   recentTable.append(recentBody);
   container.append(el("h3", "", "最近命中對話"), recentTable);
   return container;
+}
+
+async function showQualityCaseDetail(caseId) {
+  try {
+    const detail = await api(`/api/quality-cases/${encodeURIComponent(caseId)}`);
+    const qualityCase = detail.case;
+    const allowed = new Set(capabilities?.capabilities || []);
+    const content = el("div");
+    content.append(
+      el("p", "", `${qualityCase.status}｜${qualityCase.priority}｜ETag ${qualityCase.etag}`),
+      el("p", "", qualityCase.description || "-"),
+      el("p", "", `Owner：${qualityCase.owner_unit_id}｜Assignee：${qualityCase.assignee_id || "未指派"}`),
+      el("p", "", `頻率 ${qualityCase.frequency}｜負評率 ${(qualityCase.negative_rate * 100).toFixed(1)}%｜轉人工率 ${(qualityCase.handoff_rate * 100).toFixed(1)}%`),
+      el("p", "", `關聯 FAQ：${qualityCase.faq_ids.join(", ") || "-"}｜文件：${qualityCase.document_ids.join(", ") || "-"}`),
+    );
+    const transitions = {
+      NEW: ["TRIAGED", "WONT_FIX", "DUPLICATE"],
+      TRIAGED: ["IN_PROGRESS", "WONT_FIX", "DUPLICATE"],
+      IN_PROGRESS: ["WAITING_REVIEW", "OBSERVING", "WONT_FIX", "DUPLICATE"],
+      WAITING_REVIEW: ["IN_PROGRESS", "OBSERVING", "WONT_FIX"],
+      OBSERVING: ["IN_PROGRESS", "RESOLVED", "WONT_FIX"],
+    };
+    const actions = el("div", "filter-bar");
+    if (allowed.has("ops.quality.write")) {
+      const linkFaq = el("button", "", "連結既有 FAQ");
+      linkFaq.addEventListener("click", async () => {
+        const faqId = window.prompt("FAQ ID");
+        if (!faqId?.trim()) return;
+        await api(`/api/quality-cases/${caseId}/content`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expected_etag: qualityCase.etag, faq_id: faqId.trim() }),
+        });
+        await showQualityCaseDetail(caseId);
+      });
+      actions.append(linkFaq);
+      if (allowed.has("ops.faq.write") && qualityCase.issue_type_id) {
+        const draftFaq = el("button", "", "建立 FAQ 草稿");
+        draftFaq.addEventListener("click", () => {
+          const form = buildFaqForm({
+            owner_unit_id: qualityCase.owner_unit_id,
+            issue_type_ids: [qualityCase.issue_type_id],
+          });
+          const submit = el("button", "", "建立並連結草稿");
+          submit.type = "submit";
+          form.append(submit);
+          form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const payload = faqPayload(form);
+            await api(`/api/quality-cases/${caseId}/faq-draft`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                expected_case_etag: qualityCase.etag,
+                faq_key: payload.faq_key, question: payload.question, answer: payload.answer,
+                category: payload.category, keywords: payload.keywords,
+                business_contact: payload.business_contact,
+                audience_type: payload.audience_type,
+                audience_group_ids: payload.audience_group_ids,
+              }),
+            });
+            await renderQuality();
+          });
+          showContentModal("由 Quality Case 建立 FAQ 草稿", form);
+        });
+        actions.append(draftFaq);
+      }
+      if (qualityCase.status === "OBSERVING") {
+        const refresh = el("button", "", "刷新觀察指標");
+        refresh.addEventListener("click", async () => {
+          await api(`/api/quality-cases/${caseId}/observation/refresh`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expected_etag: qualityCase.etag }),
+          });
+          await showQualityCaseDetail(caseId);
+        });
+        actions.append(refresh);
+      }
+    }
+    for (const status of transitions[qualityCase.status] || []) {
+      const terminal = ["RESOLVED", "WONT_FIX", "DUPLICATE"].includes(status);
+      const capability = terminal ? "ops.quality.resolve" : "ops.quality.write";
+      if (!allowed.has(capability)) continue;
+      const button = el("button", "", status);
+      button.addEventListener("click", async () => {
+        const reason = window.prompt(`請輸入轉為 ${status} 的原因`);
+        if (terminal && !reason?.trim()) return;
+        try {
+          await api(`/api/quality-cases/${caseId}/transition`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expected_etag: qualityCase.etag,
+              status,
+              reason: reason?.trim() || null,
+              resolution_type: terminal ? "MANUAL_REVIEW" : null,
+            }),
+          });
+          await renderQuality();
+          await showQualityCaseDetail(caseId);
+        } catch (error) {
+          showContentModal("Quality Case 操作失敗", el("div", "error", error.message));
+        }
+      });
+      actions.append(button);
+    }
+    if (qualityCase.observation_baseline) {
+      content.append(
+        el("h3", "", "觀察指標"),
+        el("pre", "json-block", JSON.stringify({
+          baseline: qualityCase.observation_baseline,
+          latest: qualityCase.observation_latest,
+        }, null, 2)),
+      );
+    }
+    content.append(actions, el("h3", "", `Audit（${detail.audit.length}）`));
+    for (const event of detail.audit) {
+      content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
+    }
+    showContentModal(qualityCase.title, content);
+  } catch (error) {
+    showContentModal("Quality Case", el("div", "error", error.message));
+  }
+}
+
+async function buildQualityLoopPanel() {
+  const panel = el("section", "panel");
+  panel.append(el("h2", "", "改善案件池"));
+  const allowed = new Set(capabilities?.capabilities || []);
+  const controls = el("div", "filter-bar");
+  if (allowed.has("ops.quality.write")) {
+    const refresh = el("button", "", "掃描新候選");
+    refresh.addEventListener("click", async () => {
+      refresh.disabled = true;
+      try {
+        await api("/api/quality-candidates/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ days: 30 }),
+        });
+        await renderQuality();
+      } catch (error) {
+        showContentModal("候選掃描失敗", el("div", "error", error.message));
+      } finally {
+        refresh.disabled = false;
+      }
+    });
+    controls.append(refresh);
+  }
+  panel.append(controls);
+  const [candidateData, caseData] = await Promise.all([
+    api("/api/quality-candidates?status=OPEN"),
+    api("/api/quality-cases"),
+  ]);
+  panel.append(el("h3", "", `待合併候選（${candidateData.total || 0}）`));
+  const selected = new Set();
+  if ((candidateData.items || []).length) {
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>選取</th><th>類型</th><th>Issue</th><th>摘要</th><th>來源</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of candidateData.items) {
+      const checkbox = el("input");
+      checkbox.type = "checkbox";
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selected.add(item.candidate_id);
+        else selected.delete(item.candidate_id);
+      });
+      const selectCell = el("td");
+      selectCell.append(checkbox);
+      const row = el("tr");
+      row.append(
+        selectCell,
+        el("td", "", item.case_type),
+        el("td", "", item.issue_type_id || "-"),
+        el("td", "", item.description),
+        el("td", "", item.source_event_ids.join(", ")),
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    if (allowed.has("ops.quality.write")) {
+      const merge = el("button", "", "合併為 Quality Case");
+      merge.addEventListener("click", async () => {
+        if (!selected.size) return;
+        const title = window.prompt("Quality Case 標題");
+        if (!title?.trim()) return;
+        try {
+          await api("/api/quality-candidates/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              candidate_ids: [...selected], title: title.trim(),
+              description: "由營運事件候選合併", priority: "MEDIUM",
+            }),
+          });
+          await renderQuality();
+        } catch (error) {
+          showContentModal("合併失敗", el("div", "error", error.message));
+        }
+      });
+      panel.append(merge);
+    }
+  } else {
+    panel.append(el("p", "empty", "目前沒有待處理候選。"));
+  }
+  panel.append(el("h3", "", `Quality Cases（${caseData.total || 0}）`));
+  if ((caseData.items || []).length) {
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>案件</th><th>狀態</th><th>優先級</th><th>Owner / Assignee</th><th>下一步</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of caseData.items) {
+      const action = el("td");
+      const detail = el("button", "", "查看與處理");
+      detail.addEventListener("click", () => showQualityCaseDetail(item.case_id));
+      action.append(detail);
+      const row = el("tr");
+      row.append(
+        el("td", "", item.title), el("td", "", item.status), el("td", "", item.priority),
+        el("td", "", `${item.owner_unit_id} / ${item.assignee_id || "未指派"}`), action,
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+  }
+  return panel;
+}
+
+async function buildGapPanel() {
+  const panel = el("section", "panel");
+  panel.append(el("h2", "", "Knowledge Gap 排序"));
+  const data = await api("/api/gaps/summary?days=30");
+  panel.append(el("p", "metric-label", `規則版本：${data.scoreVersion}｜Taxonomy：${data.taxonomyVersion}`));
+  if (!(data.items || []).length) {
+    panel.append(el("p", "empty", "目前沒有可評分的 Gap。"));
+    return panel;
+  }
+  const table = el("table");
+  table.innerHTML = "<thead><tr><th>Issue</th><th>Gap Score</th><th>頻率</th><th>無答案</th><th>負評</th><th>轉人工</th><th>成本</th></tr></thead>";
+  const body = el("tbody");
+  for (const item of data.items) {
+    const row = el("tr");
+    row.append(
+      el("td", "", item.displayName || item.issueTypeId),
+      el("td", "", item.gapScore.toFixed(2)),
+      el("td", "", item.components.frequency.toFixed(2)),
+      el("td", "", item.components.noAnswerRate.toFixed(2)),
+      el("td", "", item.components.negativeFeedbackRate.toFixed(2)),
+      el("td", "", item.components.handoffRate.toFixed(2)),
+      el("td", "", item.components.estimatedCostUsd.toFixed(2)),
+    );
+    body.append(row);
+  }
+  table.append(body);
+  panel.append(table);
+  const clusterData = await api("/api/question-clusters");
+  const allowed = new Set(capabilities?.capabilities || []);
+  const clusterActions = el("div", "filter-bar");
+  if (allowed.has("ops.quality.write")) {
+    const generate = el("button", "", "產生 Cluster 候選");
+    generate.addEventListener("click", async () => {
+      await api("/api/question-clusters/generate", { method: "POST" });
+      await renderQuality();
+    });
+    clusterActions.append(generate);
+  }
+  panel.append(el("h3", "", `Question Clusters（${clusterData.total || 0}）`), clusterActions);
+  for (const cluster of (clusterData.items || []).filter((item) => item.status !== "SUPERSEDED")) {
+    const row = el("div", "filter-bar");
+    row.append(
+      el("strong", "", cluster.name),
+      el("span", "metric-label", `${cluster.status}｜頻率 ${cluster.frequency}｜rev ${cluster.revision}`),
+    );
+    if (allowed.has("ops.quality.write") && cluster.status === "CANDIDATE") {
+      for (const [action, label] of [["ACCEPT", "接受"], ["REJECT", "拒絕"], ["RENAME", "重新命名"]]) {
+        const button = el("button", "", label);
+        button.addEventListener("click", async () => {
+          const name = action === "RENAME" ? window.prompt("Cluster 名稱", cluster.name) : null;
+          if (action === "RENAME" && !name?.trim()) return;
+          await api("/api/question-clusters/correct", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cluster_ids: [cluster.cluster_id], action, name }),
+          });
+          await renderQuality();
+        });
+        row.append(button);
+      }
+    }
+    panel.append(row);
+  }
+  return panel;
+}
+
+async function renderPrompts() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const [activeData, candidateData, taxonomy, examples] = await Promise.all([
+      api("/api/prompts/active"),
+      api("/api/prompts/candidates"),
+      api("/api/taxonomy"),
+      api("/api/examples?status=VERIFIED"),
+    ]);
+    const active = activeData.prompt;
+    const activePanel = el("section", "panel");
+    activePanel.append(
+      el("h2", "", "Active Issue Extractor Prompt"),
+      el("p", "metric-label", `Version ${active.version}｜${active.status}｜${active.effective_at}`),
+      el("p", "metric-label", `Content Hash ${active.content_hash}`),
+    );
+    if (active.content) {
+      const inspect = el("button", "", "檢視內容");
+      inspect.addEventListener("click", () => {
+        const content = el("pre", "json-block", active.content);
+        showContentModal("Active Prompt", content);
+      });
+      activePanel.append(inspect);
+    }
+
+    const candidatePanel = el("section", "panel");
+    candidatePanel.append(el("h2", "", "Prompt Candidates"));
+    const verified = (examples.items || []).filter((item) => item.dataset_version);
+    if (allowed.has("ops.prompts.candidates.create") && verified.length) {
+      const form = el("form", "form-grid");
+      form.append(
+        exampleSelect(
+          "Verified Dataset",
+          "dataset_version",
+          verified.map((item) => [
+            item.dataset_version,
+            `${item.dataset_version}｜${item.expected_route} ${item.label}`,
+          ]),
+        ),
+        faqField("Masking Policy Version", "masking_policy_version", "mask-v1"),
+      );
+      const generate = el("button", "", "產生候選");
+      generate.type = "submit";
+      form.append(generate);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        const now = new Date();
+        const start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        try {
+          await api("/api/prompts/candidates", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              active_prompt_version: active.version,
+              dataset_version: values.get("dataset_version"),
+              taxonomy_version: taxonomy.taxonomyVersion,
+              data_range_start: start.toISOString(),
+              data_range_end: now.toISOString(),
+              masking_policy_version: values.get("masking_policy_version"),
+            }),
+          });
+          await renderPrompts();
+        } catch (error) {
+          showContentModal("候選產生失敗", el("div", "error", error.message));
+        }
+      });
+      candidatePanel.append(form);
+    }
+    if ((candidateData.items || []).length) {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Version</th><th>Dataset</th><th>Taxonomy / Masking</th><th>狀態</th><th>建立者 / 時間</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const candidate of candidateData.items) {
+        const actions = el("td");
+        const compare = el("button", "", "比較");
+        compare.addEventListener("click", async () => {
+          const result = await api(`/api/prompts/candidates/${candidate.candidate_id}/compare`);
+          const content = el("div");
+          content.append(
+            el("p", "", `Active ${result.active.version}`),
+            el("p", "", `Candidate ${result.candidate.version}`),
+            el("p", "", `Active unchanged: ${result.activeUnchanged ? "YES" : "NO"}`),
+          );
+          if (result.candidate.content) content.append(el("pre", "json-block", result.candidate.content));
+          showContentModal("Prompt 比較", content);
+        });
+        actions.append(compare);
+        const row = el("tr");
+        row.append(
+          el("td", "", candidate.version), el("td", "", candidate.dataset_version),
+          el("td", "", `${candidate.taxonomy_version} / ${candidate.masking_policy_version}`),
+          el("td", "", candidate.status),
+          el("td", "", `${candidate.generated_by} / ${candidate.created_at}`), actions,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      candidatePanel.append(table);
+    } else {
+      candidatePanel.append(el("p", "empty", "目前沒有 Prompt Candidate。"));
+    }
+    app.replaceChildren(activePanel, candidatePanel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderBudgets() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const [policyData, alertData] = await Promise.all([
+      api("/api/budget-policies"),
+      api("/api/alerts"),
+    ]);
+    const policyPanel = el("section", "panel");
+    policyPanel.append(el("h2", "", "Budget Policies"));
+    if (allowed.has("ops.budget.write")) {
+      const form = el("form", "form-grid");
+      const ownerOptions = (capabilities.ownerUnitIds || []).map((item) => [item, item]);
+      const targetOptions = (policyData.notificationTargets || []).map((item) => [item, item]);
+      form.append(
+        exampleSelect("Scope", "scope_type", [
+          ["PERSONAL", "Personal"], ["SERVICE", "Service"], ["TEAM", "Team"],
+          ["TENANT", "Tenant"], ["GLOBAL", "Global"],
+        ]),
+        faqField("Scope ID", "scope_id", ""),
+        exampleSelect("Period", "period", [["DAILY", "Daily"], ["MONTHLY", "Monthly"]]),
+        exampleSelect("Measure", "measure", [
+          ["TWD", "TWD"], ["USD", "USD"], ["TOKEN", "Token"],
+          ["LLM_CALL_COUNT", "LLM Call Count"],
+        ]),
+        faqField("Warning Threshold", "warning_threshold", ""),
+        faqField("Critical Threshold", "critical_threshold", ""),
+        exampleSelect("Owner Unit", "owner_unit_id", ownerOptions),
+        exampleSelect("Notification Target", "notification_target_id", targetOptions),
+      );
+      const submit = el("button", "", "建立 Policy");
+      submit.type = "submit";
+      form.append(submit);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        try {
+          await api("/api/budget-policies", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scope_type: values.get("scope_type"), scope_id: values.get("scope_id"),
+              period: values.get("period"), measure: values.get("measure"),
+              warning_threshold: Number(values.get("warning_threshold")),
+              critical_threshold: Number(values.get("critical_threshold")),
+              owner_unit_id: values.get("owner_unit_id"),
+              notification_target_ids: [values.get("notification_target_id")],
+            }),
+          });
+          await renderBudgets();
+        } catch (error) {
+          showContentModal("建立 Policy 失敗", el("div", "error", error.message));
+        }
+      });
+      policyPanel.append(form);
+    }
+    if ((policyData.items || []).length) {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Scope</th><th>期間 / 指標</th><th>門檻</th><th>狀態</th><th>版本</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const policy of policyData.items) {
+        const actions = el("td");
+        if (allowed.has("ops.budget.evaluate") && policy.enabled) {
+          const evaluate = el("button", "", "立即評估");
+          evaluate.addEventListener("click", async () => {
+            try {
+              const result = await api(`/api/budget-policies/${policy.policy_id}/evaluate`, { method: "POST" });
+              const usage = result.usage;
+              showContentModal(
+                "Policy 評估結果",
+                el("p", "", `Actual ${usage.actualValue}｜Coverage ${(usage.coverage * 100).toFixed(1)}%｜${usage.periodKey}`),
+              );
+              await renderBudgets();
+            } catch (error) {
+              showContentModal("評估失敗", el("div", "error", error.message));
+            }
+          });
+          actions.append(evaluate);
+        }
+        if (allowed.has("ops.budget.write")) {
+          const state = el("button", "", policy.enabled ? "停用" : "啟用");
+          state.addEventListener("click", async () => {
+            const reason = window.prompt(`${policy.enabled ? "停用" : "啟用"}原因`);
+            if (!reason?.trim()) return;
+            await api(`/api/budget-policies/${policy.policy_id}/state`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ expected_etag: policy.etag, enabled: !policy.enabled, reason }),
+            });
+            await renderBudgets();
+          });
+          actions.append(state);
+        }
+        const row = el("tr");
+        row.append(
+          el("td", "", `${policy.scope_type}:${policy.scope_id}`),
+          el("td", "", `${policy.period} / ${policy.measure}`),
+          el("td", "", `${policy.warning_threshold} / ${policy.critical_threshold}`),
+          el("td", "", policy.enabled ? "ENABLED" : "DISABLED"),
+          el("td", "", `${policy.pricing_version} / ${policy.exchange_rate_version}`),
+          actions,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      policyPanel.append(table);
+    } else {
+      policyPanel.append(el("p", "empty", "目前沒有 Budget Policy。"));
+    }
+
+    const alertPanel = el("section", "panel");
+    alertPanel.append(el("h2", "", `Alerts（${alertData.total || 0}）`));
+    if ((alertData.items || []).length) {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Severity</th><th>Scope</th><th>Actual / Threshold</th><th>Coverage</th><th>狀態</th><th>通知</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const alert of alertData.items) {
+        const actions = el("td");
+        if (allowed.has("ops.alerts.manage") && alert.status !== "RESOLVED") {
+          const alertActions = alert.status === "OPEN"
+            ? [["acknowledge", "Acknowledge"], ["resolve", "Resolve"]]
+            : [["resolve", "Resolve"]];
+          for (const [action, label] of alertActions) {
+            const button = el("button", "", label);
+            button.addEventListener("click", async () => {
+              const reason = window.prompt(`${label} 原因`);
+              if (!reason?.trim()) return;
+              await api(`/api/alerts/${alert.alert_id}/${action}`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ expected_etag: alert.etag, reason }),
+              });
+              await renderBudgets();
+            });
+            actions.append(button);
+          }
+          for (const deliveryItem of (alert.deliveries || []).filter((item) => item.status === "FAILED")) {
+            const retry = el("button", "", "重試通知");
+            retry.addEventListener("click", async () => {
+              await api(`/api/alerts/${alert.alert_id}/deliveries/${deliveryItem.delivery_id}/retry`, {
+                method: "POST",
+              });
+              await renderBudgets();
+            });
+            actions.append(retry);
+          }
+        }
+        const delivery = (alert.deliveries || [])
+          .map((item) => `${item.target_id}:${item.status}`).join(", ") || "-";
+        const row = el("tr");
+        row.append(
+          el("td", "", alert.severity), el("td", "", `${alert.scope_type}:${alert.scope_id}`),
+          el("td", "", `${alert.actual_value} / ${alert.threshold}`),
+          el("td", "", `${(alert.coverage * 100).toFixed(1)}%`),
+          el("td", "", alert.status), el("td", "", delivery), actions,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      alertPanel.append(table);
+    } else {
+      alertPanel.append(el("p", "empty", "目前沒有 Alert。"));
+    }
+    app.replaceChildren(policyPanel, alertPanel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
 }
 
 async function renderQuality(state = {}) {
@@ -1459,7 +2527,11 @@ async function renderQuality(state = {}) {
       await runExport("xlsx");
     });
     exportPanel.append(csvButton, xlsxButton);
-    app.replaceChildren(panel, exportPanel);
+    const [qualityLoopPanel, gapPanel] = await Promise.all([
+      buildQualityLoopPanel(),
+      buildGapPanel(),
+    ]);
+    app.replaceChildren(panel, qualityLoopPanel, gapPanel, exportPanel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
