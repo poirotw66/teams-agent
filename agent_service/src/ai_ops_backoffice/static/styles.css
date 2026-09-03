@@ -78,6 +78,8 @@ h1 {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1rem;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .grid {
@@ -152,7 +154,7 @@ td {
   color: var(--muted);
 }
 
-a.modal-backdrop {
+.modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.45);
@@ -160,6 +162,10 @@ a.modal-backdrop {
   place-items: center;
   padding: 1rem;
   z-index: 20;
+}
+
+.modal-backdrop[hidden] {
+  display: none;
 }
 
 .modal {

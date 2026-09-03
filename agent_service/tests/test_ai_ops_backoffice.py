@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from agent_service.operations.ingestion import EventIngestionService
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.stores.file_store import FileOperationalStore
 from ai_ops_backoffice.api import create_app
+from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 
 
@@ -859,6 +861,118 @@ def test_health_summary_simulated_anomalies(tmp_path: Path) -> None:
     assert statuses["agent-service"] == "DEGRADED"
     assert statuses["agent-retrieval-search"] == "DOWN"
     assert statuses["ticket-service"] == "DOWN"
+
+
+def test_health_summary_includes_active_knowledge_release(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    portal_response = MagicMock(status_code=200)
+    release_response = MagicMock(status_code=200)
+    release_response.json.return_value = [
+        {
+            "release_id": "release-2026-09-03",
+            "status": "ACTIVE",
+            "manifest": [{"document_id": "doc-1"}, {"document_id": "doc-2"}],
+            "created_at": "2026-09-03T01:00:00+00:00",
+            "activated_at": "2026-09-03T02:00:00+00:00",
+            "index_setting_version": "index-v3",
+        }
+    ]
+    http_client = MagicMock()
+    http_client.__aenter__ = AsyncMock(return_value=http_client)
+    http_client.__aexit__ = AsyncMock(return_value=False)
+    http_client.get = AsyncMock(side_effect=[portal_response, release_response])
+
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=http_client,
+    ):
+        response = TestClient(create_app(settings)).get(
+            "/api/health/summary",
+            headers=headers("SYSTEM_ADMIN"),
+        )
+
+    assert response.status_code == 200
+    release = next(
+        item for item in response.json()["components"]
+        if item["id"] == "knowledge-release"
+    )
+    assert release == {
+        "id": "knowledge-release",
+        "status": "READY",
+        "note": "Active Knowledge release is available.",
+        "releaseId": "release-2026-09-03",
+        "publishedAt": "2026-09-03T02:00:00+00:00",
+        "indexStatus": "READY",
+        "documentCount": 2,
+        "indexSettingVersion": "index-v3",
+        "telemetryStatus": "NO_DATA",
+        "requestCount": 0,
+        "availabilityRate": None,
+        "errorRate": None,
+        "timeoutRate": None,
+        "p50LatencyMs": None,
+        "p95LatencyMs": None,
+    }
+
+
+def test_health_summary_includes_24_hour_operational_metrics(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"retrieval": "ready", "chunks": 1, "hits": []}
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.get = AsyncMock(return_value=response)
+    client.post = AsyncMock(return_value=response)
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=client,
+    ):
+        result = seeded_backoffice_client.get(
+            "/api/health/summary",
+            headers=headers("SYSTEM_ADMIN"),
+        )
+
+    assert result.status_code == 200
+    body = result.json()
+    assert body["telemetryWindowHours"] == 24
+    components = {item["id"]: item for item in body["components"]}
+    assert components["agent-service"]["requestCount"] == 1
+    assert components["agent-service"]["availabilityRate"] == 1.0
+    assert components["llm-api"]["requestCount"] == 1
+    assert components["teams-adapter"]["telemetryStatus"] == "NO_DATA"
+
+
+def test_health_metric_summary_separates_failures_and_timeouts() -> None:
+    summary = BackofficeQueryService._health_metric_summary(
+        [("SUCCESS", 100.0), ("FAILED", 200.0), ("TIMEOUT", 300.0)]
+    )
+
+    assert summary["requestCount"] == 3
+    assert summary["availabilityRate"] == 0.3333
+    assert summary["errorRate"] == 0.3333
+    assert summary["timeoutRate"] == 0.3333
+    assert summary["p50LatencyMs"] == 200.0
 
 
 def test_operations_summary_rejects_excessive_custom_period(

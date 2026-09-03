@@ -40,6 +40,13 @@ class ExportRequest(BaseModel):
     preset: str | None = None
     start_date: str | None = None
     end_date: str | None = None
+    actor_ref: str | None = None
+    issue_type_id: str | None = None
+    route: str | None = None
+    conversation_id: str | None = None
+    model: str | None = None
+    has_feedback: bool | None = None
+    handoff: bool | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -459,6 +466,40 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         )
         return result
 
+    @app.get("/api/knowledge")
+    async def knowledge_documents(
+        status: str | None = None,
+        owner_unit_id: str | None = None,
+        query: str | None = None,
+        days: int = Query(default=30, ge=1, le=186),
+        preset: str | None = None,
+        limit: int = Query(default=50, ge=1, le=100),
+        cursor: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.knowledge.read")
+        result = await query_service.list_documents(
+            actor,
+            status=status,
+            owner_unit_id=owner_unit_id,
+            query=query,
+            preset=preset,
+            days=days,
+            limit=limit,
+            cursor=cursor,
+        )
+        await audit_read(
+            actor,
+            "knowledge.documents.list",
+            "knowledge_documents",
+            after={
+                "status": status,
+                "ownerUnitId": owner_unit_id,
+                "resultCount": len(result["items"]),
+            },
+        )
+        return result
+
     @app.get("/api/knowledge/{document_id}/performance")
     async def knowledge_performance(
         document_id: str,
@@ -484,6 +525,10 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.post("/api/exports")
     async def create_export(payload: ExportRequest, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.exports.create")
+        if payload.export_type == "knowledge_performance":
+            require_capability(actor, "ops.knowledge.read")
+        if payload.export_type == "conversations":
+            require_capability(actor, "ops.conversations.read")
         if payload.export_format not in ALLOWED_EXPORT_FORMATS:
             raise HTTPException(
                 status_code=400,
@@ -491,14 +536,21 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             )
         export_rate_limiter.check(actor.user_id)
         return await query_service.create_export_job(
-                actor=actor,
-                export_type=payload.export_type,
-                reason=payload.reason,
-                days=payload.days,
-                export_format=payload.export_format,
-                preset=payload.preset,
-                start_date=payload.start_date,
-                end_date=payload.end_date,
+            actor=actor,
+            export_type=payload.export_type,
+            reason=payload.reason,
+            days=payload.days,
+            export_format=payload.export_format,
+            preset=payload.preset,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            actor_ref=payload.actor_ref,
+            issue_type_id=payload.issue_type_id,
+            route=payload.route,
+            conversation_id=payload.conversation_id,
+            model=payload.model,
+            has_feedback=payload.has_feedback,
+            handoff=payload.handoff,
         )
 
     @app.get("/api/exports/{job_id}")

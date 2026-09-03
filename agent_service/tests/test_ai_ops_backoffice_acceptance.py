@@ -152,6 +152,233 @@ def test_uat_document_governance_text_pdf_from_portal(acceptance_client: TestCli
     assert governance["parseStatus"] == "READY"
 
 
+def test_uat_knowledge_inventory_enriches_governance_and_performance(
+    acceptance_client: TestClient,
+) -> None:
+    document = {
+        "document_id": "vpn-password-lockout",
+        "title": "VPN Password Lockout",
+        "summary": "VPN support guide",
+        "owner_unit_id": "IT Service Desk",
+        "status": "PUBLISHED",
+        "current_published_version_id": "ver-published",
+        "draft_version_id": None,
+        "updated_at": "2026-09-03T00:00:00+00:00",
+    }
+    detail = {
+        "document": document,
+        "published_version": {
+            "source_type": "MARKDOWN_UPLOAD",
+            "parse_preview": {"segments": []},
+        },
+        "status_label": "Published",
+    }
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.get = AsyncMock(
+        side_effect=[
+            _mock_portal_response(payload={"items": [document], "total": 1}),
+            _mock_portal_response(payload=detail),
+        ]
+    )
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=client,
+    ):
+        response = acceptance_client.get(
+            "/api/knowledge?status=PUBLISHED&days=30",
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["documentId"] == "vpn-password-lockout"
+    assert item["formatType"] == "MARKDOWN_UPLOAD"
+    assert item["parseStatus"] == "READY"
+    assert item["hitCount"] >= 1
+    assert item["negativeFeedbackCount"] == 1
+    assert item["issueTypeDistribution"][0]["issueTypeId"] == "vpn.connection_failed"
+
+
+def test_uat_knowledge_inventory_applies_owner_scope_and_cursor(
+    acceptance_client: TestClient,
+) -> None:
+    documents = [
+        {
+            "document_id": "doc-a",
+            "title": "A",
+            "owner_unit_id": "IT Service Desk",
+            "status": "PUBLISHED",
+        },
+        {
+            "document_id": "doc-b",
+            "title": "B",
+            "owner_unit_id": "IT Service Desk",
+            "status": "PUBLISHED",
+        },
+        {
+            "document_id": "doc-secret",
+            "title": "HR Secret",
+            "owner_unit_id": "HR",
+            "status": "PUBLISHED",
+        },
+    ]
+    detail_response = _mock_portal_response(
+        payload={
+            "document": {"status": "PUBLISHED"},
+            "published_version": {"source_type": "MARKDOWN_PASTE"},
+        }
+    )
+
+    def portal_client() -> MagicMock:
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(
+            side_effect=[
+                _mock_portal_response(payload={"items": documents, "total": 3}),
+                detail_response,
+            ]
+        )
+        return client
+
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=portal_client(),
+    ):
+        first = acceptance_client.get(
+            "/api/knowledge?limit=1",
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+    assert first.status_code == 200
+    assert first.json()["total"] == 2
+    assert [item["documentId"] for item in first.json()["items"]] == ["doc-a"]
+    assert first.json()["nextCursor"] == "doc-a"
+
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=portal_client(),
+    ):
+        second = acceptance_client.get(
+            "/api/knowledge?limit=1&cursor=doc-a",
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+    assert second.status_code == 200
+    assert second.json()["total"] == 2
+    assert [item["documentId"] for item in second.json()["items"]] == ["doc-b"]
+    assert second.json()["nextCursor"] is None
+
+
+def test_uat_knowledge_performance_export_uses_scoped_inventory(
+    acceptance_client: TestClient,
+) -> None:
+    document = {
+        "document_id": "vpn-password-lockout",
+        "title": "VPN Password Lockout",
+        "owner_unit_id": "IT Service Desk",
+        "status": "PUBLISHED",
+    }
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.get = AsyncMock(
+        side_effect=[
+            _mock_portal_response(payload={"items": [document], "total": 1}),
+            _mock_portal_response(
+                payload={
+                    "document": document,
+                    "published_version": {"source_type": "MARKDOWN_PASTE"},
+                }
+            ),
+        ]
+    )
+    with patch(
+        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        return_value=client,
+    ):
+        created = acceptance_client.post(
+            "/api/exports",
+            headers=headers("KNOWLEDGE_ADMIN"),
+            json={
+                "export_type": "knowledge_performance",
+                "reason": "Phase 1 UAT",
+                "days": 30,
+            },
+        )
+        assert created.status_code == 200
+        job_id = created.json()["jobId"]
+        for _ in range(50):
+            job = acceptance_client.get(
+                f"/api/exports/{job_id}",
+                headers=headers("KNOWLEDGE_ADMIN"),
+            )
+            if job.json()["status"] in {"COMPLETED", "FAILED"}:
+                break
+            time.sleep(0.01)
+        assert job.json()["status"] == "COMPLETED"
+        download = acceptance_client.get(
+            f"/api/exports/{job_id}/download",
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+
+    assert download.status_code == 200
+    exported = download.json()
+    assert exported["exportMetadata"]["exportType"] == "knowledge_performance"
+    assert exported["data"]["items"][0]["documentId"] == "vpn-password-lockout"
+
+
+def test_knowledge_export_requires_knowledge_capability(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("SERVICE_OWNER"),
+        json={
+            "export_type": "knowledge_performance",
+            "reason": "Should be forbidden",
+            "days": 30,
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_uat_conversation_export_is_filtered_and_masked(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("SERVICE_OWNER"),
+        json={
+            "export_type": "conversations",
+            "reason": "conversation investigation",
+            "days": 30,
+            "issue_type_id": "vpn.connection_failed",
+            "has_feedback": True,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["jobId"]
+    for _ in range(20):
+        completed = acceptance_client.get(
+            f"/api/exports/{job_id}",
+            headers=headers("SERVICE_OWNER"),
+        )
+        if completed.json()["status"] == "COMPLETED":
+            break
+    exported = completed.json()["result"]
+    assert exported["exportMetadata"]["exportType"] == "conversations"
+    assert exported["exportMetadata"]["queryFilters"] == {
+        "issueTypeId": "vpn.connection_failed",
+        "hasFeedback": True,
+    }
+    assert exported["data"]["items"][0]["conversationId"] == "conv-1"
+    assert "messageMasked" not in exported["data"]["items"][0]
+    assert "events" not in exported["data"]["items"][0]
+
+
 def test_document_performance_excludes_unpublished_hits(tmp_path: Path) -> None:
     import asyncio
 

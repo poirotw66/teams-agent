@@ -127,6 +127,7 @@ def wrap_export_payload(
     export_format: str,
     period: ResolvedPeriod,
     pricing_version: str | None = None,
+    query_filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "exportType": export_type,
@@ -140,6 +141,8 @@ def wrap_export_payload(
     }
     if pricing_version:
         metadata["pricingVersion"] = pricing_version
+    if query_filters:
+        metadata["queryFilters"] = query_filters
     return {
         "exportMetadata": metadata,
         "data": data,

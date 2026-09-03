@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import Counter, defaultdict
 from dataclasses import replace
@@ -948,13 +949,199 @@ class BackofficeQueryService:
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             return {"status": "DOWN", "note": str(exc)}
 
+    async def _probe_knowledge_release(self, url: str | None) -> dict[str, Any]:
+        if not url:
+            return {
+                "status": "UNKNOWN",
+                "note": "Knowledge Portal URL not configured.",
+                "releaseId": None,
+                "publishedAt": None,
+                "indexStatus": "UNKNOWN",
+                "documentCount": 0,
+            }
+        headers = {
+            "X-Portal-User-Id": "ai-ops-backoffice",
+            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
+            "X-Portal-Role": "PLATFORM",
+            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(
+                    f"{url.rstrip('/')}/api/releases",
+                    headers=headers,
+                )
+            if response.status_code >= 400:
+                return {
+                    "status": "DOWN",
+                    "note": f"Portal returned HTTP {response.status_code}",
+                    "releaseId": None,
+                    "publishedAt": None,
+                    "indexStatus": "UNKNOWN",
+                    "documentCount": 0,
+                }
+            payload = response.json()
+            releases = payload.get("items") if isinstance(payload, dict) else payload
+            releases = [item for item in (releases or []) if isinstance(item, dict)]
+            active = next(
+                (item for item in releases if item.get("status") == "ACTIVE"),
+                None,
+            )
+            if active is None:
+                return {
+                    "status": "DEGRADED",
+                    "note": "No active Knowledge release.",
+                    "releaseId": None,
+                    "publishedAt": None,
+                    "indexStatus": "NOT_ACTIVE",
+                    "documentCount": 0,
+                }
+            return {
+                "status": "READY",
+                "note": "Active Knowledge release is available.",
+                "releaseId": active.get("release_id"),
+                "publishedAt": active.get("activated_at") or active.get("created_at"),
+                "indexStatus": "READY",
+                "documentCount": len(active.get("manifest") or []),
+                "indexSettingVersion": active.get("index_setting_version"),
+            }
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            return {
+                "status": "DOWN",
+                "note": str(exc),
+                "releaseId": None,
+                "publishedAt": None,
+                "indexStatus": "UNKNOWN",
+                "documentCount": 0,
+            }
+
+    @staticmethod
+    def _health_metric_summary(
+        samples: list[tuple[str, float | None]],
+    ) -> dict[str, Any]:
+        if not samples:
+            return {
+                "telemetryStatus": "NO_DATA",
+                "requestCount": 0,
+                "availabilityRate": None,
+                "errorRate": None,
+                "timeoutRate": None,
+                "p50LatencyMs": None,
+                "p95LatencyMs": None,
+            }
+        statuses = [status.upper() for status, _ in samples]
+        latencies = [latency for _, latency in samples if latency is not None]
+        failures = sum(status == "FAILED" for status in statuses)
+        timeouts = sum(status == "TIMEOUT" for status in statuses)
+        successful = len(samples) - failures - timeouts
+        return {
+            "telemetryStatus": "AVAILABLE",
+            "requestCount": len(samples),
+            "availabilityRate": round(successful / len(samples), 4),
+            "errorRate": round(failures / len(samples), 4),
+            "timeoutRate": round(timeouts / len(samples), 4),
+            "p50LatencyMs": _percentile(latencies, 0.5),
+            "p95LatencyMs": _percentile(latencies, 0.95),
+        }
+
+    async def _health_telemetry(self) -> dict[str, dict[str, Any]]:
+        window_start = utc_now() - timedelta(hours=24)
+        events = [
+            event for event in await self._events()
+            if event.occurred_at >= window_start
+        ]
+        failures = [event for event in events if event.event_type == "request.failed"]
+        request_latencies = {
+            event.request_id or event.turn_id or event.correlation_id: float(
+                event.payload["elapsedMs"]
+            )
+            for event in project_usage(events).request_latency_events
+            if event.payload.get("elapsedMs") is not None
+        }
+        agent_samples: list[tuple[str, float | None]] = []
+        for turn in (event for event in events if event.event_type == "turn.received"):
+            failure = next(
+                (
+                    item for item in failures
+                    if any(
+                        (
+                            bool(turn.request_id and item.request_id == turn.request_id),
+                            bool(turn.turn_id and item.turn_id == turn.turn_id),
+                            item.correlation_id == turn.correlation_id,
+                        )
+                    )
+                ),
+                None,
+            )
+            failure_text = json.dumps(failure.payload).lower() if failure else ""
+            status = "TIMEOUT" if "timeout" in failure_text else "FAILED" if failure else "SUCCESS"
+            request_key = turn.request_id or turn.turn_id or turn.correlation_id
+            agent_samples.append((status, request_latencies.get(request_key)))
+
+        usage_samples: list[tuple[str, str, float | None]] = []
+        for event in events:
+            if event.event_type != "usage.recorded":
+                continue
+            scope = str(event.payload.get("attributionScope") or "LEGACY")
+            if scope == "REQUEST_SUMMARY":
+                continue
+            elapsed = event.payload.get("elapsedMs")
+            usage_samples.append(
+                (
+                    str(event.payload.get("component") or "unknown"),
+                    str(event.payload.get("status") or "SUCCESS"),
+                    float(elapsed) if elapsed is not None else None,
+                )
+            )
+
+        def usage_for(prefixes: tuple[str, ...]) -> list[tuple[str, float | None]]:
+            return [
+                (status, latency)
+                for component, status, latency in usage_samples
+                if component.startswith(prefixes)
+            ]
+
+        faq_samples = [
+            ("SUCCESS", None)
+            for event in events
+            if event.event_type == "faq.answered"
+        ]
+        ticket_samples = [
+            (
+                "TIMEOUT"
+                if "timeout" in json.dumps(event.payload).lower()
+                else "FAILED" if event.event_type == "ticket.failed" else "SUCCESS",
+                None,
+            )
+            for event in events
+            if event.event_type in {"ticket.created", "ticket.failed"}
+        ]
+        all_usage = [(status, latency) for _, status, latency in usage_samples]
+        return {
+            "agent-service": self._health_metric_summary(agent_samples),
+            "llm-api": self._health_metric_summary(all_usage),
+            "issue-extractor": self._health_metric_summary(
+                usage_for(("issue_extractor",))
+            ),
+            "faq-service": self._health_metric_summary(faq_samples),
+            "agent-retrieval-search": self._health_metric_summary(
+                usage_for(("knowledge_", "gemini_file_search"))
+            ),
+            "ticket-service": self._health_metric_summary(ticket_samples),
+        }
+
     async def health_summary(self) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
         agent_functional = await self._probe_agent_functional(self._settings.agent_api_url)
         retrieval = await self._probe_retrieval_search(self._settings.agent_api_url)
         portal = await self._probe_url(self._settings.knowledge_portal_url)
+        knowledge_release = await self._probe_knowledge_release(
+            self._settings.knowledge_portal_url
+        )
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
+        telemetry = await self._health_telemetry()
+        no_telemetry = self._health_metric_summary([])
         if self._settings.simulate_health_anomalies:
             agent = {"status": "DEGRADED", "note": "Simulated LLM API latency spike."}
             retrieval = {"status": "DOWN", "note": "Simulated RAG index unreachable."}
@@ -973,18 +1160,32 @@ class BackofficeQueryService:
             )
         return {
             "components": [
-                {"id": "teams-adapter", **adapter},
-                {"id": "agent-service", **agent},
-                {"id": "agent-retrieval-index", **agent_functional},
-                {"id": "agent-retrieval-search", **retrieval},
+                {"id": "teams-adapter", **adapter, **no_telemetry},
+                {"id": "agent-service", **agent, **telemetry["agent-service"]},
+                {"id": "llm-api", **agent, **telemetry["llm-api"]},
+                {
+                    "id": "issue-extractor",
+                    **agent,
+                    **telemetry["issue-extractor"],
+                },
+                {"id": "faq-service", **agent, **telemetry["faq-service"]},
+                {"id": "agent-retrieval-index", **agent_functional, **no_telemetry},
+                {
+                    "id": "agent-retrieval-search",
+                    **retrieval,
+                    **telemetry["agent-retrieval-search"],
+                },
                 {
                     "id": "analytics-store",
                     "status": "READY",
                     "note": f"mode={self._settings.ops_store_mode}",
+                    **no_telemetry,
                 },
-                {"id": "knowledge-portal", **portal},
-                {"id": "ticket-service", **ticket},
+                {"id": "knowledge-portal", **portal, **no_telemetry},
+                {"id": "knowledge-release", **knowledge_release, **no_telemetry},
+                {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
             ],
+            "telemetryWindowHours": 24,
             "monitoringLinks": monitoring_links,
             "simulatedAnomalies": self._settings.simulate_health_anomalies,
             "updatedAt": utc_now().isoformat(),
@@ -1231,6 +1432,166 @@ class BackofficeQueryService:
             "governance": await self._fetch_document_governance(document_id),
         }
 
+    async def list_documents(
+        self,
+        actor: ActorContext,
+        *,
+        status: str | None = None,
+        owner_unit_id: str | None = None,
+        query: str | None = None,
+        preset: str | None = None,
+        days: int = 30,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        period = self._resolve_period(preset=preset, days=days)
+        events = await self._scoped_events(actor, period)
+        inventory = await self._fetch_document_inventory(
+            status=status,
+            owner_unit_id=owner_unit_id,
+            query=query,
+        )
+        documents = [
+            document
+            for document in inventory["items"]
+            if actor.allows_owner_unit(document.get("owner_unit_id"))
+        ]
+        documents.sort(key=lambda item: str(item.get("document_id") or ""))
+        total = len(documents)
+        if cursor:
+            documents = [
+                document
+                for document in documents
+                if str(document.get("document_id") or "") > cursor
+            ]
+        page = documents[:limit]
+        governance = await asyncio.gather(
+            *(
+                self._fetch_document_governance(str(document["document_id"]))
+                for document in page
+            )
+        )
+        items = [
+            self._document_inventory_item(document, governance_item, events)
+            for document, governance_item in zip(page, governance, strict=True)
+        ]
+        next_cursor = None
+        if len(documents) > limit and page:
+            next_cursor = str(page[-1]["document_id"])
+        return {
+            "items": items,
+            "total": total,
+            "nextCursor": next_cursor,
+            "periodDays": period.days,
+            "periodPreset": period.preset,
+            "portalStatus": inventory["status"],
+            "warning": inventory.get("warning"),
+        }
+
+    def _document_inventory_item(
+        self,
+        document: dict[str, Any],
+        governance: dict[str, Any],
+        events: list[OperationalEvent],
+    ) -> dict[str, Any]:
+        document_id = str(document["document_id"])
+        hits = [
+            event
+            for event in events
+            if event.event_type in {"knowledge.retrieved", "knowledge.answered"}
+            and _is_published_knowledge_hit(event)
+            and (
+                event.payload.get("documentId") == document_id
+                or any(
+                    citation.get("documentId") == document_id
+                    for citation in (event.payload.get("citations") or [])
+                    if isinstance(citation, dict)
+                )
+            )
+        ]
+        hit_conversations = {event.conversation_id for event in hits if event.conversation_id}
+        feedback = [
+            event
+            for event in events
+            if event.event_type == "feedback.recorded"
+            and event.conversation_id in hit_conversations
+        ]
+        issue_counts = Counter(
+            event.issue_type_id or "other.unclassified"
+            for event in hits
+        )
+        return {
+            "documentId": document_id,
+            "title": document.get("title"),
+            "summary": document.get("summary"),
+            "ownerUnitId": document.get("owner_unit_id"),
+            "lifecycleStatus": document.get("status"),
+            "formatType": governance.get("formatType", "UNKNOWN"),
+            "parseStatus": governance.get("parseStatus", "UNKNOWN"),
+            "indexStatus": governance.get("indexStatus", document.get("status")),
+            "currentPublishedVersionId": document.get("current_published_version_id"),
+            "draftVersionId": document.get("draft_version_id"),
+            "updatedAt": document.get("updated_at"),
+            "portalUrl": governance.get("portalUrl"),
+            "hitCount": len(hits),
+            "conversationCount": len(hit_conversations),
+            "positiveFeedbackCount": sum(
+                1 for event in feedback if event.payload.get("rating") == "UP"
+            ),
+            "negativeFeedbackCount": sum(
+                1 for event in feedback if event.payload.get("rating") == "DOWN"
+            ),
+            "issueTypeDistribution": [
+                {"issueTypeId": issue_type_id, "count": count}
+                for issue_type_id, count in issue_counts.most_common()
+            ],
+        }
+
+    async def _fetch_document_inventory(
+        self,
+        *,
+        status: str | None,
+        owner_unit_id: str | None,
+        query: str | None,
+    ) -> dict[str, Any]:
+        portal_url = self._settings.knowledge_portal_url.rstrip("/")
+        headers = {
+            "X-Portal-User-Id": "ai-ops-backoffice",
+            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
+            "X-Portal-Role": "PLATFORM",
+            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
+        }
+        params = {
+            key: value
+            for key, value in {
+                "status": status,
+                "owner_unit_id": owner_unit_id,
+                "query": query,
+            }.items()
+            if value
+        }
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(
+                    f"{portal_url}/api/documents",
+                    headers=headers,
+                    params=params,
+                )
+            if response.status_code >= 400:
+                return {
+                    "status": "unavailable",
+                    "items": [],
+                    "warning": f"Portal returned HTTP {response.status_code}",
+                }
+            payload = response.json()
+            items = payload.get("items") or []
+            return {
+                "status": "available",
+                "items": [item for item in items if isinstance(item, dict)],
+            }
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            return {"status": "unavailable", "items": [], "warning": str(exc)}
+
     async def _fetch_document_governance(self, document_id: str) -> dict[str, Any]:
         portal_url = self._settings.knowledge_portal_url.rstrip("/")
         headers = {
@@ -1292,6 +1653,13 @@ class BackofficeQueryService:
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        actor_ref: str | None = None,
+        issue_type_id: str | None = None,
+        route: str | None = None,
+        conversation_id: str | None = None,
+        model: str | None = None,
+        has_feedback: bool | None = None,
+        handoff: bool | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
             "preset": preset,
@@ -1300,6 +1668,19 @@ class BackofficeQueryService:
             "end_date": end_date,
         }
         period = self._resolve_period(**period_kwargs)
+        query_filters = {
+            key: value
+            for key, value in {
+                "actorRef": actor_ref,
+                "issueTypeId": issue_type_id,
+                "route": route,
+                "conversationId": conversation_id,
+                "model": model,
+                "hasFeedback": has_feedback,
+                "handoff": handoff,
+            }.items()
+            if value is not None
+        }
 
         async def runner() -> dict[str, Any]:
             if export_type == "operations_summary":
@@ -1312,6 +1693,26 @@ class BackofficeQueryService:
                 data = await self.list_feedback(actor, **period_kwargs)
             elif export_type == "routes_summary":
                 data = await self.routes_summary(actor, **period_kwargs)
+            elif export_type == "knowledge_performance":
+                data = await self.list_documents(
+                    actor,
+                    preset=preset,
+                    days=days,
+                    limit=100_000,
+                )
+            elif export_type == "conversations":
+                data = await self.list_conversations(
+                    actor,
+                    **period_kwargs,
+                    limit=100_000,
+                    actor_ref=actor_ref,
+                    issue_type_id=issue_type_id,
+                    route=route,
+                    conversation_id=conversation_id,
+                    model=model,
+                    has_feedback=has_feedback,
+                    handoff=handoff,
+                )
             else:
                 raise ValueError(f"Unsupported export type: {export_type}")
             return wrap_export_payload(
@@ -1323,6 +1724,7 @@ class BackofficeQueryService:
                 export_format=export_format,
                 period=period,
                 pricing_version=self._metrics.get("pricingVersion"),
+                query_filters=query_filters,
             )
 
         job = await self.export_jobs.create_job(

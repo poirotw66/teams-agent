@@ -102,6 +102,20 @@ function buildPeriodQuery(prefix = "") {
   return `preset=${encodeURIComponent(preset)}`;
 }
 
+function showContentModal(title, content) {
+  const root = document.getElementById("modal-root");
+  root.hidden = false;
+  root.replaceChildren();
+  const modal = el("section", "modal");
+  const close = el("button", "", "關閉");
+  close.addEventListener("click", () => {
+    root.hidden = true;
+    root.replaceChildren();
+  });
+  modal.append(el("h2", "", title), close, content);
+  root.append(modal);
+}
+
 function showConversationModal(detail, conversationId = detail.conversationId) {
   const root = document.getElementById("modal-root");
   root.hidden = false;
@@ -350,7 +364,37 @@ async function renderConversations() {
     if (handoff) handoffSelect.value = handoff;
     const applyFilters = el("button", "", "套用篩選");
     applyFilters.addEventListener("click", () => renderConversations());
-    filterBar.append(issueInput, routeInput, modelInput, actorRefInput, feedbackSelect, handoffSelect, applyFilters);
+    const exportButton = el("button", "", "匯出 CSV");
+    exportButton.addEventListener("click", async () => {
+      exportButton.disabled = true;
+      exportButton.textContent = "匯出中…";
+      const queryFilters = {
+        issue_type_id: issueInput.value || undefined,
+        route: routeInput.value || undefined,
+        model: modelInput.value || undefined,
+        actor_ref: actorRefInput.value || undefined,
+        has_feedback: feedbackSelect.value ? feedbackSelect.value === "true" : undefined,
+        handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
+      };
+      try {
+        await runExport("csv", "conversations", 30, queryFilters);
+      } catch (error) {
+        showContentModal("匯出失敗", el("div", "error", error.message));
+      } finally {
+        exportButton.disabled = false;
+        exportButton.textContent = "匯出 CSV";
+      }
+    });
+    filterBar.append(
+      issueInput,
+      routeInput,
+      modelInput,
+      actorRefInput,
+      feedbackSelect,
+      handoffSelect,
+      applyFilters,
+      exportButton,
+    );
     panel.append(filterBar);
 
     if (!data.items.length) {
@@ -371,7 +415,9 @@ async function renderConversations() {
         const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}`);
         showConversationModal(detail);
       });
-      row.append(el("td", "", "").append(link));
+      const conversationCell = el("td");
+      conversationCell.append(link);
+      row.append(conversationCell);
       row.append(el("td", "", String(item.turnCount)));
       row.append(el("td", "", item.actorRef || "-"));
       row.append(el("td", "", (item.routes || []).join(", ") || "-"));
@@ -601,12 +647,28 @@ async function renderHealth() {
       panel.append(links);
     }
     const table = el("table");
-    table.innerHTML = "<thead><tr><th>Component</th><th>Status</th><th>Note</th></tr></thead>";
+    table.innerHTML = [
+      "<thead><tr><th>Component</th><th>Status</th><th>24h Requests</th>",
+      "<th>Availability</th><th>Error</th><th>Timeout</th>",
+      "<th>P50 ms</th><th>P95 ms</th><th>Note</th></tr></thead>",
+    ].join("");
     const body = el("tbody");
     for (const item of data.components || []) {
       const row = el("tr");
       row.append(el("td", "", item.id));
       row.append(el("td", "", item.status));
+      row.append(
+        el(
+          "td",
+          "",
+          item.telemetryStatus === "AVAILABLE" ? String(item.requestCount) : "NO DATA",
+        ),
+      );
+      for (const value of [item.availabilityRate, item.errorRate, item.timeoutRate]) {
+        row.append(el("td", "", value == null ? "-" : `${(value * 100).toFixed(1)}%`));
+      }
+      row.append(el("td", "", item.p50LatencyMs == null ? "-" : String(item.p50LatencyMs)));
+      row.append(el("td", "", item.p95LatencyMs == null ? "-" : String(item.p95LatencyMs)));
       row.append(el("td", "", item.note || item.url || ""));
       body.append(row);
     }
@@ -618,7 +680,7 @@ async function renderHealth() {
   }
 }
 
-function renderKnowledge() {
+async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
   panel.append(el("h2", "", "知識營運"));
@@ -632,29 +694,134 @@ function renderKnowledge() {
   const link = el("a", "button-link", "開啟 Knowledge Portal");
   link.href = capabilities?.knowledgePortalUrl || "http://127.0.0.1:8091";
   link.target = "_blank";
-  panel.append(link);
-  const input = el("input");
-  input.placeholder = "documentId（例如 vpn-password-lockout）";
-  input.style.marginTop = "1rem";
-  input.style.width = "100%";
-  const button = el("button", "", "查詢文件成效");
-  button.style.marginTop = "0.5rem";
+  const exportButton = el("button", "", "匯出 CSV");
+  exportButton.style.marginLeft = "0.5rem";
+  panel.append(link, exportButton);
+
+  const filters = el("form", "filter-bar");
+  filters.style.marginTop = "1rem";
+  const query = el("input");
+  query.placeholder = "搜尋標題或文件 ID";
+  query.setAttribute("aria-label", "搜尋知識文件");
+  const status = el("select");
+  status.setAttribute("aria-label", "生命週期狀態");
+  for (const [value, label] of [
+    ["", "所有狀態"],
+    ["DRAFT", "草稿"],
+    ["IN_REVIEW", "審核中"],
+    ["APPROVED", "已核准"],
+    ["PUBLISHED", "已發布"],
+    ["ARCHIVED", "已封存"],
+  ]) {
+    const option = el("option", "", label);
+    option.value = value;
+    status.append(option);
+  }
+  const submit = el("button", "", "套用篩選");
+  submit.type = "submit";
+  filters.append(query, status, submit);
   const result = el("div", "");
-  button.addEventListener("click", async () => {
-    const documentId = input.value.trim();
-    if (!documentId) return;
+  panel.append(filters, result);
+  app.replaceChildren(panel);
+
+  async function loadDocuments(cursor = "") {
     result.replaceChildren(el("p", "empty", "載入中…"));
     try {
-      const data = await api(
-        `/api/knowledge/${encodeURIComponent(documentId)}/performance?days=30`,
-      );
-      result.replaceChildren(renderDocumentPerformance(data));
+      const params = new URLSearchParams({ days: "30", limit: "50" });
+      if (query.value.trim()) params.set("query", query.value.trim());
+      if (status.value) params.set("status", status.value);
+      if (cursor) params.set("cursor", cursor);
+      const data = await api(`/api/knowledge?${params.toString()}`);
+      result.replaceChildren(renderKnowledgeInventory(data, loadDocuments));
     } catch (error) {
       result.replaceChildren(el("div", "error", error.message));
     }
+  }
+
+  filters.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadDocuments();
   });
-  panel.append(input, button, result);
-  app.replaceChildren(panel);
+  exportButton.addEventListener("click", async () => {
+    exportButton.disabled = true;
+    exportButton.textContent = "匯出中…";
+    try {
+      await runExport("csv", "knowledge_performance", 30);
+    } catch (error) {
+      result.prepend(el("div", "error", error.message));
+    } finally {
+      exportButton.disabled = false;
+      exportButton.textContent = "匯出 CSV";
+    }
+  });
+  await loadDocuments();
+}
+
+function renderKnowledgeInventory(data, loadDocuments) {
+  const container = el("div");
+  if (data.warning) container.append(el("p", "warning", data.warning));
+  const summary = el(
+    "p",
+    "",
+    `共 ${data.total || 0} 份文件｜績效期間 ${data.periodDays || 30} 天`,
+  );
+  container.append(summary);
+  if (!(data.items || []).length) {
+    container.append(el("p", "empty", "沒有符合條件的知識文件。"));
+    return container;
+  }
+  const table = el("table");
+  table.innerHTML = [
+    "<thead><tr>",
+    "<th>文件</th><th>Owner</th><th>生命週期</th><th>解析 / 索引</th>",
+    "<th>命中</th><th>對話</th><th>負面回饋</th><th>操作</th>",
+    "</tr></thead>",
+  ].join("");
+  const body = el("tbody");
+  for (const item of data.items) {
+    const row = el("tr");
+    const documentCell = el("td");
+    documentCell.append(
+      el("strong", "", item.title || item.documentId),
+      el("div", "metric-label", item.documentId),
+    );
+    const detailButton = el("button", "", "查看成效");
+    detailButton.addEventListener("click", async () => {
+      detailButton.disabled = true;
+      try {
+        const detail = await api(
+          `/api/knowledge/${encodeURIComponent(item.documentId)}/performance?days=30`,
+        );
+        showContentModal(item.title || item.documentId, renderDocumentPerformance(detail));
+      } catch (error) {
+        showContentModal("知識文件成效", el("div", "error", error.message));
+      } finally {
+        detailButton.disabled = false;
+      }
+    });
+    const actionCell = el("td");
+    actionCell.append(detailButton);
+    row.append(
+      documentCell,
+      el("td", "", item.ownerUnitId || "-"),
+      el("td", "", item.lifecycleStatus || "UNKNOWN"),
+      el("td", "", `${item.parseStatus || "UNKNOWN"} / ${item.indexStatus || "UNKNOWN"}`),
+      el("td", "", String(item.hitCount || 0)),
+      el("td", "", String(item.conversationCount || 0)),
+      el("td", "", String(item.negativeFeedbackCount || 0)),
+      actionCell,
+    );
+    body.append(row);
+  }
+  table.append(body);
+  container.append(table);
+  if (data.nextCursor) {
+    const next = el("button", "", "下一頁");
+    next.style.marginTop = "1rem";
+    next.addEventListener("click", () => loadDocuments(data.nextCursor));
+    container.append(next);
+  }
+  return container;
 }
 
 function renderDocumentPerformance(data) {
@@ -824,16 +991,22 @@ async function renderQuality() {
   }
 }
 
-async function runExport(exportFormat) {
+async function runExport(
+  exportFormat,
+  exportType = "operations_summary",
+  days = 7,
+  queryFilters = {},
+) {
   const created = await api("/api/exports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      export_type: "operations_summary",
+      export_type: exportType,
       reason: "UAT export",
-      days: 7,
+      days,
       export_format: exportFormat,
-      preset: "7d",
+      preset: `${days}d`,
+      ...queryFilters,
     }),
   });
   const job = await pollExport(created.jobId);
@@ -848,7 +1021,7 @@ async function runExport(exportFormat) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `operations-summary-${created.jobId}.${exportFormat}`;
+    link.download = `${exportType.replaceAll("_", "-")}-${created.jobId}.${exportFormat}`;
     link.click();
     URL.revokeObjectURL(url);
   }
