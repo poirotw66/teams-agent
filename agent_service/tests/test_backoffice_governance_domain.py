@@ -400,6 +400,28 @@ def test_canary_evaluate_auto_stops_on_thresholds(tmp_path: Path) -> None:
     assert detail["prompt"]["canary_version_id"] is None
 
 
+def test_masking_and_retention_list_lifecycle(tmp_path: Path) -> None:
+    svc = service(tmp_path)
+    retention_items = svc.list_retention_policies(actor=AI)
+    assert any(item["status"] == "ACTIVE" for item in retention_items)
+    masking_items = svc.list_masking_policies(actor=AI)
+    assert any(item["status"] == "ACTIVE" for item in masking_items)
+
+    created = svc.create_masking_candidate(
+        policy_version="mask-test-v2",
+        reason="new masking rules",
+        actor=AI,
+    )
+    version_id = created["policy"]["version_id"]
+    approved = svc.approve_masking(version_id=version_id, reason="approved", actor=APPROVER)
+    assert approved["policy"]["status"] == "APPROVED"
+    activated = svc.activate_masking(version_id=version_id, reason="activate", actor=APPROVER)
+    assert activated["policy"]["status"] == "ACTIVE"
+    active = [item for item in svc.list_masking_policies(actor=AI) if item["status"] == "ACTIVE"]
+    assert len(active) == 1
+    assert active[0]["policy_version"] == "mask-test-v2"
+
+
 def test_search_covers_retention_and_export_audit(tmp_path: Path) -> None:
     svc = service(tmp_path)
     svc.create_retention_candidate(

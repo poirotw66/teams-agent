@@ -1,0 +1,167 @@
+{
+  "generatedAt": "2026-09-03T11:11:49.081829+00:00",
+  "mode": "inprocess",
+  "passed": true,
+  "stepCount": 31,
+  "passedCount": 31,
+  "failedCount": 0,
+  "promptId": "issue-extractor",
+  "flagCount": 7,
+  "steps": [
+    {
+      "name": "list prompts",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "list flags",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "list models",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "list retention",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "list masking",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "list roles",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "create example",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "verify example",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "taxonomy",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt candidate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt eval",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt approve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt canary",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt canary evaluate continue",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt activate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prompt rollback",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "flag candidate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "flag approve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "flag activate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "retention candidate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "retention approve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "retention activate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "masking candidate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "masking approve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "masking activate",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "role request",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "role approve",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "governance search",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "governance search has hits",
+      "passed": true,
+      "detail": "count=2"
+    },
+    {
+      "name": "audit export",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "audit export package",
+      "passed": true,
+      "detail": "count=18"
+    }
+  ]
+}

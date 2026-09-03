@@ -11,6 +11,8 @@
 - 實作完成、局部測試通過、跨服務整合完成、LAB UAT、正式人工簽核分開記錄。
 - 2026-09-03 產品決策：Phase 0 目前以 LAB 自驗通過作為完成門檻，可繼續 Phase 2；本次不要求 BU／IT／資安／法遵跨部門簽核。
 - 2026-09-03 產品決策：SYSTEM_ADMIN 為最高權限，Phase 1 只需一次管理員最終核准，不要求各部門分別簽核；Justin 已完成管理員核准，Phase 1 狀態為已完成。
+- 2026-09-03 產品決策：Phase 3 人工簽核同樣採 SYSTEM_ADMIN 一次最終核准，不要求 BU／AI Governance／資安／稽核分別簽核；技術 gate（測試、dual-control 變更流程、audit）仍不可被核准略過。
+- 2026-09-03 Phase 3 剩餘實作：Roles／Retention／Masking UI、搜尋擴充、LAB drill（`ops_phase3_governance_drill.py`）與 `ops_phase3_signoff.py` 單人核准流程已補上；正式里程碑仍待管理員執行 approve＋validate。
 - 歷史 LAB artifacts 保持 LAB 標示，不改稱外部正式核准；若未來 production governance 要求跨部門簽核，再重新開啟正式證據 gate。
 - 不部署、不 push、不執行雲端寫入或代簽腳本；需要時另取得授權。
 - 不刪改原 spec 的要求來讓現有程式看似完成。

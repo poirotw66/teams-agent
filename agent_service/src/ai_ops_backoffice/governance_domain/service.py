@@ -1090,6 +1090,132 @@ class GovernanceService:
         self._require(actor, READ["role"])
         return [item.model_dump(mode="json") for item in self._ensured().role_changes]
 
+    def list_retention_policies(self, *, actor: ActorContext) -> list[dict[str, Any]]:
+        self._require(actor, READ["retention"])
+        return [item.model_dump(mode="json") for item in self._ensured().retention_policies]
+
+    def list_masking_policies(self, *, actor: ActorContext) -> list[dict[str, Any]]:
+        self._require(actor, READ["retention"])
+        return [item.model_dump(mode="json") for item in self._ensured().masking_policies]
+
+    def create_masking_candidate(
+        self,
+        *,
+        policy_version: str,
+        reason: str,
+        actor: ActorContext,
+    ) -> dict[str, Any]:
+        self._require(actor, WRITE["retention_write"])
+        reject_secrets_and_injection(policy_version, label="masking policy version")
+        if not policy_version.strip():
+            raise GovernanceValidationError("masking policy version is required")
+
+        def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
+            version = MaskingPolicyVersion(
+                version_id=str(uuid.uuid4()),
+                policy_version=policy_version.strip(),
+                status="CANDIDATE",
+                rules_hash=content_hash(policy_version.strip()),
+                created_by=actor.user_id,
+                created_at=self._clock(),
+                change_reason=reason,
+            )
+            audit = self._audit(
+                action="MASKING_CANDIDATE_CREATED",
+                actor=actor,
+                target_type="MASKING",
+                target_id=version.policy_version,
+                version_id=version.version_id,
+                reason=reason,
+                after=version.model_dump(mode="json"),
+            )
+            return replace_model(
+                state,
+                masking_policies=(*state.masking_policies, version),
+                audits=(*state.audits, audit),
+            ), {"policy": version.model_dump(mode="json")}
+
+        return self._mutate(operation)
+
+    def approve_masking(self, *, version_id: str, reason: str, actor: ActorContext) -> dict[str, Any]:
+        self._require(actor, WRITE["retention_write"])
+
+        def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
+            version = next(
+                (item for item in state.masking_policies if item.version_id == version_id),
+                None,
+            )
+            if version is None:
+                raise GovernanceNotFoundError(version_id)
+            if version.created_by == actor.user_id:
+                raise GovernanceAuthorizationError(
+                    "requester cannot approve their own masking policy"
+                )
+            if version.status != "CANDIDATE":
+                raise GovernanceTransitionError("masking policy is not awaiting approval")
+            updated = replace_model(
+                version,
+                status="APPROVED",
+                approved_by=actor.user_id,
+                change_reason=reason,
+            )
+            audit = self._audit(
+                action="MASKING_APPROVED",
+                actor=actor,
+                target_type="MASKING",
+                target_id=version.policy_version,
+                version_id=version_id,
+                reason=reason,
+            )
+            return replace_model(
+                state,
+                masking_policies=_upsert(state.masking_policies, updated, "version_id"),
+                audits=(*state.audits, audit),
+            ), {"policy": updated.model_dump(mode="json")}
+
+        return self._mutate(operation)
+
+    def activate_masking(self, *, version_id: str, reason: str, actor: ActorContext) -> dict[str, Any]:
+        self._require(actor, WRITE["retention_write"])
+
+        def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
+            version = next(
+                (item for item in state.masking_policies if item.version_id == version_id),
+                None,
+            )
+            if version is None:
+                raise GovernanceNotFoundError(version_id)
+            if version.status != "APPROVED":
+                raise GovernanceTransitionError("activation requires an approved masking policy")
+            retired = [
+                replace_model(item, status="RETIRED")
+                if item.status == "ACTIVE" and item.version_id != version_id
+                else item
+                for item in state.masking_policies
+            ]
+            updated = replace_model(
+                version,
+                status="ACTIVE",
+                activated_by=actor.user_id,
+                activated_at=self._clock(),
+                change_reason=reason,
+            )
+            audit = self._audit(
+                action="MASKING_ACTIVATED",
+                actor=actor,
+                target_type="MASKING",
+                target_id=version.policy_version,
+                version_id=version_id,
+                reason=reason,
+            )
+            return replace_model(
+                state,
+                masking_policies=_upsert(tuple(retired), updated, "version_id"),
+                audits=(*state.audits, audit),
+            ), {"policy": updated.model_dump(mode="json")}
+
+        return self._mutate(operation)
+
     def create_retention_candidate(
         self,
         *,

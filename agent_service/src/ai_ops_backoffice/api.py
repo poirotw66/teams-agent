@@ -2050,6 +2050,8 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         require_capability=require_capability,
         example_service=example_service,
         faq_service=faq_service,
+        query_service=query_service,
+        quality_service=quality_service,
     )
 
     # Phase 3 feature-flag list remains available under the governed API.

@@ -14,6 +14,9 @@ const routes = {
   prompts: renderPrompts,
   models: renderModels,
   flags: renderFlags,
+  roles: renderRoles,
+  retention: renderRetention,
+  masking: renderMasking,
   search: renderGovernanceSearch,
   audit: renderAudit,
 };
@@ -32,6 +35,9 @@ const navItems = [
   ["prompts", "Prompt 治理", "ops.prompts.read"],
   ["models", "模型設定", "ops.models.read"],
   ["flags", "Feature Flag", "ops.flags.read"],
+  ["roles", "角色映射", "ops.roles.read"],
+  ["retention", "Retention", "ops.retention.read"],
+  ["masking", "遮罩政策", "ops.retention.read"],
   ["search", "全域搜尋", "ops.search.read"],
   ["audit", "稽核紀錄", "ops.audit.read"],
 ];
@@ -2367,6 +2373,270 @@ async function renderFlags() {
   }
 }
 
+async function renderRoles() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const data = await api("/api/governance/roles");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "角色映射請求"));
+    if (allowed.has("ops.roles.request")) {
+      const form = el("form", "form-grid");
+      form.append(
+        faqField("目標 Principal", "target_principal", ""),
+        faqField("目標角色（可空）", "target_role", ""),
+        faqField("新增 capabilities（逗號分隔）", "add_capabilities", ""),
+        faqField("移除 capabilities（逗號分隔）", "remove_capabilities", ""),
+        faqField("理由", "reason", ""),
+      );
+      const submit = el("button", "", "送出角色請求");
+      submit.type = "submit";
+      form.append(submit);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        const reason = String(values.get("reason") || "").trim();
+        if (reason.length < 3) return;
+        const split = (raw) => String(raw || "").split(",").map((item) => item.trim()).filter(Boolean);
+        await api("/api/governance/roles/requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_principal: String(values.get("target_principal") || "").trim(),
+            target_role: String(values.get("target_role") || "").trim() || null,
+            add_capabilities: split(values.get("add_capabilities")),
+            remove_capabilities: split(values.get("remove_capabilities")),
+            reason,
+          }),
+        });
+        await renderRoles();
+      });
+      panel.append(form);
+    }
+    if (allowed.has("ops.roles.revoke")) {
+      const revoke = el("button", "", "緊急撤權");
+      revoke.addEventListener("click", async () => {
+        const principal = window.prompt("要撤權的 principal");
+        if (!principal) return;
+        const reason = window.prompt("撤權原因");
+        if (!reason || reason.trim().length < 3) return;
+        await api("/api/governance/roles/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ principal: principal.trim(), reason: reason.trim() }),
+        });
+        await renderRoles();
+      });
+      panel.append(revoke);
+    }
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>Change</th><th>Principal</th><th>狀態</th><th>請求者</th><th>操作</th></tr></thead>";
+    const body = el("tbody");
+    for (const change of (data.items || []).slice().reverse()) {
+      const actions = el("td");
+      if (allowed.has("ops.roles.approve") && change.status === "REQUESTED") {
+        const approve = el("button", "", "核准");
+        approve.addEventListener("click", async () => {
+          const reason = window.prompt("核准原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/roles/${change.change_id}/approve`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderRoles();
+        });
+        actions.append(approve);
+      }
+      const row = el("tr");
+      row.append(
+        el("td", "", change.change_id.slice(0, 8)),
+        el("td", "", change.target_principal),
+        el("td", "", change.status),
+        el("td", "", change.requested_by),
+        actions,
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderRetention() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const data = await api("/api/governance/retention");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "Retention Policies"));
+    if (allowed.has("ops.retention.write")) {
+      const form = el("form", "form-grid");
+      form.append(
+        faqField("Policy ID", "policy_id", "operational-events"),
+        faqField("TTL days", "ttl_days", "365"),
+        faqField("Migration plan", "migration_plan", "archive then delete"),
+        faqField("理由", "reason", ""),
+      );
+      const submit = el("button", "", "建立 Retention 候選");
+      submit.type = "submit";
+      form.append(submit);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        await api("/api/governance/retention/candidates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            policy_id: String(values.get("policy_id") || "").trim(),
+            ttl_days: Number(values.get("ttl_days") || 365),
+            migration_plan: String(values.get("migration_plan") || "").trim(),
+            reason: String(values.get("reason") || "").trim(),
+          }),
+        });
+        await renderRetention();
+      });
+      panel.append(form);
+    }
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>Policy</th><th>TTL</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of (data.items || []).slice().reverse()) {
+      const actions = el("td");
+      if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
+        const approve = el("button", "", "核准");
+        approve.addEventListener("click", async () => {
+          const reason = window.prompt("核准原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/retention/${item.version_id}/approve`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderRetention();
+        });
+        actions.append(approve);
+      }
+      if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
+        const activate = el("button", "", "啟用");
+        activate.addEventListener("click", async () => {
+          const reason = window.prompt("啟用原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/retention/${item.version_id}/activate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderRetention();
+        });
+        actions.append(activate);
+      }
+      const row = el("tr");
+      row.append(
+        el("td", "", item.policy_id),
+        el("td", "", String(item.ttl_days)),
+        el("td", "", item.status),
+        el("td", "", item.created_by),
+        actions,
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderMasking() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const data = await api("/api/governance/masking");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "遮罩政策版本"));
+    if (allowed.has("ops.retention.write")) {
+      const form = el("form", "form-grid");
+      form.append(
+        faqField("Policy version", "policy_version", "mask-v2"),
+        faqField("理由", "reason", ""),
+      );
+      const submit = el("button", "", "建立遮罩候選");
+      submit.type = "submit";
+      form.append(submit);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        await api("/api/governance/masking/candidates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            policy_version: String(values.get("policy_version") || "").trim(),
+            reason: String(values.get("reason") || "").trim(),
+          }),
+        });
+        await renderMasking();
+      });
+      panel.append(form);
+    }
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>Version</th><th>Hash</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of (data.items || []).slice().reverse()) {
+      const actions = el("td");
+      if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
+        const approve = el("button", "", "核准");
+        approve.addEventListener("click", async () => {
+          const reason = window.prompt("核准原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/masking/${item.version_id}/approve`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderMasking();
+        });
+        actions.append(approve);
+      }
+      if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
+        const activate = el("button", "", "啟用");
+        activate.addEventListener("click", async () => {
+          const reason = window.prompt("啟用原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/masking/${item.version_id}/activate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderMasking();
+        });
+        actions.append(activate);
+      }
+      const row = el("tr");
+      row.append(
+        el("td", "", item.policy_version),
+        el("td", "", (item.rules_hash || "").slice(0, 12)),
+        el("td", "", item.status),
+        el("td", "", item.created_by),
+        actions,
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
 async function renderGovernanceSearch() {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
@@ -2376,7 +2646,7 @@ async function renderGovernanceSearch() {
     const form = el("form", "form-grid");
     const input = el("input");
     input.name = "q";
-    input.placeholder = "搜尋 Prompt / Flag / Model / Role / Retention / FAQ / Audit";
+    input.placeholder = "搜尋 Prompt / Flag / Model / Role / Retention / FAQ / Example / Issue / Quality / Audit";
     const submit = el("button", "", "搜尋");
     submit.type = "submit";
     form.append(input, submit);

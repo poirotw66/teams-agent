@@ -141,6 +141,13 @@ class RetentionBody(BaseModel):
     reason: str = Field(min_length=3)
 
 
+class MaskingBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_version: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=3)
+
+
 def register_governance_routes(
     app: FastAPI,
     *,
@@ -149,6 +156,8 @@ def register_governance_routes(
     require_capability,
     example_service,
     faq_service=None,
+    query_service=None,
+    quality_service=None,
 ) -> None:
     @app.exception_handler(GovernanceAuthorizationError)
     async def governance_authorization_handler(_request, exc: GovernanceAuthorizationError) -> JSONResponse:
@@ -436,6 +445,11 @@ def register_governance_routes(
         require_capability(actor, "ops.retention.write")
         return governance.create_retention_candidate(**payload.model_dump(), actor=actor)
 
+    @app.get("/api/governance/retention")
+    async def list_retention(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.retention.read")
+        return {"items": governance.list_retention_policies(actor=actor)}
+
     @app.post("/api/governance/retention/{version_id}/approve")
     async def approve_retention(
         version_id: str, payload: ReasonBody, actor=Depends(current_actor)
@@ -449,6 +463,30 @@ def register_governance_routes(
     ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
         return governance.activate_retention(version_id=version_id, reason=payload.reason, actor=actor)
+
+    @app.get("/api/governance/masking")
+    async def list_masking(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.retention.read")
+        return {"items": governance.list_masking_policies(actor=actor)}
+
+    @app.post("/api/governance/masking/candidates")
+    async def create_masking(payload: MaskingBody, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.retention.write")
+        return governance.create_masking_candidate(**payload.model_dump(), actor=actor)
+
+    @app.post("/api/governance/masking/{version_id}/approve")
+    async def approve_masking(
+        version_id: str, payload: ReasonBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.retention.write")
+        return governance.approve_masking(version_id=version_id, reason=payload.reason, actor=actor)
+
+    @app.post("/api/governance/masking/{version_id}/activate")
+    async def activate_masking(
+        version_id: str, payload: ReasonBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.retention.write")
+        return governance.activate_masking(version_id=version_id, reason=payload.reason, actor=actor)
 
     @app.get("/api/governance/search")
     async def governance_search(
@@ -468,8 +506,47 @@ def register_governance_routes(
                         "type": "FAQ",
                         "id": str(faq.get("faq_id") or ""),
                         "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
-                        "snippet": str(content.get("answer") or version.get("status") or "")[:160],
+                        "snippet": str(content.get("question") or version.get("status") or "")[:160],
                         "requiredCapability": "ops.faq.read",
+                    }
+                )
+        if example_service is not None and actor.has_capability("ops.examples.read"):
+            for item in example_service.list_examples(actor=actor)[:200]:
+                extras.append(
+                    {
+                        "type": "EXAMPLE",
+                        "id": str(item.get("example_id") or ""),
+                        "title": str(item.get("expected_issue_type_id") or item.get("label") or ""),
+                        "snippet": str(item.get("text") or "")[:160],
+                        "requiredCapability": "ops.examples.read",
+                    }
+                )
+        if query_service is not None and actor.has_capability("ops.issues.read"):
+            taxonomy = getattr(query_service, "taxonomy", None)
+            if taxonomy is not None:
+                for issue in taxonomy.list_active():
+                    issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
+                    display = getattr(issue, "display_name", None) or getattr(issue, "name", issue_id)
+                    extras.append(
+                        {
+                            "type": "ISSUE_TYPE",
+                            "id": str(issue_id),
+                            "title": str(display),
+                            "snippet": str(getattr(issue, "category", "") or ""),
+                            "requiredCapability": "ops.issues.read",
+                        }
+                    )
+        if quality_service is not None and actor.has_capability("ops.quality.read"):
+            for case in quality_service.list_cases(actor=actor)[:200]:
+                extras.append(
+                    {
+                        "type": "QUALITY_CASE",
+                        "id": str(case.get("case_id") or ""),
+                        "title": str(case.get("title") or case.get("status") or ""),
+                        "snippet": str(case.get("description") or case.get("issue_type_id") or "")[
+                            :160
+                        ],
+                        "requiredCapability": "ops.quality.read",
                     }
                 )
         return governance.search(

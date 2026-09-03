@@ -243,7 +243,20 @@ Production formal acceptance, when invoked, uses a separate v2 evidence bundle w
 
 ## Phase 3 AI governance (operator notes)
 
-Handoff: `docs/ai-ops-phase-3-governance-handoff.md`. Formal Phase 3 UAT is not claimed by this runbook section.
+Handoff: `docs/ai-ops-phase-3-governance-handoff.md`.
+
+Human sign-off for Phase 3 matches Phase 0/1: one `SYSTEM_ADMIN` final approval.
+Separate BU / security / audit signatures are not required unless production
+governance later re-opens that gate.
+
+```bash
+cd agent_service
+uv run python ../scripts/ops_phase3_governance_drill.py \
+  --report ../artifacts/ops_phase3_governance_drill.json
+python ../scripts/ops_phase3_signoff.py init
+python ../scripts/ops_phase3_signoff.py approve --by Justin --notes "Phase 3 LAB drill reviewed"
+python ../scripts/ops_phase3_signoff.py validate
+```
 
 ### Prompt canary stop / evaluate
 

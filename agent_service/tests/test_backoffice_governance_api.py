@@ -183,6 +183,62 @@ def test_governance_canary_evaluate_stops_and_audit_export(tmp_path: Path) -> No
     assert any(item["action"] == "PROMPT_CANARY_STOPPED" for item in body["items"])
 
 
+def test_retention_masking_roles_api(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    ai = headers("AI_ADMIN", "ai-writer")
+    approver = headers("AI_ADMIN", "ai-approver")
+    system = headers("SYSTEM_ADMIN", "sys-writer")
+    system_b = headers("SYSTEM_ADMIN", "sys-approver")
+
+    retention = client.get("/api/governance/retention", headers=ai)
+    assert retention.status_code == 200
+    assert any(item["status"] == "ACTIVE" for item in retention.json()["items"])
+
+    masking = client.get("/api/governance/masking", headers=ai)
+    assert masking.status_code == 200
+    assert any(item["status"] == "ACTIVE" for item in masking.json()["items"])
+
+    created_mask = client.post(
+        "/api/governance/masking/candidates",
+        headers=ai,
+        json={"policy_version": "mask-api-v2", "reason": "api masking"},
+    )
+    assert created_mask.status_code == 200
+    mask_id = created_mask.json()["policy"]["version_id"]
+    assert client.post(
+        f"/api/governance/masking/{mask_id}/approve",
+        headers=approver,
+        json={"reason": "approve masking"},
+    ).status_code == 200
+    assert client.post(
+        f"/api/governance/masking/{mask_id}/activate",
+        headers=approver,
+        json={"reason": "activate masking"},
+    ).status_code == 200
+
+    role = client.post(
+        "/api/governance/roles/requests",
+        headers=system,
+        json={
+            "target_principal": "analyst.api",
+            "target_role": "ANALYST",
+            "add_capabilities": ["ops.summary.read"],
+            "remove_capabilities": [],
+            "reason": "grant analyst summary",
+        },
+    )
+    assert role.status_code == 200
+    change_id = role.json()["change"]["change_id"]
+    assert client.post(
+        f"/api/governance/roles/{change_id}/approve",
+        headers=system_b,
+        json={"reason": "approve role"},
+    ).status_code == 200
+    roles = client.get("/api/governance/roles", headers=system)
+    assert roles.status_code == 200
+    assert any(item["change_id"] == change_id for item in roles.json()["items"])
+
+
 def test_operations_summary_respects_cost_display_flag(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     ai = headers("AI_ADMIN", "ai-cost")

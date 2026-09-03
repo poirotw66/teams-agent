@@ -5,7 +5,7 @@ This handoff covers the Phase 3 AI governance domain introduced under
 
 ## Delivered
 
-- Immutable Prompt / Model / Feature Flag / Retention candidate lifecycle
+- Immutable Prompt / Model / Feature Flag / Retention / Masking candidate lifecycle
 - Deterministic Eval runner with critical safety gates
 - Dual-control approve (submitter cannot approve)
 - Prompt Canary percentage + sticky conversation routing
@@ -15,12 +15,14 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Safety-locked flags (`masking_enforced`, `audit_enforced`) cannot be disabled
 - Production flags require expiry and revert to default after expiry
 - Role-mapping requests cannot self-elevate; emergency principal revoke
-- Capability-aware global search (Prompt/Model/Flag/Role/Retention/Masking/Audit + FAQ extras)
+- Capability-aware global search (Prompt/Model/Flag/Role/Retention/Masking/Audit + FAQ/Example/Issue/Quality extras)
 - Governance audit trail with secret redaction and JSON audit export package
 - Baseline import of code-based Issue Extractor prompt / model / flags
 - Agent runtime wiring for prompt, model, and flags with fail-safe baselines
   (`PROMPT_RUNTIME_MODE=GOVERNED|CODE_BASELINE`)
-- Backoffice UI pages for Prompt governance, models, flags, search, and audit export
+- Backoffice UI pages for Prompt, models, flags, roles, retention, masking, search, audit export
+- LAB drill script: `scripts/ops_phase3_governance_drill.py`
+- SYSTEM_ADMIN single-approver sign-off helper: `scripts/ops_phase3_signoff.py`
 - API surface under `/api/governance/*`
 
 ## Explicitly not claimed complete
@@ -29,8 +31,24 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Legal hold
 - Multi-approver quorum beyond dual control
 - Continuous live production metric poller (evaluate is operator/API driven)
-- Formal BU / AI Governance / security / audit UAT sign-off
 - Entra role mapping as sole source of truth in production
+- Production Firestore multi-instance fault injection
+- Unmasked conversation full-text search in global search
+
+## Human sign-off policy (product decision)
+
+Phase 3 does **not** require separate BU / security / audit signatures.
+`SYSTEM_ADMIN` is the highest authority: one admin final approval is enough,
+matching Phase 0/1. Technical gates (tests, dual-control on high-risk changes,
+audit trail, passed LAB drill) still cannot be skipped by that approval.
+
+```bash
+cd agent_service
+uv run python ../scripts/ops_phase3_governance_drill.py
+python ../scripts/ops_phase3_signoff.py init
+python ../scripts/ops_phase3_signoff.py approve --by Justin --notes "LAB drill reviewed"
+python ../scripts/ops_phase3_signoff.py validate
+```
 
 ## Agent runtime wiring
 

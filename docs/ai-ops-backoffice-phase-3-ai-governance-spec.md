@@ -344,4 +344,4 @@ Audit 一般管理者不可刪除；匯出採獨立 capability。完整性需有
 - Role mapping、data scope、Audit、retention、redaction 與全域搜尋完成資安測試。
 - 現有 code／environment 設定完成 baseline migration，沒有未治理的 production 後門。
 - 操作 runbook、事故回復、權限申請、備份還原與 Audit 匯出文件可交接。
-- BU、AI Governance、平台、資安與稽核共同簽核 Phase 3 UAT。
+- 人工簽核採 `SYSTEM_ADMIN` 一次最終核准（與 Phase 0/1 產品決策一致）；不要求 BU／資安／稽核分別簽核。技術 gate 仍不可被核准略過。
