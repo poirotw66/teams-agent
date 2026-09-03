@@ -433,7 +433,7 @@ def test_uat_route_export_applies_issue_filter(
     assert exported["exportMetadata"]["recordCount"] == len(
         exported["data"]["routeDistribution"]
     )
-    assert exported["exportMetadata"]["fields"] == ["count", "route"]
+    assert exported["exportMetadata"]["fields"] == ["attribution", "count", "route"]
 
 
 def test_uat_conversation_export_is_filtered_and_masked(

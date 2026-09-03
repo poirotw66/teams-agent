@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from agent_service.operations.contracts import utc_now
+from agent_service.operations.contracts import DEFAULT_TIMEZONE, utc_now
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,6 @@ PRESET_DAYS = {
     "today": 1,
     "7d": 7,
     "30d": 30,
-    "month": 30,
     "180d": 180,
     "6m": 180,
 }
@@ -68,6 +68,18 @@ def resolve_period(
         )
 
     normalized = (preset or "").strip().lower()
+    if normalized == "month":
+        end_at = utc_now()
+        local_now = end_at.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+        start_at = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        resolved_days = max(1, (local_now.date() - start_at.date()).days + 1)
+        return ResolvedPeriod(
+            days=resolved_days,
+            preset="month",
+            start_at=start_at,
+            end_at=end_at,
+            explicit_range=True,
+        )
     if normalized in PRESET_DAYS:
         resolved_days = PRESET_DAYS[normalized]
         label = normalized

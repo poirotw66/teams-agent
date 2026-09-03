@@ -30,6 +30,7 @@ from ..models import (
     new_etag,
     utc_now,
 )
+from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..rbac import (
     ensure_can_edit,
     ensure_can_remove_document,
@@ -38,7 +39,6 @@ from ..rbac import (
 )
 from ..repository import PortalNotFoundError, VersionConflictError, new_id
 from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
-from ..pdf_text import ScannedPdfError, extract_text_pdf, pdf_text_to_markdown
 from ..validation import (
     build_front_matter_markdown,
     build_parse_preview,
@@ -613,7 +613,7 @@ class DocumentService:
             version_id=version_id,
             document_id=document_id,
             version_number=published.version_number + 1,
-            source_type="MARKDOWN_UPLOAD",
+            source_type=published.source_type,
             content_hash=published.content_hash,
             canonical_content=published.canonical_content,
             change_summary=f"Revision {published.version_number + 1}",

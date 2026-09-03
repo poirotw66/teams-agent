@@ -70,7 +70,8 @@
       "reviewArtifacts": [
         "agent_service/tests/test_ai_ops_portal_governance_integration.py",
         "agent_service/tests/test_knowledge_portal.py::test_pdf_publish_workflow",
-        "agent_service/tests/test_knowledge_portal.py::test_import_text_pdf"
+        "agent_service/tests/test_knowledge_portal.py::test_import_text_pdf",
+        "agent_service/tests/test_knowledge_portal.py::test_markdown_upload_update_publish_and_governed_removal"
       ]
     }
   ]

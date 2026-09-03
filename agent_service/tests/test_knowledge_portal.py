@@ -159,6 +159,122 @@ def test_import_scanned_pdf_is_rejected(portal_client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
+def test_markdown_upload_update_publish_and_governed_removal(tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "require_dual_approval", False)
+    object.__setattr__(settings, "relaxed_workflow", True)
+    client = TestClient(create_app(settings))
+    manager_headers = portal_headers(
+        user_id="manager.demo",
+        name="Manager Demo",
+        role="MANAGER",
+    )
+
+    imported = client.post(
+        "/api/documents/import-markdown",
+        files={
+            "file": (
+                "vpn-guide.md",
+                b"# VPN Markdown Guide\n\nUse the managed VPN profile.",
+                "text/markdown",
+            )
+        },
+        headers=manager_headers,
+    )
+    assert imported.status_code == 200
+    imported_data = imported.json()
+    create_payload = sample_document_payload()
+    create_payload.update(
+        {
+            "title": imported_data["title"],
+            "owner_unit_id": imported_data["owner_unit_id"],
+            "effective_at": imported_data["effective_at"],
+            "review_due_at": imported_data["review_due_at"],
+            "audience_type": imported_data["audience_type"],
+            "audience_group_ids": imported_data["audience_group_ids"],
+            "markdown_content": imported_data["markdown_content"],
+            "source_type": "MARKDOWN_UPLOAD",
+        }
+    )
+    created = client.post(
+        "/api/documents",
+        json=create_payload,
+        headers=manager_headers,
+    )
+    assert created.status_code == 200
+    document_id = created.json()["document"]["document_id"]
+
+    update_payload = sample_document_payload()
+    update_payload.update(
+        {
+            "etag": created.json()["document"]["etag"],
+            "title": imported_data["title"],
+            "markdown_content": f'{imported_data["markdown_content"]}\n\n## Updated\n\nUse MFA.',
+            "change_summary": "Markdown update",
+            "change_reason": "Refresh uploaded Markdown",
+        }
+    )
+    updated = client.put(
+        f"/api/documents/{document_id}/draft",
+        json=update_payload,
+        headers=manager_headers,
+    )
+    assert updated.status_code == 200
+    submitted = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={
+            "etag": updated.json()["document"]["etag"],
+            "change_reason": "Review Markdown upload",
+        },
+        headers=manager_headers,
+    )
+    assert submitted.status_code == 200
+    review_id = submitted.json()["open_review"]["review_id"]
+    approved = client.post(
+        f"/api/reviews/{review_id}/decision",
+        json={
+            "decision": "APPROVED",
+            "comment": "Markdown approved",
+            "policy_exceptions": [],
+        },
+        headers=manager_headers,
+    )
+    assert approved.status_code == 200
+    detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=manager_headers,
+    ).json()
+    version_id = detail["draft_version"]["version_id"]
+    published = client.post(
+        f"/api/documents/{document_id}/publish",
+        json={"version_id": version_id, "reason": "Publish Markdown"},
+        headers=manager_headers,
+    )
+    assert published.status_code == 200
+    published_detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=manager_headers,
+    ).json()
+    assert published_detail["published_version"]["source_type"] == "MARKDOWN_UPLOAD"
+
+    unpublished = client.post(
+        f"/api/documents/{document_id}/unpublish",
+        json={"reason": "Retire Markdown"},
+        headers=manager_headers,
+    )
+    assert unpublished.status_code == 200
+    assert unpublished.json()["document"]["status"] == "UNPUBLISHED"
+    removed = client.delete(
+        f"/api/documents/{document_id}?reason=Governed%20Markdown%20retirement",
+        headers=manager_headers,
+    )
+    assert removed.status_code == 200
+    assert removed.json()["status"] == "DISCARDED"
+
+
 def test_pdf_publish_workflow(portal_client: TestClient, tmp_path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
@@ -215,6 +331,81 @@ def test_pdf_publish_workflow(portal_client: TestClient, tmp_path) -> None:
         headers=portal_headers(role="MANAGER"),
     ).json()["published_version"]
     assert published_version["source_type"] == "PDF"
+
+    revision = client.post(
+        f"/api/documents/{document_id}/start-revision",
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert revision.status_code == 200
+    revised_detail = revision.json()
+    assert revised_detail["draft_version"]["version_number"] == 2
+    assert revised_detail["draft_version"]["source_type"] == "PDF"
+
+    update_payload = sample_document_payload()
+    update_payload.update(
+        {
+            "etag": revised_detail["document"]["etag"],
+            "title": imported.json()["title"],
+            "markdown_content": f'{imported.json()["markdown_content"]}\n\n## Updated\n\nVPN v2.',
+            "change_summary": "PDF revision v2",
+            "change_reason": "Refresh PDF guidance",
+        }
+    )
+    updated = client.put(
+        f"/api/documents/{document_id}/draft",
+        json=update_payload,
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert updated.status_code == 200
+    submit_v2 = client.post(
+        f"/api/documents/{document_id}/submit-review",
+        json={
+            "etag": updated.json()["document"]["etag"],
+            "change_reason": "Review PDF v2",
+        },
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert submit_v2.status_code == 200
+    review_v2 = submit_v2.json()["open_review"]["review_id"]
+    approved_v2 = client.post(
+        f"/api/reviews/{review_v2}/decision",
+        json={"decision": "APPROVED", "comment": "PDF v2 approved", "policy_exceptions": []},
+        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+    )
+    assert approved_v2.status_code == 200
+    approved_detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER"),
+    ).json()
+    version_v2 = approved_detail["draft_version"]["version_id"]
+    republished = client.post(
+        f"/api/documents/{document_id}/publish",
+        json={"version_id": version_v2, "reason": "Publish PDF v2"},
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert republished.status_code == 200
+    final_detail = client.get(
+        f"/api/documents/{document_id}",
+        headers=portal_headers(role="MANAGER"),
+    ).json()
+    assert final_detail["published_version"]["version_number"] == 2
+    assert final_detail["published_version"]["source_type"] == "PDF"
+
+    unpublished = client.post(
+        f"/api/documents/{document_id}/unpublish",
+        json={"reason": "Retire PDF v2"},
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert unpublished.status_code == 200
+    assert unpublished.json()["document"]["status"] == "UNPUBLISHED"
+    removed = client.delete(
+        f"/api/documents/{document_id}?reason=Governed%20retirement",
+        headers=portal_headers(role="MANAGER", user_id="manager.demo", name="Manager Demo"),
+    )
+    assert removed.status_code == 200
+    assert removed.json()["status"] == "DISCARDED"
+    listing = client.get("/api/documents", headers=portal_headers(role="MANAGER"))
+    assert all(item["document_id"] != document_id for item in listing.json()["items"])
 
 
 def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:

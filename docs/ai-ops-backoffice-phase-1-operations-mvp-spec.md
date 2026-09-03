@@ -292,3 +292,19 @@ Phase 1 主要 read model：
 - Markdown／PDF 的新增、版本更新、停用、受治理刪除、查詢與現有知識發布流程完成端到端 UAT。
 - Analytics 延遲、資料品質與服務健康度具有監控及 runbook。
 - BU 可在 15 分鐘內完成「由負評找到對話、Issue、來源文件」的驗收任務。
+
+## 16. 實作與驗收證據（2026-09-03）
+
+| 範圍 | 狀態 | 證據 |
+|---|---|---|
+| Route → FAQ／Document／Version／Release 歸因 | 已完成 | `test_routes_summary`、`test_uat_route_export_applies_issue_filter` |
+| 期間與分頁 | 已完成 | 本月採 Asia/Taipei 月初至今；Conversation、Feedback cursor pagination；`test_month_preset_starts_at_calendar_month`、`test_feedback_cursor_pagination` |
+| 成本分析維度 | 已完成 | Model、Provider、Component、Knowledge Backend、Route、Issue Type 與 pricing version |
+| 文件成效下鑽 | 已完成 | 最近命中 Conversation、Issue、Release、Chunk 與 Portal governance 狀態 |
+| 匯出持久化與清理 | 已完成（MVP） | FILE／Firestore metadata、FILE／GCS artifact、筆數上限、60 秒到期清理；`test_export_job_expires_after_ttl`、`test_export_record_limit_fails_before_artifact_write` |
+| 健康度最近異常 | 已完成 | 24 小時 masked anomaly 摘要；`test_health_summary_includes_recent_masked_anomalies` |
+| Markdown／文字型 PDF lifecycle | 已完成 | `test_markdown_upload_update_publish_and_governed_removal`、`test_pdf_publish_workflow` |
+| LAB 自驗 | 已核准 | `artifacts/ai_ops_signoff_checklist.json`、`artifacts/ops_bu_walkthrough.json` |
+| 跨部門正式簽核 | 非本里程碑門檻 | 不以 LAB 自驗冒充外部正式核准；若 production governance 要求則重新開啟 gate |
+
+Production hardening 仍應持續驗證 worker crash 後的租約／重試與實際 Firestore、GCS 多 instance 故障注入；此項不降低上述 Phase 1 MVP 功能驗收結果。

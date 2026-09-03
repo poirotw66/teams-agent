@@ -67,6 +67,7 @@ function periodSelect(current = "7d") {
     <option value="today">今天</option>
     <option value="7d">最近 7 天</option>
     <option value="30d">最近 30 天</option>
+    <option value="month">本月</option>
     <option value="6m">最近 6 個月</option>
     <option value="custom">自訂期間</option>
   `;
@@ -100,6 +101,54 @@ function buildPeriodQuery(prefix = "") {
     return params.toString();
   }
   return `preset=${encodeURIComponent(preset)}`;
+}
+
+function periodParams(state = { preset: "30d" }) {
+  const params = new URLSearchParams();
+  if (state.preset === "custom") {
+    if (state.start) params.set("start_date", `${state.start}T00:00:00+08:00`);
+    if (state.end) params.set("end_date", `${state.end}T23:59:59+08:00`);
+  } else {
+    params.set("preset", state.preset || "30d");
+  }
+  return params;
+}
+
+function createPeriodControls(state, onApply) {
+  const controls = el("div", "filter-bar");
+  const select = periodSelect(state.preset || "30d");
+  select.setAttribute("aria-label", "分析期間");
+  const custom = customPeriodInputs(state.start || "", state.end || "");
+  custom.hidden = select.value !== "custom";
+  select.addEventListener("change", () => {
+    custom.hidden = select.value !== "custom";
+  });
+  const apply = el("button", "", "套用期間");
+  apply.addEventListener("click", () => {
+    const inputs = custom.querySelectorAll("input");
+    onApply({
+      preset: select.value,
+      start: inputs[0]?.value || "",
+      end: inputs[1]?.value || "",
+    });
+  });
+  controls.append(select, custom, apply);
+  return controls;
+}
+
+function attributionText(attribution = {}) {
+  const labels = {
+    faqKeys: "FAQ",
+    documentIds: "Document",
+    versionIds: "Version",
+    releaseIds: "Release",
+  };
+  const parts = [];
+  for (const [key, label] of Object.entries(labels)) {
+    const values = (attribution[key] || []).map((item) => `${item.id} (${item.count})`);
+    if (values.length) parts.push(`${label}: ${values.join(", ")}`);
+  }
+  return parts.join(" | ") || "-";
 }
 
 function showContentModal(title, content) {
@@ -310,20 +359,24 @@ async function renderOverview() {
   }
 }
 
-async function renderConversations() {
+async function renderConversations(state = {}) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const navFilters = loadNavFilters();
-    const filters = new URLSearchParams({ days: "30" });
+    const period = state.period || { preset: "30d" };
+    const savedFilters = state.filters || {};
+    const filters = periodParams(period);
+    filters.set("limit", "25");
+    if (state.cursor) filters.set("cursor", state.cursor);
     const issueTypeId =
-      document.getElementById("conversation-issue-type")?.value ||
+      savedFilters.issueTypeId ||
       (navFilters.view === "conversations" ? navFilters.issueTypeId : "");
-    const route = document.getElementById("conversation-route")?.value || "";
-    const model = document.getElementById("conversation-model")?.value || "";
-    const actorRef = document.getElementById("conversation-actor-ref")?.value || "";
-    const hasFeedback = document.getElementById("conversation-has-feedback")?.value || "";
-    const handoff = document.getElementById("conversation-handoff")?.value || "";
+    const route = savedFilters.route || "";
+    const model = savedFilters.model || "";
+    const actorRef = savedFilters.actorRef || "";
+    const hasFeedback = savedFilters.hasFeedback || "";
+    const handoff = savedFilters.handoff || "";
     if (issueTypeId) filters.set("issue_type_id", issueTypeId);
     if (route) filters.set("route", route);
     if (model) filters.set("model", model);
@@ -362,8 +415,18 @@ async function renderConversations() {
     handoffSelect.innerHTML =
       '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
     if (handoff) handoffSelect.value = handoff;
+    const currentFilters = () => ({
+      issueTypeId: issueInput.value.trim(),
+      route: routeInput.value.trim(),
+      model: modelInput.value.trim(),
+      actorRef: actorRefInput.value.trim(),
+      hasFeedback: feedbackSelect.value,
+      handoff: handoffSelect.value,
+    });
     const applyFilters = el("button", "", "套用篩選");
-    applyFilters.addEventListener("click", () => renderConversations());
+    applyFilters.addEventListener("click", () =>
+      renderConversations({ period, filters: currentFilters(), cursor: "", history: [] }),
+    );
     const exportButton = el("button", "", "匯出 CSV");
     exportButton.addEventListener("click", async () => {
       exportButton.disabled = true;
@@ -375,6 +438,7 @@ async function renderConversations() {
         actor_ref: actorRefInput.value || undefined,
         has_feedback: feedbackSelect.value ? feedbackSelect.value === "true" : undefined,
         handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
+        ...Object.fromEntries(periodParams(period)),
       };
       try {
         await runExport("csv", "conversations", 30, queryFilters);
@@ -396,6 +460,16 @@ async function renderConversations() {
       exportButton,
     );
     panel.append(filterBar);
+    panel.append(
+      createPeriodControls(period, (nextPeriod) =>
+        renderConversations({
+          period: nextPeriod,
+          filters: currentFilters(),
+          cursor: "",
+          history: [],
+        }),
+      ),
+    );
 
     if (!data.items.length) {
       panel.append(el("p", "empty", "目前沒有符合條件的對話事件。"));
@@ -426,27 +500,56 @@ async function renderConversations() {
     }
     table.append(body);
     panel.append(table);
+    const history = state.history || [];
+    const pager = el("div", "filter-bar");
+    if (history.length) {
+      const previous = el("button", "", "上一頁");
+      previous.addEventListener("click", () =>
+        renderConversations({
+          period,
+          filters: currentFilters(),
+          cursor: history.at(-1),
+          history: history.slice(0, -1),
+        }),
+      );
+      pager.append(previous);
+    }
+    if (data.nextCursor) {
+      const next = el("button", "", "下一頁");
+      next.addEventListener("click", () =>
+        renderConversations({
+          period,
+          filters: currentFilters(),
+          cursor: data.nextCursor,
+          history: [...history, state.cursor || ""],
+        }),
+      );
+      pager.append(next);
+    }
+    if (pager.childElementCount) panel.append(pager);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
 }
 
-async function renderRoutes() {
+async function renderRoutes(period = { preset: "30d" }) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
-    const data = await api("/api/routes/summary?preset=30d");
+    const data = await api(`/api/routes/summary?${periodParams(period).toString()}`);
     const panel = el("section", "panel");
     panel.append(el("h2", "", "路由來源分析"));
+    panel.append(createPeriodControls(period, renderRoutes));
     panel.append(createExportButton("routes_summary", 30));
     const table = el("table");
-    table.innerHTML = "<thead><tr><th>Route</th><th>Count</th></tr></thead>";
+    table.innerHTML = "<thead><tr><th>Route</th><th>Count</th><th>實際來源</th></tr></thead>";
     const body = el("tbody");
     for (const item of data.routeDistribution || []) {
       const row = el("tr");
       row.append(el("td", "", item.route));
       row.append(el("td", "", String(item.count)));
+      row.append(el("td", "", attributionText(item.attribution)));
       body.append(row);
     }
     table.append(body);
@@ -457,7 +560,7 @@ async function renderRoutes() {
   }
 }
 
-async function renderIssues() {
+async function renderIssues(period = { preset: "30d" }) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   const filters = loadNavFilters();
@@ -466,10 +569,11 @@ async function renderIssues() {
   } else if (filters.view === "issues" && filters.issueTypeId) {
     try {
       const data = await api(
-        `/api/issues/${encodeURIComponent(filters.issueTypeId)}/routes?days=30`,
+        `/api/issues/${encodeURIComponent(filters.issueTypeId)}/routes?${periodParams(period).toString()}`,
       );
       const panel = el("section", "panel");
       panel.append(el("h2", "", `${data.displayName} 路由分布`));
+      panel.append(createPeriodControls(period, renderIssues));
       panel.append(drillLink("返回 Issue 總覽", "issues", { clear: true }));
       panel.append(
         createExportButton("routes_summary", 30, {
@@ -477,12 +581,13 @@ async function renderIssues() {
         }),
       );
       const table = el("table");
-      table.innerHTML = "<thead><tr><th>Route</th><th>Count</th><th>動作</th></tr></thead>";
+      table.innerHTML = "<thead><tr><th>Route</th><th>Count</th><th>實際來源</th><th>動作</th></tr></thead>";
       const body = el("tbody");
       for (const item of data.routes || []) {
         const row = el("tr");
         row.append(el("td", "", item.route));
         row.append(el("td", "", String(item.count)));
+        row.append(el("td", "", attributionText(item.attribution)));
         const actions = el("td", "");
         actions.append(
           drillLink("對話", "conversations"),
@@ -502,9 +607,10 @@ async function renderIssues() {
     }
   }
   try {
-    const data = await api("/api/issues/summary?days=30");
+    const data = await api(`/api/issues/summary?${periodParams(period).toString()}`);
     const panel = el("section", "panel");
     panel.append(el("h2", "", `Issue 分析 (${data.taxonomyVersion})`));
+    panel.append(createPeriodControls(period, renderIssues));
     panel.append(createExportButton("issues_summary", 30));
     panel.append(el("p", "", `未分類：${data.unclassifiedCount}`));
     const table = el("table");
@@ -563,13 +669,14 @@ function renderIssueTreeNode(node, depth = 0) {
   return item;
 }
 
-async function renderCosts() {
+async function renderCosts(period = { preset: "30d" }) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
-    const data = await api("/api/costs/summary?days=30");
+    const data = await api(`/api/costs/summary?${periodParams(period).toString()}`);
     const panel = el("section", "panel");
     panel.append(el("h2", "", "成本分析"));
+    panel.append(createPeriodControls(period, renderCosts));
     panel.append(metric("Total USD", data.totalEstimatedCostUsd));
     if (data.totalEstimatedCostTwd !== undefined) {
       panel.append(metric("Total TWD", data.totalEstimatedCostTwd));
@@ -624,6 +731,26 @@ async function renderCosts() {
     }
     issueTable.append(issueBody);
     panel.append(el("h3", "", "依 Issue Type"), issueTable);
+
+    for (const [heading, items, key] of [
+      ["依 Model", data.byModel, "model"],
+      ["依 Provider", data.byProvider, "provider"],
+      ["依 Component", data.byComponent, "component"],
+      ["依 Knowledge Backend", data.byBackend, "backend"],
+    ]) {
+      const dimensionTable = el("table");
+      dimensionTable.innerHTML = `<thead><tr><th>${heading.replace("依 ", "")}</th><th>Events</th><th>Estimated USD</th></tr></thead>`;
+      const dimensionBody = el("tbody");
+      for (const item of items || []) {
+        const row = el("tr");
+        row.append(el("td", "", item[key] || "unknown"));
+        row.append(el("td", "", String(item.eventCount ?? 0)));
+        row.append(el("td", "", String(item.estimatedCostUsd ?? "-")));
+        dimensionBody.append(row);
+      }
+      dimensionTable.append(dimensionBody);
+      panel.append(el("h3", "", heading), dimensionTable);
+    }
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
@@ -681,6 +808,22 @@ async function renderHealth() {
     }
     table.append(body);
     panel.append(table);
+    if ((data.recentAnomalies || []).length) {
+      const anomalyTable = el("table");
+      anomalyTable.innerHTML = "<thead><tr><th>時間</th><th>Component</th><th>Status</th><th>Error Type</th><th>Correlation</th></tr></thead>";
+      const anomalyBody = el("tbody");
+      for (const item of data.recentAnomalies) {
+        const row = el("tr");
+        row.append(el("td", "", item.occurredAt));
+        row.append(el("td", "", item.component));
+        row.append(el("td", "", item.status));
+        row.append(el("td", "", item.errorType));
+        row.append(el("td", "", item.correlationId || "-"));
+        anomalyBody.append(row);
+      }
+      anomalyTable.append(anomalyBody);
+      panel.append(el("h3", "", "最近異常"), anomalyTable);
+    }
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
@@ -892,22 +1035,54 @@ function renderDocumentPerformance(data) {
   }
   releaseTable.append(releaseBody);
   container.append(el("h3", "", "版本歸因"), releaseTable);
+
+  const recentTable = el("table");
+  recentTable.innerHTML = "<thead><tr><th>時間</th><th>Conversation</th><th>Issue</th><th>Release</th><th>Chunk</th></tr></thead>";
+  const recentBody = el("tbody");
+  for (const item of data.recentHits || []) {
+    const row = el("tr");
+    row.append(el("td", "", item.occurredAt));
+    const conversation = el("a", "", item.conversationId || "-");
+    conversation.href = "#";
+    conversation.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}`);
+      showConversationModal(detail);
+    });
+    const conversationCell = el("td");
+    conversationCell.append(conversation);
+    row.append(conversationCell);
+    row.append(el("td", "", item.issueTypeId || "-"));
+    row.append(el("td", "", item.releaseId || "-"));
+    row.append(el("td", "", item.chunkId || "-"));
+    recentBody.append(row);
+  }
+  recentTable.append(recentBody);
+  container.append(el("h3", "", "最近命中對話"), recentTable);
   return container;
 }
 
-async function renderQuality() {
+async function renderQuality(state = {}) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const navFilters = loadNavFilters();
-    const filters = new URLSearchParams({ days: "30" });
+    const period = state.period || { preset: "30d" };
+    const savedFilters = state.filters || {};
+    const filters = periodParams(period);
+    filters.set("limit", "25");
+    if (state.cursor) filters.set("cursor", state.cursor);
     const rating =
-      document.getElementById("feedback-rating")?.value ||
+      savedFilters.rating ||
       (navFilters.view === "quality" ? navFilters.rating : "");
-    const reason = document.getElementById("feedback-reason")?.value;
-    const resolved = document.getElementById("feedback-resolved")?.value;
-    const handoff = document.getElementById("feedback-handoff")?.value;
+    const issueTypeId =
+      savedFilters.issueTypeId ||
+      (navFilters.view === "quality" ? navFilters.issueTypeId : "");
+    const reason = savedFilters.reason || "";
+    const resolved = savedFilters.resolved || "";
+    const handoff = savedFilters.handoff || "";
     if (rating) filters.set("rating", rating);
+    if (issueTypeId) filters.set("issue_type_id", issueTypeId);
     if (reason) filters.set("reason", reason);
     if (resolved) filters.set("resolved", resolved);
     if (handoff) filters.set("handoff", handoff);
@@ -917,6 +1092,10 @@ async function renderQuality() {
     panel.append(el("h2", "", "品質與回饋"));
 
     const filterBar = el("div", "grid");
+    const issueInput = el("input");
+    issueInput.id = "feedback-issue-type";
+    issueInput.placeholder = "Issue Type ID";
+    issueInput.value = issueTypeId;
     const ratingSelect = el("select", "");
     ratingSelect.id = "feedback-rating";
     ratingSelect.innerHTML =
@@ -936,15 +1115,27 @@ async function renderQuality() {
     handoffSelect.innerHTML =
       '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
     if (handoff) handoffSelect.value = handoff;
+    const currentFilters = () => ({
+      issueTypeId: issueInput.value.trim(),
+      rating: ratingSelect.value,
+      reason: reasonInput.value.trim(),
+      resolved: resolvedSelect.value,
+      handoff: handoffSelect.value,
+    });
     const applyFilters = el("button", "", "套用篩選");
-    applyFilters.addEventListener("click", () => renderQuality());
+    applyFilters.addEventListener("click", () =>
+      renderQuality({ period, filters: currentFilters(), cursor: "", history: [] }),
+    );
     const exportButton = createExportButton("feedback", 30, () => ({
+      issue_type_id: issueInput.value || undefined,
       rating: ratingSelect.value || undefined,
       feedback_reason: reasonInput.value || undefined,
       resolved_status: resolvedSelect.value || undefined,
       handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
+      ...Object.fromEntries(periodParams(period)),
     }));
     filterBar.append(
+      issueInput,
       ratingSelect,
       reasonInput,
       resolvedSelect,
@@ -953,6 +1144,16 @@ async function renderQuality() {
       exportButton,
     );
     panel.append(filterBar);
+    panel.append(
+      createPeriodControls(period, (nextPeriod) =>
+        renderQuality({
+          period: nextPeriod,
+          filters: currentFilters(),
+          cursor: "",
+          history: [],
+        }),
+      ),
+    );
 
     if (!feedback.items.length) {
       panel.append(el("p", "empty", "目前沒有符合條件的回饋事件。"));
@@ -993,6 +1194,33 @@ async function renderQuality() {
       table.append(body);
       panel.append(table);
     }
+    const history = state.history || [];
+    const pager = el("div", "filter-bar");
+    if (history.length) {
+      const previous = el("button", "", "上一頁");
+      previous.addEventListener("click", () =>
+        renderQuality({
+          period,
+          filters: currentFilters(),
+          cursor: history.at(-1),
+          history: history.slice(0, -1),
+        }),
+      );
+      pager.append(previous);
+    }
+    if (feedback.nextCursor) {
+      const next = el("button", "", "下一頁");
+      next.addEventListener("click", () =>
+        renderQuality({
+          period,
+          filters: currentFilters(),
+          cursor: feedback.nextCursor,
+          history: [...history, state.cursor || ""],
+        }),
+      );
+      pager.append(next);
+    }
+    if (pager.childElementCount) panel.append(pager);
     const exportPanel = el("section", "panel");
     exportPanel.append(el("h3", "", "非同步匯出"));
     const csvButton = el("button", "", "建立 CSV 營運摘要匯出");

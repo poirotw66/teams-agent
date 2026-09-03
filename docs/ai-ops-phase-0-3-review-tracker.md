@@ -100,11 +100,11 @@ Terra 原生 subagent：Lagrange，`01a06305-569e-7bb0-bc7a-fb9ce76bc7e0`。写�
 
 第一輪交付獨立 privacy/backoffice/integration：52 passed，已修復合法密碼支援回答遭誤遮罩。仍退回補常見自然語言秘密值及 JSON-in-text 格式；同時要求新遮罩政策版本與來源政策 provenance，不可把新舊行為都標 v1。歷史資料尚未 backfill，不作已修正宣稱。
 
-## 匯出生命週期：程式審查發現、待派發
+## 匯出生命週期：Phase 1 MVP 修正完成，production hardening 續追
 
-`ExportJobService` 目前以單一 JSON 檔與程序內 lock 保存作業，啟動只載入、不恢復 QUEUED/RUNNING 執行；到期僅在讀取 COMPLETED job 時改狀態，未刪除下載內容。下載也允許其他 SYSTEM_ADMIN/AUDITOR，與 Phase 1 的申請者綁定需明確對齊。
+2026-09-03 已接入 FILE／Firestore job metadata store 與 FILE／GCS artifact store；匯出完成內容以 `content_ref` 分離保存，60 秒 sweeper 主動清除到期 artifact 與 persisted result，並具有最大筆數拒絕策略。Route attribution、Feedback pagination、calendar month、健康異常摘要與 Markdown/PDF lifecycle UAT 亦完成 focused 驗證。
 
-需跨程序持久化工作佇列、租約／重試／重啟恢復、申請者及現行 scope 驗證、短效授權、主動到期刪除及完成/失敗稽核。這些是程式審查發現，尚未經多實例或實際到期故障測試，不標為已完成。
+production hardening 仍需以實際 Firestore/GCS 做多 instance 故障注入，並完成 worker crash 後的租約／重試；下載者現行 scope 與短效授權也應在 production gate 再驗證。這些殘餘不再描述為 Phase 1 功能缺失，但不能據此宣稱 production resilience 已完整簽核。
 
 ## 全範圍後續門檻
 

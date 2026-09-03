@@ -34,6 +34,7 @@ class BackofficeSettings:
     export_content_path: Path | None = None
     export_gcs_bucket: str | None = None
     export_ttl_seconds: int = 86400
+    export_max_records: int = 100_000
     export_worker_lease_seconds: int = 60
     export_worker_max_attempts: int = 3
 
@@ -97,6 +98,9 @@ class BackofficeSettings:
             ).expanduser().resolve(),
             export_gcs_bucket=os.environ.get("AI_OPS_EXPORT_GCS_BUCKET") or None,
             export_ttl_seconds=int(os.environ.get("AI_OPS_EXPORT_TTL_SECONDS", "86400")),
+            export_max_records=int(
+                os.environ.get("AI_OPS_EXPORT_MAX_RECORDS", "100000")
+            ),
             export_worker_lease_seconds=int(
                 os.environ.get("AI_OPS_EXPORT_WORKER_LEASE_SECONDS", "60")
             ),

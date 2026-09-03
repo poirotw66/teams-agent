@@ -118,6 +118,19 @@ uv run --extra firestore --extra bigquery python ../scripts/ops_gcp_verification
 
 Exports are fail-closed when audit write fails. Check `audit_events` collection and backoffice service account Firestore permissions.
 
+Production export storage must be configured explicitly:
+
+```bash
+AI_OPS_EXPORT_JOB_STORE_MODE=FIRESTORE
+AI_OPS_EXPORT_JOB_COLLECTION=ai_ops_export_jobs
+AI_OPS_EXPORT_CONTENT_BACKEND=GCS
+AI_OPS_EXPORT_GCS_BUCKET=<private-export-bucket>
+AI_OPS_EXPORT_TTL_SECONDS=86400
+AI_OPS_EXPORT_MAX_RECORDS=100000
+```
+
+The backoffice sweeps expired exports every 60 seconds and removes both artifact bytes and the persisted result payload. A GCS backend without `AI_OPS_EXPORT_GCS_BUCKET` fails during startup instead of falling back to local storage.
+
 ### Symptom: Masking or unauthorized access concern
 
 1. Review audit events: `GET /api/audit-events` as `AUDITOR`.

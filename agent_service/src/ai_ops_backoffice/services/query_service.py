@@ -24,7 +24,9 @@ from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage import convert_usd_to_twd
 
 from ..settings import BackofficeSettings
+from .export_content import FileExportContentStore, GcsExportContentStore
 from .export_format import wrap_export_payload
+from .export_job_store import FileExportJobStore, FirestoreExportJobStore
 from .export_service import ExportJobService
 from .periods import ResolvedPeriod, event_in_period, resolve_period
 from .usage_projection import (
@@ -118,13 +120,15 @@ def _summarize_turn_events(
         release_id = item.payload.get("releaseId")
         if release_id and release_id not in release_ids:
             release_ids.append(str(release_id))
-    feedback_rating = next(
-        (
-            str(item.payload.get("rating"))
-            for item in related
-            if item.event_type == "feedback.recorded" and item.payload.get("rating")
-        ),
-        None,
+    latest_feedback = max(
+        (item for item in related if item.event_type == "feedback.recorded"),
+        key=lambda item: item.occurred_at,
+        default=None,
+    )
+    feedback_rating = (
+        str(latest_feedback.payload["rating"])
+        if latest_feedback and latest_feedback.payload.get("rating")
+        else None
     )
     handoff_status = next(
         (
@@ -134,13 +138,10 @@ def _summarize_turn_events(
         ),
         None,
     )
-    resolved_status = next(
-        (
-            str(item.payload.get("resolvedStatus"))
-            for item in related
-            if item.event_type == "feedback.recorded" and item.payload.get("resolvedStatus")
-        ),
-        None,
+    resolved_status = (
+        str(latest_feedback.payload["resolvedStatus"])
+        if latest_feedback and latest_feedback.payload.get("resolvedStatus")
+        else None
     )
     return {
         "issueTypeId": issue_type_id,
@@ -230,10 +231,45 @@ class BackofficeQueryService:
         self._environment = ops_settings.environment
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}
+        export_store_path = settings.ops_store_path.parent / "exports"
+        if settings.export_job_store_mode == "FILE":
+            export_job_store = FileExportJobStore(export_store_path)
+        elif settings.export_job_store_mode == "FIRESTORE":
+            try:
+                from google.cloud.firestore_v1.async_client import AsyncClient
+            except ImportError as exc:  # pragma: no cover - optional deployment dependency
+                raise RuntimeError("Firestore export jobs require google-cloud-firestore.") from exc
+            firestore_client = AsyncClient(project=settings.gcp_project_id)
+            export_job_store = FirestoreExportJobStore(
+                firestore_client,
+                settings.export_job_collection,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported export job store mode: {settings.export_job_store_mode}"
+            )
+        if settings.export_content_backend == "FILE":
+            export_content_store = FileExportContentStore(
+                settings.export_content_path or export_store_path / "content"
+            )
+        elif settings.export_content_backend == "GCS":
+            if not settings.export_gcs_bucket:
+                raise ValueError("AI_OPS_EXPORT_GCS_BUCKET is required for GCS exports.")
+            export_content_store = GcsExportContentStore(
+                bucket_name=settings.export_gcs_bucket
+            )
+        else:
+            raise ValueError(
+                f"Unsupported export content backend: {settings.export_content_backend}"
+            )
         self.export_jobs = ExportJobService(
             audit_store=self._runtime.audit_store,
-            store_path=settings.ops_store_path.parent / "exports",
+            store_path=export_store_path,
             environment=ops_settings.environment,
+            job_store=export_job_store,
+            content_store=export_content_store,
+            ttl_seconds=settings.export_ttl_seconds,
+            max_records=settings.export_max_records,
         )
 
     @property
@@ -733,9 +769,82 @@ class BackofficeQueryService:
         ]
         route_counts = Counter(str(event.payload.get("route") or "UNKNOWN") for event in route_events)
         by_issue: dict[str, Counter[str]] = defaultdict(Counter)
+        source_events = [
+            event
+            for event in events
+            if event.event_type in {"faq.answered", "knowledge.retrieved", "knowledge.answered"}
+        ]
+        attribution_by_route: dict[str, dict[str, Counter[str]]] = defaultdict(
+            lambda: {
+                "faqKeys": Counter(),
+                "documentIds": Counter(),
+                "versionIds": Counter(),
+                "releaseIds": Counter(),
+            }
+        )
+        attribution_by_issue_route: dict[
+            tuple[str, str], dict[str, Counter[str]]
+        ] = defaultdict(
+            lambda: {
+                "faqKeys": Counter(),
+                "documentIds": Counter(),
+                "versionIds": Counter(),
+                "releaseIds": Counter(),
+            }
+        )
         for event in route_events:
             key = event.issue_type_id or "other.unclassified"
-            by_issue[key][str(event.payload.get("route") or "UNKNOWN")] += 1
+            route = str(event.payload.get("route") or "UNKNOWN")
+            by_issue[key][route] += 1
+            matching_sources = [
+                source
+                for source in source_events
+                if (
+                    event.issue_occurrence_id
+                    and source.issue_occurrence_id == event.issue_occurrence_id
+                )
+                or (
+                    not event.issue_occurrence_id
+                    and source.correlation_id == event.correlation_id
+                    and source.turn_id == event.turn_id
+                    and source.issue_type_id == event.issue_type_id
+                )
+            ]
+            observed: dict[str, set[str]] = defaultdict(set)
+            for source in matching_sources:
+                payload = source.payload
+                if source.event_type == "faq.answered" and payload.get("faqKey"):
+                    observed["faqKeys"].add(str(payload["faqKey"]))
+                for field, key_name in (
+                    ("documentId", "documentIds"),
+                    ("versionId", "versionIds"),
+                    ("releaseId", "releaseIds"),
+                ):
+                    if payload.get(field):
+                        observed[key_name].add(str(payload[field]))
+                for citation in payload.get("citations") or []:
+                    if not isinstance(citation, dict):
+                        continue
+                    for field, key_name in (
+                        ("documentId", "documentIds"),
+                        ("versionId", "versionIds"),
+                        ("releaseId", "releaseIds"),
+                    ):
+                        if citation.get(field):
+                            observed[key_name].add(str(citation[field]))
+            for key_name, values in observed.items():
+                attribution_by_route[route][key_name].update(values)
+                attribution_by_issue_route[(key, route)][key_name].update(values)
+
+        def serialize_attribution(counters: dict[str, Counter[str]]) -> dict[str, list[dict[str, Any]]]:
+            return {
+                key_name: [
+                    {"id": value, "count": count}
+                    for value, count in counter.most_common()
+                ]
+                for key_name, counter in counters.items()
+            }
+
         issue_items = []
         for issue_id, routes in by_issue.items():
             record = self.taxonomy.get(issue_id)
@@ -744,7 +853,13 @@ class BackofficeQueryService:
                     "issueTypeId": issue_id,
                     "displayName": record.display_name if record else issue_id,
                     "routes": [
-                        {"route": route, "count": count}
+                        {
+                            "route": route,
+                            "count": count,
+                            "attribution": serialize_attribution(
+                                attribution_by_issue_route[(issue_id, route)]
+                            ),
+                        }
                         for route, count in routes.most_common()
                     ],
                 }
@@ -753,7 +868,12 @@ class BackofficeQueryService:
             "periodDays": period.days,
             "periodPreset": period.preset,
             "routeDistribution": [
-                {"route": route, "count": count} for route, count in route_counts.most_common()
+                {
+                    "route": route,
+                    "count": count,
+                    "attribution": serialize_attribution(attribution_by_route[route]),
+                }
+                for route, count in route_counts.most_common()
             ],
             "byIssueType": issue_items,
         }
@@ -1044,13 +1164,29 @@ class BackofficeQueryService:
             "p95LatencyMs": _percentile(latencies, 0.95),
         }
 
-    async def _health_telemetry(self) -> dict[str, dict[str, Any]]:
+    async def _health_telemetry(
+        self,
+    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
         window_start = utc_now() - timedelta(hours=24)
         events = [
             event for event in await self._events()
             if event.occurred_at >= window_start
         ]
         failures = [event for event in events if event.event_type == "request.failed"]
+        anomalies = [
+            {
+                "occurredAt": event.occurred_at.isoformat(),
+                "component": str(event.payload.get("component") or "agent-service"),
+                "status": "TIMEOUT"
+                if "timeout" in json.dumps(event.payload).lower()
+                else "FAILED",
+                "errorType": event.payload.get("errorType")
+                or event.payload.get("errorCode")
+                or "REQUEST_FAILED",
+                "correlationId": event.correlation_id,
+            }
+            for event in failures
+        ]
         request_latencies = {
             event.request_id or event.turn_id or event.correlation_id: float(
                 event.payload["elapsedMs"]
@@ -1093,6 +1229,19 @@ class BackofficeQueryService:
                     float(elapsed) if elapsed is not None else None,
                 )
             )
+            usage_status = str(event.payload.get("status") or "SUCCESS").upper()
+            if usage_status in {"FAILED", "TIMEOUT"}:
+                anomalies.append(
+                    {
+                        "occurredAt": event.occurred_at.isoformat(),
+                        "component": str(event.payload.get("component") or "unknown"),
+                        "status": usage_status,
+                        "errorType": event.payload.get("errorType")
+                        or event.payload.get("errorCode")
+                        or "UPSTREAM_FAILURE",
+                        "correlationId": event.correlation_id,
+                    }
+                )
 
         def usage_for(prefixes: tuple[str, ...]) -> list[tuple[str, float | None]]:
             return [
@@ -1117,7 +1266,7 @@ class BackofficeQueryService:
             if event.event_type in {"ticket.created", "ticket.failed"}
         ]
         all_usage = [(status, latency) for _, status, latency in usage_samples]
-        return {
+        telemetry = {
             "agent-service": self._health_metric_summary(agent_samples),
             "llm-api": self._health_metric_summary(all_usage),
             "issue-extractor": self._health_metric_summary(
@@ -1129,6 +1278,8 @@ class BackofficeQueryService:
             ),
             "ticket-service": self._health_metric_summary(ticket_samples),
         }
+        anomalies.sort(key=lambda item: item["occurredAt"], reverse=True)
+        return telemetry, anomalies[:10]
 
     async def health_summary(self) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
@@ -1140,7 +1291,7 @@ class BackofficeQueryService:
         )
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
-        telemetry = await self._health_telemetry()
+        telemetry, recent_anomalies = await self._health_telemetry()
         no_telemetry = self._health_metric_summary([])
         if self._settings.simulate_health_anomalies:
             agent = {"status": "DEGRADED", "note": "Simulated LLM API latency spike."}
@@ -1186,6 +1337,7 @@ class BackofficeQueryService:
                 {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
             ],
             "telemetryWindowHours": 24,
+            "recentAnomalies": recent_anomalies,
             "monitoringLinks": monitoring_links,
             "simulatedAnomalies": self._settings.simulate_health_anomalies,
             "updatedAt": utc_now().isoformat(),
@@ -1200,10 +1352,12 @@ class BackofficeQueryService:
         start_date: str | None = None,
         end_date: str | None = None,
         rating: str | None = None,
+        issue_type_id: str | None = None,
         reason: str | None = None,
         resolved_status: str | None = None,
         handoff: bool | None = None,
         limit: int = 50,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -1238,14 +1392,16 @@ class BackofficeQueryService:
                 == resolved_status.lower()
             ]
         feedback_events.sort(key=lambda item: item.occurred_at, reverse=True)
-        items = []
+        filtered_items = []
         for event in feedback_events:
             trace = self._build_feedback_trace(event, conversation_cache=conversation_cache)
+            if issue_type_id and trace.get("issueTypeId") != issue_type_id:
+                continue
             if handoff is True and not trace.get("handoffOccurred"):
                 continue
             if handoff is False and trace.get("handoffOccurred"):
                 continue
-            items.append(
+            filtered_items.append(
                 {
                     "occurredAt": event.occurred_at.isoformat(),
                     "conversationId": event.conversation_id,
@@ -1257,9 +1413,16 @@ class BackofficeQueryService:
                     "trace": trace,
                 }
             )
-            if len(items) >= limit:
-                break
-        return {"items": items, "total": len(items)}
+        start = max(0, int(cursor or "0"))
+        items = filtered_items[start : start + limit]
+        next_index = start + len(items)
+        has_more = next_index < len(filtered_items)
+        return {
+            "items": items,
+            "total": len(filtered_items),
+            "nextCursor": str(next_index) if has_more else None,
+            "hasMore": has_more,
+        }
 
     def _build_feedback_trace(
         self,
@@ -1700,10 +1863,11 @@ class BackofficeQueryService:
                     actor,
                     **period_kwargs,
                     rating=rating,
+                    issue_type_id=issue_type_id,
                     reason=feedback_reason,
                     resolved_status=resolved_status,
                     handoff=handoff,
-                    limit=100_000,
+                    limit=self._settings.export_max_records + 1,
                 )
             elif export_type == "routes_summary":
                 data = await self.routes_summary(
@@ -1716,13 +1880,13 @@ class BackofficeQueryService:
                     actor,
                     preset=preset,
                     days=days,
-                    limit=100_000,
+                    limit=self._settings.export_max_records + 1,
                 )
             elif export_type == "conversations":
                 data = await self.list_conversations(
                     actor,
                     **period_kwargs,
-                    limit=100_000,
+                    limit=self._settings.export_max_records + 1,
                     actor_ref=actor_ref,
                     issue_type_id=issue_type_id,
                     route=route,

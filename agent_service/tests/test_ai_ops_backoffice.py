@@ -138,6 +138,19 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             },
         ),
         OperationalEvent(
+            event_id="corr-1:feedback:1:UP",
+            event_type="feedback.recorded",
+            occurred_at=now + timedelta(seconds=30),
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            payload={
+                "rating": "UP",
+                "issueId": 1,
+                "reason": "helpful",
+                "resolvedStatus": "RESOLVED",
+            },
+        ),
+        OperationalEvent(
             event_id="case-1:handoff.offered",
             event_type="handoff.offered",
             occurred_at=now + timedelta(minutes=2),
@@ -281,6 +294,58 @@ def test_feedback_drill_down(seeded_backoffice_client: TestClient) -> None:
     assert trace["handoffOccurred"] is True
 
 
+def test_feedback_cursor_pagination(seeded_backoffice_client: TestClient) -> None:
+    first = seeded_backoffice_client.get(
+        "/api/feedback?days=30&limit=1&cursor=0",
+        headers=headers(),
+    )
+    assert first.status_code == 200
+    assert first.json()["total"] == 2
+    assert first.json()["nextCursor"] == "1"
+    assert first.json()["hasMore"] is True
+
+    second = seeded_backoffice_client.get(
+        "/api/feedback?days=30&limit=1&cursor=1",
+        headers=headers(),
+    )
+    assert second.status_code == 200
+    assert second.json()["nextCursor"] is None
+    assert second.json()["hasMore"] is False
+
+
+def test_feedback_filters_by_traced_issue_type(
+    seeded_backoffice_client: TestClient,
+) -> None:
+    matched = seeded_backoffice_client.get(
+        "/api/feedback?days=30&issue_type_id=vpn.connection_failed",
+        headers=headers(),
+    )
+    assert matched.status_code == 200
+    assert matched.json()["total"] == 2
+
+    unmatched = seeded_backoffice_client.get(
+        "/api/feedback?days=30&issue_type_id=account.password_reset",
+        headers=headers(),
+    )
+    assert unmatched.status_code == 200
+    assert unmatched.json()["total"] == 0
+
+
+def test_month_preset_starts_at_calendar_month() -> None:
+    from datetime import UTC, datetime
+
+    from ai_ops_backoffice.services.periods import resolve_period
+
+    now = datetime(2026, 9, 20, 4, 30, tzinfo=UTC)
+    with patch("ai_ops_backoffice.services.periods.utc_now", return_value=now):
+        period = resolve_period(preset="month")
+
+    assert period.preset == "month"
+    assert period.explicit_range is True
+    assert period.start_at.isoformat() == "2026-09-01T00:00:00+08:00"
+    assert period.end_at == now
+
+
 def test_document_performance(seeded_backoffice_client: TestClient) -> None:
     response = seeded_backoffice_client.get(
         "/api/knowledge/vpn-password-lockout/performance?days=30",
@@ -298,6 +363,7 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
 
     from agent_service.operations.access import ActorContext
     from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_content import MemoryExportContentStore
     from ai_ops_backoffice.services.export_service import ExportJob, ExportJobService
 
     actor = ActorContext(
@@ -306,12 +372,15 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
         role="SERVICE_OWNER",
         owner_unit_ids=("IT Service Desk",),
     )
+    content_store = MemoryExportContentStore()
     service = ExportJobService(
         audit_store=MemoryAuditStore(),
         store_path=tmp_path / "exports",
         environment="dev",
+        content_store=content_store,
     )
     expired_at = (utc_now() - timedelta(hours=1)).isoformat()
+    content_store.items["memory:job-expired"] = b"expired export"
     service._jobs["job-expired"] = ExportJob(
         job_id="job-expired",
         export_type="operations_summary",
@@ -325,16 +394,23 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
         expires_at=expired_at,
         completed_at=expired_at,
         result={"conversationCount": 0},
+        content_ref="memory:job-expired",
+        content_type="application/json",
     )
 
-    async def run() -> ExportJob | None:
-        return await service.get_job("job-expired", actor=actor)
+    async def run() -> tuple[ExportJob | None, int]:
+        await service._persist(service._jobs["job-expired"])
+        removed = await service.purge_expired_jobs()
+        return await service.get_job("job-expired", actor=actor), removed
 
     import asyncio
 
-    job = asyncio.run(run())
+    job, removed = asyncio.run(run())
+    assert removed == 1
     assert job is not None
     assert job.status == "EXPIRED"
+    assert job.result is None
+    assert content_store.items == {}
 
 
 def test_routes_summary(seeded_backoffice_client: TestClient) -> None:
@@ -342,6 +418,9 @@ def test_routes_summary(seeded_backoffice_client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["routeDistribution"][0]["route"] == "KNOWLEDGE"
+    attribution = body["routeDistribution"][0]["attribution"]
+    assert attribution["documentIds"] == [{"id": "vpn-password-lockout", "count": 1}]
+    assert attribution["releaseIds"] == [{"id": "release-2025-09-01", "count": 1}]
 
 
 def test_query_audit_recorded(seeded_backoffice_client: TestClient) -> None:
@@ -583,6 +662,55 @@ def test_export_worker_failure_records_audit(tmp_path: Path) -> None:
         "status": "FAILED",
         "errorType": "ValueError",
     }
+
+
+def test_export_record_limit_fails_before_artifact_write(tmp_path: Path) -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_content import MemoryExportContentStore
+    from ai_ops_backoffice.services.export_service import ExportJobService
+
+    actor = ActorContext(
+        user_id="owner.demo",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+    )
+
+    async def run() -> tuple[str, str | None, dict[str, bytes]]:
+        content_store = MemoryExportContentStore()
+        service = ExportJobService(
+            audit_store=MemoryAuditStore(),
+            store_path=tmp_path / "limited-exports",
+            environment="dev",
+            content_store=content_store,
+            max_records=1,
+        )
+
+        async def runner() -> dict[str, object]:
+            return {
+                "exportMetadata": {"recordCount": 2},
+                "data": {"items": [{"id": "a"}, {"id": "b"}]},
+            }
+
+        job = await service.create_job(
+            actor=actor,
+            export_type="feedback",
+            reason="record limit test",
+            days=7,
+            runner=runner,
+        )
+        for _ in range(10):
+            await asyncio.sleep(0)
+            current = await service.get_job(job.job_id, actor=actor)
+            if current and current.status == "FAILED":
+                break
+        return current.status, current.error, content_store.items  # type: ignore[union-attr]
+
+    status, error, artifacts = asyncio.run(run())
+    assert status == "FAILED"
+    assert error == "Export exceeds the maximum of 1 records."
+    assert artifacts == {}
 
 
 def test_export_rate_limiter_blocks_excess_requests() -> None:
@@ -1010,6 +1138,65 @@ def test_health_summary_includes_24_hour_operational_metrics(
     assert components["agent-service"]["availabilityRate"] == 1.0
     assert components["llm-api"]["requestCount"] == 1
     assert components["teams-adapter"]["telemetryStatus"] == "NO_DATA"
+
+
+def test_health_summary_includes_recent_masked_anomalies(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    store_path = tmp_path / "events"
+    ingestion = EventIngestionService(
+        FileOperationalStore(store_path),
+        _ops_settings(data_dir, store_path),
+    )
+
+    async def seed_failure() -> None:
+        await ingestion.ingest(
+            OperationalEvent(
+                event_id="request-failed-1",
+                event_type="request.failed",
+                occurred_at=utc_now(),
+                correlation_id="corr-health-failure",
+                payload={
+                    "component": "knowledge_search",
+                    "errorType": "UpstreamTimeout",
+                    "message": "must not be returned",
+                },
+            )
+        )
+
+    asyncio.run(seed_failure())
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="FILE",
+        ops_store_path=store_path,
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    result = TestClient(create_app(settings)).get(
+        "/api/health/summary",
+        headers=headers("SYSTEM_ADMIN"),
+    )
+
+    assert result.status_code == 200
+    anomaly = result.json()["recentAnomalies"][0]
+    assert anomaly == {
+        "occurredAt": anomaly["occurredAt"],
+        "component": "knowledge_search",
+        "status": "TIMEOUT",
+        "errorType": "UpstreamTimeout",
+        "correlationId": "corr-health-failure",
+    }
 
 
 def test_health_metric_summary_separates_failures_and_timeouts() -> None:

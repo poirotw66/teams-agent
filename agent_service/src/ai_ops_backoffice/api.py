@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -139,7 +140,27 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         resolved_settings.ops_store_path.mkdir(parents=True, exist_ok=True)
-        yield
+        stop_sweeper = asyncio.Event()
+
+        async def sweep_expired_exports() -> None:
+            while not stop_sweeper.is_set():
+                try:
+                    await query_service.export_jobs.purge_expired_jobs()
+                except Exception:
+                    logger.exception("Failed to purge expired export jobs.")
+                try:
+                    await asyncio.wait_for(stop_sweeper.wait(), timeout=60)
+                except TimeoutError:
+                    continue
+
+        sweeper = asyncio.create_task(sweep_expired_exports())
+        try:
+            yield
+        finally:
+            stop_sweeper.set()
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
 
     app = FastAPI(title="AI Operations Backoffice", lifespan=lifespan)
 
@@ -385,9 +406,12 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         start_date: str | None = None,
         end_date: str | None = None,
         rating: str | None = None,
+        issue_type_id: str | None = None,
         reason: str | None = None,
         resolved_status: str | None = Query(default=None, alias="resolved"),
         handoff: bool | None = None,
+        limit: int = Query(default=50, ge=1, le=100),
+        cursor: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.feedback.read")
@@ -398,9 +422,12 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             start_date=start_date,
             end_date=end_date,
             rating=rating,
+            issue_type_id=issue_type_id,
             reason=reason,
             resolved_status=resolved_status,
             handoff=handoff,
+            limit=limit,
+            cursor=cursor,
         )
 
     @app.get("/api/admin/reconciliation/operations-summary")
@@ -588,16 +615,10 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         if job.status != "COMPLETED":
             raise HTTPException(status_code=409, detail="Export job is not completed.")
         export_format = job.export_format or "json"
-        if job.download_bytes is not None:
-            content = job.download_bytes
-            media_type = (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        elif job.download_content:
-            content = job.download_content
-            media_type = "text/csv" if export_format == "csv" else "application/json"
-        else:
+        artifact = await query_service.export_jobs.get_content(job)
+        if artifact is None:
             raise HTTPException(status_code=404, detail="Export content is not available.")
+        content, media_type = artifact
         filename = f"{job_id}.{export_format}"
         await query_service.export_jobs.record_download(job_id, actor=actor)
         return Response(
