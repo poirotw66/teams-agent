@@ -439,6 +439,7 @@ async function renderRoutes() {
     const data = await api("/api/routes/summary?preset=30d");
     const panel = el("section", "panel");
     panel.append(el("h2", "", "路由來源分析"));
+    panel.append(createExportButton("routes_summary", 30));
     const table = el("table");
     table.innerHTML = "<thead><tr><th>Route</th><th>Count</th></tr></thead>";
     const body = el("tbody");
@@ -470,6 +471,11 @@ async function renderIssues() {
       const panel = el("section", "panel");
       panel.append(el("h2", "", `${data.displayName} 路由分布`));
       panel.append(drillLink("返回 Issue 總覽", "issues", { clear: true }));
+      panel.append(
+        createExportButton("routes_summary", 30, {
+          issue_type_id: data.issueTypeId,
+        }),
+      );
       const table = el("table");
       table.innerHTML = "<thead><tr><th>Route</th><th>Count</th><th>動作</th></tr></thead>";
       const body = el("tbody");
@@ -499,6 +505,7 @@ async function renderIssues() {
     const data = await api("/api/issues/summary?days=30");
     const panel = el("section", "panel");
     panel.append(el("h2", "", `Issue 分析 (${data.taxonomyVersion})`));
+    panel.append(createExportButton("issues_summary", 30));
     panel.append(el("p", "", `未分類：${data.unclassifiedCount}`));
     const table = el("table");
     table.innerHTML =
@@ -931,7 +938,20 @@ async function renderQuality() {
     if (handoff) handoffSelect.value = handoff;
     const applyFilters = el("button", "", "套用篩選");
     applyFilters.addEventListener("click", () => renderQuality());
-    filterBar.append(ratingSelect, reasonInput, resolvedSelect, handoffSelect, applyFilters);
+    const exportButton = createExportButton("feedback", 30, () => ({
+      rating: ratingSelect.value || undefined,
+      feedback_reason: reasonInput.value || undefined,
+      resolved_status: resolvedSelect.value || undefined,
+      handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
+    }));
+    filterBar.append(
+      ratingSelect,
+      reasonInput,
+      resolvedSelect,
+      handoffSelect,
+      applyFilters,
+      exportButton,
+    );
     panel.append(filterBar);
 
     if (!feedback.items.length) {
@@ -1026,6 +1046,24 @@ async function runExport(
     URL.revokeObjectURL(url);
   }
   return job;
+}
+
+function createExportButton(exportType, days, queryFilters = {}) {
+  const button = el("button", "", "匯出 CSV");
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "匯出中…";
+    try {
+      const filters = typeof queryFilters === "function" ? queryFilters() : queryFilters;
+      await runExport("csv", exportType, days, filters);
+    } catch (error) {
+      showContentModal("匯出失敗", el("div", "error", error.message));
+    } finally {
+      button.disabled = false;
+      button.textContent = "匯出 CSV";
+    }
+  });
+  return button;
 }
 
 async function pollExport(jobId) {

@@ -98,6 +98,7 @@ class ExportJobService:
         days: int,
         runner: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
         export_format: str = "json",
+        request_metadata: dict[str, object] | None = None,
     ) -> ExportJob:
         job_id = str(uuid.uuid4())
         now = utc_now()
@@ -117,19 +118,31 @@ class ExportJobService:
             self._jobs[job_id] = job
             self._persist()
         try:
-            await self._audit(actor, "export.create", job_id, after={"exportType": export_type, "days": days})
+            await self._audit(
+                actor,
+                "export.create",
+                job_id,
+                reason=reason,
+                after={
+                    "exportType": export_type,
+                    "exportFormat": export_format,
+                    "days": days,
+                    **(request_metadata or {}),
+                },
+            )
         except AuditWriteError:
             async with self._lock:
                 self._jobs.pop(job_id, None)
                 self._persist()
             raise
-        asyncio.create_task(self._run_job(job_id, runner))
+        asyncio.create_task(self._run_job(job_id, runner, actor))
         return job
 
     async def _run_job(
         self,
         job_id: str,
         runner: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
+        actor: ActorContext,
     ) -> None:
         async with self._lock:
             job = self._jobs[job_id]
@@ -137,6 +150,20 @@ class ExportJobService:
             self._persist()
         try:
             result = await runner()
+            metadata = result.get("exportMetadata") or {}
+            await self._audit(
+                actor,
+                "export.complete",
+                job_id,
+                after={
+                    "exportType": job.export_type,
+                    "exportFormat": job.export_format,
+                    "status": "COMPLETED",
+                    "recordCount": metadata.get("recordCount"),
+                    "fields": metadata.get("fields") or [],
+                    "queryFilters": metadata.get("queryFilters") or {},
+                },
+            )
             async with self._lock:
                 job = self._jobs[job_id]
                 job.status = "COMPLETED"
@@ -153,6 +180,20 @@ class ExportJobService:
                 job.completed_at = utc_now().isoformat()
                 self._persist()
         except Exception as exc:  # noqa: BLE001
+            try:
+                await self._audit(
+                    actor,
+                    "export.failed",
+                    job_id,
+                    after={
+                        "exportType": job.export_type,
+                        "exportFormat": job.export_format,
+                        "status": "FAILED",
+                        "errorType": type(exc).__name__,
+                    },
+                )
+            except AuditWriteError:
+                pass
             async with self._lock:
                 job = self._jobs[job_id]
                 job.status = "FAILED"
@@ -183,6 +224,7 @@ class ExportJobService:
         job_id: str,
         *,
         after: dict[str, object] | None = None,
+        reason: str | None = None,
     ) -> None:
         try:
             await self._audit_store.append(
@@ -193,6 +235,7 @@ class ExportJobService:
                     target_type="export_job",
                     target_id=job_id,
                     after=after,
+                    reason=reason,
                     environment=self._environment,
                 )
             )

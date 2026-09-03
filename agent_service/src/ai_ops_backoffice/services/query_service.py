@@ -1660,6 +1660,9 @@ class BackofficeQueryService:
         model: str | None = None,
         has_feedback: bool | None = None,
         handoff: bool | None = None,
+        rating: str | None = None,
+        feedback_reason: str | None = None,
+        resolved_status: str | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
             "preset": preset,
@@ -1678,6 +1681,9 @@ class BackofficeQueryService:
                 "model": model,
                 "hasFeedback": has_feedback,
                 "handoff": handoff,
+                "rating": rating,
+                "reason": feedback_reason,
+                "resolvedStatus": resolved_status,
             }.items()
             if value is not None
         }
@@ -1690,9 +1696,21 @@ class BackofficeQueryService:
             elif export_type == "costs_summary":
                 data = await self.costs_summary(actor, **period_kwargs)
             elif export_type == "feedback":
-                data = await self.list_feedback(actor, **period_kwargs)
+                data = await self.list_feedback(
+                    actor,
+                    **period_kwargs,
+                    rating=rating,
+                    reason=feedback_reason,
+                    resolved_status=resolved_status,
+                    handoff=handoff,
+                    limit=100_000,
+                )
             elif export_type == "routes_summary":
-                data = await self.routes_summary(actor, **period_kwargs)
+                data = await self.routes_summary(
+                    actor,
+                    **period_kwargs,
+                    issue_type_id=issue_type_id,
+                )
             elif export_type == "knowledge_performance":
                 data = await self.list_documents(
                     actor,
@@ -1734,6 +1752,12 @@ class BackofficeQueryService:
             days=days,
             runner=runner,
             export_format=export_format,
+            request_metadata={
+                "queryFilters": query_filters,
+                "periodPreset": period.preset,
+                "periodStart": period.start_at.isoformat(),
+                "periodEnd": period.end_at.isoformat(),
+            },
         )
         return {
             "jobId": job.job_id,

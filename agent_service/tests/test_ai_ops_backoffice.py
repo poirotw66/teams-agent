@@ -536,6 +536,55 @@ def test_export_audit_fail_closed(tmp_path: Path) -> None:
         )
 
 
+def test_export_worker_failure_records_audit(tmp_path: Path) -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_service import ExportJobService
+
+    actor = ActorContext(
+        user_id="owner.demo",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+    )
+
+    async def run() -> tuple[str, list]:
+        audit_store = MemoryAuditStore()
+        service = ExportJobService(
+            audit_store=audit_store,
+            store_path=tmp_path / "failed-exports",
+            environment="dev",
+        )
+
+        async def runner() -> dict[str, object]:
+            raise ValueError("invalid export data")
+
+        job = await service.create_job(
+            actor=actor,
+            export_type="issues_summary",
+            reason="failure audit test",
+            days=7,
+            runner=runner,
+        )
+        for _ in range(10):
+            await asyncio.sleep(0)
+            current = await service.get_job(job.job_id, actor=actor)
+            if current and current.status == "FAILED":
+                break
+        events, _ = await audit_store.list_events()
+        return current.status, events  # type: ignore[union-attr]
+
+    status, events = asyncio.run(run())
+    assert status == "FAILED"
+    failure = next(event for event in events if event.action == "export.failed")
+    assert failure.after == {
+        "exportType": "issues_summary",
+        "exportFormat": "json",
+        "status": "FAILED",
+        "errorType": "ValueError",
+    }
+
+
 def test_export_rate_limiter_blocks_excess_requests() -> None:
     from ai_ops_backoffice.services.rate_limit import ExportRateLimiter, RateLimitExceeded
 

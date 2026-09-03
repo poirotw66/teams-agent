@@ -30,6 +30,15 @@ from .settings import BackofficeSettings
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ALLOWED_EXPORT_FORMATS = frozenset({"json", "csv", "xlsx"})
+EXPORT_CAPABILITIES = {
+    "operations_summary": "ops.summary.read",
+    "issues_summary": "ops.issues.read",
+    "costs_summary": "ops.cost.read",
+    "feedback": "ops.feedback.read",
+    "routes_summary": "ops.issues.read",
+    "knowledge_performance": "ops.knowledge.read",
+    "conversations": "ops.conversations.read",
+}
 
 
 class ExportRequest(BaseModel):
@@ -47,6 +56,9 @@ class ExportRequest(BaseModel):
     model: str | None = None
     has_feedback: bool | None = None
     handoff: bool | None = None
+    rating: str | None = None
+    feedback_reason: str | None = None
+    resolved_status: str | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -525,10 +537,13 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.post("/api/exports")
     async def create_export(payload: ExportRequest, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.exports.create")
-        if payload.export_type == "knowledge_performance":
-            require_capability(actor, "ops.knowledge.read")
-        if payload.export_type == "conversations":
-            require_capability(actor, "ops.conversations.read")
+        export_capability = EXPORT_CAPABILITIES.get(payload.export_type)
+        if export_capability is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported export type: {payload.export_type}",
+            )
+        require_capability(actor, export_capability)
         if payload.export_format not in ALLOWED_EXPORT_FORMATS:
             raise HTTPException(
                 status_code=400,
@@ -551,6 +566,9 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             model=payload.model,
             has_feedback=payload.has_feedback,
             handoff=payload.handoff,
+            rating=payload.rating,
+            feedback_reason=payload.feedback_reason,
+            resolved_status=payload.resolved_status,
         )
 
     @app.get("/api/exports/{job_id}")

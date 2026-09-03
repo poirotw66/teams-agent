@@ -129,6 +129,27 @@ def wrap_export_payload(
     pricing_version: str | None = None,
     query_filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    row_keys = {
+        "issues_summary": "items",
+        "feedback": "items",
+        "knowledge_performance": "items",
+        "conversations": "items",
+        "routes_summary": "routeDistribution",
+    }
+    records = data.get(row_keys.get(export_type, ""))
+    if isinstance(records, list):
+        record_count = len(records)
+        fields = sorted(
+            {
+                str(key)
+                for record in records
+                if isinstance(record, dict)
+                for key in record
+            }
+        )
+    else:
+        record_count = 1
+        fields = sorted(str(key) for key in data)
     metadata: dict[str, Any] = {
         "exportType": export_type,
         "exportFormat": export_format,
@@ -138,6 +159,8 @@ def wrap_export_payload(
         "generatedAt": utc_now().isoformat(),
         "timezone": DEFAULT_TIMEZONE,
         "period": period_metadata(period),
+        "recordCount": record_count,
+        "fields": fields,
     }
     if pricing_version:
         metadata["pricingVersion"] = pricing_version

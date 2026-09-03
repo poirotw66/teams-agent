@@ -345,6 +345,97 @@ def test_knowledge_export_requires_knowledge_capability(
     assert response.status_code == 403
 
 
+def test_feedback_export_requires_feedback_capability(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("AI_ADMIN"),
+        json={
+            "export_type": "feedback",
+            "reason": "forbidden feedback export",
+            "days": 30,
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_export_rejects_unknown_type_before_creating_job(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("SERVICE_OWNER"),
+        json={"export_type": "raw_events", "reason": "invalid export", "days": 30},
+    )
+    assert response.status_code == 400
+
+
+def test_uat_feedback_export_applies_visible_filters(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("SERVICE_OWNER"),
+        json={
+            "export_type": "feedback",
+            "reason": "filtered quality review",
+            "days": 30,
+            "rating": "DOWN",
+            "feedback_reason": "wrong_answer",
+            "resolved_status": "UNRESOLVED",
+            "handoff": True,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["jobId"]
+    for _ in range(20):
+        completed = acceptance_client.get(f"/api/exports/{job_id}", headers=headers())
+        if completed.json()["status"] == "COMPLETED":
+            break
+        time.sleep(0.05)
+    exported = completed.json()["result"]
+    assert exported["exportMetadata"]["queryFilters"] == {
+        "handoff": True,
+        "rating": "DOWN",
+        "reason": "wrong_answer",
+        "resolvedStatus": "UNRESOLVED",
+    }
+    assert exported["exportMetadata"]["recordCount"] == 1
+    assert exported["data"]["items"][0]["rating"] == "DOWN"
+
+
+def test_uat_route_export_applies_issue_filter(
+    acceptance_client: TestClient,
+) -> None:
+    response = acceptance_client.post(
+        "/api/exports",
+        headers=headers("SERVICE_OWNER"),
+        json={
+            "export_type": "routes_summary",
+            "reason": "filtered route review",
+            "days": 30,
+            "issue_type_id": "vpn.connection_failed",
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["jobId"]
+    for _ in range(20):
+        completed = acceptance_client.get(f"/api/exports/{job_id}", headers=headers())
+        if completed.json()["status"] == "COMPLETED":
+            break
+        time.sleep(0.05)
+    exported = completed.json()["result"]
+    assert exported["exportMetadata"]["queryFilters"] == {
+        "issueTypeId": "vpn.connection_failed"
+    }
+    assert exported["data"]["byIssueType"][0]["issueTypeId"] == "vpn.connection_failed"
+    assert exported["exportMetadata"]["recordCount"] == len(
+        exported["data"]["routeDistribution"]
+    )
+    assert exported["exportMetadata"]["fields"] == ["count", "route"]
+
+
 def test_uat_conversation_export_is_filtered_and_masked(
     acceptance_client: TestClient,
 ) -> None:
@@ -582,7 +673,17 @@ def test_uat_export_records_audit_and_metadata(acceptance_client: TestClient) ->
     metadata = completed.json()["result"]["exportMetadata"]
     assert metadata["exportType"] == "issues_summary"
     assert metadata["period"]["preset"] == "7d"
+    assert metadata["recordCount"] == len(completed.json()["result"]["data"]["items"])
+    assert "issueTypeId" in metadata["fields"]
 
     audit = acceptance_client.get("/api/audit-events", headers=headers("AUDITOR"))
-    actions = {item["action"] for item in audit.json()["items"]}
+    audit_items = audit.json()["items"]
+    actions = {item["action"] for item in audit_items}
     assert "export.create" in actions
+    assert "export.complete" in actions
+    created_audit = next(item for item in audit_items if item["action"] == "export.create")
+    assert created_audit["reason"] == "acceptance export"
+    assert created_audit["after"]["periodPreset"] == "7d"
+    completion = next(item for item in audit_items if item["action"] == "export.complete")
+    assert completion["after"]["recordCount"] == metadata["recordCount"]
+    assert completion["after"]["fields"] == metadata["fields"]
