@@ -702,8 +702,8 @@ decision or approval needed.
 
 ### Configuring FAQ (spec §7)
 
-FAQ is only for high-frequency questions with fixed answers that need no document retrieval and no user-condition variation (for example password-reset
-entry points, VPN install entry points, fixed contact windows). FAQ entries live in
+FAQ is only for high-frequency questions with fixed answers that need no document retrieval (for example password-reset
+entry points, VPN install entry points, fixed contact windows). The legacy bootstrap entries live in
 [`data/faq.json`](data/faq.json) (this file **is** Git-tracked; see the
 `.gitignore` note below), in this format:
 
@@ -723,8 +723,9 @@ entry points, VPN install entry points, fixed contact windows). FAQ entries live
 `faqKey` must be unique; Issue Extractor may only choose from enabled (`enabled: true`)
 `faqKey` values. When it cannot map clearly it uses `route=KNOWLEDGE` instead of forcing a
 `faqKey`. FAQ Service itself does not call an LLM, compute semantic similarity, or rewrite answers (spec
-§7.3)—adding/editing FAQ only requires editing this JSON file, not changing code. Changes take effect after starting or
-restarting `agent_service`; the file path can be overridden with `FAQ_PATH`.
+§7.3).
+
+Phase 2 governed environments set `FAQ_RUNTIME_MODE=GOVERNED`. The Agent then reads only immutable `ACTIVE` versions from the same FILE or Firestore store as Backoffice, applies the caller's Entra/Teams groups to FAQ audience rules, and observes activation, rollback, or disable without restarting. There is deliberately no fallback to `data/faq.json` in governed mode: fallback could revive a disabled or unauthorized answer. `LEGACY_JSON` remains the default until an environment has migrated and activated its governed FAQ records.
 
 ### Feedback (`POST /feedback`, spec §14)
 
@@ -832,7 +833,11 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `HANDOFF_FIRESTORE_COLLECTION` | `handoffs` | Root collection for Handoff cases; audit events use `<name>_events` |
 | `HANDOFF_DEMO_TIMEOUT_HOURS` | `24` | Demo session timeout; expiration restores AI routing without deleting the case |
 | `HANDOFF_RETENTION_DAYS` | `730` | Case/summary/audit retention period, separate from session timeout |
-| `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | FAQ config file path |
+| `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | Legacy FAQ bootstrap path used only with `FAQ_RUNTIME_MODE=LEGACY_JSON` |
+| `FAQ_RUNTIME_MODE` | `LEGACY_JSON` | `LEGACY_JSON` or `GOVERNED`; governed mode reads only ACTIVE immutable versions |
+| `AI_OPS_FAQ_STORE_MODE` | `FILE` | Governed FAQ backend: `FILE` locally or `FIRESTORE` for multi-instance environments |
+| `AI_OPS_FAQ_STORE_PATH` | `<RAG_DATA_DIR>/ops/phase2/faqs.json` | Shared local governed FAQ state path in FILE mode |
+| `AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX` | `ai_ops_faq` | Shared Firestore collection prefix; Agent and Backoffice values must match |
 | `FEEDBACK_ENABLED` | `true` | Whether to enable `POST /feedback` and Teams 👍 / 👎 buttons |
 
 Full examples are in [`.env.example`](.env.example) and

@@ -271,13 +271,13 @@ class FlakyFaqService:
         self._inner = inner
         self._miss_keys = miss_keys
 
-    def get(self, faq_key: str):
+    def get(self, faq_key: str, audience_group_ids: tuple[str, ...] = ()):
         if faq_key in self._miss_keys:
             return None
-        return self._inner.get(faq_key)
+        return self._inner.get(faq_key, audience_group_ids)
 
-    def available_keys(self) -> list[str]:
-        return self._inner.available_keys()
+    def available_keys(self, audience_group_ids: tuple[str, ...] = ()):
+        return self._inner.available_keys(audience_group_ids)
 
 
 class FakeTicketService:

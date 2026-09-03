@@ -833,6 +833,7 @@ async function renderHealth() {
 async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
+  const faqPanel = el("section", "panel");
   panel.append(el("h2", "", "知識營運"));
   panel.append(
     el(
@@ -872,7 +873,7 @@ async function renderKnowledge() {
   filters.append(query, status, submit);
   const result = el("div", "");
   panel.append(filters, result);
-  app.replaceChildren(panel);
+  app.replaceChildren(panel, faqPanel);
 
   async function loadDocuments(cursor = "") {
     result.replaceChildren(el("p", "empty", "載入中…"));
@@ -904,7 +905,232 @@ async function renderKnowledge() {
       exportButton.textContent = "匯出 CSV";
     }
   });
-  await loadDocuments();
+  await Promise.all([loadDocuments(), renderFaqManagement(faqPanel)]);
+}
+
+async function renderFaqManagement(panel) {
+  panel.replaceChildren(el("h2", "", "FAQ 治理"), el("p", "empty", "載入中…"));
+  const allowed = new Set(capabilities?.capabilities || []);
+  if (!allowed.has("ops.faq.read")) {
+    panel.replaceChildren(el("h2", "", "FAQ 治理"), el("div", "forbidden", "FORBIDDEN"));
+    return;
+  }
+  try {
+    const heading = el("h2", "", "FAQ 治理");
+    const actions = el("div", "filter-bar");
+    const query = el("input");
+    query.placeholder = "搜尋 FAQ Key 或問題";
+    const status = el("select");
+    status.innerHTML = `
+      <option value="">全部狀態</option>
+      <option value="DRAFT">DRAFT</option>
+      <option value="IN_REVIEW">IN_REVIEW</option>
+      <option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option>
+      <option value="APPROVED">APPROVED</option>
+      <option value="ACTIVE">ACTIVE</option>
+      <option value="DISABLED">DISABLED</option>
+    `;
+    const result = el("div");
+    const load = async () => {
+      const params = new URLSearchParams();
+      if (query.value.trim()) params.set("query", query.value.trim());
+      if (status.value) params.set("status", status.value);
+      const data = await api(`/api/faqs?${params}`);
+      result.replaceChildren();
+      summary.textContent = `共 ${data.total || 0} 筆`;
+      if (!(data.items || []).length) {
+        result.append(el("p", "empty", "沒有符合條件的 FAQ。"));
+        return;
+      }
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>FAQ</th><th>狀態</th><th>Owner</th><th>版本</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const item of data.items) {
+        const row = el("tr");
+        const name = el("td");
+        name.append(
+          el("strong", "", item.version.content.question),
+          el("div", "metric-label", item.faq.faq_key),
+        );
+        const action = el("td");
+        const detail = el("button", "", "查看與處理");
+        detail.addEventListener("click", () => showFaqDetail(item.faq.faq_id, panel));
+        action.append(detail);
+        row.append(
+          name,
+          el("td", "", item.faq.status),
+          el("td", "", item.version.content.owner_unit_id),
+          el("td", "", `v${item.version.version_number}`),
+          action,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      result.append(table);
+    };
+    const searchButton = el("button", "", "套用篩選");
+    searchButton.addEventListener("click", load);
+    query.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") load();
+    });
+    if (allowed.has("ops.faq.write")) {
+      const createButton = el("button", "", "新增 FAQ");
+      createButton.addEventListener("click", () => showFaqCreateModal(panel));
+      actions.append(createButton);
+    }
+    const summary = el("span", "metric-label", "");
+    actions.append(query, status, searchButton, summary);
+    panel.replaceChildren(heading, actions, result);
+    await load();
+  } catch (error) {
+    panel.replaceChildren(el("h2", "", "FAQ 治理"), el("div", "error", error.message));
+  }
+}
+
+function faqField(label, name, value = "", multiline = false, required = true) {
+  const wrap = el("label", "form-field");
+  wrap.append(el("span", "metric-label", label));
+  const input = el(multiline ? "textarea" : "input");
+  input.name = name;
+  input.value = value;
+  input.required = required;
+  wrap.append(input);
+  return wrap;
+}
+
+function showFaqCreateModal(panel) {
+  const form = el("form", "form-grid");
+  form.append(
+    faqField("FAQ Key", "faq_key"),
+    faqField("問題", "question"),
+    faqField("固定答案", "answer", "", true),
+    faqField("分類", "category"),
+    faqField("關鍵字（逗號分隔）", "keywords"),
+    faqField("Owner Unit", "owner_unit_id", "IT Service Desk"),
+    faqField("Business Contact", "business_contact", "IT Service Desk"),
+    faqField("Issue Type IDs（逗號分隔）", "issue_type_ids"),
+    faqField("Audience Groups（逗號分隔；空白代表 ALL）", "audience_group_ids", "", false, false),
+  );
+  const message = el("div");
+  const submit = el("button", "", "建立草稿");
+  submit.type = "submit";
+  form.append(submit, message);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    message.replaceChildren();
+    const values = new FormData(form);
+    const split = (name) => String(values.get(name) || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const groups = split("audience_group_ids");
+    try {
+      const created = await api("/api/faqs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          faq_key: values.get("faq_key"), question: values.get("question"),
+          answer: values.get("answer"), category: values.get("category"),
+          keywords: split("keywords"), owner_unit_id: values.get("owner_unit_id"),
+          business_contact: values.get("business_contact"), issue_type_ids: split("issue_type_ids"),
+          audience_type: groups.length ? "GROUPS" : "ALL", audience_group_ids: groups,
+        }),
+      });
+      document.getElementById("modal-root").hidden = true;
+      await renderFaqManagement(panel);
+      showFaqDetail(created.faq.faq_id, panel);
+    } catch (error) {
+      message.replaceChildren(el("div", "error", error.message));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  showContentModal("新增 FAQ 草稿", form);
+}
+
+async function showFaqDetail(faqId, panel) {
+  try {
+    const detail = await api(`/api/faqs/${encodeURIComponent(faqId)}`);
+    const allowed = new Set(capabilities?.capabilities || []);
+    const faq = detail.faq;
+    const current = detail.versions.at(-1);
+    const content = el("div");
+    content.append(
+      el("p", "", `狀態：${faq.status}｜版本：v${current.version_number}｜ETag：${faq.etag}`),
+      el("p", "", `問題：${current.content.question}`),
+      el("p", "", `答案：${current.content.answer}`),
+      el("p", "", `Owner：${current.content.owner_unit_id}｜Issue：${current.content.issue_type_ids.join(", ")}`),
+    );
+    const actions = el("div", "filter-bar");
+    const run = async (path, payload) => {
+      try {
+        await api(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify(payload),
+        });
+        await renderFaqManagement(panel);
+        await showFaqDetail(faqId, panel);
+      } catch (error) {
+        showContentModal("FAQ 操作失敗", el("div", "error", error.message));
+      }
+    };
+    if (allowed.has("ops.faq.write") && ["DRAFT", "CHANGES_REQUESTED"].includes(current.status)) {
+      for (const [kind, label] of [["POSITIVE", "新增正例"], ["NEGATIVE", "新增反例"]]) {
+        const button = el("button", "", label);
+        button.addEventListener("click", async () => {
+          const utterance = window.prompt(`${label}問法`);
+          if (!utterance) return;
+          await run(`/api/faqs/${faqId}/versions/${current.version_id}/tests`, {
+            expected_etag: faq.etag, kind, utterance,
+            expected_audience_group_ids: current.content.audience_group_ids,
+          });
+        });
+        actions.append(button);
+      }
+      const submit = el("button", "", "送審");
+      submit.addEventListener("click", () => run(
+        `/api/faqs/${faqId}/versions/${current.version_id}/submit`, { expected_etag: faq.etag },
+      ));
+      actions.append(submit);
+    }
+    if (allowed.has("ops.faq.review") && current.status === "IN_REVIEW") {
+      const approve = el("button", "", "核准");
+      approve.addEventListener("click", () => run(
+        `/api/faqs/${faqId}/versions/${current.version_id}/review`,
+        { expected_etag: faq.etag, approve: true, reason: "管理員已審閱內容與正反例" },
+      ));
+      const reject = el("button", "", "退回修改");
+      reject.addEventListener("click", () => {
+        const reason = window.prompt("請輸入退回原因");
+        if (!reason?.trim()) return;
+        run(`/api/faqs/${faqId}/versions/${current.version_id}/review`, {
+          expected_etag: faq.etag, approve: false, reason: reason.trim(),
+        });
+      });
+      actions.append(approve, reject);
+    }
+    if (allowed.has("ops.faq.activate") && current.status === "APPROVED") {
+      const activate = el("button", "", "啟用");
+      activate.addEventListener("click", () => run(
+        `/api/faqs/${faqId}/versions/${current.version_id}/activate`,
+        { expected_etag: faq.etag, reason: "管理員核准啟用" },
+      ));
+      actions.append(activate);
+    }
+    if (allowed.has("ops.faq.disable") && faq.status === "ACTIVE") {
+      const disable = el("button", "", "停用");
+      disable.addEventListener("click", () => run(
+        `/api/faqs/${faqId}/disable`, { expected_etag: faq.etag, reason: "管理員停用" },
+      ));
+      actions.append(disable);
+    }
+    content.append(actions, el("h3", "", `測試案例（${detail.tests.length}）`));
+    for (const test of detail.tests) content.append(el("p", "", `${test.kind}｜${test.utterance}`));
+    content.append(el("h3", "", `Audit（${detail.audit.length}）`));
+    for (const event of detail.audit) content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
+    showContentModal(current.content.question, content);
+  } catch (error) {
+    showContentModal("FAQ", el("div", "error", error.message));
+  }
 }
 
 function renderKnowledgeInventory(data, loadDocuments) {

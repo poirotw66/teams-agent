@@ -42,6 +42,8 @@ Terra 原生 subagent：Fermat，`01a06301-2b87-71a2-8b4f-f3ee926d80c2`。
 
 這一批不包含 endpoint／UI／現有 FAQ runtime 接線；domain 通過不能宣稱 Phase 2 完成。
 
+2026-09-03 主工作樹後續接線狀態：FAQ endpoint 與 Backoffice UI 第一垂直切片已完成。API 已涵蓋 list/detail/create/edit/test/submit/review/activate/disable，FILE／Firestore store、owner scope、etag、冪等與 Audit 已接線；Knowledge Admin 可建草稿、補正反例與送審，Justin 以 SYSTEM_ADMIN 執行核准／退回／啟用／停用。瀏覽器已驗證建立至送審流程及 390×844 無水平溢位，focused suite 36 passed。Agent 已新增 governed runtime adapter，會以 request groups 只讀 ACTIVE snapshot；FILE mode 已驗證同一 instance 無重啟即可看見 activate/disable。production 尚需設定 `FAQ_RUNTIME_MODE=GOVERNED` 並完成實際 Firestore 故障注入；edit／rollback UI 與其餘 Phase 2 模組仍未完成，因此不得宣稱 Phase 2 完成。
+
 進行中程式的提前審查已回饋實作者（尚非最終交付判定）：
 
 - Pydantic model 不適用 dataclasses.replace，生命週期轉移需實測。
@@ -115,7 +117,7 @@ production hardening 仍需以實際 Firestore/GCS 做多 instance 故障注入�
 | --- | --- |
 | 0 | Taxonomy 治理與修正事件；完整事件契約、可靠投遞及逐呼叫成本；四類資料責任分離；憑證排除、遮罩／保存／TTL；認證、能力及 scope；audit；Terraform、環境隔離、監控、交接及效能；正式治理決策。 |
 | 1 | 全期間篩選與 KPI 下鑽；user/assistant timeline；受保護 transcript 的真正授權解遮罩；成本與 FX；知識 Markdown/PDF 發布及 Portal 真正連線；品質／健康；持久化且請求者綁定的匯出與到期刪除；UI 狀態、效能、真 BU UAT。 |
-| 2 | FAQ domain 接線與 UI；正反例及 taxonomy 資料集；品質候選、去重合併、owner 與 etag、補知識後觀察及結案證據；可解釋 Gap 排序及語意分群；可恢復同步作業与原子發布；預算政策、告警、通知去重與核准收件人；完整授權／稽核及回歸。 |
+| 2 | FAQ domain、API、第一版 UI 與 audience-aware ACTIVE runtime adapter 已接線；尚需 production Firestore cutover／故障注入、edit／rollback UI 與完整驗收、正反例及 taxonomy dataset、品質候選／Case、Gap、可恢復 Sync、Budget Policy、Alert、Notification、Prompt POC，以及完整授權／稽核與回歸。 |
 | 3 | Prompt/model/flag registry 及不可變版本；可重現 eval manifest 与硬性安全 gate；獨立核准、黏性 canary、原子啟用、fallback/rollback；provider allowlist 與 secret ref；權限治理與撤權；audit、資料治理及受限全域搜尋；UI、監控與正式核准。 |
 
 原始規格：

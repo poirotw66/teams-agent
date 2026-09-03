@@ -1,8 +1,8 @@
 # AI 資訊客服營運後台 Phase 2：品質改善閉環規格
 
-> 文件狀態：Draft for review
+> 文件狀態：Implementation in progress
 >
-> 規格版本：v1.1
+> 規格版本：v1.2
 >
 > 需求基準：2026-09-03 提供之《功能需求清單》與《資料保存規則》CSV
 >
@@ -27,6 +27,14 @@ Phase 2 將 Phase 1 的觀察能力轉為改善能力。系統不只呈現「哪
 ```
 
 Phase 2 產生的 Issue 正反例可供 Prompt 候選與離線評測使用。本階段依 POC 需求提供目前正式 Prompt 的唯讀檢視及候選產生，但不得啟用候選或直接修改正式 Prompt；生產核准、Canary、啟用與回復由 Phase 3 負責。
+
+### 1.1 實作進度（2026-09-03）
+
+- FAQ 第一垂直切片已完成：FILE／Firestore repository、不可變版本、owner scope、etag、冪等、Audit、正反例、送審、SYSTEM_ADMIN 核准／退回／啟用／停用，以及 Backoffice 管理介面。
+- 已驗證 FILE restart persistence、Knowledge Admin 與 SYSTEM_ADMIN 職責分離、API lifecycle，以及 390×844 responsive UI；focused suite 為 36 passed。
+- Agent runtime adapter 已完成：`FAQ_RUNTIME_MODE=GOVERNED` 時只讀 immutable ACTIVE versions，沿用 request groups 執行 audience ACL，FILE mode 已驗證同一 instance 無重啟即可看見啟用與停用。production Firestore cutover 與故障注入證據仍待完成。
+- 尚未完成：FAQ edit／rollback UI 與完整 API 驗收、FAQ 命中分析、examples dataset 治理，以及其餘 Quality Case、Gap、Sync、Budget、Alert、Notification、Prompt POC。
+- 本節僅代表第一垂直切片完成，不代表 Phase 2 驗收完成。
 
 ## 2. 對應 BU 需求
 
@@ -331,7 +339,7 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 
 | 決策 | 建議預設 |
 |---|---|
-| FAQ 是否雙人覆核 | 正式環境是 |
+| FAQ 覆核權限 | 由 SYSTEM_ADMIN 完成最終核准；目前指定核准人為 Justin，技術 gate 不得略過 |
 | Clustering 模型 | 使用核准模型；只產生候選 |
 | Quality Case 觀察期 | 14 天或至少 30 次相關 Issue |
 | 個人每日 50 元 | 只告警，不自動停用 |

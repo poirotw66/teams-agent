@@ -26,6 +26,7 @@ from .models import (
 )
 from .repository import FaqCommit, FaqRepository, fingerprint
 
+READ = "ops.faq.read"
 WRITE = "ops.faq.write"
 REVIEW = "ops.faq.review"
 ACTIVATE = "ops.faq.activate"
@@ -132,6 +133,42 @@ class FaqDomainService:
     @staticmethod
     def _result(faq: FaqRecord, version: FaqVersion) -> dict[str, Any]:
         return {"faq": faq.model_dump(mode="json"), "version": version.model_dump(mode="json")}
+
+    def list_faqs(self, *, actor: ActorContext) -> list[dict[str, Any]]:
+        visible: list[dict[str, Any]] = []
+        for faq in self._repository.list_faqs():
+            versions = self._repository.list_versions(faq.faq_id)
+            if not versions:
+                continue
+            current = versions[-1]
+            try:
+                self._authorize(actor, READ, current.content.owner_unit_id)
+            except FaqAuthorizationError:
+                continue
+            visible.append(self._result(faq, current))
+        return visible
+
+    def detail(self, *, faq_id: str, actor: ActorContext) -> dict[str, Any]:
+        faq = self._repository.get_faq(faq_id)
+        if faq is None:
+            raise FaqNotFoundError(faq_id)
+        versions = self._repository.list_versions(faq_id)
+        if not versions:
+            raise FaqNotFoundError(faq_id)
+        self._authorize(actor, READ, versions[-1].content.owner_unit_id)
+        return {
+            "faq": faq.model_dump(mode="json"),
+            "versions": [version.model_dump(mode="json") for version in versions],
+            "tests": [
+                test.model_dump(mode="json")
+                for version in versions
+                for test in self._repository.list_tests(version.version_id)
+            ],
+            "audit": [
+                event.model_dump(mode="json")
+                for event in self._repository.list_audit(faq_id)
+            ],
+        }
 
     def create(
         self,
@@ -683,6 +720,23 @@ class FaqDomainService:
             audience_type=content.audience_type,
             audience_group_ids=content.audience_group_ids,
             effective_at=content.effective_at,
+        )
+
+    def active_snapshots(
+        self, *, audience_group_ids: tuple[str, ...]
+    ) -> tuple[FaqRuntimeSnapshot, ...]:
+        snapshots = (
+            self.active_snapshot(
+                faq_key=faq.faq_key,
+                audience_group_ids=audience_group_ids,
+            )
+            for faq in self._repository.list_faqs()
+        )
+        return tuple(
+            sorted(
+                (snapshot for snapshot in snapshots if snapshot is not None),
+                key=lambda snapshot: snapshot.faq_key,
+            )
         )
 
     def _require(self, faq_id: str, version_id: str) -> tuple[FaqRecord, FaqVersion]:

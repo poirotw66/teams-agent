@@ -143,7 +143,15 @@ class IssueProcessingWorkflowMixin:
             )
 
         if issue.route == "FAQ":
-            entry = self.faq_service.get(issue.faqKey) if issue.faqKey else None
+            entry = (
+                await asyncio.to_thread(
+                    self.faq_service.get,
+                    issue.faqKey,
+                    tuple(user.groups),
+                )
+                if issue.faqKey
+                else None
+            )
             if entry is not None:
                 # Spec §7.3: FAQ answer used VERBATIM. No LLM, no rewriting.
                 return IssueResult(

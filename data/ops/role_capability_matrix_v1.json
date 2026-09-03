@@ -33,7 +33,11 @@
         "ops.feedback.read",
         "ops.knowledge.read",
         "ops.quality.read",
+        "ops.faq.read",
         "ops.faq.write",
+        "ops.faq.review",
+        "ops.faq.activate",
+        "ops.faq.disable",
         "ops.exports.create",
         "ops.exports.read"
       ],
@@ -63,6 +67,7 @@
         "ops.conversations.read",
         "ops.conversations.unmasked",
         "ops.quality.read",
+        "ops.faq.read",
         "ops.faq.write",
         "ops.exports.create",
         "ops.exports.read"
@@ -98,7 +103,8 @@
       "role": "AUDITOR",
       "capabilities": [
         "ops.audit.read",
-        "ops.exports.read"
+        "ops.exports.read",
+        "ops.faq.read"
       ],
       "dataScope": "all_owner_units"
     }

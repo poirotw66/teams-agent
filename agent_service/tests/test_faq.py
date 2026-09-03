@@ -4,8 +4,17 @@ from pathlib import Path
 import pytest
 
 from agent_service.contracts import FaqEntry
-from agent_service.faq import FaqConfigError, FaqRepository, FaqService
+from agent_service.faq import (
+    FaqConfigError,
+    FaqRepository,
+    FaqService,
+    GovernedFaqRepository,
+)
+from agent_service.operations.access import ActorContext
 from agent_service.settings import RagSettings
+from ai_ops_backoffice.faq_domain.models import FaqContent, FaqRuntimeSnapshot
+from ai_ops_backoffice.faq_domain.repository import FileFaqRepository
+from ai_ops_backoffice.faq_domain.service import FaqDomainService
 
 
 def _write_faq(tmp_path: Path, payload) -> Path:
@@ -218,3 +227,144 @@ def test_from_settings_falls_back_to_data_dir_faq_json(tmp_path: Path) -> None:
     service = FaqService.from_settings(settings)
 
     assert service.get("IT_CONTACT") is not None
+
+
+class _GovernedSnapshotSource:
+    def __init__(self) -> None:
+        self.snapshot = FaqRuntimeSnapshot(
+            faq_id="faq-1",
+            faq_key="VPN_GROUP",
+            version_id="version-1",
+            question="VPN?",
+            answer="固定群組答案",
+            category="VPN",
+            keywords=("vpn",),
+            issue_type_ids=("vpn.connection_failed",),
+            audience_type="GROUPS",
+            audience_group_ids=("employees",),
+        )
+
+    def active_snapshot(self, *, faq_key, audience_group_ids):
+        if faq_key != self.snapshot.faq_key:
+            return None
+        if not set(audience_group_ids).intersection(self.snapshot.audience_group_ids):
+            return None
+        return self.snapshot
+
+    def active_snapshots(self, *, audience_group_ids):
+        snapshot = self.active_snapshot(
+            faq_key=self.snapshot.faq_key,
+            audience_group_ids=audience_group_ids,
+        )
+        return (snapshot,) if snapshot else ()
+
+
+def test_governed_runtime_maps_active_snapshot_and_enforces_audience() -> None:
+    service = FaqService(GovernedFaqRepository(_GovernedSnapshotSource()))
+
+    assert service.available_keys(("employees",)) == ["VPN_GROUP"]
+    assert service.available_keys(("contractors",)) == []
+    assert service.get("VPN_GROUP", ("contractors",)) is None
+    entry = service.get("VPN_GROUP", ("employees",))
+    assert entry and entry.id == "faq-1" and entry.answer == "固定群組答案"
+
+
+def test_from_settings_governed_file_is_active_only(tmp_path: Path) -> None:
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "index" / "chunks.json",
+        faq_runtime_mode="GOVERNED",
+        faq_governed_store_mode="FILE",
+        faq_governed_store_path=tmp_path / "governed-faqs.json",
+    )
+
+    service = FaqService.from_settings(settings)
+
+    assert service.available_keys(("employees",)) == []
+    assert service.get("LEGACY_KEY", ("employees",)) is None
+
+
+class _ActiveTaxonomy:
+    def require_active(self, issue_type_id: str) -> None:
+        if issue_type_id != "vpn.connection_failed":
+            raise ValueError(issue_type_id)
+
+
+def test_governed_file_runtime_refreshes_activation_and_disable_without_restart(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "governed-faqs.json"
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "index" / "chunks.json",
+        faq_runtime_mode="GOVERNED",
+        faq_governed_store_mode="FILE",
+        faq_governed_store_path=store_path,
+    )
+    runtime = FaqService.from_settings(settings)
+    domain = FaqDomainService(FileFaqRepository(store_path), taxonomy=_ActiveTaxonomy())
+    writer = ActorContext("writer", "Writer", "KNOWLEDGE_ADMIN", ("IT",))
+    reviewer = ActorContext("justin", "Justin", "SYSTEM_ADMIN", ())
+    created = domain.create(
+        content=FaqContent(
+            faq_key="VPN_REFRESH",
+            question="VPN 無法連線？",
+            answer="固定答案，不經 LLM 改寫。",
+            category="VPN",
+            keywords=("vpn",),
+            owner_unit_id="IT",
+            business_contact="IT Service Desk",
+            issue_type_ids=("vpn.connection_failed",),
+            audience_type="GROUPS",
+            audience_group_ids=("employees",),
+        ),
+        actor=writer,
+    )
+    faq, version = created["faq"], created["version"]
+    assert runtime.get("VPN_REFRESH", ("employees",)) is None
+    for kind, utterance in (("POSITIVE", "VPN 連不上"), ("NEGATIVE", "申請新電腦")):
+        result = domain.add_test(
+            faq_id=faq["faq_id"],
+            version_id=version["version_id"],
+            kind=kind,
+            utterance=utterance,
+            expected_audience_group_ids=("employees",),
+            actor=writer,
+            expected_etag=faq["etag"],
+        )
+        faq = result["faq"]
+    submitted = domain.submit(
+        faq_id=faq["faq_id"],
+        version_id=version["version_id"],
+        actor=writer,
+        expected_etag=faq["etag"],
+    )
+    reviewed = domain.review(
+        faq_id=faq["faq_id"],
+        version_id=version["version_id"],
+        approve=True,
+        reason="內容與 audience 已驗證",
+        actor=reviewer,
+        expected_etag=submitted["faq"]["etag"],
+    )
+    activated = domain.activate(
+        faq_id=faq["faq_id"],
+        version_id=version["version_id"],
+        actor=reviewer,
+        expected_etag=reviewed["faq"]["etag"],
+        reason="release",
+    )
+
+    assert runtime.available_keys(("employees",)) == ["VPN_REFRESH"]
+    assert runtime.get("VPN_REFRESH", ("contractors",)) is None
+    entry = runtime.get("VPN_REFRESH", ("employees",))
+    assert entry and entry.answer == "固定答案，不經 LLM 改寫。"
+
+    domain.disable(
+        faq_id=faq["faq_id"],
+        actor=reviewer,
+        expected_etag=activated["faq"]["etag"],
+        reason="emergency disable",
+    )
+    assert runtime.get("VPN_REFRESH", ("employees",)) is None
+    assert runtime.available_keys(("employees",)) == []

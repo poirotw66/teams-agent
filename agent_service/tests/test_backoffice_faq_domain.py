@@ -126,6 +126,11 @@ def test_full_lifecycle_activation_disable_and_audited_rollback(contributor, rev
         svc.active_snapshot(faq_key="VPN_LOCKED", audience_group_ids=("employees",)).answer
         == "原文固定答案"
     )
+    assert [
+        snapshot.faq_key
+        for snapshot in svc.active_snapshots(audience_group_ids=("employees",))
+    ] == ["VPN_LOCKED"]
+    assert svc.active_snapshots(audience_group_ids=("contractors",)) == ()
     assert svc.active_snapshot(faq_key="VPN_LOCKED", audience_group_ids=("contractors",)) is None
 
     draft_two = svc.edit(
@@ -164,6 +169,7 @@ def test_full_lifecycle_activation_disable_and_audited_rollback(contributor, rev
     )
     assert disabled["faq"]["status"] == "DISABLED"
     assert svc.active_snapshot(faq_key="VPN_LOCKED", audience_group_ids=("employees",)) is None
+    assert svc.active_snapshots(audience_group_ids=("employees",)) == ()
 
 
 def test_review_separation_changes_requested_and_required_tests(contributor, reviewer) -> None:

@@ -27,7 +27,11 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.feedback.read",
             "ops.knowledge.read",
             "ops.quality.read",
+            "ops.faq.read",
             "ops.faq.write",
+            "ops.faq.review",
+            "ops.faq.activate",
+            "ops.faq.disable",
             "ops.exports.create",
             "ops.exports.read",
         }
@@ -53,6 +57,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.conversations.read",
             "ops.conversations.unmasked",
             "ops.quality.read",
+            "ops.faq.read",
             "ops.faq.write",
             "ops.exports.create",
             "ops.exports.read",
@@ -79,7 +84,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.exports.read",
         }
     ),
-    "AUDITOR": frozenset({"ops.audit.read", "ops.exports.read"}),
+    "AUDITOR": frozenset({"ops.audit.read", "ops.exports.read", "ops.faq.read"}),
 }
 
 

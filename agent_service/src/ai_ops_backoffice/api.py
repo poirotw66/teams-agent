@@ -4,7 +4,9 @@ import asyncio
 import hmac
 import logging
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -15,8 +17,21 @@ from agent_service.operations.access import CAPABILITIES
 from agent_service.operations.audit_errors import AuditWriteError
 
 from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
+from .faq_domain import (
+    FaqAuthorizationError,
+    FaqContent,
+    FaqDomainError,
+    FaqDomainService,
+    FaqIdempotencyConflictError,
+    FaqNotFoundError,
+    FaqTransitionError,
+    FaqValidationError,
+    FaqVersionConflictError,
+    FileFaqRepository,
+    FirestoreFaqRepository,
+)
 from .services.periods import PeriodPolicyError
-from .services.phase2_registry import FaqRecord, Phase2Registry, QualityCaseRecord, SyncJobRecord
+from .services.phase2_registry import Phase2Registry, QualityCaseRecord, SyncJobRecord
 from .services.phase3_registry import FeatureFlagRecord, Phase3Registry, PromptVersionRecord
 from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
@@ -66,7 +81,44 @@ class FaqCreateRequest(BaseModel):
     faq_key: str
     question: str
     answer: str
-    owner_unit_id: str = "IT Service Desk"
+    category: str
+    keywords: tuple[str, ...]
+    owner_unit_id: str
+    business_contact: str
+    issue_type_ids: tuple[str, ...]
+    audience_type: Literal["ALL", "GROUPS"]
+    audience_group_ids: tuple[str, ...] = ()
+    effective_at: datetime | None = None
+    review_due_at: datetime | None = None
+
+    def to_content(self) -> FaqContent:
+        return FaqContent.model_validate(self.model_dump())
+
+
+class FaqEditRequest(FaqCreateRequest):
+    expected_etag: int = Field(ge=1)
+
+
+class FaqTestCreateRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+    kind: Literal["POSITIVE", "NEGATIVE"]
+    utterance: str = Field(min_length=1)
+    expected_audience_group_ids: tuple[str, ...] = ()
+    source_type: Literal["MANUAL", "CONVERSATION"] = "MANUAL"
+    source_correlation_id: str | None = None
+
+
+class FaqTransitionRequest(BaseModel):
+    expected_etag: int = Field(ge=1)
+
+
+class FaqReviewRequest(FaqTransitionRequest):
+    approve: bool
+    reason: str = Field(min_length=1)
+
+
+class FaqReasonRequest(FaqTransitionRequest):
+    reason: str = Field(min_length=1)
 
 
 class QualityCaseCreateRequest(BaseModel):
@@ -92,6 +144,29 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     export_rate_limiter = ExportRateLimiter()
     phase2 = Phase2Registry()
     phase3 = Phase3Registry()
+
+    class ActiveFaqTaxonomy:
+        def require_active(self, issue_type_id: str) -> None:
+            issue_type = query_service.taxonomy.get(issue_type_id)
+            if issue_type is None or issue_type.status != "ACTIVE":
+                raise FaqValidationError(f"inactive issue type: {issue_type_id}")
+
+    faq_store_mode = resolved_settings.faq_store_mode.upper()
+    if faq_store_mode == "FILE":
+        faq_store_path = resolved_settings.faq_store_path or (
+            resolved_settings.ops_store_path.parent / "phase2" / "faqs.json"
+        )
+        faq_repository = FileFaqRepository(faq_store_path)
+    elif faq_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        faq_repository = FirestoreFaqRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection_prefix=resolved_settings.faq_firestore_collection_prefix,
+        )
+    else:
+        raise ValueError(f"Unsupported FAQ store mode: {faq_store_mode}")
+    faq_service = FaqDomainService(faq_repository, taxonomy=ActiveFaqTaxonomy())
 
     def authorize(authorization: str | None = Header(default=None)) -> None:
         expected = resolved_settings.service_token
@@ -175,6 +250,24 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     @app.exception_handler(AuditWriteError)
     async def audit_write_handler(_request, exc: AuditWriteError) -> JSONResponse:
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(FaqAuthorizationError)
+    async def faq_authorization_handler(_request, exc: FaqAuthorizationError) -> JSONResponse:
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    @app.exception_handler(FaqNotFoundError)
+    async def faq_not_found_handler(_request, exc: FaqNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(FaqVersionConflictError)
+    @app.exception_handler(FaqIdempotencyConflictError)
+    @app.exception_handler(FaqTransitionError)
+    async def faq_conflict_handler(_request, exc: FaqDomainError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(FaqValidationError)
+    async def faq_validation_handler(_request, exc: FaqValidationError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -627,26 +720,171 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    # Phase 2 scaffold
+    # Phase 2 FAQ governance
     @app.get("/api/faqs")
-    async def list_faqs(actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.faq.write")
-        return {"items": phase2.list_faqs()}
+    async def list_faqs(
+        status: str | None = None,
+        owner_unit_id: str | None = None,
+        query: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.read")
+        items = faq_service.list_faqs(actor=actor)
+        if status:
+            items = [item for item in items if item["faq"]["status"] == status]
+        if owner_unit_id:
+            items = [
+                item for item in items
+                if item["version"]["content"]["owner_unit_id"] == owner_unit_id
+            ]
+        if query:
+            needle = query.casefold()
+            items = [
+                item for item in items
+                if needle in item["faq"]["faq_key"].casefold()
+                or needle in item["version"]["content"]["question"].casefold()
+            ]
+        return {"items": items, "total": len(items)}
+
+    @app.get("/api/faqs/{faq_id}")
+    async def get_faq(faq_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.faq.read")
+        return faq_service.detail(faq_id=faq_id, actor=actor)
 
     @app.post("/api/faqs")
-    async def create_faq(payload: FaqCreateRequest, actor=Depends(current_actor)) -> dict[str, object]:
+    async def create_faq(
+        payload: FaqCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
         require_capability(actor, "ops.faq.write")
-        import uuid
-
-        record = FaqRecord(
-            faq_id=str(uuid.uuid4()),
-            faq_key=payload.faq_key,
-            question=payload.question,
-            answer=payload.answer,
-            owner_unit_id=payload.owner_unit_id,
+        return faq_service.create(
+            content=payload.to_content(),
+            actor=actor,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
         )
-        phase2.faqs.append(record)
-        return {"faq": record.model_dump()}
+
+    @app.put("/api/faqs/{faq_id}")
+    async def edit_faq(
+        faq_id: str,
+        payload: FaqEditRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.write")
+        return faq_service.edit(
+            faq_id=faq_id,
+            content=payload.to_content(),
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/tests")
+    async def add_faq_test(
+        faq_id: str,
+        version_id: str,
+        payload: FaqTestCreateRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.write")
+        return faq_service.add_test(
+            faq_id=faq_id,
+            version_id=version_id,
+            kind=payload.kind,
+            utterance=payload.utterance,
+            expected_audience_group_ids=payload.expected_audience_group_ids,
+            source_type=payload.source_type,
+            source_correlation_id=payload.source_correlation_id,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/submit")
+    async def submit_faq(
+        faq_id: str,
+        version_id: str,
+        payload: FaqTransitionRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.write")
+        return faq_service.submit(
+            faq_id=faq_id,
+            version_id=version_id,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/review")
+    async def review_faq(
+        faq_id: str,
+        version_id: str,
+        payload: FaqReviewRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.review")
+        return faq_service.review(
+            faq_id=faq_id,
+            version_id=version_id,
+            approve=payload.approve,
+            reason=payload.reason,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/faqs/{faq_id}/versions/{version_id}/activate")
+    async def activate_faq(
+        faq_id: str,
+        version_id: str,
+        payload: FaqReasonRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.activate")
+        return faq_service.activate(
+            faq_id=faq_id,
+            version_id=version_id,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
+
+    @app.post("/api/faqs/{faq_id}/disable")
+    async def disable_faq(
+        faq_id: str,
+        payload: FaqReasonRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.faq.disable")
+        return faq_service.disable(
+            faq_id=faq_id,
+            actor=actor,
+            expected_etag=payload.expected_etag,
+            reason=payload.reason,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+        )
 
     @app.get("/api/quality-cases")
     async def list_quality_cases(actor=Depends(current_actor)) -> dict[str, object]:

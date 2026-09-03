@@ -240,6 +240,150 @@ def headers(role: str = "SERVICE_OWNER") -> dict[str, str]:
     }
 
 
+def test_phase2_faq_api_lifecycle_persists_and_enforces_governance(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        faq_store_mode="FILE",
+        faq_store_path=tmp_path / "phase2" / "faqs.json",
+    )
+    writer_headers = {
+        **headers("KNOWLEDGE_ADMIN"),
+        "X-Backoffice-User-Id": "faq.writer",
+        "X-Backoffice-User-Name": "FAQ Writer",
+    }
+    admin_headers = {
+        **headers("SYSTEM_ADMIN"),
+        "X-Backoffice-User-Id": "faq.admin",
+        "X-Backoffice-User-Name": "FAQ Admin",
+    }
+    payload = {
+        "faq_key": "VPN_CONNECTION_FAILED",
+        "question": "VPN 無法連線怎麼辦？",
+        "answer": "請先重新連線公司網路，再重新啟動 VPN。",
+        "category": "VPN",
+        "keywords": ["vpn", "connection"],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": ["vpn.connection_failed"],
+        "audience_type": "GROUPS",
+        "audience_group_ids": ["employees"],
+    }
+
+    with TestClient(create_app(settings)) as client:
+        created = client.post(
+            "/api/faqs",
+            json=payload,
+            headers={**writer_headers, "Idempotency-Key": "faq-create-1"},
+        )
+        assert created.status_code == 200
+        faq = created.json()["faq"]
+        version = created.json()["version"]
+        faq_id, version_id = faq["faq_id"], version["version_id"]
+
+        replay = client.post(
+            "/api/faqs",
+            json=payload,
+            headers={**writer_headers, "Idempotency-Key": "faq-create-1"},
+        )
+        assert replay.status_code == 200
+        assert replay.json()["faq"]["faq_id"] == faq_id
+
+        positive = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/tests",
+            json={
+                "expected_etag": 1,
+                "kind": "POSITIVE",
+                "utterance": "我的 VPN 連不上",
+                "expected_audience_group_ids": ["employees"],
+            },
+            headers=writer_headers,
+        )
+        assert positive.status_code == 200
+        negative = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/tests",
+            json={
+                "expected_etag": 2,
+                "kind": "NEGATIVE",
+                "utterance": "我要重設密碼",
+                "expected_audience_group_ids": ["employees"],
+            },
+            headers=writer_headers,
+        )
+        assert negative.status_code == 200
+
+        stale = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/tests",
+            json={
+                "expected_etag": 1,
+                "kind": "NEGATIVE",
+                "utterance": "電腦無法開機",
+            },
+            headers=writer_headers,
+        )
+        assert stale.status_code == 409
+
+        submitted = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/submit",
+            json={"expected_etag": 3},
+            headers=writer_headers,
+        )
+        assert submitted.status_code == 200
+        denied_review = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/review",
+            json={"expected_etag": 4, "approve": True, "reason": "checked"},
+            headers=writer_headers,
+        )
+        assert denied_review.status_code == 403
+        reviewed = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/review",
+            json={"expected_etag": 4, "approve": True, "reason": "正反例與內容已確認"},
+            headers=admin_headers,
+        )
+        assert reviewed.status_code == 200
+        activated = client.post(
+            f"/api/faqs/{faq_id}/versions/{version_id}/activate",
+            json={"expected_etag": 5, "reason": "發布固定答案"},
+            headers=admin_headers,
+        )
+        assert activated.status_code == 200
+        assert activated.json()["faq"]["status"] == "ACTIVE"
+
+        other_scope = {**writer_headers, "X-Backoffice-Owner-Units": "Finance"}
+        assert client.get(f"/api/faqs/{faq_id}", headers=other_scope).status_code == 403
+        assert client.get("/api/faqs", headers=other_scope).json()["items"] == []
+
+    with TestClient(create_app(settings)) as restarted:
+        detail = restarted.get(f"/api/faqs/{faq_id}", headers=admin_headers)
+        assert detail.status_code == 200
+        assert detail.json()["faq"]["status"] == "ACTIVE"
+        assert len(detail.json()["tests"]) == 2
+        assert len(detail.json()["audit"]) == 6
+        disabled = restarted.post(
+            f"/api/faqs/{faq_id}/disable",
+            json={"expected_etag": 6, "reason": "內容暫停使用"},
+            headers=admin_headers,
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["faq"]["status"] == "DISABLED"
+
+
 def test_operations_summary_requires_auth(backoffice_client: TestClient) -> None:
     response = backoffice_client.get("/api/operations/summary")
     assert response.status_code == 401

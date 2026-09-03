@@ -93,6 +93,12 @@ class RagSettings:
     conversation_firestore_database: str | None = None
     conversation_firestore_collection: str = "conversations"
     faq_path: Path | None = None
+    faq_runtime_mode: str = "LEGACY_JSON"
+    faq_governed_store_mode: str = "FILE"
+    faq_governed_store_path: Path | None = None
+    faq_firestore_project: str | None = None
+    faq_firestore_database: str | None = None
+    faq_firestore_collection_prefix: str = "ai_ops_faq"
 
     # --- Human handoff (phase 2) ---
     handoff_repository_mode: str = "MEMORY"
@@ -133,6 +139,12 @@ class RagSettings:
             environ.get("HANDOFF_STORE_PATH", data_dir / "handoffs")
         )
         faq_path = Path(environ.get("FAQ_PATH", data_dir / "faq.json"))
+        faq_governed_store_path = Path(
+            environ.get(
+                "AI_OPS_FAQ_STORE_PATH",
+                data_dir / "ops" / "phase2" / "faqs.json",
+            )
+        )
 
         settings = cls(
             data_dir=data_dir.expanduser().resolve(),
@@ -229,6 +241,21 @@ class RagSettings:
             handoff_demo_timeout_hours=_int_env("HANDOFF_DEMO_TIMEOUT_HOURS", 24),
             handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 730),
             faq_path=faq_path.expanduser().resolve(),
+            faq_runtime_mode=(
+                _str_env("FAQ_RUNTIME_MODE") or "LEGACY_JSON"
+            ).upper(),
+            faq_governed_store_mode=(
+                _str_env("AI_OPS_FAQ_STORE_MODE") or "FILE"
+            ).upper(),
+            faq_governed_store_path=faq_governed_store_path.expanduser().resolve(),
+            faq_firestore_project=(
+                _str_env("AI_OPS_FAQ_FIRESTORE_PROJECT")
+                or _str_env("GOOGLE_CLOUD_PROJECT")
+            ),
+            faq_firestore_database=_str_env("AI_OPS_FAQ_FIRESTORE_DATABASE"),
+            faq_firestore_collection_prefix=(
+                _str_env("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX") or "ai_ops_faq"
+            ),
             feedback_enabled=_bool_env("FEEDBACK_ENABLED", True),
             show_turn_cost=_bool_env("SHOW_TURN_COST", True),
             show_turn_cost_playground=_bool_env("SHOW_TURN_COST_PLAYGROUND", False),
@@ -284,6 +311,23 @@ class RagSettings:
             raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
         if not 0 <= self.max_retrieval_rewrites <= 3:
             raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
+
+        if self.faq_runtime_mode not in {"LEGACY_JSON", "GOVERNED"}:
+            raise ValueError(
+                "FAQ_RUNTIME_MODE must be one of LEGACY_JSON or GOVERNED."
+            )
+        if self.faq_governed_store_mode not in {"FILE", "FIRESTORE"}:
+            raise ValueError(
+                "AI_OPS_FAQ_STORE_MODE must be one of FILE or FIRESTORE."
+            )
+        if not self.faq_firestore_collection_prefix.strip():
+            raise ValueError(
+                "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not be blank."
+            )
+        if "/" in self.faq_firestore_collection_prefix:
+            raise ValueError(
+                "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not contain '/'."
+            )
 
         if self.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
             raise ValueError(

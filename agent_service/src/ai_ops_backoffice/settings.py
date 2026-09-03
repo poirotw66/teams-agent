@@ -37,6 +37,9 @@ class BackofficeSettings:
     export_max_records: int = 100_000
     export_worker_lease_seconds: int = 60
     export_worker_max_attempts: int = 3
+    faq_store_mode: str = "FILE"
+    faq_store_path: Path | None = None
+    faq_firestore_collection_prefix: str = "ai_ops_faq"
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -106,5 +109,14 @@ class BackofficeSettings:
             ),
             export_worker_max_attempts=int(
                 os.environ.get("AI_OPS_EXPORT_WORKER_MAX_ATTEMPTS", "3")
+            ),
+            faq_store_mode=(
+                os.environ.get("AI_OPS_FAQ_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            faq_store_path=Path(
+                os.environ.get("AI_OPS_FAQ_STORE_PATH", ops_dir / "phase2" / "faqs.json")
+            ).expanduser().resolve(),
+            faq_firestore_collection_prefix=os.environ.get(
+                "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"
             ),
         )

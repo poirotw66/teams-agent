@@ -57,6 +57,12 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "HANDOFF_DEMO_TIMEOUT_HOURS",
         "HANDOFF_RETENTION_DAYS",
         "FAQ_PATH",
+        "FAQ_RUNTIME_MODE",
+        "AI_OPS_FAQ_STORE_MODE",
+        "AI_OPS_FAQ_STORE_PATH",
+        "AI_OPS_FAQ_FIRESTORE_PROJECT",
+        "AI_OPS_FAQ_FIRESTORE_DATABASE",
+        "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX",
         "FEEDBACK_ENABLED",
     ]
     for name in names:
@@ -112,6 +118,12 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.handoff_demo_timeout_hours == 24
     assert settings.handoff_retention_days == 730
     assert settings.faq_path == (tmp_path / "faq.json").resolve()
+    assert settings.faq_runtime_mode == "LEGACY_JSON"
+    assert settings.faq_governed_store_mode == "FILE"
+    assert settings.faq_governed_store_path == (
+        tmp_path / "ops" / "phase2" / "faqs.json"
+    ).resolve()
+    assert settings.faq_firestore_collection_prefix == "ai_ops_faq"
     assert settings.feedback_enabled is True
     assert settings.model is None
     assert settings.agent_model is None
@@ -193,6 +205,27 @@ def test_invalid_knowledge_service_mode_raises(
 ) -> None:
     _minimal_env(monkeypatch, tmp_path)
     monkeypatch.setenv("KNOWLEDGE_SERVICE_MODE", "PINECONE")
+
+    with pytest.raises(ValueError):
+        RagSettings.from_env()
+
+
+@pytest.mark.parametrize(
+    "env_name,value",
+    [
+        ("FAQ_RUNTIME_MODE", "AUTO"),
+        ("AI_OPS_FAQ_STORE_MODE", "MEMORY"),
+        ("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX", "faq/nested"),
+    ],
+)
+def test_invalid_governed_faq_settings_raise(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    env_name: str,
+    value: str,
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv(env_name, value)
 
     with pytest.raises(ValueError):
         RagSettings.from_env()

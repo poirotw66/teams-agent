@@ -38,6 +38,8 @@ class FaqCommit:
 
 
 class FaqRepository(Protocol):
+    def list_faqs(self) -> list[FaqRecord]: ...
+
     def get_faq(self, faq_id: str) -> FaqRecord | None: ...
 
     def get_faq_by_key(self, faq_key: str) -> FaqRecord | None: ...
@@ -82,6 +84,10 @@ class InMemoryFaqRepository:
             {item.version_id: item for item in state.versions},
             {item.key: item for item in state.idempotency},
         )
+
+    def list_faqs(self) -> list[FaqRecord]:
+        with self._lock:
+            return sorted(self._load_state().faqs, key=lambda item: item.updated_at, reverse=True)
 
     def get_faq(self, faq_id: str) -> FaqRecord | None:
         with self._lock:
@@ -282,6 +288,16 @@ class FirestoreFaqRepository:
         if not getattr(snapshot, "exists", False):
             return None
         return snapshot.to_dict()
+
+    def list_faqs(self) -> list[FaqRecord]:
+        return sorted(
+            (
+                FaqRecord.model_validate(item.to_dict())
+                for item in self._faqs.stream()
+            ),
+            key=lambda item: item.updated_at,
+            reverse=True,
+        )
 
     def get_faq(self, faq_id: str) -> FaqRecord | None:
         payload = self._read(self._faqs.document(faq_id))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from .confirmation import TicketIntent, is_pending_ticket_offer_confirmation
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
@@ -209,7 +211,10 @@ class ClarificationWorkflowMixin:
                 conversation
             ):
                 history = []
-            faq_keys = self.faq_service.available_keys()
+            faq_keys = await asyncio.to_thread(
+                self.faq_service.available_keys,
+                tuple(request.user.groups),
+            )
             outcome = await self.extractor.extract(
                 text=request.message.text,
                 history=history,

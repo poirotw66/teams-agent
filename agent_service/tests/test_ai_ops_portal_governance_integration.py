@@ -25,6 +25,7 @@ def _portal_settings(tmp_path: Path) -> PortalSettings:
     object.__setattr__(settings, "data_dir", tmp_path)
     object.__setattr__(settings, "require_dual_approval", False)
     object.__setattr__(settings, "relaxed_workflow", True)
+    object.__setattr__(settings, "embedding_model", None)
     return settings
 
 
