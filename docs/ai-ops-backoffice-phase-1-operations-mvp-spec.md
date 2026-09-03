@@ -2,7 +2,9 @@
 
 > 文件狀態：Draft for review
 >
-> 規格版本：v1.0
+> 規格版本：v1.1
+>
+> 需求基準：2026-09-03 提供之《功能需求清單》與《資料保存規則》CSV
 >
 > 前置條件：Phase 0 的事件、Issue taxonomy、遮罩、角色與保存契約已驗收
 >
@@ -22,7 +24,7 @@ Phase 1 交付第一個可供 BU 日常使用的完整後台。現有知識營�
 | REQ-001 | 對話量、使用者數與趨勢 Dashboard |
 | REQ-002 | Token、模型、成本與匯出 |
 | REQ-003 | 授權、遮罩、可稽核的對話查詢 |
-| REQ-007 | Markdown／PDF 文件、版本、狀態與索引狀態 |
+| REQ-007 | Markdown／PDF 文件新增、更新、停用、刪除、查詢、版本與索引狀態 |
 | REQ-008 | 文件命中與正負回饋 |
 | REQ-009 | 文件命中的 Issue 分析 |
 | REQ-011 | Issue 數量與期間趨勢 |
@@ -148,12 +150,15 @@ Document → Issue Type → Conversation Turn
 
 沿用現有草稿、測試、送審、發布、下架與回復流程，新增：
 
+- 依檔名、格式、狀態及 Owner 查詢，並支援 Markdown／PDF 文件新增、版本更新、停用及刪除。
 - 檔案格式、解析狀態、索引狀態、目前 Release。
 - PDF 上傳與解析；文字型 PDF 為必要，掃描 PDF 若未導入 OCR 應明確拒絕並說明。
 - 上傳前執行檔案類型、大小、惡意內容與敏感資訊檢查。
 - PDF 仍轉為受治理的 canonical text／segments，不直接把二進位檔當作 RAG 唯一來源。
 - 文件命中、正負評、Issue 分布、最近使用時間及對應對話。
 - 未發布草稿不得計入正式命中。
+
+文件更新必須建立新版本，不原地覆寫已發布版本。未發布且無相依關係的草稿可經權限與相依檢查後實體刪除；已發布或已有命中／Audit 關聯的文件只能下架並標記刪除，原始內容依保存政策到期刪除，ID、版本、命中與操作軌跡在政策允許期間內保持可追溯。
 
 ### 6.7 品質與回饋
 
@@ -210,6 +215,7 @@ Phase 1 主要 read model：
 - `GET /conversations/{id}`
 - `GET /issues/summary`
 - `GET /issues/{issueTypeId}/routes`
+- Knowledge document list/detail/create/new-version/disable/delete、upload/parse/test/review/publish/rollback。
 - `GET /knowledge/{documentId}/performance`
 - `GET /feedback`
 - `GET /costs/summary`
@@ -254,7 +260,7 @@ Phase 1 主要 read model：
 4. 對話可追查 Issue、Route、FAQ／文件、回饋及 Handoff／Ticket。
 5. Issue Dashboard 支援 1 日、1 週、1 月、6 個月與自訂期間。
 6. 文件頁可顯示命中、正負評、Issue 與對應對話。
-7. Markdown 及文字型 PDF 可治理、解析、測試、送審、發布及顯示索引狀態。
+7. Markdown 及文字型 PDF 可新增、更新、停用、受治理刪除及查詢，並可治理、解析、測試、送審、發布及顯示索引狀態。
 8. 系統健康度可辨識至少一個模擬 LLM、RAG、Ticket API 異常。
 9. 匯出套用畫面相同權限與遮罩，且留下 Audit。
 10. Dashboard 所有數字皆可下鑽或連結至定義，不出現無來源 KPI。
@@ -283,6 +289,6 @@ Phase 1 主要 read model：
 - 所有 Phase 1 指標均使用 Phase 0 定義並完成抽樣 reconciliation。
 - 角色、data scope、遮罩、未遮罩查閱及匯出安全測試通過。
 - Dashboard、對話、Issue、知識成效、成本、回饋、健康度具 loading／empty／error／forbidden 狀態。
-- Markdown／PDF 與現有知識發布流程完成端到端 UAT。
+- Markdown／PDF 的新增、版本更新、停用、受治理刪除、查詢與現有知識發布流程完成端到端 UAT。
 - Analytics 延遲、資料品質與服務健康度具有監控及 runbook。
 - BU 可在 15 分鐘內完成「由負評找到對話、Issue、來源文件」的驗收任務。

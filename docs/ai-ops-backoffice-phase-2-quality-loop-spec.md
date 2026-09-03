@@ -2,7 +2,9 @@
 
 > 文件狀態：Draft for review
 >
-> 規格版本：v1.0
+> 規格版本：v1.1
+>
+> 需求基準：2026-09-03 提供之《功能需求清單》與《資料保存規則》CSV
 >
 > 前置條件：Phase 0 資料治理與 Phase 1 營運可視化已驗收
 >
@@ -24,7 +26,7 @@ Phase 2 將 Phase 1 的觀察能力轉為改善能力。系統不只呈現「哪
   → 結案或重新開啟
 ```
 
-Phase 2 產生的 Issue 正反例可供 Phase 3 Prompt 候選與離線評測使用，但不得直接自動修改正式 Prompt。
+Phase 2 產生的 Issue 正反例可供 Prompt 候選與離線評測使用。本階段依 POC 需求提供目前正式 Prompt 的唯讀檢視及候選產生，但不得啟用候選或直接修改正式 Prompt；生產核准、Canary、啟用與回復由 Phase 3 負責。
 
 ## 2. 對應 BU 需求
 
@@ -35,12 +37,14 @@ Phase 2 產生的 Issue 正反例可供 Phase 3 Prompt 候選與離線評測使�
 | REQ-006 | FAQ 對應 Issue 的正反例維護 |
 | REQ-010 | 文件 Issue 正反例與人工補標 |
 | REQ-013 | 重新同步／重新索引 Job 與狀態 |
+| REQ-014 | 目前啟用中的 Issue Extractor Prompt、版本與狀態唯讀檢視 |
+| REQ-015 | 依已驗證正反例產生 Prompt Candidate；不覆蓋正式版本 |
 | REQ-018 | 無答案／低信心／負評／轉人工管理池 |
 | REQ-019 | Knowledge Gap 聚合、排序與改善追蹤 |
 | REQ-023 | 成本／Token 門檻與個人每日 50 元政策 |
 | REQ-025 | 同步、API、成本等異常通知與追蹤 |
 
-REQ-015 的 Prompt 候選產生不在本階段；Phase 2 只建立經治理的 examples／evaluation dataset。
+REQ-014、REQ-015 在本階段以 POC 範圍交付；REQ-016 的核准、啟用與回復及 REQ-015 的完整生產 Eval／治理流程留在 Phase 3。
 
 ## 3. 目標與非目標
 
@@ -53,10 +57,11 @@ REQ-015 的 Prompt 候選產生不在本階段；Phase 2 只建立經治理的 e
 - 讓管理者安全執行全量或指定範圍重新索引，並看見進度與錯誤。
 - 建立成本與系統事件的門檻、通知、確認與結案紀錄。
 - 累積可供 Phase 3 使用的人工確認正反例資料集。
+- 讓 AI Admin 唯讀查看目前正式 Prompt，並以已驗證 dataset 產生不影響 Active 版本的候選。
 
 ### 3.2 非目標
 
-- 不讓 AI 自動發布 FAQ、文件或 Prompt。
+- 不讓 AI 自動發布 FAQ／文件，或核准、啟用、回復 Prompt。
 - 不將語意 clustering 結果直接視為正式 Issue taxonomy。
 - 不建立通用客服工單系統；Quality Case 只管理 AI／知識改善。
 - 不取代公司既有通知中心或 incident management；若有既有系統，以整合為優先。
@@ -70,7 +75,7 @@ REQ-015 的 Prompt 候選產生不在本階段；Phase 2 只建立經治理的 e
 | Knowledge Reviewer | 審核 FAQ／文件版本及品質案件改善證據 |
 | Knowledge Admin | 管理 FAQ、品質池、Owner、同步範圍與緊急停用 |
 | Service Owner | 排定 Gap 優先級、核准分類與結案、設定服務成本門檻 |
-| AI Admin | 查閱 examples dataset 品質；不可在 Phase 2 啟用 Prompt |
+| AI Admin | 查閱 examples dataset 與目前正式 Prompt，產生 Prompt Candidate；不可在 Phase 2 啟用 Prompt |
 | System Admin | 管理同步 Job、通知整合與技術告警 |
 | Auditor | 唯讀查看案件、內容版本、同步、通知與操作稽核 |
 
@@ -101,6 +106,7 @@ DRAFT → IN_REVIEW → APPROVED → ACTIVE
 
 - Runtime 只能讀取 `ACTIVE` 且 audience 符合的不可變 FAQ release。
 - 編輯既有 FAQ 必須建立新版本，不原地修改正式答案。
+- 未發布且無相依關係的草稿可經權限與相依檢查後實體刪除；已發布 FAQ 不得硬刪除，應停用或由新版本取代並保留歷史關聯。
 - 停用與回復需填原因並產生 Audit。
 - `faqKey` 變更需檢查 Prompt／Issue mapping 相容性。
 - FAQ 答案仍為 deterministic fixed answer，不經 LLM 改寫。
@@ -108,7 +114,7 @@ DRAFT → IN_REVIEW → APPROVED → ACTIVE
 ### 5.3 FAQ 維護介面
 
 - 依分類、關鍵字、狀態、Owner、Issue、檢視日搜尋與篩選。
-- 新增／編輯精靈、版本差異、測試、送審、核准、啟用、停用、回復。
+- 新增／編輯精靈、版本差異、測試、送審、核准、啟用、停用、受治理刪除、回復。
 - 顯示日／週／月／總命中、正負評、無效 fallback 與對應對話。
 - FAQ 啟用前至少測試典型問法、相似但不應命中的反例及 audience。
 
@@ -132,9 +138,19 @@ DRAFT → IN_REVIEW → APPROVED → ACTIVE
 
 - Positive 表示應分類／命中；Negative 表示不應分類／不應命中，必須寫明混淆對象。
 - 由對話轉成 example 前先遮罩，並保留 source correlation 供授權追溯。
-- 人工新增的 Issue Type 必須來自 ACTIVE taxonomy；新增 taxonomy 走 Phase 0 治理流程。
+- Knowledge Admin 可為文件人工新增、修改或移除 ACTIVE Issue Type 關聯與正反例，並保存 `sourceType`、`sourceId`、`sourceVersionId` 及操作者；若需建立新的 Issue Type，必須走 Phase 0 taxonomy 治理流程。
 - 未驗證 example 不得進入正式 eval dataset。
 - 修改 example 產生新版本，不靜默改寫已使用的 dataset。
+- FAQ／文件正反例支援新增、修改與刪除；「刪除」以 `RETIRED` 及新版本表示，已被 dataset 使用的紀錄不得硬刪除。
+
+### 6.3 Prompt 檢視與候選產生（REQ-014／015 POC）
+
+- AI Admin 可唯讀查看目前啟用中的 Issue Extractor Prompt、版本、狀態及生效時間；Prompt 原文另受 capability 控制，secret value 永不顯示。
+- 候選產生必須指定 `VERIFIED` dataset version、目前 Active Prompt version、taxonomy version、資料範圍及 masking policy version。
+- 每次執行建立新的 immutable Candidate，保存產生者、輸入 manifest、模型 usage／成本、狀態、時間及 correlation ID；失敗不得留下可啟用候選。
+- Candidate 產生前執行 schema、secret、prompt injection 與長度檢查，產生後可與 Active 版本比較，但不得修改 Active pointer。
+- Phase 2 不提供 submit／approve／activate／rollback API；完整 Eval、核准、Canary、啟用與回復由 Phase 3 實作。
+- 雲端 LAB 無法串接正式 AA／IAM 時只允許 Phase 0 定義的測試角色映射；不得以本地正式帳號或略過授權方式執行候選產生。
 
 ## 7. Quality Case 管理池
 
@@ -253,8 +269,9 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 
 ## 12. API 能力需求
 
-- FAQ list/detail/create/update/submit/review/activate/disable/rollback。
-- FAQ／Document examples list/create/verify/retire。
+- FAQ list/detail/create/update/delete/submit/review/activate/disable/rollback；已發布 FAQ 的 delete 只能執行受治理停用／退役。
+- FAQ／Document Issue associations 與 examples list/create/update/verify/retire；retire 為已使用關聯或 example 的受治理刪除。
+- Active Prompt read，以及 Prompt Candidate generate/list/detail/compare；不提供 approve／activate／rollback。
 - Quality candidates list／merge，Quality cases CRUD／assign／transition／resolve。
 - Gap summary、cluster detail、cluster correction。
 - Sync job create/list/detail/retry/cancel。
@@ -272,6 +289,7 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 - 批次操作限指派、標籤與通知；不得批次發布 FAQ／文件。
 - Sync Job 顯示階段與進度，不只顯示 spinner。
 - 成本告警清楚區分估算值、資料 coverage 與帳單實際值。
+- Prompt 頁明確區分 Active 與 Candidate，候選產生按鈕不得使用「啟用」或「發布」字樣。
 
 ## 14. 安全、稽核與資料治理
 
@@ -279,8 +297,11 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 - 一般 Quality Case 頁不顯示未遮罩全文；需要時以額外授權展開並 Audit。
 - FAQ audience、文件 audience 與 runtime ACL 使用同一群組來源。
 - FAQ 啟用、停用、回復、Sync、Budget Policy 及 Alert receiver 變更必須 Audit。
+- FAQ／example 刪除、Active Prompt 查閱及 Candidate 產生必須 Audit；Prompt 與 dataset 內容先套用 secret redaction 與 masking policy。
 - 通知 receiver 不可由未授權角色任意輸入外部地址。
 - Dataset export／下載沿用 Phase 1 匯出安全規則。
+
+依最新資料保存規則，FAQ 命中、正反例及來源明細、Quality Candidate／Case／Gap 明細、Sync Job、成本門檻實績、Alert 與 Notification 歷史保存一年；到期刪除明細或僅保留不可逆彙總。FAQ 主檔及 Prompt／FAQ／文件版本期限仍待治理決議；若資料同時屬於 Audit，採較長的稽核保存政策。
 
 ## 15. 非功能需求
 
@@ -293,9 +314,9 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 
 ## 16. 驗收標準
 
-1. 可完成 FAQ 新增、測試、送審、核准、啟用、停用與回復，且 runtime 僅採用 ACTIVE 版本。
+1. 可完成 FAQ 新增、修改、受治理刪除、查詢、測試、送審、核准、啟用、停用與回復，且 runtime 僅採用 ACTIVE 版本。
 2. FAQ 日／週／月／總命中可追溯至 Turn 與 FAQ version。
-3. 可為 FAQ／文件新增、驗證、退役正反例，未驗證資料不進正式 dataset。
+3. 可為 FAQ／文件新增、修改、驗證及受治理刪除 Issue 關聯與正反例，並保留來源與操作者；未驗證資料不進正式 dataset，已使用資料不被硬刪除。
 4. 無答案、低信心、負評與 Handoff 可形成候選並合併成 Quality Case。
 5. 可由 Case 建立知識／FAQ 草稿，發布後進入觀察期並以數據驗證改善。
 6. Gap 可依頻率、負評、無答案及 Handoff 排序，且分數可解釋。
@@ -303,6 +324,8 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 8. 個人每日 TWD 50 元測試政策可觸發一次告警，並完成通知、確認與結案。
 9. 通知不包含未遮罩對話或受限內容。
 10. 所有高風險寫入、狀態轉移與匯出具有 Audit。
+11. AI Admin 可辨識目前啟用中的 Issue Extractor Prompt、版本、狀態及生效時間，未授權角色看不到 Prompt 原文。
+12. 使用已驗證 dataset 產生新 Prompt Candidate 時不修改 Active 版本，且 Phase 2 無法核准或啟用候選。
 
 ## 17. 待決策事項
 
@@ -320,6 +343,7 @@ Phase 2 預設只告警、不自動停用服務；若未來要 hard limit，必�
 - FAQ runtime 已從啟動時 JSON 改為版本化、可安全刷新或 release-based 的來源。
 - Quality Candidate → Case → 內容改善 → 發布 → 觀察 → 結案完成端到端 UAT。
 - examples dataset 具版本、遮罩、驗證與來源追溯，可供 Phase 3 eval 使用。
+- REQ-014／015 POC 完成 Active Prompt 唯讀檢視與 Candidate 產生，並以權限及 API 測試證明無法改動 Active 版本。
 - Sync Job、Budget Policy、Alert 與 Notification 具持久化狀態、重試及 Audit。
 - BU 可在 20 分鐘內將一組重複無答案問題轉為改善案件並指派處理。
 - 資安確認對話轉案例、通知及外部模型 clustering 的資料邊界。

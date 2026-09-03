@@ -2,7 +2,9 @@
 
 > 文件狀態：Draft for review
 >
-> 規格版本：v1.0
+> 規格版本：v1.1
+>
+> 需求基準：2026-09-03 提供之《功能需求清單》與《資料保存規則》CSV
 >
 > 前置條件：Phase 0–2 已完成；已有穩定事件、Issue taxonomy、eval dataset、版本化 FAQ／知識與品質流程
 >
@@ -25,14 +27,14 @@ Phase 3 處理最容易影響全體使用者的高風險能力。後台不得提
   → 必要時 Rollback
 ```
 
-任何自動優化只能產生 Candidate，不得直接覆蓋 Active 版本。
+任何自動優化只能產生 Candidate，不得直接覆蓋 Active 版本。Phase 2 已交付 REQ-014／015 的 POC 唯讀檢視與候選產生；本階段補齊生產所需的 Eval、核准、Canary、啟用與回復治理。
 
 ## 2. 對應 BU 需求
 
 | BU 需求 | Phase 3 範圍 |
 |---|---|
-| REQ-014 | Issue Extractor Prompt、版本與正式啟用狀態檢視 |
-| REQ-015 | 依核准 dataset 產生 Prompt Candidate 並執行 Eval |
+| REQ-014 | 延伸 Phase 2 唯讀檢視，納入完整 Prompt Registry、版本 diff 與權限治理 |
+| REQ-015 | 延伸 Phase 2 Candidate POC，加入可重現 Eval 與生產治理 |
 | REQ-016 | Prompt 核准、啟用、Canary、回復與歷史 |
 | REQ-020 | 完整角色映射與 capability／data scope 管理 |
 | REQ-021 | 跨 FAQ、文件、Prompt、模型、同步、權限、設定的完整 Audit |
@@ -241,6 +243,8 @@ Audit 一般管理者不可刪除；匯出採獨立 capability。完整性需有
 
 ## 13. 敏感資訊與資料治理完成版
 
+- 模型設定與 Feature Flag 的變更、生效及操作歷史保存一年；若同時屬於 Audit，採較長的稽核保存政策。
+- Prompt／FAQ／文件版本歷史的期限依最新保存規則仍待治理決議；在決議完成前不得因一般 TTL 刪除仍被 Active／Rollback／Audit 引用的版本。
 - 管理遮罩政策版本、測試集、生效環境與 rollback。
 - 提供資料刪除 request、執行狀態、受影響 store 與證明。
 - 若法遵要求，提供 legal hold 建立、核准、解除與 Audit。
