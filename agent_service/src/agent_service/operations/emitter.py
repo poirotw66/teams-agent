@@ -9,11 +9,12 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 from ..contracts import AgentRequest, FeedbackRequest, IssueResult
 from ..usage_events import RequestCostSummary
 from .classification import IssueClassifier
-from .contracts import MASKING_POLICY_VERSION, OperationalEvent
+from .contracts import MASKING_POLICY_VERSION, OperationalEvent, utc_now
 from .event_identity import (
     LogicalRequestIdentity,
     conversation_started_event_id,
     event_fingerprint,
+    feedback_event_id,
     feedback_submission_event_id,
     required_utc,
 )
@@ -28,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 class OperationalEventReplayConflict(ValueError):
     """A replay changed previously observed immutable facts."""
+
+
+class OperationalEventReplayDuplicate(Exception):
+    """A finalized logical request was delivered again without changed facts."""
 
 
 def _channel_scope(channel: str) -> str:
@@ -84,6 +89,10 @@ class OperationalEventEmitter:
         self._event_fingerprints: dict[str, str] = {}
         self._call_manifests: dict[str, set[str]] = {}
         self._final_usage: dict[str, str] = {}
+        self._feedback_provenance: dict[
+            tuple[str, str], tuple[str, str, str | None, str] | None
+        ] = {}
+        self._feedback_events: dict[str, tuple[str, OperationalEvent]] = {}
 
     @staticmethod
     def _occurred_at(state: dict[str, Any], conversation: object | None) -> datetime:
@@ -109,6 +118,8 @@ class OperationalEventEmitter:
         request_hash = event_fingerprint(request_fact)
         if self._request_fingerprints.get(request_key, request_hash) != request_hash:
             raise OperationalEventReplayConflict("logical request replay changed immutable facts")
+        if final_usage and request_key in self._final_usage:
+            raise OperationalEventReplayDuplicate
         proposed = {}
         for event in events:
             fingerprint = event_fingerprint(event)
@@ -136,9 +147,11 @@ class OperationalEventEmitter:
         self, payload: AgentRequest, state: dict[str, Any], *,
         cost_summary: RequestCostSummary | None,
     ) -> None:
-        await self._ingestion.ingest_many(
-            self.build_turn_events(payload, state, cost_summary=cost_summary)
-        )
+        try:
+            events = self.build_turn_events(payload, state, cost_summary=cost_summary)
+        except OperationalEventReplayDuplicate:
+            return
+        await self._ingestion.ingest_many(events)
 
     def schedule_turn(
         self, payload: AgentRequest, state: dict[str, Any], *,
@@ -146,18 +159,58 @@ class OperationalEventEmitter:
     ) -> None:
         # Build synchronously to validate provenance and freeze the completed
         # fact image before a caller can mutate the collector/state.
-        events = self.build_turn_events(payload, state, cost_summary=cost_summary)
+        try:
+            events = self.build_turn_events(payload, state, cost_summary=cost_summary)
+        except OperationalEventReplayDuplicate:
+            return
         asyncio.create_task(self._ingestion.ingest_many(events))
 
     def build_feedback_event(
         self, payload: FeedbackRequest, *,
-        tenant_id: str, feedback_id: str, occurred_at: datetime,
+        tenant_id: str | None = None, feedback_id: str | None = None,
+        occurred_at: datetime | None = None, actor_id: str | None = None,
         request_id: str | None = None,
     ) -> OperationalEvent:
-        if not tenant_id or not feedback_id:
-            raise ValueError("trusted tenant_id and feedback_id are required")
-        timestamp = required_utc(occurred_at, "feedback occurred_at")
-        identity = LogicalRequestIdentity(tenant_id, payload.conversationId, request_id) if request_id else None
+        provenance_key = (payload.correlationId, payload.conversationId or "")
+        trusted = self._feedback_provenance.get(provenance_key)
+        if provenance_key in self._feedback_provenance and trusted is None:
+            raise ValueError("feedback provenance is ambiguous")
+        canonical_conversation_id = payload.conversationId
+        if trusted is not None:
+            trusted_tenant, trusted_request, trusted_actor, canonical_conversation_id = trusted
+            if tenant_id is not None and tenant_id != trusted_tenant:
+                raise OperationalEventReplayConflict("feedback tenant does not match turn")
+            if request_id is not None and request_id != trusted_request:
+                raise OperationalEventReplayConflict("feedback request does not match turn")
+            if actor_id is not None and actor_id != trusted_actor:
+                raise OperationalEventReplayConflict("feedback actor does not match turn")
+            tenant_id, request_id, actor_id = (
+                trusted_tenant,
+                trusted_request,
+                trusted_actor,
+            )
+        if not tenant_id or not actor_id:
+            raise ValueError("trusted feedback tenant and actor provenance are required")
+        if payload.userId is not None and payload.userId != actor_id:
+            raise OperationalEventReplayConflict("feedback user does not match turn actor")
+        feedback_id = feedback_id or feedback_event_id(
+            tenant_id=tenant_id,
+            conversation_id=canonical_conversation_id,
+            correlation_id=payload.correlationId,
+            issue_id=payload.issueId,
+            rating=payload.rating,
+            resolved_status=payload.resolvedStatus,
+            actor_id=actor_id,
+            reason=payload.reason,
+        )
+        feedback_fact = event_fingerprint(payload.model_dump(mode="json"))
+        existing = self._feedback_events.get(feedback_id)
+        if existing is not None:
+            if existing[0] != feedback_fact:
+                raise OperationalEventReplayConflict("feedback replay changed immutable facts")
+            return existing[1]
+        timestamp = required_utc(occurred_at or utc_now(), "feedback occurred_at")
+        identity = LogicalRequestIdentity(tenant_id, canonical_conversation_id, request_id) if request_id else None
         event = OperationalEvent(
             event_id=feedback_submission_event_id(tenant_id, feedback_id),
             event_type="feedback.recorded",
@@ -165,7 +218,7 @@ class OperationalEventEmitter:
             retention_expires_at=timestamp + timedelta(days=self._settings.default_retention_days),
             environment=self._settings.environment,
             tenant_id=tenant_id,
-            conversation_id=payload.conversationId,
+            conversation_id=canonical_conversation_id,
             request_id=request_id,
             turn_id=identity.value if identity else None,
             issue_occurrence_id=(
@@ -173,7 +226,7 @@ class OperationalEventEmitter:
                 if identity and payload.issueId is not None else None
             ),
             correlation_id=payload.correlationId,
-            actor_ref=pseudonymous_actor_id(payload.userId),
+            actor_ref=pseudonymous_actor_id(actor_id),
             data_classification="CONFIDENTIAL",
             payload={
                 "rating": payload.rating,
@@ -183,6 +236,7 @@ class OperationalEventEmitter:
             },
         )
         self._assert_immutable(event.event_id, payload.model_dump(mode="json"), [event])
+        self._feedback_events[feedback_id] = (feedback_fact, event)
         return event
 
     async def emit_feedback(self, payload: FeedbackRequest, **provenance: Any) -> None:
@@ -229,8 +283,13 @@ class OperationalEventEmitter:
             "locale": payload.message.locale, "maskingPolicyVersion": MASKING_POLICY_VERSION,
         }, data_classification="CONFIDENTIAL")
         if conversation_id and state.get("conversation_started") is True:
+            started_at_value = getattr(conversation, "startedAt", None)
+            if started_at_value is None:
+                started_at_value = state.get("operational_conversation_started_at")
+            if started_at_value is None:
+                started_at_value = occurred_at
             started_at = required_utc(
-                getattr(conversation, "startedAt", None) or state.get("operational_conversation_started_at"),
+                started_at_value,
                 "conversation startedAt",
             )
             # A lifecycle fact has no request, actor, team, or correlation from
@@ -292,9 +351,10 @@ class OperationalEventEmitter:
 
         collector = getattr(state.get("execution_context"), "usage_collector", None)
         calls = tuple(collector.events()) if collector is not None else ()
-        for call in calls:
+        for call_ordinal, call in enumerate(calls, 1):
             self._validate_usage_scope(call, payload, correlation_id)
-            add("usage.recorded", call_usage_payload(call), "call", call.event_id,
+            add("usage.recorded", call_usage_payload(call, call_ordinal=call_ordinal),
+                "call", call.event_id,
                 occurred_at=call_occurred_at(call))
         if cost_summary is not None:
             self._validate_usage_scope(cost_summary, payload, correlation_id)
@@ -319,6 +379,22 @@ class OperationalEventEmitter:
             call_ids={c.event_id for c in calls}, usage_fact=usage_fact,
             final_usage=cost_summary is not None,
         )
+        feedback_provenance = (
+            payload.conversation.tenantId,
+            payload.requestId,
+            payload.user.entraObjectId or payload.user.teamsUserId,
+            conversation_id or payload.conversation.conversationId,
+        )
+        for feedback_conversation_id in {
+            conversation_id,
+            payload.conversation.conversationId,
+        }:
+            feedback_key = (correlation_id, feedback_conversation_id or "")
+            existing_provenance = self._feedback_provenance.get(feedback_key)
+            if existing_provenance is not None and existing_provenance != feedback_provenance:
+                self._feedback_provenance[feedback_key] = None
+            elif feedback_key not in self._feedback_provenance:
+                self._feedback_provenance[feedback_key] = feedback_provenance
         return events
 
     def _validate_usage_scope(self, usage: Any, request: AgentRequest, correlation_id: str) -> None:

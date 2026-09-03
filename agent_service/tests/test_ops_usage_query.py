@@ -14,7 +14,9 @@ from ai_ops_backoffice.services.reconciliation import (
 )
 from ai_ops_backoffice.services.usage_projection import project_usage
 
-ACTOR = ActorContext(user_id="test", display_name="Test", role="ANALYST")
+ACTOR = ActorContext(
+    user_id="test", display_name="Test", role="ANALYST", owner_unit_ids=()
+)
 
 
 def _event(key: str, payload: dict, *, tenant: str = "tenant", request: str = "req"):

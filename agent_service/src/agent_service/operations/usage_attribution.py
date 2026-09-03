@@ -24,10 +24,13 @@ def _total_tokens(event: UsageEvent) -> int:
     )
 
 
-def call_usage_payload(event: UsageEvent) -> dict[str, Any]:
+def call_usage_payload(event: UsageEvent, *, call_ordinal: int) -> dict[str, Any]:
     """Preserve observed facts and derive conservative coverage flags."""
+    if call_ordinal < 1:
+        raise ValueError("call_ordinal must be positive")
     return {
         "attributionScope": "CALL",
+        "callOrdinal": call_ordinal,
         "collectorEventId": event.event_id,
         "collectorTimestamp": event.timestamp,
         "component": event.component,

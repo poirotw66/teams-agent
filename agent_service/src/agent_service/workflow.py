@@ -13,9 +13,9 @@ Correlation ID (spec §15.1)
 ----------------------------
 Derived exactly ONCE, by the caller of :meth:`AgentWorkflow.run` (typically
 ``api.py``, the actual Teams-request entry point) or, if none is supplied,
-by ``run`` itself from ``request.correlationId`` / a fresh uuid4. It is
+by ``run`` itself from ``request.correlationId`` / the logical request identity. It is
 placed into ``AgentState["correlation_id"]`` before the graph starts and
-every node only *reads* it — no node ever calls ``uuid4()`` again — so the
+every node only *reads* it, so the
 same id reaches the extractor, the knowledge service, the ticket service and
 the conversation repository.
 
@@ -40,7 +40,6 @@ of the user-facing text — response_builder never renders
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -52,6 +51,7 @@ from .faq import FaqService
 from .handoff import HandoffRepository
 from .handoff_flow import AgenticHandoffRouter
 from .knowledge import KnowledgeService
+from .operations.event_identity import LogicalRequestIdentity
 from .settings import RagSettings
 from .supervisor import ConversationSupervisor
 from .ticket import AgenticTicketItemSelector, TicketService
@@ -127,7 +127,13 @@ class AgentWorkflow(
     def _initial_state(
         self, request: AgentRequest, correlation_id: str | None
     ) -> AgentState:
-        resolved_correlation_id = correlation_id or request.correlationId or str(uuid.uuid4())
+        resolved_correlation_id = correlation_id or request.correlationId
+        if not resolved_correlation_id:
+            resolved_correlation_id = LogicalRequestIdentity(
+                request.conversation.tenantId,
+                request.conversation.conversationId,
+                request.requestId,
+            ).value
         return {
             "request": request,
             "correlation_id": resolved_correlation_id,

@@ -2,7 +2,6 @@ import hmac
 import json
 import logging
 import time
-import uuid
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
@@ -27,6 +26,8 @@ from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .knowledge_release import resolve_knowledge_index
+from .operations.event_identity import LogicalRequestIdentity
+from .operations.runtime import OpsRuntime, build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .ticket import build_ticket_service
@@ -38,7 +39,6 @@ from .usage_events import (
     derive_request_outcome,
     log_request_cost,
 )
-from .operations.runtime import OpsRuntime, build_ops_runtime
 from .workflow import INITIAL_STAGE_LABEL, AgentWorkflow, build_knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -254,7 +254,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         # Spec §15.1: derive the Correlation ID exactly ONCE, at this entry
         # point, and never regenerate it downstream (the workflow honors an
         # explicitly-passed value instead of deriving its own).
-        correlation_id = payload.correlationId or str(uuid.uuid4())
+        correlation_id = payload.correlationId or LogicalRequestIdentity(
+            payload.conversation.tenantId,
+            payload.conversation.conversationId,
+            payload.requestId,
+        ).value
         logger.info(
             "Agent request started: request_id=%s channel=%s correlation_id=%s",
             payload.requestId,

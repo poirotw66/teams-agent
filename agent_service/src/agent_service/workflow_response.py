@@ -37,21 +37,23 @@ class ResponseWorkflowMixin:
         conversation = state["conversation"]
         correlation_id = state["correlation_id"]
         pending_issues = self._pending_issues_for_next_turn(state)
-        await self.conversation_service.record_message(
+        user_message = await self.conversation_service.record_message(
             conversation.conversationId,
             role="user",
             text=request.message.text,
+            request_id=request.requestId,
             correlation_id=correlation_id,
         )
         await self.conversation_service.record_message(
             conversation.conversationId,
             role="assistant",
             text=state.get("final_response", ""),
+            request_id=request.requestId,
             correlation_id=correlation_id,
             follow_up_state=self._follow_up_state(state, pending_issues),
             pending_issues=pending_issues,
         )
-        return {}
+        return {"operational_user_message": user_message}
 
     @staticmethod
     def _pending_issues_for_next_turn(

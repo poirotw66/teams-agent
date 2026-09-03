@@ -245,9 +245,14 @@ def test_feedback_identity_is_replay_safe_without_treating_correlation_as_unique
     )
 
     async def run() -> None:
-        await emitter.emit_feedback(first)
-        await emitter.emit_feedback(first)
-        await emitter.emit_feedback(distinct)
+        provenance = {
+            "tenant_id": "tenant-1",
+            "actor_id": "user-1",
+            "occurred_at": datetime(2026, 1, 2, tzinfo=UTC),
+        }
+        await emitter.emit_feedback(first, **provenance)
+        await emitter.emit_feedback(first, **provenance)
+        await emitter.emit_feedback(distinct, **provenance)
 
     asyncio.run(run())
     stored, _ = asyncio.run(store.list_events(limit=10))

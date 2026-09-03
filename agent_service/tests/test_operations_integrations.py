@@ -11,7 +11,10 @@ import pytest
 from agent_service.operations.audit import build_audit_event
 from agent_service.operations.audit_stores import FirestoreAuditStore
 from agent_service.operations.contracts import OperationalEvent, utc_now
-from agent_service.operations.stores.bigquery_sink import BigQueryEventSink
+from agent_service.operations.stores.bigquery_sink import (
+    BigQueryDeliveryError,
+    BigQueryEventSink,
+)
 from agent_service.operations.stores.firestore_store import _firestore_document
 from agent_service.operations.stores.memory_store import MemoryOperationalStore
 from ai_ops_backoffice.services.export_format import (
@@ -187,7 +190,7 @@ def test_memory_store_filters_events_by_period() -> None:
     asyncio.run(run())
 
 
-def test_bigquery_sink_logs_insert_errors_without_raising() -> None:
+def test_bigquery_sink_raises_typed_error_for_rejected_rows() -> None:
     client = MagicMock()
     client.insert_rows_json.return_value = [{"errors": "schema mismatch"}]
     sink = BigQueryEventSink(client, "dataset", "table")
@@ -202,7 +205,8 @@ def test_bigquery_sink_logs_insert_errors_without_raising() -> None:
     async def run() -> None:
         await sink.append(event)
 
-    asyncio.run(run())
+    with pytest.raises(BigQueryDeliveryError, match="bigquery_row_rejected"):
+        asyncio.run(run())
     client.insert_rows_json.assert_called_once()
 
 

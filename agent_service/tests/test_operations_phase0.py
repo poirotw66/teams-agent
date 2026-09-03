@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -76,6 +76,7 @@ def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path
         _FakeRequest(),
         {
             "correlation_id": "corr-1",
+            "operational_occurred_at": datetime(2026, 1, 2, tzinfo=UTC),
             "issues": [issue],
             "issue_results": [],
             "handoff_handled": True,

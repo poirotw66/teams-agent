@@ -535,6 +535,7 @@ class FirestoreConversationRepository:
                 role=data.get("role"),
                 text=data.get("text") or "",
                 createdAt=created_at,
+                requestId=data.get("requestId"),
                 correlationId=data.get("correlationId"),
                 followUpState=data.get("followUpState") or "NONE",
                 pendingIssues=data.get("pendingIssues") or [],
@@ -719,6 +720,7 @@ class FirestoreConversationRepository:
                 "role": message.role,
                 "text": message.text,
                 "createdAt": message.createdAt,
+                "requestId": message.requestId,
                 "correlationId": message.correlationId,
                 "followUpState": message.followUpState,
                 "pendingIssues": [
@@ -896,17 +898,40 @@ class ConversationService:
         *,
         role: str,
         text: str,
+        request_id: str | None = None,
         correlation_id: str | None = None,
         follow_up_state: str = "NONE",
         pending_issues: list[PendingIssueContext] | None = None,
     ) -> ConversationMessage:
+        expected_pending = pending_issues or []
+        if request_id:
+            messages = await self._repository.get_recent_messages(conversation_id, 10_000)
+            existing = next(
+                (
+                    message
+                    for message in reversed(messages)
+                    if message.requestId == request_id and message.role == role
+                ),
+                None,
+            )
+            if existing is not None:
+                user_message_changed = any((
+                    existing.text != text,
+                    existing.correlationId != correlation_id,
+                    existing.followUpState != follow_up_state,
+                    existing.pendingIssues != expected_pending,
+                ))
+                if role == "user" and user_message_changed:
+                    raise ValueError("request replay changed persisted conversation message")
+                return existing
         message = ConversationMessage(
             role=role,  # type: ignore[arg-type]
             text=text,
             createdAt=self._clock(),
+            requestId=request_id,
             correlationId=correlation_id,
             followUpState=follow_up_state,
-            pendingIssues=pending_issues or [],
+            pendingIssues=expected_pending,
         )
         await self._repository.save_message(conversation_id, message)
         return message

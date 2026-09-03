@@ -166,6 +166,7 @@ class ConversationMessage(StrictModel):
     role: Literal["user", "assistant"]
     text: str
     createdAt: datetime
+    requestId: str | None = None
     correlationId: str | None = None
     followUpState: Literal[
         "NONE", "AWAITING_CLARIFICATION", "AWAITING_TICKET_CONFIRMATION"

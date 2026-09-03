@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from datetime import datetime
 from typing import TypedDict
 
 from .confirmation import TicketIntent
@@ -12,6 +13,7 @@ from .contracts import (
     AgentRequest,
     Citation,
     ConversationContext,
+    ConversationMessage,
     Issue,
     IssueResult,
     PendingIssueContext,
@@ -151,6 +153,9 @@ class AgentState(TypedDict, total=False):
     handoff_resume_reason: str
     supervisor_decision: ConversationSupervisorDecision
     skip_issue_pipeline: bool
+    operational_user_message: ConversationMessage
+    operational_occurred_at: datetime
+    operational_conversation_started_at: datetime
 
 
 def _has_pending_ticket_offer(conversation: ConversationContext) -> bool:

@@ -748,6 +748,53 @@ async def test_service_record_message_and_get_history_order(repository, tmp_path
     assert history[1].role == "assistant"
 
 
+async def test_service_record_message_reuses_identical_request(repository, tmp_path, clock):
+    service = ConversationService(repository, make_settings(tmp_path), clock=clock)
+    ctx = await service.load_or_create(**KEY_A)
+
+    first = await service.record_message(
+        ctx.conversationId,
+        role="user",
+        text="same question",
+        request_id="request-1",
+        correlation_id="correlation-1",
+    )
+    clock.advance(seconds=10)
+    replay = await service.record_message(
+        ctx.conversationId,
+        role="user",
+        text="same question",
+        request_id="request-1",
+        correlation_id="correlation-1",
+    )
+
+    assert replay == first
+    assert len(await repository.get_recent_messages(ctx.conversationId, 10)) == 1
+
+
+async def test_service_record_message_rejects_changed_request_replay(
+    repository, tmp_path, clock
+):
+    service = ConversationService(repository, make_settings(tmp_path), clock=clock)
+    ctx = await service.load_or_create(**KEY_A)
+    await service.record_message(
+        ctx.conversationId,
+        role="user",
+        text="original question",
+        request_id="request-1",
+        correlation_id="correlation-1",
+    )
+
+    with pytest.raises(ValueError, match="request replay changed"):
+        await service.record_message(
+            ctx.conversationId,
+            role="user",
+            text="changed question",
+            request_id="request-1",
+            correlation_id="correlation-1",
+        )
+
+
 async def test_service_history_honors_max_history_messages(repository, tmp_path, clock):
     settings = make_settings(tmp_path, max_history_messages=3, conversation_history_rounds=10)
     service = ConversationService(repository, settings, clock=clock)
