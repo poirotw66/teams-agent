@@ -515,6 +515,8 @@ class HandoffWorkflowMixin:
         if replay is not None:
             return replay
         ticket_intent = await self._resolve_ticket_intent(state)
+        if hasattr(self, "_handoff_enabled") and not self._handoff_enabled():
+            return {"handoff_handled": False, "ticket_intent": ticket_intent}
         if self.handoff_repository is None:
             return {"handoff_handled": False, "ticket_intent": ticket_intent}
         identity = self._handoff_identity(state)

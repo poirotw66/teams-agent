@@ -47,8 +47,13 @@ from .quality_domain import (
     FirestoreQualityRepository,
     QualityService,
 )
+from .governance_domain import (
+    FileGovernanceRepository,
+    FirestoreGovernanceRepository,
+    GovernanceService,
+)
+from .governance_routes import register_governance_routes
 from .services.periods import PeriodPolicyError
-from .services.phase3_registry import FeatureFlagRecord, Phase3Registry
 from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
 from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
@@ -279,7 +284,6 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     query_service = BackofficeQueryService(resolved_settings)
     export_rate_limiter = ExportRateLimiter()
-    phase3 = Phase3Registry()
 
     class ActiveFaqTaxonomy:
         def require_active(self, issue_type_id: str) -> None:
@@ -407,6 +411,22 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         prompt_repository,
         active_effective_at=prompt_effective_at,
     )
+    governance_store_mode = resolved_settings.governance_store_mode.upper()
+    if governance_store_mode == "FILE":
+        governance_store_path = resolved_settings.governance_store_path or (
+            resolved_settings.ops_store_path.parent / "phase3" / "governance.json"
+        )
+        governance_repository = FileGovernanceRepository(governance_store_path)
+    elif governance_store_mode == "FIRESTORE":
+        from google.cloud import firestore
+
+        governance_repository = FirestoreGovernanceRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.governance_firestore_collection,
+        )
+    else:
+        raise ValueError(f"Unsupported governance store mode: {governance_store_mode}")
+    governance_service = GovernanceService(governance_repository)
     sync_worker = ActorContext(
         user_id="ai-ops-sync-worker",
         display_name="AI Ops Sync Worker",
@@ -652,6 +672,27 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             start_date=start_date,
             end_date=end_date,
         )
+        project = (resolved_settings.gcp_project_id or "").lower()
+        environment = "prod" if "prod" in project else "lab"
+        cost_flag = governance_service.peek_runtime_flag(
+            "cost_display", environment=environment
+        )
+        cost_enabled = True
+        if cost_flag is not None:
+            cost_enabled = str(cost_flag.get("value") or "").lower() in {
+                "true",
+                "1",
+                "enabled",
+            }
+        if not cost_enabled:
+            result = {
+                **result,
+                "estimatedCostUsd": None,
+                "costCoverage": None,
+                "costDisplayEnabled": False,
+            }
+        else:
+            result = {**result, "costDisplayEnabled": True}
         await audit_read(
             actor,
             "query.operations_summary",
@@ -2002,17 +2043,20 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             actor=actor,
         )
 
-    # Phase 3 scaffold
+    register_governance_routes(
+        app,
+        governance=governance_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+        example_service=example_service,
+        faq_service=faq_service,
+    )
+
+    # Phase 3 feature-flag list remains available under the governed API.
     @app.get("/api/feature-flags")
     async def list_feature_flags(actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.config.read")
-        return {"items": phase3.list_feature_flags()}
-
-    @app.post("/api/feature-flags/candidates")
-    async def create_feature_flag(payload: FeatureFlagRecord, actor=Depends(current_actor)) -> dict[str, object]:
-        require_capability(actor, "ops.config.read")
-        phase3.feature_flags.append(payload)
-        return {"flag": payload.model_dump()}
+        require_capability(actor, "ops.flags.read")
+        return {"items": governance_service.list_flags(actor=actor)}
 
     @app.get("/")
     async def index() -> FileResponse:

@@ -16,7 +16,7 @@ class ResponseWorkflowMixin:
 
     async def _build_response(self, state: AgentState) -> dict:
         # Spec §5.3: deterministic template only, no LLM call from here on.
-        offer_ticket = self.settings.ticket_service_mode != "DISABLED"
+        offer_ticket = self._ticket_offers_enabled()
         built = build_response(
             issues=state.get("issues", []),
             results=state.get("issue_results", []),
@@ -25,12 +25,34 @@ class ResponseWorkflowMixin:
             offer_ticket_on_no_knowledge=offer_ticket,
             correlation_id=state["correlation_id"],
         )
+        feedback_enabled = built.feedback_enabled and self._feedback_enabled()
         return {
             "final_response": built.text,
             "citations": built.citations,
             "images": built.images,
-            "feedback_enabled": built.feedback_enabled,
+            "feedback_enabled": feedback_enabled,
         }
+
+    def _governance_runtime(self):
+        runtime = getattr(self, "governance_runtime", None)
+        if runtime is not None:
+            return runtime
+        from .prompt_runtime import GovernanceRuntime
+
+        runtime = GovernanceRuntime.from_settings(self.settings)
+        self.governance_runtime = runtime
+        return runtime
+
+    def _ticket_offers_enabled(self) -> bool:
+        if self.settings.ticket_service_mode == "DISABLED":
+            return False
+        return self._governance_runtime().ticket_enabled()
+
+    def _feedback_enabled(self) -> bool:
+        return self._governance_runtime().feedback_enabled()
+
+    def _handoff_enabled(self) -> bool:
+        return self._governance_runtime().handoff_enabled()
 
     async def _save_conversation(self, state: AgentState) -> dict:
         request = state["request"]

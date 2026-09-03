@@ -240,3 +240,40 @@ Production formal acceptance, when invoked, uses a separate v2 evidence bundle w
 - Evidence report: `artifacts/ai_ops_uat_acceptance_report.json`
 - Sign-off evidence packet: `artifacts/ai_ops_signoff_evidence.json`
 - Sign-off checklist: `artifacts/ai_ops_signoff_checklist.json`
+
+## Phase 3 AI governance (operator notes)
+
+Handoff: `docs/ai-ops-phase-3-governance-handoff.md`. Formal Phase 3 UAT is not claimed by this runbook section.
+
+### Prompt canary stop / evaluate
+
+```bash
+# Stop an active canary (keeps the current ACTIVE healthy version)
+curl -X POST "$BACKOFFICE/api/governance/prompts/issue-extractor/canary/stop" \
+  -H "X-Backoffice-Role: AI_ADMIN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"operator stop"}'
+
+# Evaluate canary metrics; auto-stops when thresholds are breached
+curl -X POST "$BACKOFFICE/api/governance/prompts/issue-extractor/canary/evaluate" \
+  -H "X-Backoffice-Role: AI_ADMIN" \
+  -H "Content-Type: application/json" \
+  -d '{"sample_size":50,"error_rate":0.2,"negative_feedback_rate":0.1,"handoff_rate":0.1,"safety_alerts":0}'
+```
+
+Stop thresholds: `error_rate >= 0.15` or `negative_feedback_rate >= 0.25` or `handoff_rate >= 0.4`, or any `safety_alerts > 0`. Sample size below 10 continues without stop.
+
+### Agent runtime flags
+
+| Flag | Agent effect |
+|------|----------------|
+| `ticket_mode` | Combined with `ticket_service_mode`; default `ENABLED` |
+| `handoff_mode` | Blocks handoff routing when disabled |
+| `feedback` | Combined with `FEEDBACK_ENABLED` |
+| `cost_display` | Hides turn cost in Agent response and overview cost KPIs |
+
+Set `PROMPT_RUNTIME_MODE=CODE_BASELINE` to ignore governance pointers entirely.
+
+### Audit export
+
+`GET /api/governance/audit/export` returns a JSON package (`exportedAt`, `items`, `count`) and writes `GOVERNANCE_AUDIT_EXPORTED`.

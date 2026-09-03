@@ -123,7 +123,14 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             build_backend_state_store(resolved_settings),
             resolved_settings,
         )
-        extractor = IssueExtractor(resolved_settings, agent_model)
+        from .prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime
+
+        governance_runtime = GovernanceRuntime.from_settings(resolved_settings)
+        extractor = IssueExtractor(
+            resolved_settings,
+            agent_model,
+            prompt_runtime=ExtractorPromptRuntime(governance_runtime),
+        )
         ticket_request_dedupe = build_ticket_request_dedupe(resolved_settings)
         if (
             resolved_settings.rag_require_file_search_acl
@@ -144,6 +151,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             handoff_repository=handoff_repository,
             ticket_request_dedupe=ticket_request_dedupe,
         )
+        workflow.governance_runtime = governance_runtime
 
         app.state.index = index
         app.state.knowledge_index_path = resolved_index.index_path
@@ -152,6 +160,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         app.state.agent = agent
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
+        app.state.governance_runtime = governance_runtime
         app.state.handoff_repository = handoff_repository
         ops_runtime = build_ops_runtime()
         app.state.ops_runtime = ops_runtime
@@ -339,7 +348,11 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         estimated_cost_usd: float | None = None
         estimated_cost_twd: float | None = None
         cost_complete: bool | None = None
-        if resolved_settings.should_show_turn_cost(channel):
+        runtime = getattr(app.state, "governance_runtime", None)
+        cost_flag_enabled = True
+        if runtime is not None:
+            cost_flag_enabled = runtime.cost_display_enabled()
+        if cost_flag_enabled and resolved_settings.should_show_turn_cost(channel):
             cost_complete = cost_summary.cost_complete if cost_summary else False
             if cost_summary and cost_summary.estimated_cost_usd is not None:
                 estimated_cost_usd = round(cost_summary.estimated_cost_usd, 8)

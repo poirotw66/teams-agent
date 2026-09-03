@@ -125,6 +125,14 @@ class RagSettings:
     knowledge_release_dir: Path | None = None
     knowledge_active_release_id: str | None = None
 
+    # --- Phase 3 Prompt governance runtime ---
+    prompt_runtime_mode: str = "GOVERNED"
+    prompt_governance_store_mode: str = "FILE"
+    prompt_governance_store_path: Path | None = None
+    prompt_governance_firestore_project: str | None = None
+    prompt_governance_firestore_database: str | None = None
+    prompt_governance_firestore_collection: str = "ai_ops_governance_state"
+
     @classmethod
     def from_env(cls) -> "RagSettings":
         project_dir = Path(__file__).resolve().parents[2]
@@ -270,6 +278,27 @@ class RagSettings:
                 )
             ).expanduser().resolve(),
             knowledge_active_release_id=_str_env("KNOWLEDGE_ACTIVE_RELEASE_ID"),
+            prompt_runtime_mode=(_str_env("PROMPT_RUNTIME_MODE") or "GOVERNED").upper(),
+            prompt_governance_store_mode=(
+                _str_env("AI_OPS_GOVERNANCE_STORE_MODE") or "FILE"
+            ).upper(),
+            prompt_governance_store_path=Path(
+                environ.get(
+                    "AI_OPS_GOVERNANCE_STORE_PATH",
+                    data_dir / "ops" / "phase3" / "governance.json",
+                )
+            ).expanduser().resolve(),
+            prompt_governance_firestore_project=(
+                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_PROJECT")
+                or _str_env("GOOGLE_CLOUD_PROJECT")
+            ),
+            prompt_governance_firestore_database=_str_env(
+                "AI_OPS_GOVERNANCE_FIRESTORE_DATABASE"
+            ),
+            prompt_governance_firestore_collection=(
+                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION")
+                or "ai_ops_governance_state"
+            ),
         )
         settings.validate()
         return settings
@@ -327,6 +356,22 @@ class RagSettings:
         if "/" in self.faq_firestore_collection_prefix:
             raise ValueError(
                 "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not contain '/'."
+            )
+        if self.prompt_runtime_mode not in {"CODE_BASELINE", "GOVERNED"}:
+            raise ValueError(
+                "PROMPT_RUNTIME_MODE must be one of CODE_BASELINE or GOVERNED."
+            )
+        if self.prompt_governance_store_mode not in {"FILE", "FIRESTORE"}:
+            raise ValueError(
+                "AI_OPS_GOVERNANCE_STORE_MODE must be one of FILE or FIRESTORE."
+            )
+        if not self.prompt_governance_firestore_collection.strip():
+            raise ValueError(
+                "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not be blank."
+            )
+        if "/" in self.prompt_governance_firestore_collection:
+            raise ValueError(
+                "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not contain '/'."
             )
 
         if self.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:

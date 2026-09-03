@@ -61,6 +61,9 @@ class BackofficeSettings:
     prompt_poc_firestore_collection: str = "ai_ops_prompt_poc_state"
     prompt_masking_policy_version: str = "mask-v1"
     prompt_active_effective_at: str | None = None
+    governance_store_mode: str = "FILE"
+    governance_store_path: Path | None = None
+    governance_firestore_collection: str = "ai_ops_governance_state"
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -209,4 +212,16 @@ class BackofficeSettings:
                 "AI_OPS_PROMPT_MASKING_POLICY_VERSION", "mask-v1"
             ),
             prompt_active_effective_at=os.environ.get("AI_OPS_PROMPT_ACTIVE_EFFECTIVE_AT") or None,
+            governance_store_mode=(
+                os.environ.get("AI_OPS_GOVERNANCE_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            governance_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_GOVERNANCE_STORE_PATH",
+                    ops_dir / "phase3" / "governance.json",
+                )
+            ).expanduser().resolve(),
+            governance_firestore_collection=os.environ.get(
+                "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION", "ai_ops_governance_state"
+            ),
         )

@@ -12,6 +12,9 @@ const routes = {
   examples: renderExamples,
   quality: renderQuality,
   prompts: renderPrompts,
+  models: renderModels,
+  flags: renderFlags,
+  search: renderGovernanceSearch,
   audit: renderAudit,
 };
 
@@ -26,7 +29,10 @@ const navItems = [
   ["knowledge", "知識營運", "ops.knowledge.read"],
   ["examples", "品質案例集", "ops.examples.read"],
   ["quality", "品質改善", "ops.feedback.read"],
-  ["prompts", "Prompt 候選", "ops.prompts.read"],
+  ["prompts", "Prompt 治理", "ops.prompts.read"],
+  ["models", "模型設定", "ops.models.read"],
+  ["flags", "Feature Flag", "ops.flags.read"],
+  ["search", "全域搜尋", "ops.search.read"],
   ["audit", "稽核紀錄", "ops.audit.read"],
 ];
 
@@ -306,8 +312,12 @@ async function renderOverview() {
       metric("負評", data.negativeFeedbackCount),
       metric("已解決回饋", data.resolvedFeedbackCount ?? 0),
       metric("Total Tokens", data.totalTokens ?? 0),
-      metric("估算成本 USD", data.estimatedCostUsd),
-      metric("成本完整率", data.costCoverage),
+      ...(data.costDisplayEnabled === false
+        ? [metric("成本顯示", "已關閉")]
+        : [
+            metric("估算成本 USD", data.estimatedCostUsd),
+            metric("成本完整率", data.costCoverage),
+          ]),
       metric("錯誤率", data.errorRate ?? 0),
       metric("P50 延遲 ms", data.p50LatencyMs ?? "-"),
       metric("P95 延遲 ms", data.p95LatencyMs ?? "-"),
@@ -2083,63 +2093,58 @@ async function renderPrompts() {
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const allowed = new Set(capabilities?.capabilities || []);
-    const [activeData, candidateData, taxonomy, examples] = await Promise.all([
-      api("/api/prompts/active"),
+    const [govData, candidateData, taxonomy, examples] = await Promise.all([
+      api("/api/governance/prompts"),
       api("/api/prompts/candidates"),
       api("/api/taxonomy"),
       api("/api/examples?status=VERIFIED"),
     ]);
-    const active = activeData.prompt;
+    const item = (govData.items || [])[0];
+    const active = item?.active || {};
+    const promptId = item?.prompt?.prompt_id;
     const activePanel = el("section", "panel");
     activePanel.append(
       el("h2", "", "Active Issue Extractor Prompt"),
-      el("p", "metric-label", `Version ${active.version}｜${active.status}｜${active.effective_at}`),
-      el("p", "metric-label", `Content Hash ${active.content_hash}`),
+      el("p", "metric-label", `環境影響：正式 Prompt 變更需候選 → Eval → 核准 → Canary → 啟用`),
+      el("p", "metric-label", `Version ${active.version || "-"}｜${active.status || "-"}｜${active.activated_at || active.created_at || "-"}`),
+      el("p", "metric-label", `Content Hash ${active.content_hash || "-"}｜核准者 ${active.approved_by || "-"}`),
     );
-    if (active.content) {
+    if (active.template) {
       const inspect = el("button", "", "檢視內容");
       inspect.addEventListener("click", () => {
-        const content = el("pre", "json-block", active.content);
-        showContentModal("Active Prompt", content);
+        showContentModal("Active Prompt", el("pre", "json-block", active.template));
       });
       activePanel.append(inspect);
     }
 
     const candidatePanel = el("section", "panel");
-    candidatePanel.append(el("h2", "", "Prompt Candidates"));
-    const verified = (examples.items || []).filter((item) => item.dataset_version);
-    if (allowed.has("ops.prompts.candidates.create") && verified.length) {
+    candidatePanel.append(el("h2", "", "Prompt Candidates（Phase 3 治理）"));
+    const verified = (examples.items || []).filter((entry) => entry.dataset_version);
+    if (allowed.has("ops.prompts.candidates.create") && verified.length && promptId) {
       const form = el("form", "form-grid");
       form.append(
         exampleSelect(
           "Verified Dataset",
           "dataset_version",
-          verified.map((item) => [
-            item.dataset_version,
-            `${item.dataset_version}｜${item.expected_route} ${item.label}`,
+          verified.map((entry) => [
+            entry.dataset_version,
+            `${entry.dataset_version}｜${entry.expected_route} ${entry.label}`,
           ]),
         ),
-        faqField("Masking Policy Version", "masking_policy_version", "mask-v1"),
       );
-      const generate = el("button", "", "產生候選");
+      const generate = el("button", "", "建立候選");
       generate.type = "submit";
       form.append(generate);
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const values = new FormData(form);
-        const now = new Date();
-        const start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
         try {
-          await api("/api/prompts/candidates", {
+          await api(`/api/governance/prompts/${promptId}/candidates`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              active_prompt_version: active.version,
               dataset_version: values.get("dataset_version"),
               taxonomy_version: taxonomy.taxonomyVersion,
-              data_range_start: start.toISOString(),
-              data_range_end: now.toISOString(),
-              masking_policy_version: values.get("masking_policy_version"),
             }),
           });
           await renderPrompts();
@@ -2149,31 +2154,97 @@ async function renderPrompts() {
       });
       candidatePanel.append(form);
     }
-    if ((candidateData.items || []).length) {
+    const versions = (item?.versions || []);
+    const detail = promptId ? await api(`/api/governance/prompts/${promptId}`) : { versions: [] };
+    const rows = detail.versions || versions;
+    if (rows.length) {
       const table = el("table");
-      table.innerHTML = "<thead><tr><th>Version</th><th>Dataset</th><th>Taxonomy / Masking</th><th>狀態</th><th>建立者 / 時間</th><th>操作</th></tr></thead>";
+      table.innerHTML = "<thead><tr><th>Version</th><th>狀態</th><th>Dataset</th><th>建立者</th><th>操作</th></tr></thead>";
       const body = el("tbody");
-      for (const candidate of candidateData.items) {
+      for (const version of rows.slice().reverse()) {
         const actions = el("td");
-        const compare = el("button", "", "比較");
+        const compare = el("button", "", "比較／風險");
         compare.addEventListener("click", async () => {
-          const result = await api(`/api/prompts/candidates/${candidate.candidate_id}/compare`);
+          const result = await api(`/api/governance/prompts/${promptId}/versions/${version.version_id}/diff`);
           const content = el("div");
           content.append(
             el("p", "", `Active ${result.active.version}`),
             el("p", "", `Candidate ${result.candidate.version}`),
-            el("p", "", `Active unchanged: ${result.activeUnchanged ? "YES" : "NO"}`),
+            el("p", "", `Critical Eval: ${result.eval ? (result.eval.critical_passed ? "PASS" : "FAIL") : "尚未評測"}`),
           );
-          if (result.candidate.content) content.append(el("pre", "json-block", result.candidate.content));
+          if (result.diff) content.append(el("pre", "json-block", result.diff));
           showContentModal("Prompt 比較", content);
         });
         actions.append(compare);
+        const addAction = (label, path, payload) => {
+          const button = el("button", "", label);
+          button.addEventListener("click", async () => {
+            const reason = window.prompt(`${label}原因`);
+            if (!reason || reason.trim().length < 3) return;
+            await api(path, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim(), ...payload }),
+            });
+            await renderPrompts();
+          });
+          actions.append(button);
+        };
+        if (allowed.has("ops.prompts.eval.run") && ["CANDIDATE", "EVALUATED"].includes(version.status)) {
+          const evalButton = el("button", "", "執行 Eval");
+          evalButton.addEventListener("click", async () => {
+            await api(`/api/governance/prompts/${promptId}/versions/${version.version_id}/eval`, { method: "POST" });
+            await renderPrompts();
+          });
+          actions.append(evalButton);
+        }
+        if (allowed.has("ops.prompts.approve") && version.status === "EVALUATED") {
+          addAction("送審核准", `/api/governance/prompts/${promptId}/versions/${version.version_id}/approve`, {});
+        }
+        if (allowed.has("ops.prompts.canary") && version.status === "APPROVED") {
+          addAction("開始 Canary", `/api/governance/prompts/${promptId}/versions/${version.version_id}/canary`, {
+            percent: 5,
+            environment: "prod",
+          });
+        }
+        if (allowed.has("ops.prompts.canary") && version.status === "CANARY") {
+          addAction("停止 Canary", `/api/governance/prompts/${promptId}/canary/stop`, {});
+          const evaluate = el("button", "", "評估 Canary 指標");
+          evaluate.addEventListener("click", async () => {
+            const sample = window.prompt("樣本數", "50");
+            if (!sample) return;
+            const errorRate = window.prompt("錯誤率 0-1", "0.05");
+            if (errorRate == null) return;
+            const negative = window.prompt("負評率 0-1", "0.1");
+            if (negative == null) return;
+            const handoff = window.prompt("Handoff 率 0-1", "0.2");
+            if (handoff == null) return;
+            const result = await api(`/api/governance/prompts/${promptId}/canary/evaluate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sample_size: Number(sample),
+                error_rate: Number(errorRate),
+                negative_feedback_rate: Number(negative),
+                handoff_rate: Number(handoff),
+                safety_alerts: 0,
+              }),
+            });
+            showContentModal("Canary 評估", el("pre", "json-block", JSON.stringify(result, null, 2)));
+            await renderPrompts();
+          });
+          actions.append(evaluate);
+        }
+        if (allowed.has("ops.prompts.activate") && version.status === "CANARY") {
+          addAction("啟用正式版", `/api/governance/prompts/${promptId}/versions/${version.version_id}/activate`, {});
+        }
         const row = el("tr");
         row.append(
-          el("td", "", candidate.version), el("td", "", candidate.dataset_version),
-          el("td", "", `${candidate.taxonomy_version} / ${candidate.masking_policy_version}`),
-          el("td", "", candidate.status),
-          el("td", "", `${candidate.generated_by} / ${candidate.created_at}`), actions,
+          el("td", "", version.version),
+          el("td", "", version.status),
+          el("td", "", version.dataset_version || "-"),
+          el("td", "", version.created_by),
+          actions,
         );
         body.append(row);
       }
@@ -2182,7 +2253,145 @@ async function renderPrompts() {
     } else {
       candidatePanel.append(el("p", "empty", "目前沒有 Prompt Candidate。"));
     }
+    if (allowed.has("ops.prompts.rollback")) {
+      const rollback = el("button", "", "回復上一健康版本");
+      rollback.addEventListener("click", async () => {
+        const reason = window.prompt("回復原因");
+        if (!reason || reason.trim().length < 3) return;
+        await api(`/api/governance/prompts/${promptId}/rollback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: reason.trim() }),
+        });
+        await renderPrompts();
+      });
+      candidatePanel.append(rollback);
+    }
+    // Keep Phase 2 POC list visible for continuity.
+    if ((candidateData.items || []).length) {
+      candidatePanel.append(el("p", "metric-label", `Phase 2 POC candidates: ${candidateData.items.length}`));
+    }
     app.replaceChildren(activePanel, candidatePanel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderModels() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const data = await api("/api/governance/models");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "模型／Provider Allowlist"));
+    for (const item of data.items || []) {
+      const active = item.active || {};
+      const configId = item.config?.config_id;
+      panel.append(
+        el("p", "", `${configId}｜${active.provider || "-"} / ${active.model_id || "-"}｜${active.status || "無正式版"}`),
+        el("p", "metric-label", `Secret Ref ${active.secret_ref || "-"}｜Fallback ${active.fallback_model_id || "-"}`),
+      );
+      if (allowed.has("ops.models.read") && configId) {
+        const simulate = el("button", "", "模擬 Fallback");
+        simulate.addEventListener("click", async () => {
+          const error = window.prompt("觸發錯誤", "TIMEOUT");
+          if (!error) return;
+          const result = await api(`/api/governance/models/${configId}/simulate-fallback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ error }),
+          });
+          showContentModal("Fallback 模擬", el("pre", "json-block", JSON.stringify(result, null, 2)));
+        });
+        panel.append(simulate);
+      }
+      if (allowed.has("ops.models.activate") && configId) {
+        const rollback = el("button", "", "回復上一健康模型");
+        rollback.addEventListener("click", async () => {
+          const reason = window.prompt("回復原因");
+          if (!reason || reason.trim().length < 3) return;
+          await api(`/api/governance/models/${configId}/rollback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          await renderModels();
+        });
+        panel.append(rollback);
+      }
+    }
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderFlags() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const allowed = new Set(capabilities?.capabilities || []);
+    const data = await api("/api/governance/flags");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "Feature Flags"));
+    const table = el("table");
+    table.innerHTML = "<thead><tr><th>Flag</th><th>Effective</th><th>Safety Locked</th><th>Owner</th><th>操作</th></tr></thead>";
+    const body = el("tbody");
+    for (const item of data.items || []) {
+      const row = el("tr");
+      const actions = el("td");
+      const flagId = item.flag.flag_id;
+      if (allowed.has("ops.flags.read")) {
+        const effective = el("button", "", "查有效值");
+        effective.addEventListener("click", async () => {
+          const result = await api(`/api/governance/flags/${flagId}/effective?environment=lab`);
+          showContentModal(`${flagId} effective`, el("pre", "json-block", JSON.stringify(result, null, 2)));
+        });
+        actions.append(effective);
+      }
+      row.append(
+        el("td", "", flagId),
+        el("td", "", String(item.effective)),
+        el("td", "", item.flag.safety_locked ? "YES" : "NO"),
+        el("td", "", item.flag.owner),
+        actions,
+      );
+      body.append(row);
+    }
+    table.append(body);
+    panel.append(table);
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", "error", error.message));
+  }
+}
+
+async function renderGovernanceSearch() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "權限感知全域搜尋"));
+    const form = el("form", "form-grid");
+    const input = el("input");
+    input.name = "q";
+    input.placeholder = "搜尋 Prompt / Flag / Model / Role / Retention / FAQ / Audit";
+    const submit = el("button", "", "搜尋");
+    submit.type = "submit";
+    form.append(input, submit);
+    const results = el("div");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = await api(`/api/governance/search?q=${encodeURIComponent(input.value || "")}`);
+      results.replaceChildren();
+      results.append(el("p", "metric-label", `結果數 ${data.count}`));
+      for (const item of data.items || []) {
+        results.append(el("p", "", `[${item.type}] ${item.title} — ${item.snippet}`));
+      }
+    });
+    panel.append(form, results);
+    app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", "error", error.message));
   }
@@ -2607,10 +2816,25 @@ async function renderAudit() {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
-    const data = await api("/api/audit-events");
+    const allowed = new Set(capabilities?.capabilities || []);
+    const [opsAudit, governanceAudit] = await Promise.all([
+      api("/api/audit-events"),
+      api("/api/governance/audit").catch(() => ({ items: [] })),
+    ]);
     const panel = el("section", "panel");
     panel.append(el("h2", "", "稽核紀錄"));
-    panel.append(el("pre", "", JSON.stringify(data, null, 2)));
+    if (allowed.has("ops.audit.read")) {
+      const exportButton = el("button", "", "匯出治理 Audit JSON");
+      exportButton.addEventListener("click", async () => {
+        const packageData = await api("/api/governance/audit/export");
+        showContentModal("治理 Audit 匯出", el("pre", "json-block", JSON.stringify(packageData, null, 2)));
+      });
+      panel.append(exportButton);
+    }
+    panel.append(el("h3", "", "營運 Audit"));
+    panel.append(el("pre", "", JSON.stringify(opsAudit, null, 2)));
+    panel.append(el("h3", "", "治理 Audit"));
+    panel.append(el("pre", "", JSON.stringify(governanceAudit, null, 2)));
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));

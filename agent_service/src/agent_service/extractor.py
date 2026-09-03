@@ -299,14 +299,31 @@ class ExtractionOutcome:
     issues: list[Issue] = field(default_factory=list)
     too_many_issues: bool = False
     llm_calls: int = 0
+    prompt_source: str = "code_baseline"
+    prompt_version_id: str | None = None
+    prompt_version: str | None = None
+    prompt_canary: bool = False
 
 
 class IssueExtractor:
     """Splits a user message into IT issues per spec §6."""
 
-    def __init__(self, settings: RagSettings, model: BaseChatModel | None) -> None:
+    def __init__(
+        self,
+        settings: RagSettings,
+        model: BaseChatModel | None,
+        *,
+        prompt_runtime: object | None = None,
+        default_model_name: str | None = None,
+    ) -> None:
         self.settings = settings
         self.model = model
+        self.default_model_name = default_model_name or settings.agent_model or settings.model
+        if prompt_runtime is None:
+            from .prompt_runtime import ExtractorPromptRuntime
+
+            prompt_runtime = ExtractorPromptRuntime.from_settings(settings)
+        self.prompt_runtime = prompt_runtime
 
     async def extract(
         self,
@@ -315,6 +332,8 @@ class IssueExtractor:
         history: list[ConversationMessage],
         faq_keys: list[str],
         correlation_id: str | None = None,
+        conversation_id: str | None = None,
+        tenant_id: str | None = None,
         presolved_ticket_intent: TicketIntent | None = None,
         execution_context: ExecutionContext | None = None,
     ) -> ExtractionOutcome:
@@ -348,11 +367,29 @@ class IssueExtractor:
                 llm_calls=0,
             )
 
+        resolved_tenant = tenant_id
+        if resolved_tenant is None and execution_context is not None:
+            resolved_tenant = execution_context.tenant_id
+        resolved = self.prompt_runtime.resolve(
+            tenant_id=resolved_tenant,
+            conversation_id=conversation_id,
+        )
+        logger.info(
+            "IssueExtractor prompt source=%s version=%s canary=%s correlation_id=%s",
+            resolved.source,
+            resolved.version or "code-baseline",
+            resolved.canary,
+            correlation_id,
+        )
+        active_model = self._resolve_chat_model()
+
         try:
             raw = await self._call_model(
                 text=normalized_text,
                 history=history,
                 faq_keys=faq_keys,
+                system_prompt_template=resolved.template,
+                model=active_model,
                 execution_context=execution_context,
             )
             llm_calls = 1
@@ -367,10 +404,51 @@ class IssueExtractor:
                 issues=[self._fallback_issue(normalized_text)],
                 too_many_issues=False,
                 llm_calls=1,
+                prompt_source=resolved.source,
+                prompt_version_id=resolved.version_id,
+                prompt_version=resolved.version,
+                prompt_canary=resolved.canary,
             )
 
         issues, too_many = self._postprocess(raw.issues, faq_keys)
-        return ExtractionOutcome(issues=issues, too_many_issues=too_many, llm_calls=llm_calls)
+        return ExtractionOutcome(
+            issues=issues,
+            too_many_issues=too_many,
+            llm_calls=llm_calls,
+            prompt_source=resolved.source,
+            prompt_version_id=resolved.version_id,
+            prompt_version=resolved.version,
+            prompt_canary=resolved.canary,
+        )
+
+    def _resolve_chat_model(self) -> BaseChatModel | None:
+        runtime = getattr(self.prompt_runtime, "_runtime", None)
+        if runtime is None:
+            return self.model
+        try:
+            resolved = runtime.resolve_model()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "IssueExtractor model lookup failed (%s); using startup model",
+                type(exc).__name__,
+            )
+            return self.model
+        if resolved.source != "governance" or not resolved.model_name:
+            return self.model
+        if resolved.model_name == self.default_model_name:
+            return self.model
+        try:
+            from .graph import build_chat_model
+
+            built = build_chat_model(resolved.model_name)
+            return built or self.model
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "IssueExtractor failed to build governed model %s (%s); using startup model",
+                resolved.model_name,
+                type(exc).__name__,
+            )
+            return self.model
 
     async def _call_model(
         self,
@@ -378,10 +456,13 @@ class IssueExtractor:
         text: str,
         history: list[ConversationMessage],
         faq_keys: list[str],
+        system_prompt_template: str,
+        model: BaseChatModel | None,
         execution_context: ExecutionContext | None = None,
     ) -> IssueExtraction:
-        assert self.model is not None
-        system_prompt = SYSTEM_PROMPT.format(
+        if model is None:
+            raise RuntimeError("IssueExtractor model is not configured")
+        system_prompt = system_prompt_template.format(
             max_issues=self.settings.max_issues_per_message,
             faq_keys=", ".join(faq_keys) if faq_keys else "(none configured)",
         )
@@ -392,7 +473,7 @@ class IssueExtractor:
         )
 
         async def _invoke() -> IssueExtraction:
-            result = await self.model.with_structured_output(IssueExtraction).ainvoke(
+            result = await model.with_structured_output(IssueExtraction).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=human_content),

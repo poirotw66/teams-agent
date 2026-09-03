@@ -116,6 +116,9 @@ class AgentWorkflow(
         self.ticket_request_dedupe = (
             ticket_request_dedupe or InMemoryTicketRequestDedupeRepository()
         )
+        from .prompt_runtime import GovernanceRuntime
+
+        self.governance_runtime = GovernanceRuntime.from_settings(settings)
         self._knowledge_supports_counter = _knowledge_search_supports_call_counter(
             knowledge_service
         )

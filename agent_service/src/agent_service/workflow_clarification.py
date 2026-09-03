@@ -220,6 +220,8 @@ class ClarificationWorkflowMixin:
                 history=history,
                 faq_keys=faq_keys,
                 correlation_id=correlation_id,
+                conversation_id=conversation.conversationId,
+                tenant_id=request.conversation.tenantId,
                 presolved_ticket_intent=ticket_intent,
                 execution_context=state.get("execution_context"),
             )
@@ -268,7 +270,7 @@ class ClarificationWorkflowMixin:
         if (
             ticket_intent == TicketIntent.CREATE
             and not pending_confirmation
-            and self.settings.ticket_service_mode != "DISABLED"
+            and self._ticket_offers_enabled()
         ):
             # Explicit create language still needs a short confirmation
             # turn so the user can review before a ticket is opened.
