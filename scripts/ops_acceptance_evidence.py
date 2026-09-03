@@ -23,7 +23,7 @@ LAB_SELF_TEST = "LAB_SELF_TEST"
 FORMAL_ACCEPTANCE = "FORMAL_ACCEPTANCE"
 LOCAL_SCOPE = "LOCAL_AUTOMATED_BUNDLE"
 PHASE01_SCOPE = "PHASE_0_1_ACCEPTANCE_AND_DOD"
-REQUIRED_REVIEWER_ROLES = ("BU", "IT", "Security/Legal", "BU/Knowledge Admin")
+REQUIRED_REVIEWER_ROLES = ("SYSTEM_ADMIN",)
 REQUIRED_TECHNICAL_GATES = (
     "pytest", "backup_verify", "phase0_deliverables",
     "terraform_validate", "terraform_plan", "daily_reconciliation",
@@ -40,7 +40,7 @@ SPEC_CRITERIA = {
     "P0-14.8": "Exercise one-year TTL/deletion with shortened test expiry",
     "P0-14.9": "High-risk actions fail closed when Audit fails",
     "P0-14.10": "Isolate dev/test/poc/prod data and Terraform states",
-    "P0-17.1": "BU, IT and Security/Legal jointly approve metrics and governance",
+    "P0-17.1": "SYSTEM_ADMIN gives final approval after reviewing metrics and governance evidence",
     "P0-17.2": "Taxonomy usable by structured output or mapping",
     "P0-17.3": "Key paths emit valid, linkable, idempotent events",
     "P0-17.4": "Storage, TTL, masking, authorization and Audit tests pass",
@@ -63,7 +63,7 @@ SPEC_CRITERIA = {
     "P1-15.5": "Analytics delay/data quality/health monitoring and runbook",
     "P1-15.6": "BU completes negative-feedback to conversation/issue/source task in 15 minutes",
 }
-# Joint governance approval is evaluated separately by all four approval decisions.
+# Governance evidence remains role-specific, but SYSTEM_ADMIN owns the final approval decision.
 REQUIRED_PHASE01_GATES = (*REQUIRED_TECHNICAL_GATES, *(
     key for key in SPEC_CRITERIA if key != "P0-17.1"
 ))
@@ -235,7 +235,7 @@ def _validate_gates(evidence: dict, now: datetime, errors: list[str]) -> dict[st
 def _validate_approvals(evidence: dict, gates: dict[str, dict], now: datetime, errors: list[str]) -> None:
     roles = _strings(evidence.get("requiredReviewerRoles"), "requiredReviewerRoles", errors)
     if set(roles) != set(REQUIRED_REVIEWER_ROLES):
-        errors.append("requiredReviewerRoles must contain every required role exactly")
+        errors.append("requiredReviewerRoles must contain SYSTEM_ADMIN exactly")
     approvals = _records(evidence.get("formalApprovals"), "role", "formalApprovals", errors)
     if set(approvals) != set(roles):
         errors.append("formalApprovals must match requiredReviewerRoles")

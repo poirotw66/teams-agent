@@ -1,10 +1,10 @@
-# AI Ops Backoffice 正式驗收簽核指南（LAB / 交接用）
+# AI Ops Backoffice 里程碑與正式驗收簽核指南
 
-本文件說明 Phase 0 / Phase 1 **正式驗收**時，四位簽核人各自要確認什麼。  
-自動化測試已通過；簽核代表「對應角色同意此設計可交接／上線」。
+本文件說明 SYSTEM_ADMIN 最終核准前要查看的四類證據。
+自動化測試已通過；管理員核准代表同意本階段可交接。
 
-**LAB 環境**：可由同一人代簽四項（需在 checklist 註明「LAB 自驗」）。  
-**正式 Production**：建議仍由 BU、IT、資安／法遵、知識管理分別簽核。
+**Phase 1 里程碑**：依 2026-09-03 產品決策，SYSTEM_ADMIN 是最高權限，由 Justin 做一次最終核准，不另要求各部門分別簽核。
+**正式 Production**：沿用單一 SYSTEM_ADMIN 核准，但啟用時仍須依 production 規則提供 v2 外部驗證證據。
 
 ---
 
@@ -16,10 +16,10 @@
 
 ---
 
-## 1. BU — 指標與 Issue 分類
+## 1. BU 證據 — 指標與 Issue 分類
 
-**簽核項 ID：** `bu-taxonomy-metrics`  
-**簽了代表：** 後台數字與問題分類，符合 BU 營運理解，敢用來做決策。
+**證據紀錄 ID：** `bu-taxonomy-metrics`
+**確認目標：** 後台數字與問題分類符合營運理解，可用來做決策。
 
 ### 請確認
 
@@ -36,22 +36,12 @@
 | 指標定義 | `data/ops/metrics_definitions_v1.json` |
 | 後台實際畫面 | LAB URL → 總覽、Issue、品質模組 |
 
-### 簽核指令（由 BU 代表執行）
-
-```bash
-python scripts/ops_signoff_approve.py \
-  --checklist artifacts/ai_ops_signoff_checklist.json \
-  --item bu-taxonomy-metrics \
-  --by "您的姓名" \
-  --notes "已確認 taxonomy 與 KPI 口徑符合 BU 需求（LAB）。"
-```
-
 ---
 
-## 2. IT — 基礎建設可交接
+## 2. IT 證據 — 基礎建設可交接
 
-**簽核項 ID：** `it-terraform`  
-**簽了代表：** GCP 資源、Terraform 狀態可維運接手，無未說明手工作業。
+**證據紀錄 ID：** `it-terraform`
+**確認目標：** GCP 資源、Terraform 狀態可維運接手，無未說明手工作業。
 
 ### 請確認
 
@@ -69,22 +59,12 @@ python scripts/ops_signoff_approve.py \
 | 環境 inventory | `infra/ai-ops-environment-inventory.json` |
 | 維運手冊 | `docs/ai-ops-backoffice-runbook.md` |
 
-### 簽核指令
-
-```bash
-python scripts/ops_signoff_approve.py \
-  --checklist artifacts/ai_ops_signoff_checklist.json \
-  --item it-terraform \
-  --by "您的姓名" \
-  --notes "已確認 Terraform zero-diff 與環境 inventory（LAB）。"
-```
-
 ---
 
-## 3. 資安／法遵 — 遮罩、保存、匯出、稽核
+## 3. 資安／法遵證據 — 遮罩、保存、匯出、稽核
 
-**簽核項 ID：** `security-masking-retention`  
-**簽了代表：** 個資與敏感資料處理方式，符合公司政策。
+**證據紀錄 ID：** `security-masking-retention`
+**確認目標：** 個資與敏感資料處理方式符合公司政策。
 
 ### 請確認
 
@@ -102,22 +82,12 @@ python scripts/ops_signoff_approve.py \
 | 角色權限矩陣 | `data/ops/role_capability_matrix_v1.json` |
 | 自動化測試 | 匯出 fail-closed、unmask step-up、retention purge（見 evidence 包） |
 
-### 簽核指令
-
-```bash
-python scripts/ops_signoff_approve.py \
-  --checklist artifacts/ai_ops_signoff_checklist.json \
-  --item security-masking-retention \
-  --by "您的姓名" \
-  --notes "已確認遮罩、保存、匯出與 Audit 政策（LAB）。"
-```
-
 ---
 
-## 4. 知識管理 — Markdown / PDF 發布 UAT
+## 4. 知識管理證據 — Markdown / PDF 發布 UAT
 
-**簽核項 ID：** `knowledge-portal-governance`  
-**簽了代表：** 知識文件從 Portal 發布到 Backoffice 可見的流程，實際走過且可接受。
+**證據紀錄 ID：** `knowledge-portal-governance`
+**確認目標：** 知識文件從 Portal 發布到 Backoffice 可見的流程，實際走過且可接受。
 
 ### 請確認（建議人工走一輪）
 
@@ -126,41 +96,31 @@ python scripts/ops_signoff_approve.py \
 - [ ] Backoffice 知識成效／治理區塊可看到對應文件狀態  
 - [ ] 自動化測試已覆蓋 portal→backoffice 整合（作為輔助證據）  
 
-### 簽核指令
+---
+
+## SYSTEM_ADMIN 最終核准
 
 ```bash
+# 1. 審閱四類證據後，只記錄一次管理員核准
 python scripts/ops_signoff_approve.py \
   --checklist artifacts/ai_ops_signoff_checklist.json \
-  --item knowledge-portal-governance \
-  --by "您的姓名" \
-  --notes "已完成 Markdown 與 text PDF 發布 UAT（LAB）。"
+  --item phase1-admin-final-approval \
+  --by "Justin" \
+  --notes "SYSTEM_ADMIN 已審閱 Phase 1 技術與治理證據。"
+
+# 2. 驗證管理員核准
+python scripts/ops_signoff_checklist.py \
+  --validate-phase1-milestone artifacts/ai_ops_signoff_checklist.json
 ```
+
+里程碑驗證成功時會顯示：
+
+- `Phase 1 milestone approval validation passed (approver: Justin).`
 
 ---
 
-## 全部簽完後 — 關閉正式驗收
+## 權限原則
 
-```bash
-# 1. 驗證四項皆 approved
-python scripts/ops_signoff_checklist.py --validate artifacts/ai_ops_signoff_checklist.json
-
-# 2. 跑最終 UAT handoff（含 --require-signoff）
-cd agent_service
-uv run python ../scripts/ops_uat_handoff.py \
-  --gcp-project itr-aimasteryhub-lab \
-  --live-url https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app \
-  --require-signoff
-```
-
-成功時 `artifacts/ai_ops_uat_acceptance_report.json` 會顯示：
-
-- `automatedVerificationPassed: true`
-- `formalAcceptanceComplete: true`
-
----
-
-## LAB 自驗（一人代簽四項）
-
-若僅為 LAB 工程交接、無正式四部門參與，可同一人依序執行上述四個 `ops_signoff_approve.py`，並在 `--notes` 註明「LAB 自驗」。
+SYSTEM_ADMIN 是後台最高權限，能力集合涵蓋所有其他角色。四類領域紀錄供管理員審閱，不是四個獨立人工 gate；現有 checklist 已由 Justin 完成一次最終核准。技術 gate 仍必須通過，不能由管理員手動略過。
 
 規格依據：`docs/ai-ops-backoffice-phase-0-foundation-spec.md` §17、`docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md` §15。

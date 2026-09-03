@@ -1,26 +1,53 @@
 {
-  "generatedAt": "2026-09-02T07:41:44.953056+00:00",
+  "generatedAt": "2026-09-03T06:34:05.297373+00:00",
   "specReferences": [
     "docs/ai-ops-backoffice-phase-0-foundation-spec.md §17",
     "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md §15"
   ],
   "uatHandoff": {
-    "passed": true,
-    "generatedAt": "2026-09-02T04:46:40.800410+00:00",
-    "failedSteps": [],
-    "phase1CriteriaAutomated": true
+    "classification": "LEGACY_UNCLASSIFIED",
+    "technicalEvidenceErrors": [
+      "acceptanceEvidence is required"
+    ],
+    "legacyReportedPassed": true
   },
   "terraform": {
-    "planClean": true,
+    "legacyCleanPatternFound": true,
     "evidencePath": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt"
   },
   "signOffItems": [
     {
+      "id": "phase1-admin-final-approval",
+      "role": "SYSTEM_ADMIN",
+      "legacyReviewStatus": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-03T00:00:00+00:00",
+      "trustStatus": "UNVERIFIED_LEGACY",
+      "artifactChecks": [
+        {
+          "reference": "artifacts/ai_ops_uat_acceptance_report.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_uat_acceptance_report.json"
+        },
+        {
+          "reference": "artifacts/ai_ops_signoff_evidence.json",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_signoff_evidence.json"
+        },
+        {
+          "reference": "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md"
+        }
+      ]
+    },
+    {
       "id": "bu-taxonomy-metrics",
       "role": "BU",
-      "status": "approved",
+      "legacyReviewStatus": "approved",
       "approvedBy": "Justin",
       "approvedAt": "2026-09-02T07:40:54.855889+00:00",
+      "trustStatus": "UNVERIFIED_LEGACY",
       "artifactChecks": [
         {
           "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/issue_taxonomy_v1.json",
@@ -40,21 +67,22 @@
         {
           "reference": "scripts/ops_deliverables_verify.py",
           "exists": true,
-          "resolvedPath": "scripts/ops_deliverables_verify.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/scripts/ops_deliverables_verify.py"
         }
       ]
     },
     {
       "id": "it-terraform",
       "role": "IT",
-      "status": "approved",
+      "legacyReviewStatus": "approved",
       "approvedBy": "Justin",
       "approvedAt": "2026-09-02T07:40:54.939131+00:00",
+      "trustStatus": "UNVERIFIED_LEGACY",
       "artifactChecks": [
         {
           "reference": "infra/terraform/INVENTORY.md",
           "exists": true,
-          "resolvedPath": "infra/terraform/INVENTORY.md"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/infra/terraform/INVENTORY.md"
         },
         {
           "reference": "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json",
@@ -71,9 +99,10 @@
     {
       "id": "security-masking-retention",
       "role": "Security/Legal",
-      "status": "approved",
+      "legacyReviewStatus": "approved",
       "approvedBy": "Justin",
       "approvedAt": "2026-09-02T07:40:55.025582+00:00",
+      "trustStatus": "UNVERIFIED_LEGACY",
       "artifactChecks": [
         {
           "reference": "/Users/cfh00896102/Github/teams-agent/data/ops/data_governance_decisions_v1.json",
@@ -88,50 +117,58 @@
         {
           "reference": "agent_service/tests/test_ai_ops_backoffice.py::test_export_audit_fail_closed",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_ai_ops_backoffice.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_ai_ops_backoffice.py"
         },
         {
           "reference": "agent_service/tests/test_ai_ops_backoffice.py::test_conversation_unmask_requires_capability_and_reason",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_ai_ops_backoffice.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_ai_ops_backoffice.py"
         },
         {
           "reference": "agent_service/tests/test_operations_phase0.py::test_purge_expired_events_removes_only_expired_records",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_operations_phase0.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_operations_phase0.py"
         }
       ]
     },
     {
       "id": "knowledge-portal-governance",
       "role": "BU/Knowledge Admin",
-      "status": "approved",
+      "legacyReviewStatus": "approved",
       "approvedBy": "Justin",
       "approvedAt": "2026-09-02T07:40:55.113805+00:00",
+      "trustStatus": "UNVERIFIED_LEGACY",
       "artifactChecks": [
         {
           "reference": "agent_service/tests/test_ai_ops_portal_governance_integration.py",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_ai_ops_portal_governance_integration.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_ai_ops_portal_governance_integration.py"
         },
         {
           "reference": "agent_service/tests/test_knowledge_portal.py::test_pdf_publish_workflow",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_knowledge_portal.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_knowledge_portal.py"
         },
         {
           "reference": "agent_service/tests/test_knowledge_portal.py::test_import_text_pdf",
           "exists": true,
-          "resolvedPath": "agent_service/tests/test_knowledge_portal.py"
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_knowledge_portal.py"
+        },
+        {
+          "reference": "agent_service/tests/test_knowledge_portal.py::test_markdown_upload_update_publish_and_governed_removal",
+          "exists": true,
+          "resolvedPath": "/Users/cfh00896102/Github/teams-agent/agent_service/tests/test_knowledge_portal.py"
         }
       ]
     }
   ],
-  "nextSteps": [
-    "Review each signOffItem artifactChecks list with the named role owner.",
-    "Record approval: python scripts/ops_signoff_approve.py --item <id> --by \"Name\"",
-    "Validate: python scripts/ops_signoff_checklist.py --validate artifacts/ai_ops_signoff_checklist.json",
-    "Close: uv run python ../scripts/ops_uat_handoff.py --require-signoff (from agent_service)"
+  "formalAcceptanceErrors": [
+    "acceptanceEvidence is required",
+    "acceptanceEvidence is required"
   ],
-  "deliverablesVerifyPassed": true
+  "nextSteps": [
+    "Use this packet as LAB review material, not as formal approval evidence.",
+    "Record formal approvals in the approved external authority system for the exact v2 target.",
+    "Validate only with the executed v2 UAT report and a trusted read-only verifier."
+  ]
 }

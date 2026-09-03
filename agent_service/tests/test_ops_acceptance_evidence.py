@@ -18,13 +18,25 @@ if str(SCRIPTS) not in sys.path:
 
 import ops_uat_handoff as uat_cli
 from ops_acceptance_evidence import (
-    UTC, FORMAL_ACCEPTANCE, LAB_SELF_TEST, LOCAL_SCOPE, PHASE01_SCOPE,
-    REQUIRED_PHASE01_GATES, REQUIRED_REVIEWER_ROLES, REQUIRED_TECHNICAL_GATES,
-    SPEC_CRITERIA, formal_acceptance_errors, manifest_sha256, protect_output,
-    read_json, technical_manifest, technical_verification_errors, validate_acceptance_evidence,
+    FORMAL_ACCEPTANCE,
+    LAB_SELF_TEST,
+    LOCAL_SCOPE,
+    PHASE01_SCOPE,
+    REQUIRED_PHASE01_GATES,
+    REQUIRED_REVIEWER_ROLES,
+    REQUIRED_TECHNICAL_GATES,
+    SPEC_CRITERIA,
+    UTC,
+    formal_acceptance_errors,
+    manifest_sha256,
+    protect_output,
+    read_json,
+    technical_manifest,
+    technical_verification_errors,
+    validate_acceptance_evidence,
 )
 from ops_formal_acceptance_audit import build_audit
-from ops_signoff_checklist import sync_checklist
+from ops_signoff_checklist import phase1_milestone_errors, sync_checklist
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 TARGET = {
@@ -134,6 +146,32 @@ def test_legacy_lab_self_test_approved_fields_are_not_formal() -> None:
     assert formal_acceptance_errors(legacy, _uat_report(), now=NOW)
 
 
+def test_phase1_milestone_accepts_justin_as_single_approver() -> None:
+    checklist = {
+        "phase1ApprovalPolicy": {
+            "policy": "SINGLE_APPROVER",
+            "authorityRole": "SYSTEM_ADMIN",
+            "requiredApprover": "Justin",
+            "status": "approved",
+        },
+        "signOffItems": [
+            {
+                "id": "phase1-admin-final-approval",
+                "role": "SYSTEM_ADMIN",
+                "status": "approved",
+                "approvedBy": "Justin",
+                "approvedAt": "2026-09-03T00:00:00+00:00",
+            }
+        ],
+    }
+
+    assert phase1_milestone_errors(checklist) == []
+    checklist["signOffItems"][0]["approvedBy"] = "Other Reviewer"
+    assert phase1_milestone_errors(checklist) == [
+        "Phase 1 final approval must be approved by Justin"
+    ]
+
+
 def test_complete_fixture_can_be_formal_with_both_injected_verifiers() -> None:
     assert _formal_errors(_formal_checklist()) == []
 
@@ -176,7 +214,7 @@ def test_exit_code_must_be_executed_integer_zero(exit_code: object) -> None:
 def test_missing_approval_cannot_be_overridden_by_tests() -> None:
     checklist = _formal_checklist()
     checklist["acceptanceEvidence"]["formalApprovals"].pop()
-    assert any("formal approval BU/Knowledge Admin is missing" in error for error in _formal_errors(checklist))
+    assert any("formal approval SYSTEM_ADMIN is missing" in error for error in _formal_errors(checklist))
 
 
 @pytest.mark.parametrize("where", ["gates", "requiredGateIds", "formalApprovals", "requiredReviewerRoles"])

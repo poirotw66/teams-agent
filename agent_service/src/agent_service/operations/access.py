@@ -19,6 +19,17 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.config.read",
             "ops.audit.read",
             "ops.roles.read",
+            "ops.summary.read",
+            "ops.cost.read",
+            "ops.issues.read",
+            "ops.conversations.read",
+            "ops.conversations.unmasked",
+            "ops.feedback.read",
+            "ops.knowledge.read",
+            "ops.quality.read",
+            "ops.faq.write",
+            "ops.exports.create",
+            "ops.exports.read",
         }
     ),
     "AI_ADMIN": frozenset(

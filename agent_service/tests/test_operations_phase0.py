@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from agent_service.contracts import Issue
 from agent_service.operations.classification import IssueClassifier
 from agent_service.operations.emitter import OperationalEventEmitter
@@ -345,6 +344,14 @@ def test_role_capability_matrix_matches_code() -> None:
         expected = set(CAPABILITIES[role])
         actual = set(role_entry["capabilities"])
         assert actual == expected, f"matrix drift for role {role}"
+
+
+def test_system_admin_is_highest_privilege_role() -> None:
+    from agent_service.operations.access import CAPABILITIES
+
+    admin_capabilities = CAPABILITIES["SYSTEM_ADMIN"]
+    for role, capabilities in CAPABILITIES.items():
+        assert admin_capabilities.issuperset(capabilities), f"SYSTEM_ADMIN missing {role} capability"
 
 
 def test_signoff_checklist_sync_preserves_approvals(tmp_path: Path) -> None:

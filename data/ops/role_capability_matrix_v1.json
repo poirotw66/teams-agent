@@ -1,7 +1,7 @@
 {
   "matrixVersion": "v1",
-  "generatedAt": "2026-09-02T00:00:00Z",
-  "description": "Backoffice role to capability and data scope baseline for Phase 0/1.",
+  "generatedAt": "2026-09-03T00:00:00Z",
+  "description": "Backoffice role to capability and data scope baseline for Phase 0/1. SYSTEM_ADMIN is the highest-privilege role.",
   "sourceOfTruth": "agent_service/src/agent_service/operations/access.py",
   "dataScopeRules": [
     {
@@ -10,7 +10,7 @@
     },
     {
       "rule": "unmasked_conversations",
-      "description": "ops.conversations.unmasked is limited to AI_ADMIN and KNOWLEDGE_ADMIN. SERVICE_OWNER does not receive it by default."
+      "description": "ops.conversations.unmasked is limited to SYSTEM_ADMIN, AI_ADMIN, and KNOWLEDGE_ADMIN. SERVICE_OWNER does not receive it by default."
     },
     {
       "rule": "audit_read_only",
@@ -24,8 +24,20 @@
         "ops.health.read",
         "ops.config.read",
         "ops.audit.read",
-        "ops.roles.read"
-      ]
+        "ops.roles.read",
+        "ops.summary.read",
+        "ops.cost.read",
+        "ops.issues.read",
+        "ops.conversations.read",
+        "ops.conversations.unmasked",
+        "ops.feedback.read",
+        "ops.knowledge.read",
+        "ops.quality.read",
+        "ops.faq.write",
+        "ops.exports.create",
+        "ops.exports.read"
+      ],
+      "dataScope": "all_owner_units"
     },
     {
       "role": "AI_ADMIN",

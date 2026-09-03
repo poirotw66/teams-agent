@@ -5,6 +5,14 @@
     "docs/ai-ops-backoffice-phase-0-foundation-spec.md §17",
     "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md §15"
   ],
+  "phase1ApprovalPolicy": {
+    "policy": "SINGLE_APPROVER",
+    "authorityRole": "SYSTEM_ADMIN",
+    "requiredApprover": "Justin",
+    "decisionDate": "2026-09-03",
+    "status": "approved",
+    "basis": "SYSTEM_ADMIN is the highest authority. Justin gives the single final approval; separate BU, IT, Security, Legal, or Knowledge Admin signatures are not required."
+  },
   "automatedEvidence": {
     "uatAcceptanceReport": "/Users/cfh00896102/Github/teams-agent/artifacts/ai_ops_uat_acceptance_report.json",
     "terraformPlanEvidence": "/Users/cfh00896102/Github/teams-agent/artifacts/terraform-ai-ops-plan-evidence.txt",
@@ -14,6 +22,20 @@
     "environmentInventory": "/Users/cfh00896102/Github/teams-agent/infra/ai-ops-environment-inventory.json"
   },
   "signOffItems": [
+    {
+      "id": "phase1-admin-final-approval",
+      "role": "SYSTEM_ADMIN",
+      "description": "Give final Phase 1 milestone approval after reviewing technical and governance evidence",
+      "status": "approved",
+      "approvedBy": "Justin",
+      "approvedAt": "2026-09-03T00:00:00+00:00",
+      "notes": "SYSTEM_ADMIN final approval. The four domain records below are supporting review evidence, not required independent approvals.",
+      "reviewArtifacts": [
+        "artifacts/ai_ops_uat_acceptance_report.json",
+        "artifacts/ai_ops_signoff_evidence.json",
+        "docs/ai-ops-backoffice-phase-1-operations-mvp-spec.md"
+      ]
+    },
     {
       "id": "bu-taxonomy-metrics",
       "role": "BU",

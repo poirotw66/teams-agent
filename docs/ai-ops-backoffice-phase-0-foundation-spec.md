@@ -331,7 +331,7 @@ Phase 0 不要求完整管理 UI，但至少交付下列契約：
 
 Phase 0 只有在以下條件全部成立時完成：
 
-- BU、IT、資安／法遵共同核准指標與資料治理契約。
+- SYSTEM_ADMIN 審閱 BU、IT、資安／法遵與知識治理證據後做最終核准；不強制各角色分別人工簽署。
 - Issue taxonomy v1 可被 Agent structured output 或 mapping 使用。
 - 關鍵客服路徑能產生 schema-valid、可關聯、可冪等的事件。
 - 儲存、TTL、遮罩、授權與 Audit 的自動化測試通過。

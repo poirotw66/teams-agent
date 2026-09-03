@@ -305,6 +305,9 @@ Phase 1 主要 read model：
 | 健康度最近異常 | 已完成 | 24 小時 masked anomaly 摘要；`test_health_summary_includes_recent_masked_anomalies` |
 | Markdown／文字型 PDF lifecycle | 已完成 | `test_markdown_upload_update_publish_and_governed_removal`、`test_pdf_publish_workflow` |
 | LAB 自驗 | 已核准 | `artifacts/ai_ops_signoff_checklist.json`、`artifacts/ops_bu_walkthrough.json` |
-| 跨部門正式簽核 | 非本里程碑門檻 | 不以 LAB 自驗冒充外部正式核准；若 production governance 要求則重新開啟 gate |
+| Phase 1 人工簽核 | 已核准 | SYSTEM_ADMIN 為最高權限並負責單一最終核准；Justin 已完成 `phase1-admin-final-approval` |
+| 各角色分別簽核 | 不要求 | BU／IT／資安／法遵／知識管理資料作為審閱證據，不各自形成阻擋 gate |
 
 Production hardening 仍應持續驗證 worker crash 後的租約／重試與實際 Firestore、GCS 多 instance 故障注入；此項不降低上述 Phase 1 MVP 功能驗收結果。
+
+Phase 1 技術驗證與 Justin 人工簽核均已完成，本階段狀態為「已完成」。

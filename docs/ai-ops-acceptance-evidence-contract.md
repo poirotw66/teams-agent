@@ -3,7 +3,7 @@
 Phase 0 and Phase 1 have two deliberately different outcomes:
 
 - `LAB_SELF_TEST`: a reproducible technical execution in a named non-formal target. It can show that automated gates passed, but is never a BU, IT, Security/Legal, or Knowledge Admin approval.
-- `FORMAL_ACCEPTANCE`: all required technical gates passed for the exact same target and all required organisations supplied externally verified approvals. It is the only classification eligible for `formalAcceptanceComplete`.
+- `FORMAL_ACCEPTANCE`: all required technical gates passed for the exact same target and a `SYSTEM_ADMIN` supplied an externally verified final approval. It is the only classification eligible for `formalAcceptanceComplete`.
 
 The legacy `status: approved`, `approvedBy`, `approvedAt`, and `notes` fields are review history only. They are not formal evidence, irrespective of the reviewer name or note language. In particular, the validator does not use Chinese/English keyword matching and does not infer authority from names.
 
@@ -43,7 +43,7 @@ The required baseline gates are `pytest`, `backup_verify`, `phase0_deliverables`
 
 ## Formal approvals and trust
 
-`FORMAL_ACCEPTANCE` additionally requires exactly these roles: `BU`, `IT`, `Security/Legal`, and `BU/Knowledge Admin`. Each approval contains a stable reviewer subject identifier, approval and expiry times, the exact reviewed target, and an `authorityEvidence` record with a source system and immutable source record id.
+`FORMAL_ACCEPTANCE` requires exactly one final approval role: `SYSTEM_ADMIN`. The administrator is the highest-authority backoffice role and may approve after reviewing BU, IT, Security/Legal, and Knowledge Admin evidence; those evidence areas do not require separate signatures. The approval contains a stable reviewer subject identifier, approval and expiry times, the exact reviewed target, and an `authorityEvidence` record with a source system and immutable source record id.
 
 Fields such as `sourceSystem: "ENTRA_ACCESS_REVIEW"` and `verificationStatus: "EXTERNALLY_VERIFIED"` are schema claims only. They do not prove authority by themselves. The formal validator separately invokes a read-only `TrustedApprovalVerifier` adapter, which must query or cryptographically validate the organisation's authoritative approval record and confirm the reviewer, required role, source record, and target identity. The default local adapter returns pending-human-verification, so a JSON file cannot self-sign itself into formal completion. Test fakes only exercise this adapter boundary; they are not a production verifier.
 
@@ -55,4 +55,4 @@ An organisation may connect an Entra access-review, GRC workflow, or signed appr
 
 `ops_uat_handoff.py` writes no JSON unless `--report <new-path>` is supplied. It labels its output `LAB_SELF_TEST` and always sets `formalAcceptanceComplete` to `false`. Terraform plan output and audit output also require explicit new output paths. The read-only formal audit does not execute cloud actions, dispatch work, or create approvals.
 
-For a formal review, retain the executed v2 LAB report, obtain the external approvals through the approved authority system, and run validation with an organisation-configured read-only verifier. Until that integration and the governance decision exist, the correct result is `formal approval pending`, not Phase 0/1 completion.
+For a formal review, retain the executed v2 LAB report, obtain the `SYSTEM_ADMIN` decision through the approved authority system, and run validation with an organisation-configured read-only verifier. The technical gates remain mandatory and cannot be overridden by administrator approval.

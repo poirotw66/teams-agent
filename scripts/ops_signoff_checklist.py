@@ -14,17 +14,20 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ops_acceptance_evidence import (
-    UTC,
     FORMAL_ACCEPTANCE,
     PHASE01_SCOPE,
     REQUIRED_PHASE01_GATES,
     REQUIRED_REVIEWER_ROLES,
+    UTC,
+    formal_acceptance_errors,
     manifest_sha256,
     protect_output,
     read_json,
     write_json,
-    formal_acceptance_errors,
 )
+
+PHASE1_MILESTONE_APPROVER = "Justin"
+PHASE1_ADMIN_SIGN_OFF_ITEM_ID = "phase1-admin-final-approval"
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -101,6 +104,19 @@ def _default_checklist(repo_root: Path, environment: str = "lab") -> dict[str, o
         },
         "signOffItems": [
             {
+                "id": PHASE1_ADMIN_SIGN_OFF_ITEM_ID,
+                "role": "SYSTEM_ADMIN",
+                "description": "Give final Phase 1 milestone approval after reviewing technical and governance evidence",
+                "status": "pending",
+                "approvedBy": "",
+                "approvedAt": "",
+                "notes": "",
+                "reviewArtifacts": [
+                    "artifacts/ai_ops_uat_acceptance_report.json",
+                    "artifacts/ai_ops_signoff_evidence.json",
+                ],
+            },
+            {
                 "id": "bu-taxonomy-metrics",
                 "role": "BU",
                 "description": "Approve issue taxonomy v1 and metric definitions",
@@ -173,6 +189,43 @@ def _validate_checklist(payload: dict[str, object], uat_report: dict[str, object
     return formal_acceptance_errors(payload, uat_report or {})
 
 
+def phase1_milestone_errors(payload: dict[str, object]) -> list[str]:
+    """Validate the product-approved Phase 1 single-approver milestone gate."""
+    errors: list[str] = []
+    policy = payload.get("phase1ApprovalPolicy")
+    if not isinstance(policy, dict):
+        return ["phase1ApprovalPolicy is required"]
+    if policy.get("policy") != "SINGLE_APPROVER":
+        errors.append("phase1ApprovalPolicy.policy must be SINGLE_APPROVER")
+    if policy.get("requiredApprover") != PHASE1_MILESTONE_APPROVER:
+        errors.append(f"Phase 1 approver must be {PHASE1_MILESTONE_APPROVER}")
+    if policy.get("authorityRole") != "SYSTEM_ADMIN":
+        errors.append("phase1ApprovalPolicy.authorityRole must be SYSTEM_ADMIN")
+    if policy.get("status") != "approved":
+        errors.append("phase1ApprovalPolicy.status must be approved")
+
+    items = payload.get("signOffItems")
+    if not isinstance(items, list):
+        return [*errors, "signOffItems must be a list"]
+    indexed = {
+        item.get("id"): item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    item = indexed.get(PHASE1_ADMIN_SIGN_OFF_ITEM_ID)
+    if item is None:
+        return [*errors, f"Missing Phase 1 sign-off item: {PHASE1_ADMIN_SIGN_OFF_ITEM_ID}"]
+    if item.get("role") != "SYSTEM_ADMIN":
+        errors.append("Phase 1 final approval role must be SYSTEM_ADMIN")
+    if item.get("status") != "approved":
+        errors.append("Phase 1 final approval is not approved")
+    if item.get("approvedBy") != PHASE1_MILESTONE_APPROVER:
+        errors.append("Phase 1 final approval must be approved by Justin")
+    if not item.get("approvedAt"):
+        errors.append("Phase 1 final approval is missing approvedAt")
+    return errors
+
+
 def _read_json(path: Path) -> dict[str, object]:
     return read_json(path)
 
@@ -183,6 +236,11 @@ def main() -> int:
     parser.add_argument("--sync", default="", help="Read a legacy/current checklist and create a new pending v2 draft.")
     parser.add_argument("--output", default="", help="Optional new output path for --sync; omitted explicitly syncs the named local checklist in place.")
     parser.add_argument("--validate", default="", help="Read and validate a v2 formal checklist.")
+    parser.add_argument(
+        "--validate-phase1-milestone",
+        default="",
+        help="Validate the Phase 1 milestone using the approved Justin single-approver policy.",
+    )
     parser.add_argument("--uat-report", default="", help="Executed v2 LAB self-test report bound to formal evidence.")
     parser.add_argument("--environment", default="lab", help="Target environment for a new template.")
     args = parser.parse_args()
@@ -226,6 +284,22 @@ def main() -> int:
                 print(f"  [FAIL] {error}")
             return 1
         print("Formal acceptance evidence validation passed.")
+        return 0
+    if args.validate_phase1_milestone:
+        path = Path(args.validate_phase1_milestone)
+        if not path.is_file():
+            print(f"Checklist not found: {path}", file=sys.stderr)
+            return 1
+        try:
+            errors = phase1_milestone_errors(_read_json(path))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Cannot validate checklist: {exc}", file=sys.stderr)
+            return 1
+        if errors:
+            for error in errors:
+                print(f"  [FAIL] {error}")
+            return 1
+        print("Phase 1 milestone approval validation passed (approver: Justin).")
         return 0
     parser.print_help()
     return 1
