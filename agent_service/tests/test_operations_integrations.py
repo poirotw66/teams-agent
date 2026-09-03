@@ -186,6 +186,8 @@ def test_memory_store_filters_events_by_period() -> None:
         page, cursor = await store.list_events(since=now - timedelta(days=1))
         assert [item.event_id for item in page] == ["evt-new"]
         assert cursor is None
+        found = await store.find_events(correlation_id="corr-new")
+        assert [item.event_id for item in found] == ["evt-new"]
 
     asyncio.run(run())
 

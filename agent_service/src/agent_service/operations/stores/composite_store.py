@@ -13,6 +13,9 @@ from .memory_store import MemoryOperationalStore
 class OperationalStore(Protocol):
     async def append(self, event: OperationalEvent) -> bool: ...
 
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        ...
+
     async def list_events(
         self,
         *,
@@ -78,6 +81,9 @@ class CompositeOperationalStore:
             since=since,
             until=until,
         )
+
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        return await self._primary.find_events(correlation_id=correlation_id)
 
     async def delivery_stats(self) -> dict[str, object]:
         return await self._journal.stats(time.time())

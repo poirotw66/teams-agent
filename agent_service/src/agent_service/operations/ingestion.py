@@ -12,6 +12,9 @@ from .settings import OpsSettings
 class OperationalStore(Protocol):
     async def append(self, event: OperationalEvent) -> bool: ...
 
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        ...
+
     async def list_events(
         self,
         *,
@@ -64,3 +67,6 @@ class EventIngestionService:
             if await self.ingest(event):
                 inserted += 1
         return inserted
+
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        return await self._store.find_events(correlation_id=correlation_id)

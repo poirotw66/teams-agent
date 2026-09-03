@@ -240,11 +240,89 @@ class OperationalEventEmitter:
         return event
 
     async def emit_feedback(self, payload: FeedbackRequest, **provenance: Any) -> None:
+        provenance_key = (payload.correlationId, payload.conversationId or "")
+        if not provenance and provenance_key not in self._feedback_provenance:
+            await self._restore_feedback_provenance(payload)
+        if not provenance and await self._persisted_feedback_exists(payload):
+            return
         await self._ingestion.ingest(self.build_feedback_event(payload, **provenance))
 
     def schedule_feedback(self, payload: FeedbackRequest, **provenance: Any) -> None:
-        event = self.build_feedback_event(payload, **provenance)
-        asyncio.create_task(self._ingestion.ingest(event))
+        asyncio.create_task(self.emit_feedback(payload, **provenance))
+
+    async def _persisted_feedback_exists(self, payload: FeedbackRequest) -> bool:
+        provenance = self._feedback_provenance.get(
+            (payload.correlationId, payload.conversationId or "")
+        )
+        if provenance is None:
+            return False
+        tenant_id, request_id, actor_id, conversation_id = provenance
+        feedback_id = feedback_event_id(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            correlation_id=payload.correlationId,
+            issue_id=payload.issueId,
+            rating=payload.rating,
+            resolved_status=payload.resolvedStatus,
+            actor_id=actor_id,
+            reason=payload.reason,
+        )
+        event_id = feedback_submission_event_id(tenant_id, feedback_id)
+        events = await self._ingestion.find_events(correlation_id=payload.correlationId)
+        existing = next((event for event in events if event.event_id == event_id), None)
+        if existing is None:
+            return False
+        expected_payload = {
+            "rating": payload.rating,
+            "issueId": payload.issueId,
+            "reason": mask_text(payload.reason).text if payload.reason else None,
+            "resolvedStatus": payload.resolvedStatus,
+        }
+        identity_conflict = any((
+            existing.tenant_id != tenant_id,
+            existing.request_id != request_id,
+            existing.conversation_id != conversation_id,
+            existing.actor_ref != pseudonymous_actor_id(actor_id),
+            any(
+                existing.payload.get(key) != value
+                for key, value in expected_payload.items()
+            ),
+        ))
+        if identity_conflict:
+            raise OperationalEventReplayConflict("persisted feedback identity conflict")
+        return True
+
+    async def _restore_feedback_provenance(self, payload: FeedbackRequest) -> None:
+        events = await self._ingestion.find_events(correlation_id=payload.correlationId)
+        turns = [event for event in events if event.event_type == "turn.received"]
+        if payload.conversationId:
+            canonical_matches = [
+                event for event in turns
+                if event.conversation_id == payload.conversationId
+            ]
+            if canonical_matches:
+                turns = canonical_matches
+        actor_ref = pseudonymous_actor_id(payload.userId)
+        if actor_ref is not None:
+            turns = [event for event in turns if event.actor_ref == actor_ref]
+        candidates = {
+            (
+                event.tenant_id,
+                event.request_id,
+                event.actor_ref,
+                event.conversation_id,
+            )
+            for event in turns
+            if event.tenant_id and event.request_id and event.actor_ref and event.conversation_id
+        }
+        if len(candidates) != 1 or payload.userId is None:
+            raise ValueError("feedback provenance cannot be resolved uniquely")
+        tenant_id, request_id, trusted_actor_ref, conversation_id = candidates.pop()
+        if pseudonymous_actor_id(payload.userId) != trusted_actor_ref:
+            raise OperationalEventReplayConflict("feedback user does not match turn actor")
+        self._feedback_provenance[
+            (payload.correlationId, payload.conversationId or "")
+        ] = (tenant_id, request_id, payload.userId, conversation_id)
 
     def build_turn_events(
         self, payload: AgentRequest, state: dict[str, Any], *,

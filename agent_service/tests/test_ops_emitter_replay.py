@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,6 +22,7 @@ from agent_service.operations.emitter import (
 )
 from agent_service.operations.ingestion import EventIngestionService
 from agent_service.operations.settings import OpsSettings
+from agent_service.operations.stores.file_store import FileOperationalStore
 from agent_service.operations.stores.memory_store import MemoryOperationalStore
 from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage_events import RequestCostSummary, UsageEventCollector
@@ -259,3 +261,91 @@ def test_feedback_identity_is_replay_safe_without_treating_correlation_as_unique
     assert len(stored) == 2
     assert len({event.event_id for event in stored}) == 2
     assert "SENSITIVE_MARKER" not in "\n".join(event.model_dump_json() for event in stored)
+
+
+def test_feedback_provenance_recovers_from_persisted_turn_after_restart(
+    tmp_path: Path,
+) -> None:
+    settings = _settings()
+    taxonomy = TaxonomyRepository(settings.taxonomy_path)
+    store_path = tmp_path / "operational-events"
+    first_emitter = OperationalEventEmitter(
+        EventIngestionService(FileOperationalStore(store_path), settings),
+        taxonomy,
+        IssueClassifier(taxonomy, settings.classification_rules_path),
+        settings,
+    )
+    feedback = FeedbackRequest(
+        correlationId="correlation-reused-by-client",
+        conversationId="conversation-9",
+        issueId=1,
+        rating="UP",
+        userId="user-9",
+    )
+
+    async def run() -> list:
+        await first_emitter.emit_turn(_request(), _state(), cost_summary=None)
+        restarted_store = FileOperationalStore(store_path)
+        restarted_emitter = OperationalEventEmitter(
+            EventIngestionService(restarted_store, settings),
+            taxonomy,
+            IssueClassifier(taxonomy, settings.classification_rules_path),
+            settings,
+        )
+        await restarted_emitter.emit_feedback(feedback)
+        replay_ingestion = EventIngestionService(
+            FileOperationalStore(store_path), settings
+        )
+        replay_ingestion.ingest = AsyncMock(
+            side_effect=AssertionError("persisted replay must not append")
+        )
+        replay_emitter = OperationalEventEmitter(
+            replay_ingestion,
+            taxonomy,
+            IssueClassifier(taxonomy, settings.classification_rules_path),
+            settings,
+        )
+        await replay_emitter.emit_feedback(feedback)
+        replay_ingestion.ingest.assert_not_awaited()
+        events, _ = await restarted_store.list_events(limit=100)
+        return [event for event in events if event.event_type == "feedback.recorded"]
+
+    feedback_events = asyncio.run(run())
+    assert len(feedback_events) == 1
+    assert feedback_events[0].tenant_id == "tenant-a"
+    assert feedback_events[0].request_id == "request-7"
+    assert feedback_events[0].conversation_id == "conversation-9"
+
+
+def test_feedback_provenance_fails_closed_when_persisted_turns_are_ambiguous() -> None:
+    first_emitter, store = _emitter()
+    settings = _settings()
+    taxonomy = TaxonomyRepository(settings.taxonomy_path)
+
+    def restarted_emitter() -> OperationalEventEmitter:
+        return OperationalEventEmitter(
+            EventIngestionService(store, settings),
+            taxonomy,
+            IssueClassifier(taxonomy, settings.classification_rules_path),
+            settings,
+        )
+
+    feedback = FeedbackRequest(
+        correlationId="correlation-reused-by-client",
+        conversationId="conversation-9",
+        issueId=1,
+        rating="UP",
+        userId="user-9",
+    )
+
+    async def run() -> None:
+        await first_emitter.emit_turn(
+            _request(tenant_id="tenant-a"), _state(), cost_summary=None
+        )
+        await restarted_emitter().emit_turn(
+            _request(tenant_id="tenant-b"), _state(), cost_summary=None
+        )
+        with pytest.raises(ValueError, match="cannot be resolved uniquely"):
+            await restarted_emitter().emit_feedback(feedback)
+
+    asyncio.run(run())

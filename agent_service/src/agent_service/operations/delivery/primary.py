@@ -52,6 +52,15 @@ class FirestoreDeliveryPrimary:
             snapshots[limit - 1].id if len(snapshots) > limit else None,
         )
 
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        query = self._collection.where(
+            filter=FieldFilter("correlation_id", "==", correlation_id)
+        )
+        snapshots = [snapshot async for snapshot in query.stream()]
+        return [OperationalEvent.model_validate(snapshot.to_dict()) for snapshot in snapshots]
+
 
 class FileDeliveryPrimary:
     """Local development projection compatible with events.jsonl readers.
@@ -118,3 +127,10 @@ class FileDeliveryPrimary:
         page = filtered[start:start + limit]
         end = start + len(page)
         return page, str(end) if end < len(filtered) else None
+
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        events = await asyncio.to_thread(self._read)
+        return [
+            event for event in events
+            if event.correlation_id == correlation_id
+        ]

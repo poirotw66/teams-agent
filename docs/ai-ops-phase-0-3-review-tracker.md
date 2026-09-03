@@ -9,7 +9,8 @@
 - 實作者：使用者指定的 GPT-5.6 Terra，使用 Codex 原生子任務／subagent。
 - 審查員：主對話；檢查差異、獨立重跑測試，未通過則退回實作者。
 - 實作完成、局部測試通過、跨服務整合完成、LAB UAT、正式人工簽核分開記錄。
-- 不以 scaffold、假資料測試或 LAB 自驗代替正式 BU／IT／資安／法遵確認。
+- 2026-09-03 產品決策：Phase 0 目前以 LAB 自驗通過作為完成門檻，可繼續 Phase 2；本次不要求 BU／IT／資安／法遵跨部門簽核。
+- 歷史 LAB artifacts 保持 LAB 標示，不改稱外部正式核准；若未來 production governance 要求跨部門簽核，再重新開啟正式證據 gate。
 - 不部署、不 push、不執行雲端寫入或代簽腳本；需要時另取得授權。
 - 不刪改原 spec 的要求來讓現有程式看似完成。
 
@@ -55,7 +56,7 @@ Terra 原生 subagent：Maxwell，`01a06302-380b-7010-a359-07afb0dda223`。
 
 基準證據：`ai_ops_signoff_checklist.json` 四項批准的備註均為 LAB 自驗；`ai_ops_formal_acceptance_audit.json` 卻標記 `formalAcceptanceComplete=true`。這些檔案不能證明真正跨部門核准。
 
-交付門檻：明確区分 LAB 與正式證據，綁定環境／commit／artifact、必要權責及人工核准；缺失、過期、未執行或失敗技術 gate 不能被人為 approved 狀態蓋過。不得只靠姓名或備註關鍵字推斷權責，不覆寫歷史 artifacts。
+目前決策：本里程碑接受 LAB 自驗作為 Phase 0 完成證據，跨部門正式證據不阻擋 Phase 2。仍須明確區分 LAB 與正式證據，不覆寫歷史 artifacts；缺失、過期、未執行或失敗的技術 gate 仍不能被 approved 狀態蓋過。
 
 進行中程式的提前審查已回饋：發生時間（executedAt／approvedAt／verifiedAt）與 expiresAt 不能套用同一「必須在未來」判斷；JSON 自稱 EXTERNALLY_VERIFIED 並不是可信驗證。schema 通過與可信來源核驗須分離，缺少可信驗證時不可標記正式完成。
 

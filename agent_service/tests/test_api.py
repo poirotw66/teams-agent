@@ -1,6 +1,7 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -165,6 +166,34 @@ def test_chat_stream_emits_stages_then_the_same_answer_as_chat(tmp_path: Path) -
     assert final["feedbackEnabled"] == plain.json()["feedbackEnabled"]
     assert final.get("costComplete") == plain.json().get("costComplete")
     assert final.get("estimatedCostUsd") == plain.json().get("estimatedCostUsd")
+
+
+def test_chat_fails_closed_when_operational_events_cannot_persist(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        client.app.state.ops_runtime.emitter.emit_turn = AsyncMock(
+            side_effect=RuntimeError("store unavailable")
+        )
+        response = client.post("/agent/chat", json=CHAT_PAYLOAD)
+
+    assert response.status_code == 503
+    assert "Correlation ID" in response.json()["detail"]
+
+
+def test_feedback_rejects_unverifiable_provenance(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post(
+            "/feedback",
+            json={
+                "correlationId": "unknown-correlation",
+                "conversationId": "unknown-conversation",
+                "issueId": 1,
+                "rating": "UP",
+                "userId": "user-1",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Feedback provenance could not be verified."
 
 
 def test_chat_includes_turn_cost_by_default(tmp_path: Path) -> None:

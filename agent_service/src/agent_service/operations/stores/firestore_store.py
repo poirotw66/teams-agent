@@ -54,6 +54,11 @@ class FirestoreOperationalStore:
         next_cursor = snapshots[limit].id if len(snapshots) > limit else None
         return events, next_cursor
 
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        query = self._collection.where("correlation_id", "==", correlation_id)
+        snapshots = [item async for item in query.stream()]
+        return [OperationalEvent.model_validate(item.to_dict()) for item in snapshots]
+
 
 def build_firestore_client(project: str | None, database: str | None) -> Any:
     try:

@@ -27,6 +27,7 @@ from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .knowledge_release import resolve_knowledge_index
 from .operations.event_identity import LogicalRequestIdentity
+from .operations.emitter import OperationalEventReplayConflict
 from .operations.runtime import OpsRuntime, build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
@@ -282,7 +283,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             round((time.perf_counter() - started_at) * 1000, 1),
         )
 
-    def _log_chat_success(
+    async def _log_chat_success(
         payload: AgentRequest,
         correlation_id: str,
         state: dict,
@@ -325,7 +326,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             enriched = dict(state)
             if knowledge_release_id:
                 enriched["knowledge_release_id"] = knowledge_release_id
-            ops_runtime.emitter.schedule_turn(payload, enriched, cost_summary=summary)
+            await ops_runtime.emitter.emit_turn(payload, enriched, cost_summary=summary)
         return summary
 
     def _build_response(
@@ -384,15 +385,22 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
             ) from error
 
-        cost_summary = _log_chat_success(
-            payload,
-            correlation_id,
-            state,
-            usage_metadata,
-            started_at,
-            ops_runtime=getattr(request.app.state, "ops_runtime", None),
-            knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
-        )
+        try:
+            cost_summary = await _log_chat_success(
+                payload,
+                correlation_id,
+                state,
+                usage_metadata,
+                started_at,
+                ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+            )
+        except Exception as error:
+            _log_chat_failure(payload, correlation_id, error, started_at)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
+            ) from error
         return _build_response(
             state, correlation_id, channel=payload.channel, cost_summary=cost_summary
         )
@@ -462,15 +470,26 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                 )
                 return
 
-            cost_summary = _log_chat_success(
-                payload,
-                correlation_id,
-                state,
-                usage_metadata,
-                started_at,
-                ops_runtime=getattr(request.app.state, "ops_runtime", None),
-                knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
-            )
+            try:
+                cost_summary = await _log_chat_success(
+                    payload,
+                    correlation_id,
+                    state,
+                    usage_metadata,
+                    started_at,
+                    ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                    knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+                )
+            except Exception as error:  # noqa: BLE001 - HTTP status is already committed
+                _log_chat_failure(payload, correlation_id, error, started_at)
+                yield _sse(
+                    "error",
+                    {
+                        "detail": "Agent service is temporarily unavailable.",
+                        "correlationId": correlation_id,
+                    },
+                )
+                return
             yield _sse(
                 "response",
                 _build_response(
@@ -510,7 +529,18 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         )
         ops_runtime = getattr(request.app.state, "ops_runtime", None)
         if ops_runtime is not None:
-            ops_runtime.emitter.schedule_feedback(payload)
+            try:
+                await ops_runtime.emitter.emit_feedback(payload)
+            except (OperationalEventReplayConflict, ValueError) as error:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Feedback provenance could not be verified.",
+                ) from error
+            except Exception as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Feedback persistence is temporarily unavailable.",
+                ) from error
         return {"status": "recorded"}
 
     @app.post(

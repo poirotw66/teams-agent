@@ -49,6 +49,13 @@ class MemoryOperationalStore:
             next_cursor = str(next_index) if next_index < len(filtered) else None
             return list(page), next_cursor
 
+    async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
+        with self._lock:
+            return [
+                event for event in self._events
+                if event.correlation_id == correlation_id
+            ]
+
     async def count_by_type(self, event_type: str) -> int:
         with self._lock:
             return sum(1 for event in self._events if event.event_type == event_type)
