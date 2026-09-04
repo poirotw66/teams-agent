@@ -38,27 +38,47 @@ def headers(role: str, user_id: str | None = None) -> dict[str, str]:
         "X-Backoffice-User-Name": role,
         "X-Backoffice-Role": role,
         "X-Backoffice-Owner-Units": "IT Service Desk",
+        "X-Backoffice-Tenant-Id": "local-development",
     }
 
 
-def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
-    system = headers("SYSTEM_ADMIN", "sys-writer")
-    created_example = client.post(
-        "/api/examples/manual",
-        headers=system,
-        json={
+def _verify_examples(client: TestClient, system: dict[str, str]) -> dict:
+    payloads = [
+        {
             "text": "VPN 無法連線",
             "expected_issue_type_id": "vpn.connection_failed",
             "expected_route": "KNOWLEDGE",
             "label": "POSITIVE",
         },
-    ).json()["example"]
-    verified = client.post(
-        f"/api/examples/{created_example['example_id']}/review",
-        headers=system,
-        json={"expected_etag": 1, "approve": True, "reason": "verified for phase3"},
-    ).json()["example"]
+        {
+            "text": "Outlook 寄信失敗",
+            "expected_issue_type_id": "email.outlook_sync",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+        },
+        {
+            "text": "請幫我轉接真人客服",
+            "expected_issue_type_id": "other.unclassified",
+            "expected_route": "HANDOFF",
+            "label": "POSITIVE",
+        },
+    ]
+    verified = None
+    for payload in payloads:
+        created = client.post("/api/examples/manual", headers=system, json=payload).json()["example"]
+        verified = client.post(
+            f"/api/examples/{created['example_id']}/review",
+            headers=system,
+            json={"expected_etag": 1, "approve": True, "reason": "verified for phase3"},
+        ).json()["example"]
+    assert verified is not None
+    return verified
+
+
+def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    system = headers("SYSTEM_ADMIN", "sys-writer")
+    verified = _verify_examples(client, system)
     ai = headers("AI_ADMIN", "ai-writer")
     approver = headers("AI_ADMIN", "ai-approver")
     prompts = client.get("/api/governance/prompts", headers=ai)
@@ -87,6 +107,7 @@ def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
     )
     assert evaluated.status_code == 200
     assert evaluated.json()["eval"]["critical_passed"] is True
+    assert evaluated.json()["eval"]["status"] == "COMPLETED"
     approved = client.post(
         f"/api/governance/prompts/{prompt_id}/versions/{version_id}/approve",
         headers=approver,
@@ -118,21 +139,7 @@ def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
 def test_governance_canary_evaluate_stops_and_audit_export(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     system = headers("SYSTEM_ADMIN", "sys-writer")
-    created_example = client.post(
-        "/api/examples/manual",
-        headers=system,
-        json={
-            "text": "VPN 無法連線",
-            "expected_issue_type_id": "vpn.connection_failed",
-            "expected_route": "KNOWLEDGE",
-            "label": "POSITIVE",
-        },
-    ).json()["example"]
-    verified = client.post(
-        f"/api/examples/{created_example['example_id']}/review",
-        headers=system,
-        json={"expected_etag": 1, "approve": True, "reason": "verified for phase3"},
-    ).json()["example"]
+    verified = _verify_examples(client, system)
     ai = headers("AI_ADMIN", "ai-writer")
     approver = headers("AI_ADMIN", "ai-approver")
     prompts = client.get("/api/governance/prompts", headers=ai).json()

@@ -76,16 +76,18 @@ class RoleRevalidatingExportAuthorizationResolver:
             display_name=display_name,
             role=role,  # type: ignore[arg-type]
             owner_unit_ids=owner_unit_ids,
+            tenant_id=tenant_id,
         )
 
 
 def tenant_for_actor(actor: ActorContext, *, environment: str) -> str:
     """Read tenant provenance supplied by the security-owned ActorContext.
 
-    Header clients cannot choose this value.  A synthetic tenant is permitted
-    only for isolated non-production fixtures until the Entra adapter supplies it.
+    Header clients cannot choose an arbitrary cross-tenant value in production
+    Entra mode; HEADER lab mode may supply ``X-Backoffice-Tenant-Id`` or the
+    default ``local-development`` binding.
     """
-    tenant_id = getattr(actor, "tenant_id", None)
+    tenant_id = actor.tenant_id
     if isinstance(tenant_id, str) and tenant_id.strip():
         return tenant_id.strip()
     if environment.lower() in {"dev", "test", "poc", "lab"}:

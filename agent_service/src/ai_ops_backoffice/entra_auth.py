@@ -87,11 +87,13 @@ def resolve_actor_from_entra(
 
     role = _resolve_role(claims)
     owner_units = _resolve_owner_units(claims, default_owner_unit_id)
+    claim_tenant = str(claims.get("tid") or tenant_id or "").strip() or None
     return ActorContext(
         user_id=user_id,
         display_name=display_name,
         role=role,
         owner_unit_ids=tuple(owner_units),
+        tenant_id=claim_tenant,
     )
 
 

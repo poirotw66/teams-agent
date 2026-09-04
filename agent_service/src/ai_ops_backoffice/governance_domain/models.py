@@ -17,7 +17,7 @@ LifecycleStatus = Literal[
     "RETIRED",
     "REJECTED",
 ]
-EvalStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
+EvalStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED", "INCOMPLETE"]
 FlagType = Literal["boolean", "enum", "percentage"]
 RoleChangeStatus = Literal["REQUESTED", "APPROVED", "REJECTED", "REVOKED"]
 TargetType = Literal[

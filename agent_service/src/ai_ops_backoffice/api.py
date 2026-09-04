@@ -548,6 +548,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         x_backoffice_user_name: str | None = Header(default=None, alias="X-Backoffice-User-Name"),
         x_backoffice_role: str | None = Header(default="ANALYST", alias="X-Backoffice-Role"),
         x_backoffice_owner_units: str | None = Header(default="", alias="X-Backoffice-Owner-Units"),
+        x_backoffice_tenant_id: str | None = Header(default=None, alias="X-Backoffice-Tenant-Id"),
     ):
         try:
             return resolve_actor(
@@ -557,6 +558,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
                 header_user_name=x_backoffice_user_name,
                 header_role=x_backoffice_role,
                 header_owner_units=x_backoffice_owner_units,
+                header_tenant_id=x_backoffice_tenant_id,
                 default_owner_unit_id=resolved_settings.default_owner_unit_id,
                 entra_tenant_id=resolved_settings.entra_tenant_id,
                 entra_client_id=resolved_settings.entra_client_id,

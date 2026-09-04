@@ -27,6 +27,10 @@ This handoff covers the Phase 3 AI governance domain introduced under
   (`PROMPT_RUNTIME_MODE=GOVERNED|CODE_BASELINE`)
 - ACTIVE retention TTL and masking policy version bridged into ops runtime via
   `agent_service.operations.policy_runtime` (emitters / retention / mask stamps)
+- Operational event scope: tenant is a hard boundary; owner-unit checks are
+  per-event; same-conversation inheritance no longer widens visibility
+- Eval layers: `static` + `dataset` + `real_flow` (`phase3-eval-v3`); unavailable
+  model/harness yields `INCOMPLETE` and cannot pass critical gates
 - Backoffice UI pages for Prompt, models, flags, roles, retention, masking, search, audit export
 - LAB drill script: `scripts/ops_phase3_governance_drill.py`
 - SYSTEM_ADMIN single-approver sign-off helper: `scripts/ops_phase3_signoff.py`

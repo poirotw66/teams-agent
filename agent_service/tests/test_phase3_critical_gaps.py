@@ -104,6 +104,8 @@ def test_active_retention_and_masking_affect_runtime(tmp_path: Path) -> None:
 
 
 def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> None:
+    from ai_ops_backoffice.governance_domain.eval_flow import ScriptedExtractorHarness
+
     now = datetime.now(UTC)
     examples = [
         {
@@ -150,12 +152,44 @@ def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> 
         actor_id="ai",
         taxonomy_version="taxonomy-v1",
         knowledge_release_id=None,
+        flow_harness=ScriptedExtractorHarness(),
     )
-    assert any(item.category == "classification" for item in run.case_results)
-    assert all(
-        "expected=" in item.detail
-        for item in run.case_results
-        if item.category == "classification"
-    )
+    assert any(item.category == "static" for item in run.case_results)
+    assert any(item.category == "dataset" for item in run.case_results)
+    assert any(item.category == "real_flow" for item in run.case_results)
+    assert run.status == "COMPLETED"
     assert run.critical_passed is True
-    assert any("char_token_heuristic_v2" in item.detail for item in run.case_results)
+    assert any("harness=scripted_extractor_v1" in item.detail for item in run.case_results)
+
+
+def test_eval_marks_incomplete_when_flow_unavailable(tmp_path: Path) -> None:
+    from ai_ops_backoffice.governance_domain.eval_flow import UnavailableFlowHarness
+
+    now = datetime.now(UTC)
+    candidate = PromptVersion(
+        version_id="v1",
+        prompt_id="issue-extractor",
+        version="test",
+        status="CANDIDATE",
+        template=SYSTEM_PROMPT,
+        content_hash="x",
+        input_schema_version="issue-extractor-input-v1",
+        output_schema_version="issue-extractor-output-v1",
+        created_by="ai",
+        created_at=now,
+        dataset_version="dataset-v1",
+        taxonomy_version="taxonomy-v1",
+        model_id="offline",
+    )
+    run = evaluate_prompt(
+        candidate=candidate,
+        baseline=None,
+        examples=[],
+        actor_id="ai",
+        taxonomy_version="taxonomy-v1",
+        knowledge_release_id=None,
+        flow_harness=UnavailableFlowHarness(),
+    )
+    assert run.status == "INCOMPLETE"
+    assert run.critical_passed is False
+    assert any("model_unavailable" in item.detail for item in run.case_results)

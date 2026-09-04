@@ -172,6 +172,7 @@ def test_operations_phase0_scope_filter() -> None:
         display_name="Analyst",
         role="ANALYST",
         owner_unit_ids=("Other Unit",),
+        tenant_id="tenant-a",
     )
     events = [
         OperationalEvent(
@@ -179,6 +180,7 @@ def test_operations_phase0_scope_filter() -> None:
             event_type="issue.extracted",
             occurred_at=utc_now(),
             correlation_id="corr-1",
+            tenant_id="tenant-a",
             issue_type_id="vpn.connection_failed",
             payload={},
         )
@@ -187,7 +189,7 @@ def test_operations_phase0_scope_filter() -> None:
     assert scoped == []
 
 
-def test_scope_inherits_conversation_events_without_issue_type() -> None:
+def test_scope_inherits_same_turn_events_without_issue_type() -> None:
     from agent_service.operations.access import ActorContext
     from agent_service.operations.contracts import OperationalEvent, utc_now
     from agent_service.operations.scope import filter_events_by_scope
@@ -200,6 +202,7 @@ def test_scope_inherits_conversation_events_without_issue_type() -> None:
         display_name="Analyst",
         role="ANALYST",
         owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
     )
     now = utc_now()
     events = [
@@ -208,6 +211,8 @@ def test_scope_inherits_conversation_events_without_issue_type() -> None:
             event_type="issue.extracted",
             occurred_at=now,
             conversation_id="conv-1",
+            turn_id="turn-1",
+            tenant_id="tenant-a",
             correlation_id="corr-1",
             issue_type_id="vpn.connection_failed",
             payload={},
@@ -219,15 +224,17 @@ def test_scope_inherits_conversation_events_without_issue_type() -> None:
             conversation_id="conv-1",
             correlation_id="corr-1",
             turn_id="turn-1",
+            tenant_id="tenant-a",
             payload={"messageMasked": "hello"},
         ),
         OperationalEvent(
             event_id="turn-orphan",
             event_type="turn.received",
             occurred_at=now,
-            conversation_id="conv-2",
+            conversation_id="conv-1",
             correlation_id="corr-2",
             turn_id="turn-2",
+            tenant_id="tenant-a",
             payload={"messageMasked": "secret"},
         ),
     ]

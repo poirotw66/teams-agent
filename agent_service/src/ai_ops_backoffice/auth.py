@@ -38,6 +38,7 @@ def resolve_actor(
     default_owner_unit_id: str,
     entra_tenant_id: str | None,
     entra_client_id: str | None,
+    header_tenant_id: str | None = None,
 ) -> ActorContext:
     mode = auth_mode.upper()
     if mode == "ENTRA":
@@ -85,9 +86,11 @@ def resolve_actor(
         for item in (header_owner_units or default_owner_unit_id).split(",")
         if item.strip()
     ]
+    tenant_id = (header_tenant_id or "").strip() or "local-development"
     return ActorContext(
         user_id=header_user_id,
         display_name=header_user_name or header_user_id,
         role=role,  # type: ignore[arg-type]
         owner_unit_ids=tuple(owner_units),
+        tenant_id=tenant_id,
     )

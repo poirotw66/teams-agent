@@ -24,7 +24,13 @@ ANALYST = ActorContext("analyst", "Analyst", "ANALYST", ("it",))
 
 
 def service(tmp_path: Path, *, clock=None) -> GovernanceService:
-    return GovernanceService(FileGovernanceRepository(tmp_path / "gov.json"), clock=clock)
+    from ai_ops_backoffice.governance_domain.eval_flow import ScriptedExtractorHarness
+
+    return GovernanceService(
+        FileGovernanceRepository(tmp_path / "gov.json"),
+        clock=clock,
+        eval_flow_harness=ScriptedExtractorHarness(),
+    )
 
 
 def verified_examples(now: datetime) -> list[dict]:
@@ -36,7 +42,23 @@ def verified_examples(now: datetime) -> list[dict]:
             "text": "VPN 無法連線",
             "expected_route": "KNOWLEDGE",
             "label": "POSITIVE",
-        }
+        },
+        {
+            "status": "VERIFIED",
+            "dataset_version": "dataset-v1",
+            "created_at": now.isoformat(),
+            "text": "Outlook 寄信失敗",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+        },
+        {
+            "status": "VERIFIED",
+            "dataset_version": "dataset-v1",
+            "created_at": now.isoformat(),
+            "text": "今天天氣如何",
+            "expected_route": "NON_IT",
+            "label": "NEGATIVE",
+        },
     ]
 
 

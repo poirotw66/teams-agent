@@ -25,6 +25,7 @@ from .errors import (
     GovernanceTransitionError,
     GovernanceValidationError,
 )
+from .eval_flow import PromptFlowHarness
 from .eval_runner import evaluate_model, evaluate_prompt
 from .helpers import (
     content_hash,
@@ -61,9 +62,16 @@ Clock = Callable[[], datetime]
 class GovernanceService:
     """Phase 3 governed release lifecycle for prompts, models, flags, and access."""
 
-    def __init__(self, repository: GovernanceRepository, *, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        repository: GovernanceRepository,
+        *,
+        clock: Clock | None = None,
+        eval_flow_harness: PromptFlowHarness | None = None,
+    ) -> None:
         self._repository = repository
         self._clock = clock or utc_now
+        self._eval_flow_harness = eval_flow_harness
 
     def _require(self, actor: ActorContext, capability: str) -> None:
         if actor.user_id in self._repository.load().revoked_principals:
@@ -314,6 +322,7 @@ class GovernanceService:
                 actor_id=actor.user_id,
                 taxonomy_version=version.taxonomy_version,
                 knowledge_release_id=version.knowledge_release_id,
+                flow_harness=self._eval_flow_harness,
             )
             updated = replace_model(version, status="EVALUATED", eval_run_id=run.run_id)
             audit = self._audit(

@@ -11,11 +11,48 @@ from agent_service.settings import RagSettings
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
 from ai_ops_backoffice.governance_domain.constants import ISSUE_EXTRACTOR_PROMPT_ID
+from ai_ops_backoffice.governance_domain.eval_flow import ScriptedExtractorHarness
 from ai_ops_backoffice.governance_domain.helpers import content_hash
 
 
 AI = ActorContext("ai-admin", "AI Admin", "AI_ADMIN", ())
 APPROVER = ActorContext("approver", "Approver", "AI_ADMIN", ())
+
+
+def _gov(tmp_path: Path) -> GovernanceService:
+    return GovernanceService(
+        FileGovernanceRepository(tmp_path / "governance.json"),
+        eval_flow_harness=ScriptedExtractorHarness(),
+    )
+
+
+def _examples(now: datetime) -> list[dict]:
+    return [
+        {
+            "status": "VERIFIED",
+            "dataset_version": "dataset-v1",
+            "created_at": now.isoformat(),
+            "text": "VPN 無法連線",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+        },
+        {
+            "status": "VERIFIED",
+            "dataset_version": "dataset-v1",
+            "created_at": now.isoformat(),
+            "text": "Outlook 寄信失敗",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+        },
+        {
+            "status": "VERIFIED",
+            "dataset_version": "dataset-v1",
+            "created_at": now.isoformat(),
+            "text": "今天天氣如何",
+            "expected_route": "NON_IT",
+            "label": "NEGATIVE",
+        },
+    ]
 
 
 def _settings(tmp_path: Path, **overrides) -> RagSettings:
@@ -50,7 +87,7 @@ def test_governed_mode_falls_back_when_store_empty(tmp_path: Path) -> None:
 
 
 def test_governed_mode_uses_active_pointer(tmp_path: Path) -> None:
-    svc = GovernanceService(FileGovernanceRepository(tmp_path / "governance.json"))
+    svc = _gov(tmp_path)
     active = svc.list_prompts(actor=AI)[0]["active"]
     runtime = ExtractorPromptRuntime.from_settings(_settings(tmp_path))
     resolved = runtime.resolve(tenant_id="tenant-a", conversation_id="conv-1")
@@ -61,19 +98,10 @@ def test_governed_mode_uses_active_pointer(tmp_path: Path) -> None:
 
 
 def test_peek_runtime_prompt_selects_canary_by_sticky_bucket(tmp_path: Path) -> None:
-    svc = GovernanceService(FileGovernanceRepository(tmp_path / "governance.json"))
+    svc = _gov(tmp_path)
     baseline = svc.list_prompts(actor=AI)[0]["active"]["version_id"]
     now = datetime.now(UTC)
-    examples = [
-        {
-            "status": "VERIFIED",
-            "dataset_version": "dataset-v1",
-            "created_at": now.isoformat(),
-            "text": "VPN 無法連線",
-            "expected_route": "KNOWLEDGE",
-            "label": "POSITIVE",
-        }
-    ]
+    examples = _examples(now)
     created = svc.create_prompt_candidate(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         dataset_version="dataset-v1",
