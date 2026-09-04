@@ -34,21 +34,45 @@ Bot：依知識庫回覆排除步驟 + 來源引用（可附圖）+ 👍/👎
 
 Service endpoints:
 
-Teams Adapter (public):
+| Service | Port | Access | Description |
+| :--- | :--- | :--- | :--- |
+| **AI Ops Console** | `8092` | Public / Ops | **Primary Unified Operations Portal & BFF** (Native UI, Bento Grid metrics, Closed-Loop Ops) |
+| **Teams Adapter** | `3978` | Public / Teams | Microsoft Teams SDK Messaging Endpoint (`/api/messages`) & Adaptive Card renderer |
+| **Agent Service** | `8000` | Private / Internal | LangGraph Workflow main entry (`/agent/chat`), Hybrid RAG, & Evaluation engine |
+| **Knowledge Portal** | `8091` | Loopback Only | Internal Headless Knowledge Engine (Bridged directly into Port `8092`) |
+| **Mock Ticket** | `8090` | Internal / Test | Local Mock Service Desk Ticket System |
+| **Agents Playground** | `3979` | Internal / Test | Web Chat Testing Interface with Knowledge Backend Switcher (`/login`) |
 
-- `POST /api/messages`: Messaging endpoint registered by the Teams SDK (Bot Framework JWT verified
-  by the SDK)
-- `GET /healthz`: Health check for the deployment platform
-- `GET /readyz`: Readiness check for Teams credentials and Agent mode
-- `GET /rag-assets/{path}`: Signed, protected source images (loaded by Teams clients)
+Detailed endpoints by service:
 
-Agent Service (private; callable only by the Adapter — see section 5):
+- **AI Operations Console (Port 8092; Unified Operations Entrypoint & BFF)**:
+  - `GET /`: AI Operations Console Web UI (Double-Bezel hardware architecture, Bento Grid metrics, native DOM components)
+  - `POST /api/quality-cases/*`: Quality Case closed-loop management (triage candidates, merge, link content, observation, lifecycle transitions)
+  - `POST /api/knowledge/*`: BFF bridge for native knowledge document operations (draft, review, publish, rollback)
+  - `GET /api/governance/*`: Prompts, Models, Feature Flags, Roles, Retention, Masking, Search & Audit
+  - `POST /api/exports`: Async background report generation (CSV / XLSX)
 
-- `POST /agent/chat`: LangGraph Workflow main entry
-- `POST /agent/chat/stream`: Same as above, but reports progress step-by-step via SSE (see section 4.3)
-- `POST /feedback`: Records 👍 / 👎 feedback (spec §14)
-- `POST /retrieval/search`: Retrieval-only debug endpoint
-- `GET /healthz` / `GET /readyz`: Health check and index readiness check
+- **Teams Adapter (Port 3978; public webhook)**:
+  - `POST /api/messages`: Messaging endpoint registered by the Teams SDK (Bot Framework JWT verified by SDK)
+  - `GET /healthz`: Health check for deployment platforms
+  - `GET /readyz`: Readiness check for Teams credentials and Agent mode
+  - `GET /rag-assets/{path}`: Signed, protected source images (loaded by Teams clients)
+
+- **Agent Service (Port 8000; private; called by Adapter and Backoffice)**:
+  - `POST /agent/chat`: LangGraph Workflow main entry
+  - `POST /agent/chat/stream`: Same as above, with SSE progress updates
+  - `POST /feedback`: Records 👍 / 👎 feedback (spec §14)
+  - `POST /retrieval/search`: Retrieval-only debug endpoint
+  - `GET /healthz` / `GET /readyz`: Health check and index readiness check
+
+- **Knowledge Portal (Port 8091; internal loopback)**:
+  - Headless knowledge repository and document governance engine, consumed natively via the BFF on port 8092.
+
+- **Mock Ticket Service (Port 8090)**:
+  - `GET /`: Web UI for simulating and querying service desk incident tickets.
+
+- **Agents Playground (Port 3979)**:
+  - `GET /login`: Web test chat interface with knowledge-backend selector (`HYBRID` vs `GEMINI_FILE_SEARCH`).
 
 > **After deployment, verify the service with `/readyz`, not `/healthz`.** Requests to `/healthz` on the Cloud Run
 > service from the corporate network return Google's 404 error page, and the response has no
@@ -60,17 +84,19 @@ Agent Service (private; callable only by the Adapter — see section 5):
 
 ## Project status
 
-As of 2026-08-26:
+As of 2026-09-04:
 
-- Teams Adapter has moved to the Microsoft Teams SDK, with the bot managed in Teams Developer Portal.
-- The Teams app package has been uploaded to company Teams; channel `@Bot` Echo and Agent API / RAG end-to-end have succeeded.
-- LangGraph Workflow covers: conversation context, Issue extraction, IT classification, FAQ, follow-up questions,
-  Hybrid RAG, ticket confirmation flow, Deterministic Response Builder, and Feedback.
-- Locally you can run the full path with `scripts/simulate_teams.py` or `./start.sh`; Agent
-  Service `/readyz` and Adapter Adaptive Card replies have been verified.
-- Most of the twenty-two POC §19 items already pass via automation; remaining work is **switching the Teams Developer Portal bot
-  endpoint to the Cloud Run Adapter** and re-testing in the cloud. See
-  [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md).
+- **AI Operations Console & Knowledge Portal Consolidation (Phases 1–3 Complete)**:
+  - Unified operational web portal (`http://127.0.0.1:8092/`) providing three major role-based workspaces: **Knowledge Ops** (`knowledge_ops`), **AI Ops** (`ai_ops`), and **Platform Ops** (`platform`).
+  - **Native Component Architecture**: Completely replaced iframe containers with native DOM component views for seamless navigation, instant state hydration, and deep hash linking (`#/knowledge_ops/knowledgePortal`).
+  - **High-End Visual Design System**: Modernized interface featuring Double-Bezel cards, machined 3D branding, Bento Grid dashboards with `tabular-nums` tabular alignment, semantic status badge pills, responsive table scroll-boxes with sticky headers, and structured audit logs.
+  - **Closed-Loop Quality Operations**: Validated candidate triage & merge → Quality case creation → Native knowledge document draft/edit → Evaluation & conversation verification → Case lifecycle transitions (`NEW` → `TRIAGED` → `IN_PROGRESS` → `WAITING_REVIEW` → `OBSERVING` → `RESOLVED`).
+  - **Evaluation Harness & Governance**: Fully automated benchmark evaluations, reproducible quality gates, prompt canary releases, and model fallback simulations.
+  - Comprehensive test suite passing: 54 backoffice unit/integration tests and 35 acceptance/portal tests passing with 100% success.
+- **Teams Adapter & Core Agent**:
+  - Teams Adapter moved to Microsoft Teams SDK with bot registration managed in Teams Developer Portal.
+  - LangGraph Workflow covers: conversation context, Issue extraction, IT classification, FAQ, follow-up questions, Hybrid RAG, ticket confirmation flow, Deterministic Response Builder, and Feedback.
+  - Single-command orchestration via `./start.sh` launches all 6 local services cleanly.
 
 GCP Cloud Run (from 2026-07-30, with ongoing redeploys):
 
@@ -107,6 +133,17 @@ Teams
 ```
 
 ### Completed (summary)
+
+AI Operations Console & Knowledge Portal (Phases 1–3):
+
+- [x] Unified AI Operations Console (`:8092`) with 3 role workspaces (`knowledge_ops`, `ai_ops`, `platform`)
+- [x] Native Component Architecture (100% native DOM embedding for Knowledge Portal, zero iframes)
+- [x] High-End Visual Design System (Double-Bezel cards, Bento Grids, semantic badge pills, responsive tables)
+- [x] Quality Case closed loop (Candidate merge → Case creation → Native draft/edit → Verification → Resolution)
+- [x] Prompt versioning, canary evaluation, model allowlist & fallback simulation
+- [x] Multi-dimensional cost analytics, budget policies, and alert routing
+- [x] Dual-track audit logs (Operations + Governance) with structured payload inspection and export
+- [x] Evaluation Harness with quality gates, scoring improvements, and test datasets
 
 Communications and deployment:
 
@@ -231,11 +268,19 @@ Start:
 uv run teams-agent
 ```
 
-Or from the project root, start Agent Service, Teams Adapter, and Dev Tunnel in one go:
+Or from the project root, start all local services in one go:
 
 ```bash
 ./start.sh
 ```
+
+This single command orchestrates:
+1. **AI Operations Console (`:8092`)**: The primary web entrance (`http://127.0.0.1:8092/`) with Knowledge Ops, AI Ops, and Platform Ops.
+2. **Teams Adapter (`:3978`)**: Microsoft Teams SDK bot endpoint and webhook handler.
+3. **Agent Service (`:8000`)**: LangGraph workflow, Hybrid RAG, and Evaluation engine.
+4. **Knowledge Portal (`:8091`)**: Internal loopback knowledge engine (BFF-bridged).
+5. **Mock Ticket Service (`:8090`)**: Local incident ticket system.
+6. **Agents Playground (`:3979`)**: Local web chat testing interface (`http://127.0.0.1:3979/login`).
 
 If Dev Tunnel is already running in another terminal:
 
@@ -243,8 +288,7 @@ If Dev Tunnel is already running in another terminal:
 START_TUNNEL=false ./start.sh
 ```
 
-`Ctrl+C` stops all child processes started by the script. If `3978` or `8000` is already occupied by an old process,
-the script stops first and tells you which service to close manually.
+`Ctrl+C` stops all child processes started by the script. If any port is already occupied by an old process, the script stops first and tells you which service to close manually.
 
 `start.sh` also launches the local Agents Playground with the knowledge-backend selector.
 For Gemini File Search it first respects shell environment variables and

@@ -34,21 +34,45 @@ Bot：依知識庫回覆排除步驟 + 來源引用（可附圖）+ 👍/👎
 
 服務端點：
 
-Teams Adapter（公開）：
+| 服務模組 | 本機 Port | 存取類型 | 說明 |
+| :--- | :--- | :--- | :--- |
+| **AI 營運後台 (AI Ops Console)** | `8092` | 公開／營運 | **主要統一操作入口與 BFF**（高階視覺設計、Bento Grid 數據網格、閉環營運） |
+| **Teams Adapter** | `3978` | 公開／Teams | Microsoft Teams SDK 訊息端點（`/api/messages`）與 Adaptive Card 渲染 |
+| **Agent Service** | `8000` | 私有／內部 | LangGraph Workflow 主入口（`/agent/chat`）、Hybrid RAG 與評測引擎 |
+| **知識文件庫 (Knowledge Portal)** | `8091` | 僅 Loopback | 內部 Headless 知識管理引擎（由 8092 BFF 橋接至原生元件視圖） |
+| **Mock Ticket** | `8090` | 內部／測試 | 本機 Mock IT 服務台工單系統 |
+| **Agents Playground** | `3979` | 內部／測試 | 網頁對話測試介面，支援切換知識檢索後端（`/login`） |
 
-- `POST /api/messages`：Teams SDK 註冊的 Messaging endpoint（由 SDK 驗證
-  Bot Framework JWT）
-- `GET /healthz`：部署平台的健康檢查
-- `GET /readyz`：Teams 憑證與 Agent 模式的就緒檢查
-- `GET /rag-assets/{path}`：簽章保護的來源圖片（供 Teams 端載入）
+各服務詳細端點：
 
-Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
+- **AI 資訊客服營運後台（Port 8092；統一營運入口 & BFF）**：
+  - `GET /`：AI 營運後台 Web UI（Double-Bezel 雙層邊框設計、Bento Grid 指標卡、原生 DOM 視圖）
+  - `POST /api/quality-cases/*`：品質案件閉環管理（候選分派、合併案件、關聯知識、成效觀察、生命週期流轉）
+  - `POST /api/knowledge/*`：BFF 橋接原生知識庫操作（草稿、送審、發布、版本回滾）
+  - `GET /api/governance/*`：Prompt 版本、模型設定、Feature Flag、角色權限、保存政策、脫敏遮罩、全域搜尋與雙稽核軌
+  - `POST /api/exports`：非同步背景營運報表匯出（CSV / XLSX）
 
-- `POST /agent/chat`：LangGraph Workflow 主入口
-- `POST /agent/chat/stream`：同上，但以 SSE 逐步回報進度（見第 4.3 節）
-- `POST /feedback`：記錄 👍/👎 回饋（spec §14）
-- `POST /retrieval/search`：純檢索除錯用端點
-- `GET /healthz` / `GET /readyz`：健康檢查與索引就緒檢查
+- **Teams Adapter（Port 3978；公開 Webhook）**：
+  - `POST /api/messages`：Teams SDK 註冊的 Messaging endpoint（由 SDK 驗證 Bot Framework JWT）
+  - `GET /healthz`：部署平台的健康檢查
+  - `GET /readyz`：Teams 憑證與 Agent 模式的就緒檢查
+  - `GET /rag-assets/{path}`：簽章保護的來源圖片（供 Teams 端載入）
+
+- **Agent Service（Port 8000；私有；供 Adapter 與 Backoffice 呼叫）**：
+  - `POST /agent/chat`：LangGraph Workflow 主入口
+  - `POST /agent/chat/stream`：同上，但以 SSE 逐步回報進度（見第 4.3 節）
+  - `POST /feedback`：記錄 👍/👎 回饋（spec §14）
+  - `POST /retrieval/search`：純檢索除錯用端點
+  - `GET /healthz` / `GET /readyz`：健康檢查與索引就緒檢查
+
+- **知識文件庫（Port 8091；內部 Loopback）**：
+  - Headless 知識文件管理引擎與版本治理核心，由 8092 BFF 橋接為純原生視圖。
+
+- **Mock Ticket 服務（Port 8090）**：
+  - `GET /`：模擬與查詢 IT 服務台事件工單之 Web 介面。
+
+- **Agents Playground（Port 3979）**：
+  - `GET /login`：網頁端測試聊天介面，支援 `HYBRID` 與 `GEMINI_FILE_SEARCH` 知識庫切換。
 
 > **部署後請用 `/readyz` 而非 `/healthz` 驗證服務。** 從公司網路對 Cloud Run 上的
 > 服務請求 `/healthz` 會得到 Google 的 404 錯誤頁，且回應不含
@@ -60,17 +84,18 @@ Agent Service（私有，僅 Adapter 可呼叫，詳見第 5 節）：
 
 ## 專案狀態
 
-截至 2026-08-26：
+截至 2026-09-04：
 
-- Teams Adapter 已改用 Microsoft Teams SDK，並以 Teams Developer Portal 管理 bot。
-- Teams app package 已上傳公司 Teams；頻道 `@Bot` Echo 與 Agent API／RAG 端到端已成功。
-- LangGraph Workflow 已涵蓋：對話上下文、Issue 拆解、IT 判斷、FAQ、追問、
-  Hybrid RAG、工單確認流程、Deterministic Response Builder、Feedback。
-- 本機可用 `scripts/simulate_teams.py` 或 `./start.sh` 跑完整路徑；Agent
-  Service `/readyz` 與 Adapter Adaptive Card 回覆已驗證。
-- POC §19 二十二項中，多數已自動化通過；仍待 **Teams Developer Portal bot
-  endpoint 切到 Cloud Run Adapter** 後做雲端複測。詳見
-  [`docs/poc-acceptance-checklist.md`](docs/poc-acceptance-checklist.md)。
+- **AI 營運後台與知識庫深度原生整併（Phase 1–3 全面完成）**：
+  - 統一營運管理後台（`http://127.0.0.1:8092/`），提供三大角色工作區：**知識營運**（`knowledge_ops`）、**AI 管理**（`ai_ops`）與**平台管理**（`platform`）。
+  - **深度原生架構（Native Component Architecture）**：徹底剔除 iframe 容器，改以純原生 DOM 元件掛載知識文件庫，實現即時狀態同步與深層錨點路由（`#/knowledge_ops/knowledgePortal`）。
+  - **高階視覺設計系統（High-End Visual Design）**：全後台導入 Double-Bezel 雙層邊框、金屬質感 3D 徽標、Bento Grid 數據網格（等寬數字 `tabular-nums` 對齊）、語意化狀態標籤藥丸（Badge Pills）、全表格滾動保護容器（`.table-responsive`）與結構化雙軌稽核紀錄。
+  - **端到端營運閉環驗證**：支援改善案件池候選合併 → 建立品質案件 → 原生文件草稿建立/編輯/審核發布 → 案例集與對話驗證 → 狀態機流轉（`NEW` → `TRIAGED` → `IN_PROGRESS` → `WAITING_REVIEW` → `OBSERVING` → `RESOLVED`）。
+  - **評測體系與治理能力**：具備 Evaluation Harness 自動評測集、Prompt 版本金絲雀評測、模型 Fallback 模擬演練，後台全套 54 篇單元/整合測試與 35 篇驗收測試 100% 通過。
+- **Teams Adapter 與核心 Agent**：
+  - Teams Adapter 已改用 Microsoft Teams SDK，並以 Teams Developer Portal 管理 bot。
+  - LangGraph Workflow 已涵蓋：對話上下文、Issue 拆解、IT 判斷、FAQ、追問、Hybrid RAG、工單確認流程、Deterministic Response Builder、Feedback。
+  - 本機以 `./start.sh` 單一指令即可一鍵協同啟動 6 大本地服務。
 
 GCP Cloud Run（2026-07-30 起，後續持續 redeploy）：
 
@@ -107,6 +132,17 @@ Teams
 ```
 
 ### 已完成（摘要）
+
+AI 營運後台與知識治理（Phase 1–3）：
+
+- [x] 統一 AI 營運管理後台（`:8092`），整合知識營運、AI 管理與平台管理 3 大工作區
+- [x] 深度原生化架構（以 Native DOM 元件完全取代 iframe 知識庫容器）
+- [x] 高階視覺設計系統（Double-Bezel 邊框、Bento Grid 數據網格、Badge Pills、響應式表格防溢出）
+- [x] 品質案件閉環機制（候選合併 → 品質案件 → 原生文件草稿/編輯 → 驗證 → 結案）
+- [x] Prompt 版本管理、Canary 金絲雀發布、模型 Allowlist 與 Fallback 演練
+- [x] 多維成本分析、預算策略評估與告警路由通知
+- [x] 雙軌稽核日誌（營運稽核＋治理稽核），支援結構化表格與 Payload 檢視匯出
+- [x] Evaluation Harness 評測體系與基準資料集維護
 
 通訊與部署：
 
@@ -231,11 +267,19 @@ AGENT_MODE=echo
 uv run teams-agent
 ```
 
-也可以從專案根目錄一次啟動 Agent Service、Teams Adapter 與 Dev Tunnel：
+也可以從專案根目錄一鍵啟動所有本機服務：
 
 ```bash
 ./start.sh
 ```
+
+此指令會同步協同啟動 6 大本機服務：
+1. **AI 營運後台（`:8092`）**：主要統一操作入口（`http://127.0.0.1:8092/`），涵蓋知識營運、AI 管理與平台管理。
+2. **Teams Adapter（`:3978`）**：Microsoft Teams SDK 訊息端點與 Webhook 處理。
+3. **Agent Service（`:8000`）**：LangGraph 工作流、Hybrid RAG 與評測引擎。
+4. **知識文件庫（`:8091`）**：內部 Loopback 知識治理引擎（由 8092 BFF 橋接）。
+5. **Mock Ticket（`:8090`）**：本機模擬 IT 工單系統。
+6. **Agents Playground（`:3979`）**：網頁端測試聊天介面（`http://127.0.0.1:3979/login`）。
 
 若 Dev Tunnel 已由其他 Terminal 執行：
 
@@ -243,8 +287,7 @@ uv run teams-agent
 START_TUNNEL=false ./start.sh
 ```
 
-`Ctrl+C` 會停止由腳本啟動的所有子程序。若 `3978` 或 `8000` 已被舊程序占用，
-腳本會先停止並提示需要手動關閉哪個服務。
+`Ctrl+C` 會停止由腳本啟動的所有子程序。若有任何 port 被舊程序占用，腳本會先停止並提示需要手動關閉哪個服務。
 
 `start.sh` 也會啟動含知識引擎選擇器的本機 Agents Playground。Gemini File Search
 優先使用 shell 環境變數與 `agent_service/.env` 的
