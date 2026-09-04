@@ -6,8 +6,13 @@ This handoff covers the Phase 3 AI governance domain introduced under
 ## Delivered
 
 - Immutable Prompt / Model / Feature Flag / Retention / Masking candidate lifecycle
-- Deterministic offline Eval runner (`phase3-eval-v3`): static + dataset + real_flow
-  layers; scripted/live harness; unavailable model yields `INCOMPLETE`
+- Deterministic offline Eval runner (`phase3-eval-v4`): static + dataset +
+  real_flow / simulation_flow layers; scripted harness is simulation-only and
+  cannot set ``critical_passed`` / ``quality_passed`` for publish; release
+  requires a release-eligible harness (`deterministic_agent_v1` or
+  `agent_workflow_v1`) with allowlisted ``model_id``, full case manifest +
+  prompt hash binding, and multi-turn behavior checks (greeting friendly reply,
+  clarification, handoff cancel). LLM-as-judge can replace behavior scoring later.
 - Dual-control approve (submitter cannot approve)
 - Prompt Canary percentage + sticky conversation routing
 - Canary stop + metric evaluate; **safety_alerts stop before sample-size CONTINUE**
@@ -29,8 +34,14 @@ This handoff covers the Phase 3 AI governance domain introduced under
   entities; `daily_aggregates` defines the aggregate document shape for later workers
 - Operational event scope: tenant is a hard boundary; owner-unit checks are
   per-event; companions may share turn/correlation only (not whole conversation)
-- Eval layers: `static` + `dataset` + `real_flow` (`phase3-eval-v3`); unavailable
-  model/harness yields `INCOMPLETE` and cannot pass critical gates
+- Mixed-permission turns redact shared ``messageMasked``; authorized case
+  fragments come from visible ``issue.extracted.descriptionMasked`` only
+- Scope role policy: ``SYSTEM_ADMIN`` / ``AUDITOR`` may cross tenants;
+  ``AI_ADMIN`` is cross-unit but tenant-bound; other roles need matching
+  ``tenant_id`` and owner units
+- Eval layers: `static` + `dataset` + `real_flow` / `simulation_flow`
+  (`phase3-eval-v4`); scripted simulation cannot pass publish gates; unavailable
+  or non-release harness yields `INCOMPLETE` and cannot pass critical gates
 - Backoffice UI pages for Prompt, models, flags, roles, retention, masking, search, audit export
 - LAB drill script: `scripts/ops_phase3_governance_drill.py`
 - SYSTEM_ADMIN single-approver sign-off helper: `scripts/ops_phase3_signoff.py`
@@ -43,7 +54,9 @@ This handoff covers the Phase 3 AI governance domain introduced under
 
 ## Explicitly not claimed complete
 
-- Live LLM accuracy / F1 / injection eval against production models (offline heuristic only)
+- Live LLM accuracy / F1 / injection eval against production models (deterministic
+  agent harness is release-eligible for CI gates; prefer `agent_workflow_v1` +
+  future LLM-as-judge for production scoring)
 - LLM-as-judge or cloud eval workers
 - Legal hold
 - Multi-approver quorum beyond dual control

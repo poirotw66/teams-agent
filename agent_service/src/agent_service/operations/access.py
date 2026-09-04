@@ -193,6 +193,9 @@ class ActorContext:
         return capability in CAPABILITIES.get(self.role, frozenset())
 
     def allows_owner_unit(self, owner_unit_id: str | None) -> bool:
+        # Cross-unit bypass for platform / AI / audit roles. Tenant boundary is
+        # enforced separately in operations.scope (AI_ADMIN is tenant-bound;
+        # SYSTEM_ADMIN and AUDITOR may cross tenants).
         if self.role in {"SYSTEM_ADMIN", "AI_ADMIN", "AUDITOR"}:
             return True
         if not owner_unit_id:

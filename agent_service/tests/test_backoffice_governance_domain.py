@@ -24,12 +24,12 @@ ANALYST = ActorContext("analyst", "Analyst", "ANALYST", ("it",))
 
 
 def service(tmp_path: Path, *, clock=None) -> GovernanceService:
-    from ai_ops_backoffice.governance_domain.eval_flow import ScriptedExtractorHarness
+    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
 
     return GovernanceService(
         FileGovernanceRepository(tmp_path / "gov.json"),
         clock=clock,
-        eval_flow_harness=ScriptedExtractorHarness(),
+        eval_flow_harness=DeterministicAgentFlowHarness(),
     )
 
 

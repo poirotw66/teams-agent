@@ -644,12 +644,29 @@ class BackofficeQueryService:
                 if item.turn_id == event.turn_id and item.event_type != "turn.received"
             ]
             summary = _summarize_turn_events(event, events)
+            message_hidden = bool(event.payload.get("messageHidden"))
+            authorized_fragments = [
+                {
+                    "issueTypeId": item.issue_type_id,
+                    "descriptionMasked": item.payload.get("descriptionMasked"),
+                    "issueId": item.payload.get("issueId"),
+                }
+                for item in related
+                if item.event_type == "issue.extracted"
+                and item.payload.get("descriptionMasked")
+            ]
+            # Mixed-permission turns redact the shared user message; never fall
+            # back to releasing foreign-unit business text via messageMasked.
+            message_masked = None if message_hidden else event.payload.get("messageMasked")
             turns.append(
                 {
                     "turnId": event.turn_id,
                     "occurredAt": event.occurred_at.isoformat(),
                     "correlationId": event.correlation_id,
-                    "messageMasked": event.payload.get("messageMasked"),
+                    "messageMasked": message_masked,
+                    "messageHidden": message_hidden,
+                    "messageHiddenReason": event.payload.get("messageHiddenReason"),
+                    "authorizedFragments": authorized_fragments,
                     "maskingPolicyVersion": event.payload.get("maskingPolicyVersion"),
                     "masked": not allow_unmasked,
                     **summary,

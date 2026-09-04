@@ -9,6 +9,7 @@ from .constants import (
     INJECTION_SIGNATURES,
     MAX_PROMPT_LENGTH,
     METRIC_VERSION,
+    PROVIDER_MODELS,
     RUNNER_VERSION,
 )
 from .eval_flow import (
@@ -25,6 +26,9 @@ TOKEN_CHARS = 4
 INPUT_COST_PER_1K = 0.00015
 OUTPUT_COST_PER_1K = 0.0006
 MIN_VERIFIED_EXAMPLES = 3
+_ALLOWED_MODELS = frozenset(
+    model_id for models in PROVIDER_MODELS.values() for model_id in models
+)
 
 
 def _case(case_id: str, category: str, passed: bool, detail: str, *, critical: bool) -> EvalCaseResult:
@@ -214,13 +218,7 @@ def _estimate_latency_ms(*, template: str, examples: list[dict[str, Any]]) -> fl
     return float(max(20, per_example * max(1, len(examples))))
 
 
-def _real_flow_cases(
-    *,
-    candidate: PromptVersion,
-    baseline: PromptVersion | None,
-    examples: list[dict[str, Any]],
-    harness: PromptFlowHarness,
-) -> tuple[list[EvalCaseResult], float, float | None, bool]:
+def _probe_catalog(examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
     probes = multi_turn_probe_examples()
     for index, example in enumerate(examples):
         probes.append(
@@ -229,9 +227,72 @@ def _real_flow_cases(
                 "text": str(example.get("text") or ""),
                 "expected_route": str(example.get("expected_route") or ""),
                 "label": str(example.get("label") or ""),
+                "expected_behaviors": list(example.get("expected_behaviors") or []),
                 "history": example.get("history") or [],
             }
         )
+    return probes
+
+
+def _case_manifest_entries(probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for probe in probes:
+        history = probe.get("history") if isinstance(probe.get("history"), list) else []
+        entries.append(
+            {
+                "caseId": probe.get("case_id"),
+                "text": probe.get("text"),
+                "history": history,
+                "expectedRoute": probe.get("expected_route"),
+                "label": probe.get("label"),
+                "expectedBehaviors": list(probe.get("expected_behaviors") or []),
+                "contentHash": content_hash(
+                    fingerprint(
+                        {
+                            "text": probe.get("text"),
+                            "history": history,
+                            "expectedRoute": probe.get("expected_route"),
+                            "behaviors": list(probe.get("expected_behaviors") or []),
+                        }
+                    )
+                ),
+            }
+        )
+    return entries
+
+
+def _observation_matches(probe: dict[str, Any], observation: Any) -> tuple[bool, str]:
+    expected = str(probe.get("expected_route") or "")
+    expected_behaviors = {
+        str(item) for item in (probe.get("expected_behaviors") or []) if str(item)
+    }
+    route_ok = observation.route == expected
+    if expected == "REFUSED":
+        route_ok = observation.refused_injection and observation.route == "REFUSED"
+    missing = sorted(expected_behaviors - set(observation.observed_behaviors))
+    behavior_ok = not missing
+    if expected_behaviors and expected == "GREETING":
+        if "friendly_reply" in expected_behaviors and not (observation.reply_text or "").strip():
+            behavior_ok = False
+            missing = sorted(set(missing) | {"friendly_reply_text"})
+    ok = route_ok and behavior_ok
+    detail = (
+        f"expected={expected} predicted={observation.route} "
+        f"behaviors_missing={missing or []} "
+        f"template_chars={observation.used_template_chars} {observation.detail}"
+    )
+    return ok, detail
+
+
+def _real_flow_cases(
+    *,
+    candidate: PromptVersion,
+    baseline: PromptVersion | None,
+    examples: list[dict[str, Any]],
+    harness: PromptFlowHarness,
+) -> tuple[list[EvalCaseResult], float, float | None, bool]:
+    probes = _probe_catalog(examples)
+    release_eligible = bool(getattr(harness, "release_eligible", False))
 
     if not harness.available:
         incomplete = [
@@ -241,21 +302,58 @@ def _real_flow_cases(
                 False,
                 "model_unavailable: real flow incomplete",
                 critical=True,
-            )
+            ),
+            _case(
+                "real-flow-release-eligible",
+                "real_flow",
+                False,
+                f"harness={harness.name} release_eligible=False",
+                critical=True,
+            ),
         ]
         return incomplete, 0.0, None, False
 
+    model_bound = bool(candidate.model_id) and candidate.model_id in _ALLOWED_MODELS
     results: list[EvalCaseResult] = [
         _case(
             "real-flow-harness",
-            "real_flow",
+            "simulation_flow" if not release_eligible else "real_flow",
             True,
-            f"harness={harness.name}",
+            (
+                f"harness={harness.name} release_eligible={release_eligible} "
+                f"model_id={candidate.model_id}"
+            ),
             critical=False,
-        )
+        ),
+        _case(
+            "real-flow-release-eligible",
+            "real_flow",
+            release_eligible,
+            (
+                f"harness={harness.name} is simulation-only; not a publish gate"
+                if not release_eligible
+                else f"harness={harness.name} release_eligible"
+            ),
+            critical=True,
+        ),
+        _case(
+            "real-flow-model-bound",
+            "real_flow",
+            model_bound if release_eligible else True,
+            (
+                f"model_id={candidate.model_id} allowlisted={model_bound}"
+                if release_eligible
+                else "skipped_for_simulation_harness"
+            ),
+            critical=release_eligible,
+        ),
     ]
+    if release_eligible and not model_bound:
+        return results, 0.0, None, False
+
     pairs: list[tuple[str, str]] = []
     baseline_pairs: list[tuple[str, str]] = []
+    category = "simulation_flow" if not release_eligible else "real_flow"
     for probe in probes:
         text = str(probe.get("text") or "")
         expected = str(probe.get("expected_route") or "")
@@ -264,21 +362,17 @@ def _real_flow_cases(
             template=candidate.template,
             text=text,
             history=history,  # type: ignore[arg-type]
+            model_id=candidate.model_id,
         )
-        ok = observation.route == expected
-        if expected == "REFUSED":
-            ok = observation.refused_injection and observation.route == "REFUSED"
+        ok, detail = _observation_matches(probe, observation)
         pairs.append((expected, observation.route))
         results.append(
             _case(
-                f"real-flow-{probe.get('case_id')}",
-                "real_flow",
+                f"{'sim' if not release_eligible else 'real'}-flow-{probe.get('case_id')}",
+                category,
                 ok,
-                (
-                    f"expected={expected} predicted={observation.route} "
-                    f"template_chars={observation.used_template_chars} {observation.detail}"
-                ),
-                critical=expected == "REFUSED",
+                detail,
+                critical=release_eligible and expected in {"REFUSED", "GREETING"},
             )
         )
         if baseline is not None:
@@ -286,6 +380,7 @@ def _real_flow_cases(
                 template=baseline.template,
                 text=text,
                 history=history,  # type: ignore[arg-type]
+                model_id=baseline.model_id or candidate.model_id,
             )
             baseline_pairs.append((expected, baseline_obs.route))
 
@@ -299,7 +394,9 @@ def _real_flow_cases(
         baseline_accuracy = sum(
             1 for expected, predicted in baseline_pairs if expected == predicted
         ) / len(baseline_pairs)
-    complete = all(item.passed for item in results if item.critical)
+    complete = release_eligible and all(
+        item.passed for item in results if item.critical and item.category == "real_flow"
+    )
     return results, accuracy, baseline_accuracy, complete
 
 
@@ -314,9 +411,11 @@ def evaluate_prompt(
     flow_harness: PromptFlowHarness | None = None,
 ) -> EvalRun:
     harness = resolve_default_flow_harness(flow_harness)
+    release_eligible = bool(getattr(harness, "release_eligible", False))
     static_cases = _static_cases(candidate.template)
     dataset_cases = _dataset_cases(examples)
     similarity_cases, similarity_accuracy, _, similarity_f1 = _dataset_similarity_cases(examples)
+    probes = _probe_catalog(examples)
     flow_cases, flow_accuracy, flow_baseline_accuracy, flow_complete = _real_flow_cases(
         candidate=candidate,
         baseline=baseline,
@@ -340,12 +439,12 @@ def evaluate_prompt(
     baseline_cost = (
         _estimate_cost_usd(template=baseline.template, examples=examples) if baseline else None
     )
-    accuracy = flow_accuracy if flow_complete else similarity_accuracy
+    accuracy = flow_accuracy if (flow_complete or harness.available) else similarity_accuracy
     baseline_accuracy = flow_baseline_accuracy
     if baseline_accuracy is None and baseline is not None:
         _, baseline_accuracy, _, _ = _dataset_similarity_cases(examples)
 
-    quality_passed = flow_complete
+    quality_passed = flow_complete and release_eligible
     if baseline_accuracy is not None and accuracy + 1e-9 < baseline_accuracy - 0.05:
         quality_passed = False
     if baseline_cost is not None and cost > baseline_cost * 2:
@@ -360,6 +459,7 @@ def evaluate_prompt(
     if not flow_complete:
         critical_passed = False
 
+    case_entries = _case_manifest_entries(probes)
     now = utc_now()
     manifest = fingerprint(
         {
@@ -367,17 +467,16 @@ def evaluate_prompt(
             "taxonomy": taxonomy_version,
             "knowledge": knowledge_release_id,
             "model": candidate.model_id,
+            "promptContentHash": candidate.content_hash,
+            "promptTemplateHash": content_hash(candidate.template),
             "runner": RUNNER_VERSION,
             "metric": METRIC_VERSION,
-            "evaluationLayers": ["static", "dataset", "real_flow"],
+            "evaluationLayers": ["static", "dataset", "real_flow", "simulation_flow"],
             "flowHarness": harness.name,
+            "releaseEligible": release_eligible,
             "flowComplete": flow_complete,
-            "examples": sorted(
-                f"{route}:{label}:{count}"
-                for (route, label), count in Counter(
-                    (str(item.get("expected_route")), str(item.get("label"))) for item in examples
-                ).items()
-            ),
+            "caseContentHash": content_hash(fingerprint({"cases": case_entries})),
+            "cases": case_entries,
         }
     )
     return EvalRun(

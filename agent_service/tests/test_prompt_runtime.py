@@ -11,7 +11,6 @@ from agent_service.settings import RagSettings
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
 from ai_ops_backoffice.governance_domain.constants import ISSUE_EXTRACTOR_PROMPT_ID
-from ai_ops_backoffice.governance_domain.eval_flow import ScriptedExtractorHarness
 from ai_ops_backoffice.governance_domain.helpers import content_hash
 
 
@@ -20,9 +19,11 @@ APPROVER = ActorContext("approver", "Approver", "AI_ADMIN", ())
 
 
 def _gov(tmp_path: Path) -> GovernanceService:
+    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+
     return GovernanceService(
         FileGovernanceRepository(tmp_path / "governance.json"),
-        eval_flow_harness=ScriptedExtractorHarness(),
+        eval_flow_harness=DeterministicAgentFlowHarness(),
     )
 
 

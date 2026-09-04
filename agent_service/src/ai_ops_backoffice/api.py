@@ -282,7 +282,11 @@ class PromptCandidateRequest(BaseModel):
     masking_policy_version: str
 
 
-def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
+def create_app(
+    settings: BackofficeSettings | None = None,
+    *,
+    eval_flow_harness: object | None = None,
+) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     query_service = BackofficeQueryService(resolved_settings)
     export_rate_limiter = ExportRateLimiter()
@@ -435,7 +439,10 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
         )
     else:
         raise ValueError(f"Unsupported governance store mode: {governance_store_mode}")
-    governance_service = GovernanceService(governance_repository)
+    governance_service = GovernanceService(
+        governance_repository,
+        eval_flow_harness=eval_flow_harness,  # type: ignore[arg-type]
+    )
     from agent_service.operations.policy_runtime import (
         PolicyRuntime,
         configure_policy_runtime,

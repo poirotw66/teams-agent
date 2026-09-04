@@ -76,7 +76,11 @@ def _verify_examples(client: TestClient, system: dict[str, str]) -> dict:
 
 
 def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
+    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+
+    client = TestClient(
+        create_app(_settings(tmp_path), eval_flow_harness=DeterministicAgentFlowHarness())
+    )
     system = headers("SYSTEM_ADMIN", "sys-writer")
     verified = _verify_examples(client, system)
     ai = headers("AI_ADMIN", "ai-writer")
@@ -137,7 +141,11 @@ def test_governance_prompt_api_lifecycle(tmp_path: Path) -> None:
 
 
 def test_governance_canary_evaluate_stops_and_audit_export(tmp_path: Path) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
+    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+
+    client = TestClient(
+        create_app(_settings(tmp_path), eval_flow_harness=DeterministicAgentFlowHarness())
+    )
     system = headers("SYSTEM_ADMIN", "sys-writer")
     verified = _verify_examples(client, system)
     ai = headers("AI_ADMIN", "ai-writer")
