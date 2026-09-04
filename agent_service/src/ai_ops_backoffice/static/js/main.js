@@ -446,15 +446,15 @@ function renderTopbarActions() {
     });
     meta.append(knowledgeLink);
   }
-  meta.append(
-    el(
-      "span",
-      "meta-text",
-      `角色：${capabilities.role}｜驗證：${capabilities.authMode}${
-        capabilities.knowledgeBridgeEnabled ? "｜知識整合：已啟用" : ""
-      }`,
-    ),
-  );
+  const roleChip = el("span", "meta-chip");
+  const roleStrong = document.createElement("strong");
+  roleStrong.textContent = capabilities.role;
+  roleChip.append(document.createTextNode("角色 "), roleStrong);
+  meta.append(roleChip);
+  meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
+  if (capabilities.knowledgeBridgeEnabled) {
+    meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
+  }
 }
 
 function activeWorkspaceId() {
@@ -3480,7 +3480,7 @@ async function renderQuality(state = {}) {
     const issueInput = el("input");
     issueInput.id = "feedback-issue-type";
     issueInput.placeholder = "問題類型（顯示名稱或 ID）";
-    issueInput.value = issueTypeId;
+    issueInput.value = issueTypeId || "";
     const ratingSelect = el("select", "");
     ratingSelect.id = "feedback-rating";
     ratingSelect.innerHTML =
