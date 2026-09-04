@@ -33,6 +33,7 @@ _ALLOWED = (
     re.compile(r"^releases$"),
     re.compile(r"^releases/compare$"),
     re.compile(r"^releases/rollback$"),
+    re.compile(r"^releases/[^/]+/sync-agent$"),
     re.compile(r"^audit-events$"),
 )
 

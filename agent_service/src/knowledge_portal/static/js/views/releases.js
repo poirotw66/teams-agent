@@ -4,11 +4,13 @@ import { handleConflictError } from "../errors.js";
 import { escapeHtml, handleViewError, openDialog, promptDialog, showToast } from "../ui.js?v=20260831e";
 
 const RELEASE_STATUS_LABELS = {
-  ACTIVE: "使用中",
+  ACTIVE: "正式生效 (驗證通過)",
+  DEPLOYING: "發布完成 (等待生效)",
   ROLLED_BACK: "已取代",
   BUILDING: "建立中",
   READY: "待啟用",
-  FAILED: "失敗",
+  RELOAD_FAILED: "生效失敗 (待重試)",
+  FAILED: "建立失敗",
 };
 
 function formatWhen(value) {
@@ -103,11 +105,18 @@ export async function renderReleasesView(app) {
             ${releases.map((item) => `
               <tr>
                 <td>${escapeHtml(item.release_id)}${item.release_id === activeId ? " <span class=\"muted\">（使用中）</span>" : ""}</td>
-                <td>${escapeHtml(releaseStatusLabel(item.status))}</td>
+                <td>
+                  <span class="status-badge ${item.status === "ACTIVE" ? "success" : item.status === "RELOAD_FAILED" ? "danger" : item.status === "DEPLOYING" ? "warning" : "default"}">
+                    ${escapeHtml(releaseStatusLabel(item.status))}
+                  </span>
+                  ${item.failure_summary ? `<br><small class="text-danger">${escapeHtml(item.failure_summary)}</small>` : ""}
+                </td>
                 <td>${item.manifest?.length || 0}</td>
                 <td>${formatWhen(item.created_at)}</td>
                 <td>${formatWhen(item.activated_at)}</td>
                 <td>
+                  ${can("manage_releases") && item.status === "RELOAD_FAILED" ? `
+                    <button type="button" class="btn warning btn-sm" data-sync="${escapeHtml(item.release_id)}">重試通知 Agent</button>` : ""}
                   ${can("manage_releases") && item.release_id !== activeId ? `
                     <button type="button" class="btn secondary btn-sm" data-rollback="${escapeHtml(item.release_id)}">查看差異並切換</button>` : ""}
                 </td>
@@ -119,8 +128,27 @@ export async function renderReleasesView(app) {
       <div class="panel">
         <p class="muted">目前使用中：${escapeHtml(activeId || "（無）")}</p>
         ${rows}
-        <p class="muted">切換版本會更新 Teams 引用的正式知識索引。請先查看差異，確認後再執行。</p>
+        <p class="muted">切換版本會更新 Teams 引用的正式知識索引並發送生效通知。請先查看差異，確認後再執行。</p>
       </div>`;
+
+    container.querySelectorAll("[data-sync]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const releaseId = button.dataset.sync;
+        button.disabled = true;
+        button.textContent = "同步中…";
+        try {
+          await api(`/api/releases/${encodeURIComponent(releaseId)}/sync-agent`, {
+            method: "POST",
+          });
+          showToast("已向 Teams 智慧助理發送重載請求");
+          await refresh();
+        } catch (error) {
+          showToast(error.message, true);
+          button.disabled = false;
+          button.textContent = "重試通知 Agent";
+        }
+      });
+    });
 
     container.querySelectorAll("[data-rollback]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -144,18 +172,21 @@ export async function renderReleasesView(app) {
 
           const confirmed = await openDialog({
             title: "最終確認",
-            bodyHtml: `<p>此操作會立即更新 Teams 使用的正式知識版本。確定要切換至 <strong>${escapeHtml(releaseId)}</strong> 嗎？</p>`,
+            bodyHtml: `<p>此操作會更新正式發布指標，並通知 Teams 智慧助理重新載入知識索引。確定要切換至 <strong>${escapeHtml(releaseId)}</strong> 嗎？</p>`,
             confirmLabel: "執行切換",
             danger: true,
           });
           if (!confirmed) return;
 
+          const idempotencyKey = "rollback-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
           await api("/api/releases/rollback", {
             method: "POST",
+            headers: { "Idempotency-Key": idempotencyKey },
             body: JSON.stringify({ release_id: releaseId, reason }),
           });
           showToast("已切換發布版本");
           await refresh();
+
         } catch (error) {
           if (await handleConflictError(error, refresh)) return;
           showToast(error.message, true);

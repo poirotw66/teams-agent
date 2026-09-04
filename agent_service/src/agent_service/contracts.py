@@ -277,3 +277,8 @@ class SearchResponse(StrictModel):
 
 class KnowledgeBackendUpdate(StrictModel):
     backend: Literal["HYBRID", "GEMINI_FILE_SEARCH"]
+
+
+class ReloadKnowledgeRequest(StrictModel):
+    releaseId: str | None = None
+

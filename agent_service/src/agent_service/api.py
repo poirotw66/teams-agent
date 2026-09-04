@@ -14,6 +14,7 @@ from .contracts import (
     AgentResponse,
     FeedbackRequest,
     KnowledgeBackendUpdate,
+    ReloadKnowledgeRequest,
     SearchHit,
     SearchRequest,
     SearchResponse,
@@ -25,9 +26,9 @@ from .graph import RagAgent, build_chat_model
 from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
-from .knowledge_release import resolve_knowledge_index
-from .operations.event_identity import LogicalRequestIdentity
+from .knowledge_release import release_index_path, resolve_knowledge_index
 from .operations.emitter import OperationalEventReplayConflict
+from .operations.event_identity import LogicalRequestIdentity
 from .operations.runtime import OpsRuntime, build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
@@ -162,6 +163,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         app.state.workflow = workflow
         app.state.governance_runtime = governance_runtime
         app.state.handoff_repository = handoff_repository
+        app.state.rag_model = rag_model
+        app.state.hybrid_settings = hybrid_settings
         ops_runtime = build_ops_runtime()
         app.state.ops_runtime = ops_runtime
         if ops_runtime is not None:
@@ -251,6 +254,70 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(error)) from error
         logger.info("Knowledge backend changed: backend=%s", payload.backend)
         return await router.status()
+
+    @app.post(
+        "/admin/reload-knowledge",
+        dependencies=[Depends(authorize)],
+    )
+    async def reload_knowledge(
+        request: Request,
+        payload: ReloadKnowledgeRequest | None = None,
+    ) -> dict[str, object]:
+        target_release_id: str | None = None
+        if payload and payload.releaseId:
+            release_dir = (
+                resolved_settings.knowledge_release_dir
+                or (resolved_settings.data_dir / "releases")
+            )
+            target_release_id = payload.releaseId
+            target_index_path = release_index_path(release_dir, target_release_id)
+            source = "portal_release"
+        else:
+            resolved_index = resolve_knowledge_index(resolved_settings)
+            target_release_id = resolved_index.release_id
+            target_index_path = resolved_index.index_path
+            source = resolved_index.source
+
+        if not target_index_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Knowledge index not found: {target_index_path}",
+            )
+
+        new_index = HybridIndex.load(
+            target_index_path,
+            resolved_settings.embedding_model,
+        )
+        new_agent = RagAgent(resolved_settings, new_index)
+        new_hybrid_service = build_knowledge_service(
+            request.app.state.hybrid_settings,
+            new_index,
+            request.app.state.rag_model,
+        )
+        router: KnowledgeBackendRouter = request.app.state.knowledge_router
+        router.update_service("HYBRID", new_hybrid_service)
+
+        request.app.state.index = new_index
+        request.app.state.knowledge_index_path = target_index_path
+        request.app.state.knowledge_release_id = target_release_id
+        request.app.state.knowledge_index_source = source
+        request.app.state.agent = new_agent
+
+        logger.info(
+            "Knowledge index reloaded: release_id=%s path=%s chunks=%d source=%s",
+            target_release_id,
+            target_index_path,
+            len(new_index.chunks),
+            source,
+        )
+        return {
+            "status": "reloaded",
+            "releaseId": target_release_id,
+            "indexPath": str(target_index_path),
+            "chunks": len(new_index.chunks),
+            "source": source,
+        }
+
 
     def _authorize_tenant(payload: AgentRequest) -> None:
         tenant_id = payload.conversation.tenantId

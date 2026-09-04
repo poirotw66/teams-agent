@@ -110,6 +110,9 @@ class KnowledgeBackendRouter:
         backend = await self._state_store.get()
         return backend if backend in self._services else next(iter(self._services))
 
+    def update_service(self, backend: str, service: KnowledgeService) -> None:
+        self._services[backend] = service
+
     async def select(self, backend: str) -> None:
         if backend not in self._services:
             raise ValueError(

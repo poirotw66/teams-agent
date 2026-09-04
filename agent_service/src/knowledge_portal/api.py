@@ -76,6 +76,9 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
     def correlation_id(request: Request) -> str:
         return request.headers.get("X-Correlation-Id") or uuid.uuid4().hex
 
+    def idempotency_key(request: Request) -> str | None:
+        return request.headers.get("idempotency-key") or request.headers.get("x-idempotency-key")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         resolved_settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -311,9 +314,15 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
         correlation_id_value: str = Depends(correlation_id),
+        idempotency_key_value: str | None = Depends(idempotency_key),
     ):
         try:
-            return await service.create_document(actor, request, correlation_id_value)
+            return await service.create_document(
+                actor,
+                request,
+                correlation_id_value,
+                idempotency_key=idempotency_key_value,
+            )
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -455,10 +464,15 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
         correlation_id_value: str = Depends(correlation_id),
+        idempotency_key_value: str | None = Depends(idempotency_key),
     ):
         try:
             return await service.publish_version(
-                actor, document_id, request, correlation_id_value
+                actor,
+                document_id,
+                request,
+                correlation_id_value,
+                idempotency_key=idempotency_key_value,
             )
         except Exception as exc:
             raise handle_errors(exc) from exc
@@ -469,10 +483,28 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
         correlation_id_value: str = Depends(correlation_id),
+        idempotency_key_value: str | None = Depends(idempotency_key),
     ):
         try:
             return await service.rollback_release(
-                actor, request, correlation_id_value
+                actor,
+                request,
+                correlation_id_value,
+                idempotency_key=idempotency_key_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/releases/{release_id}/sync-agent")
+    async def sync_agent_release(
+        release_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.sync_agent_release(
+                actor, release_id, correlation_id_value
             )
         except Exception as exc:
             raise handle_errors(exc) from exc
