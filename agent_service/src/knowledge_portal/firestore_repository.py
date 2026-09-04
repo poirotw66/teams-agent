@@ -19,14 +19,17 @@ from .settings import PortalSettings
 
 
 class FirestorePortalRepository:
-    def __init__(self, settings: PortalSettings) -> None:
+    def __init__(self, settings: PortalSettings, client: Any | None = None) -> None:
         from google.cloud import firestore
 
         self._settings = settings
-        self._client = firestore.AsyncClient(
-            project=settings.firestore_project_id,
-            database=settings.firestore_database_id,
-        )
+        if client is not None:
+            self._client = client
+        else:
+            self._client = firestore.AsyncClient(
+                project=settings.firestore_project_id,
+                database=settings.firestore_database_id,
+            )
 
     def _documents(self):
         return self._client.collection(self._settings.documents_collection)

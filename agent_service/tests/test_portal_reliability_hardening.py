@@ -314,10 +314,8 @@ async def test_concurrent_publishing_serialization(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_firestore_repository_list_pending_reviews_query() -> None:
     settings = PortalSettings.from_env()
-    repo = FirestorePortalRepository(settings)
-
     mock_db = MagicMock()
-    repo._client = mock_db
+    repo = FirestorePortalRepository(settings, client=mock_db)
 
     from datetime import datetime, timezone
 
