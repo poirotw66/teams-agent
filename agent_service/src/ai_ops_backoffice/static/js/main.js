@@ -292,6 +292,25 @@ function attributionText(attribution = {}) {
   return parts.join(" | ") || "-";
 }
 
+function badge(text, variant = "neutral") {
+  return el("span", `badge badge-${variant}`, String(text ?? ""));
+}
+
+function statusBadge(status) {
+  const s = String(status || "").toUpperCase();
+  let variant = "neutral";
+  if (["ACTIVE", "APPROVED", "RESOLVED", "OK", "HEALTHY", "ENABLED", "SUCCESS", "TRUE"].includes(s)) {
+    variant = "success";
+  } else if (["REQUESTED", "CANDIDATE", "OBSERVING", "IN_PROGRESS", "TRIAGED", "WAITING_REVIEW", "DEGRADED", "WARNING"].includes(s)) {
+    variant = "warning";
+  } else if (["FAILED", "ERROR", "CRITICAL", "REJECTED", "WONT_FIX", "LOCKED", "YES"].includes(s)) {
+    variant = "danger";
+  } else if (["NEW", "DISABLED", "DUPLICATE", "FALSE", "UNLOCKED", "NO"].includes(s)) {
+    variant = "neutral";
+  }
+  return badge(status, variant);
+}
+
 function showContentModal(title, content) {
   const root = document.getElementById("modal-root");
   root.hidden = false;
@@ -875,7 +894,9 @@ async function renderOverview() {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const tableScroll = el("div", "table-responsive");
+    tableScroll.append(table);
+    panel.append(tableScroll);
 
     const definitions = data.metricDefinitions || {};
     if (Object.keys(definitions).length) {
@@ -890,7 +911,9 @@ async function renderOverview() {
         defBody.append(row);
       }
       defTable.append(defBody);
-      panel.append(defTable);
+      const defScroll = el("div", "table-responsive");
+      defScroll.append(defTable);
+      panel.append(defScroll);
     }
     app.replaceChildren(panel);
   } catch (error) {
@@ -1038,7 +1061,9 @@ async function renderConversations(state = {}) {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const convScroll = el("div", "table-responsive");
+    convScroll.append(table);
+    panel.append(convScroll);
     const history = state.history || [];
     const pager = el("div", "filter-bar");
     if (history.length) {
@@ -1092,7 +1117,9 @@ async function renderRoutes(period = { preset: "30d" }) {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const routeScroll = el("div", "table-responsive");
+    routeScroll.append(table);
+    panel.append(routeScroll);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
@@ -1137,7 +1164,9 @@ async function renderIssues(period = { preset: "30d" }) {
         body.append(row);
       }
       table.append(body);
-      panel.append(table);
+      const issueRouteScroll = el("div", "table-responsive");
+      issueRouteScroll.append(table);
+      panel.append(issueRouteScroll);
       app.replaceChildren(panel);
       return;
     } catch (error) {
@@ -1175,7 +1204,9 @@ async function renderIssues(period = { preset: "30d" }) {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const issuesScroll = el("div", "table-responsive");
+    issuesScroll.append(table);
+    panel.append(issuesScroll);
 
     if (data.hierarchy?.length) {
       panel.append(el("h3", "", "Taxonomy 階層"));
@@ -1216,23 +1247,25 @@ async function renderCosts(period = { preset: "30d" }) {
     const panel = el("section", "panel");
     panel.append(el("h2", "", "成本分析"));
     panel.append(createPeriodControls(period, renderCosts));
-    panel.append(metric("Total USD", data.totalEstimatedCostUsd));
-    if (data.totalEstimatedCostTwd !== undefined) {
-      panel.append(metric("Total TWD", data.totalEstimatedCostTwd));
-      panel.append(el("p", "", `匯率：${data.usdTwdExchangeRate} TWD/USD`));
+
+    const grid = el("div", "grid");
+    grid.append(
+      metric("預估總成本 USD", (data.totalEstimatedCostUsd ?? 0).toFixed(4)),
+      metric("預估總成本 TWD", data.totalEstimatedCostTwd != null ? Number(data.totalEstimatedCostTwd).toFixed(2) : "-"),
+      metric("Input Tokens", (data.inputTokens ?? 0).toLocaleString()),
+      metric("Output Tokens", (data.outputTokens ?? 0).toLocaleString()),
+      metric("未歸屬成本事件", data.missingCostEventCount ?? 0),
+    );
+    panel.append(grid);
+
+    const metaRow = el("div", "filter-bar");
+    if (data.usdTwdExchangeRate) metaRow.append(el("span", "metric-label", `匯率：${data.usdTwdExchangeRate} TWD/USD`));
+    if (data.embeddingTokens != null || data.toolContextTokens != null) {
+      metaRow.append(el("span", "metric-label", `Embedding：${(data.embeddingTokens ?? 0).toLocaleString()} tokens｜Tool Context：${(data.toolContextTokens ?? 0).toLocaleString()} tokens`));
     }
-    panel.append(el("p", "", `缺少成本資料事件：${data.missingCostEventCount}`));
-    panel.append(el("p", "", `Input tokens：${data.inputTokens}｜Output tokens：${data.outputTokens}`));
-    if (data.embeddingTokens !== undefined || data.toolContextTokens !== undefined) {
-      panel.append(
-        el(
-          "p",
-          "",
-          `Embedding tokens：${data.embeddingTokens ?? 0}｜Tool context tokens：${data.toolContextTokens ?? 0}`,
-        ),
-      );
-    }
-    panel.append(el("p", "", `Pricing version：${data.pricingVersion}`));
+    metaRow.append(el("span", "metric-label", `定價版本：${data.pricingVersion || "v1"}`));
+    panel.append(metaRow);
+
     const table = el("table");
     table.innerHTML = "<thead><tr><th>Date</th><th>Estimated USD</th></tr></thead>";
     const body = el("tbody");
@@ -1243,7 +1276,9 @@ async function renderCosts(period = { preset: "30d" }) {
       body.append(row);
     }
     table.append(body);
-    panel.append(el("h3", "", "依日期"), table);
+    const dateScroll = el("div", "table-responsive");
+    dateScroll.append(table);
+    panel.append(el("h3", "", "依日期"), dateScroll);
 
     const routeTable = el("table");
     routeTable.innerHTML = "<thead><tr><th>Route</th><th>Estimated USD</th></tr></thead>";
@@ -1255,7 +1290,9 @@ async function renderCosts(period = { preset: "30d" }) {
       routeBody.append(row);
     }
     routeTable.append(routeBody);
-    panel.append(el("h3", "", "依 Route"), routeTable);
+    const routeScroll = el("div", "table-responsive");
+    routeScroll.append(routeTable);
+    panel.append(el("h3", "", "依 Route"), routeScroll);
 
     const issueTable = el("table");
     issueTable.innerHTML =
@@ -1269,7 +1306,9 @@ async function renderCosts(period = { preset: "30d" }) {
       issueBody.append(row);
     }
     issueTable.append(issueBody);
-    panel.append(el("h3", "", "依 Issue Type"), issueTable);
+    const issueScroll = el("div", "table-responsive");
+    issueScroll.append(issueTable);
+    panel.append(el("h3", "", "依 Issue Type"), issueScroll);
 
     for (const [heading, items, key] of [
       ["依 Model", data.byModel, "model"],
@@ -1288,7 +1327,9 @@ async function renderCosts(period = { preset: "30d" }) {
         dimensionBody.append(row);
       }
       dimensionTable.append(dimensionBody);
-      panel.append(el("h3", "", heading), dimensionTable);
+      const dimScroll = el("div", "table-responsive");
+      dimScroll.append(dimensionTable);
+      panel.append(el("h3", "", heading), dimScroll);
     }
     app.replaceChildren(panel);
   } catch (error) {
@@ -1303,6 +1344,20 @@ async function renderHealth() {
     const data = await api("/api/health/summary");
     const panel = el("section", "panel");
     panel.append(el("h2", "", "系統健康度"));
+
+    const components = data.components || [];
+    const healthyCount = components.filter((c) => ["READY", "AVAILABLE", "OK"].includes(c.status?.toUpperCase())).length;
+    const abnormalCount = components.length - healthyCount;
+
+    const grid = el("div", "grid");
+    grid.append(
+      metric("監控元件總數", components.length),
+      metric("運作正常", healthyCount),
+      metric("異常／降級", abnormalCount),
+      metric("遙測視窗", `${data.telemetryWindowHours || 24} 小時`),
+    );
+    panel.append(grid);
+
     if (data.simulatedAnomalies) {
       panel.append(
         el("div", "warning", "目前為模擬異常模式，部分元件狀態為測試用途。"),
@@ -1326,10 +1381,19 @@ async function renderHealth() {
       "<th>P50 ms</th><th>P95 ms</th><th>Note</th></tr></thead>",
     ].join("");
     const body = el("tbody");
-    for (const item of data.components || []) {
+    for (const item of components) {
       const row = el("tr");
       row.append(el("td", "", item.id));
-      row.append(el("td", "", item.status));
+      const statusCell = el("td");
+      const isOk = ["READY", "AVAILABLE", "OK"].includes(item.status?.toUpperCase());
+      const statusBadge = el("span", "badge", item.status);
+      if (!isOk) {
+        statusBadge.style.background = "var(--danger-soft)";
+        statusBadge.style.borderColor = "var(--danger-border)";
+        statusBadge.style.color = "var(--danger)";
+      }
+      statusCell.append(statusBadge);
+      row.append(statusCell);
       row.append(
         el(
           "td",
@@ -1346,7 +1410,10 @@ async function renderHealth() {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const tableScroll = el("div", "table-responsive");
+    tableScroll.append(table);
+    panel.append(tableScroll);
+
     if ((data.recentAnomalies || []).length) {
       const anomalyTable = el("table");
       anomalyTable.innerHTML = "<thead><tr><th>時間</th><th>Component</th><th>Status</th><th>Error Type</th><th>Correlation</th></tr></thead>";
@@ -1361,7 +1428,9 @@ async function renderHealth() {
         anomalyBody.append(row);
       }
       anomalyTable.append(anomalyBody);
-      panel.append(el("h3", "", "最近異常"), anomalyTable);
+      const anomalyScroll = el("div", "table-responsive");
+      anomalyScroll.append(anomalyTable);
+      panel.append(el("h3", "", "最近異常"), anomalyScroll);
     }
     app.replaceChildren(panel);
   } catch (error) {
@@ -2251,7 +2320,9 @@ async function renderExamples() {
         body.append(row);
       }
       table.append(body);
-      result.append(table);
+      const examplesScroll = el("div", "table-responsive");
+      examplesScroll.append(table);
+      result.append(examplesScroll);
     } catch (error) {
       result.replaceChildren(el("div", "error", error.message));
     }
@@ -2475,35 +2546,73 @@ async function showQualityCaseDetail(caseId) {
       DUPLICATE: "標記重複",
     };
     const content = el("div");
-    content.append(
-      el(
-        "p",
-        "",
-        `${statusLabels[qualityCase.status] || qualityCase.status}｜優先級 ${qualityCase.priority}`,
-      ),
-      el("p", "", qualityCase.description || "-"),
-      el(
-        "p",
-        "",
-        `負責單位：${qualityCase.owner_unit_id}｜承辦：${qualityCase.assignee_id || "未指派"}`,
-      ),
-      el(
-        "p",
-        "",
-        `問題類型：${qualityCase.issue_type_display_name || qualityCase.issue_type_id || "未指定"}`,
-      ),
-      el(
-        "p",
-        "",
-        `頻率 ${qualityCase.frequency}｜負評率 ${(qualityCase.negative_rate * 100).toFixed(1)}%｜轉人工率 ${(qualityCase.handoff_rate * 100).toFixed(1)}%`,
-      ),
-      el(
-        "p",
-        "",
-        `關聯 FAQ：${qualityCase.faq_ids.join(", ") || "-"}｜文件：${qualityCase.document_ids.join(", ") || "-"}`,
-      ),
+
+    const headerRow = el("div", "meta-panel");
+    headerRow.style.justifyContent = "flex-start";
+    headerRow.style.marginBottom = "1rem";
+    headerRow.style.gap = "0.6rem";
+    const statusPill = statusBadge(statusLabels[qualityCase.status] || qualityCase.status);
+    const prioPill = badge(`優先級 P${qualityCase.priority}`, qualityCase.priority <= 2 ? "danger" : "neutral");
+    const caseIdPill = badge(`ID: ${caseId.slice(0, 8)}`, "neutral");
+    headerRow.append(statusPill, prioPill, caseIdPill);
+
+    const metricsGrid = el("div", "grid");
+    metricsGrid.style.marginBottom = "1rem";
+    metricsGrid.append(
+      metric("發生頻率", (qualityCase.frequency || 0).toLocaleString()),
+      metric("負評率", `${((qualityCase.negative_rate || 0) * 100).toFixed(1)}%`),
+      metric("轉人工率", `${((qualityCase.handoff_rate || 0) * 100).toFixed(1)}%`),
+      metric("預估成本影響", qualityCase.cost_impact_usd != null ? `$${Number(qualityCase.cost_impact_usd).toFixed(3)}` : "USD 0.00"),
     );
+
+    const infoPanel = el("div");
+    infoPanel.style.padding = "0.85rem 1.1rem";
+    infoPanel.style.borderRadius = "var(--radius-sm)";
+    infoPanel.style.background = "var(--panel-muted)";
+    infoPanel.style.border = "1px solid var(--border-subtle)";
+    infoPanel.style.marginBottom = "1rem";
+
+    if (qualityCase.description) {
+      const descP = el("p", "", qualityCase.description);
+      descP.style.margin = "0 0 0.6rem 0";
+      descP.style.fontWeight = "550";
+      infoPanel.append(descP);
+    }
+
+    const metaGrid = el("div", "filter-bar");
+    metaGrid.style.gap = "1.2rem";
+    metaGrid.style.fontSize = "0.825rem";
+    metaGrid.append(
+      el("span", "", `負責單位：${qualityCase.owner_unit_id}`),
+      el("span", "", `承辦人：${qualityCase.assignee_id || "未指派"}`),
+      el("span", "", `問題類型：${qualityCase.issue_type_display_name || qualityCase.issue_type_id || "未指定"}`),
+    );
+    infoPanel.append(metaGrid);
+
+    const relBox = el("div", "filter-bar");
+    relBox.style.marginTop = "0.5rem";
+    relBox.style.gap = "0.5rem";
+    relBox.append(el("span", "metric-label", "關聯 FAQ:"));
+    if (qualityCase.faq_ids && qualityCase.faq_ids.length) {
+      for (const fid of qualityCase.faq_ids) {
+        relBox.append(badge(fid, "neutral"));
+      }
+    } else {
+      relBox.append(el("span", "muted", "無"));
+    }
+
+    relBox.append(el("span", "metric-label", "關聯文件:"));
+    if (qualityCase.document_ids && qualityCase.document_ids.length) {
+      for (const did of qualityCase.document_ids) {
+        relBox.append(badge(did, "accent"));
+      }
+    } else {
+      relBox.append(el("span", "muted", "無"));
+    }
+    infoPanel.append(relBox);
+
     const loopHints = el("div", "filter-bar");
+    loopHints.style.marginBottom = "1rem";
     loopHints.append(
       el("span", "metric-label", "閉環捷徑："),
       drillLink("修正文件／FAQ", "knowledge"),
@@ -2528,7 +2637,7 @@ async function showQualityCaseDetail(caseId) {
       portal.rel = "noopener noreferrer";
       loopHints.append(portal);
     }
-    content.append(loopHints);
+    content.append(headerRow, metricsGrid, infoPanel, loopHints);
     const transitions = {
       NEW: ["TRIAGED", "WONT_FIX", "DUPLICATE"],
       TRIAGED: ["IN_PROGRESS", "WONT_FIX", "DUPLICATE"],
@@ -2703,7 +2812,7 @@ async function showQualityCaseDetail(caseId) {
                 const goEdit = el("button", "btn primary", "前往編輯草稿");
                 goEdit.addEventListener("click", () => {
                   if (root) { root.hidden = true; root.replaceChildren(); }
-                  renderNav("knowledgePortal", {
+                  navigateTo("knowledgePortal", {
                     k: `/knowledge/${createdDocId}?caseId=${encodeURIComponent(caseId)}`,
                   });
                 });
@@ -2803,8 +2912,28 @@ async function showQualityCaseDetail(caseId) {
       );
     }
     content.append(actions, el("h3", "", `操作紀錄（${detail.audit.length}）`));
-    for (const event of detail.audit) {
-      content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
+    if (detail.audit.length) {
+      const aTable = el("table");
+      aTable.innerHTML = "<thead><tr><th>時間</th><th>操作</th><th>執行人員</th></tr></thead>";
+      const aBody = el("tbody");
+      for (const event of detail.audit) {
+        const row = el("tr");
+        const occurred = (event.occurred_at || "").replace("T", " ").slice(0, 19);
+        const actCell = el("td");
+        actCell.append(statusBadge(event.action));
+        row.append(
+          el("td", "", occurred),
+          actCell,
+          el("td", "", event.actor_id || "-"),
+        );
+        aBody.append(row);
+      }
+      aTable.append(aBody);
+      const aScroll = el("div", "table-responsive");
+      aScroll.append(aTable);
+      content.append(aScroll);
+    } else {
+      content.append(el("p", "empty", "尚無操作紀錄"));
     }
     showContentModal(qualityCase.title, content);
   } catch (error) {
@@ -3437,7 +3566,9 @@ async function renderPrompts() {
         body.append(row);
       }
       table.append(body);
-      candidatePanel.append(table);
+      const promptScroll = el("div", "table-responsive");
+      promptScroll.append(table);
+      candidatePanel.append(promptScroll);
     } else {
       candidatePanel.append(el("p", "empty", "目前沒有 Prompt Candidate。"));
     }
@@ -3523,32 +3654,43 @@ async function renderFlags() {
     const data = await api("/api/governance/flags");
     const panel = el("section", "panel");
     panel.append(el("h2", "", "Feature Flags"));
-    const table = el("table");
-    table.innerHTML = "<thead><tr><th>Flag</th><th>Effective</th><th>Safety Locked</th><th>Owner</th><th>操作</th></tr></thead>";
-    const body = el("tbody");
-    for (const item of data.items || []) {
-      const row = el("tr");
-      const actions = el("td");
-      const flagId = item.flag.flag_id;
-      if (allowed.has("ops.flags.read")) {
-        const effective = el("button", "", "查有效值");
-        effective.addEventListener("click", async () => {
-          const result = await api(`/api/governance/flags/${flagId}/effective?environment=lab`);
-          showContentModal(`${flagId} effective`, el("pre", "json-block", JSON.stringify(result, null, 2)));
-        });
-        actions.append(effective);
+    const items = data.items || [];
+    if (!items.length) {
+      panel.append(el("p", "empty", "目前無 Feature Flag。"));
+    } else {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Flag</th><th>Effective</th><th>Safety Locked</th><th>Owner</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const item of items) {
+        const row = el("tr");
+        const actions = el("td");
+        const flagId = item.flag.flag_id;
+        if (allowed.has("ops.flags.read")) {
+          const effective = el("button", "", "查有效值");
+          effective.addEventListener("click", async () => {
+            const result = await api(`/api/governance/flags/${flagId}/effective?environment=lab`);
+            showContentModal(`${flagId} effective`, el("pre", "json-block", JSON.stringify(result, null, 2)));
+          });
+          actions.append(effective);
+        }
+        const effCell = el("td");
+        effCell.append(statusBadge(item.effective ? "ENABLED" : "DISABLED"));
+        const lockCell = el("td");
+        lockCell.append(statusBadge(item.flag.safety_locked ? "LOCKED" : "UNLOCKED"));
+        row.append(
+          el("td", "", flagId),
+          effCell,
+          lockCell,
+          el("td", "", item.flag.owner || "-"),
+          actions,
+        );
+        body.append(row);
       }
-      row.append(
-        el("td", "", flagId),
-        el("td", "", String(item.effective)),
-        el("td", "", item.flag.safety_locked ? "YES" : "NO"),
-        el("td", "", item.flag.owner),
-        actions,
-      );
-      body.append(row);
+      table.append(body);
+      const scroll = el("div", "table-responsive");
+      scroll.append(table);
+      panel.append(scroll);
     }
-    table.append(body);
-    panel.append(table);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", "error", error.message));
@@ -3612,37 +3754,46 @@ async function renderRoles() {
       });
       panel.append(revoke);
     }
-    const table = el("table");
-    table.innerHTML = "<thead><tr><th>Change</th><th>Principal</th><th>狀態</th><th>請求者</th><th>操作</th></tr></thead>";
-    const body = el("tbody");
-    for (const change of (data.items || []).slice().reverse()) {
-      const actions = el("td");
-      if (allowed.has("ops.roles.approve") && change.status === "REQUESTED") {
-        const approve = el("button", "", "核准");
-        approve.addEventListener("click", async () => {
-          const reason = window.prompt("核准原因");
-          if (!reason || reason.trim().length < 3) return;
-          await api(`/api/governance/roles/${change.change_id}/approve`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
+    const items = (data.items || []).slice().reverse();
+    if (!items.length) {
+      panel.append(el("p", "empty", "目前沒有角色映射請求。"));
+    } else {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Change</th><th>Principal</th><th>狀態</th><th>請求者</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const change of items) {
+        const actions = el("td");
+        if (allowed.has("ops.roles.approve") && change.status === "REQUESTED") {
+          const approve = el("button", "", "核准");
+          approve.addEventListener("click", async () => {
+            const reason = window.prompt("核准原因");
+            if (!reason || reason.trim().length < 3) return;
+            await api(`/api/governance/roles/${change.change_id}/approve`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            });
+            await renderRoles();
           });
-          await renderRoles();
-        });
-        actions.append(approve);
+          actions.append(approve);
+        }
+        const statusCell = el("td");
+        statusCell.append(statusBadge(change.status));
+        const row = el("tr");
+        row.append(
+          el("td", "", change.change_id.slice(0, 8)),
+          el("td", "", change.target_principal),
+          statusCell,
+          el("td", "", change.requested_by),
+          actions,
+        );
+        body.append(row);
       }
-      const row = el("tr");
-      row.append(
-        el("td", "", change.change_id.slice(0, 8)),
-        el("td", "", change.target_principal),
-        el("td", "", change.status),
-        el("td", "", change.requested_by),
-        actions,
-      );
-      body.append(row);
+      table.append(body);
+      const scroll = el("div", "table-responsive");
+      scroll.append(table);
+      panel.append(scroll);
     }
-    table.append(body);
-    panel.append(table);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", "error", error.message));
@@ -3685,51 +3836,60 @@ async function renderRetention() {
       });
       panel.append(form);
     }
-    const table = el("table");
-    table.innerHTML = "<thead><tr><th>Policy</th><th>TTL</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
-    const body = el("tbody");
-    for (const item of (data.items || []).slice().reverse()) {
-      const actions = el("td");
-      if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
-        const approve = el("button", "", "核准");
-        approve.addEventListener("click", async () => {
-          const reason = window.prompt("核准原因");
-          if (!reason || reason.trim().length < 3) return;
-          await api(`/api/governance/retention/${item.version_id}/approve`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
+    const items = (data.items || []).slice().reverse();
+    if (!items.length) {
+      panel.append(el("p", "empty", "目前無 Retention 政策紀錄。"));
+    } else {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Policy</th><th>TTL</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const item of items) {
+        const actions = el("td");
+        if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
+          const approve = el("button", "", "核准");
+          approve.addEventListener("click", async () => {
+            const reason = window.prompt("核准原因");
+            if (!reason || reason.trim().length < 3) return;
+            await api(`/api/governance/retention/${item.version_id}/approve`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            });
+            await renderRetention();
           });
-          await renderRetention();
-        });
-        actions.append(approve);
-      }
-      if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
-        const activate = el("button", "", "啟用");
-        activate.addEventListener("click", async () => {
-          const reason = window.prompt("啟用原因");
-          if (!reason || reason.trim().length < 3) return;
-          await api(`/api/governance/retention/${item.version_id}/activate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
+          actions.append(approve);
+        }
+        if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
+          const activate = el("button", "", "啟用");
+          activate.addEventListener("click", async () => {
+            const reason = window.prompt("啟用原因");
+            if (!reason || reason.trim().length < 3) return;
+            await api(`/api/governance/retention/${item.version_id}/activate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            });
+            await renderRetention();
           });
-          await renderRetention();
-        });
-        actions.append(activate);
+          actions.append(activate);
+        }
+        const statusCell = el("td");
+        statusCell.append(statusBadge(item.status));
+        const row = el("tr");
+        row.append(
+          el("td", "", item.policy_id),
+          el("td", "", `${item.ttl_days} 天`),
+          statusCell,
+          el("td", "", item.created_by),
+          actions,
+        );
+        body.append(row);
       }
-      const row = el("tr");
-      row.append(
-        el("td", "", item.policy_id),
-        el("td", "", String(item.ttl_days)),
-        el("td", "", item.status),
-        el("td", "", item.created_by),
-        actions,
-      );
-      body.append(row);
+      table.append(body);
+      const scroll = el("div", "table-responsive");
+      scroll.append(table);
+      panel.append(scroll);
     }
-    table.append(body);
-    panel.append(table);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", "error", error.message));
@@ -3768,51 +3928,60 @@ async function renderMasking() {
       });
       panel.append(form);
     }
-    const table = el("table");
-    table.innerHTML = "<thead><tr><th>Version</th><th>Hash</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
-    const body = el("tbody");
-    for (const item of (data.items || []).slice().reverse()) {
-      const actions = el("td");
-      if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
-        const approve = el("button", "", "核准");
-        approve.addEventListener("click", async () => {
-          const reason = window.prompt("核准原因");
-          if (!reason || reason.trim().length < 3) return;
-          await api(`/api/governance/masking/${item.version_id}/approve`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
+    const items = (data.items || []).slice().reverse();
+    if (!items.length) {
+      panel.append(el("p", "empty", "目前無遮罩政策版本紀錄。"));
+    } else {
+      const table = el("table");
+      table.innerHTML = "<thead><tr><th>Version</th><th>Hash</th><th>狀態</th><th>建立者</th><th>操作</th></tr></thead>";
+      const body = el("tbody");
+      for (const item of items) {
+        const actions = el("td");
+        if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
+          const approve = el("button", "", "核准");
+          approve.addEventListener("click", async () => {
+            const reason = window.prompt("核准原因");
+            if (!reason || reason.trim().length < 3) return;
+            await api(`/api/governance/masking/${item.version_id}/approve`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            });
+            await renderMasking();
           });
-          await renderMasking();
-        });
-        actions.append(approve);
-      }
-      if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
-        const activate = el("button", "", "啟用");
-        activate.addEventListener("click", async () => {
-          const reason = window.prompt("啟用原因");
-          if (!reason || reason.trim().length < 3) return;
-          await api(`/api/governance/masking/${item.version_id}/activate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
+          actions.append(approve);
+        }
+        if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
+          const activate = el("button", "", "啟用");
+          activate.addEventListener("click", async () => {
+            const reason = window.prompt("啟用原因");
+            if (!reason || reason.trim().length < 3) return;
+            await api(`/api/governance/masking/${item.version_id}/activate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reason: reason.trim() }),
+            });
+            await renderMasking();
           });
-          await renderMasking();
-        });
-        actions.append(activate);
+          actions.append(activate);
+        }
+        const statusCell = el("td");
+        statusCell.append(statusBadge(item.status));
+        const row = el("tr");
+        row.append(
+          el("td", "", item.policy_version),
+          el("td", "", (item.rules_hash || "").slice(0, 12)),
+          statusCell,
+          el("td", "", item.created_by),
+          actions,
+        );
+        body.append(row);
       }
-      const row = el("tr");
-      row.append(
-        el("td", "", item.policy_version),
-        el("td", "", (item.rules_hash || "").slice(0, 12)),
-        el("td", "", item.status),
-        el("td", "", item.created_by),
-        actions,
-      );
-      body.append(row);
+      table.append(body);
+      const scroll = el("div", "table-responsive");
+      scroll.append(table);
+      panel.append(scroll);
     }
-    table.append(body);
-    panel.append(table);
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", "error", error.message));
@@ -3835,11 +4004,57 @@ async function renderGovernanceSearch() {
     const results = el("div");
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const data = await api(`/api/governance/search?q=${encodeURIComponent(input.value || "")}`);
-      results.replaceChildren();
-      results.append(el("p", "metric-label", `結果數 ${data.count}`));
-      for (const item of data.items || []) {
-        results.append(el("p", "", `[${item.type}] ${item.title} — ${item.snippet}`));
+      const query = (input.value || "").trim();
+      if (!query) return;
+      results.replaceChildren(el("div", "empty", "搜尋中…"));
+      try {
+        const data = await api(`/api/governance/search?q=${encodeURIComponent(query)}`);
+        results.replaceChildren();
+        const summaryBar = el("div", "filter-bar");
+        summaryBar.style.margin = "1rem 0";
+        summaryBar.append(badge(`搜尋結果：${data.count} 筆`, data.count > 0 ? "success" : "neutral"));
+        results.append(summaryBar);
+
+        if (!data.items || !data.items.length) {
+          results.append(el("p", "empty", "未找到符合關鍵字的資源。"));
+        } else {
+          const listContainer = el("div");
+          listContainer.style.display = "flex";
+          listContainer.style.flexDirection = "column";
+          listContainer.style.gap = "0.75rem";
+          for (const item of data.items) {
+            const card = el("div", "metric");
+            card.style.flexDirection = "row";
+            card.style.justifyContent = "space-between";
+            card.style.alignItems = "center";
+            card.style.padding = "0.85rem 1.15rem";
+
+            const info = el("div");
+            info.style.minWidth = "0";
+            const titleRow = el("div");
+            titleRow.style.display = "flex";
+            titleRow.style.alignItems = "center";
+            titleRow.style.gap = "0.6rem";
+            titleRow.style.marginBottom = "0.3rem";
+
+            const typeBadge = badge(item.type, "accent");
+            const titleStrong = el("strong", "", item.title || item.id || "未命名");
+            titleStrong.style.fontSize = "0.95rem";
+            titleRow.append(typeBadge, titleStrong);
+
+            const snippetP = el("div", "metric-label", item.snippet || "-");
+            snippetP.style.textTransform = "none";
+            snippetP.style.letterSpacing = "normal";
+            snippetP.style.fontSize = "0.8rem";
+            info.append(titleRow, snippetP);
+
+            card.append(info);
+            listContainer.append(card);
+          }
+          results.append(listContainer);
+        }
+      } catch (err) {
+        results.replaceChildren(el("div", "error", `搜尋失敗：${err.message || err}`));
       }
     });
     panel.append(form, results);
@@ -3954,7 +4169,9 @@ async function renderBudgets() {
         body.append(row);
       }
       table.append(body);
-      policyPanel.append(table);
+      const policyScroll = el("div", "table-responsive");
+      policyScroll.append(table);
+      policyPanel.append(policyScroll);
     } else {
       policyPanel.append(el("p", "empty", "目前沒有 Budget Policy。"));
     }
@@ -4007,7 +4224,9 @@ async function renderBudgets() {
         body.append(row);
       }
       table.append(body);
-      alertPanel.append(table);
+      const alertScroll = el("div", "table-responsive");
+      alertScroll.append(table);
+      alertPanel.append(alertScroll);
     } else {
       alertPanel.append(el("p", "empty", "目前沒有 Alert。"));
     }
@@ -4301,23 +4520,89 @@ async function renderAudit() {
   try {
     const allowed = new Set(capabilities?.capabilities || []);
     const [opsAudit, governanceAudit] = await Promise.all([
-      api("/api/audit-events"),
+      api("/api/audit-events").catch(() => ({ items: [] })),
       api("/api/governance/audit").catch(() => ({ items: [] })),
     ]);
     const panel = el("section", "panel");
-    panel.append(el("h2", "", "稽核紀錄"));
+    panel.append(el("h2", "", "系統稽核紀錄"));
+
+    const actionBar = el("div", "filter-bar");
+    actionBar.style.marginBottom = "1rem";
     if (allowed.has("ops.audit.read")) {
       const exportButton = el("button", "", "匯出治理 Audit JSON");
       exportButton.addEventListener("click", async () => {
-        const packageData = await api("/api/governance/audit/export");
-        showContentModal("治理 Audit 匯出", el("pre", "json-block", JSON.stringify(packageData, null, 2)));
+        try {
+          const packageData = await api("/api/governance/audit/export");
+          showContentModal("治理 Audit 匯出", el("pre", "json-block", JSON.stringify(packageData, null, 2)));
+        } catch (err) {
+          showContentModal("匯出失敗", el("div", "error", err.message || err));
+        }
       });
-      panel.append(exportButton);
+      actionBar.append(exportButton);
     }
-    panel.append(el("h3", "", "營運 Audit"));
-    panel.append(el("pre", "", JSON.stringify(opsAudit, null, 2)));
-    panel.append(el("h3", "", "治理 Audit"));
-    panel.append(el("pre", "", JSON.stringify(governanceAudit, null, 2)));
+    panel.append(actionBar);
+
+    function createAuditTable(items, typeLabel) {
+      if (!items || !items.length) {
+        return el("p", "empty", `目前沒有${typeLabel}稽核事件紀錄。`);
+      }
+      const table = el("table");
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>時間</th>
+            <th>執行者 / 角色</th>
+            <th>操作動作</th>
+            <th>目標類型 / ID</th>
+            <th>結果</th>
+            <th>詳情</th>
+          </tr>
+        </thead>
+      `;
+      const body = el("tbody");
+      for (const item of items) {
+        const row = el("tr");
+        const occurred = (item.occurred_at || "").replace("T", " ").slice(0, 19) || "-";
+        const actor = `${item.actor_id || "-"}${item.actor_role ? ` (${item.actor_role})` : ""}`;
+        const target = item.target_type ? `${item.target_type}：${item.target_id || "-"}` : (item.target_id || "-");
+
+        const resultCell = el("td");
+        resultCell.append(statusBadge(item.result || "SUCCESS"));
+
+        const detailCell = el("td");
+        const viewBtn = el("button", "", "檢視 Payload");
+        viewBtn.addEventListener("click", () => {
+          showContentModal(
+            `稽核事件詳情：${item.action || item.audit_id}`,
+            el("pre", "json-block", JSON.stringify(item, null, 2)),
+          );
+        });
+        detailCell.append(viewBtn);
+
+        row.append(
+          el("td", "", occurred),
+          el("td", "", actor),
+          el("td", "", item.action || "-"),
+          el("td", "", target),
+          resultCell,
+          detailCell,
+        );
+        body.append(row);
+      }
+      table.append(body);
+      const scroll = el("div", "table-responsive");
+      scroll.append(table);
+      return scroll;
+    }
+
+    const opsItems = opsAudit.items || [];
+    panel.append(el("h3", "", `營運稽核紀錄（${opsItems.length} 筆）`));
+    panel.append(createAuditTable(opsItems, "營運"));
+
+    const govItems = governanceAudit.items || [];
+    panel.append(el("h3", "", `治理稽核紀錄（${govItems.length} 筆）`));
+    panel.append(createAuditTable(govItems, "治理"));
+
     app.replaceChildren(panel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));

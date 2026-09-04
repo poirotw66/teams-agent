@@ -1,5 +1,5 @@
 {
-  "revision": 444,
+  "revision": 448,
   "candidates": [
     {
       "candidate_id": "8c5d90cb4fd4ac5d6da5c909",
@@ -22,11 +22,11 @@
       "negative_rate": 0.0,
       "handoff_rate": 1.0,
       "estimated_cost_impact": 0.0,
-      "status": "OPEN",
-      "merged_case_id": null,
-      "etag": 1,
+      "status": "MERGED",
+      "merged_case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "etag": 2,
       "created_at": "2026-09-04T09:12:43.370579Z",
-      "updated_at": "2026-09-04T09:12:43.370579Z"
+      "updated_at": "2026-09-04T10:04:06.073871Z"
     },
     {
       "candidate_id": "dfa219ad8503caffa37551eb",
@@ -11990,7 +11990,49 @@
       "updated_at": "2026-09-04T09:12:45.924443Z"
     }
   ],
-  "cases": [],
+  "cases": [
+    {
+      "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "title": "端到端閉環測試案件：轉人工事件",
+      "description": "由候選自動合併測試",
+      "case_type": "HANDOFF",
+      "issue_type_id": "other.unclassified",
+      "question_cluster_id": null,
+      "priority": "MEDIUM",
+      "owner_unit_id": "IT Service Desk",
+      "assignee_id": null,
+      "status": "IN_PROGRESS",
+      "source_candidate_ids": [
+        "8c5d90cb4fd4ac5d6da5c909"
+      ],
+      "source_event_ids": [
+        "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+      ],
+      "conversation_refs": [
+        "26679677-508b-41dd-a650-6e1ba021313c"
+      ],
+      "faq_ids": [],
+      "document_ids": [
+        "doc--187248458a"
+      ],
+      "frequency": 1,
+      "negative_rate": 0.0,
+      "handoff_rate": 1.0,
+      "estimated_cost_impact": 0.0,
+      "target_due_at": null,
+      "resolution_type": null,
+      "resolution_note": null,
+      "etag": 4,
+      "created_by": "ops.admin",
+      "created_at": "2026-09-04T10:04:06.073871Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-04T10:20:05.136325Z",
+      "resolved_at": null,
+      "observation_started_at": null,
+      "observation_baseline": null,
+      "observation_latest": null
+    }
+  ],
   "clusters": [],
   "audits": [
     {
@@ -29308,6 +29350,334 @@
       },
       "reason": null,
       "occurred_at": "2026-09-04T09:12:45.928792Z"
+    },
+    {
+      "audit_id": "a15143b8-5855-4d1f-a59b-d389658b846b",
+      "target_type": "QUALITY_CASE",
+      "target_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "action": "QUALITY_CASE_CREATED_FROM_CANDIDATES",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT Service Desk",
+      "before": null,
+      "after": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "NEW",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": null,
+        "etag": 1,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:04:06.073871Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "reason": null,
+      "occurred_at": "2026-09-04T10:04:06.080447Z"
+    },
+    {
+      "audit_id": "5d5050d8-abd8-47b1-a729-e372d4d24279",
+      "target_type": "QUALITY_CASE",
+      "target_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "action": "QUALITY_CASE_CONTENT_LINKED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT Service Desk",
+      "before": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "NEW",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": null,
+        "etag": 1,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:04:06.073871Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "after": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "NEW",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [
+          "doc--187248458a"
+        ],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": null,
+        "etag": 2,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:04:20.736733Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "reason": null,
+      "occurred_at": "2026-09-04T10:04:20.745208Z"
+    },
+    {
+      "audit_id": "698d4c77-77b0-4c72-9697-e0e1d389f9c8",
+      "target_type": "QUALITY_CASE",
+      "target_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "action": "QUALITY_CASE_TRIAGED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT Service Desk",
+      "before": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "NEW",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [
+          "doc--187248458a"
+        ],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": null,
+        "etag": 2,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:04:20.736733Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "after": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "TRIAGED",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [
+          "doc--187248458a"
+        ],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": "分派給 IT 處理",
+        "etag": 3,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:05:01.122482Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "reason": "分派給 IT 處理",
+      "occurred_at": "2026-09-04T10:05:01.134025Z"
+    },
+    {
+      "audit_id": "c3bd6f49-4f57-47a0-866f-1b2dfe197c26",
+      "target_type": "QUALITY_CASE",
+      "target_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+      "action": "QUALITY_CASE_IN_PROGRESS",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT Service Desk",
+      "before": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "TRIAGED",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [
+          "doc--187248458a"
+        ],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": "分派給 IT 處理",
+        "etag": 3,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:05:01.122482Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "after": {
+        "case_id": "e0a52eb6-1721-445c-bde2-04dfe13e2d33",
+        "title": "端到端閉環測試案件：轉人工事件",
+        "description": "由候選自動合併測試",
+        "case_type": "HANDOFF",
+        "issue_type_id": "other.unclassified",
+        "question_cluster_id": null,
+        "priority": "MEDIUM",
+        "owner_unit_id": "IT Service Desk",
+        "assignee_id": null,
+        "status": "IN_PROGRESS",
+        "source_candidate_ids": [
+          "8c5d90cb4fd4ac5d6da5c909"
+        ],
+        "source_event_ids": [
+          "54adcae8-fda0-4b5b-9b92-f5cc8a3ea907:handoff.started"
+        ],
+        "conversation_refs": [
+          "26679677-508b-41dd-a650-6e1ba021313c"
+        ],
+        "faq_ids": [],
+        "document_ids": [
+          "doc--187248458a"
+        ],
+        "frequency": 1,
+        "negative_rate": 0.0,
+        "handoff_rate": 1.0,
+        "estimated_cost_impact": 0.0,
+        "target_due_at": null,
+        "resolution_type": null,
+        "resolution_note": null,
+        "etag": 4,
+        "created_by": "ops.admin",
+        "created_at": "2026-09-04T10:04:06.073871Z",
+        "updated_by": "ops.admin",
+        "updated_at": "2026-09-04T10:20:05.136325Z",
+        "resolved_at": null,
+        "observation_started_at": null,
+        "observation_baseline": null,
+        "observation_latest": null
+      },
+      "reason": null,
+      "occurred_at": "2026-09-04T10:20:05.150031Z"
     }
   ]
 }
