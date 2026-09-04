@@ -1660,6 +1660,11 @@ def test_capabilities_hide_restricted_nav_for_service_owner(
     assert "ops.health.read" not in body["capabilities"]
     assert "ops.audit.read" not in body["capabilities"]
     assert "ops.knowledge.read" not in body["capabilities"]
+    assert body["userId"] == "owner.demo"
+    assert body["userName"] == "Owner Demo"
+    assert body["displayName"] == "Owner Demo"
+    assert "relaxedWorkflow" in body
+    assert "minTestCasesForReview" in body
 
 
 def test_xlsx_export_job_download(seeded_backoffice_client: TestClient) -> None:

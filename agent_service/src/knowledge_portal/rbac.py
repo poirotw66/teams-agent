@@ -39,33 +39,61 @@ def require_minimum_role(actor: PortalActor, minimum: PortalRole) -> None:
         )
 
 
-def can_view_document(actor: PortalActor, owner_unit_id: str, created_by: str) -> bool:
-    if actor.role in {"MANAGER", "PLATFORM", "AUDITOR", "REVIEWER"}:
+def can_view_document(
+    actor: PortalActor,
+    owner_unit_id: str,
+    created_by: str,
+    *,
+    tenant_id: str | None = None,
+) -> bool:
+    if actor.role == "PLATFORM":
         return True
-    if actor.role == "CONTRIBUTOR":
-        return (
-            owner_unit_id in actor.owner_unit_ids or created_by == actor.user_id
-        )
+    if actor.tenant_id and tenant_id and actor.tenant_id != tenant_id:
+        return False
+    if actor.role in {"MANAGER", "REVIEWER", "CONTRIBUTOR", "AUDITOR"}:
+        if actor.owner_unit_ids:
+            return owner_unit_id in actor.owner_unit_ids or created_by == actor.user_id
+        return True
     return False
 
 
-def ensure_document_visible(actor: PortalActor, owner_unit_id: str, created_by: str) -> None:
-    if not can_view_document(actor, owner_unit_id, created_by):
+def ensure_document_visible(
+    actor: PortalActor,
+    owner_unit_id: str,
+    created_by: str,
+    *,
+    tenant_id: str | None = None,
+) -> None:
+    if not can_view_document(actor, owner_unit_id, created_by, tenant_id=tenant_id):
         raise PortalPermissionError("You do not have access to this document.")
 
 
-def can_edit_document(actor: PortalActor, owner_unit_id: str, created_by: str) -> bool:
-    if actor.role in {"MANAGER", "PLATFORM"}:
+def can_edit_document(
+    actor: PortalActor,
+    owner_unit_id: str,
+    created_by: str,
+    *,
+    tenant_id: str | None = None,
+) -> bool:
+    if actor.role == "PLATFORM":
         return True
-    if actor.role == "CONTRIBUTOR":
-        return (
-            owner_unit_id in actor.owner_unit_ids or created_by == actor.user_id
-        )
+    if actor.tenant_id and tenant_id and actor.tenant_id != tenant_id:
+        return False
+    if actor.role in {"MANAGER", "CONTRIBUTOR"}:
+        if actor.owner_unit_ids:
+            return owner_unit_id in actor.owner_unit_ids or created_by == actor.user_id
+        return True
     return False
 
 
-def ensure_can_edit(actor: PortalActor, owner_unit_id: str, created_by: str) -> None:
-    if not can_edit_document(actor, owner_unit_id, created_by):
+def ensure_can_edit(
+    actor: PortalActor,
+    owner_unit_id: str,
+    created_by: str,
+    *,
+    tenant_id: str | None = None,
+) -> None:
+    if not can_edit_document(actor, owner_unit_id, created_by, tenant_id=tenant_id):
         raise PortalPermissionError("You do not have permission to edit this document.")
 
 
@@ -103,14 +131,22 @@ def ensure_can_remove_document(
     *,
     relaxed_workflow: bool = False,
 ) -> None:
-    if actor.role in {"MANAGER", "PLATFORM"}:
+    if actor.role == "PLATFORM":
+        return
+    if actor.role == "MANAGER":
+        if (
+            actor.owner_unit_ids
+            and document.owner_unit_id not in actor.owner_unit_ids
+            and document.created_by != actor.user_id
+        ):
+            raise PortalPermissionError("You do not have permission to remove this document.")
         return
     if document.status == "IN_REVIEW":
         raise PortalPermissionError("Documents in review must be decided before removal.")
     if document.current_published_version_id:
         raise PortalPermissionError("Only managers can unpublish published documents.")
     if relaxed_workflow and can_edit_document(
-        actor, document.owner_unit_id, document.created_by
+        actor, document.owner_unit_id, document.created_by, tenant_id=document.tenant_id
     ) and document.status in {
         "DRAFT",
         "CHANGES_REQUESTED",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from functools import lru_cache
 from typing import Any
 
@@ -26,12 +27,62 @@ class EntraAuthError(Exception):
     pass
 
 
+@lru_cache(maxsize=8)
+def _jwk_client_for_tenant(tenant_id: str) -> Any:
+    from jwt import PyJWKClient
+
+    url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
+    return PyJWKClient(url, cache_keys=True, lifespan=300, timeout=10.0)
+
+
 @lru_cache(maxsize=4)
 def _jwks_for_tenant(tenant_id: str) -> dict[str, Any]:
     url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
     response = httpx.get(url, timeout=5.0)
     response.raise_for_status()
     return response.json()
+
+
+def _resolve_signing_key(
+    token: str,
+    tenant_id: str,
+    *,
+    jwks_client: Any | None = None,
+    jwks: dict[str, Any] | None = None,
+) -> Any:
+    try:
+        import jwt
+        from jwt import PyJWKSet
+    except ImportError as exc:  # pragma: no cover
+        raise EntraAuthError(
+            "Entra auth requires PyJWT. Install teams-agent-rag-service[portal]."
+        ) from exc
+
+    if jwks is not None:
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+        except Exception as exc:
+            raise EntraAuthError(f"Malformed token header: {exc}") from exc
+        kid = unverified_header.get("kid")
+        try:
+            jwk_set = PyJWKSet.from_dict(jwks)
+        except Exception as exc:
+            raise EntraAuthError(f"Invalid JWKS format: {exc}") from exc
+        if kid:
+            try:
+                return jwk_set[kid].key
+            except KeyError as exc:
+                raise EntraAuthError(f"Signing key '{kid}' not found in JWKS.") from exc
+        if len(jwk_set.keys) == 1:
+            return jwk_set.keys[0].key
+        raise EntraAuthError("Token header is missing 'kid' claim.")
+
+    client = jwks_client or _jwk_client_for_tenant(tenant_id)
+    try:
+        signing_key = client.get_signing_key_from_jwt(token)
+        return signing_key.key
+    except Exception as exc:
+        raise EntraAuthError(f"Failed to resolve Entra signing key: {exc}") from exc
 
 
 def _decode_unverified_claims(token: str) -> dict[str, Any]:
@@ -55,6 +106,8 @@ def resolve_actor_from_entra(
     client_id: str,
     default_owner_unit_id: str,
     validate_signature: bool = True,
+    jwks_client: Any | None = None,
+    jwks: dict[str, Any] | None = None,
 ) -> ActorContext:
     token = bearer_token.strip()
     if not token:
@@ -67,17 +120,39 @@ def resolve_actor_from_entra(
             raise EntraAuthError(
                 "Entra auth requires PyJWT. Install teams-agent-rag-service[portal]."
             ) from exc
-        jwks = _jwks_for_tenant(tenant_id)
-        issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
-        claims = jwt.decode(
+
+        if not tenant_id or not client_id:
+            raise EntraAuthError("Entra tenant_id and client_id are required.")
+
+        signing_key = _resolve_signing_key(
             token,
-            jwks,
-            algorithms=["RS256"],
-            audience=client_id,
-            issuer=issuer,
-            options={"verify_aud": True},
+            tenant_id,
+            jwks_client=jwks_client,
+            jwks=jwks,
         )
+        issuers = [
+            f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+            f"https://sts.windows.net/{tenant_id}/",
+        ]
+        try:
+            claims = jwt.decode(
+                token,
+                signing_key,
+                algorithms=["RS256"],
+                audience=client_id,
+                issuer=issuers,
+                options={"verify_aud": True, "verify_signature": True},
+            )
+        except jwt.PyJWTError as exc:
+            raise EntraAuthError(f"Token validation failed: {exc}") from exc
     else:
+        environment = (
+            os.environ.get("AGENT_DEPLOYMENT_ENV")
+            or os.environ.get("RAG_DEPLOYMENT_ENV")
+            or "dev"
+        ).lower()
+        if environment not in {"dev", "test", "poc"}:
+            raise EntraAuthError("Token signature validation cannot be disabled in production.")
         claims = _decode_unverified_claims(token)
 
     user_id = str(claims.get("oid") or claims.get("sub") or "")

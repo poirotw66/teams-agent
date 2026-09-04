@@ -75,8 +75,11 @@ class PortalService:
         actor: PortalActor,
         request: CreateDocumentRequest,
         correlation_id: str,
+        idempotency_key: str | None = None,
     ) -> DocumentDetailResponse:
-        return await self._documents.create_document(actor, request, correlation_id)
+        return await self._documents.create_document(
+            actor, request, correlation_id, idempotency_key=idempotency_key
+        )
 
     async def update_draft(
         self,
@@ -122,9 +125,10 @@ class PortalService:
         document_id: str,
         request: PublishRequest,
         correlation_id: str,
+        idempotency_key: str | None = None,
     ) -> ReleaseRecord:
         return await self._releases.publish_version(
-            actor, document_id, request, correlation_id
+            actor, document_id, request, correlation_id, idempotency_key=idempotency_key
         )
 
     async def discard_draft(
@@ -165,9 +169,20 @@ class PortalService:
         actor: PortalActor,
         request: RollbackRequest,
         correlation_id: str,
+        idempotency_key: str | None = None,
     ) -> ReleaseRecord:
         return await self._releases.rollback_release(
-            actor, request, correlation_id
+            actor, request, correlation_id, idempotency_key=idempotency_key
+        )
+
+    async def sync_agent_release(
+        self,
+        actor: PortalActor,
+        release_id: str,
+        correlation_id: str,
+    ) -> ReleaseRecord:
+        return await self._releases.sync_agent_release(
+            actor, release_id, correlation_id
         )
 
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:

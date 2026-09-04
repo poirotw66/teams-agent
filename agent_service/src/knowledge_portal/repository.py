@@ -127,13 +127,20 @@ class InMemoryPortalRepository:
     ) -> list[KnowledgeDocumentRecord]:
         items = list(self.documents.values())
         items = [item for item in items if item.status != "DISCARDED"]
-        if actor.role == "CONTRIBUTOR":
-            items = [
-                item
-                for item in items
-                if item.owner_unit_id in actor.owner_unit_ids
-                or item.created_by == actor.user_id
-            ]
+        if actor.role != "PLATFORM":
+            if actor.tenant_id:
+                items = [
+                    item
+                    for item in items
+                    if item.tenant_id is None or item.tenant_id == actor.tenant_id
+                ]
+            if actor.owner_unit_ids:
+                items = [
+                    item
+                    for item in items
+                    if item.owner_unit_id in actor.owner_unit_ids
+                    or item.created_by == actor.user_id
+                ]
         if status:
             items = [item for item in items if item.status == status]
         if owner_unit_id:

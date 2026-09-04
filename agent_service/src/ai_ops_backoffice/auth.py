@@ -47,12 +47,20 @@ def resolve_actor(
         scheme, _, token = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise BackofficeAuthError("Missing Entra bearer token.")
-        validate_signature = os.environ.get("AI_OPS_ENTRA_VALIDATE_JWT", "true").lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
+        environment = (
+            os.environ.get("AGENT_DEPLOYMENT_ENV")
+            or os.environ.get("RAG_DEPLOYMENT_ENV")
+            or "dev"
+        ).lower()
+        if environment in {"dev", "test", "poc"}:
+            validate_signature = os.environ.get("AI_OPS_ENTRA_VALIDATE_JWT", "true").lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        else:
+            validate_signature = True
         try:
             return resolve_actor_from_entra(
                 token,

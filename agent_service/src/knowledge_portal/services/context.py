@@ -25,12 +25,35 @@ from ..repository import PortalRepository, new_id
 from ..settings import PortalSettings
 
 
+class IdempotencyStore:
+    """Bounded in-memory cache for deduplicating mutating API requests."""
+
+    def __init__(self, max_records: int = 1000) -> None:
+        self._cache: dict[str, Any] = {}
+        self._keys: list[str] = []
+        self._max_records = max_records
+
+    def get(self, key: str) -> Any | None:
+        return self._cache.get(key)
+
+    def set(self, key: str, value: Any) -> None:
+        if key in self._cache:
+            self._cache[key] = value
+            return
+        if len(self._keys) >= self._max_records:
+            oldest = self._keys.pop(0)
+            self._cache.pop(oldest, None)
+        self._keys.append(key)
+        self._cache[key] = value
+
+
 class PortalServiceContext:
     def __init__(self, settings: PortalSettings, repository: PortalRepository) -> None:
         self.settings = settings
         self.repository = repository
         self.publisher = ReleasePublisher(settings)
         self.migration = KnowledgeMigrationService(settings, repository, self.publisher)
+        self.idempotency = IdempotencyStore()
 
     async def audit(
         self,

@@ -21,12 +21,13 @@ def portal_headers(
     role: str = "CONTRIBUTOR",
     user_id: str = "contributor.demo",
     name: str = "Contributor Demo",
+    owner_units: str = "IT Service Desk",
 ) -> dict[str, str]:
     return {
         "X-Portal-User-Id": user_id,
         "X-Portal-User-Name": name,
         "X-Portal-Role": role,
-        "X-Portal-Owner-Units": "IT Service Desk",
+        "X-Portal-Owner-Units": owner_units,
     }
 
 

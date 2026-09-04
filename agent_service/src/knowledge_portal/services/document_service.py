@@ -32,6 +32,7 @@ from ..models import (
 )
 from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..rbac import (
+    PortalPermissionError,
     ensure_can_edit,
     ensure_can_remove_document,
     ensure_document_visible,
@@ -80,7 +81,12 @@ class DocumentService:
     async def get_document(self, actor: PortalActor, document_id: str) -> DocumentDetailResponse:
         document = await self._repository.get_document(document_id)
         ensure_not_found("document", document_id, document)
-        ensure_document_visible(actor, document.owner_unit_id, document.created_by)
+        ensure_document_visible(
+            actor,
+            document.owner_unit_id,
+            document.created_by,
+            tenant_id=document.tenant_id,
+        )
 
         draft_version = None
         if document.draft_version_id:
@@ -122,8 +128,23 @@ class DocumentService:
         actor: PortalActor,
         request: CreateDocumentRequest,
         correlation_id: str,
+        idempotency_key: str | None = None,
     ) -> DocumentDetailResponse:
         ensure_can_create_document(actor)
+        if (
+            actor.role != "PLATFORM"
+            and actor.owner_unit_ids
+            and request.owner_unit_id not in actor.owner_unit_ids
+        ):
+            raise PortalPermissionError(
+                "You do not have permission to create documents for this owner unit."
+            )
+
+        if idempotency_key:
+            scope_key = f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
+            cached = self._ctx.idempotency.get(scope_key)
+            if cached is not None:
+                return cached
         document_id = new_id("doc")
         version_id = new_id("ver")
         asset_slug = slug_from_title(request.title)
@@ -201,6 +222,7 @@ class DocumentService:
             created_by=actor.user_id,
             updated_at=now,
             updated_by=actor.user_id,
+            tenant_id=actor.tenant_id,
         )
         await self._repository.save_version(version)
         await self._repository.save_document(document)
@@ -211,7 +233,10 @@ class DocumentService:
             target_id=document_id,
             correlation_id=correlation_id,
         )
-        return await self.get_document(actor, document_id)
+        response = await self.get_document(actor, document_id)
+        if idempotency_key:
+            self._ctx.idempotency.set(scope_key, response)
+        return response
 
     async def update_draft(
         self,
@@ -222,7 +247,20 @@ class DocumentService:
     ) -> DocumentDetailResponse:
         detail = await self.get_document(actor, document_id)
         document = detail.document
-        ensure_can_edit(actor, document.owner_unit_id, document.created_by)
+        ensure_can_edit(
+            actor,
+            document.owner_unit_id,
+            document.created_by,
+            tenant_id=document.tenant_id,
+        )
+        if (
+            actor.role != "PLATFORM"
+            and actor.owner_unit_ids
+            and request.owner_unit_id not in actor.owner_unit_ids
+        ):
+            raise PortalPermissionError(
+                "You do not have permission to assign this document to that owner unit."
+            )
         if document.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
             raise ValueError("Only draft documents can be edited.")
         if document.etag != request.etag:
@@ -470,7 +508,12 @@ class DocumentService:
     ) -> tuple[KnowledgeDocumentRecord, KnowledgeVersionRecord]:
         detail = await self.get_document(actor, document_id)
         document = detail.document
-        ensure_can_edit(actor, document.owner_unit_id, document.created_by)
+        ensure_can_edit(
+            actor,
+            document.owner_unit_id,
+            document.created_by,
+            tenant_id=document.tenant_id,
+        )
         if detail.draft_version is None:
             raise ValueError("Document has no editable draft version.")
         if document.status not in {"DRAFT", "CHANGES_REQUESTED"}:
@@ -591,7 +634,12 @@ class DocumentService:
     ) -> DocumentDetailResponse:
         detail = await self.get_document(actor, document_id)
         document = detail.document
-        ensure_can_edit(actor, document.owner_unit_id, document.created_by)
+        ensure_can_edit(
+            actor,
+            document.owner_unit_id,
+            document.created_by,
+            tenant_id=document.tenant_id,
+        )
         if document.status != "PUBLISHED" or detail.published_version is None:
             raise ValueError("Only published documents can start a new revision.")
         if document.draft_version_id is not None:

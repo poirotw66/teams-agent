@@ -36,7 +36,15 @@ VersionLifecycleStatus = Literal[
     "DISCARDED",
 ]
 ReviewDecision = Literal["APPROVED", "CHANGES_REQUESTED", "REJECTED"]
-ReleaseStatus = Literal["BUILDING", "READY", "ACTIVE", "FAILED", "ROLLED_BACK"]
+ReleaseStatus = Literal[
+    "BUILDING",
+    "READY",
+    "DEPLOYING",
+    "ACTIVE",
+    "FAILED",
+    "ROLLED_BACK",
+    "RELOAD_FAILED",
+]
 ValidationSeverity = Literal["BLOCKING", "WARNING", "INFO"]
 TestResultStatus = Literal["PASS", "NEEDS_REVIEW", "FAIL"]
 
@@ -99,6 +107,7 @@ class KnowledgeDocumentRecord(StrictModel):
     created_by: str
     updated_at: datetime
     updated_by: str
+    tenant_id: str | None = None
 
 
 class KnowledgeVersionRecord(StrictModel):

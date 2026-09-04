@@ -260,18 +260,33 @@
           return;
         }
         const role = portalRole(knowledgeCaps);
-        const stored = JSON.parse(sessionStorage.getItem("ai_ops_backoffice_auth") || "{}");
+        const relaxedWorkflow =
+          caps.relaxedWorkflow !== undefined
+            ? Boolean(caps.relaxedWorkflow)
+            : false;
+        const minTestCasesForReview =
+          typeof caps.minTestCasesForReview === "number"
+            ? caps.minTestCasesForReview
+            : (relaxedWorkflow ? 0 : 3);
+        const userId = caps.userId || stored.userId || "ops.user";
+        const userName =
+          caps.userName || caps.displayName || stored.userName || "Ops User";
+        const ownerUnits =
+          (caps.ownerUnitIds || []).join(",") ||
+          stored.ownerUnits ||
+          "";
+
         window.__AI_OPS_EMBED_SESSION__ = {
           demoMode: false,
           portalProfile: "INTEGRATED",
-          relaxedWorkflow: true,
-          minTestCasesForReview: 0,
+          relaxedWorkflow,
+          minTestCasesForReview,
           homeRoute: "#/knowledge",
           visibleNav: visibleNav(role),
-          userId: stored.userId || "ops.user",
-          userName: stored.userName || stored.userId || "Ops User",
+          userId,
+          userName,
           role,
-          ownerUnits: stored.ownerUnits || (caps.ownerUnitIds || []).join(",") || "IT Service Desk",
+          ownerUnits,
           capabilities: portalCapabilities(knowledgeCaps),
         };
         if (!location.hash || location.hash === "#/" || location.hash === "#") {

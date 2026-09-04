@@ -59,7 +59,6 @@ ROLE_KNOWLEDGE_CAPABILITIES: dict[str, frozenset[str]] = {
 # Map granted knowledge capabilities to an existing Portal RBAC role.
 # This is an internal compatibility bridge, not a product role rename.
 _PORTAL_ROLE_FOR_CAPS: tuple[tuple[frozenset[str], str], ...] = (
-    (frozenset({"knowledge.publish", "knowledge.rollback"}), "PLATFORM"),
     (frozenset({"knowledge.review", "knowledge.publish"}), "MANAGER"),
     (frozenset({"knowledge.review"}), "REVIEWER"),
     (frozenset({"knowledge.audit.read"}), "AUDITOR"),
@@ -76,6 +75,8 @@ def has_knowledge_capability(actor: ActorContext, capability: str) -> bool:
 
 
 def portal_role_for(actor: ActorContext) -> str:
+    if actor.role == "SYSTEM_ADMIN":
+        return "PLATFORM"
     caps = knowledge_capabilities_for(actor)
     if not caps:
         raise PermissionError("no knowledge capabilities for actor")
@@ -133,6 +134,8 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
         return "knowledge.review"
     if path == "releases/rollback" and method == "POST":
         return "knowledge.rollback"
+    if path.startswith("releases/") and path.endswith("/sync-agent") and method == "POST":
+        return "knowledge.publish"
     if path.startswith("releases") and method == "GET":
         return "knowledge.read"
     if path == "audit-events" and method == "GET":

@@ -159,6 +159,12 @@ class ReviewService:
         ensure_not_found("version", review.version_id, version)
         document = await self._ctx.repository.get_document(review.document_id)
         ensure_not_found("document", review.document_id, document)
+        ensure_document_visible(
+            actor,
+            document.owner_unit_id,
+            document.created_by,
+            tenant_id=document.tenant_id,
+        )
 
         now = utc_now()
         updated_review = review.model_copy(
