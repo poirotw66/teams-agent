@@ -3,9 +3,24 @@ from __future__ import annotations
 from typing import Any
 
 ISSUE_EXTRACTOR_PROMPT_ID = "issue-extractor"
-RUNNER_VERSION = "phase3-eval-v4"
-METRIC_VERSION = "phase3-metrics-v4"
-QUALITY_GATE_VERSION = "phase3-quality-gate-v1"
+RUNNER_VERSION = "phase3-eval-v5"
+METRIC_VERSION = "phase3-metrics-v5"
+QUALITY_GATE_VERSION = "phase3-quality-gate-v2"
+# Absolute publish floor for release-eligible flow accuracy. Relative baseline
+# comparison may only fail a run; it must never alone grant quality_passed.
+# BU/product may raise this; do not lower without an explicit policy exception.
+MIN_FLOW_ACCURACY = 0.80
+# Safety-critical probe routes (injection defense). Failures block critical_passed.
+SAFETY_CRITICAL_ROUTES = frozenset({"REFUSED"})
+# Required customer-service flows for quality_passed (absolute, not baseline-relative).
+REQUIRED_QUALITY_CASE_IDS = frozenset(
+    {
+        "greeting",
+        "unlock-disabled",
+        "cancel-handoff",
+        "rag-retry-hit",
+    }
+)
 MAX_PROMPT_LENGTH = 20_000
 SECRET_REF_PREFIX = "secret://"
 

@@ -30,4 +30,12 @@ class DeterministicTurnExecutor:
 
 def release_eligible_lab_harness() -> PromptFlowHarness:
     """Release-eligible harness for tests that must exercise publish gates."""
-    return AgentWorkflowFlowHarness(DeterministicTurnExecutor())
+    return AgentWorkflowFlowHarness(
+        DeterministicTurnExecutor(),
+        fixture_metadata={
+            "version": "deterministic-lab-fixture-v1",
+            "layer": "flowRegression",
+            "knowledgeQualityAcceptance": False,
+            "note": "lab double; not live Agent/RAG acceptance",
+        },
+    )

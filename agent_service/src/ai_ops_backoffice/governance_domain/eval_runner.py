@@ -9,8 +9,12 @@ from .constants import (
     INJECTION_SIGNATURES,
     MAX_PROMPT_LENGTH,
     METRIC_VERSION,
+    MIN_FLOW_ACCURACY,
     PROVIDER_MODELS,
+    QUALITY_GATE_VERSION,
+    REQUIRED_QUALITY_CASE_IDS,
     RUNNER_VERSION,
+    SAFETY_CRITICAL_ROUTES,
 )
 from .eval_flow import (
     PromptFlowHarness,
@@ -238,28 +242,70 @@ def _case_manifest_entries(probes: list[dict[str, Any]]) -> list[dict[str, Any]]
     entries: list[dict[str, Any]] = []
     for probe in probes:
         history = probe.get("history") if isinstance(probe.get("history"), list) else []
+        setup = probe.get("setup") if isinstance(probe.get("setup"), str) else None
+        identity = {
+            "text": probe.get("text"),
+            "history": history,
+            "expectedRoute": probe.get("expected_route"),
+            "behaviors": list(probe.get("expected_behaviors") or []),
+            "setup": setup,
+            "label": probe.get("label"),
+            "caseId": probe.get("case_id"),
+        }
         entries.append(
             {
                 "caseId": probe.get("case_id"),
                 "text": probe.get("text"),
                 "history": history,
+                "setup": setup,
                 "expectedRoute": probe.get("expected_route"),
                 "label": probe.get("label"),
                 "expectedBehaviors": list(probe.get("expected_behaviors") or []),
-                "contentHash": content_hash(
-                    fingerprint(
-                        {
-                            "text": probe.get("text"),
-                            "history": history,
-                            "expectedRoute": probe.get("expected_route"),
-                            "behaviors": list(probe.get("expected_behaviors") or []),
-                        }
-                    )
-                ),
+                "qualityRequired": _probe_is_quality_required(probe),
+                "safetyCritical": _probe_is_safety_critical(probe),
+                "contentHash": content_hash(fingerprint(identity)),
             }
         )
     return entries
 
+
+def _probe_is_safety_critical(probe: dict[str, Any]) -> bool:
+    return str(probe.get("expected_route") or "") in SAFETY_CRITICAL_ROUTES
+
+
+def _probe_is_quality_required(probe: dict[str, Any]) -> bool:
+    case_id = str(probe.get("case_id") or "")
+    return case_id in REQUIRED_QUALITY_CASE_IDS
+
+
+def _harness_fixture_metadata(harness: PromptFlowHarness) -> dict[str, Any]:
+    reader = getattr(harness, "reproducibility_metadata", None)
+    if callable(reader):
+        payload = reader()
+        if isinstance(payload, dict):
+            return payload
+    name = str(getattr(harness, "name", "unknown") or "unknown")
+    return {
+        "version": f"{name}-no-fixture-metadata",
+        "layer": "flowRegression",
+        "knowledgeQualityAcceptance": False,
+    }
+
+
+def _version_binding(version: PromptVersion | None) -> dict[str, Any] | None:
+    if version is None:
+        return None
+    return {
+        "versionId": version.version_id,
+        "promptId": version.prompt_id,
+        "contentHash": version.content_hash,
+        "templateHash": content_hash(version.template),
+        "modelId": version.model_id,
+        "datasetVersion": version.dataset_version,
+        "taxonomyVersion": version.taxonomy_version,
+        "knowledgeReleaseId": version.knowledge_release_id,
+        "status": version.status,
+    }
 
 def _observation_matches(probe: dict[str, Any], observation: Any) -> tuple[bool, str]:
     expected = str(probe.get("expected_route") or "")
@@ -390,11 +436,13 @@ async def _real_flow_cases(
     pairs: list[tuple[str, str]] = []
     baseline_pairs: list[tuple[str, str]] = []
     category = "simulation_flow" if not release_eligible else "real_flow"
+    quality_probe_results: list[tuple[str, bool]] = []
     for probe in probes:
         text = str(probe.get("text") or "")
         expected = str(probe.get("expected_route") or "")
         history = probe.get("history") if isinstance(probe.get("history"), list) else []
         setup = probe.get("setup") if isinstance(probe.get("setup"), str) else None
+        case_id = str(probe.get("case_id") or "")
         observation = await _harness_observe(
             harness,
             template=candidate.template,
@@ -407,13 +455,15 @@ async def _real_flow_cases(
         pairs.append((expected, observation.route))
         results.append(
             _case(
-                f"{'sim' if not release_eligible else 'real'}-flow-{probe.get('case_id')}",
+                f"{'sim' if not release_eligible else 'real'}-flow-{case_id}",
                 category,
                 ok,
                 detail,
-                critical=release_eligible and expected in {"REFUSED", "GREETING"},
+                critical=release_eligible and _probe_is_safety_critical(probe),
             )
         )
+        if release_eligible and _probe_is_quality_required(probe):
+            quality_probe_results.append((case_id, ok))
         if baseline is not None:
             baseline_obs = await _harness_observe(
                 harness,
@@ -435,9 +485,36 @@ async def _real_flow_cases(
         baseline_accuracy = sum(
             1 for expected, predicted in baseline_pairs if expected == predicted
         ) / len(baseline_pairs)
-    complete = release_eligible and all(
-        item.passed for item in results if item.critical and item.category == "real_flow"
-    )
+
+    if release_eligible:
+        missing_required = sorted(REQUIRED_QUALITY_CASE_IDS - {item[0] for item in quality_probe_results})
+        required_ok = (not missing_required) and all(passed for _, passed in quality_probe_results)
+        results.append(
+            _case(
+                "quality-required-flows",
+                "quality_gate",
+                required_ok,
+                (
+                    f"required={sorted(REQUIRED_QUALITY_CASE_IDS)} "
+                    f"missing={missing_required} "
+                    f"failed={[case for case, passed in quality_probe_results if not passed]}"
+                ),
+                critical=False,
+            )
+        )
+        results.append(
+            _case(
+                "quality-min-accuracy",
+                "quality_gate",
+                accuracy + 1e-9 >= MIN_FLOW_ACCURACY,
+                f"accuracy={accuracy:.4f} min={MIN_FLOW_ACCURACY}",
+                critical=False,
+            )
+        )
+
+    # Execution complete = release-eligible harness finished all probes with a bound model.
+    # Safety and quality gates are evaluated separately afterwards.
+    complete = release_eligible and model_bound and bool(pairs)
     return results, accuracy, baseline_accuracy, complete
 
 
@@ -560,22 +637,73 @@ def _build_eval_run(
     if baseline_accuracy is None and baseline is not None:
         _, baseline_accuracy, _, _ = _dataset_similarity_cases(examples)
 
-    quality_passed = flow_complete and release_eligible
+    # status = execution finished; critical_passed = safety; quality_passed = absolute floor.
+    execution_complete = flow_complete
+    status = "COMPLETED" if execution_complete else "INCOMPLETE"
+
+    critical_passed = all(item.passed for item in cases if item.critical)
+    if not execution_complete:
+        # Incomplete runs cannot claim a finished safety evaluation for publish.
+        critical_passed = False
+
+    required_flows_ok = all(
+        item.passed for item in flow_cases if item.case_id == "quality-required-flows"
+    )
+    # Simulation / non-release harnesses do not emit the quality-required case.
+    if release_eligible and execution_complete and not any(
+        item.case_id == "quality-required-flows" for item in flow_cases
+    ):
+        required_flows_ok = False
+
+    min_accuracy_ok = accuracy + 1e-9 >= MIN_FLOW_ACCURACY
+    if not (release_eligible and execution_complete):
+        min_accuracy_ok = False
+
+    quality_passed = (
+        execution_complete
+        and release_eligible
+        and critical_passed
+        and required_flows_ok
+        and min_accuracy_ok
+    )
+    # Relative checks may only fail quality; never grant a pass by themselves.
     if baseline_accuracy is not None and accuracy + 1e-9 < baseline_accuracy - 0.05:
         quality_passed = False
     if baseline_cost is not None and cost > baseline_cost * 2:
         quality_passed = False
     if any(not item.passed for item in dataset_cases):
         quality_passed = False
-    if similarity_f1 < 0.5 and examples and not flow_complete:
+    if similarity_f1 < 0.5 and examples and not execution_complete:
         quality_passed = False
 
-    critical_passed = all(item.passed for item in cases if item.critical)
-    status = "COMPLETED" if flow_complete else "INCOMPLETE"
-    if not flow_complete:
-        critical_passed = False
-
     case_entries = _case_manifest_entries(probes)
+    fixture_meta = _harness_fixture_metadata(harness)
+    reproducibility = {
+        "qualityGateVersion": QUALITY_GATE_VERSION,
+        "minFlowAccuracy": MIN_FLOW_ACCURACY,
+        "scoringPolicyVersion": METRIC_VERSION,
+        "runnerVersion": RUNNER_VERSION,
+        "requiredQualityCaseIds": sorted(REQUIRED_QUALITY_CASE_IDS),
+        "safetyCriticalRoutes": sorted(SAFETY_CRITICAL_ROUTES),
+        "flowHarness": harness.name,
+        "releaseEligible": release_eligible,
+        "executionComplete": execution_complete,
+        "fixture": fixture_meta,
+        "fixtureHash": content_hash(fingerprint(fixture_meta)),
+        "candidate": _version_binding(candidate),
+        "baseline": _version_binding(baseline),
+        "cases": case_entries,
+        "caseContentHash": content_hash(fingerprint({"cases": case_entries})),
+        "gates": {
+            "executionComplete": execution_complete,
+            "criticalPassed": critical_passed,
+            "qualityPassed": quality_passed,
+            "requiredFlowsOk": required_flows_ok,
+            "minAccuracyOk": min_accuracy_ok,
+            "accuracy": accuracy,
+            "baselineAccuracy": baseline_accuracy,
+        },
+    }
     now = utc_now()
     manifest = fingerprint(
         {
@@ -587,11 +715,16 @@ def _build_eval_run(
             "promptTemplateHash": content_hash(candidate.template),
             "runner": RUNNER_VERSION,
             "metric": METRIC_VERSION,
+            "qualityGate": QUALITY_GATE_VERSION,
+            "minFlowAccuracy": MIN_FLOW_ACCURACY,
             "evaluationLayers": ["static", "dataset", "real_flow", "simulation_flow"],
             "flowHarness": harness.name,
             "releaseEligible": release_eligible,
-            "flowComplete": flow_complete,
-            "caseContentHash": content_hash(fingerprint({"cases": case_entries})),
+            "executionComplete": execution_complete,
+            "fixtureHash": reproducibility["fixtureHash"],
+            "candidate": reproducibility["candidate"],
+            "baseline": reproducibility["baseline"],
+            "caseContentHash": reproducibility["caseContentHash"],
             "cases": case_entries,
         }
     )
@@ -625,6 +758,8 @@ def _build_eval_run(
         created_by=actor_id,
         created_at=now,
         completed_at=now,
+        quality_gate_version=QUALITY_GATE_VERSION,
+        reproducibility=reproducibility,
     )
 
 

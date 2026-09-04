@@ -119,6 +119,9 @@ class EvalRun(StrictModel):
     created_by: str
     created_at: datetime
     completed_at: datetime | None = None
+    # Gate separation: status=execution finished; critical=safety; quality=floor+flows.
+    quality_gate_version: str = ""
+    reproducibility: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelConfigRecord(StrictModel):

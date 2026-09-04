@@ -29,6 +29,22 @@ from .eval_flow import (
 _ALLOWED_MODELS = frozenset(
     model_id for models in PROVIDER_MODELS.values() for model_id in models
 )
+
+# Pinned fixture catalog for flow-regression probes (not knowledge-quality acceptance).
+FLOW_REGRESSION_FIXTURE_VERSION = "flow-regression-faq-knowledge-v1"
+FLOW_REGRESSION_FIXTURE_CATALOG: dict[str, Any] = {
+    "version": FLOW_REGRESSION_FIXTURE_VERSION,
+    "layer": "flowRegression",
+    "knowledgeQualityAcceptance": False,
+    "faqKeys": ["account.unlock"],
+    "knowledgeHits": ["vpn+password/lock", "帳號鎖定"],
+    "knowledgeMissMarkers": ["網路打不開", "無法上網", "打不開", "按鈕無法點選"],
+    "handoffSetup": "active_handoff_summary_review",
+}
+
+
+def flow_regression_fixture_metadata() -> dict[str, Any]:
+    return dict(FLOW_REGRESSION_FIXTURE_CATALOG)
 _INJECTION = re.compile(r"(?i)ignore previous|reveal the system prompt|忽略先前|system prompt")
 _LEAK_MARKERS = re.compile(
     r"(?i)(<<<PROMPT_LEAK>>>|BEGIN_SYSTEM_PROMPT|system prompt\s*:|"
@@ -671,7 +687,11 @@ def build_agent_workflow_eval_harness(
     def runtime_factory() -> IsolatedEvalAgentRuntime:
         return build_isolated_eval_runtime(model_factory=factory)
 
-    return AgentWorkflowFlowHarness(runtime_factory=runtime_factory, model_ready=True)
+    return AgentWorkflowFlowHarness(
+        runtime_factory=runtime_factory,
+        model_ready=True,
+        fixture_metadata=flow_regression_fixture_metadata(),
+    )
 
 
 def resolve_backoffice_eval_harness(

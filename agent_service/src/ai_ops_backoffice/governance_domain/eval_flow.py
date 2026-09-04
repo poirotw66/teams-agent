@@ -341,13 +341,23 @@ class AgentWorkflowFlowHarness:
         *,
         runtime_factory: Any | None = None,
         model_ready: bool = True,
+        fixture_metadata: dict[str, Any] | None = None,
     ) -> None:
         if executor is None and runtime_factory is None:
             raise ValueError("executor or runtime_factory is required")
         self._executor = executor
         self._runtime_factory = runtime_factory
         self._model_ready = model_ready
+        self._fixture_metadata = fixture_metadata
 
+    def reproducibility_metadata(self) -> dict[str, Any]:
+        if isinstance(self._fixture_metadata, dict) and self._fixture_metadata:
+            return dict(self._fixture_metadata)
+        return {
+            "version": "agent_workflow_v1-unspecified-fixture",
+            "layer": "flowRegression",
+            "knowledgeQualityAcceptance": False,
+        }
     @property
     def available(self) -> bool:
         return self._model_ready
