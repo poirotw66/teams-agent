@@ -343,6 +343,8 @@ class BackofficeQueryService:
             and now - cached[0] < cache_ttl
         ):
             return list(cached[1])
+        if force_refresh:
+            self._event_caches.clear()
         since, until = self._period_bounds(period)
         events: list[OperationalEvent] = []
         cursor: str | None = None
@@ -381,8 +383,9 @@ class BackofficeQueryService:
         self,
         actor: ActorContext,
         period: ResolvedPeriod,
+        force_refresh: bool = False,
     ) -> list[OperationalEvent]:
-        events = await self._events(period=period)
+        events = await self._events(period=period, force_refresh=force_refresh)
         in_period = [event for event in events if event_in_period(event.occurred_at, period)]
         return filter_events_by_scope(in_period, actor, self.taxonomy)
 
@@ -475,6 +478,7 @@ class BackofficeQueryService:
         days: int = 7,
         start_date: str | None = None,
         end_date: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -482,7 +486,7 @@ class BackofficeQueryService:
             start_date=start_date,
             end_date=end_date,
         )
-        events = await self._scoped_events(actor, period)
+        events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         turns = [event for event in events if event.event_type == "turn.received"]
         issues = [event for event in events if event.event_type == "issue.extracted"]
         faq_hits = [event for event in events if event.event_type == "faq.answered"]
@@ -663,6 +667,8 @@ class BackofficeQueryService:
         model: str | None = None,
         has_feedback: bool | None = None,
         handoff: bool | None = None,
+        channel_scope: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -670,7 +676,7 @@ class BackofficeQueryService:
             start_date=start_date,
             end_date=end_date,
         )
-        events = await self._scoped_events(actor, period)
+        events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         grouped: dict[str, list[OperationalEvent]] = defaultdict(list)
         for event in events:
             if event.conversation_id:
@@ -685,6 +691,10 @@ class BackofficeQueryService:
             if conversation_id and cid != conversation_id:
                 continue
             conv_events = grouped[cid]
+            if channel_scope and not any(
+                event.channel_scope == channel_scope for event in conv_events
+            ):
+                continue
             if actor_ref and not any(event.actor_ref == actor_ref for event in conv_events):
                 continue
             if issue_type_id and not any(
@@ -754,11 +764,12 @@ class BackofficeQueryService:
         conversation_id: str,
         *,
         unmask_reason: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any] | None:
         events = filter_events_by_scope(
             [
                 event
-                for event in await self._events()
+                for event in await self._events(force_refresh=force_refresh)
                 if event.conversation_id == conversation_id
             ],
             actor,
@@ -839,6 +850,7 @@ class BackofficeQueryService:
         days: int = 30,
         start_date: str | None = None,
         end_date: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -846,7 +858,7 @@ class BackofficeQueryService:
             start_date=start_date,
             end_date=end_date,
         )
-        all_events = await self._scoped_events(actor, period)
+        all_events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         events = [event for event in all_events if event.event_type == "issue.extracted"]
         correlation_to_issue: dict[str, str] = {}
         for event in all_events:
@@ -1003,6 +1015,7 @@ class BackofficeQueryService:
         start_date: str | None = None,
         end_date: str | None = None,
         issue_type_id: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -1010,7 +1023,7 @@ class BackofficeQueryService:
             start_date=start_date,
             end_date=end_date,
         )
-        events = await self._scoped_events(actor, period)
+        events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         route_events = [
             event
             for event in events
@@ -1312,6 +1325,7 @@ class BackofficeQueryService:
         days: int = 30,
         start_date: str | None = None,
         end_date: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
             preset=preset,
@@ -1319,7 +1333,7 @@ class BackofficeQueryService:
             start_date=start_date,
             end_date=end_date,
         )
-        all_events = await self._scoped_events(actor, period)
+        all_events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         usage_dimensions = UsageDimensions(all_events)
         events = list(project_usage(all_events).detail_events)
         by_day: dict[str, float] = defaultdict(float)

@@ -1280,6 +1280,47 @@ def test_file_audit_store_persists(tmp_path: Path) -> None:
     assert (tmp_path / "audit" / "audit_events.jsonl").is_file()
 
 
+def test_file_audit_store_incremental_sync_across_instances(tmp_path: Path) -> None:
+    from agent_service.operations.audit import build_audit_event
+    from agent_service.operations.audit_stores import FileAuditStore
+
+    store_a = FileAuditStore(tmp_path / "audit")
+    store_b = FileAuditStore(tmp_path / "audit")
+
+    event_1 = build_audit_event(
+        actor_id="owner.demo",
+        actor_role="SERVICE_OWNER",
+        action="export.create",
+        target_type="export_job",
+        target_id="job-1",
+    )
+    event_2 = build_audit_event(
+        actor_id="owner.demo",
+        actor_role="SERVICE_OWNER",
+        action="export.create",
+        target_type="export_job",
+        target_id="job-2",
+    )
+
+    async def run() -> None:
+        page_a, _ = await store_a.list_events(limit=10)
+        assert len(page_a) == 0
+
+        await store_b.append(event_1)
+
+        page_a, _ = await store_a.list_events(limit=10)
+        assert len(page_a) == 1
+        assert page_a[0].target_id == "job-1"
+
+        await store_b.append(event_2)
+
+        page_a, _ = await store_a.list_events(limit=10)
+        assert len(page_a) == 2
+
+    asyncio.run(run())
+
+
+
 def test_export_audit_on_download(backoffice_client: TestClient) -> None:
     created = backoffice_client.post(
         "/api/exports",
@@ -2055,3 +2096,204 @@ def test_operations_summary_rejects_excessive_custom_period(
         headers=headers(),
     )
     assert response.status_code == 400
+
+
+def test_file_operational_store_incremental_sync_across_instances(tmp_path: Path) -> None:
+    store_path = tmp_path / "events"
+    store_a = FileOperationalStore(store_path)
+    store_b = FileOperationalStore(store_path)
+
+    # Initial state: both empty
+    events_a, _ = asyncio.run(store_a.list_events())
+    assert len(events_a) == 0
+
+    now = utc_now()
+    event_1 = OperationalEvent(
+        event_id="e1",
+        event_type="turn.received",
+        occurred_at=now,
+        conversation_id="conv-1",
+        correlation_id="corr-1",
+        turn_id="turn-1",
+    )
+    # Store B appends event_1 (simulating process B writing to disk)
+    asyncio.run(store_b.append(event_1))
+
+    # Store A (simulating process A reading) must detect and return event_1 without restart
+    events_a, _ = asyncio.run(store_a.list_events())
+    assert len(events_a) == 1
+    assert events_a[0].event_id == "e1"
+
+    # Store B appends event_2
+    event_2 = OperationalEvent(
+        event_id="e2",
+        event_type="knowledge.answered",
+        occurred_at=now,
+        conversation_id="conv-1",
+        correlation_id="corr-1",
+        turn_id="turn-1",
+    )
+    asyncio.run(store_b.append(event_2))
+
+    # Store A detects event_2
+    events_a, _ = asyncio.run(store_a.list_events())
+    assert len(events_a) == 2
+    assert [e.event_id for e in events_a] == ["e1", "e2"]
+
+
+def test_conversations_api_force_refresh_and_channel_filter(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    store_path = tmp_path / "events"
+    store = FileOperationalStore(store_path)
+    now = utc_now()
+
+    # Event 1: Teams 1:1 conversation
+    event_teams = OperationalEvent(
+        event_id="teams-turn-1",
+        event_type="turn.received",
+        occurred_at=now,
+        conversation_id="conv-teams",
+        correlation_id="corr-teams-1",
+        turn_id="turn-1",
+        channel_scope="personal",
+        issue_type_id="vpn.connection_failed",
+        tenant_id="00000000-0000-0000-0000-0000000000001",
+    )
+    asyncio.run(store.append(event_teams))
+
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="FILE",
+        ops_store_path=store_path,
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    client = TestClient(create_app(settings))
+
+    # Service owner in local-development
+    res = client.get("/api/conversations", headers=headers("SERVICE_OWNER"))
+    assert res.status_code == 200
+    convs = res.json()["items"]
+    assert len(convs) == 1
+    assert convs[0]["conversationId"] == "conv-teams"
+
+    # Ingest event 2: Playground conversation via a separate store writer (simulating rag-agent)
+    store_writer = FileOperationalStore(store_path)
+    event_pg = OperationalEvent(
+        event_id="pg-turn-1",
+        event_type="turn.received",
+        occurred_at=now + timedelta(seconds=10),
+        conversation_id="conv-playground",
+        correlation_id="corr-pg-1",
+        turn_id="turn-2",
+        channel_scope="playground",
+        issue_type_id="vpn.connection_failed",
+        tenant_id="00000000-0000-0000-0000-0000000000001",
+    )
+    asyncio.run(store_writer.append(event_pg))
+
+    # With refresh=true, both conversations are returned
+    res_refresh = client.get("/api/conversations?refresh=true", headers=headers("SERVICE_OWNER"))
+    assert res_refresh.status_code == 200
+    conv_ids = [c["conversationId"] for c in res_refresh.json()["items"]]
+    assert "conv-teams" in conv_ids
+    assert "conv-playground" in conv_ids
+
+    # Filter by channel_scope=playground
+    res_pg = client.get("/api/conversations?channel_scope=playground", headers=headers("SERVICE_OWNER"))
+    assert res_pg.status_code == 200
+    pg_convs = res_pg.json()["items"]
+    assert len(pg_convs) == 1
+    assert pg_convs[0]["conversationId"] == "conv-playground"
+
+    # Filter by channel_scope=personal
+    res_tp = client.get("/api/conversations?channel_scope=personal", headers=headers("SERVICE_OWNER"))
+    assert res_tp.status_code == 200
+    tp_convs = res_tp.json()["items"]
+    assert len(tp_convs) == 1
+    assert tp_convs[0]["conversationId"] == "conv-teams"
+
+
+def test_playground_visibility_for_bu_role_in_local_development(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    store_path = tmp_path / "events"
+    store = FileOperationalStore(store_path)
+    now = utc_now()
+
+    # Playground event with synthetic tenant
+    event = OperationalEvent(
+        event_id="pg-turn-100",
+        event_type="turn.received",
+        occurred_at=now,
+        conversation_id="conv-playground-bu",
+        correlation_id="corr-pg-100",
+        turn_id="turn-100",
+        channel_scope="playground",
+        issue_type_id="vpn.connection_failed",
+        tenant_id="00000000-0000-0000-0000-0000000000001",
+        payload={"messageMasked": "Test playground message"},
+    )
+    asyncio.run(store.append(event))
+
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="FILE",
+        ops_store_path=store_path,
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    client = TestClient(create_app(settings))
+
+    # KNOWLEDGE_ADMIN role with default tenant (local-development)
+    res = client.get(
+        "/api/conversations?refresh=true",
+        headers={
+            "X-Backoffice-User-Id": "bu.admin",
+            "X-Backoffice-User-Name": "BU Admin",
+            "X-Backoffice-Role": "KNOWLEDGE_ADMIN",
+            "X-Backoffice-Owner-Units": "IT Service Desk",
+        },
+    )
+    assert res.status_code == 200
+    convs = res.json()["items"]
+    assert len(convs) == 1
+    assert convs[0]["conversationId"] == "conv-playground-bu"
+
+    # Detail API with refresh=true also works
+    detail_res = client.get(
+        "/api/conversations/conv-playground-bu?refresh=true",
+        headers={
+            "X-Backoffice-User-Id": "bu.admin",
+            "X-Backoffice-User-Name": "BU Admin",
+            "X-Backoffice-Role": "KNOWLEDGE_ADMIN",
+            "X-Backoffice-Owner-Units": "IT Service Desk",
+        },
+    )
+    assert detail_res.status_code == 200
+    assert detail_res.json()["conversationId"] == "conv-playground-bu"
+
+

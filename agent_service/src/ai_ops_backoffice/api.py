@@ -788,6 +788,7 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.summary.read")
@@ -797,6 +798,7 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            force_refresh=refresh,
         )
         project = (resolved_settings.gcp_project_id or "").lower()
         environment = "prod" if "prod" in project else "lab"
@@ -871,6 +873,8 @@ def create_app(
         model: str | None = None,
         has_feedback: bool | None = None,
         handoff: bool | None = None,
+        channel_scope: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
@@ -888,6 +892,8 @@ def create_app(
             model=model,
             has_feedback=has_feedback,
             handoff=handoff,
+            channel_scope=channel_scope,
+            force_refresh=refresh,
         )
         await audit_read(actor, "query.conversations", "conversations")
         return result
@@ -896,6 +902,7 @@ def create_app(
     async def conversation_detail(
         conversation_id: str,
         unmask_reason: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.conversations.read")
@@ -907,6 +914,7 @@ def create_app(
             actor,
             conversation_id,
             unmask_reason=unmask_reason,
+            force_refresh=refresh,
         )
         if detail is None:
             raise HTTPException(status_code=404, detail="Conversation not found.")
@@ -929,6 +937,7 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.issues.read")
@@ -938,6 +947,7 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            force_refresh=refresh,
         )
         await audit_read(actor, "query.issues_summary", "issues_summary")
         return result
@@ -970,6 +980,7 @@ def create_app(
         start_date: str | None = None,
         end_date: str | None = None,
         issue_type_id: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.issues.read")
@@ -980,6 +991,7 @@ def create_app(
             start_date=start_date,
             end_date=end_date,
             issue_type_id=issue_type_id,
+            force_refresh=refresh,
         )
         await audit_read(actor, "query.routes_summary", "routes_summary")
         return result
@@ -990,6 +1002,7 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.cost.read")
@@ -999,6 +1012,7 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            force_refresh=refresh,
         )
         await audit_read(actor, "query.costs_summary", "costs_summary")
         return result

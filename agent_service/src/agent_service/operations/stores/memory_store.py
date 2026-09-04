@@ -12,8 +12,12 @@ class MemoryOperationalStore:
         self._seen_event_ids: set[str] = set()
         self._lock = Lock()
 
+    def _ensure_synced(self) -> None:
+        pass
+
     async def append(self, event: OperationalEvent) -> bool:
         with self._lock:
+            self._ensure_synced()
             if event.event_id in self._seen_event_ids:
                 return False
             self._seen_event_ids.add(event.event_id)
@@ -42,6 +46,7 @@ class MemoryOperationalStore:
         until: datetime | None = None,
     ) -> tuple[list[OperationalEvent], str | None]:
         with self._lock:
+            self._ensure_synced()
             filtered = self._filter_events(since=since, until=until)
             start = int(cursor or "0")
             page = filtered[start : start + limit]
@@ -51,6 +56,7 @@ class MemoryOperationalStore:
 
     async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:
         with self._lock:
+            self._ensure_synced()
             return [
                 event for event in self._events
                 if event.correlation_id == correlation_id
@@ -58,12 +64,14 @@ class MemoryOperationalStore:
 
     async def count_by_type(self, event_type: str) -> int:
         with self._lock:
+            self._ensure_synced()
             return sum(1 for event in self._events if event.event_type == event_type)
 
     async def purge_expired(self) -> int:
         from ..retention import purge_expired_events
 
         with self._lock:
+            self._ensure_synced()
             kept, removed = purge_expired_events(self._events)
             if removed:
                 self._events = kept

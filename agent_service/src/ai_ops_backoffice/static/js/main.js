@@ -388,12 +388,34 @@ function showConversationModal(detail, conversationId = detail.conversationId) {
   const heading = el("h2", "", `對話記錄 Conversation ${conversationId}`);
   heading.style.margin = "0";
 
+  const headerActions = el("div");
+  headerActions.style.display = "flex";
+  headerActions.style.gap = "0.5rem";
+  headerActions.style.alignItems = "center";
+
+  const refreshBtn = el("button", "", "🔄 重新整理");
+  refreshBtn.type = "button";
+  refreshBtn.title = "重新整理此對話最新內容";
+  refreshBtn.addEventListener("click", async () => {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = "載入中…";
+    try {
+      const refreshed = await api(`/api/conversations/${encodeURIComponent(conversationId)}?refresh=true`);
+      showConversationModal(refreshed, conversationId);
+    } catch (e) {
+      alert("重新整理失敗: " + e.message);
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = "🔄 重新整理";
+    }
+  });
+
   const close = el("button", "btn-modal-close", "✕ 關閉");
   close.addEventListener("click", () => {
     root.hidden = true;
     root.replaceChildren();
   });
-  header.append(heading, close);
+  headerActions.append(refreshBtn, close);
+  header.append(heading, headerActions);
   modal.append(header);
   const allowed = new Set(capabilities?.capabilities || []);
   if (allowed.has("ops.conversations.unmasked") && !detail.unmaskAuthorized) {
@@ -886,6 +908,10 @@ function renderNav(active, options = {}) {
     syncLocationHash(active, filters);
   }
 
+  if (active !== "conversations") {
+    stopConversationPolling();
+  }
+
   if (typeof routes[active] === "function") {
     routes[active]();
   } else if (workspace?.items[0]) {
@@ -893,12 +919,13 @@ function renderNav(active, options = {}) {
   }
 }
 
-async function renderOverview() {
+async function renderOverview(forceRefresh = false) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   const preset = document.getElementById("overview-preset")?.value || "7d";
   try {
-    const data = await api(`/api/operations/summary?${buildPeriodQuery()}`);
+    const refreshQuery = forceRefresh ? "&refresh=true" : "";
+    const data = await api(`/api/operations/summary?${buildPeriodQuery()}${refreshQuery}`);
     const panel = el("section", "panel");
     const filterBar = el("div", "filter-bar");
     const select = periodSelect(preset);
@@ -910,8 +937,12 @@ async function renderOverview() {
       }
     });
     const apply = el("button", "", "套用期間");
-    apply.addEventListener("click", () => renderOverview());
-    filterBar.append(select, apply);
+    apply.addEventListener("click", () => renderOverview(false));
+    const refresh = el("button", "button-primary", "🔄 立即重新整理");
+    refresh.type = "button";
+    refresh.title = "即刻向後端取得最新營運數據（繞過暫存）";
+    refresh.addEventListener("click", () => renderOverview(true));
+    filterBar.append(select, apply, refresh);
     const customPeriod = customPeriodInputs(
       document.getElementById("custom-start-date")?.value || "",
       document.getElementById("custom-end-date")?.value || "",
@@ -1003,9 +1034,21 @@ async function renderOverview() {
   }
 }
 
+let conversationPollTimer = null;
+let conversationAutoRefresh = false;
+
+function stopConversationPolling() {
+  if (conversationPollTimer) {
+    clearInterval(conversationPollTimer);
+    conversationPollTimer = null;
+  }
+}
+
 async function renderConversations(state = {}) {
   const app = document.getElementById("app");
-  app.replaceChildren(el("div", "empty", "載入中…"));
+  if (!state.isPolling) {
+    app.replaceChildren(el("div", "empty", "載入中…"));
+  }
   try {
     const navFilters = loadNavFilters();
     const period = state.period || { preset: "30d" };
@@ -1021,18 +1064,112 @@ async function renderConversations(state = {}) {
     const actorRef = savedFilters.actorRef || "";
     const hasFeedback = savedFilters.hasFeedback || "";
     const handoff = savedFilters.handoff || "";
+    const channelScope = savedFilters.channelScope || "";
     if (issueTypeId) filters.set("issue_type_id", issueTypeId);
     if (route) filters.set("route", route);
     if (model) filters.set("model", model);
     if (actorRef) filters.set("actor_ref", actorRef);
     if (hasFeedback) filters.set("has_feedback", hasFeedback);
     if (handoff) filters.set("handoff", handoff);
+    if (channelScope) filters.set("channel_scope", channelScope);
+    if (state.forceRefresh) filters.set("refresh", "true");
 
     const data = await api(`/api/conversations?${filters.toString()}`);
     const panel = el("section", "panel");
-    panel.append(el("h2", "", "對話紀錄（遮罩摘要）"));
+
+    // Header with Title & Real-time Live Controls
+    const headerRow = el("div", "split");
+    headerRow.style.display = "flex";
+    headerRow.style.justifyContent = "space-between";
+    headerRow.style.alignItems = "center";
+    headerRow.style.marginBottom = "0.75rem";
+    headerRow.style.flexWrap = "wrap";
+    headerRow.style.gap = "0.75rem";
+
+    const heading = el("h2", "", "對話紀錄（遮罩摘要）");
+    heading.style.margin = "0";
+
+    const liveControls = el("div", "meta-group");
+    liveControls.style.display = "flex";
+    liveControls.style.alignItems = "center";
+    liveControls.style.gap = "0.6rem";
+
+    const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+    const freshnessBadge = el("span", "meta-chip", `最後更新：${nowTime}`);
+    freshnessBadge.id = "conversations-freshness";
+    freshnessBadge.title = "目前對話清單資料抓取時間點";
+
+    const autoRefreshLabel = el(
+      "label",
+      `meta-chip is-button ${conversationAutoRefresh ? "is-ok" : ""}`
+    );
+    autoRefreshLabel.style.cursor = "pointer";
+    autoRefreshLabel.style.display = "inline-flex";
+    autoRefreshLabel.style.alignItems = "center";
+    autoRefreshLabel.style.gap = "0.35rem";
+    autoRefreshLabel.title = "每 5 秒自動重新整理對話清單，即時呈現最新對話紀錄";
+
+    const autoRefreshCheckbox = el("input");
+    autoRefreshCheckbox.type = "checkbox";
+    autoRefreshCheckbox.checked = conversationAutoRefresh;
+    autoRefreshCheckbox.style.margin = "0";
+    autoRefreshCheckbox.style.cursor = "pointer";
+
+    const autoRefreshText = el(
+      "span",
+      "",
+      conversationAutoRefresh ? "🟢 即時自動更新（5s）" : "⚡ 即時自動更新"
+    );
+    autoRefreshLabel.append(autoRefreshCheckbox, autoRefreshText);
+
+    autoRefreshCheckbox.addEventListener("change", () => {
+      conversationAutoRefresh = autoRefreshCheckbox.checked;
+      stopConversationPolling();
+      if (conversationAutoRefresh) {
+        conversationPollTimer = setInterval(() => {
+          renderConversations({
+            period,
+            filters: currentFilters(),
+            cursor: state.cursor || "",
+            history: state.history || [],
+            forceRefresh: true,
+            isPolling: true,
+          });
+        }, 5000);
+      }
+      renderConversations({
+        period,
+        filters: currentFilters(),
+        cursor: state.cursor || "",
+        history: state.history || [],
+        forceRefresh: true,
+      });
+    });
+
+    const refreshButton = el("button", "button-primary", "🔄 立即重新整理");
+    refreshButton.type = "button";
+    refreshButton.title = "即刻向後端取得最新對話記錄（繞過暫存）";
+    refreshButton.addEventListener("click", () => {
+      renderConversations({
+        period,
+        filters: currentFilters(),
+        cursor: state.cursor || "",
+        history: state.history || [],
+        forceRefresh: true,
+      });
+    });
+
+    liveControls.append(freshnessBadge, autoRefreshLabel, refreshButton);
+    headerRow.append(heading, liveControls);
+    panel.append(headerRow);
 
     const filterBar = el("div", "filter-bar");
+    const channelSelect = el("select", "");
+    channelSelect.id = "conversation-channel-scope";
+    channelSelect.innerHTML =
+      '<option value="">全部通道</option><option value="playground">Playground 測試</option><option value="personal">Teams 個人 (1:1)</option><option value="channel">Teams 頻道</option><option value="groupchat">群組對話</option>';
+    if (channelScope) channelSelect.value = channelScope;
+
     const issueInput = el("input");
     issueInput.id = "conversation-issue-type";
     issueInput.placeholder = "Issue Type ID";
@@ -1060,6 +1197,7 @@ async function renderConversations(state = {}) {
       '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
     if (handoff) handoffSelect.value = handoff;
     const currentFilters = () => ({
+      channelScope: channelSelect.value,
       issueTypeId: issueInput.value.trim(),
       route: routeInput.value.trim(),
       model: modelInput.value.trim(),
@@ -1076,6 +1214,7 @@ async function renderConversations(state = {}) {
       exportButton.disabled = true;
       exportButton.textContent = "匯出中…";
       const queryFilters = {
+        channel_scope: channelSelect.value || undefined,
         issue_type_id: issueInput.value || undefined,
         route: routeInput.value || undefined,
         model: modelInput.value || undefined,
@@ -1094,6 +1233,7 @@ async function renderConversations(state = {}) {
       }
     });
     filterBar.append(
+      channelSelect,
       issueInput,
       routeInput,
       modelInput,
@@ -1122,7 +1262,7 @@ async function renderConversations(state = {}) {
     }
     const table = el("table");
     table.innerHTML =
-      "<thead><tr><th>Conversation</th><th>Turns</th><th>Actor</th><th>Routes</th><th>Last Seen</th></tr></thead>";
+      "<thead><tr><th>Conversation</th><th>Turns</th><th>Actor</th><th>Channel</th><th>Routes</th><th>Last Seen</th></tr></thead>";
     const body = el("tbody");
     for (const item of data.items) {
       const row = el("tr");
@@ -1130,14 +1270,32 @@ async function renderConversations(state = {}) {
       link.href = "#";
       link.addEventListener("click", async (event) => {
         event.preventDefault();
-        const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}`);
-        showConversationModal(detail);
+        const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}?refresh=true`);
+        showConversationModal(detail, item.conversationId);
       });
       const conversationCell = el("td");
       conversationCell.append(link);
       row.append(conversationCell);
       row.append(el("td", "", String(item.turnCount)));
       row.append(el("td", "", item.actorRef || "-"));
+
+      const channelCell = el("td");
+      const channelTag = el("span", "meta-chip");
+      if (item.channelScope === "playground") {
+        channelTag.className = "meta-chip is-ok";
+        channelTag.textContent = "Playground";
+      } else if (item.channelScope === "personal") {
+        channelTag.textContent = "Teams 個人";
+      } else if (item.channelScope === "channel") {
+        channelTag.textContent = "Teams 頻道";
+      } else if (item.channelScope === "groupchat") {
+        channelTag.textContent = "群組";
+      } else {
+        channelTag.textContent = item.channelScope || "-";
+      }
+      channelCell.append(channelTag);
+      row.append(channelCell);
+
       row.append(el("td", "", (item.routes || []).join(", ") || "-"));
       row.append(el("td", "", item.lastOccurredAt));
       body.append(row);

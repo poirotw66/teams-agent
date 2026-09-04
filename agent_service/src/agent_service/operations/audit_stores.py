@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from .contracts import AuditEventRecord
@@ -11,9 +12,15 @@ from .contracts import AuditEventRecord
 class MemoryAuditStore:
     def __init__(self) -> None:
         self._events: list[AuditEventRecord] = []
+        self._lock = Lock()
+
+    def _ensure_synced(self) -> None:
+        pass
 
     async def append(self, event: AuditEventRecord) -> None:
-        self._events.append(event)
+        with self._lock:
+            self._ensure_synced()
+            self._events.append(event)
 
     async def list_events(
         self,
@@ -21,11 +28,13 @@ class MemoryAuditStore:
         limit: int = 50,
         cursor: str | None = None,
     ) -> tuple[list[AuditEventRecord], str | None]:
-        start = int(cursor or "0")
-        page = self._events[start : start + limit]
-        next_index = start + len(page)
-        next_cursor = str(next_index) if next_index < len(self._events) else None
-        return page, next_cursor
+        with self._lock:
+            self._ensure_synced()
+            start = int(cursor or "0")
+            page = self._events[start : start + limit]
+            next_index = start + len(page)
+            next_cursor = str(next_index) if next_index < len(self._events) else None
+            return page, next_cursor
 
 
 class FileAuditStore(MemoryAuditStore):
@@ -34,25 +43,51 @@ class FileAuditStore(MemoryAuditStore):
         self._store_path = store_path
         self._store_path.mkdir(parents=True, exist_ok=True)
         self._events_file = self._store_path / "audit_events.jsonl"
+        self._file_offset: int = 0
         self._load()
 
-    def _load(self) -> None:
+    def _ensure_synced(self) -> None:
+        self._sync_locked()
+
+    def _sync_locked(self) -> None:
         if not self._events_file.is_file():
+            self._events = []
+            self._file_offset = 0
             return
-        for line in self._events_file.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            event = AuditEventRecord.model_validate(json.loads(line))
-            self._events.append(event)
+        stat = self._events_file.stat()
+        file_size = stat.st_size
+        if file_size < self._file_offset:
+            self._events = []
+            self._file_offset = 0
+        if file_size > self._file_offset:
+            with self._events_file.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(self._file_offset)
+                new_lines = f.read()
+                self._file_offset = f.tell()
+            for line in new_lines.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    event = AuditEventRecord.model_validate(json.loads(line))
+                    self._events.append(event)
+                except Exception:
+                    pass
+
+    def _load(self) -> None:
+        with self._lock:
+            self._sync_locked()
 
     def _persist(self, event: AuditEventRecord) -> None:
         with self._events_file.open("a", encoding="utf-8") as handle:
             handle.write(event.model_dump_json())
             handle.write("\n")
+            self._file_offset = handle.tell()
 
     async def append(self, event: AuditEventRecord) -> None:
-        await super().append(event)
-        self._persist(event)
+        with self._lock:
+            self._sync_locked()
+            self._events.append(event)
+            self._persist(event)
 
 
 class FirestoreAuditStore:
