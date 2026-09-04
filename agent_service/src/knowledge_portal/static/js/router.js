@@ -3,9 +3,26 @@ import { clearDirtyChecker, confirmLeaveIfDirty, isNavigationDirty } from "./dir
 let onRoute = null;
 let lastCommittedHash = window.location.hash || "#/work";
 let suppressHashChange = false;
+let customNavigator = null;
+
+export function setCustomNavigator(fn) {
+  customNavigator = fn;
+}
 
 export function navigate(hash) {
   const next = hash.startsWith("#") ? hash : `#${hash}`;
+  if (customNavigator) {
+    if (isNavigationDirty()) {
+      void confirmLeaveIfDirty().then((ok) => {
+        if (!ok) return;
+        clearDirtyChecker();
+        customNavigator(next);
+      });
+      return;
+    }
+    customNavigator(next);
+    return;
+  }
   void attemptNavigation(next);
 }
 

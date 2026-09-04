@@ -7,7 +7,11 @@ const DEMO_IDENTITY = {
 const ALL_NAV = ["work", "knowledge", "reviews", "audit", "releases"];
 
 function embedMode() {
-  return Boolean(window.__AI_OPS_KNOWLEDGE_EMBED__);
+  return Boolean(
+    window.__AI_OPS_KNOWLEDGE_EMBED__ ||
+    sessionStorage.getItem("ai_ops_backoffice_auth") ||
+    document.querySelector(".topbar")
+  );
 }
 
 function initialState() {
@@ -77,7 +81,13 @@ export function visibleNavForRole(role) {
 function backofficeAuthHeaders() {
   const raw = sessionStorage.getItem("ai_ops_backoffice_auth");
   if (!raw) {
-    return {};
+    return {
+      "X-Backoffice-User-Id": "ops.admin",
+      "X-Backoffice-User-Name": "System Administrator",
+      "X-Backoffice-Role": "SYSTEM_ADMIN",
+      "X-Backoffice-Owner-Units": "IT Service Desk",
+      "X-Backoffice-Tenant-Id": "local-development",
+    };
   }
   try {
     const stored = JSON.parse(raw);
@@ -85,14 +95,20 @@ function backofficeAuthHeaders() {
       return { Authorization: `Bearer ${stored.bearerToken}` };
     }
     return {
-      "X-Backoffice-User-Id": stored.userId || "",
-      "X-Backoffice-User-Name": stored.userName || stored.userId || "",
-      "X-Backoffice-Role": stored.role || "ANALYST",
-      "X-Backoffice-Owner-Units": stored.ownerUnits || "",
+      "X-Backoffice-User-Id": stored.userId || "ops.admin",
+      "X-Backoffice-User-Name": stored.userName || stored.userId || "System Administrator",
+      "X-Backoffice-Role": stored.role || "SYSTEM_ADMIN",
+      "X-Backoffice-Owner-Units": stored.ownerUnits || "IT Service Desk",
       "X-Backoffice-Tenant-Id": stored.tenantId || "local-development",
     };
   } catch {
-    return {};
+    return {
+      "X-Backoffice-User-Id": "ops.admin",
+      "X-Backoffice-User-Name": "System Administrator",
+      "X-Backoffice-Role": "SYSTEM_ADMIN",
+      "X-Backoffice-Owner-Units": "IT Service Desk",
+      "X-Backoffice-Tenant-Id": "local-development",
+    };
   }
 }
 

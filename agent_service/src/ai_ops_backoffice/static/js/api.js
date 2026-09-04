@@ -1,6 +1,6 @@
 const AUTH_STORAGE_KEY = "ai_ops_backoffice_auth";
 
-function loadAuthHeaders() {
+export function loadAuthHeaders() {
   const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
   if (!raw) {
     return {};
@@ -10,6 +10,10 @@ function loadAuthHeaders() {
   } catch {
     return {};
   }
+}
+
+export function clearAuthHeaders() {
+  sessionStorage.removeItem(AUTH_STORAGE_KEY);
 }
 
 export function saveAuthHeaders(headers) {
@@ -22,10 +26,10 @@ export function authHeaders() {
     return { Authorization: `Bearer ${stored.bearerToken}` };
   }
   return {
-    "X-Backoffice-User-Id": stored.userId || "",
-    "X-Backoffice-User-Name": stored.userName || "",
-    "X-Backoffice-Role": stored.role || "ANALYST",
-    "X-Backoffice-Owner-Units": stored.ownerUnits || "",
+    "X-Backoffice-User-Id": stored.userId || "ops.admin",
+    "X-Backoffice-User-Name": stored.userName || "System Administrator",
+    "X-Backoffice-Role": stored.role || "SYSTEM_ADMIN",
+    "X-Backoffice-Owner-Units": stored.ownerUnits || "IT Service Desk",
   };
 }
 
@@ -90,17 +94,12 @@ export async function ensureAuth(authConfig) {
   if (stored.userId) {
     return;
   }
-  const userId = window.prompt("Dev User Id", "ops.knowledge.demo");
-  const role = window.prompt("Dev Role", "KNOWLEDGE_ADMIN");
-  const ownerUnits = window.prompt("Owner Units", "IT Service Desk");
-  if (!userId) {
-    throw new Error("UNAUTHORIZED");
-  }
+  // 本機開發與測試預設為最高權限（SYSTEM_ADMIN），不再彈出確認視窗
   saveAuthHeaders({
-    userId,
-    userName: userId,
-    role: role || "ANALYST",
-    ownerUnits: ownerUnits || "IT Service Desk",
+    userId: "ops.admin",
+    userName: "System Administrator",
+    role: "SYSTEM_ADMIN",
+    ownerUnits: "IT Service Desk",
   });
 }
 

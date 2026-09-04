@@ -57,10 +57,12 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
 
   if (caseId) {
     app.querySelector("[data-back-case]")?.addEventListener("click", () => {
-      if (window.parent && window.parent !== window) {
+      if (window.__navigateCase) {
+        window.__navigateCase(caseId);
+      } else if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: "NAVIGATE_CASE", caseId }, "*");
       } else {
-        window.location.href = `/#/quality?caseId=${encodeURIComponent(caseId)}`;
+        window.location.hash = `#/knowledge_ops/quality?caseId=${encodeURIComponent(caseId)}`;
       }
     });
   }

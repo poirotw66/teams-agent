@@ -1679,11 +1679,11 @@ class BackofficeQueryService:
     async def health_summary(self) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
         agent_functional = await self._probe_agent_functional(self._settings.agent_api_url)
-        retrieval = await self._probe_retrieval_search(self._settings.agent_api_url)
-        portal = await self._probe_url(self._settings.knowledge_portal_url)
-        knowledge_release = await self._probe_knowledge_release(
-            self._settings.knowledge_portal_url
+        internal_portal = (
+            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
         )
+        portal = await self._probe_url(internal_portal)
+        knowledge_release = await self._probe_knowledge_release(internal_portal)
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
         telemetry, recent_anomalies = await self._health_telemetry()
@@ -2112,7 +2112,9 @@ class BackofficeQueryService:
         owner_unit_id: str | None,
         query: str | None,
     ) -> dict[str, Any]:
-        portal_url = self._settings.knowledge_portal_url.rstrip("/")
+        portal_url = (
+            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
+        ).rstrip("/")
         headers = {
             "X-Portal-User-Id": "ai-ops-backoffice",
             "X-Portal-User-Name": "AI%20Ops%20Backoffice",
@@ -2151,7 +2153,9 @@ class BackofficeQueryService:
             return {"status": "unavailable", "items": [], "warning": str(exc)}
 
     async def _fetch_document_governance(self, document_id: str) -> dict[str, Any]:
-        portal_url = self._settings.knowledge_portal_url.rstrip("/")
+        portal_url = (
+            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
+        ).rstrip("/")
         headers = {
             "X-Portal-User-Id": "ai-ops-backoffice",
             "X-Portal-User-Name": "AI%20Ops%20Backoffice",

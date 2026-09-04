@@ -13,14 +13,19 @@ function translatePortalError(message) {
   return ERROR_MAPPING[message] || message;
 }
 
+function isBackofficeEmbed() {
+  return Boolean(
+    window.__AI_OPS_KNOWLEDGE_EMBED__ ||
+    sessionStorage.getItem("ai_ops_backoffice_auth") ||
+    document.querySelector(".topbar")
+  );
+}
+
 function resolveApiUrl(path) {
-  if (!window.__AI_OPS_KNOWLEDGE_EMBED__) {
-    return path;
-  }
   if (path.startsWith("/api/knowledge/") || path === "/api/knowledge") {
     return path;
   }
-  if (path.startsWith("/api/")) {
+  if (isBackofficeEmbed() && path.startsWith("/api/")) {
     return `/api/knowledge${path.slice(4)}`;
   }
   return path;

@@ -4,7 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AI 資訊客服營運後台</title>
-    <link rel="stylesheet" href="/static/styles.css?v=ops-ui-20260904b" />
+    <link rel="stylesheet" href="/static/kp/styles.css?v=embed-20260904g" />
+    <link rel="stylesheet" href="/static/styles.css?v=ops-ui-20260904g" />
+    <script>
+      window.__AI_OPS_KNOWLEDGE_EMBED__ = true;
+      window.__AI_OPS_STATIC_PREFIX__ = "/static/kp";
+    </script>
   </head>
   <body>
     <header class="topbar">
@@ -20,6 +25,8 @@
     <nav class="nav" id="nav" aria-label="工作區導覽"></nav>
     <main id="app" class="app"></main>
     <div id="modal-root" class="modal-backdrop" hidden></div>
-    <script type="module" src="/static/js/main.js?v=ops-ui-20260904c"></script>
+    <div id="dialogRoot"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <script type="module" src="/static/js/main.js?v=ops-ui-20260904g"></script>
   </body>
 </html>

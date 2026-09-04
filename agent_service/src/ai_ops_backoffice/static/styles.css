@@ -165,6 +165,20 @@ h1 {
   color: var(--success);
 }
 
+.meta-chip.is-button {
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  font-family: inherit;
+  transition: all 140ms ease;
+}
+
+.meta-chip.is-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .meta-text {
   color: var(--muted);
   font-size: 0.75rem;
@@ -337,25 +351,87 @@ body.view-knowledge-portal .workspace-hint {
   display: none;
 }
 
+/* —— Native Knowledge Portal Shell —— */
+.kp-native-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 500px;
+}
+
+.kp-subnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.kp-subnav-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.kp-subnav-btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-muted);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 140ms ease;
+  font-family: inherit;
+}
+
+.kp-subnav-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.kp-subnav-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.kp-subnav-right {
+  display: flex;
+  align-items: center;
+}
+
+.kp-subnav-action {
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.85rem;
+}
+
+.kp-provider {
+  display: block;
+  width: 100%;
+}
+
+.kp-native-host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 400px;
+}
+
 .knowledge-embed-shell {
   display: block;
   width: 100%;
   height: 100%;
   min-height: 12rem;
-}
-
-.knowledge-embed-frame {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  top: var(--ops-chrome-bottom, 12rem);
-  width: 100%;
-  height: auto;
-  border: 0;
-  background: #fff;
-  display: block;
-  z-index: 5;
 }
 
 /* —— Surfaces —— */

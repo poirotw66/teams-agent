@@ -1,4 +1,5 @@
-import { api, el, metric, ensureAuth, authHeaders } from "./api.js";
+import { api, el, metric, ensureAuth, authHeaders, saveAuthHeaders, loadAuthHeaders } from "./api.js";
+import { renderNativeKnowledgePortal } from "./knowledge_portal_view.js";
 
 const routes = {
   overview: renderOverview,
@@ -446,15 +447,225 @@ function renderTopbarActions() {
     });
     meta.append(knowledgeLink);
   }
-  const roleChip = el("span", "meta-chip");
+  const roleChip = el("button", "meta-chip is-button");
+  roleChip.type = "button";
+  roleChip.title = "點擊切換開發測試身分與角色";
   const roleStrong = document.createElement("strong");
   roleStrong.textContent = capabilities.role;
-  roleChip.append(document.createTextNode("角色 "), roleStrong);
+  roleChip.append(document.createTextNode("角色 "), roleStrong, document.createTextNode(" ▾"));
+  roleChip.addEventListener("click", showRoleSwitcherModal);
   meta.append(roleChip);
   meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
   if (capabilities.knowledgeBridgeEnabled) {
     meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
   }
+}
+
+function showRoleSwitcherModal() {
+  const stored = loadAuthHeaders();
+  const currentRole = stored.role || capabilities.role || "SYSTEM_ADMIN";
+  const currentUserId = stored.userId || "ops.admin";
+  const currentUserName = stored.userName || "System Administrator";
+  const currentOwnerUnits = stored.ownerUnits || "IT Service Desk";
+
+  const container = el("div");
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
+  container.style.gap = "1rem";
+  container.style.maxWidth = "560px";
+
+  const desc = el(
+    "p",
+    "muted",
+    "本機開發模式預設啟用最高權限（SYSTEM_ADMIN）。若需驗證各項功能在不同角色下的權限邊界，可點選下方身分快速切換，或透過自訂表單調整："
+  );
+  container.append(desc);
+
+  const presets = [
+    {
+      role: "SYSTEM_ADMIN",
+      title: "最高系統管理員 (預設)",
+      userId: "ops.admin",
+      userName: "System Administrator",
+      ownerUnits: "IT Service Desk",
+      desc: "營運後台全功能 + 知識庫 PLATFORM 最高管理權限",
+    },
+    {
+      role: "KNOWLEDGE_ADMIN",
+      title: "知識管理員",
+      userId: "ops.knowledge",
+      userName: "Knowledge Administrator",
+      ownerUnits: "IT Service Desk",
+      desc: "知識庫全生命週期、審核與發布 (Portal PLATFORM/MANAGER)",
+    },
+    {
+      role: "SERVICE_OWNER",
+      title: "服務負責人",
+      userId: "ops.owner",
+      userName: "Service Owner",
+      ownerUnits: "IT Service Desk",
+      desc: "管理品質案例、FAQ 與範例庫",
+    },
+    {
+      role: "AI_ADMIN",
+      title: "AI 管理員",
+      userId: "ops.ai",
+      userName: "AI Administrator",
+      ownerUnits: "IT Service Desk",
+      desc: "提示詞工程、模型註冊與評估管理",
+    },
+    {
+      role: "AUDITOR",
+      title: "稽核人員",
+      userId: "ops.auditor",
+      userName: "Auditor",
+      ownerUnits: "IT Service Desk",
+      desc: "唯讀稽核日誌與安全脫敏查詢",
+    },
+    {
+      role: "ANALYST",
+      title: "分析人員",
+      userId: "ops.analyst",
+      userName: "Analyst",
+      ownerUnits: "IT Service Desk",
+      desc: "檢視對話紀錄、議題與營運指標",
+    },
+  ];
+
+  const presetList = el("div");
+  presetList.style.display = "flex";
+  presetList.style.flexDirection = "column";
+  presetList.style.gap = "0.5rem";
+
+  for (const p of presets) {
+    const isCurrent = p.role === currentRole;
+    const itemBtn = el("button");
+    itemBtn.type = "button";
+    itemBtn.style.textAlign = "left";
+    itemBtn.style.padding = "0.65rem 0.85rem";
+    itemBtn.style.display = "flex";
+    itemBtn.style.flexDirection = "column";
+    itemBtn.style.gap = "0.25rem";
+    itemBtn.style.borderRadius = "8px";
+    itemBtn.style.border = isCurrent
+      ? "2px solid var(--accent, #0f6cbd)"
+      : "1px solid var(--border, #cbd5e1)";
+    itemBtn.style.background = isCurrent
+      ? "var(--accent-soft, #eff6fc)"
+      : "var(--panel, #ffffff)";
+    itemBtn.style.cursor = "pointer";
+
+    const headerRow = el("div");
+    headerRow.style.display = "flex";
+    headerRow.style.justifyContent = "space-between";
+    headerRow.style.alignItems = "center";
+
+    const titleStrong = el("strong", "", p.title);
+    titleStrong.style.color = isCurrent ? "var(--accent, #0f6cbd)" : "var(--text, #1e293b)";
+
+    const badge = el("span", "badge", isCurrent ? `${p.role} (目前使用中)` : p.role);
+    if (isCurrent) {
+      badge.style.background = "var(--accent, #0f6cbd)";
+      badge.style.color = "#ffffff";
+    }
+    headerRow.append(titleStrong, badge);
+
+    const descSpan = el("span", "muted", p.desc);
+    descSpan.style.fontSize = "0.82rem";
+
+    itemBtn.append(headerRow, descSpan);
+    itemBtn.addEventListener("click", () => {
+      saveAuthHeaders({
+        userId: p.userId,
+        userName: p.userName,
+        role: p.role,
+        ownerUnits: p.ownerUnits,
+      });
+      window.location.reload();
+    });
+    presetList.append(itemBtn);
+  }
+
+  container.append(presetList);
+
+  const customDetails = document.createElement("details");
+  customDetails.style.border = "1px solid var(--border, #e2e8f0)";
+  customDetails.style.borderRadius = "8px";
+  customDetails.style.padding = "0.65rem 0.85rem";
+
+  const summary = document.createElement("summary");
+  summary.textContent = "自訂身分與權限單位 (進階)";
+  summary.style.cursor = "pointer";
+  summary.style.fontWeight = "600";
+  customDetails.append(summary);
+
+  const customForm = el("form");
+  customForm.style.display = "flex";
+  customForm.style.flexDirection = "column";
+  customForm.style.gap = "0.55rem";
+  customForm.style.marginTop = "0.75rem";
+
+  const userIdGroup = el("div", "form-field");
+  userIdGroup.append(el("label", "", "使用者代號 (User ID):"));
+  const userIdInput = el("input");
+  userIdInput.type = "text";
+  userIdInput.value = currentUserId;
+  userIdInput.required = true;
+  userIdGroup.append(userIdInput);
+
+  const userNameGroup = el("div", "form-field");
+  userNameGroup.append(el("label", "", "使用者名稱 (User Name):"));
+  const userNameInput = el("input");
+  userNameInput.type = "text";
+  userNameInput.value = currentUserName;
+  userNameGroup.append(userNameInput);
+
+  const roleGroup = el("div", "form-field");
+  roleGroup.append(el("label", "", "角色 (Role):"));
+  const roleSelect = el("select");
+  for (const r of [
+    "SYSTEM_ADMIN",
+    "KNOWLEDGE_ADMIN",
+    "SERVICE_OWNER",
+    "AI_ADMIN",
+    "AUDITOR",
+    "ANALYST",
+  ]) {
+    const opt = document.createElement("option");
+    opt.value = r;
+    opt.textContent = r;
+    if (r === currentRole) opt.selected = true;
+    roleSelect.append(opt);
+  }
+  roleGroup.append(roleSelect);
+
+  const unitsGroup = el("div", "form-field");
+  unitsGroup.append(el("label", "", "所屬單位 (Owner Units, 逗號分隔):"));
+  const unitsInput = el("input");
+  unitsInput.type = "text";
+  unitsInput.value = currentOwnerUnits;
+  unitsGroup.append(unitsInput);
+
+  const submitCustomBtn = el("button", "", "套用自訂身分並重新整理");
+  submitCustomBtn.type = "submit";
+  submitCustomBtn.style.marginTop = "0.35rem";
+
+  customForm.append(userIdGroup, userNameGroup, roleGroup, unitsGroup, submitCustomBtn);
+  customForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveAuthHeaders({
+      userId: userIdInput.value.trim() || "ops.admin",
+      userName: userNameInput.value.trim() || "System Administrator",
+      role: roleSelect.value,
+      ownerUnits: unitsInput.value.trim() || "IT Service Desk",
+    });
+    window.location.reload();
+  });
+
+  customDetails.append(customForm);
+  container.append(customDetails);
+
+  showContentModal("切換身分與權限（開發測試）", container);
 }
 
 function activeWorkspaceId() {
@@ -529,13 +740,6 @@ function renderNav(active, options = {}) {
   nav.append(itemRow);
 
   document.body.classList.toggle("view-knowledge-portal", active === "knowledgePortal");
-  if (active === "knowledgePortal") {
-    ensureKnowledgeEmbedResizeHandler();
-    // Re-measure after nav DOM updates (hint may hide).
-    requestAnimationFrame(() => syncKnowledgeEmbedChrome());
-  } else {
-    document.documentElement.style.removeProperty("--ops-chrome-bottom");
-  }
   const title = VIEW_TITLES[active] || active;
   document.title = `${title}｜AI 資訊客服營運後台`;
 
@@ -1143,58 +1347,7 @@ async function renderKnowledgePortalEntry() {
   }
 
   const filters = loadNavFilters();
-  const portalPath =
-    filters.k ||
-    sessionStorage.getItem("ai_ops_knowledge_embed_hash") ||
-    "#/knowledge";
-  sessionStorage.removeItem("ai_ops_knowledge_embed_hash");
-  const portalHash = portalPath.startsWith("#") ? portalPath : `#${portalPath}`;
-
-  const wrap = el("div", "knowledge-embed-shell");
-  const frame = document.createElement("iframe");
-  frame.className = "knowledge-embed-frame";
-  frame.title = "知識文件庫";
-  frame.src = `/knowledge-ui/?shell=1${portalHash}`;
-  wrap.append(frame);
-  app.replaceChildren(wrap);
-  syncKnowledgeEmbedChrome();
-}
-
-function syncKnowledgeEmbedChrome() {
-  const nav = document.querySelector(".nav");
-  const topbar = document.querySelector(".topbar");
-  const bottom = Math.ceil(
-    (nav?.getBoundingClientRect().bottom ||
-      topbar?.getBoundingClientRect().bottom ||
-      0),
-  );
-  document.documentElement.style.setProperty("--ops-chrome-bottom", `${bottom}px`);
-  const frame = document.querySelector(".knowledge-embed-frame");
-  if (frame) {
-    frame.style.top = `${bottom}px`;
-    frame.style.left = "0px";
-    frame.style.right = "0px";
-    frame.style.bottom = "0px";
-    frame.style.width = "100%";
-    frame.style.height = `${Math.max(240, window.innerHeight - bottom)}px`;
-    frame.style.position = "fixed";
-    frame.style.border = "0";
-    frame.style.zIndex = "5";
-  }
-}
-
-let knowledgeEmbedResizeBound = false;
-
-function ensureKnowledgeEmbedResizeHandler() {
-  if (knowledgeEmbedResizeBound) {
-    return;
-  }
-  knowledgeEmbedResizeBound = true;
-  window.addEventListener("resize", () => {
-    if (document.body.classList.contains("view-knowledge-portal")) {
-      syncKnowledgeEmbedChrome();
-    }
-  });
+  await renderNativeKnowledgePortal(app, capabilities, navigateTo, filters);
 }
 
 async function renderKnowledgeDocument() {
@@ -3910,4 +4063,10 @@ window.addEventListener("message", (event) => {
   }
 });
 
-boot();
+boot().catch((error) => {
+  console.error("Boot failed:", error);
+  const app = document.getElementById("app");
+  if (app) {
+    app.innerHTML = `<div class="error" style="padding: 2rem;">系統載入失敗：${error.message || error}</div>`;
+  }
+});
