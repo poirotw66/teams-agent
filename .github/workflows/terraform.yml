@@ -9,6 +9,7 @@ on:
       - "infra/DEPLOYER_IAM.md"
       - "deploy/release-gcp.sh"
       - "deploy/deploy-gcp.sh"
+      - "start.sh"
       - ".gitattributes"
       - ".github/workflows/terraform.yml"
   push:
@@ -20,6 +21,7 @@ on:
       - "infra/DEPLOYER_IAM.md"
       - "deploy/release-gcp.sh"
       - "deploy/deploy-gcp.sh"
+      - "start.sh"
       - ".gitattributes"
       - ".github/workflows/terraform.yml"
 
