@@ -115,19 +115,26 @@ def _load_acl_index(index_path: Path) -> dict[str, list[str]]:
     after any front-matter/audience change, before running `upload`. That is
     already true of the query-time registry, so it is not a new requirement.
 
-    Keyed by upload slug (the same ASCII slug ``_ascii_display_name``
-    produces for a given source filename), so a caller just computes the
-    slug for the file it is about to upload and looks it up directly.
+    Keyed by the corpus-unique upload slug (``assign_unique_ascii_slugs``), so
+    a caller looks up the same display name it will attach on upload.
     """
     if not index_path.is_file():
         return {}
     value = json.loads(index_path.read_text(encoding="utf-8"))
+    source_paths = [
+        str(chunk.get("source_path"))
+        for chunk in value.get("chunks", [])
+        if chunk.get("source_path")
+    ]
+    from agent_service.file_search_slugs import assign_unique_ascii_slugs
+
+    slug_map = assign_unique_ascii_slugs(source_paths)
     acl_by_slug: dict[str, list[str]] = {}
     for chunk in value.get("chunks", []):
         source_path = chunk.get("source_path")
         if not source_path:
             continue
-        slug = _ascii_display_name(Path(source_path))
+        slug = slug_map[str(source_path)]
         # All chunks of one document carry the same allowed_groups; the
         # first one seen for a slug is as good as any.
         acl_by_slug.setdefault(slug, list(chunk.get("allowed_groups") or []))
@@ -139,9 +146,10 @@ def cmd_upload(args: argparse.Namespace) -> None:
 
     try:
         from agent_service.file_search_acl import upload_metadata_for
+        from agent_service.file_search_slugs import assign_unique_ascii_slugs
     except ImportError as exc:
         print(
-            "error: could not import agent_service.file_search_acl. Run this "
+            "error: could not import agent_service.file_search_*. Run this "
             "script with agent_service/.venv/bin/python, not the repo-root "
             f"venv.\n  ({exc})",
             file=sys.stderr,
@@ -149,15 +157,28 @@ def cmd_upload(args: argparse.Namespace) -> None:
         raise SystemExit(2) from exc
 
     acl_index = _load_acl_index(args.index_path)
+    upload_paths = [Path(raw_path) for raw_path in args.files]
+    # Build uniqueness against the full sources corpus when available, so a
+    # partial upload batch still gets the same slug the registry would use.
+    sources_dir = _default_index_path().parent.parent / "sources"
+    corpus_paths = [
+        f"sources/{path.name}"
+        for path in sorted(sources_dir.glob("*.md"))
+        if path.name != "README.md"
+    ]
+    for path in upload_paths:
+        key = f"sources/{path.name}"
+        if key not in corpus_paths:
+            corpus_paths.append(key)
+    slug_map = assign_unique_ascii_slugs(corpus_paths)
 
     client = None if args.dry_run else _client(_require_api_key())
-    for raw_path in args.files:
-        path = Path(raw_path)
+    for path in upload_paths:
         if not path.is_file():
             print(f"skip (not a file): {path}", file=sys.stderr)
             continue
 
-        slug = _ascii_display_name(path)
+        slug = slug_map[f"sources/{path.name}"]
 
         # custom_metadata drives `--metadata-filter` on query (spec §8.3
         # item 5). Unlike the file path, metadata values DO accept
@@ -192,7 +213,7 @@ def cmd_upload(args: argparse.Namespace) -> None:
         )
         config.custom_metadata = metadata
 
-        with _ascii_path(path) as upload_path:
+        with _ascii_path(path, slug=slug) as upload_path:
             operation = client.file_search_stores.upload_to_file_search_store(
                 file_search_store_name=args.store,
                 file=str(upload_path),
@@ -208,7 +229,7 @@ def cmd_upload(args: argparse.Namespace) -> None:
 
 
 @contextmanager
-def _ascii_path(path: Path):
+def _ascii_path(path: Path, *, slug: str | None = None):
     """Yield a path safe to hand to ``upload_to_file_search_store``.
 
     FINDING (spec §8.3 / §18.7 ops-complexity, verified 2026-08-06): the
@@ -222,11 +243,12 @@ def _ascii_path(path: Path):
     and ``custom_metadata`` carry Chinese, so the restriction is on the
     path alone. Documented in docs/gemini-file-search-spike.md.
     """
-    if str(path).isascii():
+    display = slug or _ascii_display_name(path)
+    if path.name.isascii() and path.name == display:
         yield path
         return
     with tempfile.TemporaryDirectory(prefix="gemini-spike-") as staging:
-        staged = Path(staging) / _ascii_display_name(path)
+        staged = Path(staging) / display
         shutil.copyfile(path, staged)
         print(f"  (staged as ASCII filename: {staged.name})")
         yield staged
@@ -248,24 +270,16 @@ def _mime_type_for(path: Path) -> str:
 
 
 def _ascii_display_name(path: Path) -> str:
-    """Derive an ASCII slug from a filename.
-
-    Used for the staged upload filename (see ``_ascii_path``, where ASCII
-    is a verified hard requirement) and reused as ``display_name`` for
-    consistency between the two.
-
-    Note: whether ``display_name`` *itself* tolerates non-ASCII was not
-    tested in the 2026-08-06 spike — only the file path was isolated as
-    the failing input. Do not cite this function as evidence about
-    ``display_name``.
-    """
-    stem = path.stem.encode("ascii", "ignore").decode("ascii").strip(" -_")
-    if not stem:
-        # Entirely non-ASCII filename: fall back to a stable content hash so
-        # two different documents never collide.
-        digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()[:12]
-        stem = f"doc-{digest}"
-    return f"{stem}{path.suffix.lower()}"
+    """Provisional ASCII slug; uploads prefer ``assign_unique_ascii_slugs``."""
+    try:
+        from agent_service.file_search_slugs import provisional_ascii_slug
+    except ImportError:
+        stem = path.stem.encode("ascii", "ignore").decode("ascii").strip(" -_")
+        if not stem:
+            digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()[:12]
+            stem = f"doc-{digest}"
+        return f"{stem}{path.suffix.lower()}"
+    return provisional_ascii_slug(path)
 
 
 def _parse_metadata(pairs: list[str]) -> list:

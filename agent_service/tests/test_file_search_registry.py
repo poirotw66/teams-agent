@@ -59,6 +59,63 @@ def test_slug_for_different_non_ascii_filenames_do_not_collide():
     assert a != b
 
 
+def test_registry_auto_disambiguates_provisional_slug_collisions():
+    from agent_service.file_search_slugs import assign_unique_ascii_slugs
+
+    paths = [
+        "sources/VPN國外連線短暫申請.md",
+        "sources/VPN跳板機連線異常.md",
+        "sources/內網筆電VPN連線問題.md",
+    ]
+    assert FileSearchDocumentRegistry.slug_for(paths[0]) == "VPN.md"
+    assert FileSearchDocumentRegistry.slug_for(paths[1]) == "VPN.md"
+    chunks = [
+        make_chunk("c1", "國外", paths[0]),
+        make_chunk("c2", "跳板", paths[1]),
+        make_chunk("c3", "內網", paths[2]),
+    ]
+    registry = FileSearchDocumentRegistry.from_chunks(chunks)
+    unique = assign_unique_ascii_slugs(paths)
+    assert len(set(unique.values())) == 3
+    assert registry.title_for(unique[paths[0]]) == "國外"
+    assert registry.title_for(unique[paths[1]]) == "跳板"
+    assert registry.title_for(unique[paths[2]]) == "內網"
+
+
+def test_ensure_unique_file_search_slugs_strict_raises():
+    from agent_service.file_search_slugs import (
+        FileSearchSlugCollisionError,
+        ensure_unique_file_search_slugs,
+    )
+
+    with pytest.raises(FileSearchSlugCollisionError, match="VPN.md"):
+        ensure_unique_file_search_slugs(
+            [
+                "sources/VPN國外連線短暫申請.md",
+                "sources/VPN跳板機連線異常.md",
+            ],
+            strict=True,
+        )
+
+
+def test_indexer_rejects_slug_collisions(tmp_path: Path):
+    from agent_service.file_search_slugs import FileSearchSlugCollisionError
+    from agent_service.indexer import build_index
+    from agent_service.settings import RagSettings
+
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    (sources / "VPN甲.md").write_text("# A\n\nhello\n", encoding="utf-8")
+    (sources / "VPN乙.md").write_text("# B\n\nworld\n", encoding="utf-8")
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "index" / "chunks.json",
+        embedding_model=None,
+    )
+    with pytest.raises(FileSearchSlugCollisionError, match="VPN.md"):
+        build_index(settings)
+
+
 # --- title_for -----------------------------------------------------------
 
 
@@ -107,16 +164,18 @@ def test_images_for_empty_when_document_has_no_images():
 # --- collisions --------------------------------------------------------
 
 
-def test_collision_raises_and_names_both_files():
+def test_collision_auto_disambiguates_same_basename_paths():
+    from agent_service.file_search_slugs import assign_unique_ascii_slugs
+
     chunk_a = make_chunk("c1", "A", "sources/foo.md")
     chunk_b = make_chunk("c2", "B", "other/foo.md")
-
-    with pytest.raises(ValueError) as excinfo:
-        FileSearchDocumentRegistry.from_chunks([chunk_a, chunk_b])
-
-    message = str(excinfo.value)
-    assert "sources/foo.md" in message
-    assert "other/foo.md" in message
+    registry = FileSearchDocumentRegistry.from_chunks([chunk_a, chunk_b])
+    unique = assign_unique_ascii_slugs(
+        ["sources/foo.md", "other/foo.md"]
+    )
+    assert unique["sources/foo.md"] != unique["other/foo.md"]
+    assert registry.title_for(unique["sources/foo.md"]) == "A"
+    assert registry.title_for(unique["other/foo.md"]) == "B"
 
 
 # --- unknown slug --------------------------------------------------------
@@ -227,9 +286,11 @@ def test_legacy_helpdesk_store_names_resolve_chinese_titles_and_images():
 
 @pytest.mark.skipif(not REAL_INDEX_PATH.is_file(), reason="data/index/chunks.json not present")
 def test_real_index_has_no_slug_collisions():
-    # from_index_path would already have raised if there were a collision;
-    # this test documents that expectation explicitly.
+    from agent_service.file_search_slugs import slug_collision_groups
+
     value = json.loads(REAL_INDEX_PATH.read_text(encoding="utf-8"))
     chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
+    paths = sorted({chunk.source_path for chunk in chunks})
+    assert slug_collision_groups(paths) == {}
     registry = FileSearchDocumentRegistry.from_chunks(chunks)
     assert registry is not None

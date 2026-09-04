@@ -4,9 +4,9 @@ A 2026-08-06 spike (docs/gemini-file-search-spike.md, findings 1, 3, 9)
 established that:
 
   * ``upload_to_file_search_store`` must stage every non-ASCII source file
-    under an ASCII slug (see ``_ascii_display_name`` below), because the
-    resumable-upload path puts the file *path* into an HTTP header and
-    non-ASCII header values raise ``UnicodeEncodeError``.
+    under an ASCII slug (see ``file_search_slugs.provisional_ascii_slug``),
+    because the resumable-upload path puts the file *path* into an HTTP
+    header and non-ASCII header values raise ``UnicodeEncodeError``.
   * Grounding chunks returned by File Search carry that ASCII slug as
     ``title``, with ``uri`` and ``document_name`` both ``None`` — so a
     citation would otherwise show e.g. ``VPNQ&A.md`` instead of the real
@@ -20,19 +20,19 @@ This module lets the adapter go from "the slug File Search gave us back" to
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import AgentImage
 from .documents import DocumentChunk, DocumentImage
+from .file_search_slugs import assign_unique_ascii_slugs, provisional_ascii_slug
 
 # The existing helpdesk-store was uploaded before the current ASCII slug
 # algorithm and uses hand-written English display names. Keep this explicit
 # compatibility table so grounding citations can still join to the canonical
-# local source metadata and images. New uploads should use ``slug_for`` and do
-# not need an entry here.
+# local source metadata and images. New uploads should use ``slug_for`` /
+# ``assign_unique_ascii_slugs`` and do not need an entry here.
 _LEGACY_FILE_SEARCH_ALIASES: dict[str, str] = {
     "branch-cs-vpn-permissions.md": "分公司CS團隊VPN連線可使用權限列表.md",
     "cathay-futures-ai-login-error-200.md": "國泰期貨艾揚登入出現-200.md",
@@ -53,27 +53,6 @@ _LEGACY_FILE_SEARCH_ALIASES: dict[str, str] = {
     "xiaozhou-first-time-setup.md": "大州首次使用設定.md",
     "xq-faq.md": "XQ問題.md",
 }
-
-
-def _ascii_display_name(path: Path) -> str:
-    """Derive an ASCII slug from a filename.
-
-    DUPLICATED from ``scripts/gemini_file_search_spike.py::_ascii_display_name``.
-    That script is a standalone spike runner, not an importable package
-    module, so this function is copied verbatim rather than imported. It
-    MUST stay byte-for-byte in sync with the spike script's algorithm —
-    ``tests/test_file_search_registry.py`` asserts the two implementations
-    agree for every file currently in ``data/sources/``, but a future edit
-    to either copy without updating the other will silently break every
-    File Search citation/image lookup.
-    """
-    stem = path.stem.encode("ascii", "ignore").decode("ascii").strip(" -_")
-    if not stem:
-        # Entirely non-ASCII filename: fall back to a stable content hash so
-        # two different documents never collide.
-        digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()[:12]
-        stem = f"doc-{digest}"
-    return f"{stem}{path.suffix.lower()}"
 
 
 @dataclass(frozen=True)
@@ -109,20 +88,13 @@ class FileSearchDocumentRegistry:
                 chunks_by_source[chunk.source_path] = []
             chunks_by_source[chunk.source_path].append(chunk)
 
-        slug_to_source: dict[str, str] = {}
+        # Auto-disambiguate provisional collisions so agent startup cannot
+        # fail solely because two Chinese filenames share an ASCII stem.
+        slug_map = assign_unique_ascii_slugs(source_order)
         records_by_filename: dict[str, _DocumentRecord] = {}
         records_by_title: dict[str, _DocumentRecord] = {}
         for source_path in source_order:
-            slug = cls.slug_for(source_path)
-            if slug in slug_to_source:
-                raise ValueError(
-                    "File Search slug collision: "
-                    f"{slug_to_source[slug]!r} and {source_path!r} both map to "
-                    f"slug {slug!r}. Rename one of the source files so their "
-                    "ASCII slugs no longer collide."
-                )
-            slug_to_source[slug] = source_path
-
+            slug = slug_map[source_path]
             doc_chunks = chunks_by_source[source_path]
             title = next(
                 (chunk.title for chunk in doc_chunks if chunk.title),
@@ -155,8 +127,8 @@ class FileSearchDocumentRegistry:
 
     @staticmethod
     def slug_for(source_path: str) -> str:
-        """The canonical ASCII slug an uploaded document is staged under."""
-        return _ascii_display_name(Path(source_path))
+        """Provisional ASCII slug (may collide across the corpus)."""
+        return provisional_ascii_slug(source_path)
 
     def title_for(self, slug: str) -> str | None:
         record = self._by_slug.get(slug)

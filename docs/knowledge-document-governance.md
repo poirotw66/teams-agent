@@ -62,7 +62,8 @@ Front matter 區塊在建立索引時會被完整移除，**不會**出現在切
 2. 在檔案最上方加入 front matter，至少建議填寫 `title`、`owner`、`version`、`effectiveDate`、`reviewDate`、`audience`。
 3. 內文維持現有格式（`# 標題`、`## 正文（canonical）` 等區段），不需要額外標記。
 4. 若文件僅供特定群組使用，於 `audience` 填入該群組代碼（非 `all-employees`），並確認呼叫端（Teams Adapter／Agent Service）已能提供對應的 `groups`，否則該文件將對所有使用者不可見。
-5. 重建索引（見下一節）。
+5. **ASCII slug 不可撞名**：Gemini File Search 會把檔名中的非 ASCII 字元剝掉後當 upload slug。若兩個檔名只差在中文（例如 `VPN國外….md` 與 `VPN跳板….md`），會撞成同一個 `VPN.md`。`rag-index` 會在建索引時自動檢查並拒絕；請改成含可區分英文的檔名（例如 `VPN-jumpbox-….md`）。
+6. 重建索引（見下一節）。
 
 ## 4. 如何重建索引
 
