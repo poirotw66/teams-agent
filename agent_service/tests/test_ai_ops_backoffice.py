@@ -83,7 +83,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
             turn_id=turn_id,
             issue_occurrence_id=occurrence_id,
             issue_type_id="vpn.connection_failed",
-            payload={"classificationSource": "MODEL"},
+            payload={"classificationSource": "KEYWORD_RULE"},
         ),
         OperationalEvent(
             event_id=f"{occurrence_id}:route.selected",
@@ -877,8 +877,11 @@ def test_phase2_quality_candidates_merge_case_and_gap_score(
         headers=writer_headers,
     )
     assert generated.status_code == 200
-    assert generated.json()["total"] >= 1
-    cluster = generated.json()["items"][0]
+    payload = generated.json()
+    assert len(payload["items"]) >= 1
+    assert payload["groupingMethod"] == "OWNER_UNIT_ISSUE_TYPE"
+    cluster = payload["items"][0]
+    assert cluster["grouping_method"] == "OWNER_UNIT_ISSUE_TYPE"
     corrected = seeded_backoffice_client.post(
         "/api/question-clusters/correct",
         json={

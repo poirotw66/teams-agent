@@ -19,54 +19,94 @@
   },
   "keyword_rules": [
     {
-      "keywords": ["vpn", "連線", "連不上"],
+      "keywords": [
+        "vpn",
+        "連線",
+        "連不上"
+      ],
       "issue_type_id": "vpn.connection_failed",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["vpn", "鎖定", "locked"],
+      "keywords": [
+        "vpn",
+        "鎖定",
+        "locked"
+      ],
       "issue_type_id": "vpn.account_locked",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["密碼", "password", "重設", "reset"],
+      "keywords": [
+        "密碼",
+        "password",
+        "重設",
+        "reset"
+      ],
       "issue_type_id": "password.reset_procedure",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["帳號", "鎖定", "locked"],
+      "keywords": [
+        "帳號",
+        "鎖定",
+        "locked"
+      ],
       "issue_type_id": "password.account_locked",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["outlook", "郵件", "email", "信箱"],
+      "keywords": [
+        "outlook",
+        "郵件",
+        "email",
+        "信箱"
+      ],
       "issue_type_id": "email.outlook_sync",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["wifi", "wi-fi", "無線"],
+      "keywords": [
+        "wifi",
+        "wi-fi",
+        "無線"
+      ],
       "issue_type_id": "network.wifi_access",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["印表機", "printer", "列印"],
+      "keywords": [
+        "印表機",
+        "printer",
+        "列印"
+      ],
       "issue_type_id": "hardware.printer_issue",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["teams", "通話", "視訊"],
+      "keywords": [
+        "teams",
+        "通話",
+        "視訊"
+      ],
       "issue_type_id": "phone.teams_call_quality",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["釣魚", "phishing", "可疑"],
+      "keywords": [
+        "釣魚",
+        "phishing",
+        "可疑"
+      ],
       "issue_type_id": "security.phishing_report",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     },
     {
-      "keywords": ["gitlab"],
+      "keywords": [
+        "gitlab"
+      ],
       "issue_type_id": "password.account_locked",
-      "source": "MODEL"
+      "source": "KEYWORD_RULE"
     }
   ]
 }

@@ -45,11 +45,60 @@ h1 {
 
 .nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
   background: #eef2f6;
   border-bottom: 1px solid var(--border);
+}
+
+.workspace-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workspace-switcher .workspace {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.workspace-switcher .workspace.active {
+  background: #d9e6f2;
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.workspace-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.nav-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nav-items button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.nav-items button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
 }
 
 .nav button {

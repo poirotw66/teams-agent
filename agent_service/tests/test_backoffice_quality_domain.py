@@ -164,8 +164,10 @@ def test_question_cluster_corrections_create_immutable_revisions(tmp_path: Path)
     first = seed_candidate(service, "event-1")
     second = seed_candidate(service, "event-2")
     generated = service.generate_clusters(actor=WRITER)
-    assert generated["total"] == 1
+    assert len(generated["items"]) == 1
+    assert generated["groupingMethod"] == "OWNER_UNIT_ISSUE_TYPE"
     cluster = generated["items"][0]
+    assert cluster["grouping_method"] == "OWNER_UNIT_ISSUE_TYPE"
     renamed = service.correct_clusters(
         (cluster["cluster_id"],),
         action="RENAME",

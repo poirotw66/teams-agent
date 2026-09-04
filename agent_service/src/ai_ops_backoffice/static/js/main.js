@@ -21,28 +21,61 @@ const routes = {
   audit: renderAudit,
 };
 
-const navItems = [
-  ["overview", "營運總覽", "ops.summary.read"],
-  ["conversations", "對話紀錄", "ops.conversations.read"],
-  ["issues", "Issue 分析", "ops.issues.read"],
-  ["routes", "路由來源", "ops.issues.read"],
-  ["costs", "成本分析", "ops.cost.read"],
-  ["budgets", "預算與告警", "ops.budget.read"],
-  ["health", "系統健康度", "ops.health.read"],
-  ["knowledge", "知識營運", "ops.knowledge.read"],
-  ["examples", "品質案例集", "ops.examples.read"],
-  ["quality", "品質改善", "ops.feedback.read"],
-  ["prompts", "Prompt 治理", "ops.prompts.read"],
-  ["models", "模型設定", "ops.models.read"],
-  ["flags", "Feature Flag", "ops.flags.read"],
-  ["roles", "角色映射", "ops.roles.read"],
-  ["retention", "Retention", "ops.retention.read"],
-  ["masking", "遮罩政策", "ops.retention.read"],
-  ["search", "全域搜尋", "ops.search.read"],
-  ["audit", "稽核紀錄", "ops.audit.read"],
+/** Role workspaces focused on completing work, not module catalogs. */
+const workspaces = [
+  {
+    id: "knowledge_ops",
+    label: "知識營運",
+    hint: "待辦 → 修正知識 → 審核發布 → 驗證回答 → 結案",
+    items: [
+      ["quality", "我的待辦／品質案件", "ops.feedback.read"],
+      ["knowledge", "文件／FAQ", "ops.knowledge.read"],
+      ["examples", "案例集驗證", "ops.examples.read"],
+      ["conversations", "回答驗證", "ops.conversations.read"],
+    ],
+  },
+  {
+    id: "ai_ops",
+    label: "AI 管理",
+    hint: "資料集、評測、Prompt、模型與發布",
+    items: [
+      ["examples", "資料集／案例", "ops.examples.read"],
+      ["prompts", "Prompt 與評測", "ops.prompts.read"],
+      ["models", "模型設定", "ops.models.read"],
+      ["flags", "Feature Flag", "ops.flags.read"],
+    ],
+  },
+  {
+    id: "platform",
+    label: "平台管理",
+    hint: "權限、背景工作、稽核、保存與告警",
+    items: [
+      ["overview", "營運總覽", "ops.summary.read"],
+      ["issues", "Issue 分析", "ops.issues.read"],
+      ["routes", "路由來源", "ops.issues.read"],
+      ["costs", "成本分析", "ops.cost.read"],
+      ["budgets", "預算與告警", "ops.budget.read"],
+      ["health", "系統健康度", "ops.health.read"],
+      ["roles", "權限／角色", "ops.roles.read"],
+      ["retention", "保存政策", "ops.retention.read"],
+      ["masking", "遮罩政策", "ops.retention.read"],
+      ["search", "全域搜尋", "ops.search.read"],
+      ["audit", "稽核紀錄", "ops.audit.read"],
+    ],
+  },
 ];
 
+const ROLE_DEFAULT_WORKSPACE = {
+  KNOWLEDGE_ADMIN: "knowledge_ops",
+  SERVICE_OWNER: "knowledge_ops",
+  AI_ADMIN: "ai_ops",
+  SYSTEM_ADMIN: "platform",
+  ANALYST: "platform",
+  AUDITOR: "platform",
+};
+
 const NAV_FILTERS_KEY = "ai_ops_nav_filters";
+const WORKSPACE_KEY = "ai_ops_active_workspace";
 
 function saveNavFilters(filters) {
   sessionStorage.setItem(NAV_FILTERS_KEY, JSON.stringify(filters));
@@ -252,16 +285,68 @@ async function boot() {
   const authConfig = await fetch("/api/auth/config").then((response) => response.json());
   await ensureAuth(authConfig);
   capabilities = await api("/api/capabilities");
-  renderNav("overview");
+  const defaultWorkspace =
+    ROLE_DEFAULT_WORKSPACE[capabilities.role] || visibleWorkspaces()[0]?.id || "platform";
+  if (!sessionStorage.getItem(WORKSPACE_KEY)) {
+    sessionStorage.setItem(WORKSPACE_KEY, defaultWorkspace);
+  }
+  const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
+  renderNav(firstView);
   document.getElementById("meta-panel").textContent =
     `角色：${capabilities.role}｜驗證：${capabilities.authMode}｜資料更新：即時讀取 Analytics Store`;
+}
+
+function activeWorkspaceId() {
+  return sessionStorage.getItem(WORKSPACE_KEY) || "knowledge_ops";
+}
+
+function visibleWorkspaces() {
+  const allowed = new Set(capabilities?.capabilities || []);
+  return workspaces
+    .map((workspace) => ({
+      ...workspace,
+      items: workspace.items.filter(([, , capability]) => !capability || allowed.has(capability)),
+    }))
+    .filter((workspace) => workspace.items.length > 0);
+}
+
+function firstVisibleView(workspaceId) {
+  const workspace = visibleWorkspaces().find((item) => item.id === workspaceId);
+  return workspace?.items[0]?.[0] || null;
 }
 
 function renderNav(active) {
   const nav = document.getElementById("nav");
   nav.replaceChildren();
   const allowed = new Set(capabilities?.capabilities || []);
-  for (const [id, label, capability] of navItems) {
+  const visible = visibleWorkspaces();
+  let workspaceId = activeWorkspaceId();
+  if (!visible.some((item) => item.id === workspaceId)) {
+    workspaceId = visible[0]?.id || "platform";
+    sessionStorage.setItem(WORKSPACE_KEY, workspaceId);
+  }
+  const workspace = visible.find((item) => item.id === workspaceId) || visible[0];
+
+  const switcher = el("div", "workspace-switcher");
+  for (const item of visible) {
+    const button = el("button", item.id === workspaceId ? "workspace active" : "workspace", item.label);
+    button.type = "button";
+    button.title = item.hint;
+    button.addEventListener("click", () => {
+      sessionStorage.setItem(WORKSPACE_KEY, item.id);
+      const nextView = item.items[0]?.[0] || "overview";
+      renderNav(nextView);
+    });
+    switcher.append(button);
+  }
+  nav.append(switcher);
+
+  if (workspace?.hint) {
+    nav.append(el("p", "workspace-hint", workspace.hint));
+  }
+
+  const itemRow = el("div", "nav-items");
+  for (const [id, label, capability] of workspace?.items || []) {
     if (capability && !allowed.has(capability)) {
       continue;
     }
@@ -270,9 +355,14 @@ function renderNav(active) {
       renderNav(id);
       routes[id]();
     });
-    nav.append(button);
+    itemRow.append(button);
   }
-  routes[active]();
+  nav.append(itemRow);
+  if (typeof routes[active] === "function") {
+    routes[active]();
+  } else if (workspace?.items[0]) {
+    routes[workspace.items[0][0]]();
+  }
 }
 
 async function renderOverview() {
@@ -1927,9 +2017,15 @@ async function showQualityCaseDetail(caseId) {
 async function buildQualityLoopPanel() {
   const panel = el("section", "panel");
   panel.append(el("h2", "", "改善案件池"));
+  panel.append(
+    el(
+      "p",
+      "metric-label",
+      "閉環步驟：待辦／負評 → 合併 Quality Case → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
+    ),
+  );
   const allowed = new Set(capabilities?.capabilities || []);
-  const controls = el("div", "filter-bar");
-  if (allowed.has("ops.quality.write")) {
+  const controls = el("div", "filter-bar");  if (allowed.has("ops.quality.write")) {
     const refresh = el("button", "", "掃描新候選");
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
@@ -2059,19 +2155,31 @@ async function buildGapPanel() {
   const allowed = new Set(capabilities?.capabilities || []);
   const clusterActions = el("div", "filter-bar");
   if (allowed.has("ops.quality.write")) {
-    const generate = el("button", "", "產生 Cluster 候選");
+    const generate = el("button", "", "產生單位／問題類型分組");
     generate.addEventListener("click", async () => {
       await api("/api/question-clusters/generate", { method: "POST" });
       await renderQuality();
     });
     clusterActions.append(generate);
   }
-  panel.append(el("h3", "", `Question Clusters（${clusterData.total || 0}）`), clusterActions);
+  panel.append(
+    el("h3", "", `單位／問題類型分組（${clusterData.total || 0}）`),
+    el(
+      "p",
+      "metric-label",
+      "依 owner unit + issue type 分組，不是語意聚類。確認需求後再導入 embedding／人工審核。",
+    ),
+    clusterActions,
+  );
   for (const cluster of (clusterData.items || []).filter((item) => item.status !== "SUPERSEDED")) {
     const row = el("div", "filter-bar");
     row.append(
       el("strong", "", cluster.name),
-      el("span", "metric-label", `${cluster.status}｜頻率 ${cluster.frequency}｜rev ${cluster.revision}`),
+      el(
+        "span",
+        "metric-label",
+        `${cluster.status}｜${cluster.grouping_method || "OWNER_UNIT_ISSUE_TYPE"}｜頻率 ${cluster.frequency}｜rev ${cluster.revision}`,
+      ),
     );
     if (allowed.has("ops.quality.write") && cluster.status === "CANDIDATE") {
       for (const [action, label] of [["ACCEPT", "接受"], ["REJECT", "拒絕"], ["RENAME", "重新命名"]]) {
@@ -2862,8 +2970,14 @@ async function renderQuality(state = {}) {
 
     const feedback = await api(`/api/feedback?${filters.toString()}`);
     const panel = el("section", "panel");
-    panel.append(el("h2", "", "品質與回饋"));
-
+    panel.append(el("h2", "", "我的待辦／品質案件"));
+    panel.append(
+      el(
+        "p",
+        "metric-label",
+        "知識修正閉環：待辦 → 無答案／負評 → 修正知識 → 審核發布 → 驗證回答 → 觀察成效並結案。",
+      ),
+    );
     const filterBar = el("div", "grid");
     const issueInput = el("input");
     issueInput.id = "feedback-issue-type";

@@ -119,6 +119,8 @@ class QuestionCluster(StrictModel):
     source_candidate_ids: tuple[str, ...]
     issue_type_distribution: dict[str, int]
     frequency: int = Field(ge=1)
+    # Not embedding/semantic clustering — honest analytics grouping only.
+    grouping_method: Literal["OWNER_UNIT_ISSUE_TYPE"] = "OWNER_UNIT_ISSUE_TYPE"
     parent_cluster_ids: tuple[str, ...] = ()
     created_by: str
     created_at: datetime
@@ -768,6 +770,8 @@ class QualityService:
         return self._repository.mutate(operation)
 
     def generate_clusters(self, *, actor: ActorContext) -> dict[str, Any]:
+        """Group open candidates by owner unit + issue type (not semantic clustering)."""
+
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
             groups: dict[tuple[str, str], list[QualityCandidate]] = {}
             for candidate in state.candidates:
@@ -799,12 +803,13 @@ class QualityService:
                     cluster_id=str(uuid.uuid4()),
                     cluster_key=cluster_key,
                     revision=1,
-                    name=candidates[0].title,
+                    name=f"{owner_unit_id}｜{issue_type_id}",
                     representative_question=candidates[0].description or candidates[0].title,
                     owner_unit_id=owner_unit_id,
                     source_candidate_ids=candidate_ids,
                     issue_type_distribution=issue_distribution,
                     frequency=sum(item.frequency for item in candidates),
+                    grouping_method="OWNER_UNIT_ISSUE_TYPE",
                     created_by=actor.user_id,
                     created_at=now,
                 )
@@ -813,11 +818,12 @@ class QualityService:
                     self._audit(
                         target_type="QUESTION_CLUSTER",
                         target_id=cluster.cluster_id,
-                        action="QUESTION_CLUSTER_GENERATED",
+                        action="QUESTION_GROUP_GENERATED",
                         actor=actor,
                         owner_unit_id=owner_unit_id,
                         before=None,
                         after=cluster,
+                        reason="owner_unit_issue_type_grouping",
                     )
                 )
             next_state = QualityState(
@@ -829,7 +835,8 @@ class QualityService:
             )
             return next_state, {
                 "items": [item.model_dump(mode="json") for item in created],
-                "total": len(created),
+                "groupingMethod": "OWNER_UNIT_ISSUE_TYPE",
+                "note": "Groups by owner unit and issue type; not semantic clustering.",
             }
 
         return self._repository.mutate(operation)
@@ -902,6 +909,7 @@ class QualityService:
                         source_candidate_ids=group,
                         issue_type_distribution=issue_distribution,
                         frequency=sum(item.frequency for item in source_candidates),
+                        grouping_method=selected[0].grouping_method,
                         parent_cluster_ids=cluster_ids,
                         created_by=actor.user_id,
                         created_at=now,

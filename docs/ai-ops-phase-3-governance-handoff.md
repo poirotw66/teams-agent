@@ -35,6 +35,11 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - LAB drill script: `scripts/ops_phase3_governance_drill.py`
 - SYSTEM_ADMIN single-approver sign-off helper: `scripts/ops_phase3_signoff.py`
 - API surface under `/api/governance/*`
+- P2 product honesty: conversation save ≠ LangGraph checkpoint resume (optional
+  `checkpointer` hook; external ops listed as idempotent prerequisites);
+  classification keyword hits labeled `KEYWORD_RULE` (never `MODEL`); quality
+  groups named `OWNER_UNIT_ISSUE_TYPE` (not semantic clustering); Backoffice nav
+  organized as Knowledge / AI / Platform workspaces around the knowledge-fix loop
 
 ## Explicitly not claimed complete
 
@@ -49,6 +54,10 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Unmasked conversation full-text search in global search
 - Changing ACTIVE masking **rules** at runtime (version stamp is governed; regex
   implementation remains code-defined until rules are externalized)
+- Mid-turn LangGraph resume / interrupt with production checkpointer
+- Embedding-based semantic quality clustering
+- Full microservice split (remain modular monolith with clear API / domain /
+  query / background / runtime boundaries)
 
 ## Human sign-off policy (product decision)
 

@@ -3,6 +3,21 @@
 Production uses only :func:`build_agent_workflow_graph`. The ``*_NODES`` tuples
 document how node implementations are split across mixin modules; they are not
 separate compiled subgraphs.
+
+Conversation memory vs execution recovery
+-----------------------------------------
+``ConversationRepository`` / ``save_conversation`` persist **dialogue state**
+(messages, unresolved issues, handoff case) so the next user turn can continue
+the conversation.
+
+That is **not** LangGraph execution checkpointing.  Without a checkpointer,
+an interrupted in-flight turn cannot resume at ``process_issues`` or
+``evaluate_handoff``; the turn must be retried from START.
+
+When long-running human approval or cross-process resume is required, pass a
+LangGraph checkpointer into :func:`build_agent_workflow_graph` and design
+``interrupt`` points with idempotent external side effects (ticket create,
+handoff provider calls).
 """
 
 from __future__ import annotations
@@ -16,6 +31,15 @@ KNOWLEDGE_NODES = ("process_issues",)
 TICKET_NODES = ("process_issues",)
 HANDOFF_NODES = ("route_handoff", "evaluate_handoff")
 RESPONSE_NODES = ("build_response", "save_conversation")
+
+# Side effects that must stay idempotent before enabling interrupt/resume.
+IDEMPOTENT_EXTERNAL_OPS = (
+    "ticket.create",
+    "ticket.query",
+    "handoff.offer",
+    "handoff.complete",
+    "ops.event.append",
+)
 
 
 class WorkflowGraphNodes(Protocol):
@@ -36,8 +60,18 @@ class WorkflowGraphNodes(Protocol):
     async def _save_conversation(self, state: dict) -> dict: ...
 
 
-def build_agent_workflow_graph(state_type: type, workflow: WorkflowGraphNodes) -> Any:
-    """Compose the production Agent workflow graph from domain node groups."""
+def build_agent_workflow_graph(
+    state_type: type,
+    workflow: WorkflowGraphNodes,
+    *,
+    checkpointer: Any | None = None,
+) -> Any:
+    """Compose the production Agent workflow graph from domain node groups.
+
+    ``checkpointer=None`` (default) means each ``ainvoke``/``astream`` runs the
+    full turn graph without mid-graph resume.  Conversation continuity still
+    comes from ``load_conversation`` / ``save_conversation``.
+    """
     builder = StateGraph(state_type)
     builder.add_node("load_conversation", workflow._load_conversation)
     builder.add_node("route_handoff", workflow._route_handoff)
@@ -75,4 +109,6 @@ def build_agent_workflow_graph(state_type: type, workflow: WorkflowGraphNodes) -
     )
     builder.add_edge("build_response", "save_conversation")
     builder.add_edge("save_conversation", END)
-    return builder.compile()
+    if checkpointer is None:
+        return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

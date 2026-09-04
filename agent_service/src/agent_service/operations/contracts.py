@@ -15,7 +15,12 @@ DataClassification = Literal["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
 ChannelScope = Literal["personal", "channel", "group_chat", "playground"]
 IssueTypeStatus = Literal["DRAFT", "ACTIVE", "DEPRECATED"]
 ClassificationSource = Literal[
-    "MODEL", "FAQ_MAPPING", "DOCUMENT_MAPPING", "MANUAL", "FALLBACK"
+    "MODEL",
+    "KEYWORD_RULE",
+    "FAQ_MAPPING",
+    "DOCUMENT_MAPPING",
+    "MANUAL",
+    "FALLBACK",
 ]
 
 OperationalEventType = Literal[

@@ -28,7 +28,7 @@ def test_classifier_maps_vpn_and_faq(ops_paths: tuple[Path, Path, Path]) -> None
     classifier = IssueClassifier(TaxonomyRepository(taxonomy_path), rules_path)
     vpn = classifier.classify("VPN 一直連不上", route="KNOWLEDGE")
     assert vpn.issue_type_id == "vpn.connection_failed"
-    assert vpn.classification_source == "MODEL"
+    assert vpn.classification_source == "KEYWORD_RULE"
     faq = classifier.classify("密碼重設", route="FAQ", faq_key="PASSWORD_RESET")
     assert faq.issue_type_id == "password.reset_procedure"
     assert faq.classification_source == "FAQ_MAPPING"
