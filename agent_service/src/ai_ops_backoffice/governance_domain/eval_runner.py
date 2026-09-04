@@ -291,15 +291,34 @@ async def _harness_observe(
     text: str,
     history: list[dict[str, str]] | None,
     model_id: str | None,
+    setup: str | None = None,
 ) -> Any:
     aobserve = getattr(harness, "aobserve", None)
     if callable(aobserve):
-        return await aobserve(
+        try:
+            return await aobserve(
+                template=template,
+                text=text,
+                history=history,
+                model_id=model_id,
+                setup=setup,
+            )
+        except TypeError:
+            return await aobserve(
+                template=template, text=text, history=history, model_id=model_id
+            )
+    try:
+        return harness.observe(
+            template=template,
+            text=text,
+            history=history,
+            model_id=model_id,
+            setup=setup,
+        )
+    except TypeError:
+        return harness.observe(
             template=template, text=text, history=history, model_id=model_id
         )
-    return harness.observe(
-        template=template, text=text, history=history, model_id=model_id
-    )
 
 
 async def _real_flow_cases(
@@ -376,12 +395,14 @@ async def _real_flow_cases(
         text = str(probe.get("text") or "")
         expected = str(probe.get("expected_route") or "")
         history = probe.get("history") if isinstance(probe.get("history"), list) else []
+        setup = probe.get("setup") if isinstance(probe.get("setup"), str) else None
         observation = await _harness_observe(
             harness,
             template=candidate.template,
             text=text,
             history=history,  # type: ignore[arg-type]
             model_id=candidate.model_id,
+            setup=setup,
         )
         ok, detail = _observation_matches(probe, observation)
         pairs.append((expected, observation.route))
@@ -401,6 +422,7 @@ async def _real_flow_cases(
                 text=text,
                 history=history,  # type: ignore[arg-type]
                 model_id=baseline.model_id or candidate.model_id,
+                setup=setup,
             )
             baseline_pairs.append((expected, baseline_obs.route))
 

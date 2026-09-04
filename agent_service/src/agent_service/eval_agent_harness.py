@@ -34,7 +34,7 @@ class SupportsAgentRespond(Protocol):
 
 RequestFactory = Callable[[str, list[dict[str, str]] | None], Any]
 SideEffectReader = Callable[[], Mapping[str, Any]]
-PrepareCase = Callable[[list[dict[str, str]] | None], Awaitable[None]]
+PrepareCase = Callable[..., Awaitable[None]]
 NoteTurnResult = Callable[..., None]
 
 
@@ -70,6 +70,7 @@ class AgentWorkflowTurnExecutor:
         model_id: str,
         text: str,
         history: list[dict[str, str]] | None,
+        setup: str | None = None,
     ) -> FlowObservation:
         if self._apply_candidate is None:
             return FlowObservation(
@@ -101,7 +102,7 @@ class AgentWorkflowTurnExecutor:
                 model_id_used=None,
             )
         if self._prepare_case is not None:
-            await self._prepare_case(history)
+            await self._prepare_case(history, setup=setup)
         request = self._request_factory(text, history)
         response = await self._workflow.respond(request)
         answer = str(getattr(response, "answer", "") or "")
@@ -140,6 +141,7 @@ class AgentWorkflowTurnExecutor:
         model_id: str,
         text: str,
         history: list[dict[str, str]] | None,
+        setup: str | None = None,
     ) -> FlowObservation:
         try:
             asyncio.get_running_loop()
@@ -150,6 +152,7 @@ class AgentWorkflowTurnExecutor:
                     model_id=model_id,
                     text=text,
                     history=history,
+                    setup=setup,
                 )
             )
         raise RuntimeError(

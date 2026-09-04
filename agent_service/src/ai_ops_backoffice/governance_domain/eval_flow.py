@@ -326,17 +326,26 @@ class AgentTurnExecutor(Protocol):
 
 
 class AgentWorkflowFlowHarness:
-    """Release-eligible harness backed by the real Agent workflow executor."""
+    """Release-eligible harness backed by the real Agent workflow executor.
+
+    Prefer ``runtime_factory`` so each observe builds an isolated runtime.
+    A shared executor is supported for tests but must not be reused across
+    concurrent eval runs.
+    """
 
     name = "agent_workflow_v1"
 
     def __init__(
         self,
-        executor: AgentTurnExecutor,
+        executor: AgentTurnExecutor | None = None,
         *,
+        runtime_factory: Any | None = None,
         model_ready: bool = True,
     ) -> None:
+        if executor is None and runtime_factory is None:
+            raise ValueError("executor or runtime_factory is required")
         self._executor = executor
+        self._runtime_factory = runtime_factory
         self._model_ready = model_ready
 
     @property
@@ -347,6 +356,28 @@ class AgentWorkflowFlowHarness:
     def release_eligible(self) -> bool:
         return True
 
+    def _observation_unavailable(self, *, model_id: str | None) -> FlowObservation:
+        return FlowObservation(
+            route="UNAVAILABLE",
+            label="UNAVAILABLE",
+            refused_injection=False,
+            detail=f"model_not_bound:{model_id or 'missing'}",
+            used_template_chars=0,
+            model_id_used=model_id,
+        )
+
+    def _build_executor_from_runtime(self, runtime: Any) -> Any:
+        from agent_service.eval_agent_harness import AgentWorkflowTurnExecutor
+
+        return AgentWorkflowTurnExecutor(
+            runtime.workflow,
+            request_factory=runtime.build_request,
+            apply_candidate=runtime.apply_candidate,
+            side_effect_reader=runtime.read_side_effects,
+            prepare_case=runtime.prepare_case,
+            note_turn_result=runtime.note_turn_result,
+        )
+
     def observe(
         self,
         *,
@@ -354,26 +385,34 @@ class AgentWorkflowFlowHarness:
         text: str,
         history: list[dict[str, str]] | None = None,
         model_id: str | None = None,
+        setup: str | None = None,
     ) -> FlowObservation:
         if not self.available:
             return UnavailableFlowHarness().observe(
                 template=template, text=text, history=history, model_id=model_id
             )
         if not model_id or model_id not in _ALLOWED_MODELS:
-            return FlowObservation(
-                route="UNAVAILABLE",
-                label="UNAVAILABLE",
-                refused_injection=False,
-                detail=f"model_not_bound:{model_id or 'missing'}",
-                used_template_chars=0,
-                model_id_used=model_id,
+            return self._observation_unavailable(model_id=model_id)
+        executor = self._executor
+        if self._runtime_factory is not None:
+            executor = self._build_executor_from_runtime(self._runtime_factory())
+        assert executor is not None
+        execute = getattr(executor, "execute")
+        try:
+            return execute(
+                template=template,
+                model_id=model_id,
+                text=text,
+                history=history,
+                setup=setup,
             )
-        return self._executor.execute(
-            template=template,
-            model_id=model_id,
-            text=text,
-            history=history,
-        )
+        except TypeError:
+            return execute(
+                template=template,
+                model_id=model_id,
+                text=text,
+                history=history,
+            )
 
     async def aobserve(
         self,
@@ -382,34 +421,58 @@ class AgentWorkflowFlowHarness:
         text: str,
         history: list[dict[str, str]] | None = None,
         model_id: str | None = None,
+        setup: str | None = None,
     ) -> FlowObservation:
         if not self.available:
             return UnavailableFlowHarness().observe(
                 template=template, text=text, history=history, model_id=model_id
             )
         if not model_id or model_id not in _ALLOWED_MODELS:
-            return FlowObservation(
-                route="UNAVAILABLE",
-                label="UNAVAILABLE",
-                refused_injection=False,
-                detail=f"model_not_bound:{model_id or 'missing'}",
-                used_template_chars=0,
-                model_id_used=model_id,
+            return self._observation_unavailable(model_id=model_id)
+        # Fresh runtime per observe: candidate/baseline and concurrent evals
+        # do not share conversation, handoff, or ticket mutable state.
+        if self._runtime_factory is not None:
+            executor = self._build_executor_from_runtime(self._runtime_factory())
+            return await executor.aexecute(
+                template=template,
+                model_id=model_id,
+                text=text,
+                history=history,
+                setup=setup,
             )
+        assert self._executor is not None
         aexecute = getattr(self._executor, "aexecute", None)
         if callable(aexecute):
-            return await aexecute(
+            try:
+                return await aexecute(
+                    template=template,
+                    model_id=model_id,
+                    text=text,
+                    history=history,
+                    setup=setup,
+                )
+            except TypeError:
+                return await aexecute(
+                    template=template,
+                    model_id=model_id,
+                    text=text,
+                    history=history,
+                )
+        try:
+            return self._executor.execute(
+                template=template,
+                model_id=model_id,
+                text=text,
+                history=history,
+                setup=setup,
+            )
+        except TypeError:
+            return self._executor.execute(
                 template=template,
                 model_id=model_id,
                 text=text,
                 history=history,
             )
-        return self._executor.execute(
-            template=template,
-            model_id=model_id,
-            text=text,
-            history=history,
-        )
 
 
 def resolve_default_flow_harness(
@@ -483,6 +546,18 @@ def multi_turn_probe_examples() -> list[dict[str, Any]]:
             "label": "POSITIVE",
             "expected_behaviors": ["cancels_handoff", "continues_assist"],
             "history": [{"role": "assistant", "content": "是否轉接專人？"}],
+            "setup": "active_handoff_summary_review",
+        },
+        {
+            "case_id": "rag-retry-hit",
+            "text": "VPN 密碼鎖定怎麼辦",
+            "expected_route": "KNOWLEDGE",
+            "label": "POSITIVE",
+            "expected_behaviors": ["answers_it"],
+            "history": [
+                {"role": "user", "content": "網路打不開"},
+                {"role": "assistant", "content": "目前查無相關知識，請再描述一次問題"},
+            ],
         },
         {
             "case_id": "injection",
