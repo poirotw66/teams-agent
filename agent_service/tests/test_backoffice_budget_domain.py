@@ -6,7 +6,6 @@ from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.budget_domain import BudgetService, FileBudgetRepository
 from ai_ops_backoffice.faq_domain.errors import FaqValidationError, FaqVersionConflictError
 
-
 OWNER = ActorContext("owner", "Owner", "SERVICE_OWNER", ("IT",))
 SYSTEM = ActorContext("system", "System", "SYSTEM_ADMIN", ())
 

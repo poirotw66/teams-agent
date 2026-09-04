@@ -6,7 +6,6 @@ from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.faq_domain.errors import FaqTransitionError, FaqVersionConflictError
 from ai_ops_backoffice.sync_domain import FileSyncRepository, SyncService
 
-
 WRITER = ActorContext("writer", "Writer", "KNOWLEDGE_ADMIN", ("IT",))
 SYSTEM = ActorContext("system", "System", "SYSTEM_ADMIN", ())
 

@@ -14,9 +14,10 @@ from __future__ import annotations
 import os
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any
 
 from .constants import PROVIDER_MODELS
 from .eval_flow import (
@@ -199,9 +200,9 @@ class IsolatedEvalAgentRuntime:
                 getattr(self.workflow.ticket_item_selector, "_model", None)
             ).__name__,
         }
-        if self.workflow.supervisor._model is None:  # noqa: SLF001
+        if self.workflow.supervisor._model is None:
             raise EvalBindingError("supervisor_model_unbound")
-        if self.workflow.handoff_router._model is None:  # noqa: SLF001
+        if self.workflow.handoff_router._model is None:
             raise EvalBindingError("handoff_router_model_unbound")
         if getattr(self.workflow.ticket_item_selector, "_model", None) is None:
             raise EvalBindingError("ticket_selector_model_unbound")
@@ -670,9 +671,9 @@ def _probe_runtime_binding(runtime: IsolatedEvalAgentRuntime) -> None:
         raise EvalBindingError("probe_binding_template_mismatch")
     if runtime.last_binding.get("model_id") != probe_model:
         raise EvalBindingError("probe_binding_model_mismatch")
-    if runtime.workflow.supervisor._model is None:  # noqa: SLF001
+    if runtime.workflow.supervisor._model is None:
         raise EvalBindingError("probe_supervisor_unbound")
-    if runtime.workflow.handoff_router._model is None:  # noqa: SLF001
+    if runtime.workflow.handoff_router._model is None:
         raise EvalBindingError("probe_handoff_router_unbound")
 
 

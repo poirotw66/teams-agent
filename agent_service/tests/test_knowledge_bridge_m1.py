@@ -7,7 +7,9 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from test_knowledge_portal import portal_headers, sample_document_payload
 
+from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.knowledge_bridge.capabilities import (
     has_knowledge_capability,
@@ -19,11 +21,8 @@ from ai_ops_backoffice.knowledge_bridge.delegation import (
 )
 from ai_ops_backoffice.knowledge_bridge.errors import assert_allowlisted
 from ai_ops_backoffice.settings import BackofficeSettings
-from agent_service.operations.access import ActorContext
 from knowledge_portal.api import create_app as create_portal_app
 from knowledge_portal.settings import PortalSettings
-from test_knowledge_portal import portal_headers, sample_document_payload
-
 
 SECRET = "test-delegation-secret-m1"
 
@@ -142,7 +141,7 @@ def test_knowledge_bridge_document_read_via_asgi(tmp_path: Path) -> None:
     document_id = created.json()["document"]["document_id"]
 
     settings = _backoffice_settings(tmp_path, bridge=True)
-    app = create_app(settings)
+    _ = create_app(settings)
     # Inject ASGI transport into the client created by create_app.
     from ai_ops_backoffice.knowledge_bridge.client import KnowledgePortalClient
 
@@ -159,8 +158,9 @@ def test_knowledge_bridge_document_read_via_asgi(tmp_path: Path) -> None:
     bo = TestClient(create_app(settings))
     # Monkeypatch: call client directly through status then replace via request path.
     # Simpler approach: use KnowledgePortalClient with transport in a fresh mini-app.
-    from fastapi import FastAPI, Depends, Header, HTTPException
-    from ai_ops_backoffice.auth import resolve_actor, BackofficeAuthError
+    from fastapi import FastAPI, Header, HTTPException
+
+    from ai_ops_backoffice.auth import BackofficeAuthError, resolve_actor
 
     mini = FastAPI()
 
@@ -188,8 +188,9 @@ def test_knowledge_bridge_document_read_via_asgi(tmp_path: Path) -> None:
         except BackofficeAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-    from ai_ops_backoffice.knowledge_bridge.errors import KnowledgeBridgeError
     from fastapi.responses import JSONResponse
+
+    from ai_ops_backoffice.knowledge_bridge.errors import KnowledgeBridgeError
 
     @mini.exception_handler(KnowledgeBridgeError)
     async def _kb(_req, exc: KnowledgeBridgeError):

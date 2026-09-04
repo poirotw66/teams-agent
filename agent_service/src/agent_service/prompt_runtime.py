@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from agent_service.extractor import SYSTEM_PROMPT
 from agent_service.settings import RagSettings

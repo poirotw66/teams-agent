@@ -16,7 +16,6 @@ from ai_ops_backoffice.governance_domain import (
 )
 from ai_ops_backoffice.governance_domain.constants import ISSUE_EXTRACTOR_PROMPT_ID
 
-
 AI = ActorContext("ai-admin", "AI Admin", "AI_ADMIN", ())
 APPROVER = ActorContext("approver", "Approver", "AI_ADMIN", ())
 SYSTEM_A = ActorContext("sys-a", "System A", "SYSTEM_ADMIN", ())

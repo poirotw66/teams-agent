@@ -152,7 +152,7 @@ def _actor_from_delegation(
             delegation_header,
             secret=settings.delegation_secret,
         )
-    except Exception as exc:  # noqa: BLE001 - map all verify failures to auth error
+    except Exception as exc:
         raise PortalAuthError(f"Invalid delegation envelope: {exc}") from exc
 
     role = str(payload.get("portalRole") or "CONTRIBUTOR")

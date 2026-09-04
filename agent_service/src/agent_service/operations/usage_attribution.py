@@ -7,9 +7,10 @@ the call records.
 
 from __future__ import annotations
 
-from math import isclose
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Sequence
+from math import isclose
+from typing import Any
 
 from ..usage_events import RequestCostSummary, UsageEvent
 from .event_identity import required_utc

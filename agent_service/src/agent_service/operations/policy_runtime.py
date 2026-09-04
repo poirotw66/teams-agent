@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Protocol
+from typing import Protocol
 
 from agent_service.operations.contracts import MASKING_POLICY_VERSION
 from agent_service.operations.masking_rules import MaskingRulePack, resolve_masking_pack
@@ -101,7 +102,7 @@ class PolicyRuntime:
             if self._governance is not None:
                 try:
                     peeked = self._governance.peek_runtime_retention(policy_id)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     if self._require_governance:
                         raise PolicySourceUnavailableError(
                             f"governance retention peek failed: {type(exc).__name__}"
@@ -132,7 +133,7 @@ class PolicyRuntime:
             if self._governance is not None:
                 try:
                     peeked = self._governance.peek_runtime_masking()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     if self._require_governance:
                         raise PolicySourceUnavailableError(
                             f"governance masking peek failed: {type(exc).__name__}"

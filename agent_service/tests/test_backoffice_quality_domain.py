@@ -11,7 +11,6 @@ from ai_ops_backoffice.faq_domain.errors import (
 )
 from ai_ops_backoffice.quality_domain import FileQualityRepository, QualityService
 
-
 WRITER = ActorContext("writer", "Writer", "KNOWLEDGE_ADMIN", ("IT",))
 OWNER = ActorContext("owner", "Owner", "SERVICE_OWNER", ("IT",))
 

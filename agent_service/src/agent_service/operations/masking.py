@@ -116,8 +116,8 @@ def pseudonymous_actor_id(raw_id: str | None) -> str | None:
 
 
 def mask_text(text: str, *, reveal: bool = False) -> MaskingResult:
-    from .policy_runtime import active_masking_policy
     from .masking_rules import apply_masking_pack
+    from .policy_runtime import active_masking_policy
 
     policy = active_masking_policy()
     pack = policy.pack

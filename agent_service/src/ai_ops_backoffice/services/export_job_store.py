@@ -417,7 +417,7 @@ class FirestoreExportJobStore:
     async def list_all_content_refs(self) -> set[str]:
         """Scan every status fully so purge never treats capped pages as complete."""
         refs: set[str] = set()
-        for status in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"}:
+        for status in ("QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"):
             for payload in await self._stream_where(field="status", op="==", value=status):
                 ref = payload.get("content_ref")
                 if isinstance(ref, str) and ref:

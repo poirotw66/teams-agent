@@ -18,6 +18,7 @@ from test_backoffice_faq_domain import (
 )
 
 from agent_service.operations.access import ActorContext
+from agent_service.operations.masking import MASKING_POLICY_VERSION
 from ai_ops_backoffice.faq_domain import (
     FaqAuthorizationError,
     FaqDomainService,
@@ -32,7 +33,6 @@ from ai_ops_backoffice.faq_domain.authorization import (
     PocOnlySelfApprovalException,
 )
 from ai_ops_backoffice.faq_domain.models import FaqAuditEvent, FaqTestCase
-from agent_service.operations.masking import MASKING_POLICY_VERSION
 
 WRITER = ActorContext("writer", "Writer", "KNOWLEDGE_ADMIN", ("it",))
 REVIEWER = ActorContext("reviewer", "Reviewer", "KNOWLEDGE_ADMIN", ("it",))

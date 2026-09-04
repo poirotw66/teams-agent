@@ -4,9 +4,10 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable
+from typing import Any
 
 from ..contracts import OperationalEvent
 from .journal import Lease, claim_record, expire_record, register, settle_record, summarize

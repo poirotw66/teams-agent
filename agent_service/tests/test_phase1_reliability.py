@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from test_backoffice_governance_domain import AI, APPROVER
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.contracts import OperationalEvent, utc_now
@@ -21,7 +22,6 @@ from ai_ops_backoffice.governance_domain import FileGovernanceRepository, Govern
 from ai_ops_backoffice.services.daily_aggregates import build_daily_ops_aggregates
 from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
 from ai_ops_backoffice.services.export_service import ExportJob, ExportJobService
-from test_backoffice_governance_domain import AI, APPROVER
 
 
 def _ops(tmp_path: Path) -> OpsSettings:
@@ -242,7 +242,6 @@ def test_daily_aggregate_store_materialize_and_coverage(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_export_atomic_claim_is_exclusive(tmp_path: Path) -> None:
-    from agent_service.operations.audit_stores import MemoryAuditStore
     from ai_ops_backoffice.services.export_job_store import FileExportJobStore
 
     store = FileExportJobStore(tmp_path / "jobs")
@@ -342,7 +341,6 @@ async def test_export_idempotency_scoped_to_tenant_and_requester(tmp_path: Path)
 async def test_export_mid_crash_lease_takeover(tmp_path: Path) -> None:
     from datetime import timedelta
 
-    from agent_service.operations.audit_stores import MemoryAuditStore
     from ai_ops_backoffice.services.export_job_store import FileExportJobStore
 
     store = FileExportJobStore(tmp_path / "jobs")
@@ -444,7 +442,7 @@ class _MemoryDoc:
         self._store = store
         self._path = path
 
-    def collection(self, name: str) -> "_MemoryCollection":
+    def collection(self, name: str) -> _MemoryCollection:
         return _MemoryCollection(self._store, self._path + (name,))
 
     def get(self, transaction=None):
@@ -565,7 +563,6 @@ def test_sharded_governance_migrates_unchanged_entities_before_pointer() -> None
 
 @pytest.mark.asyncio
 async def test_export_recovery_skips_own_active_lease(tmp_path: Path) -> None:
-    from datetime import timedelta
 
     from agent_service.operations.audit_stores import MemoryAuditStore
 
@@ -648,7 +645,7 @@ async def test_export_service_requires_authority_outside_lab(tmp_path: Path) -> 
         owner_unit_ids=("IT Service Desk",),
         tenant_id="tenant-a",
     )
-    register = getattr(wired._authorization_resolver, "register")
+    register = wired._authorization_resolver.register
     register(actor=actor, tenant_id="tenant-a")
     assert await wired._authorization_resolver.resolve(
         requester_id="alice", tenant_id="tenant-a"
@@ -1053,7 +1050,7 @@ def test_harness_observe_does_not_retry_on_inner_type_error() -> None:
         available = True
         release_eligible = False
 
-        async def aobserve(self, **kwargs):  # noqa: ANN003
+        async def aobserve(self, **kwargs):
             calls["count"] += 1
             raise TypeError("model adapter exploded after invoke")
 
@@ -1076,7 +1073,6 @@ def test_harness_observe_does_not_retry_on_inner_type_error() -> None:
 
 
 def test_migrate_legacy_reads_inside_transaction_and_freezes(tmp_path: Path) -> None:
-    from ai_ops_backoffice.governance_domain.models import GovernanceState
     from ai_ops_backoffice.governance_domain.sharded_repository import (
         ShardedFirestoreGovernanceRepository,
     )
@@ -1203,12 +1199,12 @@ async def test_export_audit_failure_cleans_pending_artifact(tmp_path: Path) -> N
     from ai_ops_backoffice.services.export_service import ExportJobService
 
     class _BoomOnCompleteAudit:
-        async def append(self, event):  # noqa: ANN001
+        async def append(self, event):
             if event.action == "export.complete":
                 raise RuntimeError("audit unavailable")
 
     class _StubBackend:
-        async def execute(self, *, actor, job):  # noqa: ANN001
+        async def execute(self, *, actor, job):
             return {
                 "ok": True,
                 "exportMetadata": {
@@ -1409,7 +1405,7 @@ class _RecordingEvalModel:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[object]]] = []
 
-    def with_structured_output(self, schema):  # noqa: ANN001
+    def with_structured_output(self, schema):
         from agent_service.contracts import Issue, IssueExtraction
         from agent_service.handoff_flow import HandoffRouteDecision
         from agent_service.supervisor import ConversationSupervisorDecision
@@ -1418,7 +1414,7 @@ class _RecordingEvalModel:
         schema_name = getattr(schema, "__name__", type(schema).__name__)
 
         class _Structured:
-            async def ainvoke(self, messages):  # noqa: ANN001
+            async def ainvoke(self, messages):
                 parent.calls.append((schema_name, list(messages)))
                 blob = " ".join(str(getattr(item, "content", item)) for item in messages)
                 if schema_name == "IssueExtraction" or schema is IssueExtraction:

@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from pdf_test_helpers import build_text_pdf_bytes
 from test_ai_ops_backoffice import _seed_sample_events, headers
 from test_knowledge_portal import portal_headers, sample_document_payload
-from pdf_test_helpers import build_text_pdf_bytes
 
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.settings import BackofficeSettings

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..contracts import OperationalEvent
 from .journal import Lease, claim_record, register, settle_record, summarize

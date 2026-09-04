@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from agent_service.extractor import SYSTEM_PROMPT
 from agent_service.operations.access import CAPABILITIES, ActorContext

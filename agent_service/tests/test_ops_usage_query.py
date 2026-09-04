@@ -54,9 +54,10 @@ def _summary(key="summary", *, cost=0.3, elapsed=1200, calls=2, tokens=40, **kwa
 
 
 def _query(events):
-    from ai_ops_backoffice.services.daily_aggregates import FileDailyAggregateStore
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
+    from ai_ops_backoffice.services.daily_aggregates import FileDailyAggregateStore
 
     query = object.__new__(BackofficeQueryService)
     query._metrics = {}

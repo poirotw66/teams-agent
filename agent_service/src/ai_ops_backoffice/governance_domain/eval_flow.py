@@ -437,7 +437,7 @@ class AgentWorkflowFlowHarness:
         if self._runtime_factory is not None:
             executor = self._build_executor_from_runtime(self._runtime_factory())
         assert executor is not None
-        execute = getattr(executor, "execute")
+        execute = executor.execute
         return execute(
             **self._executor_call_kwargs(
                 execute,
@@ -488,7 +488,7 @@ class AgentWorkflowFlowHarness:
                     setup=setup,
                 )
             )
-        execute = getattr(self._executor, "execute")
+        execute = self._executor.execute
         return execute(
             **self._executor_call_kwargs(
                 execute,

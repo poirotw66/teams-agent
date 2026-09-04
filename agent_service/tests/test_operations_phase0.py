@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+
 from agent_service.contracts import Issue
 from agent_service.operations.classification import IssueClassifier
 from agent_service.operations.emitter import OperationalEventEmitter

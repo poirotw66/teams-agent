@@ -7,7 +7,6 @@ from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.faq_domain.errors import FaqAuthorizationError, FaqValidationError
 from ai_ops_backoffice.prompt_domain import FilePromptRepository, PromptPocService
 
-
 AI_ADMIN = ActorContext("ai-admin", "AI Admin", "AI_ADMIN", ())
 ANALYST = ActorContext("analyst", "Analyst", "ANALYST", ())
 

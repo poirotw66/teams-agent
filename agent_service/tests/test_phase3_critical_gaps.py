@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from test_backoffice_governance_api import _settings, headers
+from test_backoffice_governance_domain import AI, APPROVER
 
 from agent_service.extractor import SYSTEM_PROMPT
 from agent_service.operations.contracts import MASKING_POLICY_VERSION, utc_now
@@ -15,8 +17,6 @@ from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
 from ai_ops_backoffice.governance_domain.eval_runner import evaluate_prompt
 from ai_ops_backoffice.governance_domain.models import PromptVersion
-from test_backoffice_governance_api import _settings, headers
-from test_backoffice_governance_domain import AI, APPROVER
 
 
 def _ops(tmp_path: Path) -> OpsSettings:
@@ -105,8 +105,9 @@ def test_active_retention_and_masking_affect_runtime(tmp_path: Path) -> None:
 
 
 def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> None:
-    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
     from governance_eval_helpers import release_eligible_lab_harness
+
+    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
 
     now = datetime.now(UTC)
     examples = [

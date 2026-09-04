@@ -10,6 +10,7 @@ from ..delivery.journal import Journal
 from ..delivery.worker import DeliveryWorker
 from .memory_store import MemoryOperationalStore
 
+
 class OperationalStore(Protocol):
     async def append(self, event: OperationalEvent) -> bool: ...
 

@@ -765,25 +765,24 @@ def test_phase2_document_example_uses_scoped_inventory(tmp_path: Path) -> None:
         BackofficeQueryService,
         "list_documents",
         new=AsyncMock(return_value=inventory),
-    ):
-        with TestClient(create_app(settings)) as client:
-            invalid = client.post(
-                "/api/knowledge/vpn-guide/versions/version-6/examples",
-                json=payload,
-                headers=headers("KNOWLEDGE_ADMIN"),
-            )
-            assert invalid.status_code == 404
-            created = client.post(
-                "/api/knowledge/vpn-guide/versions/version-7/examples",
-                json=payload,
-                headers=headers("KNOWLEDGE_ADMIN"),
-            )
-            assert created.status_code == 200
-            example = created.json()["example"]
-            assert example["source_type"] == "DOCUMENT"
-            assert example["source_id"] == "vpn-guide"
-            assert example["source_version_id"] == "version-7"
-            assert example["owner_unit_id"] == "IT Service Desk"
+    ), TestClient(create_app(settings)) as client:
+        invalid = client.post(
+            "/api/knowledge/vpn-guide/versions/version-6/examples",
+            json=payload,
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+        assert invalid.status_code == 404
+        created = client.post(
+            "/api/knowledge/vpn-guide/versions/version-7/examples",
+            json=payload,
+            headers=headers("KNOWLEDGE_ADMIN"),
+        )
+        assert created.status_code == 200
+        example = created.json()["example"]
+        assert example["source_type"] == "DOCUMENT"
+        assert example["source_id"] == "vpn-guide"
+        assert example["source_version_id"] == "version-7"
+        assert example["owner_unit_id"] == "IT Service Desk"
 
     with patch.object(
         BackofficeQueryService,

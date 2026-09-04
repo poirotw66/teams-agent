@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from google.api_core.exceptions import Aborted, PermissionDenied
 from google.auth.credentials import AnonymousCredentials
 from google.cloud.firestore_v1 import Client

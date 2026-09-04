@@ -1,8 +1,7 @@
 """Static Phase 0 infrastructure contracts; these tests do not contact GCP."""
 
-from pathlib import Path
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM = ROOT / "infra" / "terraform"
@@ -18,9 +17,8 @@ class OpsInfrastructureContractTests(unittest.TestCase):
 
         self.assertIn('variable "environment_name"', variables)
         self.assertIn('["dev", "test", "poc", "prod"]', variables)
-        self.assertIn("AGENT_DEPLOYMENT_ENV               = var.environment_name", locals_tf)
-        self.assertIn("AGENT_DEPLOYMENT_ENV           = var.environment_name", locals_tf)
-        self.assertNotIn('AGENT_DEPLOYMENT_ENV           = var.deployment_phase', locals_tf)
+        self.assertRegex(locals_tf, r"AGENT_DEPLOYMENT_ENV\s+=\s+var\.environment_name")
+        self.assertNotRegex(locals_tf, r"AGENT_DEPLOYMENT_ENV\s+=\s+var\.deployment_phase")
 
     def test_one_year_retention_is_the_default(self) -> None:
         variables = self.read("infra/terraform/variables.tf")
@@ -82,9 +80,9 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         cloud_run = self.read("infra/terraform/cloud_run.tf")
         backoffice = self.read("infra/terraform/ai_ops.tf")
 
-        self.assertIn("KNOWLEDGE_PORTAL_PUBLIC_URL    = var.knowledge_portal_public_url", locals_tf)
-        self.assertIn("KNOWLEDGE_PORTAL_URL_CONFIGURED = tostring(var.knowledge_portal_public_url != \"\")", locals_tf)
-        self.assertNotIn("KNOWLEDGE_PORTAL_PUBLIC_URL    = var.adapter_public_base_url", locals_tf)
+        self.assertRegex(locals_tf, r"KNOWLEDGE_PORTAL_PUBLIC_URL\s+=\s+var\.knowledge_portal_public_url")
+        self.assertRegex(locals_tf, r'KNOWLEDGE_PORTAL_URL_CONFIGURED\s+=\s+tostring\(var\.knowledge_portal_public_url != ""\)')
+        self.assertNotRegex(locals_tf, r"KNOWLEDGE_PORTAL_PUBLIC_URL\s+=\s+var\.adapter_public_base_url")
         self.assertNotIn("      template,", cloud_run)
         self.assertNotIn("      scaling,", cloud_run)
         self.assertNotIn("      template,", backoffice)

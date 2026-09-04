@@ -5,9 +5,10 @@ import asyncio
 import logging
 import signal
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
-from .journal import DeliveryError, EventConflict, Journal, Lease, PRIMARY, fingerprint
+from .journal import PRIMARY, DeliveryError, EventConflict, Journal, Lease, fingerprint
 
 logger = logging.getLogger(__name__)
 

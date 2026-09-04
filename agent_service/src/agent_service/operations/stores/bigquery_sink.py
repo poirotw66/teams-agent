@@ -7,6 +7,7 @@ from typing import Any
 from ..contracts import OperationalEvent
 from ..delivery.journal import DeliveryError
 
+
 class BigQueryDeliveryError(DeliveryError):
     """Sanitized typed failure. Raw SDK errors and rows must not escape or be logged."""
 
