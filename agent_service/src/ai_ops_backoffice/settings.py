@@ -64,6 +64,12 @@ class BackofficeSettings:
     governance_store_mode: str = "FILE"
     governance_store_path: Path | None = None
     governance_firestore_collection: str = "ai_ops_governance_state"
+    # Knowledge Portal BFF bridge (consolidation M1). Defaults keep bridge off.
+    knowledge_internal_url: str = ""
+    knowledge_service_token: str = ""
+    knowledge_delegation_secret: str = ""
+    knowledge_bridge_enabled: bool = False
+    deployment_tenant_id: str = "local-development"
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -91,6 +97,22 @@ class BackofficeSettings:
             ).upper(),
             knowledge_portal_url=os.environ.get(
                 "KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"
+            ),
+            knowledge_internal_url=os.environ.get(
+                "KNOWLEDGE_PORTAL_INTERNAL_URL",
+                os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"),
+            ),
+            knowledge_service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", ""),
+            knowledge_delegation_secret=os.environ.get(
+                "KNOWLEDGE_PORTAL_DELEGATION_SECRET",
+                os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),
+            ),
+            knowledge_bridge_enabled=os.environ.get(
+                "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", ""
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            deployment_tenant_id=os.environ.get(
+                "AI_OPS_DEPLOYMENT_TENANT_ID", "local-development"
             ),
             agent_api_url=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL")
             or os.environ.get("AGENT_API_URL"),

@@ -56,6 +56,9 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         x_portal_user_name: str | None = Header(default=None, alias="X-Portal-User-Name"),
         x_portal_role: str | None = Header(default="CONTRIBUTOR", alias="X-Portal-Role"),
         x_portal_owner_units: str | None = Header(default="", alias="X-Portal-Owner-Units"),
+        x_knowledge_delegation: str | None = Header(
+            default=None, alias="X-Knowledge-Delegation"
+        ),
     ) -> PortalActor:
         try:
             return resolve_portal_actor(
@@ -65,6 +68,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                 header_user_name=x_portal_user_name,
                 header_role=x_portal_role,
                 header_owner_units=x_portal_owner_units,
+                delegation_header=x_knowledge_delegation,
             )
         except PortalAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc

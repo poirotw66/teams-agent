@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>知識營運｜AI 資訊客服營運後台</title>
+    <link rel="stylesheet" href="/static/kp/styles.css?v=embed-20260904f">
+    <style>
+      .embed-backbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.65rem 1rem;
+        background: #0f6cbd;
+        color: #fff;
+        font-size: 0.9rem;
+      }
+      .embed-backbar a {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .embed-backbar a:hover { text-decoration: underline; }
+      .embed-backbar .hint { opacity: 0.9; }
+
+      /* Fill the parent iframe completely. */
+      html.shell-embed,
+      body.shell-embed {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg, #f1f5f9);
+      }
+      body.shell-embed .embed-backbar,
+      body.shell-embed .skip-link,
+      body.shell-embed .sidebar-brand,
+      body.shell-embed .sidebar-identity {
+        display: none !important;
+      }
+      body.shell-embed .app-root,
+      body.shell-embed fluent-design-system-provider.app-root {
+        display: flex !important;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+      }
+      body.shell-embed .app-shell {
+        display: flex !important;
+        flex-direction: column;
+        grid-template-columns: none;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        flex: 1 1 auto;
+      }
+      body.shell-embed .app-sidebar {
+        position: static;
+        height: auto;
+        width: 100%;
+        flex: 0 0 auto;
+        display: block;
+        padding: 0.65rem 0.85rem 0.55rem;
+        background: var(--surface, #fff);
+        border-right: none;
+        border-bottom: 1px solid var(--border, #e2e8f0);
+        box-shadow: none;
+      }
+      body.shell-embed .sidebar-nav {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        flex: 0;
+        padding: 0;
+      }
+      body.shell-embed .sidebar-nav .nav-link {
+        width: auto;
+        border: 1px solid var(--border, #e2e8f0);
+        border-radius: 999px;
+        background: var(--surface, #fff);
+        padding: 0.35rem 0.85rem;
+        white-space: nowrap;
+      }
+      body.shell-embed .sidebar-nav .nav-link.active,
+      body.shell-embed .sidebar-nav .nav-link[aria-current="page"] {
+        background: var(--accent-subtle, #eff6fc);
+        border-color: var(--accent, #0078d4);
+      }
+      body.shell-embed .app-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      body.shell-embed .app-main {
+        flex: 1 1 auto;
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 0.75rem 1rem 1rem;
+        min-height: 0;
+        animation: none;
+        display: flex;
+        flex-direction: column;
+      }
+      body.shell-embed .page {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        width: 100%;
+      }
+      body.shell-embed .page-header {
+        margin-bottom: 0.65rem;
+        flex: 0 0 auto;
+      }
+      body.shell-embed .page-header h2 {
+        font-size: 1.2rem;
+      }
+      body.shell-embed .command-bar {
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+      body.shell-embed #knowledgeContent {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      body.shell-embed #knowledgeContent .table-wrap,
+      body.shell-embed .table-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        border-radius: 0;
+        box-shadow: none;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
+      }
+      body.shell-embed .app-body {
+        background: #fff;
+      }
+    </style>
+    <script>
+      window.__AI_OPS_KNOWLEDGE_EMBED__ = true;
+      window.__AI_OPS_STATIC_PREFIX__ = "/static/kp";
+      window.__AI_OPS_SHELL_EMBED__ = new URLSearchParams(location.search).get("shell") === "1";
+      if (window.__AI_OPS_SHELL_EMBED__) {
+        document.documentElement.classList.add("shell-embed");
+      }
+    </script>
+  </head>
+  <body class="embed-mode">
+    <script>
+      if (window.__AI_OPS_SHELL_EMBED__) {
+        document.body.classList.add("shell-embed");
+      }
+    </script>
+    <div class="embed-backbar">
+      <a href="/">← 返回 AI 資訊客服營運後台</a>
+      <span class="hint">同一登入｜知識 API 經 /api/knowledge/*</span>
+    </div>
+    <a class="skip-link" href="#app">跳至主要內容</a>
+    <fluent-design-system-provider use-default-config class="app-root">
+      <div class="app-shell">
+        <aside class="app-sidebar" aria-label="側邊導覽">
+          <div class="sidebar-brand">
+            <div class="brand-copy">
+              <p class="brand-label">AI 資訊客服營運後台</p>
+              <p class="brand-title">知識營運</p>
+            </div>
+            <fluent-badge id="profileBadge" appearance="neutral" class="env-badge"></fluent-badge>
+          </div>
+          <nav class="sidebar-nav" aria-label="主要導覽">
+            <button type="button" class="nav-link" data-nav="#/work" data-nav-item="work">我的工作</button>
+            <button type="button" class="nav-link" data-nav="#/knowledge" data-nav-item="knowledge">知識庫</button>
+            <button type="button" class="nav-link" data-nav="#/reviews" data-nav-item="reviews">待審核</button>
+            <button type="button" class="nav-link" data-nav="#/audit" data-nav-item="audit">稽核紀錄</button>
+            <button type="button" class="nav-link" data-nav="#/releases" data-nav-item="releases">發布紀錄</button>
+          </nav>
+          <div id="identityChip" class="sidebar-identity"></div>
+        </aside>
+        <div class="app-body">
+          <main id="app" class="app-main" tabindex="-1"></main>
+        </div>
+      </div>
+      <div id="dialogRoot"></div>
+      <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    </fluent-design-system-provider>
+
+    <script type="module">
+      import { authHeaders } from "/static/js/api.js";
+
+      function portalCapabilities(knowledgeCaps) {
+        const set = new Set(knowledgeCaps || []);
+        return {
+          create_document: set.has("knowledge.create"),
+          import_markdown: set.has("knowledge.create"),
+          list_pending_reviews: set.has("knowledge.review"),
+          decide_review: set.has("knowledge.review"),
+          publish: set.has("knowledge.publish"),
+          list_releases: set.has("knowledge.read"),
+          manage_releases: set.has("knowledge.rollback") || set.has("knowledge.publish"),
+          view_audit: set.has("knowledge.audit.read") || set.has("knowledge.read"),
+        };
+      }
+
+      function portalRole(knowledgeCaps) {
+        const set = new Set(knowledgeCaps || []);
+        if (set.has("knowledge.publish") && set.has("knowledge.rollback")) return "PLATFORM";
+        if (set.has("knowledge.publish") || set.has("knowledge.review")) return "MANAGER";
+        if (set.has("knowledge.review")) return "REVIEWER";
+        if (set.has("knowledge.audit.read") && !set.has("knowledge.create")) return "AUDITOR";
+        return "CONTRIBUTOR";
+      }
+
+      function visibleNav(role) {
+        const nav = ["work", "knowledge"];
+        if (["REVIEWER", "MANAGER", "PLATFORM"].includes(role)) nav.push("reviews");
+        if (["AUDITOR", "MANAGER", "PLATFORM"].includes(role)) nav.push("audit");
+        if (["MANAGER", "PLATFORM"].includes(role)) nav.push("releases");
+        return nav;
+      }
+
+      async function boot() {
+        const authConfig = await fetch("/api/auth/config").then((r) => r.json()).catch(() => ({}));
+        const { ensureAuth } = await import("/static/js/api.js");
+        await ensureAuth(authConfig);
+
+        const capsResponse = await fetch("/api/capabilities", { headers: authHeaders() });
+        if (capsResponse.status === 401) {
+          document.getElementById("app").textContent = "請先在營運後台完成登入。";
+          return;
+        }
+        if (!capsResponse.ok) {
+          document.getElementById("app").textContent = "無法讀取授權範圍。";
+          return;
+        }
+        const caps = await capsResponse.json();
+        if (!caps.knowledgeBridgeEnabled) {
+          document.getElementById("app").innerHTML =
+            "<p>知識整合尚未啟用。請以 AI_OPS_KNOWLEDGE_BRIDGE_ENABLED=true 重啟 start.sh。</p>";
+          return;
+        }
+        const knowledgeCaps = caps.knowledgeCapabilities || [];
+        if (!knowledgeCaps.includes("knowledge.read")) {
+          document.getElementById("app").innerHTML =
+            "<p>目前角色沒有 knowledge.read。請使用 KNOWLEDGE_ADMIN 登入營運後台。</p>";
+          return;
+        }
+        const role = portalRole(knowledgeCaps);
+        const stored = JSON.parse(sessionStorage.getItem("ai_ops_backoffice_auth") || "{}");
+        window.__AI_OPS_EMBED_SESSION__ = {
+          demoMode: false,
+          portalProfile: "INTEGRATED",
+          relaxedWorkflow: true,
+          minTestCasesForReview: 0,
+          homeRoute: "#/knowledge",
+          visibleNav: visibleNav(role),
+          userId: stored.userId || "ops.user",
+          userName: stored.userName || stored.userId || "Ops User",
+          role,
+          ownerUnits: stored.ownerUnits || (caps.ownerUnitIds || []).join(",") || "IT Service Desk",
+          capabilities: portalCapabilities(knowledgeCaps),
+        };
+        if (!location.hash || location.hash === "#/" || location.hash === "#") {
+          location.hash = "#/knowledge";
+        }
+        await import("/static/kp/js/main.js?v=embed-20260904f");
+      }
+
+      boot().catch((error) => {
+        document.getElementById("app").textContent =
+          `知識營運載入失敗：${error.message || error}`;
+      });
+    </script>
+  </body>
+</html>

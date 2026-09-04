@@ -18,6 +18,9 @@ from agent_service.operations.access import CAPABILITIES, ActorContext
 from agent_service.operations.audit_errors import AuditWriteError
 
 from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
+from .knowledge_bridge import KnowledgePortalClient, build_knowledge_router
+from .knowledge_bridge.capabilities import knowledge_capabilities_for
+from .knowledge_bridge.errors import KnowledgeBridgeError
 from .budget_domain import (
     BudgetService,
     FileBudgetRepository,
@@ -707,6 +710,10 @@ def create_app(
     async def faq_validation_handler(_request, exc: FaqValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
+    @app.exception_handler(KnowledgeBridgeError)
+    async def knowledge_bridge_error_handler(_request, exc: KnowledgeBridgeError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
@@ -722,12 +729,20 @@ def create_app(
 
     @app.get("/api/capabilities")
     async def capabilities(actor=Depends(current_actor)) -> dict[str, object]:
+        knowledge_caps = sorted(knowledge_capabilities_for(actor))
         return {
             "role": actor.role,
             "capabilities": sorted(CAPABILITIES.get(actor.role, frozenset())),
+            "knowledgeCapabilities": knowledge_caps,
             "ownerUnitIds": list(actor.owner_unit_ids),
             "knowledgePortalUrl": resolved_settings.knowledge_portal_url,
+            "knowledgeBridgeEnabled": bool(
+                resolved_settings.knowledge_bridge_enabled
+                and resolved_settings.knowledge_delegation_secret
+            ),
+            "knowledgeUiUrl": "/knowledge-ui/#/knowledge",
             "authMode": resolved_settings.auth_mode,
+            "deploymentTenantId": resolved_settings.deployment_tenant_id,
         }
 
     @app.get("/api/taxonomy")
@@ -2202,6 +2217,21 @@ def create_app(
         eval_harness_status=eval_harness_status,
     )
 
+    knowledge_client = KnowledgePortalClient(
+        base_url=resolved_settings.knowledge_internal_url
+        or resolved_settings.knowledge_portal_url,
+        service_token=resolved_settings.knowledge_service_token,
+        delegation_secret=resolved_settings.knowledge_delegation_secret,
+    )
+    app.include_router(
+        build_knowledge_router(
+            client=knowledge_client,
+            current_actor=current_actor,
+            enabled=resolved_settings.knowledge_bridge_enabled,
+        ),
+        prefix="/api/knowledge",
+    )
+
     # Phase 3 feature-flag list remains available under the governed API.
     @app.get("/api/feature-flags")
     async def list_feature_flags(actor=Depends(current_actor)) -> dict[str, object]:
@@ -2211,6 +2241,20 @@ def create_app(
     @app.get("/")
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    portal_static = Path(__file__).resolve().parents[1] / "knowledge_portal" / "static"
+    if portal_static.is_dir():
+        app.mount(
+            "/static/kp",
+            StaticFiles(directory=portal_static),
+            name="knowledge_portal_static",
+        )
+
+    @app.get("/knowledge-ui")
+    @app.get("/knowledge-ui/")
+    async def knowledge_ui() -> FileResponse:
+        """Same-origin Knowledge Portal UI hosted inside the ops console."""
+        return FileResponse(STATIC_DIR / "knowledge-ui.html")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

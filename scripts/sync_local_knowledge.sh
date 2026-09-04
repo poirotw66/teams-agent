@@ -17,6 +17,7 @@ cd "${REPO_ROOT}/agent_service"
 uv run python "${REPO_ROOT}/scripts/sync_local_knowledge.py" "$@"
 
 printf '\nNext steps:\n'
-printf '  1. Portal UI:  cd agent_service && KNOWLEDGE_PORTAL_PORT=8091 uv run knowledge-portal\n'
-printf '  2. Agent/Playground: KNOWLEDGE_RELEASE_MODE=AUTO ./start.sh\n'
+printf '  1. Ops console：./start.sh  →  http://127.0.0.1:8092/#/knowledge_ops/knowledgePortal\n'
+printf '  2. Agent/Playground：KNOWLEDGE_RELEASE_MODE=AUTO ./start.sh\n'
 printf '     (AUTO prefers portal release when active; falls back to bundled index)\n'
+printf '  （勿再開 8091 Portal UI；8091 僅供後台 bridge 內部呼叫）\n'

@@ -9,6 +9,8 @@ const routes = {
   budgets: renderBudgets,
   health: renderHealth,
   knowledge: renderKnowledge,
+  knowledgeDocument: renderKnowledgeDocument,
+  knowledgePortal: renderKnowledgePortalEntry,
   examples: renderExamples,
   quality: renderQuality,
   prompts: renderPrompts,
@@ -26,10 +28,11 @@ const workspaces = [
   {
     id: "knowledge_ops",
     label: "知識營運",
-    hint: "待辦 → 修正知識 → 審核發布 → 驗證回答 → 結案",
+    hint: "待辦 → 知識文件庫 → 審核發布 → 驗證 → 結案",
     items: [
       ["quality", "我的待辦／品質案件", "ops.feedback.read"],
-      ["knowledge", "文件／FAQ", "ops.knowledge.read"],
+      ["knowledgePortal", "知識文件庫", "knowledge.ui"],
+      ["knowledge", "FAQ／成效", "ops.knowledge.read"],
       ["examples", "案例集驗證", "ops.examples.read"],
       ["conversations", "回答驗證", "ops.conversations.read"],
     ],
@@ -77,6 +80,15 @@ const ROLE_DEFAULT_WORKSPACE = {
 const NAV_FILTERS_KEY = "ai_ops_nav_filters";
 const WORKSPACE_KEY = "ai_ops_active_workspace";
 
+/** Avoid re-entrancy when we write location.hash from renderNav. */
+let syncingLocationHash = false;
+
+const VIEW_TITLES = Object.fromEntries(
+  workspaces.flatMap((workspace) =>
+    workspace.items.map(([id, label]) => [id, label]),
+  ),
+);
+
 function saveNavFilters(filters) {
   sessionStorage.setItem(NAV_FILTERS_KEY, JSON.stringify(filters));
 }
@@ -97,15 +109,92 @@ function clearNavFilters() {
   sessionStorage.removeItem(NAV_FILTERS_KEY);
 }
 
+function workspaceForView(view) {
+  for (const workspace of workspaces) {
+    if (workspace.items.some(([id]) => id === view)) {
+      return workspace.id;
+    }
+  }
+  return null;
+}
+
+function buildLocationHash(workspace, view, filters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters || {})) {
+    if (key === "view" || value == null || value === "" || value === false) {
+      continue;
+    }
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return `#/${encodeURIComponent(workspace)}/${encodeURIComponent(view)}${
+    query ? `?${query}` : ""
+  }`;
+}
+
+function parseLocationHash() {
+  const raw = (location.hash || "").replace(/^#\/?/, "").trim();
+  if (!raw) {
+    return null;
+  }
+  const [pathPart, queryPart = ""] = raw.split("?");
+  const parts = pathPart.split("/").filter(Boolean).map(decodeURIComponent);
+  const filters = Object.fromEntries(new URLSearchParams(queryPart));
+  if (parts.length >= 2) {
+    return { workspace: parts[0], view: parts[1], filters };
+  }
+  if (parts.length === 1 && routes[parts[0]]) {
+    return {
+      workspace: workspaceForView(parts[0]),
+      view: parts[0],
+      filters,
+    };
+  }
+  return null;
+}
+
+function syncLocationHash(view, filters = {}) {
+  const workspace = activeWorkspaceId();
+  const next = buildLocationHash(workspace, view, filters);
+  if (location.hash === next) {
+    return;
+  }
+  syncingLocationHash = true;
+  location.hash = next;
+  queueMicrotask(() => {
+    syncingLocationHash = false;
+  });
+}
+
+function routeFiltersForHash(filters = {}) {
+  const next = { ...filters };
+  delete next.view;
+  delete next.clear;
+  return next;
+}
+
 function navigateTo(view, filters = {}) {
-  saveNavFilters({ view, ...filters });
+  const workspace = workspaceForView(view);
+  if (workspace) {
+    sessionStorage.setItem(WORKSPACE_KEY, workspace);
+  }
+  if (filters.clear) {
+    clearNavFilters();
+    saveNavFilters({ view });
+  } else {
+    saveNavFilters({ view, ...routeFiltersForHash(filters) });
+  }
   renderNav(view);
 }
 
 function drillLink(label, view, filters = {}) {
   const link = el("a", "drill-link", label);
-  link.href = "#";
+  const workspace = workspaceForView(view) || activeWorkspaceId();
+  link.href = buildLocationHash(workspace, view, routeFiltersForHash(filters));
   link.addEventListener("click", (event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
     event.preventDefault();
     navigateTo(view, filters);
   });
@@ -281,6 +370,23 @@ function showConversationModal(detail, conversationId = detail.conversationId) {
 
 let capabilities = null;
 
+function canUseKnowledgeUi() {
+  if (!capabilities?.knowledgeBridgeEnabled) {
+    return false;
+  }
+  return (capabilities.knowledgeCapabilities || []).includes("knowledge.read");
+}
+
+function actorHasCapability(capability) {
+  if (!capability) {
+    return true;
+  }
+  if (capability === "knowledge.ui") {
+    return canUseKnowledgeUi();
+  }
+  return (capabilities?.capabilities || []).includes(capability);
+}
+
 async function boot() {
   const authConfig = await fetch("/api/auth/config").then((response) => response.json());
   await ensureAuth(authConfig);
@@ -290,10 +396,65 @@ async function boot() {
   if (!sessionStorage.getItem(WORKSPACE_KEY)) {
     sessionStorage.setItem(WORKSPACE_KEY, defaultWorkspace);
   }
-  const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
-  renderNav(firstView);
-  document.getElementById("meta-panel").textContent =
-    `角色：${capabilities.role}｜驗證：${capabilities.authMode}｜資料更新：即時讀取 Analytics Store`;
+  renderTopbarActions();
+  window.addEventListener("hashchange", () => {
+    if (syncingLocationHash) {
+      return;
+    }
+    applyLocationRoute();
+  });
+  if (!applyLocationRoute()) {
+    const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
+    renderNav(firstView);
+  }
+}
+
+function applyLocationRoute() {
+  const parsed = parseLocationHash();
+  if (!parsed?.view || typeof routes[parsed.view] !== "function") {
+    return false;
+  }
+  if (parsed.workspace) {
+    sessionStorage.setItem(WORKSPACE_KEY, parsed.workspace);
+  } else {
+    const inferred = workspaceForView(parsed.view);
+    if (inferred) {
+      sessionStorage.setItem(WORKSPACE_KEY, inferred);
+    }
+  }
+  saveNavFilters({ view: parsed.view, ...parsed.filters });
+  renderNav(parsed.view, { skipHashSync: true });
+  return true;
+}
+
+function renderTopbarActions() {
+  const meta = document.getElementById("meta-panel");
+  if (!meta) {
+    return;
+  }
+  meta.replaceChildren();
+  if (canUseKnowledgeUi()) {
+    const knowledgeLink = el("a", "topbar-action", "知識文件庫");
+    knowledgeLink.href = buildLocationHash("knowledge_ops", "knowledgePortal");
+    knowledgeLink.title = "在營運後台內開啟知識編輯／審核／發布";
+    knowledgeLink.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      navigateTo("knowledgePortal");
+    });
+    meta.append(knowledgeLink);
+  }
+  meta.append(
+    el(
+      "span",
+      "meta-text",
+      `角色：${capabilities.role}｜驗證：${capabilities.authMode}${
+        capabilities.knowledgeBridgeEnabled ? "｜知識整合：已啟用" : ""
+      }`,
+    ),
+  );
 }
 
 function activeWorkspaceId() {
@@ -301,11 +462,10 @@ function activeWorkspaceId() {
 }
 
 function visibleWorkspaces() {
-  const allowed = new Set(capabilities?.capabilities || []);
   return workspaces
     .map((workspace) => ({
       ...workspace,
-      items: workspace.items.filter(([, , capability]) => !capability || allowed.has(capability)),
+      items: workspace.items.filter(([, , capability]) => actorHasCapability(capability)),
     }))
     .filter((workspace) => workspace.items.length > 0);
 }
@@ -315,10 +475,9 @@ function firstVisibleView(workspaceId) {
   return workspace?.items[0]?.[0] || null;
 }
 
-function renderNav(active) {
+function renderNav(active, options = {}) {
   const nav = document.getElementById("nav");
   nav.replaceChildren();
-  const allowed = new Set(capabilities?.capabilities || []);
   const visible = visibleWorkspaces();
   let workspaceId = activeWorkspaceId();
   if (!visible.some((item) => item.id === workspaceId)) {
@@ -333,9 +492,14 @@ function renderNav(active) {
     button.type = "button";
     button.title = item.hint;
     button.addEventListener("click", () => {
-      sessionStorage.setItem(WORKSPACE_KEY, item.id);
-      const nextView = item.items[0]?.[0] || "overview";
-      renderNav(nextView);
+      const preferred =
+        item.id === "knowledge_ops" && canUseKnowledgeUi()
+          ? "knowledgePortal"
+          : item.items[0]?.[0] || "overview";
+      const nextView = item.items.some(([id]) => id === preferred)
+        ? preferred
+        : item.items[0]?.[0] || "overview";
+      navigateTo(nextView);
     });
     switcher.append(button);
   }
@@ -347,17 +511,40 @@ function renderNav(active) {
 
   const itemRow = el("div", "nav-items");
   for (const [id, label, capability] of workspace?.items || []) {
-    if (capability && !allowed.has(capability)) {
+    if (!actorHasCapability(capability)) {
       continue;
     }
-    const button = el("button", active === id ? "active" : "", label);
-    button.addEventListener("click", () => {
-      renderNav(id);
-      routes[id]();
+    const button = el("a", active === id ? "active" : "", label);
+    button.href = buildLocationHash(workspaceId, id);
+    button.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      clearNavFilters();
+      navigateTo(id);
     });
     itemRow.append(button);
   }
   nav.append(itemRow);
+
+  document.body.classList.toggle("view-knowledge-portal", active === "knowledgePortal");
+  if (active === "knowledgePortal") {
+    ensureKnowledgeEmbedResizeHandler();
+    // Re-measure after nav DOM updates (hint may hide).
+    requestAnimationFrame(() => syncKnowledgeEmbedChrome());
+  } else {
+    document.documentElement.style.removeProperty("--ops-chrome-bottom");
+  }
+  const title = VIEW_TITLES[active] || active;
+  document.title = `${title}｜AI 資訊客服營運後台`;
+
+  if (!options.skipHashSync) {
+    const stored = loadNavFilters();
+    const { view: _view, ...filters } = stored.view === active ? stored : { view: active };
+    syncLocationHash(active, filters);
+  }
+
   if (typeof routes[active] === "function") {
     routes[active]();
   } else if (workspace?.items[0]) {
@@ -942,25 +1129,174 @@ async function renderHealth() {
   }
 }
 
+async function renderKnowledgePortalEntry() {
+  const app = document.getElementById("app");
+  if (!canUseKnowledgeUi()) {
+    app.replaceChildren(
+      el(
+        "div",
+        "error",
+        "知識文件庫尚未啟用，或目前角色沒有 knowledge.read。請用 KNOWLEDGE_ADMIN 登入，並確認 start.sh 已啟用 knowledge bridge。",
+      ),
+    );
+    return;
+  }
+
+  const filters = loadNavFilters();
+  const portalPath =
+    filters.k ||
+    sessionStorage.getItem("ai_ops_knowledge_embed_hash") ||
+    "#/knowledge";
+  sessionStorage.removeItem("ai_ops_knowledge_embed_hash");
+  const portalHash = portalPath.startsWith("#") ? portalPath : `#${portalPath}`;
+
+  const wrap = el("div", "knowledge-embed-shell");
+  const frame = document.createElement("iframe");
+  frame.className = "knowledge-embed-frame";
+  frame.title = "知識文件庫";
+  frame.src = `/knowledge-ui/?shell=1${portalHash}`;
+  wrap.append(frame);
+  app.replaceChildren(wrap);
+  syncKnowledgeEmbedChrome();
+}
+
+function syncKnowledgeEmbedChrome() {
+  const nav = document.querySelector(".nav");
+  const topbar = document.querySelector(".topbar");
+  const bottom = Math.ceil(
+    (nav?.getBoundingClientRect().bottom ||
+      topbar?.getBoundingClientRect().bottom ||
+      0),
+  );
+  document.documentElement.style.setProperty("--ops-chrome-bottom", `${bottom}px`);
+  const frame = document.querySelector(".knowledge-embed-frame");
+  if (frame) {
+    frame.style.top = `${bottom}px`;
+    frame.style.left = "0px";
+    frame.style.right = "0px";
+    frame.style.bottom = "0px";
+    frame.style.width = "100%";
+    frame.style.height = `${Math.max(240, window.innerHeight - bottom)}px`;
+    frame.style.position = "fixed";
+    frame.style.border = "0";
+    frame.style.zIndex = "5";
+  }
+}
+
+let knowledgeEmbedResizeBound = false;
+
+function ensureKnowledgeEmbedResizeHandler() {
+  if (knowledgeEmbedResizeBound) {
+    return;
+  }
+  knowledgeEmbedResizeBound = true;
+  window.addEventListener("resize", () => {
+    if (document.body.classList.contains("view-knowledge-portal")) {
+      syncKnowledgeEmbedChrome();
+    }
+  });
+}
+
+async function renderKnowledgeDocument() {
+  const app = document.getElementById("app");
+  const filters = loadNavFilters();
+  const documentId = filters.documentId;
+  const caseId = filters.caseId;
+  if (!documentId) {
+    app.replaceChildren(el("div", "error", "缺少文件 ID。請從品質案件或文件清單進入。"));
+    return;
+  }
+  if (!capabilities?.knowledgeBridgeEnabled) {
+    app.replaceChildren(
+      el("div", "error", "知識整合尚未啟用。請聯絡平台管理員開啟 knowledge bridge。"),
+    );
+    return;
+  }
+  try {
+    const payload = await api(`/api/knowledge/documents/${encodeURIComponent(documentId)}`);
+    const document = payload.document || payload;
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", document.title || documentId));
+    panel.append(
+      el("p", "metric-label", `知識營運／文件／${document.title || documentId}`),
+    );
+    if (caseId) {
+      const back = el("button", "", "返回品質案件");
+      back.addEventListener("click", () => navigateTo("quality", { caseId }));
+      panel.append(back);
+    }
+    panel.append(
+      el("p", "", `狀態：${document.lifecycle_status || document.status || "-"}`),
+      el("p", "", `負責單位：${(document.owner_unit_ids || []).join(", ") || "-"}`),
+      el(
+        "p",
+        "metric-label",
+        `文件 ID（進階）：${document.document_id || documentId}`,
+      ),
+    );
+    const draft = document.draft || document.current_draft;
+    if (draft?.markdown || draft?.content) {
+      const pre = el("pre");
+      pre.textContent = String(draft.markdown || draft.content).slice(0, 8000);
+      panel.append(el("h3", "", "草稿內容預覽"), pre);
+    } else if (payload.draft_markdown) {
+      const pre = el("pre");
+      pre.textContent = String(payload.draft_markdown).slice(0, 8000);
+      panel.append(el("h3", "", "草稿內容預覽"), pre);
+    } else {
+      panel.append(el("p", "", "目前沒有可預覽的草稿正文（可能尚未建立修訂）。"));
+    }
+    app.replaceChildren(panel);
+  } catch (error) {
+    const message =
+      error.message === "FORBIDDEN"
+        ? "沒有知識讀取權限（knowledge.read）。"
+        : error.message;
+    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", message));
+  }
+}
+
 async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
   const faqPanel = el("section", "panel");
   const syncPanel = el("section", "panel");
   panel.append(el("h2", "", "知識營運"));
-  panel.append(
-    el(
-      "p",
-      "",
-      "文件維護、審核、發布與測試仍由 Knowledge Portal 提供。下方可查看文件成效。",
-    ),
-  );
-  const link = el("a", "button-link", "開啟 Knowledge Portal");
-  link.href = capabilities?.knowledgePortalUrl || "http://127.0.0.1:8091";
-  link.target = "_blank";
+  if (capabilities?.knowledgeBridgeEnabled) {
+    panel.append(
+      el(
+        "p",
+        "",
+        "文件編輯、審核與發布請使用上方「知識文件庫」分頁（內嵌於營運後台）。本頁保留 FAQ 與成效查詢。",
+      ),
+    );
+    const openPortal = el("a", "button-link", "開啟知識文件庫");
+    openPortal.href = buildLocationHash("knowledge_ops", "knowledgePortal");
+    openPortal.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      navigateTo("knowledgePortal");
+    });
+    openPortal.style.marginRight = "0.5rem";
+    panel.append(openPortal);
+  } else {
+    panel.append(
+      el(
+        "p",
+        "",
+        "文件維護、審核、發布與測試仍由 Knowledge Portal 提供。下方可查看文件成效。",
+      ),
+    );
+    const link = el("a", "button-link", "開啟 Knowledge Portal");
+    link.href = capabilities?.knowledgePortalUrl || "http://127.0.0.1:8091";
+    link.target = "_blank";
+    panel.append(link);
+  }
   const exportButton = el("button", "", "匯出 CSV");
   exportButton.style.marginLeft = "0.5rem";
-  panel.append(link, exportButton);
+  panel.append(exportButton);
 
   const filters = el("form", "filter-bar");
   filters.style.marginTop = "1rem";
@@ -1830,10 +2166,26 @@ function renderDocumentPerformance(data) {
         ),
       );
       if (governance.portalUrl) {
-        const portalLink = el("a", "button-link", "在 Knowledge Portal 開啟");
-        portalLink.href = governance.portalUrl;
-        portalLink.target = "_blank";
-        govPanel.append(portalLink);
+        if (capabilities?.knowledgeBridgeEnabled) {
+          const openDoc = el("a", "button-link", "在知識文件庫開啟");
+          const documentId = data.documentId || governance.documentId;
+          openDoc.href = buildLocationHash("knowledge_ops", "knowledgePortal", {
+            k: `/knowledge/${documentId}`,
+          });
+          openDoc.addEventListener("click", (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+              return;
+            }
+            event.preventDefault();
+            navigateTo("knowledgePortal", { k: `/knowledge/${documentId}` });
+          });
+          govPanel.append(openDoc);
+        } else {
+          const portalLink = el("a", "button-link", "在 Knowledge Portal 開啟");
+          portalLink.href = governance.portalUrl;
+          portalLink.target = "_blank";
+          govPanel.append(portalLink);
+        }
       }
     } else {
       govPanel.append(el("p", "", governance.note || `狀態：${governance.status}`));
@@ -1955,7 +2307,16 @@ async function showQualityCaseDetail(caseId) {
         issueTypeId: qualityCase.issue_type_id || "",
       }),
     );
-    if (capabilities?.knowledgePortalUrl) {
+    if (capabilities?.knowledgeBridgeEnabled) {
+      for (const documentId of qualityCase.document_ids || []) {
+        loopHints.append(
+          drillLink("開啟關聯文件", "knowledgePortal", {
+            k: `/knowledge/${documentId}`,
+          }),
+        );
+      }
+      loopHints.append(drillLink("知識文件庫", "knowledgePortal"));
+    } else if (capabilities?.knowledgePortalUrl) {
       const portal = el("a", "drill-link", "開啟知識入口");
       portal.href = capabilities.knowledgePortalUrl;
       portal.target = "_blank";
@@ -3094,6 +3455,10 @@ async function renderQuality(state = {}) {
       buildGapPanel(),
       api(`/api/feedback?${filters.toString()}`),
     ]);
+
+    if (navFilters.view === "quality" && navFilters.caseId) {
+      await showQualityCaseDetail(navFilters.caseId);
+    }
 
     const panel = el("section", "panel");
     panel.append(el("h2", "", "回饋與待觀察事件"));

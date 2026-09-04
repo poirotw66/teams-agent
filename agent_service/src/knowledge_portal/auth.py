@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any
 from urllib.parse import unquote
@@ -96,7 +97,16 @@ def resolve_portal_actor(
     header_user_name: str | None,
     header_role: str | None,
     header_owner_units: str | None,
+    delegation_header: str | None = None,
 ) -> PortalActor:
+    # Prefer signed BFF delegation over browser X-Portal-* headers.
+    if delegation_header:
+        return _actor_from_delegation(
+            settings=settings,
+            authorization=authorization,
+            delegation_header=delegation_header,
+        )
+
     if settings.auth_mode == "ENTRA":
         scheme, _, token = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not token:
@@ -105,7 +115,8 @@ def resolve_portal_actor(
 
     if not header_user_id or not header_user_name:
         raise PortalAuthError(
-            "Missing portal identity headers. Use Entra auth or X-Portal-* headers."
+            "Missing portal identity headers. Use Entra auth, BFF delegation, "
+            "or X-Portal-* headers in isolated local mode."
         )
     owner_units = [
         item.strip()
@@ -117,6 +128,41 @@ def resolve_portal_actor(
         display_name=decode_portal_header_value(header_user_name),
         role=header_role or "CONTRIBUTOR",
         owner_units=owner_units,
+    )
+
+
+def _actor_from_delegation(
+    *,
+    settings: PortalSettings,
+    authorization: str | None,
+    delegation_header: str,
+) -> PortalActor:
+    if not settings.delegation_secret:
+        raise PortalAuthError("Delegation auth is not configured on knowledge portal.")
+    if settings.require_service_token_with_delegation:
+        expected = settings.service_token
+        if expected:
+            scheme, _, token = (authorization or "").partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
+                raise PortalAuthError("Delegation requires a valid service bearer token.")
+    try:
+        from ai_ops_backoffice.knowledge_bridge.delegation import verify_delegation_envelope
+
+        payload = verify_delegation_envelope(
+            delegation_header,
+            secret=settings.delegation_secret,
+        )
+    except Exception as exc:  # noqa: BLE001 - map all verify failures to auth error
+        raise PortalAuthError(f"Invalid delegation envelope: {exc}") from exc
+
+    role = str(payload.get("portalRole") or "CONTRIBUTOR")
+    owner_units = [str(item) for item in (payload.get("ownerUnitIds") or []) if str(item)]
+    return PortalActor(
+        user_id=str(payload["sub"]),
+        display_name=str(payload.get("name") or payload["sub"]),
+        role=role,  # type: ignore[arg-type]
+        owner_unit_ids=owner_units or list(settings.default_owner_unit_ids),
+        tenant_id=str(payload.get("tenantId") or "") or None,
     )
 
 

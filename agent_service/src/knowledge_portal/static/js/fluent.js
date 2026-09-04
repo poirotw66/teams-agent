@@ -1,6 +1,7 @@
 import { escapeHtml } from "./ui.js?v=20260831e";
 
-const FLUENT_BUNDLE = "/static/vendor/fluent-web-components.min.js";
+const STATIC_PREFIX = window.__AI_OPS_STATIC_PREFIX__ || "/static";
+const FLUENT_BUNDLE = `${STATIC_PREFIX}/vendor/fluent-web-components.min.js`;
 
 let fluentPromise = null;
 

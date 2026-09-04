@@ -43,6 +43,8 @@ class PortalSettings:
     drafts_dir: Path
     max_asset_bytes: int
     max_assets_per_version: int
+    delegation_secret: str = ""
+    require_service_token_with_delegation: bool = True
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -169,6 +171,11 @@ class PortalSettings:
             max_assets_per_version=int(
                 os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSETS_PER_VERSION", "20")
             ),
+            delegation_secret=os.environ.get("KNOWLEDGE_PORTAL_DELEGATION_SECRET", ""),
+            require_service_token_with_delegation=os.environ.get(
+                "KNOWLEDGE_PORTAL_REQUIRE_SERVICE_TOKEN_WITH_DELEGATION", "true"
+            ).lower()
+            in {"1", "true", "yes", "on"},
         )
 
     def effective_relaxed_workflow(self) -> bool:

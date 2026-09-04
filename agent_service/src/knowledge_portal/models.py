@@ -46,6 +46,7 @@ class PortalActor(StrictModel):
     display_name: str = Field(min_length=1, max_length=256)
     role: PortalRole
     owner_unit_ids: list[str] = Field(default_factory=list)
+    tenant_id: str | None = None
 
 
 class ValidationIssue(StrictModel):

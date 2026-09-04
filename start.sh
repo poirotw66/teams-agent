@@ -20,15 +20,25 @@ START_BACKOFFICE="${START_AI_OPS_BACKOFFICE:-true}"
 START_PLAYGROUND="${START_PLAYGROUND:-true}"
 START_TUNNEL="${START_TUNNEL:-false}"
 OPEN_PLAYGROUND="${OPEN_PLAYGROUND:-true}"
+OPEN_BACKOFFICE="${OPEN_BACKOFFICE:-true}"
 AUTO_STOP_EXISTING="${AUTO_STOP_EXISTING:-true}"
+# Consolidation M1: backoffice BFF talks to Portal as an internal dependency.
+# Users only open 8092; 8091 stays loopback-only and is not a product entry.
+KNOWLEDGE_BRIDGE_ENABLED="${AI_OPS_KNOWLEDGE_BRIDGE_ENABLED:-true}"
+KNOWLEDGE_DELEGATION_SECRET="${KNOWLEDGE_PORTAL_DELEGATION_SECRET:-${AI_OPS_KNOWLEDGE_DELEGATION_SECRET:-local-dev-knowledge-delegation}}"
 PORTAL_STATE_PATH="${KNOWLEDGE_PORTAL_STATE_PATH:-${PROJECT_DIR}/data/portal_state/portal_state.json}"
 PORTAL_RELEASE_DIR="${KNOWLEDGE_PORTAL_RELEASE_DIR:-${PROJECT_DIR}/data/releases}"
+PORTAL_BIND_HOST="${KNOWLEDGE_PORTAL_HOST:-127.0.0.1}"
 PLAYGROUND_TEST_USER_EMAIL="${PLAYGROUND_TEST_USER_EMAIL:-playground.user@example.test}"
 PLAYGROUND_PASSWORD_VALUE="${PLAYGROUND_PASSWORD:-local-playground}"
 PLAYGROUND_PASSWORD_IS_DEFAULT="false"
 if [[ -z "${PLAYGROUND_PASSWORD:-}" ]]; then
   PLAYGROUND_PASSWORD_IS_DEFAULT="true"
 fi
+PUBLIC_OPS_URL="http://127.0.0.1:${AI_OPS_PORT}"
+PORTAL_INTERNAL_URL="http://${PORTAL_BIND_HOST}:${PORTAL_PORT}"
+# Prefer 127.0.0.1 in printed URLs even if bind host is localhost.
+PORTAL_INTERNAL_PRINT_URL="http://127.0.0.1:${PORTAL_PORT}"
 
 # Keep local Playground aligned with the deployed Gemini File Search setup
 # without putting a key in this repository. These are the same project, secret
@@ -342,14 +352,23 @@ require_free_port "Agent Service" "${RAG_PORT}"
 
 if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   require_free_port "Mock Ticket" "${MOCK_TICKET_PORT}"
+  if [[ "${PORTAL_PORT}" == "${MOCK_TICKET_PORT}" ]]; then
+    fail "Knowledge Portal port ${PORTAL_PORT} 與 Mock Ticket 衝突。整合模式請使用 KNOWLEDGE_PORTAL_PORT=8091（預設），Mock Ticket 用 8090。"
+  fi
 fi
 
 if [[ "${START_PORTAL}" == "true" ]]; then
-  require_free_port "Knowledge Portal" "${PORTAL_PORT}"
+  require_free_port "Knowledge Portal (internal)" "${PORTAL_PORT}"
 fi
 
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
-  require_free_port "AI Ops Backoffice" "${AI_OPS_PORT}"
+  require_free_port "AI Ops Backoffice (public entry)" "${AI_OPS_PORT}"
+  if [[ "${KNOWLEDGE_BRIDGE_ENABLED}" == "true" && -z "${KNOWLEDGE_DELEGATION_SECRET}" ]]; then
+    fail "已啟用 knowledge bridge，但未設定 KNOWLEDGE_PORTAL_DELEGATION_SECRET。"
+  fi
+  if [[ "${KNOWLEDGE_BRIDGE_ENABLED}" == "true" && "${START_PORTAL}" != "true" ]]; then
+    log "警告：knowledge bridge 已啟用，但 START_PORTAL=false；後台知識 API 會回 503，直到內部 Portal 可用。"
+  fi
 fi
 
 if [[ "${START_PLAYGROUND}" == "true" ]]; then
@@ -406,35 +425,50 @@ CHILD_PIDS+=("$!")
 wait_for_url "Agent Service" "http://127.0.0.1:${RAG_PORT}/readyz" 45
 
 if [[ "${START_PORTAL}" == "true" ]]; then
-  log "啟動 Knowledge Portal：http://127.0.0.1:${PORTAL_PORT}/"
+  log "啟動 Knowledge Portal 內部 API（僅供 8092 bridge；請勿當產品入口）：${PORTAL_INTERNAL_PRINT_URL}/"
   (
     cd "${AGENT_SERVICE_DIR}"
+    export KNOWLEDGE_PORTAL_HOST="${PORTAL_BIND_HOST}"
     export KNOWLEDGE_PORTAL_PORT="${PORTAL_PORT}"
     export KNOWLEDGE_PORTAL_REPOSITORY_MODE="${KNOWLEDGE_PORTAL_REPOSITORY_MODE:-FILE}"
     export KNOWLEDGE_PORTAL_STATE_PATH="${PORTAL_STATE_PATH}"
     export KNOWLEDGE_PORTAL_RELEASE_DIR="${PORTAL_RELEASE_DIR}"
     export KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL="${KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL:-false}"
     export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
+    export KNOWLEDGE_PORTAL_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
+    # Local start remains HEADER-capable for break-glass; BFF uses delegation.
+    export KNOWLEDGE_PORTAL_AUTH_MODE="${KNOWLEDGE_PORTAL_AUTH_MODE:-HEADER}"
+    export KNOWLEDGE_PORTAL_DEMO_MODE="${KNOWLEDGE_PORTAL_DEMO_MODE:-true}"
     exec uv run knowledge-portal
   ) &
   CHILD_PIDS+=("$!")
-  wait_for_url "Knowledge Portal" "http://127.0.0.1:${PORTAL_PORT}/" 45
+  wait_for_url "Knowledge Portal (internal API)" "${PORTAL_INTERNAL_PRINT_URL}/healthz" 45
 fi
 
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
-  log "啟動 AI Ops Backoffice：http://127.0.0.1:${AI_OPS_PORT}/"
+  log "啟動 AI 資訊客服營運後台（唯一操作入口）：${PUBLIC_OPS_URL}/"
   (
     cd "${AGENT_SERVICE_DIR}"
     export AI_OPS_BACKOFFICE_PORT="${AI_OPS_PORT}"
-    export KNOWLEDGE_PORTAL_PUBLIC_URL="http://127.0.0.1:${PORTAL_PORT}"
+    # Compat only: browsers should use the backoffice origin, not open Portal UI.
+    export KNOWLEDGE_PORTAL_PUBLIC_URL="${PUBLIC_OPS_URL}"
+    export KNOWLEDGE_PORTAL_INTERNAL_URL="${PORTAL_INTERNAL_PRINT_URL}"
+    export AI_OPS_KNOWLEDGE_INTERNAL_URL="${PORTAL_INTERNAL_PRINT_URL}"
+    export KNOWLEDGE_PORTAL_TOKEN="${KNOWLEDGE_PORTAL_TOKEN:-}"
+    export KNOWLEDGE_PORTAL_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
+    export AI_OPS_KNOWLEDGE_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
+    export AI_OPS_KNOWLEDGE_BRIDGE_ENABLED="${KNOWLEDGE_BRIDGE_ENABLED}"
+    export AI_OPS_DEPLOYMENT_TENANT_ID="${AI_OPS_DEPLOYMENT_TENANT_ID:-local-development}"
+    export AI_OPS_BACKOFFICE_AUTH_MODE="${AI_OPS_BACKOFFICE_AUTH_MODE:-HEADER}"
     export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
     export RAG_DATA_DIR="${PROJECT_DIR}/data"
     export OPS_STORE_MODE=FILE
     export OPS_AUDIT_STORE_MODE=FILE
+    export AGENT_DEPLOYMENT_ENV="${AGENT_DEPLOYMENT_ENV:-dev}"
     exec uv run ai-ops-backoffice
   ) &
   CHILD_PIDS+=("$!")
-  wait_for_url "AI Ops Backoffice" "http://127.0.0.1:${AI_OPS_PORT}/healthz" 45
+  wait_for_url "AI Ops Backoffice" "${PUBLIC_OPS_URL}/healthz" 45
 fi
 
 log "啟動 Teams Adapter：http://127.0.0.1:${TEAMS_PORT}"
@@ -504,12 +538,30 @@ else
   log "本機 Playground 模式，不啟動 Dev Tunnel。"
 fi
 
-if [[ "${START_PORTAL}" == "true" ]]; then
-  printf '[start] Knowledge Portal：http://127.0.0.1:%s/\n' "${PORTAL_PORT}"
-fi
-
+printf '\n'
+printf '[start] ==============================================\n'
+printf '[start] 環境標籤：DEV／本機整合（HEADER auth 僅限本機）\n'
+printf '[start] 唯一操作入口：%s/\n' "${PUBLIC_OPS_URL}"
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
-  printf '[start] AI Ops Backoffice：http://127.0.0.1:%s/\n' "${AI_OPS_PORT}"
+  printf '[start] 知識文件庫：%s/#/knowledge_ops/knowledgePortal\n' "${PUBLIC_OPS_URL}"
+  printf '[start] 知識 API：%s/api/knowledge/*（BFF → 內部 Portal）\n' "${PUBLIC_OPS_URL}"
+  printf '[start] knowledge bridge：%s\n' "${KNOWLEDGE_BRIDGE_ENABLED}"
+fi
+if [[ "${START_PORTAL}" == "true" ]]; then
+  printf '[start] Portal 程序：仍會在 %s 啟動，但僅 loopback 內部 API，請不要開瀏覽器進 8091。\n' \
+    "${PORTAL_INTERNAL_PRINT_URL}"
+fi
+if [[ "${START_MOCK_TICKET}" == "true" ]]; then
+  printf '[start] Mock Ticket：http://127.0.0.1:%s/\n' "${MOCK_TICKET_PORT}"
+fi
+printf '[start] Agent：http://127.0.0.1:%s/ ｜ Teams Adapter：http://127.0.0.1:%s/\n' \
+  "${RAG_PORT}" "${TEAMS_PORT}"
+printf '[start] ==============================================\n\n'
+
+if [[ "${OPEN_BACKOFFICE}" == "true" && "${START_BACKOFFICE}" == "true" ]]; then
+  if command -v open >/dev/null 2>&1; then
+    open "${PUBLIC_OPS_URL}/" || true
+  fi
 fi
 
 log "所有服務已啟動。按 Ctrl+C 可一起停止。"

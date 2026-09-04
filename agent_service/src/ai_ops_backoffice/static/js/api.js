@@ -40,10 +40,15 @@ export async function api(path, options = {}) {
   if (response.status === 403) {
     throw new Error("FORBIDDEN");
   }
+  const contentType = response.headers.get("content-type") || "";
   if (!response.ok) {
+    if (contentType.includes("application/json")) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload.error?.message || payload.detail || `HTTP ${response.status}`;
+      throw new Error(typeof message === "string" ? message : `HTTP ${response.status}`);
+    }
     throw new Error(`HTTP ${response.status}`);
   }
-  const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("text/csv")) {
     return response.text();
   }
@@ -85,8 +90,8 @@ export async function ensureAuth(authConfig) {
   if (stored.userId) {
     return;
   }
-  const userId = window.prompt("Dev User Id", "ops.analyst.demo");
-  const role = window.prompt("Dev Role", "SERVICE_OWNER");
+  const userId = window.prompt("Dev User Id", "ops.knowledge.demo");
+  const role = window.prompt("Dev Role", "KNOWLEDGE_ADMIN");
   const ownerUnits = window.prompt("Owner Units", "IT Service Desk");
   if (!userId) {
     throw new Error("UNAUTHORIZED");
