@@ -174,7 +174,18 @@ function routeFiltersForHash(filters = {}) {
   return next;
 }
 
-function navigateTo(view, filters = {}) {
+async function navigateTo(view, filters = {}) {
+  if (typeof window.__isKnowledgeDirty === "function" && window.__isKnowledgeDirty()) {
+    if (typeof window.__confirmKnowledgeDirty === "function") {
+      const ok = await window.__confirmKnowledgeDirty();
+      if (!ok) {
+        return;
+      }
+      if (typeof window.__clearKnowledgeDirty === "function") {
+        window.__clearKnowledgeDirty();
+      }
+    }
+  }
   const workspace = workspaceForView(view);
   if (workspace) {
     sessionStorage.setItem(WORKSPACE_KEY, workspace);
@@ -453,9 +464,22 @@ async function boot() {
     sessionStorage.setItem(WORKSPACE_KEY, defaultWorkspace);
   }
   renderTopbarActions();
-  window.addEventListener("hashchange", () => {
+  window.addEventListener("hashchange", async () => {
     if (syncingLocationHash) {
       return;
+    }
+    if (typeof window.__isKnowledgeDirty === "function" && window.__isKnowledgeDirty()) {
+      if (typeof window.__confirmKnowledgeDirty === "function") {
+        const ok = await window.__confirmKnowledgeDirty();
+        if (!ok) {
+          const stored = loadNavFilters();
+          syncLocationHash(stored.view || "knowledgePortal", stored);
+          return;
+        }
+        if (typeof window.__clearKnowledgeDirty === "function") {
+          window.__clearKnowledgeDirty();
+        }
+      }
     }
     applyLocationRoute();
   });
@@ -502,14 +526,27 @@ function renderTopbarActions() {
     });
     meta.append(knowledgeLink);
   }
-  const roleChip = el("button", "meta-chip is-button");
-  roleChip.type = "button";
-  roleChip.title = "點擊切換開發測試身分與角色";
-  const roleStrong = document.createElement("strong");
-  roleStrong.textContent = capabilities.role;
-  roleChip.append(document.createTextNode("角色 "), roleStrong, document.createTextNode(" ▾"));
-  roleChip.addEventListener("click", showRoleSwitcherModal);
-  meta.append(roleChip);
+  if (capabilities.authMode === "ENTRA") {
+    const userChip = el(
+      "span",
+      "meta-chip",
+      `👤 ${capabilities.displayName || capabilities.userName || capabilities.userId || "使用者"}`
+    );
+    const roleBadge = el("span", "meta-chip");
+    const roleStrong = document.createElement("strong");
+    roleStrong.textContent = capabilities.role;
+    roleBadge.append(document.createTextNode("角色 "), roleStrong);
+    meta.append(userChip, roleBadge);
+  } else {
+    const roleChip = el("button", "meta-chip is-button");
+    roleChip.type = "button";
+    roleChip.title = "點擊切換開發測試身分與角色";
+    const roleStrong = document.createElement("strong");
+    roleStrong.textContent = capabilities.role;
+    roleChip.append(document.createTextNode("角色 "), roleStrong, document.createTextNode(" ▾"));
+    roleChip.addEventListener("click", showRoleSwitcherModal);
+    meta.append(roleChip);
+  }
   meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
   if (capabilities.knowledgeBridgeEnabled) {
     meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));

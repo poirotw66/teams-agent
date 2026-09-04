@@ -34,10 +34,12 @@ function resolveApiUrl(path) {
 function buildApiError(response, payload) {
   const bridge = payload.error;
   if (bridge?.message) {
+    const issues = bridge.details?.issues || (Array.isArray(bridge.details) ? bridge.details : undefined);
     return Object.assign(new Error(translatePortalError(String(bridge.message))), {
       status: response.status,
       code: bridge.code,
-      issues: bridge.details,
+      issues: issues,
+      details: bridge.details,
     });
   }
   const raw = payload.detail?.message || payload.detail || "操作失敗";
@@ -46,6 +48,7 @@ function buildApiError(response, payload) {
     status: response.status,
     code: payload.detail?.code,
     issues: payload.detail?.issues,
+    details: payload.detail,
   });
 }
 

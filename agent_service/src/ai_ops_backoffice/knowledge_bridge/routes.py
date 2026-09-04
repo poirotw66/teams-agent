@@ -113,6 +113,12 @@ def build_knowledge_router(
                 content = body
                 forward_content_type = content_type
 
+        forward_headers: dict[str, str] = {}
+        for key in ("idempotency-key", "x-idempotency-key"):
+            if key in request.headers:
+                forward_headers["Idempotency-Key"] = request.headers[key]
+                break
+
         upstream = await client.request(
             method=request.method,
             relative_path=relative,
@@ -122,6 +128,7 @@ def build_knowledge_router(
             json_body=json_body,
             content=content,
             content_type=forward_content_type,
+            headers=forward_headers or None,
         )
         return _to_response(upstream, correlation_id=correlation_id)
 
@@ -155,29 +162,48 @@ def _safe_upstream_error(upstream: Any, *, correlation_id: str, status: int) -> 
     details: dict[str, Any] = {}
     try:
         payload = upstream.json()
-    except Exception:
+    except Exception:  # noqa: BLE001
         payload = None
     if isinstance(payload, dict):
         detail = payload.get("detail")
         if isinstance(detail, str) and detail and len(detail) < 300:
             message = detail
+        elif isinstance(detail, dict):
+            code = str(detail.get("code") or code)
+            message = str(detail.get("message") or message)
+            if "issues" in detail:
+                details["issues"] = detail["issues"]
+            for k, v in detail.items():
+                if k not in {"code", "message"} and k not in details:
+                    details[k] = v
+        elif isinstance(detail, list):
+            code = "VALIDATION_FAILED"
+            message = "內容檢查或參數驗證未通過。"
+            details["issues"] = detail
         elif isinstance(payload.get("error"), dict):
             err = payload["error"]
             code = str(err.get("code") or code)
             message = str(err.get("message") or message)
             if isinstance(err.get("details"), dict):
-                details = err["details"]
+                details = dict(err["details"])
+            elif "issues" in err:
+                details["issues"] = err["issues"]
     if status == 401:
         code = "KNOWLEDGE_UPSTREAM_UNAUTHORIZED"
         message = "知識服務拒絕服務身分或委派身分。"
     elif status == 403:
         code = "KNOWLEDGE_UPSTREAM_FORBIDDEN"
     elif status == 404:
-        code = "KNOWLEDGE_NOT_FOUND"
-        message = "找不到可存取的知識資源。"
+        if code == "KNOWLEDGE_UPSTREAM_ERROR":
+            code = "KNOWLEDGE_NOT_FOUND"
+            message = "找不到可存取的知識資源。"
     elif status == 409:
-        code = "KNOWLEDGE_VERSION_CONFLICT"
-        message = "這份文件已被更新，請重新載入後再儲存。"
+        if code in {"KNOWLEDGE_UPSTREAM_ERROR", "CONFLICT"}:
+            code = "KNOWLEDGE_VERSION_CONFLICT"
+        if message == "知識服務請求失敗。":
+            message = "這份文件已被更新，請重新載入後再儲存。"
+    elif status == 422 and code == "KNOWLEDGE_UPSTREAM_ERROR":
+        code = "VALIDATION_FAILED"
     return {
         "error": {
             "code": code,

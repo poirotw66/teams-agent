@@ -3,7 +3,7 @@ import { clearDirtyChecker, registerDirtyChecker } from "../dirty-state.js";
 import { fluentButton } from "../fluent.js";
 import { audienceLabel } from "../labels.js";
 import { navigate } from "../router.js";
-import { escapeHtml, showToast } from "../ui.js?v=20260831e";
+import { escapeHtml, openDialog, showToast } from "../ui.js?v=20260831e";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
@@ -160,8 +160,10 @@ function buildCreatePayload(formValues) {
 }
 
 async function submitCreate(formValues) {
+  const idempotencyKey = "create-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
   const created = await api("/api/documents", {
     method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(buildCreatePayload(formValues)),
   });
   showToast("草稿已建立");
@@ -284,6 +286,22 @@ export async function renderCreateView(app) {
       try {
         await submitCreate(formValues);
       } catch (error) {
+        if (error.issues && Array.isArray(error.issues) && error.issues.length > 0) {
+          const listHtml = error.issues
+            .map((issue) => {
+              const fieldPrefix = issue.field ? `<strong>[${escapeHtml(issue.field)}]</strong> ` : "";
+              const msg = escapeHtml(issue.message || issue.msg || issue.code || "驗證問題");
+              const sev = issue.severity ? ` <small class="text-muted">(${escapeHtml(issue.severity)})</small>` : "";
+              return `<li>${fieldPrefix}${msg}${sev}</li>`;
+            })
+            .join("");
+          await openDialog({
+            title: "建立文件未通過驗證",
+            bodyHtml: `<p>${escapeHtml(error.message)}</p><ul class="issue-list" style="margin:8px 0;padding-left:20px;text-align:left;">${listHtml}</ul>`,
+            confirmLabel: "關閉",
+          });
+          return;
+        }
         showToast(error.message, true);
       }
     });

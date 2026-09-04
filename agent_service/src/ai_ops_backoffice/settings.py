@@ -68,8 +68,10 @@ class BackofficeSettings:
     knowledge_internal_url: str = ""
     knowledge_service_token: str = ""
     knowledge_delegation_secret: str = ""
-    knowledge_bridge_enabled: bool = False
+    knowledge_bridge_enabled: bool = True
     deployment_tenant_id: str = "local-development"
+    relaxed_workflow: bool = False
+    min_test_cases_for_review: int = 3
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -108,7 +110,7 @@ class BackofficeSettings:
                 os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),
             ),
             knowledge_bridge_enabled=os.environ.get(
-                "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", ""
+                "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", "true"
             ).lower()
             in {"1", "true", "yes", "on"},
             deployment_tenant_id=os.environ.get(
@@ -245,5 +247,43 @@ class BackofficeSettings:
             ).expanduser().resolve(),
             governance_firestore_collection=os.environ.get(
                 "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION", "ai_ops_governance_state"
+            ),
+            relaxed_workflow=(
+                os.environ.get("AI_OPS_RELAXED_WORKFLOW")
+                or os.environ.get("KNOWLEDGE_PORTAL_RELAXED_WORKFLOW")
+                or (
+                    "false"
+                    if (
+                        os.environ.get("AGENT_DEPLOYMENT_ENV")
+                        or os.environ.get("ENV")
+                        or "dev"
+                    ).lower()
+                    in {"prod", "production", "staging"}
+                    else "true"
+                )
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            min_test_cases_for_review=int(
+                os.environ.get("AI_OPS_MIN_TEST_CASES_FOR_REVIEW")
+                or os.environ.get("KNOWLEDGE_PORTAL_MIN_TEST_CASES_FOR_REVIEW")
+                or (
+                    "0"
+                    if (
+                        os.environ.get("AI_OPS_RELAXED_WORKFLOW")
+                        or os.environ.get("KNOWLEDGE_PORTAL_RELAXED_WORKFLOW")
+                        or (
+                            "false"
+                            if (
+                                os.environ.get("AGENT_DEPLOYMENT_ENV")
+                                or os.environ.get("ENV")
+                                or "dev"
+                            ).lower()
+                            in {"prod", "production", "staging"}
+                            else "true"
+                        )
+                    ).lower()
+                    in {"1", "true", "yes", "on"}
+                    else "3"
+                )
             ),
         )

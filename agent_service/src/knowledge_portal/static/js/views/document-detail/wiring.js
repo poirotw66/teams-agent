@@ -2,7 +2,7 @@ import { api, apiForm } from "../../api.js";
 import { handleConflictError } from "../../errors.js";
 import { navigate } from "../../router.js";
 import { testResultLabel } from "../../labels.js";
-import { showToast } from "../../ui.js?v=20260831e";
+import { escapeHtml, openDialog, showToast } from "../../ui.js?v=20260831e";
 import { handleAction } from "./actions.js";
 
 export function wireActions(app, documentId, detail, refresh) {
@@ -15,6 +15,22 @@ export function wireActions(app, documentId, detail, refresh) {
         }
       } catch (error) {
         if (await handleConflictError(error, refresh)) return;
+        if (error.issues && Array.isArray(error.issues) && error.issues.length > 0) {
+          const listHtml = error.issues
+            .map((issue) => {
+              const fieldPrefix = issue.field ? `<strong>[${escapeHtml(issue.field)}]</strong> ` : "";
+              const msg = escapeHtml(issue.message || issue.msg || issue.code || "驗證問題");
+              const sev = issue.severity ? ` <small class="text-muted">(${escapeHtml(issue.severity)})</small>` : "";
+              return `<li>${fieldPrefix}${msg}${sev}</li>`;
+            })
+            .join("");
+          await openDialog({
+            title: "內容檢查未通過",
+            bodyHtml: `<p>${escapeHtml(error.message)}</p><ul class="issue-list" style="margin:8px 0;padding-left:20px;text-align:left;">${listHtml}</ul>`,
+            confirmLabel: "關閉",
+          });
+          return;
+        }
         showToast(error.message, true);
       }
     });

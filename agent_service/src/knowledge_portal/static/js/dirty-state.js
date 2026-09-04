@@ -6,10 +6,16 @@ let dirtyMessage = "你有尚未儲存的變更。離開此頁將捨棄這些變
 export function registerDirtyChecker(checker, message = dirtyMessage) {
   dirtyChecker = checker;
   if (message) dirtyMessage = message;
+  window.__isKnowledgeDirty = isNavigationDirty;
+  window.__confirmKnowledgeDirty = confirmLeaveIfDirty;
+  window.__clearKnowledgeDirty = clearDirtyChecker;
 }
 
 export function clearDirtyChecker() {
   dirtyChecker = null;
+  window.__isKnowledgeDirty = null;
+  window.__confirmKnowledgeDirty = null;
+  window.__clearKnowledgeDirty = null;
 }
 
 export function isNavigationDirty() {
@@ -22,6 +28,8 @@ export async function confirmLeaveIfDirty(message = dirtyMessage) {
 }
 
 export function installBeforeUnloadGuard() {
+  if (window.__beforeUnloadGuardInstalled) return;
+  window.__beforeUnloadGuardInstalled = true;
   window.addEventListener("beforeunload", (event) => {
     if (!isNavigationDirty()) return;
     event.preventDefault();

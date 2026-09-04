@@ -5,6 +5,7 @@
 
 import { loadFluentComponents } from "/static/kp/js/fluent.js";
 import { setCustomNavigator } from "/static/kp/js/router.js";
+import { installBeforeUnloadGuard } from "/static/kp/js/dirty-state.js";
 import { renderKnowledgeListView } from "/static/kp/js/views/knowledge-list.js";
 import { renderDocumentDetailView } from "/static/kp/js/views/document-detail.js";
 import { renderCreateView } from "/static/kp/js/views/create.js";
@@ -29,9 +30,9 @@ function portalCapabilities(knowledgeCaps) {
   };
 }
 
-function portalRole(knowledgeCaps) {
+function portalRole(knowledgeCaps, backofficeRole) {
+  if (backofficeRole === "SYSTEM_ADMIN") return "PLATFORM";
   const set = new Set(knowledgeCaps || []);
-  if (set.has("knowledge.publish") && set.has("knowledge.rollback")) return "PLATFORM";
   if (set.has("knowledge.publish") || set.has("knowledge.review")) return "MANAGER";
   if (set.has("knowledge.review")) return "REVIEWER";
   if (set.has("knowledge.audit.read") && !set.has("knowledge.create")) return "AUDITOR";
@@ -51,22 +52,39 @@ export async function initKnowledgePortalSession(capabilities, storedAuth = {}) 
   window.__AI_OPS_STATIC_PREFIX__ = "/static/kp";
 
   const knowledgeCaps = capabilities?.knowledgeCapabilities || [];
-  const role = portalRole(knowledgeCaps);
+  const role = portalRole(knowledgeCaps, capabilities?.role);
+
+  const relaxedWorkflow =
+    capabilities?.relaxedWorkflow !== undefined
+      ? Boolean(capabilities.relaxedWorkflow)
+      : false;
+  const minTestCasesForReview =
+    typeof capabilities?.minTestCasesForReview === "number"
+      ? capabilities.minTestCasesForReview
+      : (relaxedWorkflow ? 0 : 3);
+
+  const userId = capabilities?.userId || storedAuth.userId || "ops.user";
+  const userName =
+    capabilities?.userName ||
+    capabilities?.displayName ||
+    storedAuth.userName ||
+    "Ops User";
+  const ownerUnits =
+    (capabilities?.ownerUnitIds || []).join(",") ||
+    storedAuth.ownerUnits ||
+    "";
 
   const sessionData = {
     demoMode: false,
     portalProfile: "INTEGRATED",
-    relaxedWorkflow: true,
-    minTestCasesForReview: 0,
+    relaxedWorkflow,
+    minTestCasesForReview,
     homeRoute: "#/knowledge",
     visibleNav: visibleNav(role),
-    userId: storedAuth.userId || "ops.admin",
-    userName: storedAuth.userName || "System Administrator",
+    userId,
+    userName,
     role,
-    ownerUnits:
-      storedAuth.ownerUnits ||
-      (capabilities?.ownerUnitIds || []).join(",") ||
-      "IT Service Desk",
+    ownerUnits,
     capabilities: portalCapabilities(knowledgeCaps),
   };
   window.__AI_OPS_EMBED_SESSION__ = sessionData;
@@ -84,6 +102,7 @@ export async function initKnowledgePortalSession(capabilities, storedAuth = {}) 
 export async function renderNativeKnowledgePortal(app, capabilities, navigateTo, filters = {}) {
   // Ensure session and web components are loaded
   await loadFluentComponents();
+  installBeforeUnloadGuard();
   const storedAuth = JSON.parse(sessionStorage.getItem("ai_ops_backoffice_auth") || "{}");
   await initKnowledgePortalSession(capabilities, storedAuth);
 

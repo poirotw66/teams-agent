@@ -252,7 +252,12 @@ def test_link_existing_document_cross_unit_rejected(tmp_path: Path) -> None:
     created = portal_client.post(
         "/api/documents",
         json=hr_payload,
-        headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
+        headers=portal_headers(
+            user_id="manager.demo",
+            name="Manager Demo",
+            role="MANAGER",
+            owner_units="HR Operations",
+        ),
     )
     assert created.status_code == 200
     doc_id = created.json()["document"]["document_id"]

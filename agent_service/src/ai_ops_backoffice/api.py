@@ -749,6 +749,9 @@ def create_app(
     async def capabilities(actor=Depends(current_actor)) -> dict[str, object]:
         knowledge_caps = sorted(knowledge_capabilities_for(actor))
         return {
+            "userId": actor.user_id,
+            "userName": actor.display_name or actor.user_id,
+            "displayName": actor.display_name or actor.user_id,
             "role": actor.role,
             "capabilities": sorted(CAPABILITIES.get(actor.role, frozenset())),
             "knowledgeCapabilities": knowledge_caps,
@@ -761,6 +764,8 @@ def create_app(
             "knowledgeUiUrl": "/knowledge-ui/#/knowledge",
             "authMode": resolved_settings.auth_mode,
             "deploymentTenantId": resolved_settings.deployment_tenant_id,
+            "relaxedWorkflow": resolved_settings.relaxed_workflow,
+            "minTestCasesForReview": resolved_settings.min_test_cases_for_review,
         }
 
     @app.get("/api/taxonomy")
@@ -1778,6 +1783,12 @@ def create_app(
                     if p_res.status_code == 200:
                         p_data = p_res.json().get("document") or {}
                         doc_owner_unit = p_data.get("owner_unit_id")
+                    elif p_res.status_code == 403:
+                        raise FaqValidationError(
+                            "linked document must belong to the Quality Case owner unit"
+                        )
+                except FaqValidationError:
+                    raise
                 except Exception:  # noqa: BLE001
                     doc_owner_unit = None
             if doc_owner_unit is None:
