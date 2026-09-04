@@ -157,9 +157,16 @@ class PortalSettings:
                     os.environ.get("KNOWLEDGE_PORTAL_ENTRA_AUDITOR_ROLES", "Knowledge.Auditor").split(","),
                 )
             ),
-            agent_api_url=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL"),
-            agent_api_token=os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
-            or os.environ.get("AGENT_SERVICE_TOKEN"),
+            agent_api_url=(
+                os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL")
+                or os.environ.get("AGENT_API_URL")
+            ),
+            agent_api_token=(
+                os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
+                or os.environ.get("AGENT_SERVICE_TOKEN")
+                or os.environ.get("AGENT_RELOAD_TOKEN")
+                or os.environ.get("SERVICE_TOKEN")
+            ),
             state_path=state_path,
             drafts_dir=Path(
                 os.environ.get(

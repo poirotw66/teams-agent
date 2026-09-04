@@ -281,4 +281,10 @@ class KnowledgeBackendUpdate(StrictModel):
 
 class ReloadKnowledgeRequest(StrictModel):
     releaseId: str | None = None
+    release_id: str | None = None
+    reason: str | None = None
+
+    @property
+    def target_release_id(self) -> str | None:
+        return self.releaseId or self.release_id
 

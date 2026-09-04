@@ -167,8 +167,12 @@ class RagSettings:
             chunk_size=int(environ.get("RAG_CHUNK_SIZE", "900")),
             chunk_overlap=int(environ.get("RAG_CHUNK_OVERLAP", "120")),
             allowed_tenants=_csv_env("RAG_ALLOWED_TENANTS"),
-            source_base_url=environ.get("RAG_SOURCE_BASE_URL", "").strip() or None,
-            service_token=environ.get("AGENT_SERVICE_TOKEN", "").strip() or None,
+            service_token=(
+                environ.get("AGENT_SERVICE_TOKEN", "").strip()
+                or environ.get("AGENT_RELOAD_TOKEN", "").strip()
+                or environ.get("SERVICE_TOKEN", "").strip()
+                or None
+            ),
             max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
             max_issues_per_message=_int_env("MAX_ISSUES_PER_MESSAGE", 3),
             max_missing_info_per_issue=_int_env("MAX_MISSING_INFO_PER_ISSUE", 2),

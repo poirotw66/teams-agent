@@ -159,13 +159,27 @@ function buildCreatePayload(formValues) {
   };
 }
 
+let currentSubmissionKey = null;
+
+function getOrCreateSubmissionKey() {
+  if (!currentSubmissionKey) {
+    currentSubmissionKey = "create-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
+  }
+  return currentSubmissionKey;
+}
+
+function resetSubmissionKey() {
+  currentSubmissionKey = null;
+}
+
 async function submitCreate(formValues) {
-  const idempotencyKey = "create-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
+  const idempotencyKey = getOrCreateSubmissionKey();
   const created = await api("/api/documents", {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(buildCreatePayload(formValues)),
   });
+  resetSubmissionKey();
   showToast("草稿已建立");
   clearDirtyChecker();
   createBaseline = null;
@@ -175,6 +189,7 @@ async function submitCreate(formValues) {
 export async function renderCreateView(app) {
   clearDirtyChecker();
   createBaseline = null;
+  resetSubmissionKey();
   let currentStep = 1;
   const formValues = {
     audience_type: "ALL_EMPLOYEES",

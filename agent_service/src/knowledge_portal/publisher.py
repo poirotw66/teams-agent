@@ -36,9 +36,6 @@ class ReleasePublisher:
         previous_release_id: str | None,
         bundled_index_path: Path | None = None,
     ) -> ReleaseRecord:
-        if not published_versions:
-            raise ReleaseBuildError("Cannot publish an empty knowledge release.")
-
         self._settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
         release_dir = self._settings.release_artifact_dir / release_id
         if release_dir.exists():
@@ -49,31 +46,32 @@ class ReleasePublisher:
 
         manifest: list[ReleaseManifestEntry] = []
         asset_store = DraftAssetStore(self._settings)
-        for version in published_versions:
-            filename = f"{version.document_id}.md"
-            body = version.canonical_content
-            if not body.lstrip().startswith("---"):
-                body = build_front_matter_markdown(
-                    title=version.title,
-                    owner_unit_id=version.owner_unit_id,
-                    effective_at=version.effective_at,
-                    review_due_at=version.review_due_at,
-                    audience_type=version.audience_type,
-                    audience_group_ids=version.audience_group_ids,
-                    version_number=version.version_number,
-                    body=body,
+        if published_versions:
+            for version in published_versions:
+                filename = f"{version.document_id}.md"
+                body = version.canonical_content
+                if not body.lstrip().startswith("---"):
+                    body = build_front_matter_markdown(
+                        title=version.title,
+                        owner_unit_id=version.owner_unit_id,
+                        effective_at=version.effective_at,
+                        review_due_at=version.review_due_at,
+                        audience_type=version.audience_type,
+                        audience_group_ids=version.audience_group_ids,
+                        version_number=version.version_number,
+                        body=body,
+                    )
+                target = sources_dir / filename
+                target.write_text(body, encoding="utf-8")
+                asset_store.copy_assets_to_release(release_dir, version=version)
+                manifest.append(
+                    ReleaseManifestEntry(
+                        document_id=version.document_id,
+                        version_id=version.version_id,
+                        title=version.title,
+                        content_hash=version.content_hash,
+                    )
                 )
-            target = sources_dir / filename
-            target.write_text(body, encoding="utf-8")
-            asset_store.copy_assets_to_release(release_dir, version=version)
-            manifest.append(
-                ReleaseManifestEntry(
-                    document_id=version.document_id,
-                    version_id=version.version_id,
-                    title=version.title,
-                    content_hash=version.content_hash,
-                )
-            )
 
         corpus_hash = hashlib.sha256(
             json.dumps(
@@ -91,6 +89,10 @@ class ReleasePublisher:
                 release_id,
                 bundled_index_path,
             )
+        elif not published_versions:
+            index = HybridIndex([], self._settings.embedding_model)
+            index.save(index_path)
+            logger.info("Built empty knowledge release %s with 0 chunks", release_id)
         else:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_root = Path(temp_dir)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 from typing import Any
 
@@ -17,13 +19,20 @@ from ..models import (
     PublishRequest,
     ReleaseCompareResponse,
     ReleaseDocumentChange,
+    ReleaseManifestEntry,
     ReleaseRecord,
     RemoveDocumentRequest,
     RollbackRequest,
     utc_now,
 )
 from ..publisher import ReleaseBuildError
-from ..rbac import ensure_can_publish, ensure_not_found
+from ..rbac import (
+    PortalPermissionError,
+    can_edit_document,
+    can_view_document,
+    ensure_can_publish,
+    ensure_not_found,
+)
 from ..repository import new_id
 from ..role_capabilities import ensure_can_list_releases
 from .context import PortalServiceContext
@@ -34,6 +43,7 @@ class ReleaseService:
     def __init__(self, ctx: PortalServiceContext, documents: DocumentService) -> None:
         self._ctx = ctx
         self._documents = documents
+        self._publish_lock = asyncio.Lock()
 
     async def publish_version(
         self,
@@ -45,8 +55,11 @@ class ReleaseService:
     ) -> ReleaseRecord:
         if idempotency_key:
             scope_key = f"publish::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            cached = self._ctx.idempotency.get(scope_key)
+            payload_hash = hashlib.sha256(f"{document_id}::{request.model_dump_json()}".encode()).hexdigest()
+            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
             if cached is not None:
+                if isinstance(cached, dict):
+                    return ReleaseRecord.model_validate(cached)
                 return cached
 
         ensure_can_publish(actor)
@@ -65,34 +78,36 @@ class ReleaseService:
         ):
             raise ValueError("Contributors cannot publish their own approved content.")
 
-        published_versions = await self._collect_active_published_versions(
-            actor,
-            exclude_document_ids={document_id},
-        )
-        published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
+        async with self._publish_lock:
+            published_versions = await self._collect_active_published_versions(
+                actor,
+                exclude_document_ids={document_id},
+            )
+            published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
 
-        release = await self._activate_release(
-            actor=actor,
-            published_versions=published_versions,
-            correlation_id=correlation_id,
-            reason=request.reason,
-            metadata={"documentId": document_id, "versionId": version.version_id},
-        )
-        if release is None:
-            raise ValueError("Publishing failed to produce an active release.")
+            release = await self._activate_release(
+                actor=actor,
+                published_versions=published_versions,
+                correlation_id=correlation_id,
+                reason=request.reason,
+                metadata={"documentId": document_id, "versionId": version.version_id},
+            )
+            if release is None:
+                raise ValueError("Publishing failed to produce an active release.")
 
-        updated_version = version.model_copy(update={"status": "PUBLISHED"})
-        updated_document = document.model_copy(
-            update={
-                "status": "PUBLISHED",
-                "current_published_version_id": version.version_id,
-                "draft_version_id": None,
-                "updated_at": utc_now(),
-                "updated_by": actor.user_id,
-            }
-        )
-        await self._ctx.repository.save_version(updated_version)
-        await self._ctx.repository.save_document(updated_document)
+            updated_version = version.model_copy(update={"status": "PUBLISHED"})
+            updated_document = document.model_copy(
+                update={
+                    "status": "PUBLISHED",
+                    "current_published_version_id": version.version_id,
+                    "draft_version_id": None,
+                    "updated_at": utc_now(),
+                    "updated_by": actor.user_id,
+                }
+            )
+            await self._ctx.repository.save_version(updated_version)
+            await self._ctx.repository.save_document(updated_document)
+
         await self._ctx.audit(
             actor=actor,
             action="document.publish",
@@ -103,7 +118,7 @@ class ReleaseService:
             metadata={"versionId": version.version_id, "releaseId": release.release_id},
         )
         if idempotency_key:
-            self._ctx.idempotency.set(scope_key, release)
+            await self._ctx.save_idempotency(scope_key, payload_hash, release)
         return release
 
     async def unpublish_document(
@@ -120,26 +135,27 @@ class ReleaseService:
         ensure_can_publish(actor)
 
         now = utc_now()
-        updated_document = document.model_copy(
-            update={
-                "status": "UNPUBLISHED",
-                "current_published_version_id": None,
-                "updated_at": now,
-                "updated_by": actor.user_id,
-            }
-        )
-        await self._ctx.repository.save_document(updated_document)
-        published_versions = await self._collect_active_published_versions(
-            actor,
-            exclude_document_ids={document_id},
-        )
-        await self._activate_release(
-            actor=actor,
-            published_versions=published_versions,
-            correlation_id=correlation_id,
-            reason=request.reason,
-            metadata={"documentId": document_id, "action": "unpublish"},
-        )
+        async with self._publish_lock:
+            updated_document = document.model_copy(
+                update={
+                    "status": "UNPUBLISHED",
+                    "current_published_version_id": None,
+                    "updated_at": now,
+                    "updated_by": actor.user_id,
+                }
+            )
+            await self._ctx.repository.save_document(updated_document)
+            published_versions = await self._collect_active_published_versions(
+                actor,
+                exclude_document_ids={document_id},
+            )
+            await self._activate_release(
+                actor=actor,
+                published_versions=published_versions,
+                correlation_id=correlation_id,
+                reason=request.reason,
+                metadata={"documentId": document_id, "action": "unpublish"},
+            )
         await self._ctx.audit(
             actor=actor,
             action="document.unpublish",
@@ -176,8 +192,11 @@ class ReleaseService:
     ) -> ReleaseRecord:
         if idempotency_key:
             scope_key = f"rollback::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            cached = self._ctx.idempotency.get(scope_key)
+            payload_hash = hashlib.sha256(f"{request.release_id}::{request.reason}".encode()).hexdigest()
+            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
             if cached is not None:
+                if isinstance(cached, dict):
+                    return ReleaseRecord.model_validate(cached)
                 return cached
 
         ensure_can_publish(actor)
@@ -189,73 +208,88 @@ class ReleaseService:
             if previous_active_id
             else None
         )
-        await self._deactivate_other_releases(target.release_id)
-        await self._ctx.repository.set_active_release_id(target.release_id)
-        write_active_release_pointer(
-            self._ctx.settings.release_artifact_dir,
-            target.release_id,
-        )
-        rolled_back = target.model_copy(
-            update={"status": "DEPLOYING", "activated_at": utc_now()}
-        )
-        await self._ctx.repository.save_release(rolled_back)
 
-        # Synchronize repository document records to match target release manifest
         target_manifest = {entry.document_id: entry.version_id for entry in target.manifest}
         prev_manifest = (
             {entry.document_id: entry.version_id for entry in previous_release.manifest}
             if previous_release
             else {}
         )
-        now = utc_now()
-        for doc_id in prev_manifest:
-            if doc_id not in target_manifest:
+
+        # Issue 1: Unit managers cannot perform global rollbacks affecting documents from other units
+        if actor.role != "PLATFORM":
+            affected_doc_ids = set(target_manifest.keys()) | set(prev_manifest.keys())
+            for doc_id in affected_doc_ids:
+                doc = await self._ctx.repository.get_document(doc_id)
+                if doc and not can_edit_document(
+                    actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+                ):
+                    raise PortalPermissionError(
+                        "Global rollback affects documents from other units. Only platform administrators can perform global rollbacks."
+                    )
+
+        async with self._publish_lock:
+            await self._deactivate_other_releases(target.release_id)
+            await self._ctx.repository.set_active_release_id(target.release_id)
+            write_active_release_pointer(
+                self._ctx.settings.release_artifact_dir,
+                target.release_id,
+            )
+            rolled_back = target.model_copy(
+                update={"status": "DEPLOYING", "activated_at": utc_now()}
+            )
+            await self._ctx.repository.save_release(rolled_back)
+
+            # Synchronize repository document records to match target release manifest
+            now = utc_now()
+            for doc_id in prev_manifest:
+                if doc_id not in target_manifest:
+                    doc = await self._ctx.repository.get_document(doc_id)
+                    if doc is not None:
+                        update_fields: dict[str, Any] = {
+                            "current_published_version_id": None,
+                            "updated_at": now,
+                            "updated_by": actor.user_id,
+                        }
+                        if doc.status == "PUBLISHED":
+                            update_fields["status"] = "UNPUBLISHED"
+                        await self._ctx.repository.save_document(
+                            doc.model_copy(update=update_fields)
+                        )
+
+            for doc_id, version_id in target_manifest.items():
                 doc = await self._ctx.repository.get_document(doc_id)
                 if doc is not None:
-                    update_fields: dict[str, Any] = {
-                        "current_published_version_id": None,
+                    update_fields = {
+                        "current_published_version_id": version_id,
                         "updated_at": now,
                         "updated_by": actor.user_id,
                     }
-                    if doc.status == "PUBLISHED":
-                        update_fields["status"] = "UNPUBLISHED"
+                    if doc.status == "UNPUBLISHED":
+                        update_fields["status"] = "PUBLISHED"
                     await self._ctx.repository.save_document(
                         doc.model_copy(update=update_fields)
                     )
 
-        for doc_id, version_id in target_manifest.items():
-            doc = await self._ctx.repository.get_document(doc_id)
-            if doc is not None:
-                update_fields = {
-                    "current_published_version_id": version_id,
-                    "updated_at": now,
-                    "updated_by": actor.user_id,
-                }
-                if doc.status == "UNPUBLISHED":
-                    update_fields["status"] = "PUBLISHED"
-                await self._ctx.repository.save_document(
-                    doc.model_copy(update=update_fields)
+            reload_success, reload_error = await self._notify_agent_reload(
+                target.release_id, correlation_id
+            )
+            if reload_success:
+                rolled_back = rolled_back.model_copy(
+                    update={
+                        "status": "ACTIVE",
+                        "verified_at": utc_now(),
+                        "failure_summary": "",
+                    }
                 )
-
-        reload_success, reload_error = await self._notify_agent_reload(
-            target.release_id, correlation_id
-        )
-        if reload_success:
-            rolled_back = rolled_back.model_copy(
-                update={
-                    "status": "ACTIVE",
-                    "verified_at": utc_now(),
-                    "failure_summary": "",
-                }
-            )
-        else:
-            rolled_back = rolled_back.model_copy(
-                update={
-                    "status": "RELOAD_FAILED",
-                    "failure_summary": reload_error or "Agent reload failed",
-                }
-            )
-        await self._ctx.repository.save_release(rolled_back)
+            else:
+                rolled_back = rolled_back.model_copy(
+                    update={
+                        "status": "RELOAD_FAILED",
+                        "failure_summary": reload_error or "Agent reload failed",
+                    }
+                )
+            await self._ctx.repository.save_release(rolled_back)
 
         await self._ctx.audit(
             actor=actor,
@@ -270,7 +304,7 @@ class ReleaseService:
             },
         )
         if idempotency_key:
-            self._ctx.idempotency.set(scope_key, rolled_back)
+            await self._ctx.save_idempotency(scope_key, payload_hash, rolled_back)
         return rolled_back
 
     async def sync_agent_release(
@@ -282,6 +316,11 @@ class ReleaseService:
         ensure_can_publish(actor)
         release = await self._ctx.repository.get_release(release_id)
         ensure_not_found("release", release_id, release)
+        active_id = await self._ctx.repository.get_active_release_id()
+        if release_id != active_id:
+            raise ValueError(
+                f"Cannot sync release '{release_id}' because it is not the current active release ('{active_id}'). Use rollback to switch versions."
+            )
 
         reload_success, reload_error = await self._notify_agent_reload(
             release_id, correlation_id
@@ -294,6 +333,7 @@ class ReleaseService:
                     "failure_summary": "",
                 }
             )
+            await self._deactivate_other_releases(release_id)
         else:
             updated = release.model_copy(
                 update={
@@ -339,6 +379,18 @@ class ReleaseService:
                     headers=headers,
                 )
                 if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                        returned_release = data.get("releaseId")
+                        if returned_release and returned_release != release_id:
+                            err_msg = (
+                                f"Agent reload returned release '{returned_release}' "
+                                f"which does not match expected '{release_id}'"
+                            )
+                            logger.warning(err_msg)
+                            return False, err_msg
+                    except Exception:  # noqa: S110
+                        pass
                     logger.info(
                         "Agent reload acknowledged for release %s (correlation_id=%s)",
                         release_id,
@@ -366,7 +418,27 @@ class ReleaseService:
 
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
         ensure_can_list_releases(actor)
-        return await self._ctx.repository.list_releases()
+        releases = await self._ctx.repository.list_releases()
+        if actor.role == "PLATFORM" or not actor.owner_unit_ids:
+            return releases
+
+        sanitized_releases: list[ReleaseRecord] = []
+        for release in releases:
+            sanitized_manifest: list[ReleaseManifestEntry] = []
+            for entry in release.manifest:
+                doc = await self._ctx.repository.get_document(entry.document_id)
+                if doc and can_view_document(
+                    actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+                ):
+                    sanitized_manifest.append(entry)
+                else:
+                    sanitized_manifest.append(
+                        entry.model_copy(update={"title": "[Restricted Document]"})
+                    )
+            sanitized_releases.append(
+                release.model_copy(update={"manifest": sanitized_manifest})
+            )
+        return sanitized_releases
 
     async def compare_releases(
         self,
@@ -387,12 +459,24 @@ class ReleaseService:
 
         changes: list[ReleaseDocumentChange] = []
         for doc_id, entry in target_manifest.items():
+            doc = await self._ctx.repository.get_document(doc_id)
+            is_visible = (
+                actor.role == "PLATFORM"
+                or not actor.owner_unit_ids
+                or (
+                    doc is not None
+                    and can_view_document(
+                        actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+                    )
+                )
+            )
+            title = entry.title if is_visible else "[Restricted Document]"
             current_entry = current_manifest.get(doc_id)
             if current_entry is None:
                 changes.append(
                     ReleaseDocumentChange(
                         document_id=doc_id,
-                        title=entry.title,
+                        title=title,
                         change_type="ADDED",
                         target_version_id=entry.version_id,
                     )
@@ -401,7 +485,7 @@ class ReleaseService:
                 changes.append(
                     ReleaseDocumentChange(
                         document_id=doc_id,
-                        title=entry.title,
+                        title=title,
                         change_type="UPDATED",
                         current_version_id=current_entry.version_id,
                         target_version_id=entry.version_id,
@@ -409,10 +493,22 @@ class ReleaseService:
                 )
         for doc_id, entry in current_manifest.items():
             if doc_id not in target_manifest:
+                doc = await self._ctx.repository.get_document(doc_id)
+                is_visible = (
+                    actor.role == "PLATFORM"
+                    or not actor.owner_unit_ids
+                    or (
+                        doc is not None
+                        and can_view_document(
+                            actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+                        )
+                    )
+                )
+                title = entry.title if is_visible else "[Restricted Document]"
                 changes.append(
                     ReleaseDocumentChange(
                         document_id=doc_id,
-                        title=entry.title,
+                        title=title,
                         change_type="REMOVED",
                         current_version_id=entry.version_id,
                     )
@@ -488,22 +584,8 @@ class ReleaseService:
         correlation_id: str,
         reason: str,
         metadata: dict[str, Any] | None = None,
-    ) -> ReleaseRecord | None:
+    ) -> ReleaseRecord:
         previous_release_id = await self._ctx.repository.get_active_release_id()
-        if not published_versions:
-            await self._ctx.repository.set_active_release_id(None)
-            write_active_release_pointer(self._ctx.settings.release_artifact_dir, None)
-            await self._ctx.audit(
-                actor=actor,
-                action="release.clear",
-                target_type="release",
-                target_id=previous_release_id or "none",
-                correlation_id=correlation_id,
-                reason=reason,
-                metadata=metadata or {},
-            )
-            return None
-
         release_id = new_id("release")
         try:
             release = self._ctx.publisher.build_release(

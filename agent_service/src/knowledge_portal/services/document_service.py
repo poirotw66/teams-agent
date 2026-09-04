@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from ..draft_assets import (
@@ -142,8 +143,11 @@ class DocumentService:
 
         if idempotency_key:
             scope_key = f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            cached = self._ctx.idempotency.get(scope_key)
+            payload_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
             if cached is not None:
+                if isinstance(cached, dict):
+                    return DocumentDetailResponse.model_validate(cached)
                 return cached
         document_id = new_id("doc")
         version_id = new_id("ver")
@@ -235,7 +239,7 @@ class DocumentService:
         )
         response = await self.get_document(actor, document_id)
         if idempotency_key:
-            self._ctx.idempotency.set(scope_key, response)
+            await self._ctx.save_idempotency(scope_key, payload_hash, response)
         return response
 
     async def update_draft(

@@ -50,6 +50,7 @@ def draft_asset_client(tmp_path) -> TestClient:
     object.__setattr__(settings, "drafts_dir", tmp_path / "portal_drafts")
     object.__setattr__(settings, "data_dir", tmp_path)
     object.__setattr__(settings, "require_dual_approval", False)
+    object.__setattr__(settings, "embedding_model", None)
     return TestClient(create_app(settings))
 
 

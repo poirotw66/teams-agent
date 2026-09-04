@@ -210,12 +210,20 @@ def test_idempotency_prevents_duplicate_publish_and_rollback(portal_client: Test
     )
     pub2 = portal_client.post(
         f"/api/documents/{doc_id}/publish",
-        json={"version_id": ver_id, "reason": "First publish duplicate"},
+        json={"version_id": ver_id, "reason": "First publish"},
         headers=pub_headers,
     )
     assert pub1.status_code == 200
     assert pub2.status_code == 200
     assert pub1.json()["release_id"] == pub2.json()["release_id"]
+
+    # Different payload with same key returns 409 Conflict
+    pub_conflict = portal_client.post(
+        f"/api/documents/{doc_id}/publish",
+        json={"version_id": ver_id, "reason": "First publish different payload"},
+        headers=pub_headers,
+    )
+    assert pub_conflict.status_code == 409
 
     # Verify only 1 release was created
     releases = portal_client.get("/api/releases", headers=headers).json()

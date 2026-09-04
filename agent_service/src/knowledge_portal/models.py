@@ -209,6 +209,13 @@ class AuditEventRecord(StrictModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class IdempotencyRecord(StrictModel):
+    key: str
+    payload_hash: str
+    response: dict[str, Any] | list[Any] | str
+    created_at: datetime
+
+
 class CreateDocumentRequest(StrictModel):
     title: str = Field(min_length=1, max_length=256)
     summary: str = Field(default="", max_length=2000)

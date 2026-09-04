@@ -8,7 +8,7 @@
 
 知識營運服務（Knowledge Portal）已完全整合至 **AI 資訊客服營運後台（AI Ops Backoffice）**：
 
-- **單一登入（SSO）**：全面整合 Microsoft Entra ID (Azure AD)，採用 RS256 簽章公鑰動態輪替驗簽機制。
+- **身分驗證與權限控管**：整合 Microsoft Entra ID (Azure AD)，採用後端 RS256 簽章動態輪替公鑰驗簽（JWKS）。使用者登入後由前端注入或輸入 Entra Bearer Token，後台自動驗簽並解析權限與單位範圍。
 - **無縫原生嵌入**：以 Web Components 原生技術嵌入後台，無需 iframe，提供一致之設計語言（Fluent UI）與流暢操作體驗。
 - **BFF 代理層（Knowledge Bridge）**：後台與知識服務間透過委派密鑰（Delegation Secret）與 HMAC 安全封裝，內部流量隔離，防止前端偽造身分。
 - **Agent 即時生效閉環**：文件發布與回退操作即時聯動 Agent 向量索引重載，實現無需重啟服務之熱更新。
@@ -40,7 +40,7 @@
 | 建立／編輯草稿 | ✅ | ✅ | ✅ | ❌ | ✅ (跨單位均可) |
 | 提交審核 (送審) | ✅ | ✅ | ✅ | ❌ | ✅ |
 | 審核他人文件 (核准/退回) | ❌ | ✅ | ✅ | ❌ | ✅ |
-| 審核自己建立之文件 (自審) | ❌ | ❌ (嚴格阻擋) | ❌ (嚴格阻擋) | ❌ | ✅ (急件特權) |
+| 審核自己建立之文件 (自審) | ❌ | ❌ (嚴格禁止) | ❌ (嚴格禁止) | ❌ | ✅ (急件特權，需填寫特權事由) |
 | 發布正式版本 / 回退版本 | ❌ | ❌ | ✅ (限所屬單位) | ❌ | ✅ (跨單位發布) |
 | 觸發 Agent 重新同步 | ❌ | ❌ | ✅ | ❌ | ✅ |
 | 查閱完整稽核軌跡 | ❌ | ❌ | ✅ | ✅ | ✅ |
@@ -127,7 +127,7 @@ graph TD
                           ▼
             檢查 Agent 服務狀態與密鑰：
             1. 確認 Agent 服務是否在線 (GET /readyz)
-            2. 確認知識庫與 Agent 之 SERVICE_TOKEN 是否一致
+            2. 確認知識庫與 Agent 之 AGENT_RELOAD_TOKEN (或 SERVICE_TOKEN) 是否一致
             3. 查看 Agent 服務日誌 (搜尋 POST /admin/reload-knowledge)
 ```
 
@@ -137,7 +137,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **401** | `KNOWLEDGE_UPSTREAM_UNAUTHORIZED` | Entra Token 過期或缺少 Token | 重新登入後台重新整理憑證 |
 | **403** | `KNOWLEDGE_UPSTREAM_FORBIDDEN` | 嘗試修改或發布非所屬單位之文件 | 確認使用者角色與帳號指派之單位 |
-| **409** | `KNOWLEDGE_VERSION_CONFLICT` | 同時有其他管理員編輯並儲存了草稿 | 重新載入頁面取得最新 ETag 後再儲存 |
+| **409** | `KNOWLEDGE_VERSION_CONFLICT` | 同時有其他管理員編輯並儲存了草稿，或請求過期之 release 部署 | 重新載入頁面取得最新狀態後再送出 |
 | **422** | `VALIDATION_FAILED` | Markdown 格式不符、必填欄位缺漏 | 查看彈窗中的 issues 列表逐項修正 |
 | **502 / 504** | `KNOWLEDGE_UPSTREAM_ERROR` | 後端服務啟動中或網路短暫逾時 | 系統標記為可重試（Retryable），等待 30 秒後重新整理 |
 
@@ -152,21 +152,22 @@ graph TD
 | `AI_OPS_KNOWLEDGE_BRIDGE_ENABLED` | Backoffice | 必須設為 `true`，啟用 BFF 代理功能 |
 | `AI_OPS_KNOWLEDGE_DELEGATION_SECRET` | Backoffice | 與知識庫共用之 HMAC 委派密鑰（存於 Secret Manager） |
 | `KNOWLEDGE_PORTAL_DELEGATION_SECRET` | Portal | 知識庫驗簽 HMAC 密鑰，須與 Backoffice 密鑰一致 |
-| `AGENT_RELOAD_TOKEN` | Agent / Portal | Agent 熱重載端點授權 Token（用於 `/admin/reload-knowledge`） |
+| `AGENT_RELOAD_TOKEN` / `SERVICE_TOKEN` | Agent / Portal | Agent 熱重載端點授權 Token（用於 `/admin/reload-knowledge`，若未設定 `AGENT_RELOAD_TOKEN` 則自動回退至 `SERVICE_TOKEN`） |
 | `ENTRA_CLIENT_ID` / `ENTRA_TENANT_ID` | Backoffice | Microsoft Entra ID 應用程式註冊識別碼 |
 
 ### 5.2 核心健康檢查端點
 
 - **AI Ops 後台健康檢查**：`GET /healthz`
 - **知識庫健康檢查**：`GET /healthz`
-- **Teams Agent 運作狀態**：`GET /healthz`（服務存活）與 `GET /readyz`（知識索引已加載完成）
+- **Teams Agent 運作狀態**：`GET /healthz`（服務存活）、`GET /readyz`（知識索引已加載完成）與 `GET /admin/knowledge-status`（副本同步狀態）
 - **Agent 手動觸發熱重載**：
   ```bash
   curl -X POST "https://<AGENT_INTERNAL_URL>/admin/reload-knowledge" \
     -H "Authorization: Bearer <AGENT_RELOAD_TOKEN>" \
     -H "Content-Type: application/json" \
-    -d '{"release_id": "<RELEASE_ID>", "reason": "Manual operator refresh"}'
+    -d '{"releaseId": "<RELEASE_ID>", "reason": "Manual operator refresh"}'
   ```
+  *(註：請求 Payload 支援 `releaseId` 或 `release_id`，若未指定則自動載入 active release)*
 
 ---
 

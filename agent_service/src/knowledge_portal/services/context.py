@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from ..capabilities import (
     compute_allowed_actions,
@@ -14,6 +17,7 @@ from ..models import (
     AuditEventRecord,
     DocumentDetailResponse,
     DraftAssetListResponse,
+    IdempotencyRecord,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
@@ -25,26 +29,46 @@ from ..repository import PortalRepository, new_id
 from ..settings import PortalSettings
 
 
+class IdempotencyConflictError(Exception):
+    def __init__(
+        self,
+        message: str = "Idempotency key was previously used with a different request payload.",
+    ) -> None:
+        super().__init__(message)
+
+
 class IdempotencyStore:
-    """Bounded in-memory cache for deduplicating mutating API requests."""
+    """Bounded in-memory cache for deduplicating mutating API requests with payload conflict detection."""
 
     def __init__(self, max_records: int = 1000) -> None:
-        self._cache: dict[str, Any] = {}
+        self._cache: dict[str, tuple[str, Any]] = {}
         self._keys: list[str] = []
         self._max_records = max_records
 
-    def get(self, key: str) -> Any | None:
-        return self._cache.get(key)
-
-    def set(self, key: str, value: Any) -> None:
+    def check_and_get(self, key: str, payload_hash: str) -> Any | None:
         if key in self._cache:
-            self._cache[key] = value
+            stored_hash, response = self._cache[key]
+            if stored_hash and stored_hash != payload_hash:
+                raise IdempotencyConflictError(
+                    "Idempotency key was previously used with a different request payload."
+                )
+            return response
+        return None
+
+    def get(self, key: str) -> Any | None:
+        if key in self._cache:
+            return self._cache[key][1]
+        return None
+
+    def set(self, key: str, value: Any, payload_hash: str = "") -> None:
+        if key in self._cache:
+            self._cache[key] = (payload_hash, value)
             return
         if len(self._keys) >= self._max_records:
             oldest = self._keys.pop(0)
             self._cache.pop(oldest, None)
         self._keys.append(key)
-        self._cache[key] = value
+        self._cache[key] = (payload_hash, value)
 
 
 class PortalServiceContext:
@@ -54,6 +78,38 @@ class PortalServiceContext:
         self.publisher = ReleasePublisher(settings)
         self.migration = KnowledgeMigrationService(settings, repository, self.publisher)
         self.idempotency = IdempotencyStore()
+
+    async def get_idempotency(self, key: str, payload_hash: str) -> Any | None:
+        mem_cached = self.idempotency.check_and_get(key, payload_hash)
+        if mem_cached is not None:
+            return mem_cached
+        repo_rec = await self.repository.get_idempotency(key)
+        if repo_rec is not None:
+            if repo_rec.payload_hash and repo_rec.payload_hash != payload_hash:
+                raise IdempotencyConflictError(
+                    "Idempotency key was previously used with a different request payload."
+                )
+            self.idempotency.set(key, repo_rec.response, payload_hash=payload_hash)
+            return repo_rec.response
+        return None
+
+    async def save_idempotency(self, key: str, payload_hash: str, response: Any) -> None:
+        self.idempotency.set(key, response, payload_hash=payload_hash)
+        try:
+            serialized_response = (
+                response.model_dump(mode="json")
+                if hasattr(response, "model_dump")
+                else response
+            )
+            rec = IdempotencyRecord(
+                key=key,
+                payload_hash=payload_hash,
+                response=serialized_response,
+                created_at=utc_now(),
+            )
+            await self.repository.save_idempotency(rec)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist idempotency record for key %s: %s", key, exc)
 
     async def audit(
         self,

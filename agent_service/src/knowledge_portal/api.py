@@ -31,6 +31,7 @@ from .pdf_text import ScannedPdfError
 from .rbac import PortalPermissionError
 from .repository import PortalNotFoundError, VersionConflictError, build_repository
 from .service import PortalService
+from .services.context import IdempotencyConflictError
 from .settings import PortalSettings
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                 status_code=403,
                 detail={"code": PortalErrorCode.FORBIDDEN.value, "message": str(exc)},
             )
-        if isinstance(exc, VersionConflictError):
+        if isinstance(exc, (VersionConflictError, IdempotencyConflictError)):
             return HTTPException(
                 status_code=409,
                 detail={"code": PortalErrorCode.CONFLICT.value, "message": str(exc)},

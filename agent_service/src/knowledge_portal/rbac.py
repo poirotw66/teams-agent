@@ -105,10 +105,10 @@ def ensure_can_review(
 ) -> None:
     if actor.role not in REVIEW_ROLES:
         raise PortalPermissionError("You do not have permission to review documents.")
-    if relaxed_workflow or actor.role in {"MANAGER", "PLATFORM"}:
+    if relaxed_workflow or actor.role == "PLATFORM":
         return
-    if actor.role == "REVIEWER" and submitted_by == actor.user_id:
-        raise PortalPermissionError("Reviewers cannot approve their own submissions.")
+    if submitted_by == actor.user_id:
+        raise PortalPermissionError("Reviewers and managers cannot approve their own submissions.")
 
 
 def ensure_can_publish(actor: PortalActor) -> None:

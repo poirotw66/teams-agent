@@ -7,6 +7,7 @@ from typing import Protocol
 from .models import (
     AuditEventRecord,
     DashboardSummary,
+    IdempotencyRecord,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
@@ -80,6 +81,10 @@ class PortalRepository(Protocol):
 
     async def list_test_runs(self, version_id: str) -> list[TestRunRecord]: ...
 
+    async def get_idempotency(self, key: str) -> IdempotencyRecord | None: ...
+
+    async def save_idempotency(self, record: IdempotencyRecord) -> None: ...
+
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary: ...
 
 
@@ -115,6 +120,7 @@ class InMemoryPortalRepository:
         self.audit_events: list[AuditEventRecord] = []
         self.test_cases: dict[str, TestCaseRecord] = {}
         self.test_runs: dict[str, TestRunRecord] = {}
+        self.idempotency_records: dict[str, IdempotencyRecord] = {}
         self.active_release_id: str | None = None
 
     async def list_documents(
@@ -237,6 +243,12 @@ class InMemoryPortalRepository:
         return [
             item for item in self.test_runs.values() if item.version_id == version_id
         ]
+
+    async def get_idempotency(self, key: str) -> IdempotencyRecord | None:
+        return self.idempotency_records.get(key)
+
+    async def save_idempotency(self, record: IdempotencyRecord) -> None:
+        self.idempotency_records[record.key] = record
 
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary:
         documents = await self.list_documents(actor=actor)

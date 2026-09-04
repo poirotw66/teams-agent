@@ -26,7 +26,11 @@ from .graph import RagAgent, build_chat_model
 from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
-from .knowledge_release import release_index_path, resolve_knowledge_index
+from .knowledge_release import (
+    read_active_release_id,
+    release_index_path,
+    resolve_knowledge_index,
+)
 from .operations.emitter import OperationalEventReplayConflict
 from .operations.event_identity import LogicalRequestIdentity
 from .operations.runtime import OpsRuntime, build_ops_runtime
@@ -193,14 +197,69 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    def _sync_knowledge_to_active_pointer(target_app: FastAPI) -> bool:
+        release_dir = (
+            resolved_settings.knowledge_release_dir
+            or (resolved_settings.data_dir / "releases")
+        )
+        active_release_id = read_active_release_id(release_dir)
+        if not active_release_id:
+            return False
+        current_release_id = getattr(target_app.state, "knowledge_release_id", None)
+        if current_release_id == active_release_id:
+            return False
+
+        target_index_path = release_index_path(release_dir, active_release_id)
+        if not target_index_path.exists():
+            logger.warning(
+                "Active release index not found for auto-sync: release_id=%s path=%s",
+                active_release_id,
+                target_index_path,
+            )
+            return False
+
+        try:
+            new_index = HybridIndex.load(
+                target_index_path,
+                resolved_settings.embedding_model,
+            )
+            new_agent = RagAgent(resolved_settings, new_index)
+            new_hybrid_service = build_knowledge_service(
+                target_app.state.hybrid_settings,
+                new_index,
+                target_app.state.rag_model,
+            )
+            router: KnowledgeBackendRouter = target_app.state.knowledge_router
+            router.update_service("HYBRID", new_hybrid_service)
+
+            target_app.state.index = new_index
+            target_app.state.knowledge_index_path = target_index_path
+            target_app.state.knowledge_release_id = active_release_id
+            target_app.state.knowledge_index_source = "portal_release"
+            target_app.state.agent = new_agent
+            logger.info(
+                "Auto-synced knowledge index to active pointer: release_id=%s chunks=%d",
+                active_release_id,
+                len(new_index.chunks),
+            )
+            return True
+        except Exception as err:
+            logger.error(
+                "Failed to auto-sync knowledge index to active pointer %s: %s",
+                active_release_id,
+                err,
+            )
+            return False
+
     @app.get("/healthz")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/readyz")
     async def ready(request: Request) -> dict[str, object]:
+        _sync_knowledge_to_active_pointer(request.app)
         index: HybridIndex | None = getattr(request.app.state, "index", None)
-        is_ready = bool(index and index.chunks)
+        is_ready = bool(index is not None)
         if not is_ready:
             raise HTTPException(status_code=503, detail="RAG index is not ready.")
         return {
@@ -255,6 +314,30 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         logger.info("Knowledge backend changed: backend=%s", payload.backend)
         return await router.status()
 
+    @app.get(
+        "/admin/knowledge-status",
+        dependencies=[Depends(authorize)],
+    )
+    async def get_knowledge_status(request: Request) -> dict[str, object]:
+        _sync_knowledge_to_active_pointer(request.app)
+        release_dir = (
+            resolved_settings.knowledge_release_dir
+            or (resolved_settings.data_dir / "releases")
+        )
+        active_id = read_active_release_id(release_dir)
+        current_id = getattr(request.app.state, "knowledge_release_id", None)
+        index: HybridIndex | None = getattr(request.app.state, "index", None)
+        return {
+            "currentReleaseId": current_id,
+            "targetReleaseId": active_id,
+            "inSync": current_id == active_id if active_id else True,
+            "chunks": len(index.chunks) if index else 0,
+            "source": getattr(request.app.state, "knowledge_index_source", "bundled_index"),
+            "indexPath": str(
+                getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
+            ),
+        }
+
     @app.post(
         "/admin/reload-knowledge",
         dependencies=[Depends(authorize)],
@@ -264,12 +347,27 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         payload: ReloadKnowledgeRequest | None = None,
     ) -> dict[str, object]:
         target_release_id: str | None = None
-        if payload and payload.releaseId:
-            release_dir = (
-                resolved_settings.knowledge_release_dir
-                or (resolved_settings.data_dir / "releases")
-            )
-            target_release_id = payload.releaseId
+        release_dir = (
+            resolved_settings.knowledge_release_dir
+            or (resolved_settings.data_dir / "releases")
+        )
+        active_release_id = read_active_release_id(release_dir)
+        requested_release_id = payload.target_release_id if payload else None
+
+        if requested_release_id:
+            if active_release_id and requested_release_id != active_release_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Stale deployment request: target release '{requested_release_id}' "
+                        f"does not match active release '{active_release_id}'."
+                    ),
+                )
+            target_release_id = requested_release_id
+            target_index_path = release_index_path(release_dir, target_release_id)
+            source = "portal_release"
+        elif active_release_id:
+            target_release_id = active_release_id
             target_index_path = release_index_path(release_dir, target_release_id)
             source = "portal_release"
         else:
@@ -452,6 +550,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             policy_snapshot_scope,
         )
 
+        _sync_knowledge_to_active_pointer(request.app)
         _authorize_tenant(payload)
         correlation_id = _start_chat(payload)
         workflow: AgentWorkflow = request.app.state.workflow
@@ -521,6 +620,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         starts -- bad service token, disallowed tenant -- is still a real HTTP
         error, because those checks run before the response begins.
         """
+        _sync_knowledge_to_active_pointer(request.app)
         _authorize_tenant(payload)
         correlation_id = _start_chat(payload)
         workflow: AgentWorkflow = request.app.state.workflow
@@ -666,6 +766,7 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         dependencies=[Depends(authorize)],
     )
     async def search(payload: SearchRequest, request: Request) -> SearchResponse:
+        _sync_knowledge_to_active_pointer(request.app)
         if (
             resolved_settings.allowed_tenants
             and payload.tenantId not in resolved_settings.allowed_tenants

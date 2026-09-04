@@ -125,6 +125,7 @@ async def test_portal_release_agent_sync_three_state_machine(tmp_path: Path) -> 
 
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "data_dir", data_dir)
+    object.__setattr__(settings, "state_path", data_dir / "portal_state.json")
     object.__setattr__(settings, "release_artifact_dir", release_dir)
     object.__setattr__(settings, "drafts_dir", drafts_dir)
     object.__setattr__(settings, "embedding_model", None)

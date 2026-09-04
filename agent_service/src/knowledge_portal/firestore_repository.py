@@ -5,6 +5,7 @@ from typing import Any
 from .models import (
     AuditEventRecord,
     DashboardSummary,
+    IdempotencyRecord,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
@@ -44,6 +45,9 @@ class FirestorePortalRepository:
 
     def _config(self):
         return self._client.collection(self._settings.config_collection)
+
+    def _idempotency(self):
+        return self._client.collection(f"{self._settings.config_collection}_idempotency")
 
     @staticmethod
     def _serialize(model) -> dict[str, Any]:
@@ -119,8 +123,14 @@ class FirestorePortalRepository:
         return None
 
     async def list_pending_reviews(self, actor: PortalActor) -> list[ReviewRecord]:
-        memory = _MemoryFilter([])
-        return await memory.list_pending_reviews(actor)
+        if actor.role not in {"REVIEWER", "MANAGER", "PLATFORM"}:
+            return []
+        items: list[ReviewRecord] = []
+        async for snapshot in self._reviews().stream():
+            review = self._deserialize(ReviewRecord, snapshot.to_dict())
+            if review is not None and review.decision is None:
+                items.append(review)
+        return sorted(items, key=lambda item: item.submitted_at, reverse=True)
 
     async def save_release(self, release: ReleaseRecord) -> ReleaseRecord:
         await self._releases().document(release.release_id).set(self._serialize(release))
@@ -193,6 +203,15 @@ class FirestorePortalRepository:
             if test_run is not None:
                 items.append(test_run)
         return items
+
+    async def get_idempotency(self, key: str) -> IdempotencyRecord | None:
+        doc_id = key.replace("/", "_")
+        snapshot = await self._idempotency().document(doc_id).get()
+        return self._deserialize(IdempotencyRecord, snapshot.to_dict())
+
+    async def save_idempotency(self, record: IdempotencyRecord) -> None:
+        doc_id = record.key.replace("/", "_")
+        await self._idempotency().document(doc_id).set(self._serialize(record))
 
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary:
         documents = await self.list_documents(actor=actor)
