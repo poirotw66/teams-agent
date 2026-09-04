@@ -78,24 +78,28 @@ locals {
   }
 
   backoffice_env = {
-    AI_OPS_BACKOFFICE_PORT         = "8080"
-    AI_OPS_BACKOFFICE_AUTH_MODE    = var.backoffice_auth_mode
-    AI_OPS_ENTRA_TENANT_ID         = var.bot_tenant_id
-    AI_OPS_ENTRA_CLIENT_ID         = var.ai_ops_entra_client_id != "" ? var.ai_ops_entra_client_id : var.bot_client_id
-    AGENT_DEPLOYMENT_ENV           = var.environment_name
-    OPS_STORE_MODE                 = "FIRESTORE"
-    OPS_AUDIT_STORE_MODE           = "FIRESTORE"
-    OPS_FIRESTORE_COLLECTION       = var.ops_events_collection
-    OPS_AUDIT_FIRESTORE_COLLECTION = var.ops_audit_collection
-    OPS_BIGQUERY_ENABLED           = "false"
-    OPS_FIRESTORE_PROJECT          = var.project_id
-    GCP_PROJECT_ID                 = var.project_id
-    AI_OPS_GCP_PROJECT             = var.project_id
-    KNOWLEDGE_PORTAL_PUBLIC_URL    = var.knowledge_portal_public_url
+    AI_OPS_BACKOFFICE_PORT          = "8080"
+    AI_OPS_BACKOFFICE_AUTH_MODE     = var.backoffice_auth_mode
+    AI_OPS_ENTRA_TENANT_ID          = var.bot_tenant_id
+    AI_OPS_ENTRA_CLIENT_ID          = var.ai_ops_entra_client_id != "" ? var.ai_ops_entra_client_id : var.bot_client_id
+    AGENT_DEPLOYMENT_ENV            = var.environment_name
+    OPS_STORE_MODE                  = "FIRESTORE"
+    OPS_AUDIT_STORE_MODE            = "FIRESTORE"
+    OPS_FIRESTORE_COLLECTION        = var.ops_events_collection
+    OPS_AUDIT_FIRESTORE_COLLECTION  = var.ops_audit_collection
+    OPS_BIGQUERY_ENABLED            = "false"
+    OPS_FIRESTORE_PROJECT           = var.project_id
+    GCP_PROJECT_ID                  = var.project_id
+    AI_OPS_GCP_PROJECT              = var.project_id
+    KNOWLEDGE_PORTAL_PUBLIC_URL     = var.knowledge_portal_public_url
     KNOWLEDGE_PORTAL_URL_CONFIGURED = tostring(var.knowledge_portal_public_url != "")
-    KNOWLEDGE_PORTAL_AGENT_API_URL = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
-    TEAMS_ADAPTER_URL              = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
-    RAG_DATA_DIR                   = "/app/data"
+    KNOWLEDGE_PORTAL_INTERNAL_URL   = var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : var.knowledge_portal_public_url
+    AI_OPS_KNOWLEDGE_INTERNAL_URL   = var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : var.knowledge_portal_public_url
+    AI_OPS_KNOWLEDGE_BRIDGE_ENABLED = tostring(var.knowledge_bridge_enabled)
+    AI_OPS_DEPLOYMENT_TENANT_ID     = var.bot_tenant_id
+    KNOWLEDGE_PORTAL_AGENT_API_URL  = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
+    TEAMS_ADAPTER_URL               = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
+    RAG_DATA_DIR                    = "/app/data"
   }
 
   adapter_env = {

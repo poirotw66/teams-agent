@@ -273,3 +273,21 @@ variable "ai_ops_entra_client_id" {
   type        = string
   default     = ""
 }
+
+variable "knowledge_delegation_secret_id" {
+  description = "Secret Manager secret ID for Knowledge Portal delegation secret."
+  type        = string
+  default     = "teams-agent-knowledge-delegation-secret"
+}
+
+variable "knowledge_bridge_enabled" {
+  description = "Whether to enable the AI Ops Backoffice Knowledge Bridge (BFF)."
+  type        = bool
+  default     = true
+}
+
+variable "knowledge_portal_internal_url" {
+  description = "Internal URL of the Knowledge Portal service for Backoffice BFF."
+  type        = string
+  default     = ""
+}

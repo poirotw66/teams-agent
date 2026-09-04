@@ -51,10 +51,16 @@ output "artifact_registry_repository" {
 
 output "secret_names" {
   value = {
-    google_api_key    = google_secret_manager_secret.google_api_key.secret_id
-    bot_client_secret = google_secret_manager_secret.bot_client_secret.secret_id
-    asset_signing_key = google_secret_manager_secret.asset_signing_key.secret_id
+    google_api_key              = google_secret_manager_secret.google_api_key.secret_id
+    bot_client_secret           = google_secret_manager_secret.bot_client_secret.secret_id
+    asset_signing_key           = google_secret_manager_secret.asset_signing_key.secret_id
+    knowledge_delegation_secret = google_secret_manager_secret.knowledge_delegation_secret.secret_id
   }
+}
+
+output "knowledge_portal_internal_url" {
+  description = "Internal URL of the Knowledge Portal service for Backoffice BFF."
+  value       = var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : null
 }
 
 output "firestore_database_id" {

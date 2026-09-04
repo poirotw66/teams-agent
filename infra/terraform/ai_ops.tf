@@ -76,8 +76,8 @@ resource "google_bigquery_table" "operational_events" {
   require_partition_filter = true
 
   time_partitioning {
-    type  = "DAY"
-    field = "occurred_at"
+    type          = "DAY"
+    field         = "occurred_at"
     expiration_ms = 31536000000
   }
 
@@ -115,7 +115,7 @@ resource "google_bigquery_table" "operational_events_deduplicated" {
 
   view {
     use_legacy_sql = false
-    query = <<-SQL
+    query          = <<-SQL
       SELECT * EXCEPT (event_row_number)
       FROM (
         SELECT
@@ -184,6 +184,7 @@ resource "google_cloud_run_v2_service" "backoffice" {
   depends_on = [
     google_project_service.required,
     google_bigquery_dataset.ai_ops,
+    google_secret_manager_secret_iam_member.backoffice_knowledge_delegation_secret,
     terraform_data.image_policy,
   ]
 
@@ -221,6 +222,26 @@ resource "google_cloud_run_v2_service" "backoffice" {
         content {
           name  = env.key
           value = env.value
+        }
+      }
+
+      env {
+        name = "AI_OPS_KNOWLEDGE_DELEGATION_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.knowledge_delegation_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "KNOWLEDGE_PORTAL_DELEGATION_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.knowledge_delegation_secret.secret_id
+            version = "latest"
+          }
         }
       }
     }
