@@ -41,6 +41,7 @@ def test_scope_does_not_inherit_foreign_unit_via_conversation() -> None:
             event_id="a-issue",
             conversation_id="shared-conv",
             turn_id="turn-a",
+            correlation_id="corr-a",
             tenant_id="tenant-a",
             issue_type_id="vpn.connection_failed",
         ),
@@ -48,6 +49,7 @@ def test_scope_does_not_inherit_foreign_unit_via_conversation() -> None:
             event_id="b-issue",
             conversation_id="shared-conv",
             turn_id="turn-b",
+            correlation_id="corr-b",
             tenant_id="tenant-a",
             issue_type_id="security.phishing_report",
         ),
@@ -56,12 +58,21 @@ def test_scope_does_not_inherit_foreign_unit_via_conversation() -> None:
             event_type="turn.received",
             conversation_id="shared-conv",
             turn_id="turn-b",
+            correlation_id="corr-b",
             tenant_id="tenant-a",
             payload={"messageMasked": "phishing body"},
         ),
+        _event(
+            event_id="a-feedback",
+            event_type="feedback.recorded",
+            conversation_id="shared-conv",
+            correlation_id="corr-a",
+            tenant_id="tenant-a",
+            payload={"rating": "DOWN"},
+        ),
     ]
     scoped_ids = {event.event_id for event in filter_events_by_scope(events, actor, taxonomy)}
-    assert scoped_ids == {"a-issue"}
+    assert scoped_ids == {"a-issue", "a-feedback"}
 
 
 def test_scope_blocks_cross_tenant_even_same_unit_and_conversation() -> None:
@@ -115,6 +126,7 @@ def test_scope_allows_same_turn_companion_without_owner_unit() -> None:
             event_id="issue-1",
             conversation_id="conv-1",
             turn_id="turn-1",
+            correlation_id="corr-1",
             tenant_id="tenant-a",
             issue_type_id="vpn.connection_failed",
         ),
@@ -123,6 +135,7 @@ def test_scope_allows_same_turn_companion_without_owner_unit() -> None:
             event_type="turn.received",
             conversation_id="conv-1",
             turn_id="turn-1",
+            correlation_id="corr-1",
             tenant_id="tenant-a",
             payload={"messageMasked": "hello"},
         ),
@@ -131,6 +144,7 @@ def test_scope_allows_same_turn_companion_without_owner_unit() -> None:
             event_type="turn.received",
             conversation_id="conv-1",
             turn_id="turn-2",
+            correlation_id="corr-2",
             tenant_id="tenant-a",
             payload={"messageMasked": "later"},
         ),

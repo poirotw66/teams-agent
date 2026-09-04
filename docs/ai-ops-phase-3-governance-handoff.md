@@ -6,9 +6,8 @@ This handoff covers the Phase 3 AI governance domain introduced under
 ## Delivered
 
 - Immutable Prompt / Model / Feature Flag / Retention / Masking candidate lifecycle
-- Deterministic offline Eval runner (`phase3-eval-v2`): leave-one-out nearest-neighbor
-  classification on example text, injection-defense coverage, and
-  `char_token_heuristic_v2` cost/latency estimates — **not** live-model accuracy proof
+- Deterministic offline Eval runner (`phase3-eval-v3`): static + dataset + real_flow
+  layers; scripted/live harness; unavailable model yields `INCOMPLETE`
 - Dual-control approve (submitter cannot approve)
 - Prompt Canary percentage + sticky conversation routing
 - Canary stop + metric evaluate; **safety_alerts stop before sample-size CONTINUE**
@@ -20,15 +19,16 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Capability-aware global search (Prompt/Model/Flag/Role/Retention/Masking/Audit + FAQ/Example/Issue/Quality extras)
 - Governance audit trail with secret redaction and JSON audit export package
 - Export jobs are **requester-bound** (other SYSTEM_ADMIN / AUDITOR cannot fetch);
-  worker re-resolves via `RoleRevalidatingExportAuthorizationResolver` (still asyncio
-  `create_task`, not a durable queue / Entra SoT)
-- Baseline import of code-based Issue Extractor prompt / model / flags
-- Agent runtime wiring for prompt, model, and flags with fail-safe baselines
-  (`PROMPT_RUNTIME_MODE=GOVERNED|CODE_BASELINE`)
+  worker re-resolves via durable `FileBackedExportAuthorizationResolver`; jobs
+  persist `request_params`, support idempotency keys, lease-based restart recovery,
+  retries for transient I/O errors, and expiry cleanup with audit
 - ACTIVE retention TTL and masking policy version bridged into ops runtime via
-  `agent_service.operations.policy_runtime` (emitters / retention / mask stamps)
+  `RuntimePolicyProvider` / `PolicySnapshot`; masking versions map to concrete
+  rule packs (`v2`, `v3`) with content hashes — version change alters behavior
+- Firestore growth path: `AI_OPS_GOVERNANCE_STORE_MODE=FIRESTORE_SHARDED` splits
+  entities; `daily_aggregates` defines the aggregate document shape for later workers
 - Operational event scope: tenant is a hard boundary; owner-unit checks are
-  per-event; same-conversation inheritance no longer widens visibility
+  per-event; companions may share turn/correlation only (not whole conversation)
 - Eval layers: `static` + `dataset` + `real_flow` (`phase3-eval-v3`); unavailable
   model/harness yields `INCOMPLETE` and cannot pass critical gates
 - Backoffice UI pages for Prompt, models, flags, roles, retention, masking, search, audit export

@@ -208,7 +208,7 @@ def test_retention_masking_roles_api(tmp_path: Path) -> None:
     created_mask = client.post(
         "/api/governance/masking/candidates",
         headers=ai,
-        json={"policy_version": "mask-api-v2", "reason": "api masking"},
+        json={"policy_version": "v3", "reason": "api masking"},
     )
     assert created_mask.status_code == 200
     mask_id = created_mask.json()["policy"]["version_id"]

@@ -1425,6 +1425,7 @@ def test_export_worker_failure_records_audit(tmp_path: Path) -> None:
         "exportType": "issues_summary",
         "exportFormat": "json",
         "status": "FAILED",
+        "attemptCount": 1,
         "errorType": "ValueError",
     }
 

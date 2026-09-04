@@ -52,6 +52,7 @@ from .governance_domain import (
     FirestoreGovernanceRepository,
     GovernanceService,
 )
+from .governance_domain.sharded_repository import ShardedFirestoreGovernanceRepository
 from .governance_routes import register_governance_routes
 from .services.periods import PeriodPolicyError
 from .services.query_audit import record_query_audit
@@ -97,6 +98,7 @@ class ExportRequest(BaseModel):
     rating: str | None = None
     feedback_reason: str | None = None
     resolved_status: str | None = None
+    idempotency_key: str | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -424,6 +426,13 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             firestore.Client(project=resolved_settings.gcp_project_id),
             collection=resolved_settings.governance_firestore_collection,
         )
+    elif governance_store_mode in {"FIRESTORE_SHARDED", "FIRESTORE_SPLIT"}:
+        from google.cloud import firestore
+
+        governance_repository = ShardedFirestoreGovernanceRepository(
+            firestore.Client(project=resolved_settings.gcp_project_id),
+            collection=resolved_settings.governance_firestore_collection,
+        )
     else:
         raise ValueError(f"Unsupported governance store mode: {governance_store_mode}")
     governance_service = GovernanceService(governance_repository)
@@ -584,6 +593,13 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         resolved_settings.ops_store_path.mkdir(parents=True, exist_ok=True)
         stop_sweeper = asyncio.Event()
+        query_service.export_jobs.configure_execution_backend(query_service)
+        try:
+            recovered = await query_service.export_jobs.recover_interrupted_jobs()
+            if recovered:
+                logger.info("Recovered %s interrupted export jobs", recovered)
+        except Exception:
+            logger.exception("Failed to recover interrupted export jobs.")
 
         async def sweep_expired_exports() -> None:
             while not stop_sweeper.is_set():
@@ -1060,6 +1076,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
                 detail=f"Unsupported export format: {payload.export_format}",
             )
         export_rate_limiter.check(actor.user_id)
+        idempotency = payload.idempotency_key
         return await query_service.create_export_job(
             actor=actor,
             export_type=payload.export_type,
@@ -1079,6 +1096,7 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             rating=payload.rating,
             feedback_reason=payload.feedback_reason,
             resolved_status=payload.resolved_status,
+            idempotency_key=idempotency,
         )
 
     @app.get("/api/exports/{job_id}")
@@ -1103,7 +1121,14 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Export content is not available.")
         content, media_type = artifact
         filename = f"{job_id}.{export_format}"
-        await query_service.export_jobs.record_download(job_id, actor=actor)
+        try:
+            await query_service.export_jobs.record_download(job_id, actor=actor)
+        except Exception as exc:
+            from ai_ops_backoffice.services.export_authorization import ExportAuthorizationError
+
+            if isinstance(exc, ExportAuthorizationError):
+                raise HTTPException(status_code=404, detail="Export job not found.") from exc
+            raise
         return Response(
             content=content,
             media_type=media_type,

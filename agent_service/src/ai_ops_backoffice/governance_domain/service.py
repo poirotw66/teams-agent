@@ -8,6 +8,7 @@ from typing import Any, Callable
 from agent_service.extractor import SYSTEM_PROMPT
 from agent_service.operations.access import CAPABILITIES, ActorContext
 from agent_service.operations.masking import MASKING_POLICY_VERSION, redact_secrets
+from agent_service.operations.masking_rules import resolve_masking_pack
 
 from .constants import (
     FALLBACK_TRIGGERS,
@@ -118,7 +119,7 @@ class GovernanceService:
             version_id=str(uuid.uuid4()),
             policy_version=MASKING_POLICY_VERSION,
             status="ACTIVE",
-            rules_hash=content_hash(MASKING_POLICY_VERSION),
+            rules_hash=resolve_masking_pack(MASKING_POLICY_VERSION).rules_hash,
             created_by="system-baseline",
             created_at=now,
             approved_by="system-baseline",
@@ -1162,13 +1163,17 @@ class GovernanceService:
         reject_secrets_and_injection(policy_version, label="masking policy version")
         if not policy_version.strip():
             raise GovernanceValidationError("masking policy version is required")
+        try:
+            pack = resolve_masking_pack(policy_version.strip())
+        except KeyError as exc:
+            raise GovernanceValidationError(str(exc)) from exc
 
         def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
             version = MaskingPolicyVersion(
                 version_id=str(uuid.uuid4()),
-                policy_version=policy_version.strip(),
+                policy_version=pack.policy_version,
                 status="CANDIDATE",
-                rules_hash=content_hash(policy_version.strip()),
+                rules_hash=pack.rules_hash,
                 created_by=actor.user_id,
                 created_at=self._clock(),
                 change_reason=reason,
@@ -1180,7 +1185,16 @@ class GovernanceService:
                 target_id=version.policy_version,
                 version_id=version.version_id,
                 reason=reason,
-                after=version.model_dump(mode="json"),
+                after={
+                    **version.model_dump(mode="json"),
+                    "rules": {
+                        "maskEmail": pack.mask_email,
+                        "maskPhone": pack.mask_phone,
+                        "maskEmployeeId": pack.mask_employee_id,
+                        "maskNationalId": pack.mask_national_id,
+                        "maskCredentials": pack.mask_credentials,
+                    },
+                },
             )
             return replace_model(
                 state,

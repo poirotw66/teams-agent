@@ -83,7 +83,7 @@ def test_active_retention_and_masking_affect_runtime(tmp_path: Path) -> None:
     gov.approve_retention(version_id=version_id, reason="approve", actor=APPROVER)
     gov.activate_retention(version_id=version_id, reason="activate", actor=APPROVER)
     masking = gov.create_masking_candidate(
-        policy_version="mask-runtime-v9",
+        policy_version="v3",
         reason="runtime masking",
         actor=AI,
     )
@@ -96,9 +96,10 @@ def test_active_retention_and_masking_affect_runtime(tmp_path: Path) -> None:
     try:
         delta_days = (retention_expiry(settings) - utc_now()).days
         assert delta_days in {89, 90}
-        masked = mask_text("hello")
-        assert masked.policy_version == "mask-runtime-v9"
-        assert MASKING_POLICY_VERSION != "mask-runtime-v9"
+        masked = mask_text("hello A123456789")
+        assert masked.policy_version == "v3"
+        assert "[REDACTED_NATIONAL_ID]" in masked.text
+        assert MASKING_POLICY_VERSION != "v3"
     finally:
         configure_policy_runtime(None)
 

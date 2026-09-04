@@ -1,4 +1,4 @@
-"""Runtime bridge from Phase 3 ACTIVE governance policies to ops emitters."""
+"""Request-scoped policy snapshots and providers for ops runtime."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Protocol
 
 from agent_service.operations.contracts import MASKING_POLICY_VERSION
+from agent_service.operations.masking_rules import MaskingRulePack, resolve_masking_pack
 from agent_service.operations.settings import OpsSettings
 
 logger = logging.getLogger(__name__)
 
-# Governance model validators call mask_text during peek/load.  mask_text asks
-# for the active masking policy version, which would otherwise re-enter peek.
 _RESOLVE_DEPTH = threading.local()
+_SNAPSHOT: threading.local = threading.local()
 
 
 def _resolve_depth() -> int:
@@ -48,8 +48,28 @@ class EffectiveRetentionPolicy:
 @dataclass(frozen=True)
 class EffectiveMaskingPolicy:
     policy_version: str
+    rules_hash: str
+    pack: MaskingRulePack
     source: str
     version_id: str | None = None
+
+
+@dataclass(frozen=True)
+class PolicySnapshot:
+    """Consistent retention + masking view for one request/worker cycle."""
+
+    retention: EffectiveRetentionPolicy
+    masking: EffectiveMaskingPolicy
+
+
+class RuntimePolicyProvider(Protocol):
+    def snapshot(self, *, policy_id: str = "operational-events") -> PolicySnapshot: ...
+
+    def retention(
+        self, *, policy_id: str = "operational-events"
+    ) -> EffectiveRetentionPolicy: ...
+
+    def masking(self) -> EffectiveMaskingPolicy: ...
 
 
 class PolicyRuntime:
@@ -67,6 +87,12 @@ class PolicyRuntime:
     @classmethod
     def from_ops_settings(cls, settings: OpsSettings) -> PolicyRuntime:
         return cls(settings=settings, governance=_try_build_governance(settings))
+
+    def snapshot(self, *, policy_id: str = "operational-events") -> PolicySnapshot:
+        return PolicySnapshot(
+            retention=self.retention(policy_id=policy_id),
+            masking=self.masking(),
+        )
 
     def retention(
         self, *, policy_id: str = "operational-events"
@@ -111,48 +137,108 @@ class PolicyRuntime:
                     peeked = None
                 if peeked is not None:
                     version = str(peeked.get("policyVersion") or "").strip()
+                    rules_hash = str(peeked.get("rulesHash") or "").strip()
                     if version:
+                        try:
+                            pack = resolve_masking_pack(version)
+                        except KeyError:
+                            logger.warning(
+                                "unknown masking policy version %s; using code baseline",
+                                version,
+                            )
+                            pack = resolve_masking_pack(MASKING_POLICY_VERSION)
+                            return EffectiveMaskingPolicy(
+                                policy_version=pack.policy_version,
+                                rules_hash=pack.rules_hash,
+                                pack=pack,
+                                source="code_baseline_fallback",
+                                version_id=str(peeked.get("versionId") or "") or None,
+                            )
+                        if rules_hash and rules_hash != pack.rules_hash:
+                            logger.warning(
+                                "masking rules_hash mismatch for %s "
+                                "(stored=%s computed=%s); using computed pack",
+                                version,
+                                rules_hash,
+                                pack.rules_hash,
+                            )
                         return EffectiveMaskingPolicy(
-                            policy_version=version,
+                            policy_version=pack.policy_version,
+                            rules_hash=pack.rules_hash,
+                            pack=pack,
                             source="governance",
                             version_id=str(peeked.get("versionId") or "") or None,
                         )
+            pack = resolve_masking_pack(MASKING_POLICY_VERSION)
             return EffectiveMaskingPolicy(
-                policy_version=MASKING_POLICY_VERSION,
+                policy_version=pack.policy_version,
+                rules_hash=pack.rules_hash,
+                pack=pack,
                 source="code_baseline",
             )
         finally:
             _exit_resolve()
 
 
-_POLICY_RUNTIME: PolicyRuntime | None = None
+_POLICY_RUNTIME: RuntimePolicyProvider | None = None
 
 
-def configure_policy_runtime(runtime: PolicyRuntime | None) -> None:
+def configure_policy_runtime(runtime: RuntimePolicyProvider | None) -> None:
     global _POLICY_RUNTIME
     _POLICY_RUNTIME = runtime
 
 
-def get_policy_runtime() -> PolicyRuntime | None:
+def get_policy_runtime() -> RuntimePolicyProvider | None:
     return _POLICY_RUNTIME
+
+
+def bind_policy_snapshot(snapshot: PolicySnapshot | None) -> None:
+    """Bind a per-request snapshot; clears when ``None``."""
+    _SNAPSHOT.value = snapshot
+
+
+def current_policy_snapshot() -> PolicySnapshot | None:
+    return getattr(_SNAPSHOT, "value", None)
 
 
 def active_retention_days(settings: OpsSettings) -> int:
     if _resolve_depth() > 0:
         return settings.default_retention_days
+    snapshot = current_policy_snapshot()
+    if snapshot is not None:
+        return snapshot.retention.ttl_days
     runtime = get_policy_runtime()
     if runtime is None:
         return settings.default_retention_days
     return runtime.retention().ttl_days
 
 
-def active_masking_policy_version() -> str:
+def active_masking_policy() -> EffectiveMaskingPolicy:
     if _resolve_depth() > 0:
-        return MASKING_POLICY_VERSION
+        pack = resolve_masking_pack(MASKING_POLICY_VERSION)
+        return EffectiveMaskingPolicy(
+            policy_version=pack.policy_version,
+            rules_hash=pack.rules_hash,
+            pack=pack,
+            source="code_baseline",
+        )
+    snapshot = current_policy_snapshot()
+    if snapshot is not None:
+        return snapshot.masking
     runtime = get_policy_runtime()
     if runtime is None:
-        return MASKING_POLICY_VERSION
-    return runtime.masking().policy_version
+        pack = resolve_masking_pack(MASKING_POLICY_VERSION)
+        return EffectiveMaskingPolicy(
+            policy_version=pack.policy_version,
+            rules_hash=pack.rules_hash,
+            pack=pack,
+            source="code_baseline",
+        )
+    return runtime.masking()
+
+
+def active_masking_policy_version() -> str:
+    return active_masking_policy().policy_version
 
 
 def _try_build_governance(settings: OpsSettings) -> GovernancePolicySource | None:

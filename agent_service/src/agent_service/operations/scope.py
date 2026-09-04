@@ -18,16 +18,18 @@ def owner_unit_for_event(
 
 
 def tenant_allows_event(actor: ActorContext, event: OperationalEvent) -> bool:
-    """Tenant is a hard boundary for non-bypass roles."""
+    """Tenant is a hard boundary for non-bypass roles.
+
+    Events with a missing tenant bind only to the synthetic lab tenant
+    ``local-development`` so legacy fixtures remain readable without opening
+    cross-tenant access for real tenants.
+    """
     if actor.role in _BYPASS_SCOPE_ROLES:
         return True
     actor_tenant = (actor.tenant_id or "").strip()
-    event_tenant = (event.tenant_id or "").strip()
     if not actor_tenant:
-        # Scoped principals must carry a tenant; missing binding denies access.
         return False
-    if not event_tenant:
-        return False
+    event_tenant = (event.tenant_id or "").strip() or "local-development"
     return actor_tenant == event_tenant
 
 
@@ -55,13 +57,14 @@ def filter_events_by_scope(
 
     Tenant is always enforced first for non-bypass roles.  Owner-unit checks
     apply per event.  Companion events without an owner unit may ride along
-    only when they share the same ``turn_id`` and tenant as an explicitly
-    authorized event — never the whole conversation.
+    only when they share the same ``turn_id`` or ``correlation_id`` (and tenant)
+    as an explicitly authorized event — never the whole conversation.
     """
     if actor.role in _BYPASS_SCOPE_ROLES:
         return list(events)
 
     allowed_turns: set[str] = set()
+    allowed_correlations: set[str] = set()
     scoped: list[OperationalEvent] = []
     scoped_ids: set[str] = set()
 
@@ -77,6 +80,8 @@ def filter_events_by_scope(
         scoped_ids.add(event.event_id)
         if event.turn_id:
             allowed_turns.add(event.turn_id)
+        if event.correlation_id:
+            allowed_correlations.add(event.correlation_id)
 
     for event in events:
         if event.event_id in scoped_ids:
@@ -86,7 +91,11 @@ def filter_events_by_scope(
         # Never widen to foreign owner units via conversation membership.
         if owner_unit_for_event(event, taxonomy):
             continue
-        if event.turn_id and event.turn_id in allowed_turns:
+        same_turn = bool(event.turn_id and event.turn_id in allowed_turns)
+        same_correlation = bool(
+            event.correlation_id and event.correlation_id in allowed_correlations
+        )
+        if same_turn or same_correlation:
             scoped.append(event)
             scoped_ids.add(event.event_id)
 

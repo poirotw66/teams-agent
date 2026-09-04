@@ -450,7 +450,7 @@ def test_masking_and_retention_list_lifecycle(tmp_path: Path) -> None:
     assert any(item["status"] == "ACTIVE" for item in masking_items)
 
     created = svc.create_masking_candidate(
-        policy_version="mask-test-v2",
+        policy_version="v3",
         reason="new masking rules",
         actor=AI,
     )
@@ -461,7 +461,7 @@ def test_masking_and_retention_list_lifecycle(tmp_path: Path) -> None:
     assert activated["policy"]["status"] == "ACTIVE"
     active = [item for item in svc.list_masking_policies(actor=AI) if item["status"] == "ACTIVE"]
     assert len(active) == 1
-    assert active[0]["policy_version"] == "mask-test-v2"
+    assert active[0]["policy_version"] == "v3"
 
 
 def test_search_covers_retention_and_export_audit(tmp_path: Path) -> None:

@@ -116,16 +116,18 @@ def pseudonymous_actor_id(raw_id: str | None) -> str | None:
 
 
 def mask_text(text: str, *, reveal: bool = False) -> MaskingResult:
-    from .policy_runtime import active_masking_policy_version
+    from .policy_runtime import active_masking_policy
+    from .masking_rules import apply_masking_pack
 
-    policy_version = active_masking_policy_version()
+    policy = active_masking_policy()
+    pack = policy.pack
     contains_credential = bool(_CREDENTIAL_ASSIGNMENT_PATTERN.search(text))
-    if contains_credential:
+    if pack.mask_credentials and contains_credential:
         return MaskingResult(
             text=_REDACTED_CREDENTIAL,
             was_masked=True,
             contains_credential=True,
-            policy_version=policy_version,
+            policy_version=policy.policy_version,
         )
     # `reveal` is for an already-authorized PII view only.  It must never reveal
     # a credential: that branch is deliberately after credential detection.
@@ -134,16 +136,14 @@ def mask_text(text: str, *, reveal: bool = False) -> MaskingResult:
             text=text,
             was_masked=False,
             contains_credential=False,
-            policy_version=policy_version,
+            policy_version=policy.policy_version,
         )
-    masked = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
-    masked = _PHONE_PATTERN.sub("[REDACTED_PHONE]", masked)
-    masked = _EMPLOYEE_ID_PATTERN.sub("[REDACTED_ID]", masked)
+    masked, was_masked = apply_masking_pack(text, pack, reveal=False)
     return MaskingResult(
         text=masked,
-        was_masked=masked != text,
+        was_masked=was_masked,
         contains_credential=False,
-        policy_version=policy_version,
+        policy_version=policy.policy_version,
     )
 
 
