@@ -61,8 +61,9 @@ def test_issue_extraction_parses_spec_sample_verbatim() -> None:
     assert issue.faqKey is None
     assert issue.ticketAction is None
 
-    # Round-trip: re-serializing should reproduce the same structural data.
-    round_tripped = json.loads(extraction.model_dump_json())
+    # Round-trip: fields absent from the input (e.g. optional issueTypeId) must
+    # stay absent; explicitly-null sample fields such as faqKey remain.
+    round_tripped = json.loads(extraction.model_dump_json(exclude_unset=True))
     assert round_tripped == payload
 
 

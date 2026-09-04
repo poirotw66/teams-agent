@@ -9,7 +9,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-COPY data/assets ./data/assets
+COPY data/sources/assets ./data/sources/assets
 
 RUN pip install --no-cache-dir .
 

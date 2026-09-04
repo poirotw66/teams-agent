@@ -18,7 +18,10 @@ from agent_service.operations.contracts import (
     utc_now,
 )
 from agent_service.operations.runtime import build_ops_runtime
-from agent_service.operations.scope import filter_events_by_scope
+from agent_service.operations.scope import (
+    actor_bypasses_owner_unit_scope,
+    filter_events_by_scope,
+)
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage import convert_usd_to_twd
@@ -401,6 +404,15 @@ class BackofficeQueryService:
             environment=self._environment,
         )
 
+    def _actor_may_use_daily_aggregates(self, actor: ActorContext) -> bool:
+        """Aggregates are tenant-wide and omit owner-unit dimensions.
+
+        Until the read model carries authorizable owner-unit slices, only
+        cross-unit roles may consume aggregate rollups. Scoped BU actors stay
+        on ``operations_summary`` event scans.
+        """
+        return actor_bypasses_owner_unit_scope(actor)
+
     async def daily_aggregates_summary(
         self,
         actor: ActorContext,
@@ -408,6 +420,27 @@ class BackofficeQueryService:
         days: int = 7,
     ) -> dict[str, Any]:
         period = self._resolve_period(days=days)
+        if not self._actor_may_use_daily_aggregates(actor):
+            return {
+                "source": "unavailable_for_scoped_actor",
+                "dayCount": 0,
+                "turnCount": 0,
+                "issueOccurrenceCount": 0,
+                "handoffCount": 0,
+                "feedbackCount": 0,
+                "noAnswerCount": 0,
+                "estimatedCostUsd": 0.0,
+                "topIssueTypes": [],
+                "periodDays": period.days,
+                "periodStart": period.start_at.isoformat(),
+                "periodEnd": period.end_at.isoformat(),
+                "coverageComplete": False,
+                "items": [],
+                "reason": (
+                    "Daily aggregates omit owner-unit dimensions; "
+                    "scoped actors must use operations_summary event scan."
+                ),
+            }
         rows = self._aggregate_store.list_range(
             start_day=period.start_at.date().isoformat(),
             end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
@@ -420,6 +453,7 @@ class BackofficeQueryService:
             start_at=period.start_at,
             end_at=period.end_at,
             environment=self._environment,
+            explicit_range=period.explicit_range,
         )
         summary = summarize_aggregates(rows)
         return {
@@ -519,30 +553,37 @@ class BackofficeQueryService:
             for key, value in issue_types.most_common(5)
         ]
         estimated_cost = known_cost_total(usage_events)
-        aggregate_rows = self._aggregate_store.list_range(
-            start_day=period.start_at.date().isoformat(),
-            end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
-            environment=self._environment,
-        )
-        if actor.tenant_id and actor.role not in {"SYSTEM_ADMIN", "AUDITOR"}:
-            aggregate_rows = [
-                item for item in aggregate_rows if item.tenant_id in {"", actor.tenant_id}
-            ]
-        coverage_complete = aggregates_cover_period(
-            aggregate_rows,
-            start_at=period.start_at,
-            end_at=period.end_at,
-            environment=self._environment,
-        )
-        if coverage_complete and aggregate_rows:
-            rolled = summarize_aggregates(aggregate_rows)
-            metrics_source = "daily_aggregates"
-            turn_count_value = int(rolled["turnCount"])
-            issue_occurrence_count = int(rolled["issueOccurrenceCount"])
-            handoff_count = int(rolled["handoffCount"])
-            no_answer_count = int(rolled["noAnswerCount"])
-            top_issue_types = rolled["topIssueTypes"]
-            estimated_cost = float(rolled["estimatedCostUsd"])
+        # Tenant-wide aggregates omit owner-unit slices. Overlaying them on a
+        # scoped event scan would mix authorization boundaries in one report.
+        coverage_complete = False
+        if self._actor_may_use_daily_aggregates(actor):
+            aggregate_rows = self._aggregate_store.list_range(
+                start_day=period.start_at.date().isoformat(),
+                end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
+                environment=self._environment,
+            )
+            if actor.tenant_id and actor.role not in {"SYSTEM_ADMIN", "AUDITOR"}:
+                aggregate_rows = [
+                    item
+                    for item in aggregate_rows
+                    if item.tenant_id in {"", actor.tenant_id}
+                ]
+            coverage_complete = aggregates_cover_period(
+                aggregate_rows,
+                start_at=period.start_at,
+                end_at=period.end_at,
+                environment=self._environment,
+                explicit_range=period.explicit_range,
+            )
+            if coverage_complete and aggregate_rows:
+                rolled = summarize_aggregates(aggregate_rows)
+                metrics_source = "daily_aggregates"
+                turn_count_value = int(rolled["turnCount"])
+                issue_occurrence_count = int(rolled["issueOccurrenceCount"])
+                handoff_count = int(rolled["handoffCount"])
+                no_answer_count = int(rolled["noAnswerCount"])
+                top_issue_types = rolled["topIssueTypes"]
+                estimated_cost = float(rolled["estimatedCostUsd"])
 
         return {
             "periodDays": period.days,

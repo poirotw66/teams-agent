@@ -58,7 +58,7 @@ class AgentSettings:
         ).strip().lower()
         project_dir = Path(__file__).resolve().parents[2]
         asset_dir = Path(
-            environ.get("RAG_ASSET_DIR", project_dir / "data" / "assets")
+            environ.get("RAG_ASSET_DIR", project_dir / "data" / "sources" / "assets")
         )
 
         try:

@@ -21,7 +21,9 @@ from .export_auth_store import FileBackedExportAuthorizationResolver
 from .export_authorization import (
     ExportAuthorizationError,
     ExportAuthorizationResolver,
+    ExportAuthoritySource,
     ExportIdempotencyConflictError,
+    UnavailableExportAuthorizationResolver,
     require_current_export_access,
     tenant_for_actor,
 )
@@ -102,6 +104,8 @@ class ExportJobService:
         ttl_seconds: int = 86400,
         max_records: int = 100_000,
         authorization_resolver: ExportAuthorizationResolver | None = None,
+        export_authority: ExportAuthoritySource | None = None,
+        require_export_authority: bool | None = None,
         execution_backend: ExportExecutionBackend | None = None,
         worker_id: str | None = None,
         run_inline: bool = False,
@@ -120,9 +124,19 @@ class ExportJobService:
         self._content_store = content_store or FileExportContentStore(
             self._store_path / "content"
         )
-        self._authorization_resolver = authorization_resolver or FileBackedExportAuthorizationResolver(
-            self._store_path / "export_auth_registry.json"
-        )
+        lab_environment = environment.lower() in {"dev", "test", "poc", "lab"}
+        if require_export_authority is None:
+            require_export_authority = not lab_environment
+        if authorization_resolver is not None:
+            self._authorization_resolver = authorization_resolver
+        elif require_export_authority and export_authority is None:
+            # Production must not silently accept file-registry-only revoke checks.
+            self._authorization_resolver = UnavailableExportAuthorizationResolver()
+        else:
+            self._authorization_resolver = FileBackedExportAuthorizationResolver(
+                self._store_path / "export_auth_registry.json",
+                authority=export_authority,
+            )
         self._execution_backend = execution_backend
         self._legacy_runners: dict[str, Callable[[], Coroutine[Any, Any, dict[str, Any]]]] = {}
         self._worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
@@ -130,6 +144,12 @@ class ExportJobService:
         self._lease_seconds = lease_seconds
         self._recovery_scan_seconds = recovery_scan_seconds
         self._background_tasks: set[asyncio.Task[None]] = set()
+
+    def configure_authorization_resolver(
+        self,
+        resolver: ExportAuthorizationResolver,
+    ) -> None:
+        self._authorization_resolver = resolver
 
     def configure_execution_backend(self, backend: ExportExecutionBackend) -> None:
         self._execution_backend = backend
@@ -301,10 +321,10 @@ class ExportJobService:
                 lease_raw = job.lease_expires_at
                 if lease_raw:
                     lease_expires = datetime.fromisoformat(lease_raw.replace("Z", "+00:00"))
-                    if lease_expires > now and job.lease_owner != self._worker_id:
-                        # Active foreign lease — periodic scanner will retry later.
+                    if lease_expires > now:
+                        # Any active lease (own or foreign) — do not re-dispatch.
                         continue
-                # Reset to QUEUED then let atomic claim pick it up.
+                # Expired lease: reset to QUEUED then let atomic claim pick it up.
                 job.status = "QUEUED"
                 job.lease_owner = None
                 job.lease_expires_at = None
@@ -411,6 +431,8 @@ class ExportJobService:
                 job_id=job_id,
                 content=content,
                 content_type=content_type,
+                attempt=job.attempt_count,
+                lease_token=lease_token,
             )
             await self._audit(
                 actor,
@@ -484,8 +506,14 @@ class ExportJobService:
                 current.lease_token = None
                 current.content_ref = None
                 current.content_type = None
-                # Force release even if lease token still matches.
-                await self._job_store.put(job_id, self._serialize_job(current))
+                committed = await self._job_store.requeue_if_owner(
+                    job_id,
+                    worker_id=self._worker_id,
+                    lease_token=lease_token,
+                    payload=self._serialize_job(current),
+                )
+                if not committed:
+                    return
                 self._jobs[job_id] = current
                 self._schedule(self._run_job(job_id))
                 return

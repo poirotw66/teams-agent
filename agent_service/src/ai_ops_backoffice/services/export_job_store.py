@@ -56,6 +56,15 @@ class ExportJobStore(Protocol):
         payload: dict[str, Any],
     ) -> bool: ...
 
+    async def requeue_if_owner(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        lease_token: str,
+        payload: dict[str, Any],
+    ) -> bool: ...
+
 
 def _lease_expired(payload: dict[str, Any], now: datetime) -> bool:
     raw = payload.get("lease_expires_at")
@@ -221,13 +230,13 @@ class FileExportJobStore:
                     current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
                 )
             elif status == "RUNNING":
-                owner = current.get("lease_owner")
-                if owner == worker_id or _lease_expired(current, now):
-                    claimed = _apply_claim(
-                        current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
-                    )
-                else:
+                # Never steal a still-valid lease — including the caller's own —
+                # so recovery scanners cannot double-dispatch in-flight work.
+                if not _lease_expired(current, now):
                     return None
+                claimed = _apply_claim(
+                    current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
+                )
             else:
                 return None
             jobs[job_id] = claimed
@@ -280,6 +289,34 @@ class FileExportJobStore:
             if current.get("lease_token") != lease_token:
                 return False
             next_payload = dict(payload)
+            next_payload["lease_owner"] = None
+            next_payload["lease_expires_at"] = None
+            next_payload["lease_token"] = None
+            jobs[job_id] = next_payload
+            self._write_unlocked(jobs)
+            return True
+
+    async def requeue_if_owner(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        lease_token: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        with self._exclusive():
+            jobs = self._read_unlocked()
+            current = jobs.get(job_id)
+            if current is None:
+                return False
+            if current.get("status") != "RUNNING":
+                return False
+            if current.get("lease_owner") != worker_id:
+                return False
+            if current.get("lease_token") != lease_token:
+                return False
+            next_payload = dict(payload)
+            next_payload["status"] = "QUEUED"
             next_payload["lease_owner"] = None
             next_payload["lease_expires_at"] = None
             next_payload["lease_token"] = None
@@ -378,13 +415,11 @@ class FirestoreExportJobStore:
                     current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
                 )
             elif status == "RUNNING":
-                owner = current.get("lease_owner")
-                if owner == worker_id or _lease_expired(current, now):
-                    claimed = _apply_claim(
-                        current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
-                    )
-                else:
+                if not _lease_expired(current, now):
                     return None
+                claimed = _apply_claim(
+                    current, worker_id=worker_id, lease_seconds=lease_seconds, now=now
+                )
             else:
                 return None
             for key in ("created_at", "expires_at", "completed_at", "lease_expires_at"):
@@ -457,3 +492,40 @@ class FirestoreExportJobStore:
             return True
 
         return bool(_complete(transaction))
+
+    async def requeue_if_owner(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        lease_token: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        transaction = self._client.transaction()
+        doc_ref = self._collection.document(job_id)
+
+        @transaction.transactional
+        def _requeue(txn: Any) -> bool:
+            snapshot = doc_ref.get(transaction=txn)
+            if not snapshot.exists:
+                return False
+            current = snapshot.to_dict()
+            if current.get("status") != "RUNNING":
+                return False
+            if current.get("lease_owner") != worker_id:
+                return False
+            if current.get("lease_token") != lease_token:
+                return False
+            next_payload = dict(payload)
+            next_payload["status"] = "QUEUED"
+            next_payload["lease_owner"] = None
+            next_payload["lease_expires_at"] = None
+            next_payload["lease_token"] = None
+            for key in ("created_at", "expires_at", "completed_at", "lease_expires_at"):
+                value = next_payload.get(key)
+                if isinstance(value, str):
+                    next_payload[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            txn.set(doc_ref, next_payload)
+            return True
+
+        return bool(_requeue(transaction))

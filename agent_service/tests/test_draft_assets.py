@@ -199,7 +199,7 @@ def test_upload_and_list_draft_assets(draft_asset_client: TestClient) -> None:
 def test_missing_asset_is_blocking_on_validate(draft_asset_client: TestClient) -> None:
     title = sample_document_payload()["title"]
     asset_slug = slug_from_title(title)
-    markdown = f"# {title}\n\n![screenshot](../assets/{asset_slug}/p01.png)\n"
+    markdown = f"# {title}\n\n![screenshot](assets/{asset_slug}/p01.png)\n"
     document_id = _create_document(draft_asset_client)
     _update_draft_markdown(draft_asset_client, document_id, markdown)
     validate = draft_asset_client.post(
@@ -221,7 +221,7 @@ def test_publisher_copies_assets_into_release(
     title = sample_document_payload()["title"]
     asset_slug = slug_from_title(title)
     document_id = _create_document(draft_asset_client)
-    markdown = f"# {title}\n\n![screenshot](../assets/{asset_slug}/p01.png)\n"
+    markdown = f"# {title}\n\n![screenshot](assets/{asset_slug}/p01.png)\n"
     _update_draft_markdown(draft_asset_client, document_id, markdown)
     png_bytes = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"

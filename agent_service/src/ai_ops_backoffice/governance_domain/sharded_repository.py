@@ -9,7 +9,8 @@ Layout:
   {collection}/snapshots/{revision} — optional full-state checkpoint (LAB migrate)
 
 ``load()`` reassembles a ``GovernanceState`` for the existing service layer.
-``mutate()`` updates the pointer transactionally and writes only changed entities.
+``mutate()`` updates the pointer transactionally and writes only changed entities
+after a successful full legacy migration.
 """
 
 from __future__ import annotations
@@ -57,11 +58,14 @@ class ShardedFirestoreGovernanceRepository:
     def _read_collection(self, kind: str) -> list[dict[str, Any]]:
         return [snapshot.to_dict() for snapshot in self._root.document(kind).collection("items").stream()]
 
+    def _legacy_document(self) -> Any:
+        return self._root.document("current")
+
     def load(self) -> GovernanceState:
         pointer = self._pointer.get()
         if not pointer.exists:
             # Backward-compatible: fall back to monolithic ``current`` if present.
-            legacy = self._root.document("current").get()
+            legacy = self._legacy_document().get()
             if legacy.exists:
                 return GovernanceState.model_validate(legacy.to_dict())
             return GovernanceState()
@@ -86,22 +90,29 @@ class ShardedFirestoreGovernanceRepository:
     def mutate(self, operation: Mutation) -> dict[str, Any]:
         def transaction_operation(transaction: Any) -> dict[str, Any]:
             pointer_snap = self._pointer.get(transaction=transaction)
+            migrating_from_legacy = False
             if pointer_snap.exists:
                 current = self.load()
                 current = current.model_copy(
                     update={"revision": int(pointer_snap.to_dict().get("revision") or 1)}
                 )
             else:
-                legacy = self._root.document("current").get(transaction=transaction)
+                legacy = self._legacy_document().get(transaction=transaction)
                 current = (
                     GovernanceState.model_validate(legacy.to_dict())
                     if legacy.exists
                     else GovernanceState()
                 )
+                migrating_from_legacy = bool(legacy.exists)
             next_state, result = operation(current)
             if next_state.revision != current.revision + 1:
                 raise GovernanceConflictError("governance state revision must increment")
-            self._write_state(transaction, previous=current, next_state=next_state)
+            self._write_state(
+                transaction,
+                previous=current,
+                next_state=next_state,
+                full_copy=migrating_from_legacy,
+            )
             return result
 
         if self._transaction_runner is not None:
@@ -112,26 +123,73 @@ class ShardedFirestoreGovernanceRepository:
             raise RuntimeError("FIRESTORE governance repository requires google-cloud-firestore") from error
         return transactional(transaction_operation)(self._client.transaction())
 
+    def migrate_legacy_if_needed(self) -> dict[str, Any]:
+        """Idempotent full copy of monolithic ``current`` into shards, then pointer.
+
+        Safe to re-run: when the pointer already exists this is a no-op.
+        On failure the pointer is not written, so ``load()`` keeps reading legacy.
+        """
+        pointer = self._pointer.get()
+        if pointer.exists:
+            return {
+                "migrated": False,
+                "reason": "pointer_already_exists",
+                "revision": int(pointer.to_dict().get("revision") or 1),
+            }
+        legacy = self._legacy_document().get()
+        if not legacy.exists:
+            return {"migrated": False, "reason": "no_legacy_document"}
+        state = GovernanceState.model_validate(legacy.to_dict())
+
+        def transaction_operation(transaction: Any) -> dict[str, Any]:
+            pointer_snap = self._pointer.get(transaction=transaction)
+            if pointer_snap.exists:
+                return {
+                    "migrated": False,
+                    "reason": "pointer_already_exists",
+                    "revision": int(pointer_snap.to_dict().get("revision") or 1),
+                }
+            self._write_state(
+                transaction,
+                previous=GovernanceState(),
+                next_state=state,
+                full_copy=True,
+            )
+            return {
+                "migrated": True,
+                "revision": state.revision,
+                "entityCounts": self._entity_counts(state),
+            }
+
+        if self._transaction_runner is not None:
+            return self._transaction_runner(transaction_operation, self._client.transaction())
+        try:
+            from google.cloud.firestore_v1.transaction import transactional
+        except ImportError as error:  # pragma: no cover
+            raise RuntimeError("FIRESTORE governance repository requires google-cloud-firestore") from error
+        return transactional(transaction_operation)(self._client.transaction())
+
+    @staticmethod
+    def _entity_counts(state: GovernanceState) -> dict[str, int]:
+        dumped = state.model_dump(mode="python")
+        return {
+            kind: len(dumped.get(kind) or [])
+            for kind, _id_field in _ENTITY_SPECS
+        }
+
     def _write_state(
         self,
         transaction: Any,
         *,
         previous: GovernanceState,
         next_state: GovernanceState,
+        full_copy: bool = False,
     ) -> None:
-        transaction.set(
-            self._pointer,
-            {
-                "revision": next_state.revision,
-                "revoked_principals": list(next_state.revoked_principals),
-                "activePromptIds": [
-                    item.prompt_id for item in next_state.prompts if item.active_version_id
-                ],
-                "schema": "sharded-v1",
-            },
-        )
         previous_dump = previous.model_dump(mode="python")
         next_dump = next_state.model_dump(mode="python")
+        expected_counts = self._entity_counts(next_state)
+        written_counts: dict[str, int] = {kind: 0 for kind, _ in _ENTITY_SPECS}
+
         for kind, id_field in _ENTITY_SPECS:
             prev_items = {
                 str(item.get(id_field) or ""): item
@@ -144,9 +202,33 @@ class ShardedFirestoreGovernanceRepository:
                 if item.get(id_field)
             }
             for entity_id, item in next_items.items():
-                if prev_items.get(entity_id) == item:
+                if not full_copy and prev_items.get(entity_id) == item:
                     continue
                 transaction.set(self._entity_doc(kind, entity_id), item)
+                written_counts[kind] += 1
             for entity_id in prev_items:
                 if entity_id not in next_items:
                     transaction.delete(self._entity_doc(kind, entity_id))
+
+        if full_copy:
+            # Fail closed before flipping the pointer: every entity must be staged.
+            for kind, expected in expected_counts.items():
+                if written_counts[kind] != expected:
+                    raise GovernanceConflictError(
+                        f"sharded migration incomplete for {kind}: "
+                        f"wrote {written_counts[kind]} expected {expected}"
+                    )
+
+        # Pointer switches only after entity writes are staged in this transaction.
+        transaction.set(
+            self._pointer,
+            {
+                "revision": next_state.revision,
+                "revoked_principals": list(next_state.revoked_principals),
+                "activePromptIds": [
+                    item.prompt_id for item in next_state.prompts if item.active_version_id
+                ],
+                "schema": "sharded-v1",
+                "migratedFromLegacy": full_copy,
+            },
+        )

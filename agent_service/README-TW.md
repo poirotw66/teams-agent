@@ -177,7 +177,7 @@ Terminal 3：devtunnel host -p 3978 --allow-anonymous
 Dev Tunnel 只需要暴露 Teams Adapter 的 `3978`；Agent Gateway 的 `8000` 可留在
 本機，不必公開。
 
-當命中的 Markdown 章節包含 `../assets/...` 圖片時，`/agent/chat` 會額外回傳：
+當命中的 Markdown 章節包含 `assets/...` 圖片時，`/agent/chat` 會額外回傳：
 
 ```json
 {

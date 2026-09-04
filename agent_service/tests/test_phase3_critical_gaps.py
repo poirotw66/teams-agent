@@ -106,6 +106,7 @@ def test_active_retention_and_masking_affect_runtime(tmp_path: Path) -> None:
 
 def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> None:
     from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+    from governance_eval_helpers import release_eligible_lab_harness
 
     now = datetime.now(UTC)
     examples = [
@@ -146,7 +147,7 @@ def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> 
         taxonomy_version="taxonomy-v1",
         model_id="gemini-2.5-flash",
     )
-    run = evaluate_prompt(
+    simulation = evaluate_prompt(
         candidate=candidate,
         baseline=None,
         examples=examples,
@@ -155,13 +156,45 @@ def test_eval_classification_is_not_template_substring_match(tmp_path: Path) -> 
         knowledge_release_id=None,
         flow_harness=DeterministicAgentFlowHarness(),
     )
-    assert any(item.category == "static" for item in run.case_results)
-    assert any(item.category == "dataset" for item in run.case_results)
-    assert any(item.category == "real_flow" for item in run.case_results)
-    assert run.status == "COMPLETED"
-    assert run.critical_passed is True
-    assert run.quality_passed is True
-    assert any("harness=deterministic_agent_v1" in item.detail for item in run.case_results)
+    assert any(item.category == "static" for item in simulation.case_results)
+    assert any(item.category == "dataset" for item in simulation.case_results)
+    assert any(item.category == "simulation_flow" for item in simulation.case_results)
+    assert simulation.critical_passed is False
+    assert simulation.quality_passed is False
+    assert any(
+        item.case_id == "real-flow-release-eligible" and not item.passed
+        for item in simulation.case_results
+    )
+    assert any("harness=deterministic_agent_v1" in item.detail for item in simulation.case_results)
+
+    release = evaluate_prompt(
+        candidate=candidate,
+        baseline=None,
+        examples=examples,
+        actor_id="ai",
+        taxonomy_version="taxonomy-v1",
+        knowledge_release_id=None,
+        flow_harness=release_eligible_lab_harness(),
+    )
+    assert any(item.category == "real_flow" for item in release.case_results)
+    assert release.status == "COMPLETED"
+    assert release.critical_passed is True
+    assert release.quality_passed is True
+
+
+def test_deterministic_harness_blocked_when_live_model_required(monkeypatch) -> None:
+    from ai_ops_backoffice.governance_domain.eval_flow import (
+        DeterministicAgentFlowHarness,
+        UnavailableFlowHarness,
+        resolve_default_flow_harness,
+    )
+
+    monkeypatch.setenv("AI_OPS_EVAL_REQUIRE_LIVE_MODEL", "true")
+    monkeypatch.setenv("AI_OPS_EVAL_HARNESS", "deterministic")
+    harness = resolve_default_flow_harness()
+    assert isinstance(harness, UnavailableFlowHarness)
+    assert DeterministicAgentFlowHarness().release_eligible is False
+    assert harness.release_eligible is False
 
 
 def test_eval_scripted_harness_cannot_pass_release_gate(tmp_path: Path) -> None:

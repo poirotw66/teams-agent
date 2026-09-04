@@ -55,7 +55,7 @@ def test_chunk_markdown_preserves_source_metadata(tmp_path: Path) -> None:
 
 def test_chunk_markdown_keeps_related_local_image(tmp_path: Path) -> None:
     sources = tmp_path / "sources"
-    assets = tmp_path / "assets" / "大州"
+    assets = sources / "assets" / "大州"
     sources.mkdir()
     assets.mkdir(parents=True)
     (assets / "p01.png").write_bytes(b"image")
@@ -69,7 +69,7 @@ def test_chunk_markdown_keeps_related_local_image(tmp_path: Path) -> None:
 
 ### Visual Evidence
 
-![IE 安全性設定](../assets/大州/p01.png)
+![IE 安全性設定](assets/大州/p01.png)
 """,
         encoding="utf-8",
     )

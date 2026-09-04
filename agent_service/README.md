@@ -182,7 +182,7 @@ Terminal 3：devtunnel host -p 3978 --allow-anonymous
 Dev Tunnel only needs to expose the Teams Adapter on `3978`; Agent Gateway
 `8000` can stay local and does not need to be public.
 
-When a matched Markdown section contains `../assets/...` images, `/agent/chat`
+When a matched Markdown section contains `assets/...` images, `/agent/chat`
 also returns:
 
 ```json

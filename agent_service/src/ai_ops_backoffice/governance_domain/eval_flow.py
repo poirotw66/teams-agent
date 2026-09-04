@@ -203,14 +203,14 @@ class ScriptedExtractorHarness:
 
 
 class DeterministicAgentFlowHarness:
-    """Release-eligible deterministic stand-in for CI when a live model is unavailable.
+    """CI / lab stand-in — not release-eligible.
 
     Unlike :class:`ScriptedExtractorHarness`, this harness:
     - binds ``model_id`` to the governed allowlist (unknown models fail closed)
     - honors candidate template overrides such as forced UNKNOWN
     - emits reply text / multi-turn behaviors required by the publish probes
 
-    It is still not a live LLM; production should prefer
+    It is still not a live LLM. Formal publish gates must use
     :class:`AgentWorkflowFlowHarness` with a real Agent turn executor.
     LLM-as-judge can replace behavioral checks later without changing gates.
     """
@@ -223,7 +223,7 @@ class DeterministicAgentFlowHarness:
 
     @property
     def release_eligible(self) -> bool:
-        return True
+        return False
 
     def observe(
         self,
@@ -381,17 +381,24 @@ def resolve_default_flow_harness(
 ) -> PromptFlowHarness:
     if explicit is not None:
         return explicit
-    mode = os.environ.get("AI_OPS_EVAL_HARNESS", "").strip().lower()
-    if mode in {"deterministic", "deterministic_agent", "deterministic_agent_v1"}:
-        return DeterministicAgentFlowHarness()
     require_live = os.environ.get("AI_OPS_EVAL_REQUIRE_LIVE_MODEL", "").lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
-    if require_live or mode in {"live", "agent", "agent_workflow", "agent_workflow_v1"}:
-        # Live Agent harness must be injected explicitly with an executor.
+    mode = os.environ.get("AI_OPS_EVAL_HARNESS", "").strip().lower()
+    # Live-model requirement always wins over a mock/deterministic mode pin.
+    if require_live:
+        if mode in {"deterministic", "deterministic_agent", "deterministic_agent_v1", "scripted"}:
+            return UnavailableFlowHarness()
+        if mode in {"live", "agent", "agent_workflow", "agent_workflow_v1", ""}:
+            # Live Agent harness must be injected explicitly with an executor.
+            return UnavailableFlowHarness()
+        return UnavailableFlowHarness()
+    if mode in {"deterministic", "deterministic_agent", "deterministic_agent_v1"}:
+        return DeterministicAgentFlowHarness()
+    if mode in {"live", "agent", "agent_workflow", "agent_workflow_v1"}:
         return UnavailableFlowHarness()
     allow_scripted = os.environ.get("AI_OPS_EVAL_ALLOW_SCRIPTED_FLOW", "true").lower() in {
         "1",

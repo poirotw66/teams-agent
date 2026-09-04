@@ -19,11 +19,11 @@ APPROVER = ActorContext("approver", "Approver", "AI_ADMIN", ())
 
 
 def _gov(tmp_path: Path) -> GovernanceService:
-    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+    from governance_eval_helpers import release_eligible_lab_harness
 
     return GovernanceService(
         FileGovernanceRepository(tmp_path / "governance.json"),
-        eval_flow_harness=DeterministicAgentFlowHarness(),
+        eval_flow_harness=release_eligible_lab_harness(),
     )
 
 

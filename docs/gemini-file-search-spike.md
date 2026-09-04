@@ -281,7 +281,7 @@ becomes a disclosure. Hybrid enforces the same rule inside our own code,
 where it is unit-tested.
 
 *Images — solvable by a local join, no File Search feature needed.* Images
-come from `data/assets/`, extracted at index time and recorded per chunk in
+come from `data/sources/assets/`, extracted at index time and recorded per chunk in
 our own index. File Search never sees them. But the citation it returns
 carries the ASCII slug, and the slug maps 1:1 back to our local document
 record, which already knows that document's images:

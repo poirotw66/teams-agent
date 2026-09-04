@@ -484,7 +484,7 @@ the request trace ID.
 Source Markdown uses relative image syntax:
 
 ```markdown
-![大州無法點選 — IE 安全性調整](../assets/大州系統_功能無法點選/p01.png)
+![大州無法點選 — IE 安全性調整](assets/大州系統_功能無法點選/p01.png)
 ```
 
 The Agent Gateway returns only validated relative image paths; the Teams Adapter creates a one-hour
@@ -493,7 +493,7 @@ Adaptive Card. Root `.env` needs:
 
 ```dotenv
 BOT_PUBLIC_BASE_URL=https://<目前的-3978-dev-tunnel-domain>
-RAG_ASSET_DIR=./data/assets
+RAG_ASSET_DIR=./data/sources/assets
 RAG_ASSET_SIGNING_KEY=<至少 16 字元的隨機值>
 RAG_ASSET_URL_TTL_SECONDS=3600
 RAG_ASSET_MAX_DIMENSION=1024
@@ -780,7 +780,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `AGENT_STREAMING_ENABLED` | `true` | Whether to stream progress in 1:1 DMs (see section 4.3); channels / group chats unaffected (Teams unsupported) |
 | `AGENT_API_TIMEOUT_SECONDS` | `10` | Non-localhost `AGENT_API_URL` values are forced to HTTPS |
 | `BOT_PUBLIC_BASE_URL` | — | Public domain used to sign source-image URLs (domain only; no `/api/messages`) |
-| `RAG_ASSET_DIR` | `<repo>/data/assets` | Source image root directory |
+| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | Source image root directory |
 | `RAG_ASSET_SIGNING_KEY` | — | At least 16 characters; HMAC signing key—put in Secret Manager for production |
 | `RAG_ASSET_URL_TTL_SECONDS` | `3600` | Signed URL lifetime in seconds |
 | `RAG_ASSET_MAX_DIMENSION` | `1024` | Longest image side (pixels) |
@@ -867,7 +867,7 @@ that is also why `data/faq.json` must be Git-tracked—otherwise an image built 
 clone would have no FAQ config.
 
 > **Build context must include the corpus.** `COPY data ./data` copies **the local
-> `data/` at build time**. `data/sources`, `data/index`, and `data/assets` are gitignored,
+> `data/` at build time**. `data/sources` (including assets), `data/index` are gitignored,
 > so an image built from a clean clone has **neither corpus nor index**. In that case
 > `RAG_AUTO_BUILD_INDEX` cannot help—auto-building needs Markdown files under `data/sources/`;
 > without source documents `build_index()` raises

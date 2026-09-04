@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -428,3 +429,335 @@ def test_governance_store_factory_accepts_sharded_mode(tmp_path: Path) -> None:
         file_path=tmp_path / "gov.json",
     )
     assert repo.load().revision == 0
+
+
+class _MemoryDoc:
+    def __init__(self, store: dict, path: tuple[str, ...]) -> None:
+        self._store = store
+        self._path = path
+
+    def collection(self, name: str) -> "_MemoryCollection":
+        return _MemoryCollection(self._store, self._path + (name,))
+
+    def get(self, transaction=None):
+        _ = transaction
+        data = self._store.get(self._path)
+        return _MemorySnap(data)
+
+    def set(self, payload: dict) -> None:
+        self._store[self._path] = dict(payload)
+
+    def delete(self) -> None:
+        self._store.pop(self._path, None)
+
+
+class _MemorySnap:
+    def __init__(self, data: dict | None) -> None:
+        self._data = data
+
+    @property
+    def exists(self) -> bool:
+        return self._data is not None
+
+    def to_dict(self) -> dict:
+        return dict(self._data or {})
+
+
+class _MemoryCollection:
+    def __init__(self, store: dict, path: tuple[str, ...]) -> None:
+        self._store = store
+        self._path = path
+
+    def document(self, doc_id: str) -> _MemoryDoc:
+        return _MemoryDoc(self._store, self._path + (doc_id,))
+
+    def stream(self):
+        prefix = self._path
+        for key, value in list(self._store.items()):
+            if len(key) == len(prefix) + 1 and key[: len(prefix)] == prefix:
+                yield _MemorySnap(value)
+
+
+class _MemoryTxn:
+    def set(self, doc: _MemoryDoc, payload: dict) -> None:
+        doc.set(payload)
+
+    def delete(self, doc: _MemoryDoc) -> None:
+        doc.delete()
+
+
+class _MemoryClient:
+    def __init__(self) -> None:
+        self._store: dict[tuple[str, ...], dict] = {}
+
+    def collection(self, name: str) -> _MemoryCollection:
+        return _MemoryCollection(self._store, (name,))
+
+    def transaction(self):
+        return _MemoryTxn()
+
+
+def test_sharded_governance_migrates_unchanged_entities_before_pointer() -> None:
+    from ai_ops_backoffice.governance_domain.models import GovernanceState
+    from ai_ops_backoffice.governance_domain.sharded_repository import (
+        ShardedFirestoreGovernanceRepository,
+    )
+
+    client = _MemoryClient()
+    root = client.collection("gov")
+    legacy = {
+        "revision": 3,
+        "prompts": [
+            {
+                "prompt_id": "issue-extractor",
+                "component": "issue-extractor",
+                "display_name": "Issue Extractor",
+                "description": "seed",
+                "active_version_id": None,
+                "etag": 1,
+            }
+        ],
+        "prompt_versions": [],
+        "eval_runs": [],
+        "model_configs": [],
+        "model_versions": [],
+        "flags": [],
+        "flag_versions": [],
+        "role_changes": [],
+        "retention_policies": [],
+        "masking_policies": [],
+        "audits": [],
+        "idempotency": [],
+        "revoked_principals": [],
+    }
+    root.document("current").set(legacy)
+
+    def runner(operation, transaction):
+        return operation(transaction)
+
+    repo = ShardedFirestoreGovernanceRepository(
+        client, collection="gov", transaction_runner=runner
+    )
+    assert len(repo.load().prompts) == 1
+
+    def bump(state: GovernanceState):
+        next_state = state.model_copy(update={"revision": state.revision + 1})
+        return next_state, {"ok": True}
+
+    repo.mutate(bump)
+    loaded = repo.load()
+    assert loaded.revision == 4
+    assert len(loaded.prompts) == 1
+    assert loaded.prompts[0].prompt_id == "issue-extractor"
+
+    # Idempotent explicit migrate is a no-op once pointer exists.
+    again = repo.migrate_legacy_if_needed()
+    assert again["migrated"] is False
+
+
+@pytest.mark.asyncio
+async def test_export_recovery_skips_own_active_lease(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    from agent_service.operations.audit_stores import MemoryAuditStore
+
+    calls = {"n": 0}
+
+    class _Backend:
+        async def execute(self, *, actor, job):
+            calls["n"] += 1
+            await asyncio.sleep(0.05)
+            return {
+                "ok": True,
+                "exportMetadata": {"recordCount": 1, "fields": [], "queryFilters": {}},
+            }
+
+    service = ExportJobService(
+        audit_store=MemoryAuditStore(),
+        store_path=tmp_path / "exports",
+        environment="test",
+        execution_backend=_Backend(),
+        worker_id="worker-a",
+        run_inline=False,
+        lease_seconds=60,
+    )
+    actor = ActorContext(
+        user_id="alice",
+        display_name="Alice",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+    job = await service.create_job(
+        actor=actor,
+        export_type="operations_summary",
+        reason="lease ownership",
+        days=7,
+        request_params={"period": {"days": 7}},
+    )
+    # Let claim happen.
+    await asyncio.sleep(0.01)
+    recovered = await service.recover_interrupted_jobs()
+    assert recovered == 0
+    await service.wait_for_background_tasks()
+    assert calls["n"] == 1
+    final = await service.get_job(job.job_id, actor=actor)
+    assert final is not None
+    assert final.status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_export_service_requires_authority_outside_lab(tmp_path: Path) -> None:
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_authorization import (
+        ExportAuthorizationError,
+        GovernanceRevocationAuthority,
+    )
+
+    bare = ExportJobService(
+        audit_store=MemoryAuditStore(),
+        store_path=tmp_path / "prod-exports",
+        environment="prod",
+        run_inline=True,
+    )
+    with pytest.raises(ExportAuthorizationError):
+        await bare._authorization_resolver.resolve(
+            requester_id="alice", tenant_id="tenant-a"
+        )
+
+    revoked: set[str] = set()
+    wired = ExportJobService(
+        audit_store=MemoryAuditStore(),
+        store_path=tmp_path / "prod-exports-2",
+        environment="prod",
+        export_authority=GovernanceRevocationAuthority(lambda: revoked),
+        run_inline=True,
+    )
+    actor = ActorContext(
+        user_id="alice",
+        display_name="Alice",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+    register = getattr(wired._authorization_resolver, "register")
+    register(actor=actor, tenant_id="tenant-a")
+    assert await wired._authorization_resolver.resolve(
+        requester_id="alice", tenant_id="tenant-a"
+    )
+
+
+@pytest.mark.asyncio
+async def test_operations_summary_does_not_overlay_cross_unit_aggregates(
+    tmp_path: Path,
+) -> None:
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from agent_service.operations.contracts import OperationalEvent
+    from agent_service.operations.taxonomy import TaxonomyRepository
+    from ai_ops_backoffice.services.daily_aggregates import (
+        DailyOpsAggregate,
+        FileDailyAggregateStore,
+    )
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    taxonomy = TaxonomyRepository(data_dir / "ops" / "issue_taxonomy_v1.json")
+    now = utc_now()
+    events = [
+        OperationalEvent(
+            event_id="vpn-issue",
+            event_type="issue.extracted",
+            occurred_at=now - timedelta(hours=1),
+            environment="test",
+            tenant_id="tenant-a",
+            issue_type_id="vpn.connection_failed",
+            correlation_id="c1",
+            payload={},
+        ),
+        OperationalEvent(
+            event_id="phish-issue",
+            event_type="issue.extracted",
+            occurred_at=now - timedelta(hours=1),
+            environment="test",
+            tenant_id="tenant-a",
+            issue_type_id="security.phishing_report",
+            correlation_id="c2",
+            payload={},
+        ),
+    ]
+    store = FileDailyAggregateStore(tmp_path / "daily.json")
+    store.upsert_many(
+        [
+            DailyOpsAggregate(
+                day=(now - timedelta(hours=1)).date().isoformat(),
+                tenant_id="tenant-a",
+                environment="test",
+                turn_count=9,
+                issue_count=9,
+                handoff_count=0,
+                feedback_count=0,
+                no_answer_count=0,
+                issue_type_counts={
+                    "vpn.connection_failed": 1,
+                    "security.phishing_report": 8,
+                },
+                model_token_counts={},
+                estimated_cost_usd=0.0,
+            )
+        ]
+    )
+    # Fill coverage for the default 7-day window with zeros for other days.
+    for offset in range(7):
+        day = (now.date() - timedelta(days=offset)).isoformat()
+        if day == (now - timedelta(hours=1)).date().isoformat():
+            continue
+        store.upsert_many(
+            [
+                DailyOpsAggregate(
+                    day=day,
+                    tenant_id="tenant-a",
+                    environment="test",
+                    turn_count=0,
+                    issue_count=0,
+                    handoff_count=0,
+                    feedback_count=0,
+                    no_answer_count=0,
+                    issue_type_counts={},
+                    model_token_counts={},
+                    estimated_cost_usd=0.0,
+                )
+            ]
+        )
+
+    query = object.__new__(BackofficeQueryService)
+    query._metrics = {"definitions": {}}
+    query._runtime = SimpleNamespace(taxonomy=taxonomy)
+    query._environment = "test"
+    query._aggregate_store = store
+    query._scoped_events = AsyncMock(return_value=[events[0]])
+
+    def _resolve_period(**kwargs):
+        return BackofficeQueryService._resolve_period(query, **kwargs)
+
+    query._resolve_period = _resolve_period  # type: ignore[method-assign]
+
+    actor = ActorContext(
+        user_id="owner",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+    summary = await query.operations_summary(actor, days=7)
+    assert summary["metricsSource"] == "event_scan"
+    assert summary["issueOccurrenceCount"] == 1
+    assert summary["topIssueTypes"] == [
+        {"issueTypeId": "vpn.connection_failed", "count": 1}
+    ]
+    assert all(
+        item["issueTypeId"] != "security.phishing_report"
+        for item in summary["topIssueTypes"]
+    )

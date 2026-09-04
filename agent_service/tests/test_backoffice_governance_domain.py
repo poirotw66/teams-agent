@@ -24,12 +24,14 @@ ANALYST = ActorContext("analyst", "Analyst", "ANALYST", ("it",))
 
 
 def service(tmp_path: Path, *, clock=None) -> GovernanceService:
-    from ai_ops_backoffice.governance_domain.eval_flow import DeterministicAgentFlowHarness
+    from governance_eval_helpers import release_eligible_lab_harness
 
     return GovernanceService(
         FileGovernanceRepository(tmp_path / "gov.json"),
         clock=clock,
-        eval_flow_harness=DeterministicAgentFlowHarness(),
+        # Lifecycle tests need a release-eligible harness; production must wire
+        # a real Agent executor rather than DeterministicAgentFlowHarness alone.
+        eval_flow_harness=release_eligible_lab_harness(),
     )
 
 

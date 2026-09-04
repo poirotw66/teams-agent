@@ -480,7 +480,7 @@ request trace ID。
 來源 Markdown 使用相對圖片語法：
 
 ```markdown
-![大州無法點選 — IE 安全性調整](../assets/大州系統_功能無法點選/p01.png)
+![大州無法點選 — IE 安全性調整](assets/大州系統_功能無法點選/p01.png)
 ```
 
 Agent Gateway 只回傳經驗證的相對圖片路徑；Teams Adapter 會產生一小時有效的
@@ -489,7 +489,7 @@ Adaptive Card。根目錄 `.env` 需要：
 
 ```dotenv
 BOT_PUBLIC_BASE_URL=https://<目前的-3978-dev-tunnel-domain>
-RAG_ASSET_DIR=./data/assets
+RAG_ASSET_DIR=./data/sources/assets
 RAG_ASSET_SIGNING_KEY=<至少 16 字元的隨機值>
 RAG_ASSET_URL_TTL_SECONDS=3600
 RAG_ASSET_MAX_DIMENSION=1024
@@ -778,7 +778,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `AGENT_STREAMING_ENABLED` | `true` | 是否在 1:1 私訊串流進度（見第 4.3 節）；頻道／群組聊天不受影響（Teams 不支援） |
 | `AGENT_API_TIMEOUT_SECONDS` | `10` | 非 localhost 的 `AGENT_API_URL` 會強制要求 HTTPS |
 | `BOT_PUBLIC_BASE_URL` | — | 用於簽出來源圖片 URL 的公開網域（只填 domain，不加 `/api/messages`） |
-| `RAG_ASSET_DIR` | `<repo>/data/assets` | 來源圖片根目錄 |
+| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | 來源圖片根目錄 |
 | `RAG_ASSET_SIGNING_KEY` | — | 至少 16 字元；HMAC 簽章金鑰，正式環境放 Secret Manager |
 | `RAG_ASSET_URL_TTL_SECONDS` | `3600` | 簽名 URL 有效秒數 |
 | `RAG_ASSET_MAX_DIMENSION` | `1024` | 圖片最長邊（pixels） |
@@ -855,7 +855,7 @@ docker run --rm -p 8080:8080 --env-file agent_service/.env teams-agent-rag-servi
 clone `docker build` 出來的 image 裡不會有 FAQ 設定。
 
 > **build context 必須含有語料。** `COPY data ./data` 複製的是**建置當下本機
-> 的 `data/`**。`data/sources`、`data/index`、`data/assets` 都是 gitignored，
+> 的 `data/`**。`data/sources`（含 assets）、`data/index` 都是 gitignored，
 > 因此從乾淨的 clone 建置出來的 image **沒有語料也沒有索引**。此時
 > `RAG_AUTO_BUILD_INDEX` 幫不上忙——自動建索引需要 `data/sources/` 裡的
 > Markdown 文件，沒有來源文件時 `build_index()` 會直接拋出

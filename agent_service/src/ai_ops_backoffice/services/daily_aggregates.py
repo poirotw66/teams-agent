@@ -314,7 +314,20 @@ def aggregates_cover_period(
     start_at: datetime,
     end_at: datetime,
     environment: str,
+    explicit_range: bool = False,
 ) -> bool:
+    """Return True when aggregate rows cover every calendar day in the period.
+
+    Rolling windows (``explicit_range=False``) only require calendar-day
+    coverage. Explicit custom ranges must align to midnight boundaries so a
+    partial-day query does not reuse whole-day rollups that disagree with an
+    event scan.
+    """
+    if explicit_range:
+        if start_at.timetz().replace(tzinfo=None) != datetime.min.time():
+            return False
+        if end_at.timetz().replace(tzinfo=None) != datetime.min.time():
+            return False
     needed = set(iter_day_keys(start_at=start_at, end_at=end_at))
     if not needed:
         return False

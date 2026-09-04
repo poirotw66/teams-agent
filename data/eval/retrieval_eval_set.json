@@ -11,7 +11,7 @@
     "error_code": "Query names a real error code/message that literally appears in a source document.",
     "no_answer": "The topic is genuinely absent from the corpus (verified by grep across data/sources/*.md before adding); a correct system must say so, not fabricate.",
     "acl": "Exercises the ACL / allowed_groups path. NOTE: the shipped corpus (data/metadata.json is not present, only metadata.example.json) has no document with a real allowed_groups restriction, so every 'acl' case here only proves the documented default ('empty allowed_groups = visible to all groups') holds for two different group sets. A true allow/deny contrast case is a known gap - see docs/retrieval-ab-test-report.md.",
-    "image": "The cited document has a real image under data/assets/ that chunk_markdown()/extract_images() actually attaches to the matching chunk."
+    "image": "The cited document has a real image under data/sources/assets/ that chunk_markdown()/extract_images() actually attaches to the matching chunk."
   },
   "cases": [
     {
@@ -233,7 +233,7 @@
       "expectedKeywords": ["安全性"],
       "expectedImagePaths": ["大州系統_功能無法點選/p01.png"],
       "groups": [],
-      "notes": "Doc: 工具-網際網路選項-安全性-自訂等級-啟用允許以指令碼開啟視窗; has ../assets/大州系統_功能無法點選/p01.png as Visual Evidence."
+      "notes": "Doc: 工具-網際網路選項-安全性-自訂等級-啟用允許以指令碼開啟視窗; has assets/大州系統_功能無法點選/p01.png as Visual Evidence."
     },
     {
       "id": "daizhou-first-setup",
@@ -244,7 +244,7 @@
       "expectedKeywords": ["網際網路選項"],
       "expectedImagePaths": ["大州首次使用設定/p01.png"],
       "groups": [],
-      "notes": "Doc 第1頁: 大州 預設Browser -> 網際網路選項(一般/安全性/進階); has ../assets/大州首次使用設定/p01.png."
+      "notes": "Doc 第1頁: 大州 預設Browser -> 網際網路選項(一般/安全性/進階); has assets/大州首次使用設定/p01.png."
     },
     {
       "id": "hq-ip-phone-panel",
@@ -255,7 +255,7 @@
       "expectedKeywords": ["面板"],
       "expectedImagePaths": ["總公司IP話機操作/p02.png"],
       "groups": [],
-      "notes": "Doc 第2頁 - 面板說明 section has ../assets/總公司IP話機操作/p02.png as Visual Evidence."
+      "notes": "Doc 第2頁 - 面板說明 section has assets/總公司IP話機操作/p02.png as Visual Evidence."
     },
     {
       "id": "hq-ip-phone-transfer",

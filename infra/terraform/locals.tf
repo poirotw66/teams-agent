@@ -107,7 +107,7 @@ locals {
     TENANT_ID                 = var.bot_tenant_id
     AGENT_DEPLOYMENT_ENV      = var.environment_name
     TEAMS_INBOUND_AUTH_MODE   = "both"
-    RAG_ASSET_DIR             = "/app/data/assets"
+    RAG_ASSET_DIR             = "/app/data/sources/assets"
     RAG_ASSET_URL_TTL_SECONDS = "3600"
     RAG_ASSET_MAX_DIMENSION   = "1024"
     RAG_ASSET_MAX_BYTES       = "1000000"

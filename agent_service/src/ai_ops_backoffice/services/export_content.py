@@ -2,13 +2,43 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Protocol
 
+_SAFE_TOKEN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def attempt_content_ref(
+    *,
+    job_id: str,
+    attempt: int | None = None,
+    lease_token: str | None = None,
+    prefix: str = "",
+) -> str:
+    """Build an attempt/lease-scoped artifact name to avoid cross-owner clobber."""
+    safe_job = _SAFE_TOKEN.sub("_", job_id)
+    attempt_part = f"a{int(attempt)}" if attempt is not None else "a0"
+    token_part = _SAFE_TOKEN.sub("", (lease_token or "none")[:12]) or "none"
+    name = f"{safe_job}.{attempt_part}.{token_part}.artifact"
+    if prefix:
+        return f"{prefix.rstrip('/')}/{name}"
+    return name
+
 
 class ExportContentStore(Protocol):
-    async def put(self, *, job_id: str, content: bytes, content_type: str) -> str: ...
+    async def put(
+        self,
+        *,
+        job_id: str,
+        content: bytes,
+        content_type: str,
+        attempt: int | None = None,
+        lease_token: str | None = None,
+    ) -> str: ...
+
     async def get(self, *, content_ref: str) -> bytes | None: ...
+
     async def delete(self, *, content_ref: str) -> None: ...
 
 
@@ -25,9 +55,19 @@ class FileExportContentStore:
             raise ValueError("Invalid export content reference.")
         return candidate
 
-    async def put(self, *, job_id: str, content: bytes, content_type: str) -> str:
+    async def put(
+        self,
+        *,
+        job_id: str,
+        content: bytes,
+        content_type: str,
+        attempt: int | None = None,
+        lease_token: str | None = None,
+    ) -> str:
         _ = content_type
-        content_ref = f"{job_id}.artifact"
+        content_ref = attempt_content_ref(
+            job_id=job_id, attempt=attempt, lease_token=lease_token
+        )
         target = self._path(content_ref)
         temporary = target.with_suffix(".tmp")
         with temporary.open("wb") as handle:
@@ -51,9 +91,19 @@ class MemoryExportContentStore:
     def __init__(self) -> None:
         self.items: dict[str, bytes] = {}
 
-    async def put(self, *, job_id: str, content: bytes, content_type: str) -> str:
+    async def put(
+        self,
+        *,
+        job_id: str,
+        content: bytes,
+        content_type: str,
+        attempt: int | None = None,
+        lease_token: str | None = None,
+    ) -> str:
         _ = content_type
-        content_ref = f"memory:{job_id}"
+        content_ref = "memory:" + attempt_content_ref(
+            job_id=job_id, attempt=attempt, lease_token=lease_token
+        )
         self.items[content_ref] = bytes(content)
         return content_ref
 
@@ -86,8 +136,21 @@ class GcsExportContentStore:
             raise ValueError("Invalid export content reference.")
         return content_ref
 
-    async def put(self, *, job_id: str, content: bytes, content_type: str) -> str:
-        content_ref = f"{self._prefix}/{job_id}.artifact"
+    async def put(
+        self,
+        *,
+        job_id: str,
+        content: bytes,
+        content_type: str,
+        attempt: int | None = None,
+        lease_token: str | None = None,
+    ) -> str:
+        content_ref = attempt_content_ref(
+            job_id=job_id,
+            attempt=attempt,
+            lease_token=lease_token,
+            prefix=self._prefix,
+        )
         self._bucket().blob(content_ref).upload_from_string(content, content_type=content_type)
         return content_ref
 

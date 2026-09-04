@@ -95,7 +95,7 @@ def referenced_asset_filenames(markdown_content: str, asset_slug: str) -> set[st
 
 def markdown_asset_ref(*, asset_slug: str, filename: str, alt_text: str = "") -> str:
     alt = alt_text.strip()
-    return f"![{alt}](../assets/{asset_slug}/{filename})"
+    return f"![{alt}](assets/{asset_slug}/{filename})"
 
 
 @dataclass(frozen=True)
@@ -339,7 +339,7 @@ def validate_asset_bundle(
                 (
                     "ASSET_PATH_UNEXPECTED",
                     "WARNING",
-                    f"圖片路徑建議使用 ../assets/{asset_slug}/：{target_path}",
+                    f"圖片路徑建議使用 assets/{asset_slug}/：{target_path}",
                 )
             )
         candidate = expected_root / filename

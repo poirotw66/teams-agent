@@ -430,6 +430,18 @@ def create_app(
         governance_repository,
         eval_flow_harness=eval_flow_harness,  # type: ignore[arg-type]
     )
+    from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
+    from ai_ops_backoffice.services.export_authorization import GovernanceRevocationAuthority
+
+    export_authority = GovernanceRevocationAuthority(
+        lambda: set(governance_repository.load().revoked_principals)
+    )
+    query_service.export_jobs.configure_authorization_resolver(
+        FileBackedExportAuthorizationResolver(
+            query_service.export_jobs._store_path / "export_auth_registry.json",
+            authority=export_authority,
+        )
+    )
     from agent_service.operations.policy_runtime import (
         PolicyRuntime,
         configure_policy_runtime,

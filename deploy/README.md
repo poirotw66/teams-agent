@@ -280,7 +280,7 @@ whatever `data/` exists **in the upload context**, and
 `gcloud builds submit .` uploads the *local working directory* filtered by
 [`.gcloudignore`](../.gcloudignore) — not the git tree. Since `.gcloudignore`
 does not exclude `data/`, the local corpus (`data/sources/`), the built index
-(`data/index/chunks.json`) and the extracted images (`data/assets/`) are all
+(`data/index/chunks.json`) and the extracted images (`data/sources/assets/`) are all
 uploaded and baked into the image. `data/faq.json` ships the same way, and
 `FAQ_PATH` resolves to `/app/data/faq.json` inside the container.
 

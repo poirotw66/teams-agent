@@ -54,11 +54,19 @@ def _summary(key="summary", *, cost=0.3, elapsed=1200, calls=2, tokens=40, **kwa
 
 
 def _query(events):
+    from ai_ops_backoffice.services.daily_aggregates import FileDailyAggregateStore
+    from pathlib import Path
+    import tempfile
+
     query = object.__new__(BackofficeQueryService)
     query._metrics = {}
     query._runtime = SimpleNamespace(taxonomy=SimpleNamespace(get=lambda _: None))
     # Exercise actual query aggregators, using an already-scoped input boundary.
     query._scoped_events = AsyncMock(return_value=events)
+    query._environment = "test"
+    query._aggregate_store = FileDailyAggregateStore(
+        Path(tempfile.mkdtemp()) / "daily_ops.json"
+    )
     return query
 
 

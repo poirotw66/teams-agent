@@ -178,7 +178,8 @@ def extract_images(
     markdown: str,
     source_path: Path,
 ) -> list[DocumentImage]:
-    assets_dir = (source_path.parent.parent / "assets").resolve()
+    # Corpus layout: data/sources/*.md with images under data/sources/assets/.
+    assets_dir = (source_path.parent / "assets").resolve()
     images: list[DocumentImage] = []
     seen: set[str] = set()
     for alt_text, target in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):

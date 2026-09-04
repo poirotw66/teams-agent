@@ -15,10 +15,9 @@ outputs/
 # Ignored (not reproducible from a clean clone on purpose, or runtime
 # state that must never be committed):
 #   data/sources/       raw knowledge corpus (internal IT documents)
+#                       including images under data/sources/assets/
 #   data/index/          built BM25/embedding index, regenerated via
 #                         `uv run rag-index`
-#   data/assets/          images extracted from the corpus for Adaptive
-#                         Cards, regenerated alongside the corpus
 #   data/conversations/  Conversation Repository FILE-mode store; runtime
 #                         state, may contain user message text
 #   data/portal_drafts/  draft image bundles uploaded via Knowledge Portal
@@ -33,7 +32,6 @@ outputs/
 #   data/eval/
 data/sources/
 data/index/
-data/assets/
 data/conversations/
 data/portal_drafts/
 data/portal_state/
