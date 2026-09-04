@@ -296,13 +296,31 @@ function showContentModal(title, content) {
   const root = document.getElementById("modal-root");
   root.hidden = false;
   root.replaceChildren();
+  root.onclick = (e) => {
+    if (e.target === root) {
+      root.hidden = true;
+      root.replaceChildren();
+    }
+  };
   const modal = el("section", "modal");
-  const close = el("button", "", "關閉");
+  const header = el("div", "modal-header");
+  header.style.display = "flex";
+  header.style.justifyContent = "space-between";
+  header.style.alignItems = "center";
+  header.style.marginBottom = "1rem";
+  header.style.paddingBottom = "0.75rem";
+  header.style.borderBottom = "1px solid var(--border-subtle, #e2e8f0)";
+
+  const heading = el("h2", "", title);
+  heading.style.margin = "0";
+
+  const close = el("button", "btn-modal-close", "✕ 關閉");
   close.addEventListener("click", () => {
     root.hidden = true;
     root.replaceChildren();
   });
-  modal.append(el("h2", "", title), close, content);
+  header.append(heading, close);
+  modal.append(header, content);
   root.append(modal);
 }
 
@@ -310,13 +328,31 @@ function showConversationModal(detail, conversationId = detail.conversationId) {
   const root = document.getElementById("modal-root");
   root.hidden = false;
   root.replaceChildren();
+  root.onclick = (e) => {
+    if (e.target === root) {
+      root.hidden = true;
+      root.replaceChildren();
+    }
+  };
   const modal = el("section", "modal");
-  const close = el("button", "", "關閉");
+  const header = el("div", "modal-header");
+  header.style.display = "flex";
+  header.style.justifyContent = "space-between";
+  header.style.alignItems = "center";
+  header.style.marginBottom = "1rem";
+  header.style.paddingBottom = "0.75rem";
+  header.style.borderBottom = "1px solid var(--border-subtle, #e2e8f0)";
+
+  const heading = el("h2", "", `對話記錄 Conversation ${conversationId}`);
+  heading.style.margin = "0";
+
+  const close = el("button", "btn-modal-close", "✕ 關閉");
   close.addEventListener("click", () => {
     root.hidden = true;
     root.replaceChildren();
   });
-  modal.append(el("h2", "", `Conversation ${conversationId}`), close);
+  header.append(heading, close);
+  modal.append(header);
   const allowed = new Set(capabilities?.capabilities || []);
   if (allowed.has("ops.conversations.unmasked") && !detail.unmaskAuthorized) {
     const unmaskButton = el("button", "", "查看未遮罩內容");
@@ -1451,9 +1487,10 @@ async function renderKnowledge() {
   exportButton.style.marginLeft = "0.5rem";
   panel.append(exportButton);
 
-  const filters = el("form", "filter-bar");
+  const filters = el("form", "filter-bar knowledge-filters");
   filters.style.marginTop = "1rem";
   const query = el("input");
+  query.style.minWidth = "280px";
   query.placeholder = "搜尋標題或文件 ID";
   query.setAttribute("aria-label", "搜尋知識文件");
   const status = el("select");
@@ -1616,7 +1653,9 @@ async function renderSyncManagement(panel) {
         body.append(row);
       }
       table.append(body);
-      result.append(table);
+      const scrollWrapper = el("div", "table-responsive");
+      scrollWrapper.append(table);
+      result.append(scrollWrapper);
     }
     panel.replaceChildren(el("h2", "", "重新同步 / 索引"), actions, result);
   } catch (error) {
@@ -1682,7 +1721,9 @@ async function renderFaqManagement(panel) {
         body.append(row);
       }
       table.append(body);
-      result.append(table);
+      const scrollWrapper = el("div", "table-responsive");
+      scrollWrapper.append(table);
+      result.append(scrollWrapper);
     };
     const searchButton = el("button", "", "套用篩選");
     searchButton.addEventListener("click", load);
@@ -2244,7 +2285,7 @@ function renderKnowledgeInventory(data, loadDocuments) {
   table.innerHTML = [
     "<thead><tr>",
     "<th>文件</th><th>Owner</th><th>生命週期</th><th>解析 / 索引</th>",
-    "<th>命中</th><th>對話</th><th>負面回饋</th><th>操作</th>",
+    "<th style=\"text-align:right;\">命中</th><th style=\"text-align:right;\">對話</th><th style=\"text-align:right;\">負面回饋</th><th>操作</th>",
     "</tr></thead>",
   ].join("");
   const body = el("tbody");
@@ -2271,20 +2312,31 @@ function renderKnowledgeInventory(data, loadDocuments) {
     });
     const actionCell = el("td");
     actionCell.append(detailButton);
+    const hitCell = el("td", "", String(item.hitCount || 0));
+    hitCell.style.textAlign = "right";
+    hitCell.style.fontVariantNumeric = "tabular-nums";
+    const convCell = el("td", "", String(item.conversationCount || 0));
+    convCell.style.textAlign = "right";
+    convCell.style.fontVariantNumeric = "tabular-nums";
+    const negCell = el("td", "", String(item.negativeFeedbackCount || 0));
+    negCell.style.textAlign = "right";
+    negCell.style.fontVariantNumeric = "tabular-nums";
     row.append(
       documentCell,
       el("td", "", item.ownerUnitId || "-"),
       el("td", "", item.lifecycleStatus || "UNKNOWN"),
       el("td", "", `${item.parseStatus || "UNKNOWN"} / ${item.indexStatus || "UNKNOWN"}`),
-      el("td", "", String(item.hitCount || 0)),
-      el("td", "", String(item.conversationCount || 0)),
-      el("td", "", String(item.negativeFeedbackCount || 0)),
+      hitCell,
+      convCell,
+      negCell,
       actionCell,
     );
     body.append(row);
   }
   table.append(body);
-  container.append(table);
+  const scrollWrapper = el("div", "table-responsive");
+  scrollWrapper.append(table);
+  container.append(scrollWrapper);
   if (data.nextCursor) {
     const next = el("button", "", "下一頁");
     next.style.marginTop = "1rem";
@@ -2771,7 +2823,37 @@ async function buildQualityLoopPanel() {
     ),
   );
   const allowed = new Set(capabilities?.capabilities || []);
+
+  const caseTypeLabels = {
+    NO_ANSWER: "無答案",
+    NEGATIVE_FEEDBACK: "負評",
+    HANDOFF: "轉人工",
+    KNOWLEDGE_GAP: "知識缺口",
+    LOW_CONFIDENCE: "低信心度",
+  };
+  const statusLabels = {
+    NEW: "新建",
+    TRIAGED: "已分派",
+    IN_PROGRESS: "修正中",
+    WAITING_REVIEW: "待審核",
+    OBSERVING: "觀察中",
+    RESOLVED: "已結案",
+    WONT_FIX: "不處理",
+    DUPLICATE: "重複",
+  };
+
+  const [candidateData, caseData] = await Promise.all([
+    api("/api/quality-candidates?status=OPEN"),
+    api("/api/quality-cases"),
+  ]);
+
+  const selected = new Set();
+  const allCandidates = candidateData.items || [];
+
+  // Top action bar
   const controls = el("div", "filter-bar");
+  let mergeBtn = null;
+
   if (allowed.has("ops.quality.write")) {
     const refresh = el("button", "", "掃描新候選");
     refresh.addEventListener("click", async () => {
@@ -2790,84 +2872,262 @@ async function buildQualityLoopPanel() {
       }
     });
     controls.append(refresh);
+
+    mergeBtn = el("button", "button-primary", "合併為改善案件 (已選 0 筆)");
+    mergeBtn.disabled = true;
+    mergeBtn.addEventListener("click", async () => {
+      if (!selected.size) return;
+      const title = window.prompt(`請輸入改善案件標題（將合併 ${selected.size} 筆候選）：`);
+      if (!title?.trim()) return;
+      try {
+        mergeBtn.disabled = true;
+        mergeBtn.textContent = "合併中…";
+        await api("/api/quality-candidates/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidate_ids: [...selected],
+            title: title.trim(),
+            description: "由營運事件候選合併",
+            priority: "MEDIUM",
+          }),
+        });
+        await renderQuality();
+      } catch (error) {
+        showContentModal("合併失敗", el("div", "error", error.message));
+      } finally {
+        updateSelectionState();
+      }
+    });
+    controls.append(mergeBtn);
   }
   panel.append(controls);
-  const caseTypeLabels = {
-    NO_ANSWER: "無答案",
-    NEGATIVE_FEEDBACK: "負評",
-    HANDOFF: "轉人工",
-    KNOWLEDGE_GAP: "知識缺口",
-  };
-  const statusLabels = {
-    NEW: "新建",
-    TRIAGED: "已分派",
-    IN_PROGRESS: "修正中",
-    WAITING_REVIEW: "待審核",
-    OBSERVING: "觀察中",
-    RESOLVED: "已結案",
-    WONT_FIX: "不處理",
-    DUPLICATE: "重複",
-  };
-  const [candidateData, caseData] = await Promise.all([
-    api("/api/quality-candidates?status=OPEN"),
-    api("/api/quality-cases"),
-  ]);
-  panel.append(el("h3", "", `待合併候選（${candidateData.total || 0}）`));
-  const selected = new Set();
-  if ((candidateData.items || []).length) {
-    const table = el("table");
-    table.innerHTML =
-      "<thead><tr><th>選取</th><th>案件類型</th><th>問題類型</th><th>摘要</th></tr></thead>";
-    const body = el("tbody");
-    for (const item of candidateData.items) {
-      const checkbox = el("input");
-      checkbox.type = "checkbox";
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) selected.add(item.candidate_id);
-        else selected.delete(item.candidate_id);
+
+  const candidateSectionHeading = el("h3", "", `待合併候選（${candidateData.total || 0}）`);
+  panel.append(candidateSectionHeading);
+
+  if (allCandidates.length) {
+    let searchQuery = "";
+    let selectedCaseType = "";
+    let currentPage = 1;
+    let pageSize = 25;
+
+    const toolbar = el("div", "candidate-toolbar");
+
+    const searchInput = el("input");
+    searchInput.placeholder = "搜尋候選摘要、問題類型…";
+    searchInput.style.minWidth = "220px";
+    searchInput.addEventListener("input", () => {
+      searchQuery = searchInput.value.toLowerCase().trim();
+      currentPage = 1;
+      renderCandidatesTable();
+    });
+
+    const typeSelect = el("select");
+    const allOpt = el("option", "", "全部案件類型");
+    allOpt.value = "";
+    typeSelect.append(allOpt);
+    for (const [val, lab] of Object.entries(caseTypeLabels)) {
+      const opt = el("option", "", lab);
+      opt.value = val;
+      typeSelect.append(opt);
+    }
+    typeSelect.addEventListener("change", () => {
+      selectedCaseType = typeSelect.value;
+      currentPage = 1;
+      renderCandidatesTable();
+    });
+
+    const selectFilteredBtn = el("button", "", "選取篩選結果");
+    selectFilteredBtn.addEventListener("click", () => {
+      const filtered = getFiltered();
+      for (const item of filtered) selected.add(item.candidate_id);
+      renderCandidatesTable();
+    });
+
+    const clearSelectionBtn = el("button", "", "清除選取");
+    clearSelectionBtn.addEventListener("click", () => {
+      selected.clear();
+      renderCandidatesTable();
+    });
+
+    const pageSizeSelect = el("select");
+    for (const size of [25, 50, 100, "all"]) {
+      const opt = el("option", "", size === "all" ? "顯示全部" : `每頁 ${size} 筆`);
+      opt.value = String(size);
+      if (size === 25) opt.selected = true;
+      pageSizeSelect.append(opt);
+    }
+    pageSizeSelect.addEventListener("change", () => {
+      pageSize = pageSizeSelect.value === "all" ? "all" : parseInt(pageSizeSelect.value, 10);
+      currentPage = 1;
+      renderCandidatesTable();
+    });
+
+    const selectionCounter = el("span", "metric-label", `已選取 0 筆`);
+
+    toolbar.append(searchInput, typeSelect, selectFilteredBtn, clearSelectionBtn, pageSizeSelect, selectionCounter);
+    panel.append(toolbar);
+
+    const tableBox = el("div", "table-scroll-box candidate-scroll-box");
+    const table = el("table", "candidate-table");
+    const headerRow = el("tr");
+    const headerSelectTh = el("th");
+    const headerSelectAllCheckbox = el("input");
+    headerSelectAllCheckbox.type = "checkbox";
+    headerSelectAllCheckbox.title = "選取／取消本頁全部";
+    headerSelectTh.append(headerSelectAllCheckbox);
+
+    headerRow.append(
+      headerSelectTh,
+      el("th", "", "案件類型"),
+      el("th", "", "問題類型"),
+      el("th", "", "摘要"),
+    );
+    table.append(el("thead", "", headerRow));
+    const tableBody = el("tbody");
+    table.append(tableBody);
+    tableBox.append(table);
+    panel.append(tableBox);
+
+    const paginationBar = el("div", "candidate-pagination");
+    const paginationSummary = el("span", "metric-label", "");
+    const pagerButtons = el("div", "filter-bar");
+    pagerButtons.style.marginBottom = "0";
+    const prevBtn = el("button", "", "上一頁");
+    const nextBtn = el("button", "", "下一頁");
+    pagerButtons.append(prevBtn, nextBtn);
+    paginationBar.append(paginationSummary, pagerButtons);
+    panel.append(paginationBar);
+
+    function getFiltered() {
+      return allCandidates.filter((item) => {
+        if (selectedCaseType && item.case_type !== selectedCaseType) {
+          return false;
+        }
+        if (searchQuery) {
+          const desc = (item.description || "").toLowerCase();
+          const issue = (item.issue_type_display_name || item.issue_type_id || "").toLowerCase();
+          const type = (caseTypeLabels[item.case_type] || item.case_type || "").toLowerCase();
+          const title = (item.title || "").toLowerCase();
+          if (!desc.includes(searchQuery) && !issue.includes(searchQuery) && !type.includes(searchQuery) && !title.includes(searchQuery)) {
+            return false;
+          }
+        }
+        return true;
       });
-      const selectCell = el("td");
-      selectCell.append(checkbox);
-      const row = el("tr");
-      row.append(
-        selectCell,
-        el("td", "", caseTypeLabels[item.case_type] || item.case_type),
-        el(
+    }
+
+    function updateSelectionState() {
+      selectionCounter.textContent = `已選取 ${selected.size} 筆`;
+      if (mergeBtn) {
+        mergeBtn.disabled = selected.size === 0;
+        mergeBtn.textContent = `合併為改善案件 (已選 ${selected.size} 筆)`;
+      }
+    }
+
+    function renderCandidatesTable() {
+      const filtered = getFiltered();
+      const totalFiltered = filtered.length;
+      const effectivePageSize = pageSize === "all" ? Math.max(totalFiltered, 1) : pageSize;
+      const totalPages = Math.max(1, Math.ceil(totalFiltered / effectivePageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      const startIndex = (currentPage - 1) * effectivePageSize;
+      const pageItems = filtered.slice(startIndex, startIndex + effectivePageSize);
+
+      tableBody.replaceChildren();
+
+      let allPageSelected = pageItems.length > 0;
+      for (const item of pageItems) {
+        const isChecked = selected.has(item.candidate_id);
+        if (!isChecked) allPageSelected = false;
+
+        const checkbox = el("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = isChecked;
+
+        const row = el("tr");
+        if (isChecked) row.classList.add("is-selected");
+
+        const updateRowCheck = (checked) => {
+          if (checked) {
+            selected.add(item.candidate_id);
+            row.classList.add("is-selected");
+          } else {
+            selected.delete(item.candidate_id);
+            row.classList.remove("is-selected");
+          }
+          checkbox.checked = checked;
+          updateSelectionState();
+          headerSelectAllCheckbox.checked = pageItems.every((it) => selected.has(it.candidate_id));
+        };
+
+        checkbox.addEventListener("change", () => updateRowCheck(checkbox.checked));
+
+        const selectCell = el("td");
+        selectCell.append(checkbox);
+
+        const typeCell = el("td");
+        const typeBadge = el("span", "badge", caseTypeLabels[item.case_type] || item.case_type);
+        typeCell.append(typeBadge);
+
+        const issueCell = el(
           "td",
           "",
           item.issue_type_display_name || item.issue_type_id || "未分類",
-        ),
-        el("td", "", item.description),
-      );
-      body.append(row);
+        );
+
+        const descCell = el("td", "", item.description || "-");
+        descCell.style.overflowWrap = "break-word";
+
+        row.append(selectCell, typeCell, issueCell, descCell);
+        tableBody.append(row);
+      }
+
+      headerSelectAllCheckbox.checked = allPageSelected;
+
+      paginationSummary.textContent = `第 ${currentPage} / ${totalPages} 頁（篩選結果 ${totalFiltered} 筆 / 全部 ${candidateData.total || allCandidates.length} 筆）`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+
+      updateSelectionState();
     }
-    table.append(body);
-    panel.append(table);
-    if (allowed.has("ops.quality.write")) {
-      const merge = el("button", "", "合併為改善案件");
-      merge.addEventListener("click", async () => {
-        if (!selected.size) return;
-        const title = window.prompt("改善案件標題");
-        if (!title?.trim()) return;
-        try {
-          await api("/api/quality-candidates/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              candidate_ids: [...selected], title: title.trim(),
-              description: "由營運事件候選合併", priority: "MEDIUM",
-            }),
-          });
-          await renderQuality();
-        } catch (error) {
-          showContentModal("合併失敗", el("div", "error", error.message));
+
+    headerSelectAllCheckbox.addEventListener("change", () => {
+      const filtered = getFiltered();
+      const effectivePageSize = pageSize === "all" ? Math.max(filtered.length, 1) : pageSize;
+      const startIndex = (currentPage - 1) * effectivePageSize;
+      const pageItems = filtered.slice(startIndex, startIndex + effectivePageSize);
+      for (const item of pageItems) {
+        if (headerSelectAllCheckbox.checked) {
+          selected.add(item.candidate_id);
+        } else {
+          selected.delete(item.candidate_id);
         }
-      });
-      panel.append(merge);
-    }
+      }
+      renderCandidatesTable();
+    });
+
+    prevBtn.addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderCandidatesTable();
+      }
+    });
+
+    nextBtn.addEventListener("click", () => {
+      currentPage++;
+      renderCandidatesTable();
+    });
+
+    renderCandidatesTable();
   } else {
     panel.append(el("p", "empty", "目前沒有待處理候選。"));
   }
+
+  // Ongoing cases section
   panel.append(el("h3", "", `進行中案件（${caseData.total || 0}）`));
   if ((caseData.items || []).length) {
     const table = el("table");
@@ -2890,7 +3150,11 @@ async function buildQualityLoopPanel() {
       body.append(row);
     }
     table.append(body);
-    panel.append(table);
+    const caseScroll = el("div", "table-responsive");
+    caseScroll.append(table);
+    panel.append(caseScroll);
+  } else {
+    panel.append(el("p", "empty", "目前沒有進行中案件。"));
   }
   return panel;
 }
@@ -2921,7 +3185,9 @@ async function buildGapPanel() {
     body.append(row);
   }
   table.append(body);
-  panel.append(table);
+  const gapScroll = el("div", "table-responsive");
+  gapScroll.append(table);
+  panel.append(gapScroll);
   const clusterData = await api("/api/question-clusters");
   const allowed = new Set(capabilities?.capabilities || []);
   const clusterActions = el("div", "filter-bar");
@@ -3802,7 +4068,7 @@ async function renderQuality(state = {}) {
       drillLink("對話驗證", "conversations"),
     );
     panel.append(shortcuts);
-    const filterBar = el("div", "grid");
+    const filterBar = el("div", "filter-bar quality-filters");
     const issueInput = el("input");
     issueInput.id = "feedback-issue-type";
     issueInput.placeholder = "問題類型（顯示名稱或 ID）";
@@ -3914,7 +4180,9 @@ async function renderQuality(state = {}) {
         body.append(row);
       }
       table.append(body);
-      panel.append(table);
+      const feedbackScroll = el("div", "table-responsive");
+      feedbackScroll.append(table);
+      panel.append(feedbackScroll);
     }
     const history = state.history || [];
     const pager = el("div", "filter-bar");
@@ -4060,6 +4328,16 @@ window.addEventListener("message", (event) => {
   if (event.data?.type === "NAVIGATE_CASE" && event.data?.caseId) {
     renderNav("quality");
     void showQualityCaseDetail(event.data.caseId);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    const root = document.getElementById("modal-root");
+    if (root && !root.hidden) {
+      root.hidden = true;
+      root.replaceChildren();
+    }
   }
 });
 

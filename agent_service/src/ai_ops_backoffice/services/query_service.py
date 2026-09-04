@@ -1688,6 +1688,7 @@ class BackofficeQueryService:
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
         telemetry, recent_anomalies = await self._health_telemetry()
         no_telemetry = self._health_metric_summary([])
+        retrieval = dict(agent_functional)
         if self._settings.simulate_health_anomalies:
             agent = {"status": "DEGRADED", "note": "Simulated LLM API latency spike."}
             retrieval = {"status": "DOWN", "note": "Simulated RAG index unreachable."}
