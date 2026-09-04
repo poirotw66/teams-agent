@@ -48,11 +48,8 @@ from .quality_domain import (
     QualityService,
 )
 from .governance_domain import (
-    FileGovernanceRepository,
-    FirestoreGovernanceRepository,
     GovernanceService,
 )
-from .governance_domain.sharded_repository import ShardedFirestoreGovernanceRepository
 from .governance_routes import register_governance_routes
 from .services.periods import PeriodPolicyError
 from .services.query_audit import record_query_audit
@@ -418,27 +415,17 @@ def create_app(
         active_effective_at=prompt_effective_at,
     )
     governance_store_mode = resolved_settings.governance_store_mode.upper()
-    if governance_store_mode == "FILE":
-        governance_store_path = resolved_settings.governance_store_path or (
-            resolved_settings.ops_store_path.parent / "phase3" / "governance.json"
-        )
-        governance_repository = FileGovernanceRepository(governance_store_path)
-    elif governance_store_mode == "FIRESTORE":
-        from google.cloud import firestore
+    from ai_ops_backoffice.governance_domain.store_factory import build_governance_repository
 
-        governance_repository = FirestoreGovernanceRepository(
-            firestore.Client(project=resolved_settings.gcp_project_id),
-            collection=resolved_settings.governance_firestore_collection,
-        )
-    elif governance_store_mode in {"FIRESTORE_SHARDED", "FIRESTORE_SPLIT"}:
-        from google.cloud import firestore
-
-        governance_repository = ShardedFirestoreGovernanceRepository(
-            firestore.Client(project=resolved_settings.gcp_project_id),
-            collection=resolved_settings.governance_firestore_collection,
-        )
-    else:
-        raise ValueError(f"Unsupported governance store mode: {governance_store_mode}")
+    governance_store_path = resolved_settings.governance_store_path or (
+        resolved_settings.ops_store_path.parent / "phase3" / "governance.json"
+    )
+    governance_repository = build_governance_repository(
+        store_mode=governance_store_mode,
+        file_path=governance_store_path,
+        firestore_project=resolved_settings.gcp_project_id,
+        firestore_collection=resolved_settings.governance_firestore_collection,
+    )
     governance_service = GovernanceService(
         governance_repository,
         eval_flow_harness=eval_flow_harness,  # type: ignore[arg-type]
@@ -620,13 +607,17 @@ def create_app(
                     continue
 
         sweeper = asyncio.create_task(sweep_expired_exports())
+        recovery = asyncio.create_task(
+            query_service.export_jobs.run_recovery_scanner(stop_sweeper)
+        )
         try:
             yield
         finally:
             stop_sweeper.set()
-            sweeper.cancel()
-            with suppress(asyncio.CancelledError):
-                await sweeper
+            for task in (sweeper, recovery):
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="AI Operations Backoffice", lifespan=lifespan)
 
@@ -1084,27 +1075,36 @@ def create_app(
             )
         export_rate_limiter.check(actor.user_id)
         idempotency = payload.idempotency_key
-        return await query_service.create_export_job(
-            actor=actor,
-            export_type=payload.export_type,
-            reason=payload.reason,
-            days=payload.days,
-            export_format=payload.export_format,
-            preset=payload.preset,
-            start_date=payload.start_date,
-            end_date=payload.end_date,
-            actor_ref=payload.actor_ref,
-            issue_type_id=payload.issue_type_id,
-            route=payload.route,
-            conversation_id=payload.conversation_id,
-            model=payload.model,
-            has_feedback=payload.has_feedback,
-            handoff=payload.handoff,
-            rating=payload.rating,
-            feedback_reason=payload.feedback_reason,
-            resolved_status=payload.resolved_status,
-            idempotency_key=idempotency,
-        )
+        try:
+            return await query_service.create_export_job(
+                actor=actor,
+                export_type=payload.export_type,
+                reason=payload.reason,
+                days=payload.days,
+                export_format=payload.export_format,
+                preset=payload.preset,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+                actor_ref=payload.actor_ref,
+                issue_type_id=payload.issue_type_id,
+                route=payload.route,
+                conversation_id=payload.conversation_id,
+                model=payload.model,
+                has_feedback=payload.has_feedback,
+                handoff=payload.handoff,
+                rating=payload.rating,
+                feedback_reason=payload.feedback_reason,
+                resolved_status=payload.resolved_status,
+                idempotency_key=idempotency,
+            )
+        except Exception as exc:
+            from ai_ops_backoffice.services.export_authorization import (
+                ExportIdempotencyConflictError,
+            )
+
+            if isinstance(exc, ExportIdempotencyConflictError):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
 
     @app.get("/api/exports/{job_id}")
     async def get_export(job_id: str, actor=Depends(current_actor)) -> dict[str, object]:

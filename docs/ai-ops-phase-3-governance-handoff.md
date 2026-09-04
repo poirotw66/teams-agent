@@ -25,13 +25,19 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Governance audit trail with secret redaction and JSON audit export package
 - Export jobs are **requester-bound** (other SYSTEM_ADMIN / AUDITOR cannot fetch);
   worker re-resolves via durable `FileBackedExportAuthorizationResolver`; jobs
-  persist `request_params`, support idempotency keys, lease-based restart recovery,
-  retries for transient I/O errors, and expiry cleanup with audit
+  persist `request_params`, support idempotency keys scoped to
+  tenant+requester+request fingerprint, lease-based atomic claim / renew /
+  complete-if-owner, periodic recovery scanning, retries for transient I/O
+  errors, and expiry cleanup with audit
+- Governance store factory shared by Backoffice + Agent
+  (`FILE|FIRESTORE|FIRESTORE_SHARDED|FIRESTORE_SPLIT`); sharded mutate writes
+  only changed entities
+- Policy snapshots use ``ContextVar`` / ``policy_snapshot_scope`` and are bound
+  at Agent request start; governance peek failures fail closed
 - ACTIVE retention TTL and masking policy version bridged into ops runtime via
   `RuntimePolicyProvider` / `PolicySnapshot`; masking versions map to concrete
   rule packs (`v2`, `v3`) with content hashes — version change alters behavior
-- Firestore growth path: `AI_OPS_GOVERNANCE_STORE_MODE=FIRESTORE_SHARDED` splits
-  entities; `daily_aggregates` defines the aggregate document shape for later workers
+- `daily_aggregates` defines the aggregate document shape for later workers
 - Operational event scope: tenant is a hard boundary; owner-unit checks are
   per-event; companions may share turn/correlation only (not whole conversation)
 - Mixed-permission turns redact shared ``messageMasked``; authorized case

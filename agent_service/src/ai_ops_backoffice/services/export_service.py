@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import uuid
 from collections.abc import Callable, Coroutine
+from contextlib import suppress
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +21,7 @@ from .export_auth_store import FileBackedExportAuthorizationResolver
 from .export_authorization import (
     ExportAuthorizationError,
     ExportAuthorizationResolver,
+    ExportIdempotencyConflictError,
     require_current_export_access,
     tenant_for_actor,
 )
@@ -28,6 +31,7 @@ from .export_job_store import ExportJobStore, FileExportJobStore
 
 ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
 LEASE_SECONDS = 120
+RECOVERY_SCAN_SECONDS = 30
 
 
 class ExportExecutionBackend(Protocol):
@@ -51,11 +55,13 @@ class ExportJob:
     tenant_id: str = "local-development"
     requested_owner_units: tuple[str, ...] = ()
     request_params: dict[str, Any] = field(default_factory=dict)
+    request_fingerprint: str | None = None
     idempotency_key: str | None = None
     attempt_count: int = 0
     max_attempts: int = 3
     lease_owner: str | None = None
     lease_expires_at: str | None = None
+    lease_token: str | None = None
     completed_at: str | None = None
     result: dict[str, Any] | None = None
     download_content: str | None = None
@@ -63,6 +69,25 @@ class ExportJob:
     content_ref: str | None = None
     content_type: str | None = None
     error: str | None = None
+
+
+def export_request_fingerprint(
+    *,
+    export_type: str,
+    export_format: str,
+    days: int,
+    reason: str,
+    request_params: dict[str, Any] | None,
+) -> str:
+    payload = {
+        "export_type": export_type,
+        "export_format": export_format,
+        "days": days,
+        "reason": reason,
+        "request_params": request_params or {},
+    }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class ExportJobService:
@@ -80,6 +105,8 @@ class ExportJobService:
         execution_backend: ExportExecutionBackend | None = None,
         worker_id: str | None = None,
         run_inline: bool = False,
+        lease_seconds: int = LEASE_SECONDS,
+        recovery_scan_seconds: int = RECOVERY_SCAN_SECONDS,
     ) -> None:
         self._audit_store = audit_store
         self._store_path = store_path
@@ -100,6 +127,8 @@ class ExportJobService:
         self._legacy_runners: dict[str, Callable[[], Coroutine[Any, Any, dict[str, Any]]]] = {}
         self._worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
         self._run_inline = run_inline
+        self._lease_seconds = lease_seconds
+        self._recovery_scan_seconds = recovery_scan_seconds
         self._background_tasks: set[asyncio.Task[None]] = set()
 
     def configure_execution_backend(self, backend: ExportExecutionBackend) -> None:
@@ -127,11 +156,13 @@ class ExportJobService:
             "tenant_id": "local-development",
             "requested_owner_units": (),
             "request_params": {},
+            "request_fingerprint": None,
             "idempotency_key": None,
             "attempt_count": 0,
             "max_attempts": 3,
             "lease_owner": None,
             "lease_expires_at": None,
+            "lease_token": None,
             "error": None,
             "result": None,
             "completed_at": None,
@@ -150,6 +181,17 @@ class ExportJobService:
         return ExportJob(**{key: value for key, value in merged.items() if key in known})
 
     def _schedule(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        if self._run_inline:
+            # Tests / single-process: still schedule on the loop when available.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(coroutine)
+                return
+            task = loop.create_task(coroutine)
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+            return
         loop = asyncio.get_running_loop()
         task = loop.create_task(coroutine)
         self._background_tasks.add(task)
@@ -173,16 +215,31 @@ class ExportJobService:
         request_metadata: dict[str, object] | None = None,
         runner: Callable[[], Coroutine[Any, Any, dict[str, Any]]] | None = None,
     ) -> ExportJob:
+        tenant_id = tenant_for_actor(actor, environment=self._environment)
+        fingerprint = export_request_fingerprint(
+            export_type=export_type,
+            export_format=export_format,
+            days=days,
+            reason=reason,
+            request_params=request_params,
+        )
         if idempotency_key:
-            existing_payload = await self._job_store.find_by_idempotency_key(idempotency_key)
+            existing_payload = await self._job_store.find_by_idempotency_scope(
+                key=idempotency_key,
+                tenant_id=tenant_id,
+                requester_id=actor.user_id,
+            )
             if existing_payload is not None:
                 existing = self._deserialize_job(existing_payload)
+                if existing.request_fingerprint and existing.request_fingerprint != fingerprint:
+                    raise ExportIdempotencyConflictError(
+                        "Idempotency key was reused with different export parameters."
+                    )
                 self._jobs[existing.job_id] = existing
                 return existing
 
         job_id = str(uuid.uuid4())
         now = utc_now()
-        tenant_id = tenant_for_actor(actor, environment=self._environment)
         register = getattr(self._authorization_resolver, "register", None)
         if callable(register):
             register(actor=actor, tenant_id=tenant_id)
@@ -200,6 +257,7 @@ class ExportJobService:
             tenant_id=tenant_id,
             requested_owner_units=tuple(actor.owner_unit_ids),
             request_params=dict(request_params or {}),
+            request_fingerprint=fingerprint,
             idempotency_key=idempotency_key,
         )
         async with self._lock:
@@ -219,6 +277,7 @@ class ExportJobService:
                     "days": days,
                     "tenantId": tenant_id,
                     "idempotencyKey": idempotency_key,
+                    "requestFingerprint": fingerprint,
                     **(request_metadata or {}),
                 },
             )
@@ -232,7 +291,7 @@ class ExportJobService:
         return job
 
     async def recover_interrupted_jobs(self) -> int:
-        """Re-queue QUEUED/RUNNING jobs after process restart."""
+        """Claim and re-queue QUEUED / expired-lease RUNNING jobs."""
         payloads = await self._job_store.list_by_status({"QUEUED", "RUNNING"})
         recovered = 0
         now = utc_now()
@@ -243,15 +302,32 @@ class ExportJobService:
                 if lease_raw:
                     lease_expires = datetime.fromisoformat(lease_raw.replace("Z", "+00:00"))
                     if lease_expires > now and job.lease_owner != self._worker_id:
+                        # Active foreign lease — periodic scanner will retry later.
                         continue
+                # Reset to QUEUED then let atomic claim pick it up.
                 job.status = "QUEUED"
                 job.lease_owner = None
                 job.lease_expires_at = None
+                job.lease_token = None
+                await self._persist(job)
             self._jobs[job.job_id] = job
-            await self._persist(job)
             self._schedule(self._run_job(job.job_id))
             recovered += 1
         return recovered
+
+    async def run_recovery_scanner(self, stop_event: asyncio.Event) -> None:
+        """Periodically take over expired leases (not only at process start)."""
+        while not stop_event.is_set():
+            try:
+                await self.recover_interrupted_jobs()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(), timeout=self._recovery_scan_seconds
+                )
+            except TimeoutError:
+                continue
 
     async def _resolve_worker_actor(self, job: ExportJob) -> ActorContext:
         actor = await self._authorization_resolver.resolve(
@@ -278,22 +354,40 @@ class ExportJobService:
         return await self._execution_backend.execute(actor=actor, job=job)
 
     async def _run_job(self, job_id: str) -> None:
-        async with self._lock:
-            persisted = await self._job_store.get(job_id)
-            job = self._deserialize_job(persisted) if persisted else self._jobs.get(job_id)
-            if job is None:
-                return
-            if job.status not in {"QUEUED", "RUNNING"}:
-                return
-            job.status = "RUNNING"
-            job.attempt_count += 1
-            job.lease_owner = self._worker_id
-            job.lease_expires_at = (
-                utc_now() + timedelta(seconds=LEASE_SECONDS)
-            ).isoformat()
-            self._jobs[job_id] = job
-            await self._persist(job)
+        claimed_payload = await self._job_store.claim_job(
+            job_id,
+            worker_id=self._worker_id,
+            lease_seconds=self._lease_seconds,
+            now=utc_now(),
+        )
+        if claimed_payload is None:
+            return
+        job = self._deserialize_job(claimed_payload)
+        lease_token = job.lease_token or ""
+        self._jobs[job_id] = job
+        renew_task: asyncio.Task[None] | None = None
+        stop_renew = asyncio.Event()
+
+        async def _renew_loop() -> None:
+            while not stop_renew.is_set():
+                try:
+                    await asyncio.wait_for(
+                        stop_renew.wait(), timeout=max(5, self._lease_seconds // 3)
+                    )
+                    return
+                except TimeoutError:
+                    ok = await self._job_store.renew_lease(
+                        job_id,
+                        worker_id=self._worker_id,
+                        lease_token=lease_token,
+                        lease_seconds=self._lease_seconds,
+                        now=utc_now(),
+                    )
+                    if not ok:
+                        return
+
         try:
+            renew_task = asyncio.create_task(_renew_loop())
             actor = await self._resolve_worker_actor(job)
             result = await self._execute(actor=actor, job=job)
             metadata = result.get("exportMetadata") or {}
@@ -330,27 +424,34 @@ class ExportJobService:
                     "recordCount": metadata.get("recordCount"),
                     "fields": metadata.get("fields") or [],
                     "queryFilters": metadata.get("queryFilters") or {},
+                    "workerId": self._worker_id,
                 },
             )
-            async with self._lock:
-                job = self._jobs[job_id]
-                job.status = "COMPLETED"
-                job.result = result
-                job.content_ref = content_ref
-                job.content_type = content_type
-                job.download_content = None
-                job.download_bytes = None
-                job.lease_owner = None
-                job.lease_expires_at = None
-                job.completed_at = utc_now().isoformat()
-                await self._persist(job)
+            job.status = "COMPLETED"
+            job.result = result
+            job.content_ref = content_ref
+            job.content_type = content_type
+            job.download_content = None
+            job.download_bytes = None
+            job.completed_at = utc_now().isoformat()
+            job.error = None
+            committed = await self._job_store.complete_if_owner(
+                job_id,
+                worker_id=self._worker_id,
+                lease_token=lease_token,
+                payload=self._serialize_job(job),
+            )
+            if not committed:
+                # Lost lease mid-flight — another worker owns the job; drop orphan content.
+                await self._content_store.delete(content_ref=content_ref)
+                return
+            self._jobs[job_id] = job
         except Exception as exc:  # noqa: BLE001
-            current = self._jobs.get(job_id)
-            if current and current.content_ref:
+            current = self._jobs.get(job_id) or job
+            if current.content_ref:
                 await self._content_store.delete(content_ref=current.content_ref)
             retryable = (
-                current is not None
-                and current.attempt_count < current.max_attempts
+                current.attempt_count < current.max_attempts
                 and isinstance(exc, (TimeoutError, ConnectionError, OSError))
             )
             try:
@@ -370,28 +471,43 @@ class ExportJobService:
                         "status": "QUEUED" if retryable else "FAILED",
                         "attemptCount": job.attempt_count,
                         "errorType": type(exc).__name__,
+                        "workerId": self._worker_id,
                     },
                 )
             except AuditWriteError:
                 pass
-            async with self._lock:
-                job = self._jobs[job_id]
-                if retryable:
-                    job.status = "QUEUED"
-                    job.error = str(exc)
-                    job.lease_owner = None
-                    job.lease_expires_at = None
-                    await self._persist(job)
-                    self._schedule(self._run_job(job_id))
-                    return
-                job.status = "FAILED"
-                job.error = str(exc)
-                job.completed_at = utc_now().isoformat()
-                job.content_ref = None
-                job.content_type = None
-                job.lease_owner = None
-                job.lease_expires_at = None
-                await self._persist(job)
+            if retryable:
+                current.status = "QUEUED"
+                current.error = str(exc)
+                current.lease_owner = None
+                current.lease_expires_at = None
+                current.lease_token = None
+                current.content_ref = None
+                current.content_type = None
+                # Force release even if lease token still matches.
+                await self._job_store.put(job_id, self._serialize_job(current))
+                self._jobs[job_id] = current
+                self._schedule(self._run_job(job_id))
+                return
+            current.status = "FAILED"
+            current.error = str(exc)
+            current.completed_at = utc_now().isoformat()
+            current.content_ref = None
+            current.content_type = None
+            committed = await self._job_store.complete_if_owner(
+                job_id,
+                worker_id=self._worker_id,
+                lease_token=lease_token,
+                payload=self._serialize_job(current),
+            )
+            if committed:
+                self._jobs[job_id] = current
+        finally:
+            stop_renew.set()
+            if renew_task is not None:
+                renew_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await renew_task
 
     async def get_job(self, job_id: str, *, actor: ActorContext) -> ExportJob | None:
         async with self._lock:

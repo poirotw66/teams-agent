@@ -361,9 +361,15 @@ class RagSettings:
             raise ValueError(
                 "PROMPT_RUNTIME_MODE must be one of CODE_BASELINE or GOVERNED."
             )
-        if self.prompt_governance_store_mode not in {"FILE", "FIRESTORE"}:
+        if self.prompt_governance_store_mode not in {
+            "FILE",
+            "FIRESTORE",
+            "FIRESTORE_SHARDED",
+            "FIRESTORE_SPLIT",
+        }:
             raise ValueError(
-                "AI_OPS_GOVERNANCE_STORE_MODE must be one of FILE or FIRESTORE."
+                "AI_OPS_GOVERNANCE_STORE_MODE must be one of FILE, FIRESTORE, "
+                "FIRESTORE_SHARDED, or FIRESTORE_SPLIT."
             )
         if not self.prompt_governance_firestore_collection.strip():
             raise ValueError(

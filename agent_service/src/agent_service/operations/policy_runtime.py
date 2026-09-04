@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-import threading
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Iterator, Protocol
 
 from agent_service.operations.contracts import MASKING_POLICY_VERSION
 from agent_service.operations.masking_rules import MaskingRulePack, resolve_masking_pack
@@ -14,20 +15,12 @@ from agent_service.operations.settings import OpsSettings
 
 logger = logging.getLogger(__name__)
 
-_RESOLVE_DEPTH = threading.local()
-_SNAPSHOT: threading.local = threading.local()
+_RESOLVE_DEPTH: ContextVar[int] = ContextVar("policy_resolve_depth", default=0)
+_SNAPSHOT: ContextVar[object | None] = ContextVar("policy_snapshot", default=None)
 
 
-def _resolve_depth() -> int:
-    return int(getattr(_RESOLVE_DEPTH, "value", 0) or 0)
-
-
-def _enter_resolve() -> None:
-    _RESOLVE_DEPTH.value = _resolve_depth() + 1
-
-
-def _exit_resolve() -> None:
-    _RESOLVE_DEPTH.value = max(0, _resolve_depth() - 1)
+class PolicySourceUnavailableError(RuntimeError):
+    """Governance policy source failed; callers must not silently relax controls."""
 
 
 class GovernancePolicySource(Protocol):
@@ -73,16 +66,22 @@ class RuntimePolicyProvider(Protocol):
 
 
 class PolicyRuntime:
-    """Resolve ACTIVE retention/masking with fail-safe settings defaults."""
+    """Resolve ACTIVE retention/masking; fail closed when governance is configured."""
 
     def __init__(
         self,
         *,
         settings: OpsSettings,
         governance: GovernancePolicySource | None = None,
+        require_governance: bool | None = None,
     ) -> None:
         self._settings = settings
         self._governance = governance
+        # When a governance source is wired, peek failures must not silently
+        # fall back to a more permissive policy.
+        self._require_governance = (
+            require_governance if require_governance is not None else governance is not None
+        )
 
     @classmethod
     def from_ops_settings(cls, settings: OpsSettings) -> PolicyRuntime:
@@ -97,12 +96,16 @@ class PolicyRuntime:
     def retention(
         self, *, policy_id: str = "operational-events"
     ) -> EffectiveRetentionPolicy:
-        _enter_resolve()
+        token = _RESOLVE_DEPTH.set(_RESOLVE_DEPTH.get() + 1)
         try:
             if self._governance is not None:
                 try:
                     peeked = self._governance.peek_runtime_retention(policy_id)
                 except Exception as exc:  # noqa: BLE001
+                    if self._require_governance:
+                        raise PolicySourceUnavailableError(
+                            f"governance retention peek failed: {type(exc).__name__}"
+                        ) from exc
                     logger.warning(
                         "governance retention peek failed (%s); using settings default",
                         type(exc).__name__,
@@ -121,15 +124,19 @@ class PolicyRuntime:
                 source="settings_baseline",
             )
         finally:
-            _exit_resolve()
+            _RESOLVE_DEPTH.reset(token)
 
     def masking(self) -> EffectiveMaskingPolicy:
-        _enter_resolve()
+        token = _RESOLVE_DEPTH.set(_RESOLVE_DEPTH.get() + 1)
         try:
             if self._governance is not None:
                 try:
                     peeked = self._governance.peek_runtime_masking()
                 except Exception as exc:  # noqa: BLE001
+                    if self._require_governance:
+                        raise PolicySourceUnavailableError(
+                            f"governance masking peek failed: {type(exc).__name__}"
+                        ) from exc
                     logger.warning(
                         "governance masking peek failed (%s); using code baseline",
                         type(exc).__name__,
@@ -141,7 +148,11 @@ class PolicyRuntime:
                     if version:
                         try:
                             pack = resolve_masking_pack(version)
-                        except KeyError:
+                        except KeyError as exc:
+                            if self._require_governance:
+                                raise PolicySourceUnavailableError(
+                                    f"unknown masking policy version {version}"
+                                ) from exc
                             logger.warning(
                                 "unknown masking policy version %s; using code baseline",
                                 version,
@@ -177,7 +188,7 @@ class PolicyRuntime:
                 source="code_baseline",
             )
         finally:
-            _exit_resolve()
+            _RESOLVE_DEPTH.reset(token)
 
 
 _POLICY_RUNTIME: RuntimePolicyProvider | None = None
@@ -192,17 +203,32 @@ def get_policy_runtime() -> RuntimePolicyProvider | None:
     return _POLICY_RUNTIME
 
 
-def bind_policy_snapshot(snapshot: PolicySnapshot | None) -> None:
-    """Bind a per-request snapshot; clears when ``None``."""
-    _SNAPSHOT.value = snapshot
+def bind_policy_snapshot(snapshot: PolicySnapshot | None) -> Token:
+    """Bind a per-request snapshot; returns a ContextVar token for reset."""
+    return _SNAPSHOT.set(snapshot)
+
+
+def reset_policy_snapshot(token: Token) -> None:
+    _SNAPSHOT.reset(token)
+
+
+@contextmanager
+def policy_snapshot_scope(snapshot: PolicySnapshot | None) -> Iterator[PolicySnapshot | None]:
+    """Bind a snapshot for the current async task / request context."""
+    token = bind_policy_snapshot(snapshot)
+    try:
+        yield snapshot
+    finally:
+        reset_policy_snapshot(token)
 
 
 def current_policy_snapshot() -> PolicySnapshot | None:
-    return getattr(_SNAPSHOT, "value", None)
+    value = _SNAPSHOT.get()
+    return value if isinstance(value, PolicySnapshot) else None
 
 
 def active_retention_days(settings: OpsSettings) -> int:
-    if _resolve_depth() > 0:
+    if _RESOLVE_DEPTH.get() > 0:
         return settings.default_retention_days
     snapshot = current_policy_snapshot()
     if snapshot is not None:
@@ -214,7 +240,7 @@ def active_retention_days(settings: OpsSettings) -> int:
 
 
 def active_masking_policy() -> EffectiveMaskingPolicy:
-    if _resolve_depth() > 0:
+    if _RESOLVE_DEPTH.get() > 0:
         pack = resolve_masking_pack(MASKING_POLICY_VERSION)
         return EffectiveMaskingPolicy(
             policy_version=pack.policy_version,
@@ -242,40 +268,42 @@ def active_masking_policy_version() -> str:
 
 
 def _try_build_governance(settings: OpsSettings) -> GovernancePolicySource | None:
-    store_mode = (
-        __import__("os").environ.get("AI_OPS_GOVERNANCE_STORE_MODE", "FILE") or "FILE"
-    ).upper()
-    if store_mode == "FILE":
-        from ai_ops_backoffice.governance_domain.repository import FileGovernanceRepository
+    import os
+
+    store_mode = (os.environ.get("AI_OPS_GOVERNANCE_STORE_MODE", "FILE") or "FILE").upper()
+    try:
         from ai_ops_backoffice.governance_domain.service import GovernanceService
-
-        path = Path(
-            __import__("os").environ.get(
-                "AI_OPS_GOVERNANCE_STORE_PATH",
-                str(settings.store_path.parent / "phase3" / "governance.json"),
-            )
+        from ai_ops_backoffice.governance_domain.store_factory import (
+            SUPPORTED_GOVERNANCE_STORE_MODES,
+            build_governance_repository,
         )
-        return GovernanceService(FileGovernanceRepository(path))
-    if store_mode == "FIRESTORE":
-        try:
-            from google.cloud import firestore
-
-            from ai_ops_backoffice.governance_domain.repository import (
-                FirestoreGovernanceRepository,
-            )
-            from ai_ops_backoffice.governance_domain.service import GovernanceService
-        except Exception:  # noqa: BLE001
-            logger.warning("firestore governance unavailable; policy runtime uses defaults")
-            return None
-        project = __import__("os").environ.get("AI_OPS_GCP_PROJECT") or settings.firestore_project
-        collection = (
-            __import__("os").environ.get("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION")
-            or "ai_ops_governance_state"
+    except Exception:  # noqa: BLE001
+        logger.warning("governance packages unavailable; policy runtime uses defaults")
+        return None
+    if store_mode not in SUPPORTED_GOVERNANCE_STORE_MODES:
+        logger.warning("unsupported governance store mode %s; using defaults", store_mode)
+        return None
+    path = Path(
+        os.environ.get(
+            "AI_OPS_GOVERNANCE_STORE_PATH",
+            str(settings.store_path.parent / "phase3" / "governance.json"),
         )
-        return GovernanceService(
-            FirestoreGovernanceRepository(
-                firestore.Client(project=project) if project else firestore.Client(),
-                collection=collection,
-            )
+    )
+    project = os.environ.get("AI_OPS_GCP_PROJECT") or settings.firestore_project
+    collection = (
+        os.environ.get("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION") or "ai_ops_governance_state"
+    )
+    try:
+        repository = build_governance_repository(
+            store_mode=store_mode,
+            file_path=path,
+            firestore_project=project,
+            firestore_collection=collection,
         )
-    return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "governance repository unavailable (%s); policy runtime uses defaults",
+            type(exc).__name__,
+        )
+        return None
+    return GovernanceService(repository)

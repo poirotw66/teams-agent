@@ -9,7 +9,7 @@ Layout:
   {collection}/snapshots/{revision} — optional full-state checkpoint (LAB migrate)
 
 ``load()`` reassembles a ``GovernanceState`` for the existing service layer.
-``mutate()`` updates the pointer transactionally and writes changed entities.
+``mutate()`` updates the pointer transactionally and writes only changed entities.
 """
 
 from __future__ import annotations
@@ -19,6 +19,21 @@ from typing import Any
 from .errors import GovernanceConflictError
 from .models import GovernanceState
 from .repository import Mutation
+
+_ENTITY_SPECS: tuple[tuple[str, str], ...] = (
+    ("prompts", "prompt_id"),
+    ("prompt_versions", "version_id"),
+    ("eval_runs", "run_id"),
+    ("model_configs", "config_id"),
+    ("model_versions", "version_id"),
+    ("flags", "flag_id"),
+    ("flag_versions", "version_id"),
+    ("role_changes", "change_id"),
+    ("retention_policies", "version_id"),
+    ("masking_policies", "version_id"),
+    ("audits", "audit_id"),
+    ("idempotency", "key"),
+)
 
 
 class ShardedFirestoreGovernanceRepository:
@@ -73,10 +88,6 @@ class ShardedFirestoreGovernanceRepository:
             pointer_snap = self._pointer.get(transaction=transaction)
             if pointer_snap.exists:
                 current = self.load()
-                # Reload under transaction semantics for revision only; entity
-                # reads above are eventually consistent.  For strong multi-writer
-                # correctness, callers should keep write rate modest or migrate
-                # hot collections to dedicated transactional paths.
                 current = current.model_copy(
                     update={"revision": int(pointer_snap.to_dict().get("revision") or 1)}
                 )
@@ -90,7 +101,7 @@ class ShardedFirestoreGovernanceRepository:
             next_state, result = operation(current)
             if next_state.revision != current.revision + 1:
                 raise GovernanceConflictError("governance state revision must increment")
-            self._write_state(transaction, next_state)
+            self._write_state(transaction, previous=current, next_state=next_state)
             return result
 
         if self._transaction_runner is not None:
@@ -101,36 +112,41 @@ class ShardedFirestoreGovernanceRepository:
             raise RuntimeError("FIRESTORE governance repository requires google-cloud-firestore") from error
         return transactional(transaction_operation)(self._client.transaction())
 
-    def _write_state(self, transaction: Any, state: GovernanceState) -> None:
-        dump = state.model_dump(mode="python")
+    def _write_state(
+        self,
+        transaction: Any,
+        *,
+        previous: GovernanceState,
+        next_state: GovernanceState,
+    ) -> None:
         transaction.set(
             self._pointer,
             {
-                "revision": state.revision,
-                "revoked_principals": list(state.revoked_principals),
+                "revision": next_state.revision,
+                "revoked_principals": list(next_state.revoked_principals),
                 "activePromptIds": [
-                    item.prompt_id for item in state.prompts if item.active_version_id
+                    item.prompt_id for item in next_state.prompts if item.active_version_id
                 ],
                 "schema": "sharded-v1",
             },
         )
-        mapping = {
-            "prompts": ("prompt_id", dump.get("prompts") or []),
-            "prompt_versions": ("version_id", dump.get("prompt_versions") or []),
-            "eval_runs": ("run_id", dump.get("eval_runs") or []),
-            "model_configs": ("config_id", dump.get("model_configs") or []),
-            "model_versions": ("version_id", dump.get("model_versions") or []),
-            "flags": ("flag_id", dump.get("flags") or []),
-            "flag_versions": ("version_id", dump.get("flag_versions") or []),
-            "role_changes": ("change_id", dump.get("role_changes") or []),
-            "retention_policies": ("version_id", dump.get("retention_policies") or []),
-            "masking_policies": ("version_id", dump.get("masking_policies") or []),
-            "audits": ("audit_id", dump.get("audits") or []),
-            "idempotency": ("key", dump.get("idempotency") or []),
-        }
-        for kind, (id_field, items) in mapping.items():
-            for item in items:
-                entity_id = str(item.get(id_field) or "")
-                if not entity_id:
+        previous_dump = previous.model_dump(mode="python")
+        next_dump = next_state.model_dump(mode="python")
+        for kind, id_field in _ENTITY_SPECS:
+            prev_items = {
+                str(item.get(id_field) or ""): item
+                for item in (previous_dump.get(kind) or [])
+                if item.get(id_field)
+            }
+            next_items = {
+                str(item.get(id_field) or ""): item
+                for item in (next_dump.get(kind) or [])
+                if item.get(id_field)
+            }
+            for entity_id, item in next_items.items():
+                if prev_items.get(entity_id) == item:
                     continue
                 transaction.set(self._entity_doc(kind, entity_id), item)
+            for entity_id in prev_items:
+                if entity_id not in next_items:
+                    transaction.delete(self._entity_doc(kind, entity_id))

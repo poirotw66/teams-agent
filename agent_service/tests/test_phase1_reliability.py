@@ -12,8 +12,8 @@ from agent_service.operations.masking import mask_text
 from agent_service.operations.masking_rules import resolve_masking_pack
 from agent_service.operations.policy_runtime import (
     PolicyRuntime,
-    bind_policy_snapshot,
     configure_policy_runtime,
+    policy_snapshot_scope,
 )
 from agent_service.operations.settings import OpsSettings
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
@@ -141,12 +141,11 @@ def test_masking_v3_changes_behavior(tmp_path: Path) -> None:
     configure_policy_runtime(runtime)
     try:
         snapshot = runtime.snapshot()
-        bind_policy_snapshot(snapshot)
-        assert snapshot.masking.policy_version == "v3"
-        assert snapshot.masking.rules_hash == resolve_masking_pack("v3").rules_hash
-        assert "[REDACTED_NATIONAL_ID]" in mask_text("id A123456789").text
+        with policy_snapshot_scope(snapshot):
+            assert snapshot.masking.policy_version == "v3"
+            assert snapshot.masking.rules_hash == resolve_masking_pack("v3").rules_hash
+            assert "[REDACTED_NATIONAL_ID]" in mask_text("id A123456789").text
     finally:
-        bind_policy_snapshot(None)
         configure_policy_runtime(None)
 
 
@@ -176,3 +175,202 @@ def test_daily_aggregate_scaffold() -> None:
     assert aggregates[0].turn_count == 1
     assert aggregates[0].issue_count == 1
     assert aggregates[0].as_dict()["schemaVersion"] == "daily-ops-aggregate-v1"
+
+
+@pytest.mark.asyncio
+async def test_export_atomic_claim_is_exclusive(tmp_path: Path) -> None:
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_job_store import FileExportJobStore
+
+    store = FileExportJobStore(tmp_path / "jobs")
+    await store.put(
+        "job-1",
+        {
+            "job_id": "job-1",
+            "export_type": "operations_summary",
+            "export_format": "json",
+            "status": "QUEUED",
+            "reason": "mutex",
+            "requested_by": "a",
+            "requested_role": "SERVICE_OWNER",
+            "days": 7,
+            "created_at": utc_now().isoformat(),
+            "expires_at": utc_now().isoformat(),
+            "tenant_id": "tenant-a",
+            "attempt_count": 0,
+        },
+    )
+    now = utc_now()
+    first = await store.claim_job("job-1", worker_id="w1", lease_seconds=60, now=now)
+    second = await store.claim_job("job-1", worker_id="w2", lease_seconds=60, now=now)
+    assert first is not None
+    assert first["lease_owner"] == "w1"
+    assert second is None
+
+
+@pytest.mark.asyncio
+async def test_export_idempotency_scoped_to_tenant_and_requester(tmp_path: Path) -> None:
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_authorization import ExportIdempotencyConflictError
+
+    class _Backend:
+        calls = 0
+
+        async def execute(self, *, actor, job):
+            self.calls += 1
+            return {
+                "ok": True,
+                "exportMetadata": {"recordCount": 1, "fields": [], "queryFilters": {}},
+            }
+
+    audit = MemoryAuditStore()
+    backend = _Backend()
+    service = ExportJobService(
+        audit_store=audit,
+        store_path=tmp_path / "exports",
+        environment="test",
+        execution_backend=backend,
+        run_inline=True,
+    )
+    alice = ActorContext(
+        user_id="alice",
+        display_name="Alice",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+    bob = ActorContext(
+        user_id="bob",
+        display_name="Bob",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-b",
+    )
+    first = await service.create_job(
+        actor=alice,
+        export_type="operations_summary",
+        reason="same key",
+        days=7,
+        request_params={"period": {"days": 7}},
+        idempotency_key="shared-key",
+    )
+    await service.wait_for_background_tasks()
+    other = await service.create_job(
+        actor=bob,
+        export_type="operations_summary",
+        reason="same key",
+        days=7,
+        request_params={"period": {"days": 7}},
+        idempotency_key="shared-key",
+    )
+    assert other.job_id != first.job_id
+    with pytest.raises(ExportIdempotencyConflictError):
+        await service.create_job(
+            actor=alice,
+            export_type="operations_summary",
+            reason="different params",
+            days=30,
+            request_params={"period": {"days": 30}},
+            idempotency_key="shared-key",
+        )
+
+
+@pytest.mark.asyncio
+async def test_export_mid_crash_lease_takeover(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_job_store import FileExportJobStore
+
+    store = FileExportJobStore(tmp_path / "jobs")
+    expired = (utc_now() - timedelta(seconds=5)).isoformat()
+    await store.put(
+        "job-crash",
+        {
+            "job_id": "job-crash",
+            "export_type": "operations_summary",
+            "export_format": "json",
+            "status": "RUNNING",
+            "reason": "crash",
+            "requested_by": "a",
+            "requested_role": "SERVICE_OWNER",
+            "days": 7,
+            "created_at": utc_now().isoformat(),
+            "expires_at": (utc_now() + timedelta(days=1)).isoformat(),
+            "tenant_id": "tenant-a",
+            "attempt_count": 1,
+            "lease_owner": "dead-worker",
+            "lease_expires_at": expired,
+            "lease_token": "old-token",
+        },
+    )
+    claimed = await store.claim_job(
+        "job-crash",
+        worker_id="survivor",
+        lease_seconds=60,
+        now=utc_now(),
+    )
+    assert claimed is not None
+    assert claimed["lease_owner"] == "survivor"
+    assert claimed["attempt_count"] == 2
+    assert claimed["lease_token"] != "old-token"
+
+    completed = {
+        **claimed,
+        "status": "COMPLETED",
+        "completed_at": utc_now().isoformat(),
+    }
+    assert await store.complete_if_owner(
+        "job-crash",
+        worker_id="survivor",
+        lease_token=claimed["lease_token"],
+        payload=completed,
+    )
+    assert not await store.complete_if_owner(
+        "job-crash",
+        worker_id="dead-worker",
+        lease_token="old-token",
+        payload=completed,
+    )
+
+
+@pytest.mark.asyncio
+async def test_export_auth_reloads_shared_registry_and_authority(tmp_path: Path) -> None:
+    from ai_ops_backoffice.services.export_authorization import GovernanceRevocationAuthority
+
+    path = tmp_path / "auth.json"
+    alice = ActorContext(
+        user_id="alice",
+        display_name="Alice",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+    writer = FileBackedExportAuthorizationResolver(path)
+    writer.register(actor=alice, tenant_id="tenant-a")
+
+    revoked: set[str] = set()
+    reader = FileBackedExportAuthorizationResolver(
+        path,
+        authority=GovernanceRevocationAuthority(lambda: revoked),
+    )
+    resolved = await reader.resolve(requester_id="alice", tenant_id="tenant-a")
+    assert resolved is not None
+    assert resolved.role == "SERVICE_OWNER"
+
+    revoked.add("alice")
+    assert await reader.resolve(requester_id="alice", tenant_id="tenant-a") is None
+
+
+def test_governance_store_factory_accepts_sharded_mode(tmp_path: Path) -> None:
+    from ai_ops_backoffice.governance_domain.store_factory import (
+        build_governance_repository,
+        normalize_governance_store_mode,
+    )
+
+    assert normalize_governance_store_mode("FIRESTORE_SHARDED") == "FIRESTORE_SHARDED"
+    repo = build_governance_repository(
+        store_mode="FILE",
+        file_path=tmp_path / "gov.json",
+    )
+    assert repo.load().revision == 0

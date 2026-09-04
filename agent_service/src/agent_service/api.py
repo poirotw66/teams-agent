@@ -379,44 +379,62 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         dependencies=[Depends(authorize)],
     )
     async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
+        from agent_service.operations.policy_runtime import (
+            PolicySourceUnavailableError,
+            get_policy_runtime,
+            policy_snapshot_scope,
+        )
+
         _authorize_tenant(payload)
         correlation_id = _start_chat(payload)
         workflow: AgentWorkflow = request.app.state.workflow
+        runtime = get_policy_runtime()
+        try:
+            snapshot = runtime.snapshot() if runtime is not None else None
+        except PolicySourceUnavailableError as error:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Policy source unavailable; refusing request without a fixed "
+                    f"policy snapshot. Correlation ID: {correlation_id}"
+                ),
+            ) from error
 
         started_at = time.perf_counter()
-        try:
-            # Keep the token-usage/cost accounting commit 53124a3 added: any
-            # LLM call made while running the workflow (Issue Extractor +
-            # every Knowledge Service call) is captured here.
-            with get_usage_metadata_callback() as usage_callback:
-                state = await workflow.run(payload, correlation_id=correlation_id)
-            usage_metadata = usage_callback.usage_metadata
-        except Exception as error:
-            _log_chat_failure(payload, correlation_id, error, started_at)
-            raise HTTPException(
-                status_code=503,
-                detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
-            ) from error
+        with policy_snapshot_scope(snapshot):
+            try:
+                # Keep the token-usage/cost accounting commit 53124a3 added: any
+                # LLM call made while running the workflow (Issue Extractor +
+                # every Knowledge Service call) is captured here.
+                with get_usage_metadata_callback() as usage_callback:
+                    state = await workflow.run(payload, correlation_id=correlation_id)
+                usage_metadata = usage_callback.usage_metadata
+            except Exception as error:
+                _log_chat_failure(payload, correlation_id, error, started_at)
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
+                ) from error
 
-        try:
-            cost_summary = await _log_chat_success(
-                payload,
-                correlation_id,
-                state,
-                usage_metadata,
-                started_at,
-                ops_runtime=getattr(request.app.state, "ops_runtime", None),
-                knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+            try:
+                cost_summary = await _log_chat_success(
+                    payload,
+                    correlation_id,
+                    state,
+                    usage_metadata,
+                    started_at,
+                    ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                    knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+                )
+            except Exception as error:
+                _log_chat_failure(payload, correlation_id, error, started_at)
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
+                ) from error
+            return _build_response(
+                state, correlation_id, channel=payload.channel, cost_summary=cost_summary
             )
-        except Exception as error:
-            _log_chat_failure(payload, correlation_id, error, started_at)
-            raise HTTPException(
-                status_code=503,
-                detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
-            ) from error
-        return _build_response(
-            state, correlation_id, channel=payload.channel, cost_summary=cost_summary
-        )
 
     @app.post(
         "/agent/chat/stream",
@@ -440,6 +458,24 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         correlation_id = _start_chat(payload)
         workflow: AgentWorkflow = request.app.state.workflow
 
+        from agent_service.operations.policy_runtime import (
+            PolicySourceUnavailableError,
+            get_policy_runtime,
+            policy_snapshot_scope,
+        )
+
+        runtime = get_policy_runtime()
+        try:
+            snapshot = runtime.snapshot() if runtime is not None else None
+        except PolicySourceUnavailableError as error:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Policy source unavailable; refusing request without a fixed "
+                    f"policy snapshot. Correlation ID: {correlation_id}"
+                ),
+            ) from error
+
         async def events():
             # Sent before the graph starts so the Teams user sees progress
             # within one round-trip instead of waiting for the first node.
@@ -447,71 +483,72 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
 
             started_at = time.perf_counter()
             state: dict | None = None
-            try:
-                with get_usage_metadata_callback() as usage_callback:
-                    async for kind, value in workflow.stream(
-                        payload, correlation_id=correlation_id
-                    ):
-                        if kind == "stage":
-                            yield _sse("stage", {"label": value})
-                        elif kind == "state":
-                            state = value
-                usage_metadata = usage_callback.usage_metadata
-            except Exception as error:  # noqa: BLE001 - cannot re-raise mid-stream, see docstring
-                _log_chat_failure(payload, correlation_id, error, started_at)
-                yield _sse(
-                    "error",
-                    {
-                        "detail": "Agent service is temporarily unavailable.",
-                        "correlationId": correlation_id,
-                    },
-                )
-                return
+            with policy_snapshot_scope(snapshot):
+                try:
+                    with get_usage_metadata_callback() as usage_callback:
+                        async for kind, value in workflow.stream(
+                            payload, correlation_id=correlation_id
+                        ):
+                            if kind == "stage":
+                                yield _sse("stage", {"label": value})
+                            elif kind == "state":
+                                state = value
+                    usage_metadata = usage_callback.usage_metadata
+                except Exception as error:  # noqa: BLE001 - cannot re-raise mid-stream, see docstring
+                    _log_chat_failure(payload, correlation_id, error, started_at)
+                    yield _sse(
+                        "error",
+                        {
+                            "detail": "Agent service is temporarily unavailable.",
+                            "correlationId": correlation_id,
+                        },
+                    )
+                    return
 
-            if state is None:
-                # The graph completed without yielding a terminal state. Treat
-                # it as a failure rather than shipping an empty answer.
-                _log_chat_failure(
-                    payload, correlation_id, RuntimeError("no state"), started_at
-                )
-                yield _sse(
-                    "error",
-                    {
-                        "detail": "Agent service is temporarily unavailable.",
-                        "correlationId": correlation_id,
-                    },
-                )
-                return
+                if state is None:
+                    # The graph completed without yielding a terminal state. Treat
+                    # it as a failure rather than shipping an empty answer.
+                    _log_chat_failure(
+                        payload, correlation_id, RuntimeError("no state"), started_at
+                    )
+                    yield _sse(
+                        "error",
+                        {
+                            "detail": "Agent service is temporarily unavailable.",
+                            "correlationId": correlation_id,
+                        },
+                    )
+                    return
 
-            try:
-                cost_summary = await _log_chat_success(
-                    payload,
-                    correlation_id,
-                    state,
-                    usage_metadata,
-                    started_at,
-                    ops_runtime=getattr(request.app.state, "ops_runtime", None),
-                    knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
-                )
-            except Exception as error:  # noqa: BLE001 - HTTP status is already committed
-                _log_chat_failure(payload, correlation_id, error, started_at)
+                try:
+                    cost_summary = await _log_chat_success(
+                        payload,
+                        correlation_id,
+                        state,
+                        usage_metadata,
+                        started_at,
+                        ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                        knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+                    )
+                except Exception as error:  # noqa: BLE001 - HTTP status is already committed
+                    _log_chat_failure(payload, correlation_id, error, started_at)
+                    yield _sse(
+                        "error",
+                        {
+                            "detail": "Agent service is temporarily unavailable.",
+                            "correlationId": correlation_id,
+                        },
+                    )
+                    return
                 yield _sse(
-                    "error",
-                    {
-                        "detail": "Agent service is temporarily unavailable.",
-                        "correlationId": correlation_id,
-                    },
+                    "response",
+                    _build_response(
+                        state,
+                        correlation_id,
+                        channel=payload.channel,
+                        cost_summary=cost_summary,
+                    ).model_dump(mode="json"),
                 )
-                return
-            yield _sse(
-                "response",
-                _build_response(
-                    state,
-                    correlation_id,
-                    channel=payload.channel,
-                    cost_summary=cost_summary,
-                ).model_dump(mode="json"),
-            )
 
         return StreamingResponse(
             events(),

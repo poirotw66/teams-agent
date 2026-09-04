@@ -51,32 +51,21 @@ def _build_governance(settings: RagSettings) -> GovernanceService | None:
         return None
     if mode != "GOVERNED":
         raise ValueError(f"Unsupported prompt runtime mode: {mode}")
-    from ai_ops_backoffice.governance_domain.repository import (
-        FileGovernanceRepository,
-        FirestoreGovernanceRepository,
-    )
+    from ai_ops_backoffice.governance_domain.service import GovernanceService
+    from ai_ops_backoffice.governance_domain.store_factory import build_governance_repository
 
     store_mode = settings.prompt_governance_store_mode.upper()
-    if store_mode == "FILE":
-        path = settings.prompt_governance_store_path or (
-            settings.data_dir / "ops" / "phase3" / "governance.json"
-        )
-        return GovernanceService(FileGovernanceRepository(Path(path)))
-    if store_mode == "FIRESTORE":
-        from google.cloud import firestore
-
-        client_kwargs: dict[str, Any] = {}
-        if settings.prompt_governance_firestore_project:
-            client_kwargs["project"] = settings.prompt_governance_firestore_project
-        if settings.prompt_governance_firestore_database:
-            client_kwargs["database"] = settings.prompt_governance_firestore_database
-        return GovernanceService(
-            FirestoreGovernanceRepository(
-                firestore.Client(**client_kwargs),
-                collection=settings.prompt_governance_firestore_collection,
-            )
-        )
-    raise ValueError(f"Unsupported prompt governance store mode: {store_mode}")
+    path = settings.prompt_governance_store_path or (
+        settings.data_dir / "ops" / "phase3" / "governance.json"
+    )
+    repository = build_governance_repository(
+        store_mode=store_mode,
+        file_path=path,
+        firestore_project=settings.prompt_governance_firestore_project,
+        firestore_database=settings.prompt_governance_firestore_database,
+        firestore_collection=settings.prompt_governance_firestore_collection,
+    )
+    return GovernanceService(repository)
 
 
 class GovernanceRuntime:

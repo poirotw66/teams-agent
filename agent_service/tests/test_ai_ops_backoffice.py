@@ -1424,13 +1424,12 @@ def test_export_worker_failure_records_audit(tmp_path: Path) -> None:
     status, events = asyncio.run(run())
     assert status == "FAILED"
     failure = next(event for event in events if event.action == "export.failed")
-    assert failure.after == {
-        "exportType": "issues_summary",
-        "exportFormat": "json",
-        "status": "FAILED",
-        "attemptCount": 1,
-        "errorType": "ValueError",
-    }
+    assert failure.after["exportType"] == "issues_summary"
+    assert failure.after["exportFormat"] == "json"
+    assert failure.after["status"] == "FAILED"
+    assert failure.after["attemptCount"] == 1
+    assert failure.after["errorType"] == "ValueError"
+    assert failure.after["workerId"]
 
 
 def test_export_record_limit_fails_before_artifact_write(tmp_path: Path) -> None:
