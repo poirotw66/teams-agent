@@ -31,7 +31,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --all-extras
       - name: Ruff
         run: uv run ruff check src tests
       - name: Pytest
