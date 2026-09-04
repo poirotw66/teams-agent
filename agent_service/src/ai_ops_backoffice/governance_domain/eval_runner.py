@@ -293,32 +293,31 @@ async def _harness_observe(
     model_id: str | None,
     setup: str | None = None,
 ) -> Any:
+    import inspect
+
+    def _call_kwargs(fn: Any) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "template": template,
+            "text": text,
+            "history": history,
+            "model_id": model_id,
+        }
+        try:
+            signature = inspect.signature(fn)
+        except (TypeError, ValueError):
+            return kwargs
+        parameters = signature.parameters
+        accepts_var_kw = any(
+            item.kind == inspect.Parameter.VAR_KEYWORD for item in parameters.values()
+        )
+        if setup is not None and ("setup" in parameters or accepts_var_kw):
+            kwargs["setup"] = setup
+        return kwargs
+
     aobserve = getattr(harness, "aobserve", None)
     if callable(aobserve):
-        try:
-            return await aobserve(
-                template=template,
-                text=text,
-                history=history,
-                model_id=model_id,
-                setup=setup,
-            )
-        except TypeError:
-            return await aobserve(
-                template=template, text=text, history=history, model_id=model_id
-            )
-    try:
-        return harness.observe(
-            template=template,
-            text=text,
-            history=history,
-            model_id=model_id,
-            setup=setup,
-        )
-    except TypeError:
-        return harness.observe(
-            template=template, text=text, history=history, model_id=model_id
-        )
+        return await aobserve(**_call_kwargs(aobserve))
+    return harness.observe(**_call_kwargs(harness.observe))
 
 
 async def _real_flow_cases(

@@ -378,6 +378,36 @@ class AgentWorkflowFlowHarness:
             note_turn_result=runtime.note_turn_result,
         )
 
+    def _executor_call_kwargs(
+        self,
+        fn: Any,
+        *,
+        template: str,
+        model_id: str,
+        text: str,
+        history: list[dict[str, str]] | None,
+        setup: str | None,
+    ) -> dict[str, Any]:
+        import inspect
+
+        kwargs: dict[str, Any] = {
+            "template": template,
+            "model_id": model_id,
+            "text": text,
+            "history": history,
+        }
+        try:
+            signature = inspect.signature(fn)
+        except (TypeError, ValueError):
+            return kwargs
+        parameters = signature.parameters
+        accepts_var_kw = any(
+            item.kind == inspect.Parameter.VAR_KEYWORD for item in parameters.values()
+        )
+        if setup is not None and ("setup" in parameters or accepts_var_kw):
+            kwargs["setup"] = setup
+        return kwargs
+
     def observe(
         self,
         *,
@@ -398,21 +428,16 @@ class AgentWorkflowFlowHarness:
             executor = self._build_executor_from_runtime(self._runtime_factory())
         assert executor is not None
         execute = getattr(executor, "execute")
-        try:
-            return execute(
+        return execute(
+            **self._executor_call_kwargs(
+                execute,
                 template=template,
                 model_id=model_id,
                 text=text,
                 history=history,
                 setup=setup,
             )
-        except TypeError:
-            return execute(
-                template=template,
-                model_id=model_id,
-                text=text,
-                history=history,
-            )
+        )
 
     async def aobserve(
         self,
@@ -443,36 +468,27 @@ class AgentWorkflowFlowHarness:
         assert self._executor is not None
         aexecute = getattr(self._executor, "aexecute", None)
         if callable(aexecute):
-            try:
-                return await aexecute(
+            return await aexecute(
+                **self._executor_call_kwargs(
+                    aexecute,
                     template=template,
                     model_id=model_id,
                     text=text,
                     history=history,
                     setup=setup,
                 )
-            except TypeError:
-                return await aexecute(
-                    template=template,
-                    model_id=model_id,
-                    text=text,
-                    history=history,
-                )
-        try:
-            return self._executor.execute(
+            )
+        execute = getattr(self._executor, "execute")
+        return execute(
+            **self._executor_call_kwargs(
+                execute,
                 template=template,
                 model_id=model_id,
                 text=text,
                 history=history,
                 setup=setup,
             )
-        except TypeError:
-            return self._executor.execute(
-                template=template,
-                model_id=model_id,
-                text=text,
-                history=history,
-            )
+        )
 
 
 def resolve_default_flow_harness(
