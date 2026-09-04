@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
+import uuid
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -18,9 +19,6 @@ from agent_service.operations.access import CAPABILITIES, ActorContext
 from agent_service.operations.audit_errors import AuditWriteError
 
 from .auth import BackofficeAuthError, header_auth_allowed, resolve_actor
-from .knowledge_bridge import KnowledgePortalClient, build_knowledge_router
-from .knowledge_bridge.capabilities import knowledge_capabilities_for
-from .knowledge_bridge.errors import KnowledgeBridgeError
 from .budget_domain import (
     BudgetService,
     FileBudgetRepository,
@@ -44,16 +42,19 @@ from .faq_domain import (
     FileFaqRepository,
     FirestoreFaqRepository,
 )
+from .governance_domain import (
+    GovernanceService,
+)
+from .governance_routes import register_governance_routes
+from .knowledge_bridge import KnowledgePortalClient, build_knowledge_router
+from .knowledge_bridge.capabilities import has_knowledge_capability, knowledge_capabilities_for
+from .knowledge_bridge.errors import KnowledgeBridgeError
 from .prompt_domain import FilePromptRepository, FirestorePromptRepository, PromptPocService
 from .quality_domain import (
     FileQualityRepository,
     FirestoreQualityRepository,
     QualityService,
 )
-from .governance_domain import (
-    GovernanceService,
-)
-from .governance_routes import register_governance_routes
 from .services.periods import PeriodPolicyError
 from .services.query_audit import record_query_audit
 from .services.query_service import BackofficeQueryService
@@ -225,6 +226,15 @@ class QualityFaqDraftRequest(BaseModel):
     review_due_at: datetime | None = None
 
 
+class QualityDocumentDraftRequest(BaseModel):
+    expected_case_etag: int = Field(ge=1)
+    title: str | None = None
+    summary: str | None = None
+    category: str | None = None
+    markdown_content: str | None = None
+    business_contact: str | None = None
+
+
 class QuestionClusterCorrectionRequest(BaseModel):
     cluster_ids: tuple[str, ...] = Field(min_length=1)
     action: Literal["RENAME", "ACCEPT", "REJECT", "MERGE", "SPLIT"]
@@ -286,6 +296,7 @@ def create_app(
     settings: BackofficeSettings | None = None,
     *,
     eval_flow_harness: object | None = None,
+    knowledge_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     query_service = BackofficeQueryService(resolved_settings)
@@ -347,6 +358,13 @@ def create_app(
     else:
         raise ValueError(f"Unsupported quality store mode: {quality_store_mode}")
     quality_service = QualityService(quality_repository)
+    knowledge_client = KnowledgePortalClient(
+        base_url=resolved_settings.knowledge_internal_url
+        or resolved_settings.knowledge_portal_url,
+        service_token=resolved_settings.knowledge_service_token,
+        delegation_secret=resolved_settings.knowledge_delegation_secret,
+        transport=knowledge_transport,
+    )
 
     sync_store_mode = resolved_settings.sync_store_mode.upper()
     if sync_store_mode == "FILE":
@@ -1748,21 +1766,37 @@ def create_app(
             if faq["versions"][-1]["content"]["owner_unit_id"] != case["owner_unit_id"]:
                 raise FaqValidationError("linked FAQ must belong to the Quality Case owner unit")
         if payload.document_id:
-            inventory = await query_service.list_documents(
-                actor,
-                query=payload.document_id,
-                limit=100,
-            )
-            document = next(
-                (
-                    item for item in inventory.get("items", [])
-                    if item.get("documentId") == payload.document_id
-                ),
-                None,
-            )
-            if document is None:
-                raise FaqNotFoundError(payload.document_id)
-            if document.get("ownerUnitId") != case["owner_unit_id"]:
+            doc_owner_unit: str | None = None
+            if knowledge_client.configured:
+                try:
+                    p_res = await knowledge_client.request(
+                        method="GET",
+                        relative_path=f"documents/{payload.document_id}",
+                        actor=actor,
+                        correlation_id=uuid.uuid4().hex,
+                    )
+                    if p_res.status_code == 200:
+                        p_data = p_res.json().get("document") or {}
+                        doc_owner_unit = p_data.get("owner_unit_id")
+                except Exception:  # noqa: BLE001
+                    doc_owner_unit = None
+            if doc_owner_unit is None:
+                inventory = await query_service.list_documents(
+                    actor,
+                    query=payload.document_id,
+                    limit=100,
+                )
+                document = next(
+                    (
+                        item for item in inventory.get("items", [])
+                        if item.get("documentId") == payload.document_id
+                    ),
+                    None,
+                )
+                if document is None:
+                    raise FaqNotFoundError(payload.document_id)
+                doc_owner_unit = document.get("ownerUnitId")
+            if doc_owner_unit != case["owner_unit_id"]:
                 raise FaqValidationError("linked document must belong to the Quality Case owner unit")
         return quality_service.link_content(
             case_id,
@@ -1771,6 +1805,105 @@ def create_app(
             expected_etag=payload.expected_etag,
             actor=actor,
         )
+
+    @app.post("/api/quality-cases/{case_id}/document-draft")
+    async def create_quality_case_document_draft(
+        case_id: str,
+        payload: QualityDocumentDraftRequest,
+        correlation_id_value: str | None = Header(default=None, alias="X-Correlation-Id"),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.quality.write")
+        if not has_knowledge_capability(actor, "knowledge.create"):
+            raise HTTPException(
+                status_code=403,
+                detail="建立知識文件草稿需要 knowledge.create 權限。請確認角色或聯絡知識管理者。",
+            )
+        if not knowledge_client.configured:
+            raise HTTPException(
+                status_code=503,
+                detail="知識整合（Knowledge Bridge）尚未啟用，無法建立文件草稿。",
+            )
+        case = quality_service.case_detail(case_id, actor=actor)["case"]
+        correlation = (correlation_id_value or "").strip() or uuid.uuid4().hex
+
+        now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        due_date = (datetime.now(timezone.utc) + timedelta(days=180)).strftime("%Y-%m-%d")
+        doc_title = (payload.title or case.get("title") or "未命名改善文件").strip()[:256]
+        doc_summary = (
+            payload.summary or f"由品質案件 {case_id} 建立之知識改善文件草稿。"
+        ).strip()[:2000]
+        doc_category = (
+            payload.category or case.get("issue_type_id") or "Operations"
+        ).strip()[:128]
+        contact = (payload.business_contact or actor.display_name or actor.user_id).strip()[:256]
+        content = payload.markdown_content or (
+            f"# {doc_title}\n\n"
+            f"## 適用問題\n\n{case.get('description', '')}\n\n"
+            "## 建議處理指引\n\n1. 步驟說明...\n"
+        )
+        doc_body = {
+            "title": doc_title,
+            "summary": doc_summary,
+            "category": doc_category,
+            "owner_unit_id": case["owner_unit_id"],
+            "business_contact": contact,
+            "audience_type": "ALL_EMPLOYEES",
+            "audience_group_ids": [],
+            "effective_at": now_date,
+            "review_due_at": due_date,
+            "change_summary": f"由品質案件 {case_id} 建立草稿",
+            "change_reason": f"品質案件 {case_id} 知識改善：{case.get('description', '')[:200]}",
+            "markdown_content": content,
+            "source_type": "MARKDOWN_PASTE",
+        }
+
+        portal_res = await knowledge_client.request(
+            method="POST",
+            relative_path="documents",
+            actor=actor,
+            correlation_id=correlation,
+            json_body=doc_body,
+        )
+        if portal_res.status_code not in (200, 201):
+            error_data = (
+                portal_res.json()
+                if portal_res.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
+            raise HTTPException(
+                status_code=portal_res.status_code,
+                detail=error_data.get("detail")
+                or error_data.get("error", {}).get("message")
+                or "建立知識文件失敗",
+            )
+        created_data = portal_res.json()
+        doc_id = (created_data.get("document") or {}).get("document_id")
+        if not doc_id:
+            raise HTTPException(status_code=502, detail="知識門戶未回傳有效 document_id")
+
+        try:
+            linked = quality_service.link_content(
+                case_id,
+                faq_id=None,
+                document_id=doc_id,
+                expected_etag=payload.expected_case_etag,
+                actor=actor,
+            )
+            return {
+                **created_data,
+                "case": linked["case"],
+                "partialSuccess": False,
+                "message": "文件草稿建立並成功關聯至案件。",
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                **created_data,
+                "case": case,
+                "partialSuccess": True,
+                "linkError": str(exc),
+                "message": "文件草稿建立成功，但自動關聯至案件失敗。請於案件中手動關聯既有文件 ID，請勿重複建立文件。",
+            }
 
     @app.post("/api/quality-cases/{case_id}/faq-draft")
     async def create_quality_case_faq_draft(
@@ -2217,12 +2350,6 @@ def create_app(
         eval_harness_status=eval_harness_status,
     )
 
-    knowledge_client = KnowledgePortalClient(
-        base_url=resolved_settings.knowledge_internal_url
-        or resolved_settings.knowledge_portal_url,
-        service_token=resolved_settings.knowledge_service_token,
-        delegation_secret=resolved_settings.knowledge_delegation_secret,
-    )
     app.include_router(
         build_knowledge_router(
             client=knowledge_client,

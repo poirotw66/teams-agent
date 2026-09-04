@@ -85,7 +85,7 @@ async function renderRoute({ segments, query, app }) {
   }
   if (segments[0] === "knowledge" && segments[1]) {
     const tab = segments[2] || "overview";
-    await renderDocumentDetailView(app, segments[1], tab);
+    await renderDocumentDetailView(app, segments[1], tab, query);
     return;
   }
   if (segments[0] === "knowledge") {

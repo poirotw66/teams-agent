@@ -30,13 +30,18 @@ function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   return "";
 }
 
-export async function renderDocumentDetailView(app, documentId, tab = "overview") {
+export async function renderDocumentDetailView(app, documentId, tab = "overview", query = new URLSearchParams()) {
   revokeAssetPreviewUrls();
   clearDirtyChecker();
+  const caseId = query?.get("caseId") || "";
+  const backCaseHtml = caseId
+    ? `<button type="button" class="btn text" data-back-case style="font-weight: 600; color: #0f6cbd; margin-right: 0.5rem;">← 返回品質案件 (${escapeHtml(caseId)})</button>`
+    : "";
   app.innerHTML = `
     <section class="page detail-page">
       <header class="page-header">
         <div>
+          ${backCaseHtml}
           <button type="button" class="btn text" data-back>← 返回知識庫</button>
           <div id="detailHeader">${renderSkeleton(1)}</div>
         </div>
@@ -50,6 +55,15 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
       </div>
     </section>`;
 
+  if (caseId) {
+    app.querySelector("[data-back-case]")?.addEventListener("click", () => {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "NAVIGATE_CASE", caseId }, "*");
+      } else {
+        window.location.href = `/#/quality?caseId=${encodeURIComponent(caseId)}`;
+      }
+    });
+  }
   app.querySelector("[data-back]")?.addEventListener("click", () => navigate("#/knowledge"));
 
   try {
@@ -59,7 +73,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
       tab = "overview";
     }
 
-    const refresh = () => renderDocumentDetailView(app, documentId, tab);
+    const refresh = () => renderDocumentDetailView(app, documentId, tab, query);
 
     app.querySelector("#detailTabs").innerHTML = visibleTabs.map((item) => `
       <button

@@ -2311,7 +2311,7 @@ async function showQualityCaseDetail(caseId) {
       for (const documentId of qualityCase.document_ids || []) {
         loopHints.append(
           drillLink("開啟關聯文件", "knowledgePortal", {
-            k: `/knowledge/${documentId}`,
+            k: `/knowledge/${documentId}?caseId=${encodeURIComponent(caseId)}`,
           }),
         );
       }
@@ -2344,6 +2344,179 @@ async function showQualityCaseDetail(caseId) {
         await showQualityCaseDetail(caseId);
       });
       actions.append(linkFaq);
+
+      const linkDoc = el("button", "", "連結既有文件");
+      linkDoc.addEventListener("click", async () => {
+        let docs = [];
+        if (capabilities?.knowledgeBridgeEnabled) {
+          try {
+            const listRes = await api("/api/knowledge/documents");
+            docs = listRes.items || listRes.documents || [];
+          } catch {
+            docs = [];
+          }
+        }
+        const modalBody = el("div");
+        const docSelect = document.createElement("select");
+        docSelect.className = "input";
+        docSelect.style.width = "100%";
+        docSelect.style.marginBottom = "0.75rem";
+
+        const defaultOpt = document.createElement("option");
+        defaultOpt.value = "";
+        defaultOpt.textContent = "-- 請選擇既有文件（或於下方手動輸入 ID）--";
+        docSelect.append(defaultOpt);
+
+        for (const doc of docs) {
+          const opt = document.createElement("option");
+          const dId = doc.document_id || doc.documentId;
+          opt.value = dId;
+          opt.textContent = `${doc.title} (${dId}｜${doc.status || "草稿"})`;
+          docSelect.append(opt);
+        }
+        const idInput = el("input", "input");
+        idInput.type = "text";
+        idInput.placeholder = "輸入文件 ID (例如 doc-xxx)";
+        idInput.style.width = "100%";
+        idInput.style.marginBottom = "1rem";
+
+        docSelect.addEventListener("change", () => {
+          if (docSelect.value) idInput.value = docSelect.value;
+        });
+
+        const confirmBtn = el("button", "btn primary", "確認關聯文件");
+        confirmBtn.addEventListener("click", async () => {
+          const docId = idInput.value.trim();
+          if (!docId) {
+            alert("請選擇或輸入文件 ID");
+            return;
+          }
+          try {
+            await api(`/api/quality-cases/${caseId}/content`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ expected_etag: qualityCase.etag, document_id: docId }),
+            });
+            const root = document.getElementById("modal-root");
+            if (root) { root.hidden = true; root.replaceChildren(); }
+            await showQualityCaseDetail(caseId);
+          } catch (err) {
+            alert(`關聯失敗：${err.message || err}`);
+          }
+        });
+
+        modalBody.append(
+          el("p", "", "選擇或輸入要關聯至此品質案件的知識文件："),
+          docSelect,
+          idInput,
+          confirmBtn,
+        );
+        showContentModal("關聯既有知識文件", modalBody);
+      });
+      actions.append(linkDoc);
+
+      if (
+        capabilities?.knowledgeBridgeEnabled &&
+        (capabilities?.knowledgeCapabilities || []).includes("knowledge.create")
+      ) {
+        const draftDoc = el("button", "", "建立文件草稿");
+        draftDoc.addEventListener("click", () => {
+          const form = document.createElement("form");
+          form.className = "form-grid";
+
+          const titleInput = el("input", "input");
+          titleInput.value = qualityCase.title || "";
+          titleInput.required = true;
+          titleInput.style.width = "100%";
+
+          const ownerDisplay = el("input", "input");
+          ownerDisplay.value = qualityCase.owner_unit_id || "";
+          ownerDisplay.disabled = true;
+          ownerDisplay.style.width = "100%";
+
+          const contactInput = el("input", "input");
+          contactInput.value = capabilities?.userId || "IT Service Desk";
+          contactInput.style.width = "100%";
+
+          const summaryInput = el("input", "input");
+          summaryInput.value = `由品質案件 ${caseId} 建立之改善文件草稿。`;
+          summaryInput.style.width = "100%";
+
+          const contentArea = document.createElement("textarea");
+          contentArea.className = "input";
+          contentArea.rows = 8;
+          contentArea.style.width = "100%";
+          contentArea.value = `# ${qualityCase.title || "知識文件草稿"}\n\n## 適用問題背景\n\n${qualityCase.description || ""}\n\n## 處理指引步驟\n\n1. 確認系統設定。\n2. 重設並驗證連線狀態。\n`;
+
+          form.append(
+            el("label", "form-label", "文件標題："),
+            titleInput,
+            el("label", "form-label", "負責單位："),
+            ownerDisplay,
+            el("label", "form-label", "業務聯絡人："),
+            contactInput,
+            el("label", "form-label", "文件摘要："),
+            summaryInput,
+            el("label", "form-label", "內容正文草稿（Markdown）："),
+            contentArea,
+          );
+
+          const submitBtn = el("button", "btn primary", "建立並連結草稿");
+          submitBtn.type = "submit";
+          submitBtn.style.marginTop = "0.75rem";
+          form.append(submitBtn);
+
+          form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            submitBtn.disabled = true;
+            submitBtn.textContent = "建立中...";
+            try {
+              const res = await api(`/api/quality-cases/${caseId}/document-draft`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  expected_case_etag: qualityCase.etag,
+                  title: titleInput.value.trim(),
+                  summary: summaryInput.value.trim(),
+                  business_contact: contactInput.value.trim(),
+                  markdown_content: contentArea.value,
+                }),
+              });
+              const root = document.getElementById("modal-root");
+              if (root) { root.hidden = true; root.replaceChildren(); }
+              const createdDocId = res.document?.document_id || "";
+              if (res.partialSuccess) {
+                showContentModal(
+                  "部分成功注意",
+                  el("div", "warning", res.message || "文件建立成功但關聯失敗。"),
+                );
+              } else {
+                const promptBox = el("div");
+                promptBox.append(
+                  el("p", "", `已成功建立文件草稿並關聯至案件（文件 ID：${createdDocId}）！`),
+                );
+                const goEdit = el("button", "btn primary", "前往編輯草稿");
+                goEdit.addEventListener("click", () => {
+                  if (root) { root.hidden = true; root.replaceChildren(); }
+                  renderNav("knowledgePortal", {
+                    k: `/knowledge/${createdDocId}?caseId=${encodeURIComponent(caseId)}`,
+                  });
+                });
+                promptBox.append(goEdit);
+                showContentModal("草稿建立成功", promptBox);
+              }
+              await showQualityCaseDetail(caseId);
+            } catch (err) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = "建立並連結草稿";
+              alert(`建立草稿失敗：${err.message || err}`);
+            }
+          });
+
+          showContentModal("由品質案件建立知識文件草稿", form);
+        });
+        actions.append(draftDoc);
+      }
       if (allowed.has("ops.faq.write") && qualityCase.issue_type_id) {
         const draftFaq = el("button", "", "建立 FAQ 草稿");
         draftFaq.addEventListener("click", () => {
@@ -3729,5 +3902,12 @@ async function renderAudit() {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
 }
+
+window.addEventListener("message", (event) => {
+  if (event.data?.type === "NAVIGATE_CASE" && event.data?.caseId) {
+    renderNav("quality");
+    void showQualityCaseDetail(event.data.caseId);
+  }
+});
 
 boot();
