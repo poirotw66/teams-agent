@@ -542,6 +542,7 @@ class ExampleService:
         approve: bool,
         reason: str,
         expected_etag: int,
+        dataset_version: str | None = None,
         actor: ActorContext,
         idempotency_key: str | None = None,
         correlation_id: str | None = None,
@@ -553,17 +554,28 @@ class ExampleService:
         action = "EXAMPLE_VERIFIED" if approve else "EXAMPLE_REJECTED"
         fingerprint = self._fingerprint(
             actor,
-            {"action": action, "example_id": example_id, "etag": expected_etag, "reason": reason},
+            {
+                "action": action,
+                "example_id": example_id,
+                "etag": expected_etag,
+                "reason": reason,
+                "dataset_version": dataset_version,
+            },
         )
         replay = self._repository.replay(idempotency_key, action, fingerprint)
         if replay is not None:
             return replay
         now = datetime.now(UTC)
+        assigned_dataset = (
+            (dataset_version or f"dataset-{now.strftime('%Y%m%dT%H%M%SZ')}")
+            if approve
+            else None
+        )
         updated = current.model_copy(
             update={
                 "status": "VERIFIED" if approve else "REJECTED",
                 "etag": expected_etag + 1,
-                "dataset_version": f"dataset-{now.strftime('%Y%m%dT%H%M%SZ')}" if approve else None,
+                "dataset_version": assigned_dataset,
                 "verified_by": actor.user_id if approve else None,
                 "verified_at": now if approve else None,
                 "updated_by": actor.user_id,

@@ -167,6 +167,7 @@ class ExampleReviewRequest(BaseModel):
     expected_etag: int = Field(ge=1)
     approve: bool
     reason: str = Field(min_length=1)
+    dataset_version: str | None = None
 
 
 class ExampleRetireRequest(BaseModel):
@@ -1675,6 +1676,7 @@ def create_app(
             approve=payload.approve,
             reason=payload.reason,
             expected_etag=payload.expected_etag,
+            dataset_version=payload.dataset_version,
             actor=actor,
             idempotency_key=idempotency_key,
             correlation_id=correlation_id,

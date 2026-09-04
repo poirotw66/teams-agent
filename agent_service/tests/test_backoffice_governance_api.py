@@ -69,7 +69,12 @@ def _verify_examples(client: TestClient, system: dict[str, str]) -> dict:
         verified = client.post(
             f"/api/examples/{created['example_id']}/review",
             headers=system,
-            json={"expected_etag": 1, "approve": True, "reason": "verified for phase3"},
+            json={
+                "expected_etag": 1,
+                "approve": True,
+                "reason": "verified for phase3",
+                "dataset_version": "dataset-phase3",
+            },
         ).json()["example"]
     assert verified is not None
     return verified
