@@ -311,7 +311,12 @@ class ExportJobService:
         return job
 
     async def recover_interrupted_jobs(self) -> int:
-        """Claim and re-queue QUEUED / expired-lease RUNNING jobs."""
+        """Schedule claim attempts for QUEUED / apparently-expired RUNNING jobs.
+
+        Never rewrite status from a stale list snapshot. ``claim_job`` atomically
+        takes over only when the durable record is still QUEUED or still expired;
+        if another worker already holds a fresh lease, claim is a no-op.
+        """
         payloads = await self._job_store.list_by_status({"QUEUED", "RUNNING"})
         recovered = 0
         now = utc_now()
@@ -322,14 +327,7 @@ class ExportJobService:
                 if lease_raw:
                     lease_expires = datetime.fromisoformat(lease_raw.replace("Z", "+00:00"))
                     if lease_expires > now:
-                        # Any active lease (own or foreign) — do not re-dispatch.
                         continue
-                # Expired lease: reset to QUEUED then let atomic claim pick it up.
-                job.status = "QUEUED"
-                job.lease_owner = None
-                job.lease_expires_at = None
-                job.lease_token = None
-                await self._persist(job)
             self._jobs[job.job_id] = job
             self._schedule(self._run_job(job.job_id))
             recovered += 1
@@ -547,17 +545,22 @@ class ExportJobService:
             expires_at = datetime.fromisoformat(job.expires_at.replace("Z", "+00:00"))
             if job.status in {"COMPLETED", "FAILED"} and utc_now() > expires_at:
                 await self._expire_job(job)
-            try:
-                require_current_export_access(
-                    actor=actor,
-                    requester_id=job.requested_by,
-                    tenant_id=job.tenant_id,
-                    requested_owner_units=job.requested_owner_units,
-                    environment=self._environment,
-                )
-            except ExportAuthorizationError:
-                return None
-            return job
+                job = self._jobs.get(job_id) or job
+        try:
+            # Same live-authority contract as download/execute: HTTP actor must
+            # still be the requester, and the durable registry + authority must
+            # still resolve the principal (revoke/downgrade fail closed).
+            require_current_export_access(
+                actor=actor,
+                requester_id=job.requested_by,
+                tenant_id=job.tenant_id,
+                requested_owner_units=job.requested_owner_units,
+                environment=self._environment,
+            )
+            await self._resolve_worker_actor(job)
+        except ExportAuthorizationError:
+            return None
+        return job
 
     async def _expire_job(self, job: ExportJob) -> None:
         if job.content_ref:
@@ -612,8 +615,6 @@ class ExportJobService:
         job = await self.get_job(job_id, actor=actor)
         if job is None:
             raise ExportAuthorizationError("Export download denied.")
-        # Re-resolve at download time — do not trust create-time identity alone.
-        await self._resolve_worker_actor(job)
         await self._audit(actor, "export.download", job_id)
 
     async def _audit(

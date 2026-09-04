@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,6 +11,27 @@ from test_ai_ops_backoffice import _ops_settings, _seed_sample_events, headers
 
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.settings import BackofficeSettings
+
+
+def _wait_export_completed(client: TestClient, job_id: str, auth: dict[str, str]) -> dict:
+    completed = None
+    for _ in range(40):
+        completed = client.get(f"/api/exports/{job_id}", headers=auth)
+        assert completed.status_code == 200
+        if completed.json()["status"] in {"COMPLETED", "FAILED"}:
+            break
+        time.sleep(0.05)
+    assert completed is not None
+    assert completed.json()["status"] == "COMPLETED"
+    assert "result" not in completed.json()
+    return completed.json()
+
+
+def _download_export_json(client: TestClient, job_id: str, auth: dict[str, str]) -> dict:
+    _wait_export_completed(client, job_id, auth)
+    download = client.get(f"/api/exports/{job_id}/download", headers=auth)
+    assert download.status_code == 200
+    return json.loads(download.content.decode("utf-8"))
 
 
 @pytest.fixture
@@ -389,12 +411,7 @@ def test_uat_feedback_export_applies_visible_filters(
     )
     assert response.status_code == 200
     job_id = response.json()["jobId"]
-    for _ in range(20):
-        completed = acceptance_client.get(f"/api/exports/{job_id}", headers=headers())
-        if completed.json()["status"] == "COMPLETED":
-            break
-        time.sleep(0.05)
-    exported = completed.json()["result"]
+    exported = _download_export_json(acceptance_client, job_id, headers())
     assert exported["exportMetadata"]["queryFilters"] == {
         "handoff": True,
         "rating": "DOWN",
@@ -420,12 +437,7 @@ def test_uat_route_export_applies_issue_filter(
     )
     assert response.status_code == 200
     job_id = response.json()["jobId"]
-    for _ in range(20):
-        completed = acceptance_client.get(f"/api/exports/{job_id}", headers=headers())
-        if completed.json()["status"] == "COMPLETED":
-            break
-        time.sleep(0.05)
-    exported = completed.json()["result"]
+    exported = _download_export_json(acceptance_client, job_id, headers())
     assert exported["exportMetadata"]["queryFilters"] == {
         "issueTypeId": "vpn.connection_failed"
     }
@@ -452,14 +464,9 @@ def test_uat_conversation_export_is_filtered_and_masked(
     )
     assert response.status_code == 200
     job_id = response.json()["jobId"]
-    for _ in range(20):
-        completed = acceptance_client.get(
-            f"/api/exports/{job_id}",
-            headers=headers("SERVICE_OWNER"),
-        )
-        if completed.json()["status"] == "COMPLETED":
-            break
-    exported = completed.json()["result"]
+    exported = _download_export_json(
+        acceptance_client, job_id, headers("SERVICE_OWNER")
+    )
     assert exported["exportMetadata"]["exportType"] == "conversations"
     assert exported["exportMetadata"]["queryFilters"] == {
         "issueTypeId": "vpn.connection_failed",
@@ -656,24 +663,20 @@ def test_uat_export_records_audit_and_metadata(acceptance_client: TestClient) ->
             "export_type": "issues_summary",
             "reason": "acceptance export",
             "days": 7,
-            "export_format": "csv",
+            "export_format": "json",
             "preset": "7d",
         },
     )
     assert created.status_code == 200
     job_id = created.json()["jobId"]
-    completed = None
-    for _ in range(20):
-        completed = acceptance_client.get(f"/api/exports/{job_id}", headers=headers())
-        if completed.json()["status"] == "COMPLETED":
-            break
-        time.sleep(0.05)
-    assert completed is not None
-    assert completed.json()["status"] == "COMPLETED"
-    metadata = completed.json()["result"]["exportMetadata"]
+    status = _wait_export_completed(acceptance_client, job_id, headers())
+    assert status["hasArtifact"] is True
+    assert status["exportFormat"] == "json"
+    exported = _download_export_json(acceptance_client, job_id, headers())
+    metadata = exported["exportMetadata"]
     assert metadata["exportType"] == "issues_summary"
     assert metadata["period"]["preset"] == "7d"
-    assert metadata["recordCount"] == len(completed.json()["result"]["data"]["items"])
+    assert metadata["recordCount"] == len(exported["data"]["items"])
     assert "issueTypeId" in metadata["fields"]
 
     audit = acceptance_client.get("/api/audit-events", headers=headers("AUDITOR"))
@@ -681,6 +684,7 @@ def test_uat_export_records_audit_and_metadata(acceptance_client: TestClient) ->
     actions = {item["action"] for item in audit_items}
     assert "export.create" in actions
     assert "export.complete" in actions
+    assert "export.download" in actions
     created_audit = next(item for item in audit_items if item["action"] == "export.create")
     assert created_audit["reason"] == "acceptance export"
     assert created_audit["after"]["periodPreset"] == "7d"

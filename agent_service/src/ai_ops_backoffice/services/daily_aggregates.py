@@ -318,16 +318,16 @@ def aggregates_cover_period(
 ) -> bool:
     """Return True when aggregate rows cover every calendar day in the period.
 
-    Rolling windows (``explicit_range=False``) only require calendar-day
-    coverage. Explicit custom ranges must align to midnight boundaries so a
-    partial-day query does not reuse whole-day rollups that disagree with an
-    event scan.
+    Rolling windows are never treated as fully covered: whole-day rollups would
+    otherwise inflate the leading partial day. Explicit custom ranges must also
+    align to midnight boundaries.
     """
-    if explicit_range:
-        if start_at.timetz().replace(tzinfo=None) != datetime.min.time():
-            return False
-        if end_at.timetz().replace(tzinfo=None) != datetime.min.time():
-            return False
+    if not explicit_range:
+        return False
+    if start_at.timetz().replace(tzinfo=None) != datetime.min.time():
+        return False
+    if end_at.timetz().replace(tzinfo=None) != datetime.min.time():
+        return False
     needed = set(iter_day_keys(start_at=start_at, end_at=end_at))
     if not needed:
         return False
@@ -337,3 +337,29 @@ def aggregates_cover_period(
         if item.environment == environment
     }
     return needed.issubset(have)
+
+
+def aggregate_store_updated_at(store: Any) -> datetime | None:
+    """Best-effort watermark from file-backed aggregate stores."""
+    path = getattr(store, "_path", None)
+    if path is None or not getattr(path, "is_file", lambda: False)():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    raw = payload.get("updatedAt") if isinstance(payload, dict) else None
+    if not raw:
+        return None
+    return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+
+
+def aggregates_are_fresh(
+    *,
+    updated_at: datetime | None,
+    max_age_minutes: int = 30,
+) -> bool:
+    if updated_at is None:
+        return False
+    age = utc_now() - updated_at
+    return age.total_seconds() <= max_age_minutes * 60

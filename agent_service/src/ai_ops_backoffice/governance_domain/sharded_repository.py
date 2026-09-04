@@ -61,13 +61,27 @@ class ShardedFirestoreGovernanceRepository:
     def _legacy_document(self) -> Any:
         return self._root.document("current")
 
+    @staticmethod
+    def _parse_legacy_state(payload: dict[str, Any]) -> GovernanceState:
+        cleaned = {
+            key: value
+            for key, value in payload.items()
+            if key
+            not in {
+                "migratedToSharded",
+                "migratedRevision",
+                "migratedFingerprint",
+            }
+        }
+        return GovernanceState.model_validate(cleaned)
+
     def load(self) -> GovernanceState:
         pointer = self._pointer.get()
         if not pointer.exists:
             # Backward-compatible: fall back to monolithic ``current`` if present.
             legacy = self._legacy_document().get()
             if legacy.exists:
-                return GovernanceState.model_validate(legacy.to_dict())
+                return self._parse_legacy_state(legacy.to_dict())
             return GovernanceState()
         payload = {
             "revision": int(pointer.to_dict().get("revision") or 1),
@@ -98,8 +112,12 @@ class ShardedFirestoreGovernanceRepository:
                 )
             else:
                 legacy = self._legacy_document().get(transaction=transaction)
+                if legacy.exists and legacy.to_dict().get("migratedToSharded"):
+                    raise GovernanceConflictError(
+                        "legacy governance document is frozen after sharded migration"
+                    )
                 current = (
-                    GovernanceState.model_validate(legacy.to_dict())
+                    self._parse_legacy_state(legacy.to_dict())
                     if legacy.exists
                     else GovernanceState()
                 )
@@ -126,20 +144,11 @@ class ShardedFirestoreGovernanceRepository:
     def migrate_legacy_if_needed(self) -> dict[str, Any]:
         """Idempotent full copy of monolithic ``current`` into shards, then pointer.
 
-        Safe to re-run: when the pointer already exists this is a no-op.
-        On failure the pointer is not written, so ``load()`` keeps reading legacy.
+        All reads happen inside the transaction so a concurrent legacy write
+        aborts/retries rather than promoting a stale snapshot. Safe to re-run:
+        when the pointer already exists this is a no-op. On failure the pointer
+        is not written, so ``load()`` keeps reading legacy.
         """
-        pointer = self._pointer.get()
-        if pointer.exists:
-            return {
-                "migrated": False,
-                "reason": "pointer_already_exists",
-                "revision": int(pointer.to_dict().get("revision") or 1),
-            }
-        legacy = self._legacy_document().get()
-        if not legacy.exists:
-            return {"migrated": False, "reason": "no_legacy_document"}
-        state = GovernanceState.model_validate(legacy.to_dict())
 
         def transaction_operation(transaction: Any) -> dict[str, Any]:
             pointer_snap = self._pointer.get(transaction=transaction)
@@ -149,16 +158,37 @@ class ShardedFirestoreGovernanceRepository:
                     "reason": "pointer_already_exists",
                     "revision": int(pointer_snap.to_dict().get("revision") or 1),
                 }
+            legacy = self._legacy_document().get(transaction=transaction)
+            if not legacy.exists:
+                return {"migrated": False, "reason": "no_legacy_document"}
+            legacy_payload = legacy.to_dict()
+            if legacy_payload.get("migratedToSharded"):
+                return {
+                    "migrated": False,
+                    "reason": "legacy_already_frozen",
+                    "revision": int(legacy_payload.get("migratedRevision") or 0),
+                }
+            state = self._parse_legacy_state(legacy_payload)
+            expected_counts = self._entity_counts(state)
+            content_fingerprint = self._state_fingerprint(state)
             self._write_state(
                 transaction,
                 previous=GovernanceState(),
                 next_state=state,
                 full_copy=True,
             )
+            # Freeze legacy head so post-cutover writers cannot silently update
+            # the abandoned monolithic document without noticing the migration.
+            frozen = dict(legacy_payload)
+            frozen["migratedToSharded"] = True
+            frozen["migratedRevision"] = state.revision
+            frozen["migratedFingerprint"] = content_fingerprint
+            transaction.set(self._legacy_document(), frozen)
             return {
                 "migrated": True,
                 "revision": state.revision,
-                "entityCounts": self._entity_counts(state),
+                "entityCounts": expected_counts,
+                "fingerprint": content_fingerprint,
             }
 
         if self._transaction_runner is not None:
@@ -176,6 +206,15 @@ class ShardedFirestoreGovernanceRepository:
             kind: len(dumped.get(kind) or [])
             for kind, _id_field in _ENTITY_SPECS
         }
+
+    @staticmethod
+    def _state_fingerprint(state: GovernanceState) -> str:
+        import hashlib
+        import json
+
+        payload = state.model_dump(mode="json")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     def _write_state(
         self,

@@ -33,6 +33,8 @@ from .export_job_store import FileExportJobStore, FirestoreExportJobStore
 from .export_service import ExportJobService
 from .daily_aggregates import (
     FileDailyAggregateStore,
+    aggregate_store_updated_at,
+    aggregates_are_fresh,
     aggregates_cover_period,
     materialize_daily_aggregates,
     summarize_aggregates,
@@ -555,6 +557,9 @@ class BackofficeQueryService:
         estimated_cost = known_cost_total(usage_events)
         # Tenant-wide aggregates omit owner-unit slices. Overlaying them on a
         # scoped event scan would mix authorization boundaries in one report.
+        # Rolling windows also stay on event_scan: whole-day rollups would
+        # inflate the leading partial day. Aggregates apply only to fresh,
+        # midnight-aligned explicit ranges for cross-unit actors.
         coverage_complete = False
         if self._actor_may_use_daily_aggregates(actor):
             aggregate_rows = self._aggregate_store.list_range(
@@ -575,7 +580,12 @@ class BackofficeQueryService:
                 environment=self._environment,
                 explicit_range=period.explicit_range,
             )
-            if coverage_complete and aggregate_rows:
+            watermark = aggregate_store_updated_at(self._aggregate_store)
+            if (
+                coverage_complete
+                and aggregate_rows
+                and aggregates_are_fresh(updated_at=watermark)
+            ):
                 rolled = summarize_aggregates(aggregate_rows)
                 metrics_source = "daily_aggregates"
                 turn_count_value = int(rolled["turnCount"])
@@ -584,6 +594,8 @@ class BackofficeQueryService:
                 no_answer_count = int(rolled["noAnswerCount"])
                 top_issue_types = rolled["topIssueTypes"]
                 estimated_cost = float(rolled["estimatedCostUsd"])
+            else:
+                coverage_complete = False
 
         return {
             "periodDays": period.days,
@@ -2350,6 +2362,11 @@ class BackofficeQueryService:
         )
 
     async def get_export_job(self, job_id: str, *, actor: ActorContext) -> dict[str, Any] | None:
+        """Return export job progress metadata only — never the artifact payload.
+
+        Full export content is available solely through the re-authorized,
+        audited download path.
+        """
         job = await self.export_jobs.get_job(job_id, actor=actor)
         if job is None:
             return None
@@ -2358,10 +2375,14 @@ class BackofficeQueryService:
             "status": job.status,
             "exportType": job.export_type,
             "exportFormat": job.export_format,
-            "result": job.result,
-            "downloadContent": job.download_content,
+            "attemptCount": job.attempt_count,
+            "maxAttempts": job.max_attempts,
             "error": job.error,
+            "createdAt": job.created_at,
             "expiresAt": job.expires_at,
             "completedAt": job.completed_at,
+            "hasArtifact": bool(
+                job.content_ref or job.download_bytes is not None or job.download_content
+            ),
         }
 

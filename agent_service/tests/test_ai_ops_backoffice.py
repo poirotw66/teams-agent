@@ -1024,6 +1024,8 @@ def test_operations_summary_for_service_owner(backoffice_client: TestClient) -> 
 
 
 def test_daily_aggregates_rebuild_and_summary(seeded_backoffice_client: TestClient) -> None:
+    from datetime import UTC, datetime, timedelta
+
     admin = headers("SYSTEM_ADMIN")
     rebuilt = seeded_backoffice_client.post(
         "/api/aggregates/rebuild?days=30",
@@ -1039,12 +1041,24 @@ def test_daily_aggregates_rebuild_and_summary(seeded_backoffice_client: TestClie
     body = summary.json()
     assert body["source"] == "daily_aggregates"
     assert body["turnCount"] >= 1
-    ops = seeded_backoffice_client.get(
+    # Rolling windows stay on event_scan so partial leading days are not inflated.
+    rolling = seeded_backoffice_client.get(
         "/api/operations/summary?days=30",
         headers=admin,
     ).json()
-    assert ops["metricsSource"] == "daily_aggregates"
-    assert ops["aggregateCoverageComplete"] is True
+    assert rolling["metricsSource"] == "event_scan"
+    end = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end - timedelta(days=7)
+    aligned = seeded_backoffice_client.get(
+        "/api/operations/summary",
+        headers=admin,
+        params={
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        },
+    ).json()
+    assert aligned["metricsSource"] == "daily_aggregates"
+    assert aligned["aggregateCoverageComplete"] is True
     # Scoped BU actors must not consume tenant-wide aggregates.
     scoped = seeded_backoffice_client.get(
         "/api/operations/summary?days=30",
@@ -1658,7 +1672,8 @@ def test_xlsx_export_job_download(seeded_backoffice_client: TestClient) -> None:
         if fetched.json()["status"] == "COMPLETED":
             break
     assert fetched.json()["status"] == "COMPLETED"
-    assert "exportMetadata" in fetched.json()["result"]
+    assert fetched.json()["hasArtifact"] is True
+    assert "result" not in fetched.json()
     download = seeded_backoffice_client.get(
         f"/api/exports/{job_id}/download",
         headers=headers(),
