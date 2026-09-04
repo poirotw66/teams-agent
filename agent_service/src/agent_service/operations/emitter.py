@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 from ..contracts import AgentRequest, FeedbackRequest, IssueResult
 from ..usage_events import RequestCostSummary
 from .classification import IssueClassifier
-from .contracts import MASKING_POLICY_VERSION, OperationalEvent, utc_now
+from .contracts import OperationalEvent, utc_now
 from .event_identity import (
     LogicalRequestIdentity,
     conversation_started_event_id,
@@ -20,6 +20,7 @@ from .event_identity import (
 )
 from .ingestion import EventIngestionService
 from .masking import mask_text, pseudonymous_actor_id
+from .policy_runtime import active_masking_policy_version, active_retention_days
 from .settings import OpsSettings
 from .taxonomy import TaxonomyRepository
 from .usage_attribution import call_occurred_at, call_usage_payload, request_summary_payload
@@ -215,7 +216,7 @@ class OperationalEventEmitter:
             event_id=feedback_submission_event_id(tenant_id, feedback_id),
             event_type="feedback.recorded",
             occurred_at=timestamp,
-            retention_expires_at=timestamp + timedelta(days=self._settings.default_retention_days),
+            retention_expires_at=timestamp + timedelta(days=active_retention_days(self._settings)),
             environment=self._settings.environment,
             tenant_id=tenant_id,
             conversation_id=canonical_conversation_id,
@@ -351,14 +352,14 @@ class OperationalEventEmitter:
             events.append(OperationalEvent(
                 **base, event_id=identity.event_id(kind, *parts), event_type=kind,
                 occurred_at=timestamp,
-                retention_expires_at=timestamp + timedelta(days=self._settings.default_retention_days),
+                retention_expires_at=timestamp + timedelta(days=active_retention_days(self._settings)),
                 payload=body, **fields,
             ))
 
         masked = mask_text(payload.message.text)
         add("turn.received", {
             "messageMasked": masked.text, "messageWasMasked": masked.was_masked,
-            "locale": payload.message.locale, "maskingPolicyVersion": MASKING_POLICY_VERSION,
+            "locale": payload.message.locale, "maskingPolicyVersion": active_masking_policy_version(),
         }, data_classification="CONFIDENTIAL")
         if conversation_id and state.get("conversation_started") is True:
             started_at_value = getattr(conversation, "startedAt", None)
@@ -380,7 +381,7 @@ class OperationalEventEmitter:
                 environment=self._settings.environment, tenant_id=payload.conversation.tenantId,
                 conversation_id=conversation_id, correlation_id=lifecycle_id,
                 occurred_at=started_at,
-                retention_expires_at=started_at + timedelta(days=self._settings.default_retention_days),
+                retention_expires_at=started_at + timedelta(days=active_retention_days(self._settings)),
                 payload={},
             ))
         issues = state.get("issues") or []

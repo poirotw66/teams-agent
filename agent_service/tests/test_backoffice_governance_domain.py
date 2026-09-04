@@ -386,6 +386,26 @@ def test_canary_evaluate_auto_stops_on_thresholds(tmp_path: Path) -> None:
         actor=APPROVER,
     )
     assert continued["action"] == "CONTINUE"
+    safety_stop = svc.evaluate_prompt_canary(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        error_rate=0.0,
+        negative_feedback_rate=0.0,
+        handoff_rate=0.0,
+        safety_alerts=1,
+        sample_size=1,
+        actor=APPROVER,
+    )
+    assert safety_stop["action"] == "STOP"
+    assert "safety" in safety_stop["reason"]
+    # Restart canary for quality-threshold stop coverage.
+    svc.start_prompt_canary(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        version_id=version_id,
+        percent=10,
+        environment="lab",
+        reason="canary again",
+        actor=APPROVER,
+    )
     stopped = svc.evaluate_prompt_canary(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         error_rate=0.2,

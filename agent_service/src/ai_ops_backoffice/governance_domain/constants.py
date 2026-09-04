@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 ISSUE_EXTRACTOR_PROMPT_ID = "issue-extractor"
-RUNNER_VERSION = "phase3-eval-v1"
-METRIC_VERSION = "phase3-metrics-v1"
+RUNNER_VERSION = "phase3-eval-v2"
+METRIC_VERSION = "phase3-metrics-v2"
 QUALITY_GATE_VERSION = "phase3-quality-gate-v1"
 MAX_PROMPT_LENGTH = 20_000
 SECRET_REF_PREFIX = "secret://"

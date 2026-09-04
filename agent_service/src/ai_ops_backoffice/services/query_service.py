@@ -270,6 +270,10 @@ class BackofficeQueryService:
             content_store=export_content_store,
             ttl_seconds=settings.export_ttl_seconds,
             max_records=settings.export_max_records,
+            run_inline=(
+                ops_settings.environment.lower() in {"dev", "test"}
+                or settings.ops_store_mode == "MEMORY"
+            ),
         )
 
     @property

@@ -427,6 +427,21 @@ def create_app(settings: BackofficeSettings | None = None) -> FastAPI:
     else:
         raise ValueError(f"Unsupported governance store mode: {governance_store_mode}")
     governance_service = GovernanceService(governance_repository)
+    from agent_service.operations.policy_runtime import (
+        PolicyRuntime,
+        configure_policy_runtime,
+        get_policy_runtime,
+    )
+
+    existing_runtime = get_policy_runtime()
+    policy_settings = (
+        existing_runtime._settings
+        if existing_runtime is not None
+        else query_service._runtime.settings
+    )
+    configure_policy_runtime(
+        PolicyRuntime(settings=policy_settings, governance=governance_service)
+    )
     sync_worker = ActorContext(
         user_id="ai-ops-sync-worker",
         display_name="AI Ops Sync Worker",

@@ -6,10 +6,12 @@ This handoff covers the Phase 3 AI governance domain introduced under
 ## Delivered
 
 - Immutable Prompt / Model / Feature Flag / Retention / Masking candidate lifecycle
-- Deterministic Eval runner with critical safety gates
+- Deterministic offline Eval runner (`phase3-eval-v2`): leave-one-out nearest-neighbor
+  classification on example text, injection-defense coverage, and
+  `char_token_heuristic_v2` cost/latency estimates — **not** live-model accuracy proof
 - Dual-control approve (submitter cannot approve)
 - Prompt Canary percentage + sticky conversation routing
-- Canary stop + metric evaluate (threshold auto-stop; keep active healthy)
+- Canary stop + metric evaluate; **safety_alerts stop before sample-size CONTINUE**
 - Atomic activate / rollback to previous healthy version
 - Model allowlist, secret-ref-only storage, fallback simulation
 - Safety-locked flags (`masking_enforced`, `audit_enforced`) cannot be disabled
@@ -17,9 +19,14 @@ This handoff covers the Phase 3 AI governance domain introduced under
 - Role-mapping requests cannot self-elevate; emergency principal revoke
 - Capability-aware global search (Prompt/Model/Flag/Role/Retention/Masking/Audit + FAQ/Example/Issue/Quality extras)
 - Governance audit trail with secret redaction and JSON audit export package
+- Export jobs are **requester-bound** (other SYSTEM_ADMIN / AUDITOR cannot fetch);
+  worker re-resolves via `RoleRevalidatingExportAuthorizationResolver` (still asyncio
+  `create_task`, not a durable queue / Entra SoT)
 - Baseline import of code-based Issue Extractor prompt / model / flags
 - Agent runtime wiring for prompt, model, and flags with fail-safe baselines
   (`PROMPT_RUNTIME_MODE=GOVERNED|CODE_BASELINE`)
+- ACTIVE retention TTL and masking policy version bridged into ops runtime via
+  `agent_service.operations.policy_runtime` (emitters / retention / mask stamps)
 - Backoffice UI pages for Prompt, models, flags, roles, retention, masking, search, audit export
 - LAB drill script: `scripts/ops_phase3_governance_drill.py`
 - SYSTEM_ADMIN single-approver sign-off helper: `scripts/ops_phase3_signoff.py`
@@ -27,13 +34,17 @@ This handoff covers the Phase 3 AI governance domain introduced under
 
 ## Explicitly not claimed complete
 
+- Live LLM accuracy / F1 / injection eval against production models (offline heuristic only)
 - LLM-as-judge or cloud eval workers
 - Legal hold
 - Multi-approver quorum beyond dual control
 - Continuous live production metric poller (evaluate is operator/API driven)
-- Entra role mapping as sole source of truth in production
+- Entra role mapping as sole source of truth in production (export resolver included)
+- Durable export worker / job queue (background still uses asyncio tasks)
 - Production Firestore multi-instance fault injection
 - Unmasked conversation full-text search in global search
+- Changing ACTIVE masking **rules** at runtime (version stamp is governed; regex
+  implementation remains code-defined until rules are externalized)
 
 ## Human sign-off policy (product decision)
 

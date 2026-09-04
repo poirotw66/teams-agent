@@ -98,6 +98,9 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
     ingestion = EventIngestionService(store, resolved)
     audit_store = build_audit_store(resolved)
     emitter = OperationalEventEmitter(ingestion, taxonomy, classifier, resolved)
+    from .policy_runtime import PolicyRuntime, configure_policy_runtime
+
+    configure_policy_runtime(PolicyRuntime.from_ops_settings(resolved))
     return OpsRuntime(
         settings=resolved,
         ingestion=ingestion,

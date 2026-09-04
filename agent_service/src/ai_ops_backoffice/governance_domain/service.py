@@ -605,7 +605,14 @@ class GovernanceService:
             if not prompt.canary_version_id:
                 raise GovernanceTransitionError("no active canary to stop")
             canary = _find_prompt_version(state, prompt.canary_version_id)
-            stopped = replace_model(canary, canary_stopped=True, change_reason=reason)
+            # Return to APPROVED so the same version can be canaried again after a
+            # non-rollback stop (safety or threshold). Keep canary_stopped for audit.
+            stopped = replace_model(
+                canary,
+                status="APPROVED",
+                canary_stopped=True,
+                change_reason=reason,
+            )
             versions = _upsert(state.prompt_versions, stopped, "version_id")
             audits = [
                 self._audit(
@@ -677,6 +684,42 @@ class GovernanceService:
 
         return self._mutate(operation)
 
+    def peek_runtime_retention(self, policy_id: str = "operational-events") -> dict[str, Any] | None:
+        """Read-only ACTIVE retention TTL for ops runtime."""
+        state = self._repository.load()
+        active = next(
+            (
+                item
+                for item in state.retention_policies
+                if item.policy_id == policy_id and item.status == "ACTIVE"
+            ),
+            None,
+        )
+        if active is None:
+            return None
+        return {
+            "policyId": active.policy_id,
+            "versionId": active.version_id,
+            "ttlDays": active.ttl_days,
+            "status": active.status,
+        }
+
+    def peek_runtime_masking(self) -> dict[str, Any] | None:
+        """Read-only ACTIVE masking policy version for ops runtime."""
+        state = self._repository.load()
+        active = next(
+            (item for item in state.masking_policies if item.status == "ACTIVE"),
+            None,
+        )
+        if active is None:
+            return None
+        return {
+            "versionId": active.version_id,
+            "policyVersion": active.policy_version,
+            "rulesHash": active.rules_hash,
+            "status": active.status,
+        }
+
     def evaluate_prompt_canary(
         self,
         *,
@@ -689,12 +732,7 @@ class GovernanceService:
         actor: ActorContext,
     ) -> dict[str, Any]:
         self._require(actor, WRITE["prompt_canary"])
-        if sample_size < 10:
-            return {
-                "action": "CONTINUE",
-                "reason": "insufficient sample size",
-                "promptId": prompt_id,
-            }
+        # Critical safety always wins — never wait for sample size.
         if safety_alerts > 0:
             stopped = self.stop_prompt_canary(
                 prompt_id=prompt_id,
@@ -703,6 +741,12 @@ class GovernanceService:
                 rollback=False,
             )
             return {**stopped, "reason": "critical safety alert"}
+        if sample_size < 10:
+            return {
+                "action": "CONTINUE",
+                "reason": "insufficient sample size",
+                "promptId": prompt_id,
+            }
         if error_rate >= 0.15 or negative_feedback_rate >= 0.25 or handoff_rate >= 0.4:
             stopped = self.stop_prompt_canary(
                 prompt_id=prompt_id,

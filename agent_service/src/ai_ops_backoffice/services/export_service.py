@@ -15,6 +15,13 @@ from agent_service.operations.audit import AuditStore, build_audit_event
 from agent_service.operations.audit_errors import AuditWriteError
 from agent_service.operations.contracts import utc_now
 
+from .export_authorization import (
+    ExportAuthorizationError,
+    ExportAuthorizationResolver,
+    RoleRevalidatingExportAuthorizationResolver,
+    require_current_export_access,
+    tenant_for_actor,
+)
 from .export_content import ExportContentStore, FileExportContentStore
 from .export_format import flatten_for_csv, flatten_for_xlsx
 from .export_job_store import ExportJobStore, FileExportJobStore
@@ -34,6 +41,8 @@ class ExportJob:
     days: int
     created_at: str
     expires_at: str
+    tenant_id: str = "local-development"
+    requested_owner_units: tuple[str, ...] = ()
     completed_at: str | None = None
     result: dict[str, Any] | None = None
     download_content: str | None = None
@@ -54,6 +63,8 @@ class ExportJobService:
         content_store: ExportContentStore | None = None,
         ttl_seconds: int = 86400,
         max_records: int = 100_000,
+        authorization_resolver: ExportAuthorizationResolver | None = None,
+        run_inline: bool = False,
     ) -> None:
         self._audit_store = audit_store
         self._store_path = store_path
@@ -67,12 +78,21 @@ class ExportJobService:
         self._content_store = content_store or FileExportContentStore(
             self._store_path / "content"
         )
+        self._authorization_resolver = (
+            authorization_resolver or RoleRevalidatingExportAuthorizationResolver()
+        )
+        self._run_inline = run_inline
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    async def _persist(self, job: ExportJob) -> None:
+        await self._job_store.put(job.job_id, self._serialize_job(job))
 
     def _serialize_job(self, job: ExportJob) -> dict[str, Any]:
         payload = job.__dict__.copy()
         download_bytes = payload.pop("download_bytes", None)
         if download_bytes is not None:
             payload["download_bytes_b64"] = base64.b64encode(download_bytes).decode("ascii")
+        payload["requested_owner_units"] = list(job.requested_owner_units)
         return payload
 
     def _deserialize_job(self, item: dict[str, Any]) -> ExportJob:
@@ -82,6 +102,8 @@ class ExportJobService:
             "download_bytes": None,
             "content_ref": None,
             "content_type": None,
+            "tenant_id": "local-development",
+            "requested_owner_units": (),
         }
         merged = {**defaults, **item}
         for key in ("created_at", "expires_at", "completed_at"):
@@ -90,10 +112,24 @@ class ExportJobService:
         encoded = merged.pop("download_bytes_b64", None)
         if encoded:
             merged["download_bytes"] = base64.b64decode(encoded)
+        units = merged.get("requested_owner_units") or ()
+        merged["requested_owner_units"] = tuple(units)
         return ExportJob(**merged)
 
-    async def _persist(self, job: ExportJob) -> None:
-        await self._job_store.put(job.job_id, self._serialize_job(job))
+    def _schedule(self, coroutine: Coroutine[Any, Any, None]) -> None:
+        if self._run_inline:
+            task = asyncio.get_running_loop().create_task(coroutine)
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+            return
+        task = asyncio.create_task(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def wait_for_background_tasks(self) -> None:
+        pending = list(self._background_tasks)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def create_job(
         self,
@@ -108,6 +144,10 @@ class ExportJobService:
     ) -> ExportJob:
         job_id = str(uuid.uuid4())
         now = utc_now()
+        tenant_id = tenant_for_actor(actor, environment=self._environment)
+        register = getattr(self._authorization_resolver, "register", None)
+        if callable(register):
+            register(actor=actor, tenant_id=tenant_id)
         job = ExportJob(
             job_id=job_id,
             export_type=export_type,
@@ -119,6 +159,8 @@ class ExportJobService:
             days=days,
             created_at=now.isoformat(),
             expires_at=(now + timedelta(seconds=self._ttl_seconds)).isoformat(),
+            tenant_id=tenant_id,
+            requested_owner_units=tuple(actor.owner_unit_ids),
         )
         async with self._lock:
             self._jobs[job_id] = job
@@ -133,6 +175,7 @@ class ExportJobService:
                     "exportType": export_type,
                     "exportFormat": export_format,
                     "days": days,
+                    "tenantId": tenant_id,
                     **(request_metadata or {}),
                 },
             )
@@ -141,20 +184,36 @@ class ExportJobService:
                 self._jobs.pop(job_id, None)
                 await self._job_store.delete(job_id)
             raise
-        asyncio.create_task(self._run_job(job_id, runner, actor))
+        self._schedule(self._run_job(job_id, runner))
         return job
+
+    async def _resolve_worker_actor(self, job: ExportJob) -> ActorContext:
+        actor = await self._authorization_resolver.resolve(
+            requester_id=job.requested_by,
+            tenant_id=job.tenant_id,
+        )
+        if actor is None:
+            raise ExportAuthorizationError("Export requester is no longer resolvable.")
+        require_current_export_access(
+            actor=actor,
+            requester_id=job.requested_by,
+            tenant_id=job.tenant_id,
+            requested_owner_units=job.requested_owner_units,
+            environment=self._environment,
+        )
+        return actor
 
     async def _run_job(
         self,
         job_id: str,
         runner: Callable[[], Coroutine[Any, Any, dict[str, Any]]],
-        actor: ActorContext,
     ) -> None:
         async with self._lock:
             job = self._jobs[job_id]
             job.status = "RUNNING"
             await self._persist(job)
         try:
+            actor = await self._resolve_worker_actor(job)
             result = await runner()
             metadata = result.get("exportMetadata") or {}
             record_count = metadata.get("recordCount")
@@ -207,7 +266,12 @@ class ExportJobService:
                 await self._content_store.delete(content_ref=current.content_ref)
             try:
                 await self._audit(
-                    actor,
+                    ActorContext(
+                        user_id=job.requested_by,
+                        display_name=job.requested_by,
+                        role=job.requested_role,  # type: ignore[arg-type]
+                        owner_unit_ids=job.requested_owner_units,
+                    ),
                     "export.failed",
                     job_id,
                     after={
@@ -238,7 +302,15 @@ class ExportJobService:
             expires_at = datetime.fromisoformat(job.expires_at.replace("Z", "+00:00"))
             if job.status == "COMPLETED" and utc_now() > expires_at:
                 await self._expire_job(job)
-            if job.requested_by != actor.user_id and actor.role not in {"SYSTEM_ADMIN", "AUDITOR"}:
+            try:
+                require_current_export_access(
+                    actor=actor,
+                    requester_id=job.requested_by,
+                    tenant_id=job.tenant_id,
+                    requested_owner_units=job.requested_owner_units,
+                    environment=self._environment,
+                )
+            except ExportAuthorizationError:
                 return None
             return job
 
