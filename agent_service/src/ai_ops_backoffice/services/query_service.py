@@ -28,6 +28,12 @@ from .export_content import FileExportContentStore, GcsExportContentStore
 from .export_format import wrap_export_payload
 from .export_job_store import FileExportJobStore, FirestoreExportJobStore
 from .export_service import ExportJobService
+from .daily_aggregates import (
+    FileDailyAggregateStore,
+    aggregates_cover_period,
+    materialize_daily_aggregates,
+    summarize_aggregates,
+)
 from .periods import ResolvedPeriod, event_in_period, resolve_period
 from .usage_projection import (
     UsageDimensions,
@@ -275,6 +281,9 @@ class BackofficeQueryService:
                 or settings.ops_store_mode == "MEMORY"
             ),
         )
+        self._aggregate_store = FileDailyAggregateStore(
+            settings.ops_store_path.parent / "aggregates" / "daily_ops.json"
+        )
 
     @property
     def taxonomy(self) -> TaxonomyRepository:
@@ -380,6 +389,48 @@ class BackofficeQueryService:
         self._invalidate_cache()
         return {"removed": removed}
 
+    async def rebuild_daily_aggregates(self, *, days: int = 30) -> dict[str, Any]:
+        """Materialize daily aggregates from operational events (worker entrypoint)."""
+        period = self._resolve_period(days=days)
+        events = await self._events(period=period, force_refresh=True)
+        return materialize_daily_aggregates(
+            events,
+            self._aggregate_store,
+            start_at=period.start_at,
+            end_at=period.end_at,
+            environment=self._environment,
+        )
+
+    async def daily_aggregates_summary(
+        self,
+        actor: ActorContext,
+        *,
+        days: int = 7,
+    ) -> dict[str, Any]:
+        period = self._resolve_period(days=days)
+        rows = self._aggregate_store.list_range(
+            start_day=period.start_at.date().isoformat(),
+            end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
+            environment=self._environment,
+        )
+        if actor.tenant_id and actor.role not in {"SYSTEM_ADMIN", "AUDITOR"}:
+            rows = [item for item in rows if item.tenant_id in {"", actor.tenant_id}]
+        covered = aggregates_cover_period(
+            rows,
+            start_at=period.start_at,
+            end_at=period.end_at,
+            environment=self._environment,
+        )
+        summary = summarize_aggregates(rows)
+        return {
+            **summary,
+            "periodDays": period.days,
+            "periodStart": period.start_at.isoformat(),
+            "periodEnd": period.end_at.isoformat(),
+            "coverageComplete": covered,
+            "items": [item.as_dict() for item in rows],
+        }
+
     async def operations_summary(
         self,
         actor: ActorContext,
@@ -458,6 +509,41 @@ class BackofficeQueryService:
                     f"Analytics data is {data_freshness_minutes} minutes old; "
                     "pipeline delay may affect dashboard accuracy."
                 )
+
+        metrics_source = "event_scan"
+        turn_count_value = len(turns)
+        issue_occurrence_count = len(issues)
+        handoff_count = len(handoffs)
+        top_issue_types = [
+            {"issueTypeId": key, "count": value}
+            for key, value in issue_types.most_common(5)
+        ]
+        estimated_cost = known_cost_total(usage_events)
+        aggregate_rows = self._aggregate_store.list_range(
+            start_day=period.start_at.date().isoformat(),
+            end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
+            environment=self._environment,
+        )
+        if actor.tenant_id and actor.role not in {"SYSTEM_ADMIN", "AUDITOR"}:
+            aggregate_rows = [
+                item for item in aggregate_rows if item.tenant_id in {"", actor.tenant_id}
+            ]
+        coverage_complete = aggregates_cover_period(
+            aggregate_rows,
+            start_at=period.start_at,
+            end_at=period.end_at,
+            environment=self._environment,
+        )
+        if coverage_complete and aggregate_rows:
+            rolled = summarize_aggregates(aggregate_rows)
+            metrics_source = "daily_aggregates"
+            turn_count_value = int(rolled["turnCount"])
+            issue_occurrence_count = int(rolled["issueOccurrenceCount"])
+            handoff_count = int(rolled["handoffCount"])
+            no_answer_count = int(rolled["noAnswerCount"])
+            top_issue_types = rolled["topIssueTypes"]
+            estimated_cost = float(rolled["estimatedCostUsd"])
+
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
@@ -466,23 +552,22 @@ class BackofficeQueryService:
             "timezone": DEFAULT_TIMEZONE,
             "metricsDefinitionVersion": METRICS_DEFINITION_VERSION,
             "metricDefinitions": self._metrics.get("definitions", {}),
+            "metricsSource": metrics_source,
+            "aggregateCoverageComplete": coverage_complete,
             "updatedAt": utc_now().isoformat(),
             "latestEventAt": latest_event_at.isoformat() if latest_event_at else None,
             "dataFreshnessMinutes": data_freshness_minutes,
             "dataDelayWarning": data_delay_warning,
             "conversationCount": len(conversations),
-            "turnCount": len(turns),
+            "turnCount": turn_count_value,
             "activeUserCount": len(actors),
-            "issueOccurrenceCount": len(issues),
-            "topIssueTypes": [
-                {"issueTypeId": key, "count": value}
-                for key, value in issue_types.most_common(5)
-            ],
+            "issueOccurrenceCount": issue_occurrence_count,
+            "topIssueTypes": top_issue_types,
             "faqAnswerCount": len(faq_hits),
             "knowledgeAnswerCount": len(knowledge_hits),
             "noAnswerCount": no_answer_count,
             "clarificationCount": clarification_count,
-            "handoffCount": len(handoffs),
+            "handoffCount": handoff_count,
             "ticketCount": len(tickets),
             "positiveFeedbackCount": sum(
                 1 for event in feedback if event.payload.get("rating") == "UP"
@@ -492,9 +577,9 @@ class BackofficeQueryService:
             ),
             "resolvedFeedbackCount": resolved_count,
             "totalTokens": total_tokens,
-            "estimatedCostUsd": known_cost_total(usage_events),
+            "estimatedCostUsd": estimated_cost,
             "costCoverage": round(cost_complete / len(usage_events), 4) if usage_events else 0.0,
-            "handoffRate": round(len(handoffs) / turn_count, 4),
+            "handoffRate": round(handoff_count / max(turn_count_value, 1), 4),
             "ticketRate": round(len(tickets) / turn_count, 4),
             "errorRate": round(len(failed_requests) / turn_count, 4),
             "p50LatencyMs": _percentile(latencies, 0.5),

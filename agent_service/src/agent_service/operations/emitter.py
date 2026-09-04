@@ -392,7 +392,10 @@ class OperationalEventEmitter:
         for issue in issues:
             occurrence = identity.issue_occurrence_id(issue.id)
             classification = self._classifier.classify(
-                issue.description, route=issue.route, faq_key=issue.faqKey,
+                issue.description,
+                route=issue.route,
+                faq_key=issue.faqKey,
+                model_issue_type_id=getattr(issue, "issueTypeId", None),
             )
             fields = {
                 "issue_occurrence_id": occurrence, "issue_type_id": classification.issue_type_id,

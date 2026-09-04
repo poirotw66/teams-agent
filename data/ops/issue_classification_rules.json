@@ -1,4 +1,18 @@
 {
+  "route_defaults": {
+    "NOT_IT": {
+      "issue_type_id": "other.not_it",
+      "source": "MODEL"
+    },
+    "GREETING": {
+      "issue_type_id": "other.greeting",
+      "source": "MODEL"
+    },
+    "TICKET": {
+      "issue_type_id": "ticket.request",
+      "source": "MODEL"
+    }
+  },
   "faq_key_mapping": {
     "PASSWORD_RESET": {
       "issue_type_id": "password.reset_procedure",

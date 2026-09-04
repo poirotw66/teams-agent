@@ -1,18 +1,23 @@
-"""Daily aggregate scaffolding for analytics growth path.
+"""Daily aggregate materialization, storage, and query helpers.
 
-POC query paths still scan period events in Python.  These helpers define the
-stable aggregate document shape so a later worker can materialize
-``daily/{date}`` rows without changing dashboard contracts.
+POC dashboards historically scanned period events in Python.  This module
+defines the aggregate document shape, a durable file store, a materialize
+worker, and a query path that can answer multi-day summaries from aggregates
+when coverage is complete (falling back to event scans otherwise).
 """
 
 from __future__ import annotations
 
+import json
+import os
+import threading
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
-from typing import Any
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Protocol
 
-from agent_service.operations.contracts import OperationalEvent
+from agent_service.operations.contracts import OperationalEvent, utc_now
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,28 @@ class DailyOpsAggregate:
             "estimatedCostUsd": self.estimated_cost_usd,
             "schemaVersion": "daily-ops-aggregate-v1",
         }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> DailyOpsAggregate:
+        return cls(
+            day=str(payload["day"]),
+            tenant_id=str(payload.get("tenantId") or ""),
+            environment=str(payload.get("environment") or ""),
+            turn_count=int(payload.get("turnCount") or 0),
+            issue_count=int(payload.get("issueCount") or 0),
+            handoff_count=int(payload.get("handoffCount") or 0),
+            feedback_count=int(payload.get("feedbackCount") or 0),
+            no_answer_count=int(payload.get("noAnswerCount") or 0),
+            issue_type_counts={
+                str(key): int(value)
+                for key, value in dict(payload.get("issueTypeCounts") or {}).items()
+            },
+            model_token_counts={
+                str(key): int(value)
+                for key, value in dict(payload.get("modelTokenCounts") or {}).items()
+            },
+            estimated_cost_usd=float(payload.get("estimatedCostUsd") or 0.0),
+        )
 
 
 def build_daily_ops_aggregates(events: list[OperationalEvent]) -> list[DailyOpsAggregate]:
@@ -88,7 +115,8 @@ def build_daily_ops_aggregates(events: list[OperationalEvent]) -> list[DailyOpsA
                 no_answer_count=sum(
                     1
                     for event in group
-                    if event.event_type in {"answer.completed", "faq.answered", "knowledge.answered"}
+                    if event.event_type
+                    in {"answer.completed", "faq.answered", "knowledge.answered"}
                     and event.payload.get("resultType") in {"NO_KNOWLEDGE", "FAILED"}
                 ),
                 issue_type_counts=dict(issue_types),
@@ -103,3 +131,196 @@ def aggregate_document_id(*, day: str | date, tenant_id: str, environment: str) 
     day_key = day.isoformat() if isinstance(day, date) else day
     tenant_key = tenant_id or "_none"
     return f"{environment}:{tenant_key}:{day_key}"
+
+
+class DailyAggregateStore(Protocol):
+    def upsert_many(self, aggregates: list[DailyOpsAggregate]) -> int: ...
+
+    def list_range(
+        self,
+        *,
+        start_day: str,
+        end_day: str,
+        environment: str | None = None,
+        tenant_id: str | None = None,
+    ) -> list[DailyOpsAggregate]: ...
+
+
+class FileDailyAggregateStore:
+    """JSON file store shared across Backoffice workers on one host."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._lock = threading.RLock()
+
+    def _read(self) -> dict[str, dict[str, Any]]:
+        if not self._path.is_file():
+            return {}
+        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        items = payload.get("items") if isinstance(payload, dict) else payload
+        if not isinstance(items, list):
+            return {}
+        result: dict[str, dict[str, Any]] = {}
+        for item in items:
+            key = aggregate_document_id(
+                day=str(item.get("day") or ""),
+                tenant_id=str(item.get("tenantId") or ""),
+                environment=str(item.get("environment") or ""),
+            )
+            result[key] = item
+        return result
+
+    def _write(self, items: dict[str, dict[str, Any]]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_suffix(".tmp")
+        payload = {
+            "updatedAt": utc_now().isoformat(),
+            "items": list(items.values()),
+        }
+        with temporary.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, self._path)
+
+    def upsert_many(self, aggregates: list[DailyOpsAggregate]) -> int:
+        with self._lock:
+            items = self._read()
+            for aggregate in aggregates:
+                key = aggregate_document_id(
+                    day=aggregate.day,
+                    tenant_id=aggregate.tenant_id,
+                    environment=aggregate.environment,
+                )
+                items[key] = aggregate.as_dict()
+            self._write(items)
+            return len(aggregates)
+
+    def list_range(
+        self,
+        *,
+        start_day: str,
+        end_day: str,
+        environment: str | None = None,
+        tenant_id: str | None = None,
+    ) -> list[DailyOpsAggregate]:
+        with self._lock:
+            items = self._read()
+        selected: list[DailyOpsAggregate] = []
+        for payload in items.values():
+            day = str(payload.get("day") or "")
+            if day < start_day or day > end_day:
+                continue
+            if environment is not None and payload.get("environment") != environment:
+                continue
+            if tenant_id is not None and (payload.get("tenantId") or "") != tenant_id:
+                continue
+            selected.append(DailyOpsAggregate.from_dict(payload))
+        return sorted(selected, key=lambda item: (item.day, item.tenant_id, item.environment))
+
+
+def materialize_daily_aggregates(
+    events: list[OperationalEvent],
+    store: DailyAggregateStore,
+    *,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    environment: str | None = None,
+) -> dict[str, Any]:
+    """Build aggregates from events and persist them.
+
+    When a period and environment are provided, missing calendar days are filled
+    with zero rows so query coverage can complete without re-scanning events.
+    """
+    aggregates = build_daily_ops_aggregates(events)
+    if start_at is not None and end_at is not None and environment is not None:
+        scoped = [item for item in aggregates if item.environment == environment]
+        tenants = {item.tenant_id for item in scoped} or {""}
+        by_key = {
+            (item.day, item.tenant_id, item.environment): item for item in scoped
+        }
+        filled: list[DailyOpsAggregate] = []
+        for day in iter_day_keys(start_at=start_at, end_at=end_at):
+            for tenant in tenants:
+                existing = by_key.get((day, tenant, environment))
+                if existing is not None:
+                    filled.append(existing)
+                    continue
+                filled.append(
+                    DailyOpsAggregate(
+                        day=day,
+                        tenant_id=tenant,
+                        environment=environment,
+                        turn_count=0,
+                        issue_count=0,
+                        handoff_count=0,
+                        feedback_count=0,
+                        no_answer_count=0,
+                        issue_type_counts={},
+                        model_token_counts={},
+                        estimated_cost_usd=0.0,
+                    )
+                )
+        other_env = [item for item in aggregates if item.environment != environment]
+        aggregates = filled + other_env
+    written = store.upsert_many(aggregates)
+    return {
+        "written": written,
+        "days": sorted({item.day for item in aggregates}),
+        "materializedAt": utc_now().isoformat(),
+    }
+
+
+def summarize_aggregates(aggregates: list[DailyOpsAggregate]) -> dict[str, Any]:
+    """Roll daily rows into the fields operations_summary can reuse."""
+    issue_types: Counter[str] = Counter()
+    for item in aggregates:
+        issue_types.update(item.issue_type_counts)
+    return {
+        "source": "daily_aggregates",
+        "dayCount": len({item.day for item in aggregates}),
+        "turnCount": sum(item.turn_count for item in aggregates),
+        "issueOccurrenceCount": sum(item.issue_count for item in aggregates),
+        "handoffCount": sum(item.handoff_count for item in aggregates),
+        "feedbackCount": sum(item.feedback_count for item in aggregates),
+        "noAnswerCount": sum(item.no_answer_count for item in aggregates),
+        "estimatedCostUsd": round(sum(item.estimated_cost_usd for item in aggregates), 6),
+        "topIssueTypes": [
+            {"issueTypeId": key, "count": value}
+            for key, value in issue_types.most_common(5)
+        ],
+    }
+
+
+def iter_day_keys(*, start_at: datetime, end_at: datetime) -> list[str]:
+    """Inclusive calendar days covered by [start_at, end_at)."""
+    start_day = start_at.date()
+    # end_at is exclusive in period helpers; last included day is the previous calendar day
+    # when end is midnight, otherwise end.date().
+    last = end_at.date()
+    if end_at.time() == datetime.min.time() and end_at > start_at:
+        last = (end_at - timedelta(microseconds=1)).date()
+    days: list[str] = []
+    cursor = start_day
+    while cursor <= last:
+        days.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    return days
+
+
+def aggregates_cover_period(
+    aggregates: list[DailyOpsAggregate],
+    *,
+    start_at: datetime,
+    end_at: datetime,
+    environment: str,
+) -> bool:
+    needed = set(iter_day_keys(start_at=start_at, end_at=end_at))
+    if not needed:
+        return False
+    have = {
+        item.day
+        for item in aggregates
+        if item.environment == environment
+    }
+    return needed.issubset(have)

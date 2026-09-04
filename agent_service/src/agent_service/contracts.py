@@ -85,6 +85,9 @@ class Issue(StrictModel):
     route: Route
     faqKey: str | None = None
     ticketAction: str | None = None
+    # Optional extractor/taxonomy id. When present, ops classification prefers
+    # MODEL over keyword rules (FAQ mapping still wins).
+    issueTypeId: str | None = None
 
     @field_validator("missingInfo")
     @classmethod

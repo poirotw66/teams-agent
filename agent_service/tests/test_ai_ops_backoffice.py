@@ -1019,6 +1019,31 @@ def test_operations_summary_for_service_owner(backoffice_client: TestClient) -> 
     body = response.json()
     assert "conversationCount" in body
     assert body["metricsDefinitionVersion"] == "v1"
+    assert body["metricsSource"] in {"event_scan", "daily_aggregates"}
+    assert "aggregateCoverageComplete" in body
+
+
+def test_daily_aggregates_rebuild_and_summary(seeded_backoffice_client: TestClient) -> None:
+    rebuilt = seeded_backoffice_client.post(
+        "/api/aggregates/rebuild?days=30",
+        headers=headers(),
+    )
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["written"] >= 1
+    summary = seeded_backoffice_client.get(
+        "/api/aggregates/summary?days=30",
+        headers=headers(),
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["source"] == "daily_aggregates"
+    assert body["turnCount"] >= 1
+    ops = seeded_backoffice_client.get(
+        "/api/operations/summary?days=30",
+        headers=headers(),
+    ).json()
+    assert ops["metricsSource"] == "daily_aggregates"
+    assert ops["aggregateCoverageComplete"] is True
 
 
 def test_taxonomy_endpoint(backoffice_client: TestClient) -> None:

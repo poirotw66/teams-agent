@@ -19,6 +19,9 @@ _VALID_SOURCES = frozenset(
     }
 )
 
+# Structured extractor routes that map to taxonomy without keyword matching.
+_ROUTE_DEFAULT_ELIGIBLE = frozenset({"NOT_IT", "GREETING", "TICKET"})
+
 
 @dataclass(frozen=True)
 class IssueClassification:
@@ -38,10 +41,19 @@ class IssueClassifier:
         self._rules_path = rules_path
         self._faq_mapping: dict[str, dict[str, str]] = {}
         self._keyword_rules: list[dict[str, object]] = []
+        self._route_defaults: dict[str, str] = {}
         if rules_path and rules_path.is_file():
             payload = json.loads(rules_path.read_text(encoding="utf-8"))
             self._faq_mapping = payload.get("faq_key_mapping") or {}
             self._keyword_rules = list(payload.get("keyword_rules") or [])
+            raw_defaults = payload.get("route_defaults") or {}
+            for route_key, mapped in dict(raw_defaults).items():
+                if isinstance(mapped, dict):
+                    issue_type_id = mapped.get("issue_type_id")
+                else:
+                    issue_type_id = mapped
+                if issue_type_id:
+                    self._route_defaults[str(route_key)] = str(issue_type_id)
 
     def classify(
         self,
@@ -56,6 +68,7 @@ class IssueClassifier:
         Prefer structured extractor outputs when provided:
         - ``faq_key`` → FAQ_MAPPING
         - ``model_issue_type_id`` → MODEL (extractor/LLM taxonomy id)
+        - structural ``route`` defaults (NOT_IT / GREETING / TICKET) → MODEL
 
         Keyword rules are always labeled ``KEYWORD_RULE``, never ``MODEL``.
         """
@@ -77,9 +90,12 @@ class IssueClassifier:
                 confidence_status="LOW",
                 normalized_description=normalized,
             )
-        if model_issue_type_id and self._taxonomy.get(model_issue_type_id):
+        resolved_model_id = model_issue_type_id
+        if not resolved_model_id and route in _ROUTE_DEFAULT_ELIGIBLE:
+            resolved_model_id = self._route_defaults.get(route)
+        if resolved_model_id and self._taxonomy.get(resolved_model_id):
             return IssueClassification(
-                issue_type_id=model_issue_type_id,
+                issue_type_id=resolved_model_id,
                 classification_source="MODEL",
                 confidence_status="HIGH",
                 normalized_description=normalized,

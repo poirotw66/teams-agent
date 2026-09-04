@@ -34,6 +34,27 @@ def test_classifier_maps_vpn_and_faq(ops_paths: tuple[Path, Path, Path]) -> None
     assert faq.classification_source == "FAQ_MAPPING"
 
 
+def test_classifier_prefers_model_issue_type_and_route_defaults(
+    ops_paths: tuple[Path, Path, Path],
+) -> None:
+    taxonomy_path, rules_path, _ = ops_paths
+    classifier = IssueClassifier(TaxonomyRepository(taxonomy_path), rules_path)
+    model = classifier.classify(
+        "VPN 一直連不上",
+        route="KNOWLEDGE",
+        model_issue_type_id="email.outlook_sync",
+    )
+    assert model.issue_type_id == "email.outlook_sync"
+    assert model.classification_source == "MODEL"
+    not_it = classifier.classify("今天天氣真好", route="NOT_IT")
+    assert not_it.issue_type_id == "other.not_it"
+    assert not_it.classification_source == "MODEL"
+    greeting = classifier.classify("你好", route="GREETING")
+    assert greeting.issue_type_id == "other.greeting"
+    assert greeting.classification_source == "MODEL"
+
+
+
 def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path, Path]) -> None:
     taxonomy_path, rules_path, metrics_path = ops_paths
     settings = OpsSettings(
@@ -70,6 +91,7 @@ def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path
         readiness="READY",
         route="KNOWLEDGE",
         missingInfo=[],
+        issueTypeId="email.outlook_sync",
     )
     events = emitter.build_turn_events(
         _FakeRequest(),
@@ -88,6 +110,9 @@ def test_emitter_emits_classified_and_handoff_events(ops_paths: tuple[Path, Path
     assert "issue.classified" in types
     assert "handoff.offered" in types
     assert "conversation.started" in types
+    classified = next(event for event in events if event.event_type == "issue.classified")
+    assert classified.issue_type_id == "email.outlook_sync"
+    assert classified.payload.get("classificationSource") == "MODEL"
     turn_received = next(event for event in events if event.event_type == "turn.received")
     assert turn_received.payload.get("maskingPolicyVersion") == "v2"
 

@@ -386,6 +386,36 @@
       "taxonomy_version": "v1",
       "created_by": "seed",
       "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "other.not_it",
+      "display_name": "非 IT 問題",
+      "description": "Extractor 判定為非 IT／業務範圍外的問題。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "other.greeting",
+      "display_name": "問候／寒暄",
+      "description": "打招呼或寒暄，無需知識庫回答。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
+    },
+    {
+      "issue_type_id": "ticket.request",
+      "display_name": "工單請求",
+      "description": "使用者要求建立、查詢或取消 IT 工單。",
+      "owner_unit_id": "IT Service Desk",
+      "status": "ACTIVE",
+      "taxonomy_version": "v1",
+      "created_by": "seed",
+      "approved_by": "seed"
     }
   ]
 }

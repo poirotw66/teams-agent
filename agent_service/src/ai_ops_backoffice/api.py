@@ -573,6 +573,15 @@ def create_app(
         if not actor.has_capability(capability):
             raise HTTPException(status_code=403, detail="Forbidden.")
 
+    def _enrich_quality_issue_display(item: dict[str, object]) -> dict[str, object]:
+        issue_type_id = item.get("issue_type_id")
+        display_name = None
+        if isinstance(issue_type_id, str) and issue_type_id:
+            record = query_service.taxonomy.get(issue_type_id)
+            if record is not None:
+                display_name = record.display_name
+        return {**item, "issue_type_display_name": display_name}
+
     async def audit_read(actor, action: str, target_id: str, after: dict[str, object] | None = None) -> None:
         await record_query_audit(
             query_service.audit_store,
@@ -606,15 +615,43 @@ def create_app(
                 except TimeoutError:
                     continue
 
+        async def materialize_daily_aggregates_worker() -> None:
+            # Warm aggregates shortly after boot, then refresh periodically so
+            # operations_summary can prefer aggregate rows when coverage is complete.
+            first_delay_seconds = 5
+            refresh_interval_seconds = 300
+            try:
+                await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
+                return
+            except TimeoutError:
+                pass
+            while not stop_sweeper.is_set():
+                try:
+                    result = await query_service.rebuild_daily_aggregates(days=30)
+                    logger.info(
+                        "Materialized daily aggregates written=%s days=%s",
+                        result.get("written"),
+                        len(result.get("days") or []),
+                    )
+                except Exception:
+                    logger.exception("Failed to materialize daily aggregates.")
+                try:
+                    await asyncio.wait_for(
+                        stop_sweeper.wait(), timeout=refresh_interval_seconds
+                    )
+                except TimeoutError:
+                    continue
+
         sweeper = asyncio.create_task(sweep_expired_exports())
         recovery = asyncio.create_task(
             query_service.export_jobs.run_recovery_scanner(stop_sweeper)
         )
+        aggregate_worker = asyncio.create_task(materialize_daily_aggregates_worker())
         try:
             yield
         finally:
             stop_sweeper.set()
-            for task in (sweeper, recovery):
+            for task in (sweeper, recovery, aggregate_worker):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -729,6 +766,36 @@ def create_app(
             "query.operations_summary",
             "operations_summary",
             after={"days": days, "preset": preset, "startDate": start_date, "endDate": end_date},
+        )
+        return result
+
+    @app.get("/api/aggregates/summary")
+    async def aggregates_summary(
+        days: int = Query(default=7, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.summary.read")
+        result = await query_service.daily_aggregates_summary(actor, days=days)
+        await audit_read(
+            actor,
+            "query.aggregates_summary",
+            "daily_aggregates",
+            after={"days": days},
+        )
+        return result
+
+    @app.post("/api/aggregates/rebuild")
+    async def aggregates_rebuild(
+        days: int = Query(default=30, ge=1, le=186),
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.summary.read")
+        result = await query_service.rebuild_daily_aggregates(days=days)
+        await audit_read(
+            actor,
+            "query.aggregates_rebuild",
+            "daily_aggregates",
+            after={"days": days, "written": result.get("written")},
         )
         return result
 
@@ -1580,13 +1647,20 @@ def create_app(
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
-        items = quality_service.list_cases(actor=actor, status=status)
+        items = [
+            _enrich_quality_issue_display(item)
+            for item in quality_service.list_cases(actor=actor, status=status)
+        ]
         return {"items": items, "total": len(items)}
 
     @app.get("/api/quality-cases/{case_id}")
     async def get_quality_case(case_id: str, actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
-        return quality_service.case_detail(case_id, actor=actor)
+        detail = quality_service.case_detail(case_id, actor=actor)
+        return {
+            **detail,
+            "case": _enrich_quality_issue_display(detail["case"]),
+        }
 
     @app.put("/api/quality-cases/{case_id}")
     async def update_quality_case(
@@ -1726,7 +1800,10 @@ def create_app(
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
-        items = quality_service.list_candidates(actor=actor, status=status)
+        items = [
+            _enrich_quality_issue_display(item)
+            for item in quality_service.list_candidates(actor=actor, status=status)
+        ]
         return {"items": items, "total": len(items)}
 
     @app.post("/api/quality-candidates/refresh")

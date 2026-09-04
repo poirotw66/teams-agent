@@ -158,6 +158,7 @@ def test_daily_aggregate_scaffold() -> None:
             occurred_at=now,
             tenant_id="t",
             correlation_id="c1",
+            environment="dev",
             payload={},
         ),
         OperationalEvent(
@@ -166,6 +167,7 @@ def test_daily_aggregate_scaffold() -> None:
             occurred_at=now,
             tenant_id="t",
             correlation_id="c1",
+            environment="dev",
             issue_type_id="vpn.connection_failed",
             payload={},
         ),
@@ -175,6 +177,58 @@ def test_daily_aggregate_scaffold() -> None:
     assert aggregates[0].turn_count == 1
     assert aggregates[0].issue_count == 1
     assert aggregates[0].as_dict()["schemaVersion"] == "daily-ops-aggregate-v1"
+
+
+def test_daily_aggregate_store_materialize_and_coverage(tmp_path: Path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ai_ops_backoffice.services.daily_aggregates import (
+        FileDailyAggregateStore,
+        aggregates_cover_period,
+        materialize_daily_aggregates,
+        summarize_aggregates,
+    )
+
+    now = utc_now().replace(hour=12, minute=0, second=0, microsecond=0)
+    events = [
+        OperationalEvent(
+            event_id=f"t-{index}",
+            event_type="turn.received",
+            occurred_at=now - timedelta(days=index),
+            tenant_id="t",
+            correlation_id=f"c-{index}",
+            environment="dev",
+            payload={},
+        )
+        for index in range(3)
+    ]
+    store = FileDailyAggregateStore(tmp_path / "daily_ops.json")
+    written = materialize_daily_aggregates(events, store)
+    assert written["written"] == 3
+    rows = store.list_range(
+        start_day=(now - timedelta(days=2)).date().isoformat(),
+        end_day=now.date().isoformat(),
+        environment="dev",
+    )
+    assert len(rows) == 3
+    summary = summarize_aggregates(rows)
+    assert summary["turnCount"] == 3
+    period_start = datetime.combine(
+        (now - timedelta(days=2)).date(),
+        datetime.min.time(),
+        tzinfo=UTC,
+    )
+    period_end = datetime.combine(
+        (now + timedelta(days=1)).date(),
+        datetime.min.time(),
+        tzinfo=UTC,
+    )
+    assert aggregates_cover_period(
+        rows,
+        start_at=period_start,
+        end_at=period_end,
+        environment="dev",
+    )
 
 
 @pytest.mark.asyncio

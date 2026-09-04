@@ -1898,14 +1898,71 @@ async function showQualityCaseDetail(caseId) {
     const detail = await api(`/api/quality-cases/${encodeURIComponent(caseId)}`);
     const qualityCase = detail.case;
     const allowed = new Set(capabilities?.capabilities || []);
+    const statusLabels = {
+      NEW: "新建",
+      TRIAGED: "已分派",
+      IN_PROGRESS: "修正中",
+      WAITING_REVIEW: "待審核發布",
+      OBSERVING: "觀察成效",
+      RESOLVED: "已結案",
+      WONT_FIX: "不處理",
+      DUPLICATE: "重複案件",
+    };
+    const transitionLabels = {
+      TRIAGED: "分派處理",
+      IN_PROGRESS: "開始修正知識",
+      WAITING_REVIEW: "送審／待發布",
+      OBSERVING: "進入觀察",
+      RESOLVED: "驗證通過並結案",
+      WONT_FIX: "標記不處理",
+      DUPLICATE: "標記重複",
+    };
     const content = el("div");
     content.append(
-      el("p", "", `${qualityCase.status}｜${qualityCase.priority}｜ETag ${qualityCase.etag}`),
+      el(
+        "p",
+        "",
+        `${statusLabels[qualityCase.status] || qualityCase.status}｜優先級 ${qualityCase.priority}`,
+      ),
       el("p", "", qualityCase.description || "-"),
-      el("p", "", `Owner：${qualityCase.owner_unit_id}｜Assignee：${qualityCase.assignee_id || "未指派"}`),
-      el("p", "", `頻率 ${qualityCase.frequency}｜負評率 ${(qualityCase.negative_rate * 100).toFixed(1)}%｜轉人工率 ${(qualityCase.handoff_rate * 100).toFixed(1)}%`),
-      el("p", "", `關聯 FAQ：${qualityCase.faq_ids.join(", ") || "-"}｜文件：${qualityCase.document_ids.join(", ") || "-"}`),
+      el(
+        "p",
+        "",
+        `負責單位：${qualityCase.owner_unit_id}｜承辦：${qualityCase.assignee_id || "未指派"}`,
+      ),
+      el(
+        "p",
+        "",
+        `問題類型：${qualityCase.issue_type_display_name || qualityCase.issue_type_id || "未指定"}`,
+      ),
+      el(
+        "p",
+        "",
+        `頻率 ${qualityCase.frequency}｜負評率 ${(qualityCase.negative_rate * 100).toFixed(1)}%｜轉人工率 ${(qualityCase.handoff_rate * 100).toFixed(1)}%`,
+      ),
+      el(
+        "p",
+        "",
+        `關聯 FAQ：${qualityCase.faq_ids.join(", ") || "-"}｜文件：${qualityCase.document_ids.join(", ") || "-"}`,
+      ),
     );
+    const loopHints = el("div", "filter-bar");
+    loopHints.append(
+      el("span", "metric-label", "閉環捷徑："),
+      drillLink("修正文件／FAQ", "knowledge"),
+      drillLink("案例驗證", "examples"),
+      drillLink("對話驗證", "conversations", {
+        issueTypeId: qualityCase.issue_type_id || "",
+      }),
+    );
+    if (capabilities?.knowledgePortalUrl) {
+      const portal = el("a", "drill-link", "開啟知識入口");
+      portal.href = capabilities.knowledgePortalUrl;
+      portal.target = "_blank";
+      portal.rel = "noopener noreferrer";
+      loopHints.append(portal);
+    }
+    content.append(loopHints);
     const transitions = {
       NEW: ["TRIAGED", "WONT_FIX", "DUPLICATE"],
       TRIAGED: ["IN_PROGRESS", "WONT_FIX", "DUPLICATE"],
@@ -1917,7 +1974,7 @@ async function showQualityCaseDetail(caseId) {
     if (allowed.has("ops.quality.write")) {
       const linkFaq = el("button", "", "連結既有 FAQ");
       linkFaq.addEventListener("click", async () => {
-        const faqId = window.prompt("FAQ ID");
+        const faqId = window.prompt("請輸入 FAQ ID");
         if (!faqId?.trim()) return;
         await api(`/api/quality-cases/${caseId}/content`, {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1952,7 +2009,7 @@ async function showQualityCaseDetail(caseId) {
             });
             await renderQuality();
           });
-          showContentModal("由 Quality Case 建立 FAQ 草稿", form);
+          showContentModal("由品質案件建立 FAQ 草稿", form);
         });
         actions.append(draftFaq);
       }
@@ -1972,9 +2029,11 @@ async function showQualityCaseDetail(caseId) {
       const terminal = ["RESOLVED", "WONT_FIX", "DUPLICATE"].includes(status);
       const capability = terminal ? "ops.quality.resolve" : "ops.quality.write";
       if (!allowed.has(capability)) continue;
-      const button = el("button", "", status);
+      const button = el("button", "", transitionLabels[status] || status);
       button.addEventListener("click", async () => {
-        const reason = window.prompt(`請輸入轉為 ${status} 的原因`);
+        const reason = window.prompt(
+          `請輸入轉為「${transitionLabels[status] || status}」的原因`,
+        );
         if (terminal && !reason?.trim()) return;
         try {
           await api(`/api/quality-cases/${caseId}/transition`, {
@@ -1990,7 +2049,7 @@ async function showQualityCaseDetail(caseId) {
           await renderQuality();
           await showQualityCaseDetail(caseId);
         } catch (error) {
-          showContentModal("Quality Case 操作失敗", el("div", "error", error.message));
+          showContentModal("品質案件操作失敗", el("div", "error", error.message));
         }
       });
       actions.append(button);
@@ -2004,13 +2063,13 @@ async function showQualityCaseDetail(caseId) {
         }, null, 2)),
       );
     }
-    content.append(actions, el("h3", "", `Audit（${detail.audit.length}）`));
+    content.append(actions, el("h3", "", `操作紀錄（${detail.audit.length}）`));
     for (const event of detail.audit) {
       content.append(el("p", "metric-label", `${event.occurred_at}｜${event.action}｜${event.actor_id}`));
     }
     showContentModal(qualityCase.title, content);
   } catch (error) {
-    showContentModal("Quality Case", el("div", "error", error.message));
+    showContentModal("品質案件", el("div", "error", error.message));
   }
 }
 
@@ -2021,11 +2080,12 @@ async function buildQualityLoopPanel() {
     el(
       "p",
       "metric-label",
-      "閉環步驟：待辦／負評 → 合併 Quality Case → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
+      "閉環步驟：待辦／負評 → 合併案件 → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
     ),
   );
   const allowed = new Set(capabilities?.capabilities || []);
-  const controls = el("div", "filter-bar");  if (allowed.has("ops.quality.write")) {
+  const controls = el("div", "filter-bar");
+  if (allowed.has("ops.quality.write")) {
     const refresh = el("button", "", "掃描新候選");
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
@@ -2045,6 +2105,22 @@ async function buildQualityLoopPanel() {
     controls.append(refresh);
   }
   panel.append(controls);
+  const caseTypeLabels = {
+    NO_ANSWER: "無答案",
+    NEGATIVE_FEEDBACK: "負評",
+    HANDOFF: "轉人工",
+    KNOWLEDGE_GAP: "知識缺口",
+  };
+  const statusLabels = {
+    NEW: "新建",
+    TRIAGED: "已分派",
+    IN_PROGRESS: "修正中",
+    WAITING_REVIEW: "待審核",
+    OBSERVING: "觀察中",
+    RESOLVED: "已結案",
+    WONT_FIX: "不處理",
+    DUPLICATE: "重複",
+  };
   const [candidateData, caseData] = await Promise.all([
     api("/api/quality-candidates?status=OPEN"),
     api("/api/quality-cases"),
@@ -2053,7 +2129,8 @@ async function buildQualityLoopPanel() {
   const selected = new Set();
   if ((candidateData.items || []).length) {
     const table = el("table");
-    table.innerHTML = "<thead><tr><th>選取</th><th>類型</th><th>Issue</th><th>摘要</th><th>來源</th></tr></thead>";
+    table.innerHTML =
+      "<thead><tr><th>選取</th><th>案件類型</th><th>問題類型</th><th>摘要</th></tr></thead>";
     const body = el("tbody");
     for (const item of candidateData.items) {
       const checkbox = el("input");
@@ -2067,20 +2144,23 @@ async function buildQualityLoopPanel() {
       const row = el("tr");
       row.append(
         selectCell,
-        el("td", "", item.case_type),
-        el("td", "", item.issue_type_id || "-"),
+        el("td", "", caseTypeLabels[item.case_type] || item.case_type),
+        el(
+          "td",
+          "",
+          item.issue_type_display_name || item.issue_type_id || "未分類",
+        ),
         el("td", "", item.description),
-        el("td", "", item.source_event_ids.join(", ")),
       );
       body.append(row);
     }
     table.append(body);
     panel.append(table);
     if (allowed.has("ops.quality.write")) {
-      const merge = el("button", "", "合併為 Quality Case");
+      const merge = el("button", "", "合併為改善案件");
       merge.addEventListener("click", async () => {
         if (!selected.size) return;
-        const title = window.prompt("Quality Case 標題");
+        const title = window.prompt("改善案件標題");
         if (!title?.trim()) return;
         try {
           await api("/api/quality-candidates/merge", {
@@ -2101,10 +2181,11 @@ async function buildQualityLoopPanel() {
   } else {
     panel.append(el("p", "empty", "目前沒有待處理候選。"));
   }
-  panel.append(el("h3", "", `Quality Cases（${caseData.total || 0}）`));
+  panel.append(el("h3", "", `進行中案件（${caseData.total || 0}）`));
   if ((caseData.items || []).length) {
     const table = el("table");
-    table.innerHTML = "<thead><tr><th>案件</th><th>狀態</th><th>優先級</th><th>Owner / Assignee</th><th>下一步</th></tr></thead>";
+    table.innerHTML =
+      "<thead><tr><th>案件</th><th>狀態</th><th>優先級</th><th>負責單位／承辦</th><th>下一步</th></tr></thead>";
     const body = el("tbody");
     for (const item of caseData.items) {
       const action = el("td");
@@ -2113,8 +2194,11 @@ async function buildQualityLoopPanel() {
       action.append(detail);
       const row = el("tr");
       row.append(
-        el("td", "", item.title), el("td", "", item.status), el("td", "", item.priority),
-        el("td", "", `${item.owner_unit_id} / ${item.assignee_id || "未指派"}`), action,
+        el("td", "", item.title),
+        el("td", "", statusLabels[item.status] || item.status),
+        el("td", "", item.priority),
+        el("td", "", `${item.owner_unit_id} / ${item.assignee_id || "未指派"}`),
+        action,
       );
       body.append(row);
     }
@@ -2968,39 +3052,51 @@ async function renderQuality(state = {}) {
     if (resolved) filters.set("resolved", resolved);
     if (handoff) filters.set("handoff", handoff);
 
-    const feedback = await api(`/api/feedback?${filters.toString()}`);
+    const [qualityLoopPanel, gapPanel, feedback] = await Promise.all([
+      buildQualityLoopPanel(),
+      buildGapPanel(),
+      api(`/api/feedback?${filters.toString()}`),
+    ]);
+
     const panel = el("section", "panel");
-    panel.append(el("h2", "", "我的待辦／品質案件"));
+    panel.append(el("h2", "", "回饋與待觀察事件"));
     panel.append(
       el(
         "p",
         "metric-label",
-        "知識修正閉環：待辦 → 無答案／負評 → 修正知識 → 審核發布 → 驗證回答 → 觀察成效並結案。",
+        "先處理上方改善案件池；此處用來篩選負評／未解決／轉人工事件，並跳轉對話驗證。",
       ),
     );
+    const shortcuts = el("div", "filter-bar");
+    shortcuts.append(
+      drillLink("文件／FAQ 修正", "knowledge"),
+      drillLink("案例集驗證", "examples"),
+      drillLink("對話驗證", "conversations"),
+    );
+    panel.append(shortcuts);
     const filterBar = el("div", "grid");
     const issueInput = el("input");
     issueInput.id = "feedback-issue-type";
-    issueInput.placeholder = "Issue Type ID";
+    issueInput.placeholder = "問題類型（顯示名稱或 ID）";
     issueInput.value = issueTypeId;
     const ratingSelect = el("select", "");
     ratingSelect.id = "feedback-rating";
     ratingSelect.innerHTML =
-      '<option value="">全部 Rating</option><option value="UP">UP</option><option value="DOWN">DOWN</option>';
+      '<option value="">全部評價</option><option value="UP">好評</option><option value="DOWN">負評</option>';
     if (rating) ratingSelect.value = rating;
     const reasonInput = el("input");
     reasonInput.id = "feedback-reason";
-    reasonInput.placeholder = "Reason";
+    reasonInput.placeholder = "回饋原因";
     reasonInput.value = reason || "";
     const resolvedSelect = el("select", "");
     resolvedSelect.id = "feedback-resolved";
     resolvedSelect.innerHTML =
-      '<option value="">全部 Resolved</option><option value="RESOLVED">RESOLVED</option><option value="UNRESOLVED">UNRESOLVED</option>';
+      '<option value="">全部解決狀態</option><option value="RESOLVED">已解決</option><option value="UNRESOLVED">未解決</option>';
     if (resolved) resolvedSelect.value = resolved;
     const handoffSelect = el("select", "");
     handoffSelect.id = "feedback-handoff";
     handoffSelect.innerHTML =
-      '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
+      '<option value="">全部轉人工</option><option value="true">有轉人工</option><option value="false">無轉人工</option>';
     if (handoff) handoffSelect.value = handoff;
     const currentFilters = () => ({
       issueTypeId: issueInput.value.trim(),
@@ -3042,21 +3138,22 @@ async function renderQuality(state = {}) {
       ),
     );
 
+    const ratingLabels = { UP: "好評", DOWN: "負評" };
     if (!feedback.items.length) {
       panel.append(el("p", "empty", "目前沒有符合條件的回饋事件。"));
     } else {
       const table = el("table");
       table.innerHTML =
-        "<thead><tr><th>時間</th><th>Rating</th><th>Issue</th><th>來源</th><th>Conversation</th><th>Reason</th></tr></thead>";
+        "<thead><tr><th>時間</th><th>評價</th><th>問題類型</th><th>來源</th><th>對話</th><th>原因</th><th>動作</th></tr></thead>";
       const body = el("tbody");
       for (const item of feedback.items) {
         const trace = item.trace || {};
         const source = trace.faqKey
-          ? `FAQ:${trace.faqKey}`
+          ? `FAQ：${trace.faqKey}`
           : (trace.documentIds || []).join(", ") || "-";
         const row = el("tr");
         row.append(el("td", "", item.occurredAt));
-        row.append(el("td", "", item.rating));
+        row.append(el("td", "", ratingLabels[item.rating] || item.rating));
         row.append(
           el(
             "td",
@@ -3065,7 +3162,7 @@ async function renderQuality(state = {}) {
           ),
         );
         row.append(el("td", "", source));
-        const convLink = el("a", "", item.conversationId ?? "-");
+        const convLink = el("a", "", "查看對話");
         convLink.href = "#";
         convLink.addEventListener("click", async (event) => {
           event.preventDefault();
@@ -3074,8 +3171,18 @@ async function renderQuality(state = {}) {
           );
           showConversationModal({ ...detail, conversationId: item.conversationId });
         });
-        row.append(el("td", "", "").append(convLink));
+        const convCell = el("td");
+        convCell.append(convLink);
+        row.append(convCell);
         row.append(el("td", "", item.reason ?? "-"));
+        const actionCell = el("td");
+        actionCell.append(
+          drillLink("驗證回答", "conversations", {
+            conversationId: item.conversationId || "",
+            issueTypeId: trace.issueTypeId || "",
+          }),
+        );
+        row.append(actionCell);
         body.append(row);
       }
       table.append(body);
@@ -3120,11 +3227,7 @@ async function renderQuality(state = {}) {
       await runExport("xlsx");
     });
     exportPanel.append(csvButton, xlsxButton);
-    const [qualityLoopPanel, gapPanel] = await Promise.all([
-      buildQualityLoopPanel(),
-      buildGapPanel(),
-    ]);
-    app.replaceChildren(panel, qualityLoopPanel, gapPanel, exportPanel);
+    app.replaceChildren(qualityLoopPanel, panel, gapPanel, exportPanel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
