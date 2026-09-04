@@ -426,9 +426,16 @@ def create_app(
         firestore_project=resolved_settings.gcp_project_id,
         firestore_collection=resolved_settings.governance_firestore_collection,
     )
+    from ai_ops_backoffice.governance_domain.eval_runtime import (
+        resolve_backoffice_eval_harness,
+    )
+
+    resolved_eval_harness, eval_harness_status = resolve_backoffice_eval_harness(
+        eval_flow_harness  # type: ignore[arg-type]
+    )
     governance_service = GovernanceService(
         governance_repository,
-        eval_flow_harness=eval_flow_harness,  # type: ignore[arg-type]
+        eval_flow_harness=resolved_eval_harness,
     )
     from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
     from ai_ops_backoffice.services.export_authorization import GovernanceRevocationAuthority
@@ -2181,6 +2188,8 @@ def create_app(
             actor=actor,
         )
 
+    app.state.eval_harness_status = eval_harness_status
+
     register_governance_routes(
         app,
         governance=governance_service,
@@ -2190,6 +2199,7 @@ def create_app(
         faq_service=faq_service,
         query_service=query_service,
         quality_service=quality_service,
+        eval_harness_status=eval_harness_status,
     )
 
     # Phase 3 feature-flag list remains available under the governed API.

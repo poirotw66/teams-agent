@@ -375,6 +375,42 @@ class AgentWorkflowFlowHarness:
             history=history,
         )
 
+    async def aobserve(
+        self,
+        *,
+        template: str,
+        text: str,
+        history: list[dict[str, str]] | None = None,
+        model_id: str | None = None,
+    ) -> FlowObservation:
+        if not self.available:
+            return UnavailableFlowHarness().observe(
+                template=template, text=text, history=history, model_id=model_id
+            )
+        if not model_id or model_id not in _ALLOWED_MODELS:
+            return FlowObservation(
+                route="UNAVAILABLE",
+                label="UNAVAILABLE",
+                refused_injection=False,
+                detail=f"model_not_bound:{model_id or 'missing'}",
+                used_template_chars=0,
+                model_id_used=model_id,
+            )
+        aexecute = getattr(self._executor, "aexecute", None)
+        if callable(aexecute):
+            return await aexecute(
+                template=template,
+                model_id=model_id,
+                text=text,
+                history=history,
+            )
+        return self._executor.execute(
+            template=template,
+            model_id=model_id,
+            text=text,
+            history=history,
+        )
+
 
 def resolve_default_flow_harness(
     explicit: PromptFlowHarness | None = None,
@@ -393,7 +429,9 @@ def resolve_default_flow_harness(
         if mode in {"deterministic", "deterministic_agent", "deterministic_agent_v1", "scripted"}:
             return UnavailableFlowHarness()
         if mode in {"live", "agent", "agent_workflow", "agent_workflow_v1", ""}:
-            # Live Agent harness must be injected explicitly with an executor.
+            # Prefer ai_ops_backoffice.governance_domain.eval_runtime
+            # resolve_backoffice_eval_harness() which builds an isolated executor.
+            # This helper alone remains fail-closed without that wiring.
             return UnavailableFlowHarness()
         return UnavailableFlowHarness()
     if mode in {"deterministic", "deterministic_agent", "deterministic_agent_v1"}:

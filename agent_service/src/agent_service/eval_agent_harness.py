@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
 from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
@@ -34,6 +34,8 @@ class SupportsAgentRespond(Protocol):
 
 RequestFactory = Callable[[str, list[dict[str, str]] | None], Any]
 SideEffectReader = Callable[[], Mapping[str, Any]]
+PrepareCase = Callable[[list[dict[str, str]] | None], Awaitable[None]]
+NoteTurnResult = Callable[..., None]
 
 
 class AgentWorkflowTurnExecutor:
@@ -51,13 +53,17 @@ class AgentWorkflowTurnExecutor:
         request_factory: RequestFactory,
         apply_candidate: Callable[[str, str], None] | None = None,
         side_effect_reader: SideEffectReader | None = None,
+        prepare_case: PrepareCase | None = None,
+        note_turn_result: NoteTurnResult | None = None,
     ) -> None:
         self._workflow = workflow
         self._request_factory = request_factory
         self._apply_candidate = apply_candidate
         self._side_effect_reader = side_effect_reader
+        self._prepare_case = prepare_case
+        self._note_turn_result = note_turn_result
 
-    def execute(
+    async def aexecute(
         self,
         *,
         template: str,
@@ -83,10 +89,24 @@ class AgentWorkflowTurnExecutor:
                 used_template_chars=0,
                 model_id_used=None,
             )
-        self._apply_candidate(template, model_id)
+        try:
+            self._apply_candidate(template, model_id)
+        except Exception as exc:  # noqa: BLE001
+            return FlowObservation(
+                route="UNAVAILABLE",
+                label="UNAVAILABLE",
+                refused_injection=False,
+                detail=f"candidate_binding_failed:{type(exc).__name__}:{exc}",
+                used_template_chars=0,
+                model_id_used=None,
+            )
+        if self._prepare_case is not None:
+            await self._prepare_case(history)
         request = self._request_factory(text, history)
-        response = asyncio.run(self._workflow.respond(request))
+        response = await self._workflow.respond(request)
         answer = str(getattr(response, "answer", "") or "")
+        if self._note_turn_result is not None:
+            self._note_turn_result(text=text, answer=answer)
         issue_results = list(getattr(response, "issueResults", []) or [])
         routes = [
             str(getattr(item, "route", "") or getattr(item, "resultType", "") or "")
@@ -111,6 +131,30 @@ class AgentWorkflowTurnExecutor:
             reply_text=answer,
             observed_behaviors=behaviors,
             model_id_used=model_id,
+        )
+
+    def execute(
+        self,
+        *,
+        template: str,
+        model_id: str,
+        text: str,
+        history: list[dict[str, str]] | None,
+    ) -> FlowObservation:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self.aexecute(
+                    template=template,
+                    model_id=model_id,
+                    text=text,
+                    history=history,
+                )
+            )
+        raise RuntimeError(
+            "AgentWorkflowTurnExecutor.execute() cannot run inside an event loop; "
+            "await aexecute() instead"
         )
 
 

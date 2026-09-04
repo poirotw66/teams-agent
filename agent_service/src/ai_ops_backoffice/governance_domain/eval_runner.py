@@ -284,7 +284,25 @@ def _observation_matches(probe: dict[str, Any], observation: Any) -> tuple[bool,
     return ok, detail
 
 
-def _real_flow_cases(
+async def _harness_observe(
+    harness: PromptFlowHarness,
+    *,
+    template: str,
+    text: str,
+    history: list[dict[str, str]] | None,
+    model_id: str | None,
+) -> Any:
+    aobserve = getattr(harness, "aobserve", None)
+    if callable(aobserve):
+        return await aobserve(
+            template=template, text=text, history=history, model_id=model_id
+        )
+    return harness.observe(
+        template=template, text=text, history=history, model_id=model_id
+    )
+
+
+async def _real_flow_cases(
     *,
     candidate: PromptVersion,
     baseline: PromptVersion | None,
@@ -358,7 +376,8 @@ def _real_flow_cases(
         text = str(probe.get("text") or "")
         expected = str(probe.get("expected_route") or "")
         history = probe.get("history") if isinstance(probe.get("history"), list) else []
-        observation = harness.observe(
+        observation = await _harness_observe(
+            harness,
             template=candidate.template,
             text=text,
             history=history,  # type: ignore[arg-type]
@@ -376,7 +395,8 @@ def _real_flow_cases(
             )
         )
         if baseline is not None:
-            baseline_obs = harness.observe(
+            baseline_obs = await _harness_observe(
+                harness,
                 template=baseline.template,
                 text=text,
                 history=history,  # type: ignore[arg-type]
@@ -400,7 +420,7 @@ def _real_flow_cases(
     return results, accuracy, baseline_accuracy, complete
 
 
-def evaluate_prompt(
+async def evaluate_prompt_async(
     *,
     candidate: PromptVersion,
     baseline: PromptVersion | None,
@@ -416,12 +436,87 @@ def evaluate_prompt(
     dataset_cases = _dataset_cases(examples)
     similarity_cases, similarity_accuracy, _, similarity_f1 = _dataset_similarity_cases(examples)
     probes = _probe_catalog(examples)
-    flow_cases, flow_accuracy, flow_baseline_accuracy, flow_complete = _real_flow_cases(
+    flow_cases, flow_accuracy, flow_baseline_accuracy, flow_complete = await _real_flow_cases(
         candidate=candidate,
         baseline=baseline,
         examples=examples,
         harness=harness,
     )
+    return _build_eval_run(
+        candidate=candidate,
+        baseline=baseline,
+        examples=examples,
+        actor_id=actor_id,
+        taxonomy_version=taxonomy_version,
+        knowledge_release_id=knowledge_release_id,
+        harness=harness,
+        release_eligible=release_eligible,
+        static_cases=static_cases,
+        dataset_cases=dataset_cases,
+        similarity_cases=similarity_cases,
+        similarity_accuracy=similarity_accuracy,
+        similarity_f1=similarity_f1,
+        probes=probes,
+        flow_cases=flow_cases,
+        flow_accuracy=flow_accuracy,
+        flow_baseline_accuracy=flow_baseline_accuracy,
+        flow_complete=flow_complete,
+    )
+
+
+def evaluate_prompt(
+    *,
+    candidate: PromptVersion,
+    baseline: PromptVersion | None,
+    examples: list[dict[str, Any]],
+    actor_id: str,
+    taxonomy_version: str,
+    knowledge_release_id: str | None,
+    flow_harness: PromptFlowHarness | None = None,
+) -> EvalRun:
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(
+            evaluate_prompt_async(
+                candidate=candidate,
+                baseline=baseline,
+                examples=examples,
+                actor_id=actor_id,
+                taxonomy_version=taxonomy_version,
+                knowledge_release_id=knowledge_release_id,
+                flow_harness=flow_harness,
+            )
+        )
+    raise RuntimeError(
+        "evaluate_prompt() cannot run inside an event loop; "
+        "await evaluate_prompt_async() instead"
+    )
+
+
+def _build_eval_run(
+    *,
+    candidate: PromptVersion,
+    baseline: PromptVersion | None,
+    examples: list[dict[str, Any]],
+    actor_id: str,
+    taxonomy_version: str,
+    knowledge_release_id: str | None,
+    harness: PromptFlowHarness,
+    release_eligible: bool,
+    static_cases: list[EvalCaseResult],
+    dataset_cases: list[EvalCaseResult],
+    similarity_cases: list[EvalCaseResult],
+    similarity_accuracy: float,
+    similarity_f1: float,
+    probes: list[dict[str, Any]],
+    flow_cases: list[EvalCaseResult],
+    flow_accuracy: float,
+    flow_baseline_accuracy: float | None,
+    flow_complete: bool,
+) -> EvalRun:
     cases = [
         *static_cases,
         *dataset_cases,

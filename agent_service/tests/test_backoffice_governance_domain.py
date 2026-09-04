@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -77,12 +78,12 @@ def _promote_prompt(svc: GovernanceService) -> dict:
         actor=AI,
     )
     version_id = created["version"]["version_id"]
-    evaluated = svc.run_prompt_eval(
+    evaluated = asyncio.run(svc.run_prompt_eval(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
         verified_examples=verified_examples(now),
         actor=AI,
-    )
+    ))
     assert evaluated["eval"]["critical_passed"] is True
     approved = svc.approve_prompt(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
@@ -147,12 +148,12 @@ def test_critical_safety_failure_blocks_approval(tmp_path: Path) -> None:
             ],
             actor=AI,
         )
-    evaluated = svc.run_prompt_eval(
+    evaluated = asyncio.run(svc.run_prompt_eval(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
         verified_examples=verified_examples(now),
         actor=AI,
-    )
+    ))
     assert evaluated["eval"]["critical_passed"] is True
     with pytest.raises(GovernanceAuthorizationError, match="cannot approve"):
         svc.approve_prompt(
@@ -347,12 +348,12 @@ def test_direct_full_activation_without_canary_is_rejected(tmp_path: Path) -> No
         actor=AI,
     )
     version_id = created["version"]["version_id"]
-    svc.run_prompt_eval(
+    asyncio.run(svc.run_prompt_eval(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
         verified_examples=verified_examples(now),
         actor=AI,
-    )
+    ))
     svc.approve_prompt(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
@@ -380,12 +381,12 @@ def test_canary_evaluate_auto_stops_on_thresholds(tmp_path: Path) -> None:
         actor=AI,
     )
     version_id = created["version"]["version_id"]
-    svc.run_prompt_eval(
+    asyncio.run(svc.run_prompt_eval(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
         verified_examples=verified_examples(now),
         actor=AI,
-    )
+    ))
     svc.approve_prompt(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,

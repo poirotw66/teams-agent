@@ -27,7 +27,7 @@ from .errors import (
     GovernanceValidationError,
 )
 from .eval_flow import PromptFlowHarness
-from .eval_runner import evaluate_model, evaluate_prompt
+from .eval_runner import evaluate_model, evaluate_prompt_async
 from .helpers import (
     content_hash,
     fingerprint,
@@ -299,7 +299,7 @@ class GovernanceService:
 
         return self._mutate(operation)
 
-    def run_prompt_eval(
+    async def run_prompt_eval(
         self,
         *,
         prompt_id: str,
@@ -307,31 +307,52 @@ class GovernanceService:
         verified_examples: list[dict[str, Any]],
         actor: ActorContext,
     ) -> dict[str, Any]:
+        """Run eval outside the governance mutation, then commit the result.
+
+        Model / Agent execution must not hold a long transaction. Snapshot the
+        candidate first, evaluate asynchronously, then verify the version is
+        unchanged before persisting the EvalRun.
+        """
         self._require(actor, WRITE["prompt_eval"])
+        state = self._ensured()
+        version = _find_prompt_version(state, version_id)
+        if version.prompt_id != prompt_id:
+            raise GovernanceNotFoundError(version_id)
+        if version.status not in {"CANDIDATE", "EVALUATED"}:
+            raise GovernanceTransitionError("eval requires a candidate version")
+        selected = _verified_examples(verified_examples, version.dataset_version or "")
+        baseline = _active_prompt(state, prompt_id)
+
+        run = await evaluate_prompt_async(
+            candidate=version,
+            baseline=baseline,
+            examples=selected,
+            actor_id=actor.user_id,
+            taxonomy_version=version.taxonomy_version,
+            knowledge_release_id=version.knowledge_release_id,
+            flow_harness=self._eval_flow_harness,
+        )
 
         def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
-            version = _find_prompt_version(state, version_id)
-            if version.prompt_id != prompt_id:
+            current = _find_prompt_version(state, version_id)
+            if current.prompt_id != prompt_id:
                 raise GovernanceNotFoundError(version_id)
-            if version.status not in {"CANDIDATE", "EVALUATED"}:
+            if current.status not in {"CANDIDATE", "EVALUATED"}:
                 raise GovernanceTransitionError("eval requires a candidate version")
-            selected = _verified_examples(verified_examples, version.dataset_version or "")
-            run = evaluate_prompt(
-                candidate=version,
-                baseline=_active_prompt(state, prompt_id),
-                examples=selected,
-                actor_id=actor.user_id,
-                taxonomy_version=version.taxonomy_version,
-                knowledge_release_id=version.knowledge_release_id,
-                flow_harness=self._eval_flow_harness,
-            )
-            updated = replace_model(version, status="EVALUATED", eval_run_id=run.run_id)
+            if current.content_hash != version.content_hash:
+                raise GovernanceConflictError("candidate changed during eval")
+            if current.template != version.template or current.model_id != version.model_id:
+                raise GovernanceConflictError("candidate binding changed during eval")
+            updated = replace_model(current, status="EVALUATED", eval_run_id=run.run_id)
             audit = self._audit(
                 action="PROMPT_EVALUATED", actor=actor, target_type="PROMPT",
                 target_id=prompt_id, version_id=version_id,
                 after={"criticalPassed": run.critical_passed, "qualityPassed": run.quality_passed},
             )
-            result = {"eval": run.model_dump(mode="json"), "version": public_prompt(updated, include_content=False)}
+            result = {
+                "eval": run.model_dump(mode="json"),
+                "version": public_prompt(updated, include_content=False),
+            }
             return replace_model(
                 state,
                 prompt_versions=_upsert(state.prompt_versions, updated, "version_id"),

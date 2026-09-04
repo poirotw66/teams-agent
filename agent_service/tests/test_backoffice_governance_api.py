@@ -289,3 +289,14 @@ def test_operations_summary_respects_cost_display_flag(tmp_path: Path) -> None:
     assert payload["costDisplayEnabled"] is False
     assert payload["estimatedCostUsd"] is None
     assert payload["costCoverage"] is None
+
+
+def test_eval_harness_status_endpoint(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    response = client.get("/api/governance/eval-harness", headers=headers("AI_ADMIN"))
+    assert response.status_code == 200
+    body = response.json()
+    assert "available" in body
+    assert "releaseEligible" in body
+    assert "mode" in body
+    assert body["configured"] is True

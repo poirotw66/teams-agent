@@ -560,6 +560,12 @@ class BackofficeQueryService:
         # Rolling windows also stay on event_scan: whole-day rollups would
         # inflate the leading partial day. Aggregates apply only to fresh,
         # midnight-aligned explicit ranges for cross-unit actors.
+        #
+        # Perf note: the event scan above still runs first because many summary
+        # fields (conversation/FAQ/ticket rates, latency, freshness) are not yet
+        # answered by the aggregate read model. Prefer measuring real volume,
+        # then expanding aggregates with auth dimensions + watermarks before
+        # skipping the scan for eligible cross-unit queries.
         coverage_complete = False
         if self._actor_may_use_daily_aggregates(actor):
             aggregate_rows = self._aggregate_store.list_range(

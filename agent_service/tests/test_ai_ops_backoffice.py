@@ -1183,6 +1183,9 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
 
     from agent_service.operations.access import ActorContext
     from agent_service.operations.audit_stores import MemoryAuditStore
+    from ai_ops_backoffice.services.export_authorization import (
+        DevelopmentExportAuthorizationResolver,
+    )
     from ai_ops_backoffice.services.export_content import MemoryExportContentStore
     from ai_ops_backoffice.services.export_service import ExportJob, ExportJobService
 
@@ -1191,13 +1194,17 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
         display_name="Owner",
         role="SERVICE_OWNER",
         owner_unit_ids=("IT Service Desk",),
+        tenant_id="local-development",
     )
+    resolver = DevelopmentExportAuthorizationResolver()
+    resolver.register(actor=actor, tenant_id="local-development")
     content_store = MemoryExportContentStore()
     service = ExportJobService(
         audit_store=MemoryAuditStore(),
         store_path=tmp_path / "exports",
         environment="dev",
         content_store=content_store,
+        authorization_resolver=resolver,
     )
     expired_at = (utc_now() - timedelta(hours=1)).isoformat()
     content_store.items["memory:job-expired"] = b"expired export"
@@ -1216,6 +1223,8 @@ def test_export_job_expires_after_ttl(tmp_path: Path) -> None:
         result={"conversationCount": 0},
         content_ref="memory:job-expired",
         content_type="application/json",
+        tenant_id="local-development",
+        requested_owner_units=("IT Service Desk",),
     )
 
     async def run() -> tuple[ExportJob | None, int]:

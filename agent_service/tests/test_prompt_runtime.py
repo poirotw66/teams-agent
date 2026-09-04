@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -112,12 +113,12 @@ def test_peek_runtime_prompt_selects_canary_by_sticky_bucket(tmp_path: Path) -> 
         actor=AI,
     )
     version_id = created["version"]["version_id"]
-    svc.run_prompt_eval(
+    asyncio.run(svc.run_prompt_eval(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,
         verified_examples=examples,
         actor=AI,
-    )
+    ))
     svc.approve_prompt(
         prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
         version_id=version_id,

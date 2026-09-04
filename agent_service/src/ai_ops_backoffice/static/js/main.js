@@ -2291,19 +2291,38 @@ async function renderPrompts() {
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const allowed = new Set(capabilities?.capabilities || []);
-    const [govData, candidateData, taxonomy, examples] = await Promise.all([
+    const [govData, candidateData, taxonomy, examples, harnessStatus] = await Promise.all([
       api("/api/governance/prompts"),
       api("/api/prompts/candidates"),
       api("/api/taxonomy"),
       api("/api/examples?status=VERIFIED"),
+      api("/api/governance/eval-harness").catch(() => null),
     ]);
     const item = (govData.items || [])[0];
     const active = item?.active || {};
     const promptId = item?.prompt?.prompt_id;
+    const harnessDetail = harnessStatus || {
+      configured: false,
+      available: false,
+      releaseEligible: false,
+      mode: "unset",
+      detail: "eval_harness_not_configured",
+    };
+    let harnessLabel = "評測執行器：未設定";
+    if (harnessDetail.configured === false || harnessDetail.mode === "unset") {
+      harnessLabel = "評測執行器：未設定（正式發布閘道不可用）";
+    } else if (!harnessDetail.available) {
+      harnessLabel = `評測執行器：執行失敗／不可用（${harnessDetail.detail || harnessDetail.mode}）`;
+    } else if (!harnessDetail.releaseEligible) {
+      harnessLabel = `評測執行器：已就緒但非正式閘道（${harnessDetail.name || harnessDetail.mode}；品質／模擬結果不可當作放行）`;
+    } else {
+      harnessLabel = `評測執行器：正式閘道就緒（${harnessDetail.name}）`;
+    }
     const activePanel = el("section", "panel");
     activePanel.append(
       el("h2", "", "Active Issue Extractor Prompt"),
       el("p", "metric-label", `環境影響：正式 Prompt 變更需候選 → Eval → 核准 → Canary → 啟用`),
+      el("p", "metric-label", harnessLabel),
       el("p", "metric-label", `Version ${active.version || "-"}｜${active.status || "-"}｜${active.activated_at || active.created_at || "-"}`),
       el("p", "metric-label", `Content Hash ${active.content_hash || "-"}｜核准者 ${active.approved_by || "-"}`),
     );
@@ -2391,7 +2410,25 @@ async function renderPrompts() {
         if (allowed.has("ops.prompts.eval.run") && ["CANDIDATE", "EVALUATED"].includes(version.status)) {
           const evalButton = el("button", "", "執行 Eval");
           evalButton.addEventListener("click", async () => {
-            await api(`/api/governance/prompts/${promptId}/versions/${version.version_id}/eval`, { method: "POST" });
+            if (!harnessDetail.available) {
+              window.alert(
+                harnessDetail.configured === false
+                  ? "評測執行器尚未設定，無法執行正式評測。"
+                  : `評測執行器不可用：${harnessDetail.detail || "unknown"}`,
+              );
+              return;
+            }
+            const result = await api(
+              `/api/governance/prompts/${promptId}/versions/${version.version_id}/eval`,
+              { method: "POST" },
+            );
+            if (result?.eval?.critical_passed === false) {
+              window.alert("評測完成：品質／閘道不合格（critical 未通過）。");
+            } else if (result?.eval?.quality_passed === false) {
+              window.alert("評測完成：品質不合格。");
+            } else if (result?.eval?.status === "INCOMPLETE") {
+              window.alert("評測完成：流程不完整（執行失敗或 harness 不可用），非正式放行。");
+            }
             await renderPrompts();
           });
           actions.append(evalButton);

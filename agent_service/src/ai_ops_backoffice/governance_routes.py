@@ -158,6 +158,7 @@ def register_governance_routes(
     faq_service=None,
     query_service=None,
     quality_service=None,
+    eval_harness_status=None,
 ) -> None:
     @app.exception_handler(GovernanceAuthorizationError)
     async def governance_authorization_handler(_request, exc: GovernanceAuthorizationError) -> JSONResponse:
@@ -179,6 +180,24 @@ def register_governance_routes(
     def _reject_client_approval(payload: PromptApproveBody) -> None:
         if payload.approved is not None:
             raise GovernanceValidationError("approved=true from the client is rejected")
+
+    @app.get("/api/governance/eval-harness")
+    async def governance_eval_harness_status(actor=Depends(current_actor)) -> dict[str, object]:
+        """Surface formal eval wiring state for operators (unset / unavailable / ready)."""
+        require_capability(actor, "ops.prompts.read")
+        if eval_harness_status is None:
+            return {
+                "name": "unset",
+                "available": False,
+                "releaseEligible": False,
+                "mode": "unset",
+                "detail": "eval_harness_not_configured",
+                "configured": False,
+            }
+        as_dict = getattr(eval_harness_status, "as_dict", None)
+        if callable(as_dict):
+            return as_dict()
+        return dict(eval_harness_status)
 
     @app.get("/api/governance/prompts")
     async def list_governance_prompts(actor=Depends(current_actor)) -> dict[str, object]:
@@ -224,7 +243,7 @@ def register_governance_routes(
     ) -> dict[str, object]:
         require_capability(actor, "ops.prompts.eval.run")
         verified = example_service.list_examples(actor=actor, status="VERIFIED")
-        return governance.run_prompt_eval(
+        return await governance.run_prompt_eval(
             prompt_id=prompt_id,
             version_id=version_id,
             verified_examples=verified,

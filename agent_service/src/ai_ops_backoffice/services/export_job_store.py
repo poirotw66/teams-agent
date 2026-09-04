@@ -20,6 +20,10 @@ class ExportJobStore(Protocol):
 
     async def list_by_status(self, statuses: set[str]) -> list[dict[str, Any]]: ...
 
+    async def list_all_content_refs(self) -> set[str]:
+        """Return every durable ``content_ref``. Must be complete (no page caps)."""
+        ...
+
     async def find_by_idempotency_scope(
         self,
         *,
@@ -95,11 +99,17 @@ def _apply_claim(
 
 
 class FileExportJobStore:
-    """Durable metadata store with process-safe atomic claim via flock."""
+    """Durable metadata store with process-safe atomic claim via flock.
+
+    The exclusive lock is held on a dedicated ``export_jobs.lock`` file so
+    ``os.replace`` of the JSON payload cannot drop the flock inode/handle that
+    other processes wait on.
+    """
 
     def __init__(self, root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self._path = root / "export_jobs.json"
+        self._lock_path = root / "export_jobs.lock"
         self._lock = threading.RLock()
 
     def _exclusive(self):
@@ -110,10 +120,9 @@ class FileExportJobStore:
 
             def __enter__(self):
                 self._store._lock.acquire()
-                self._store._path.parent.mkdir(parents=True, exist_ok=True)
-                if not self._store._path.exists():
-                    self._store._path.write_text("[]", encoding="utf-8")
-                self._handle = self._store._path.open("r+", encoding="utf-8")
+                self._store._lock_path.parent.mkdir(parents=True, exist_ok=True)
+                # Dedicated lock file — never replaced by JSON writes.
+                self._handle = self._store._lock_path.open("a+", encoding="utf-8")
                 try:
                     import fcntl
 
@@ -121,6 +130,8 @@ class FileExportJobStore:
                 except (ImportError, OSError):
                     # Windows / unsupported FS: threading lock still serializes in-process.
                     pass
+                if not self._store._path.exists():
+                    self._store._path.write_text("[]", encoding="utf-8")
                 return self
 
             def __exit__(self, exc_type, exc, tb) -> None:
@@ -188,6 +199,15 @@ class FileExportJobStore:
                 for payload in self._read_unlocked().values()
                 if payload.get("status") in statuses
             ]
+
+    async def list_all_content_refs(self) -> set[str]:
+        with self._exclusive():
+            refs: set[str] = set()
+            for payload in self._read_unlocked().values():
+                ref = payload.get("content_ref")
+                if isinstance(ref, str) and ref:
+                    refs.add(ref)
+            return refs
 
     async def find_by_idempotency_scope(
         self,
@@ -347,26 +367,62 @@ class FirestoreExportJobStore:
     async def delete(self, job_id: str) -> None:
         await self._collection.document(job_id).delete()
 
-    async def list_expired(self, before: datetime) -> list[dict[str, Any]]:
+    async def _stream_where(
+        self,
+        *,
+        field: str,
+        op: str,
+        value: Any,
+        page_size: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Page through a Firestore equality/range query without a hard row cap."""
         from google.cloud.firestore_v1.base_query import FieldFilter
 
-        query = self._collection.where(filter=FieldFilter("expires_at", "<=", before))
-        snapshots = [snapshot async for snapshot in query.limit(100).stream()]
+        results: list[dict[str, Any]] = []
+        last_snapshot = None
+        while True:
+            query = (
+                self._collection.where(filter=FieldFilter(field, op, value))
+                .order_by("__name__")
+                .limit(page_size)
+            )
+            if last_snapshot is not None:
+                query = query.start_after(last_snapshot)
+            batch = [snapshot async for snapshot in query.stream()]
+            if not batch:
+                break
+            for snapshot in batch:
+                payload = snapshot.to_dict()
+                if payload is not None:
+                    results.append(payload)
+            last_snapshot = batch[-1]
+            if len(batch) < page_size:
+                break
+        return results
+
+    async def list_expired(self, before: datetime) -> list[dict[str, Any]]:
+        snapshots = await self._stream_where(field="expires_at", op="<=", value=before)
         return [
-            snapshot.to_dict()
-            for snapshot in snapshots
-            if snapshot.to_dict().get("status") in {"COMPLETED", "FAILED"}
+            payload
+            for payload in snapshots
+            if payload.get("status") in {"COMPLETED", "FAILED"}
         ]
 
     async def list_by_status(self, statuses: set[str]) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for status in statuses:
-            from google.cloud.firestore_v1.base_query import FieldFilter
-
-            query = self._collection.where(filter=FieldFilter("status", "==", status))
-            snapshots = [snapshot async for snapshot in query.limit(100).stream()]
-            results.extend(snapshot.to_dict() for snapshot in snapshots)
+            results.extend(await self._stream_where(field="status", op="==", value=status))
         return results
+
+    async def list_all_content_refs(self) -> set[str]:
+        """Scan every status fully so purge never treats capped pages as complete."""
+        refs: set[str] = set()
+        for status in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"}:
+            for payload in await self._stream_where(field="status", op="==", value=status):
+                ref = payload.get("content_ref")
+                if isinstance(ref, str) and ref:
+                    refs.add(ref)
+        return refs
 
     async def find_by_idempotency_scope(
         self,
