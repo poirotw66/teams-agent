@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .models import (
     AuditEventRecord,
+    IdempotencyRecord,
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     ReleaseRecord,
@@ -62,6 +63,10 @@ class FilePortalRepository(InMemoryPortalRepository):
                     item["test_run_id"]: TestRunRecord.model_validate(item)
                     for item in payload.get("test_runs", [])
                 }
+                self.idempotency_records = {
+                    item["key"]: IdempotencyRecord.model_validate(item)
+                    for item in payload.get("idempotency_records", [])
+                }
                 self.active_release_id = payload.get("active_release_id")
             self._loaded = True
 
@@ -87,6 +92,10 @@ class FilePortalRepository(InMemoryPortalRepository):
                 ],
                 "test_runs": [
                     item.model_dump(mode="json") for item in self.test_runs.values()
+                ],
+                "idempotency_records": [
+                    item.model_dump(mode="json")
+                    for item in self.idempotency_records.values()
                 ],
                 "active_release_id": self.active_release_id,
             }
@@ -204,3 +213,12 @@ class FilePortalRepository(InMemoryPortalRepository):
     async def dashboard_summary(self, actor):
         await self._ensure_loaded()
         return await super().dashboard_summary(actor)
+
+    async def get_idempotency(self, key: str) -> IdempotencyRecord | None:
+        await self._ensure_loaded()
+        return await super().get_idempotency(key)
+
+    async def save_idempotency(self, record: IdempotencyRecord) -> None:
+        await self._ensure_loaded()
+        await super().save_idempotency(record)
+        await self._persist()

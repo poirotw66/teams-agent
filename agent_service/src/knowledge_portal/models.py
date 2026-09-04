@@ -212,8 +212,10 @@ class AuditEventRecord(StrictModel):
 class IdempotencyRecord(StrictModel):
     key: str
     payload_hash: str
-    response: dict[str, Any] | list[Any] | str
+    response: dict[str, Any] | list[Any] | str | None = None
+    status: Literal["PROCESSING", "COMPLETED", "FAILED"] = "COMPLETED"
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class CreateDocumentRequest(StrictModel):

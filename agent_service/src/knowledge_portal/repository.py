@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
@@ -85,6 +86,10 @@ class PortalRepository(Protocol):
 
     async def save_idempotency(self, record: IdempotencyRecord) -> None: ...
 
+    async def acquire_publish_lease(self, owner: str, ttl_seconds: float = 30.0) -> bool: ...
+
+    async def release_publish_lease(self, owner: str) -> None: ...
+
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary: ...
 
 
@@ -122,6 +127,9 @@ class InMemoryPortalRepository:
         self.test_runs: dict[str, TestRunRecord] = {}
         self.idempotency_records: dict[str, IdempotencyRecord] = {}
         self.active_release_id: str | None = None
+        self._lease_lock = asyncio.Lock()
+        self._publish_lease_owner: str | None = None
+        self._publish_lease_expires_at: datetime | None = None
 
     async def list_documents(
         self,
@@ -249,6 +257,25 @@ class InMemoryPortalRepository:
 
     async def save_idempotency(self, record: IdempotencyRecord) -> None:
         self.idempotency_records[record.key] = record
+
+    async def acquire_publish_lease(self, owner: str, ttl_seconds: float = 30.0) -> bool:
+        async with self._lease_lock:
+            now = datetime.now(UTC)
+            if self._publish_lease_owner is not None and self._publish_lease_expires_at is not None:
+                if self._publish_lease_owner == owner:
+                    self._publish_lease_expires_at = now + timedelta(seconds=ttl_seconds)
+                    return True
+                if now < self._publish_lease_expires_at:
+                    return False
+            self._publish_lease_owner = owner
+            self._publish_lease_expires_at = now + timedelta(seconds=ttl_seconds)
+            return True
+
+    async def release_publish_lease(self, owner: str) -> None:
+        async with self._lease_lock:
+            if self._publish_lease_owner == owner:
+                self._publish_lease_owner = None
+                self._publish_lease_expires_at = None
 
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary:
         documents = await self.list_documents(actor=actor)

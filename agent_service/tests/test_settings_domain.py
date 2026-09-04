@@ -459,3 +459,30 @@ def test_direct_construction_still_works_with_defaults(tmp_path: Path) -> None:
     assert settings.conversation_store_path is None
     assert settings.handoff_store_path is None
     assert settings.faq_path is None
+
+
+def test_rag_source_base_url_env_mapping_and_citation_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _minimal_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("RAG_SOURCE_BASE_URL", "https://kb.example.com/docs")
+    settings = RagSettings.from_env()
+    assert settings.source_base_url == "https://kb.example.com/docs"
+
+    # Integration test: verify that KnowledgeService._citation_for generates the full citation URL
+    from unittest.mock import MagicMock
+
+    from agent_service.knowledge import HybridKnowledgeService
+    from agent_service.retrieval import DocumentChunk, SearchResult
+
+    svc = HybridKnowledgeService(settings, index=MagicMock())
+    chunk = DocumentChunk(
+        chunk_id="chunk-1",
+        title="VPN Setup Guide",
+        source_path="it/vpn-setup.md",
+        content="VPN Instructions",
+    )
+    res = SearchResult(chunk=chunk, score=0.9, sparse_score=0.9)
+    citation = svc._citation_for(res)
+    assert citation.title == "VPN Setup Guide"
+    assert citation.url == "https://kb.example.com/docs/it/vpn-setup.md"

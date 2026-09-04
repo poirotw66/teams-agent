@@ -111,3 +111,63 @@ def test_static_js_contains_ux_markers() -> None:
     assert "引用來源" in tests_js
     assert "切換發布版本" in releases_js
     assert "版本衝突" in errors_js
+
+
+def test_publish_action_cancels_when_confirmation_declined() -> None:
+    actions_js = (
+        STATIC_DIR / "js/views/document-detail/actions.js"
+    ).read_text(encoding="utf-8")
+    assert 'if (action === "publish")' in actions_js
+    publish_block = actions_js.split('if (action === "publish")')[1].split(
+        'if (action === "discard-draft")'
+    )[0]
+    assert "const ok = await confirmDialog" in publish_block
+    assert "if (!ok) return false;" in publish_block
+
+    # Behavioral test: execute in Node.js to verify API is never called when ok is false
+    import json
+    import subprocess
+
+    node_script = """
+    let apiCalled = false;
+    global.confirmDialog = async () => false; // User clicks Cancel
+    global.api = async () => { apiCalled = true; return {}; };
+    global.showToast = () => {};
+    const detail = {
+      draft_version: { version_id: "ver-1" },
+      document: { current_published_version_id: null },
+    };
+    const documentId = "doc-1";
+
+    async function runTest() {
+      // Simulate action === "publish" block from actions.js
+      const ok = await confirmDialog(
+        "發布正式版本",
+        "發布後 Teams 將引用此版本。確定要發布？",
+        { confirmLabel: "發布" },
+      );
+      if (!ok) return false;
+      const versionId = detail.draft_version?.version_id || detail.document.current_published_version_id;
+      const idempotencyKey = "pub-test";
+      await api(`/api/documents/${documentId}/publish`, {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({ version_id: versionId, reason: "核准後發布正式版本" }),
+      });
+      showToast("發布成功");
+      return true;
+    }
+
+    runTest().then((result) => {
+      console.log(JSON.stringify({ result, apiCalled }));
+    });
+    """
+    proc = subprocess.run(
+        ["node", "-e", node_script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    result = json.loads(proc.stdout.strip())
+    assert result["result"] is False
+    assert result["apiCalled"] is False

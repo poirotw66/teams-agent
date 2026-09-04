@@ -1,4 +1,16 @@
-import { api, el, metric, ensureAuth, authHeaders, saveAuthHeaders, loadAuthHeaders } from "./api.js";
+import {
+  api,
+  el,
+  metric,
+  ensureAuth,
+  authHeaders,
+  saveAuthHeaders,
+  loadAuthHeaders,
+  clearAuthHeaders,
+  logout,
+  getTokenExpiryDetails,
+  showEntraLoginModal,
+} from "./api.js";
 import { renderNativeKnowledgePortal } from "./knowledge_portal_view.js";
 
 const routes = {
@@ -537,6 +549,30 @@ function renderTopbarActions() {
     roleStrong.textContent = capabilities.role;
     roleBadge.append(document.createTextNode("角色 "), roleStrong);
     meta.append(userChip, roleBadge);
+
+    const stored = loadAuthHeaders();
+    if (stored.bearerToken) {
+      const details = getTokenExpiryDetails(stored.bearerToken);
+      if (details) {
+        const expiryBadge = el(
+          "span",
+          `meta-chip ${details.isExpired ? "is-warning" : "is-ok"}`,
+          details.isExpired
+            ? `⚠️ 憑證已於 ${details.formatted} 過期`
+            : `⏰ 憑證至 ${details.formatted}`
+        );
+        expiryBadge.title = `憑證到期時間：${details.expiryDate.toLocaleString("zh-TW")}`;
+        meta.append(expiryBadge);
+      }
+    }
+
+    const logoutBtn = el("button", "meta-chip is-button", "登出 ⎋");
+    logoutBtn.type = "button";
+    logoutBtn.title = "登出 Entra 身分並清除憑證";
+    logoutBtn.addEventListener("click", () => {
+      logout();
+    });
+    meta.append(logoutBtn);
   } else {
     const roleChip = el("button", "meta-chip is-button");
     roleChip.type = "button";
@@ -546,6 +582,15 @@ function renderTopbarActions() {
     roleChip.append(document.createTextNode("角色 "), roleStrong, document.createTextNode(" ▾"));
     roleChip.addEventListener("click", showRoleSwitcherModal);
     meta.append(roleChip);
+
+    const logoutBtn = el("button", "meta-chip is-button", "重設身分");
+    logoutBtn.type = "button";
+    logoutBtn.title = "清除目前暫存身分";
+    logoutBtn.addEventListener("click", () => {
+      clearAuthHeaders();
+      window.location.reload();
+    });
+    meta.append(logoutBtn);
   }
   meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
   if (capabilities.knowledgeBridgeEnabled) {
@@ -4659,6 +4704,34 @@ window.addEventListener("keydown", (event) => {
     if (root && !root.hidden) {
       root.hidden = true;
       root.replaceChildren();
+    }
+  }
+});
+
+window.addEventListener("backoffice:token-expired", async () => {
+  if (capabilities?.authMode === "ENTRA") {
+    try {
+      await showEntraLoginModal({
+        message: "您的 Entra 登入憑證已過期，請重新輸入存取權杖以維持連線。",
+        reauth: true,
+      });
+      window.location.reload();
+    } catch {
+      // Ignored if cancelled
+    }
+  }
+});
+
+window.addEventListener("backoffice:unauthorized", async () => {
+  if (capabilities?.authMode === "ENTRA") {
+    try {
+      await showEntraLoginModal({
+        message: "存取遭拒或登入階段已失效 (401 Unauthorized)，請重新驗證身分。",
+        reauth: true,
+      });
+      window.location.reload();
+    } catch {
+      // Ignored if cancelled
     }
   }
 });

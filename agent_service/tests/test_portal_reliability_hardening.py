@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,6 +28,7 @@ from knowledge_portal.models import (
     RollbackRequest,
     SubmitReviewRequest,
 )
+from knowledge_portal.publisher import ReleaseBuildError
 from knowledge_portal.rbac import PortalPermissionError, ensure_can_review
 from knowledge_portal.repository import build_repository
 from knowledge_portal.service import PortalService
@@ -721,3 +724,453 @@ def test_rbac_strictly_forbids_self_review() -> None:
     ensure_can_review(reviewer, submitted_by="other-user", relaxed_workflow=False)
     ensure_can_review(manager, submitted_by="other-user", relaxed_workflow=False)
     ensure_can_review(platform, submitted_by="admin-1", relaxed_workflow=False)
+
+
+# --------------------------------------------------------------------------
+# 9. P1: Cross-instance publish coordination
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_cross_instance_concurrent_publish_coordination(tmp_path: Path) -> None:
+    service1, settings = _setup_test_portal(tmp_path)
+    # Create second service instance sharing the exact same repository
+    service2 = PortalService(settings, service1._ctx.repository)
+
+    platform_admin = PortalActor(
+        user_id="admin-1",
+        display_name="Platform Admin",
+        role="PLATFORM",
+        owner_unit_ids=[],
+    )
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(status_code=200, json={"status": "reloaded"})
+
+        # Create and approve doc1
+        doc1 = await service1.create_document(
+            platform_admin,
+            CreateDocumentRequest(
+                title="Doc 1",
+                summary="Sum 1",
+                category="General",
+                owner_unit_id="UNIT-A",
+                effective_at="2026-09-01",
+                review_due_at="2027-09-01",
+                change_reason="Init 1",
+                markdown_content="Content 1",
+            ),
+            correlation_id="c-1",
+        )
+        await service1.submit_for_review(
+            platform_admin,
+            doc1.document.document_id,
+            SubmitReviewRequest(etag=doc1.document.etag, change_reason="Review 1"),
+            correlation_id="c-2",
+        )
+        rev1 = (await service1.list_pending_reviews(platform_admin)).items[0].review_id
+        await service1.decide_review(
+            platform_admin,
+            rev1,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK 1"),
+            correlation_id="c-3",
+        )
+
+        # Create and approve doc2
+        doc2 = await service2.create_document(
+            platform_admin,
+            CreateDocumentRequest(
+                title="Doc 2",
+                summary="Sum 2",
+                category="General",
+                owner_unit_id="UNIT-A",
+                effective_at="2026-09-01",
+                review_due_at="2027-09-01",
+                change_reason="Init 2",
+                markdown_content="Content 2",
+            ),
+            correlation_id="c-4",
+        )
+        await service2.submit_for_review(
+            platform_admin,
+            doc2.document.document_id,
+            SubmitReviewRequest(etag=doc2.document.etag, change_reason="Review 2"),
+            correlation_id="c-5",
+        )
+        rev2 = (await service2.list_pending_reviews(platform_admin)).items[0].review_id
+        await service2.decide_review(
+            platform_admin,
+            rev2,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK 2"),
+            correlation_id="c-6",
+        )
+
+        # Publish concurrently from service1 and service2
+        res1, res2 = await asyncio.gather(
+            service1.publish_version(
+                platform_admin,
+                doc1.document.document_id,
+                PublishRequest(version_id=doc1.draft_version.version_id, reason="Pub 1"),
+                correlation_id="c-pub-1",
+            ),
+            service2.publish_version(
+                platform_admin,
+                doc2.document.document_id,
+                PublishRequest(version_id=doc2.draft_version.version_id, reason="Pub 2"),
+                correlation_id="c-pub-2",
+            ),
+        )
+
+        # Active release pointer must point to the winning active release
+        active_id = await service1._ctx.repository.get_active_release_id()
+        assert active_id in (res1.release_id, res2.release_id)
+
+        # The active release must contain BOTH documents in its manifest!
+        active_rel = await service1._ctx.repository.get_release(active_id)
+        assert active_rel is not None
+        manifest_doc_ids = {entry.document_id for entry in active_rel.manifest}
+        assert doc1.document.document_id in manifest_doc_ids
+        assert doc2.document.document_id in manifest_doc_ids
+
+        # Exactly one release should have status ACTIVE
+        releases = await service1.list_releases(platform_admin)
+        active_count = sum(1 for r in releases if r.status == "ACTIVE")
+        assert active_count == 1
+
+
+# --------------------------------------------------------------------------
+# 10. P1: Unpublish failure leaves document published and retryable
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_unpublish_failure_leaves_document_published(tmp_path: Path) -> None:
+    service, _ = _setup_test_portal(tmp_path)
+    platform_admin = PortalActor(
+        user_id="admin-1",
+        display_name="Platform Admin",
+        role="PLATFORM",
+        owner_unit_ids=[],
+    )
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(status_code=200, json={"status": "reloaded"})
+
+        doc = await service.create_document(
+            platform_admin,
+            CreateDocumentRequest(
+                title="Doc To Unpublish",
+                summary="Sum",
+                category="General",
+                owner_unit_id="UNIT-A",
+                effective_at="2026-09-01",
+                review_due_at="2027-09-01",
+                change_reason="Init",
+                markdown_content="Content",
+            ),
+            correlation_id="c-1",
+        )
+        await service.submit_for_review(
+            platform_admin,
+            doc.document.document_id,
+            SubmitReviewRequest(etag=doc.document.etag, change_reason="Review"),
+            correlation_id="c-2",
+        )
+        rev_id = (await service.list_pending_reviews(platform_admin)).items[0].review_id
+        await service.decide_review(
+            platform_admin,
+            rev_id,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK"),
+            correlation_id="c-3",
+        )
+        await service.publish_version(
+            platform_admin,
+            doc.document.document_id,
+            PublishRequest(version_id=doc.draft_version.version_id, reason="Pub"),
+            correlation_id="c-4",
+        )
+
+        published_doc = await service.get_document(platform_admin, doc.document.document_id)
+        assert published_doc.document.status == "PUBLISHED"
+        assert published_doc.document.current_published_version_id is not None
+
+        # Inject build release failure
+        with patch.object(
+            service._ctx.publisher,
+            "build_release",
+            side_effect=ReleaseBuildError("Injected build error"),
+        ), pytest.raises(ReleaseBuildError):
+            await service.unpublish_document(
+                platform_admin,
+                doc.document.document_id,
+                RemoveDocumentRequest(reason="Test unpublish fail"),
+                correlation_id="c-fail",
+            )
+
+        # Document must STILL be PUBLISHED and retain current_published_version_id
+        doc_after_failure = await service.get_document(platform_admin, doc.document.document_id)
+        assert doc_after_failure.document.status == "PUBLISHED"
+        assert (
+            doc_after_failure.document.current_published_version_id
+            == published_doc.document.current_published_version_id
+        )
+
+        # Retry without build error succeeds
+        await service.unpublish_document(
+            platform_admin,
+            doc.document.document_id,
+            RemoveDocumentRequest(reason="Retry unpublish"),
+            correlation_id="c-retry",
+        )
+        doc_after_retry = await service.get_document(platform_admin, doc.document.document_id)
+        assert doc_after_retry.document.status == "UNPUBLISHED"
+        assert doc_after_retry.document.current_published_version_id is None
+
+
+# --------------------------------------------------------------------------
+# 11. P1: Stale reload does not overwrite active release
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_stale_sync_response_does_not_overwrite_active_release(tmp_path: Path) -> None:
+    service, _ = _setup_test_portal(tmp_path)
+    platform_admin = PortalActor(
+        user_id="admin-1",
+        display_name="Platform Admin",
+        role="PLATFORM",
+        owner_unit_ids=[],
+    )
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(status_code=200, json={"status": "reloaded"})
+
+        # Publish Doc 1 -> Release 1
+        doc1 = await service.create_document(
+            platform_admin,
+            CreateDocumentRequest(
+                title="Doc 1",
+                summary="Sum 1",
+                category="General",
+                owner_unit_id="UNIT-A",
+                effective_at="2026-09-01",
+                review_due_at="2027-09-01",
+                change_reason="Init 1",
+                markdown_content="Content 1",
+            ),
+            correlation_id="c-1",
+        )
+        await service.submit_for_review(
+            platform_admin,
+            doc1.document.document_id,
+            SubmitReviewRequest(etag=doc1.document.etag, change_reason="Review 1"),
+            correlation_id="c-2",
+        )
+        rev1 = (await service.list_pending_reviews(platform_admin)).items[0].review_id
+        await service.decide_review(
+            platform_admin,
+            rev1,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK 1"),
+            correlation_id="c-3",
+        )
+        rel1 = await service.publish_version(
+            platform_admin,
+            doc1.document.document_id,
+            PublishRequest(version_id=doc1.draft_version.version_id, reason="Pub 1"),
+            correlation_id="c-4",
+        )
+
+        # Publish Doc 2 -> Release 2 (now active)
+        doc2 = await service.create_document(
+            platform_admin,
+            CreateDocumentRequest(
+                title="Doc 2",
+                summary="Sum 2",
+                category="General",
+                owner_unit_id="UNIT-A",
+                effective_at="2026-09-01",
+                review_due_at="2027-09-01",
+                change_reason="Init 2",
+                markdown_content="Content 2",
+            ),
+            correlation_id="c-5",
+        )
+        await service.submit_for_review(
+            platform_admin,
+            doc2.document.document_id,
+            SubmitReviewRequest(etag=doc2.document.etag, change_reason="Review 2"),
+            correlation_id="c-6",
+        )
+        rev2 = (await service.list_pending_reviews(platform_admin)).items[0].review_id
+        await service.decide_review(
+            platform_admin,
+            rev2,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK 2"),
+            correlation_id="c-7",
+        )
+        rel2 = await service.publish_version(
+            platform_admin,
+            doc2.document.document_id,
+            PublishRequest(version_id=doc2.draft_version.version_id, reason="Pub 2"),
+            correlation_id="c-8",
+        )
+
+        assert (await service._ctx.repository.get_active_release_id()) == rel2.release_id
+
+        # Attempt to call sync_agent_release for rel1 (which is NOT active)
+        with pytest.raises(ValueError, match="not the current active release"):
+            await service.sync_agent_release(platform_admin, rel1.release_id, correlation_id="c-sync")
+
+
+# --------------------------------------------------------------------------
+# 12. P2: File repository idempotency persistence across restarts
+# --------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_file_repository_idempotency_persistence_and_concurrency(tmp_path: Path) -> None:
+    data_dir = tmp_path / "portal_data"
+    release_dir = tmp_path / "releases"
+    drafts_dir = tmp_path / "drafts"
+
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "repository_mode", "FILE")
+    object.__setattr__(settings, "data_dir", data_dir)
+    object.__setattr__(settings, "state_path", data_dir / "portal_state.json")
+    object.__setattr__(settings, "release_artifact_dir", release_dir)
+    object.__setattr__(settings, "drafts_dir", drafts_dir)
+    object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "relaxed_workflow", True)
+
+    repo1 = build_repository(settings)
+    service1 = PortalService(settings, repo1)
+
+    platform_admin = PortalActor(
+        user_id="admin-1",
+        display_name="Platform Admin",
+        role="PLATFORM",
+        owner_unit_ids=[],
+    )
+
+    req = CreateDocumentRequest(
+        title="Persisted Idempotent Doc",
+        summary="Summary",
+        category="General",
+        owner_unit_id="UNIT-A",
+        effective_at="2026-09-01",
+        review_due_at="2027-09-01",
+        change_reason="Init",
+        markdown_content="Persistent content",
+    )
+
+    doc_created = await service1.create_document(
+        platform_admin, req, correlation_id="c-1", idempotency_key="idemp-persist-1"
+    )
+    assert doc_created.document.document_id is not None
+
+    # Simulate full restart of service by creating fresh repo2 and service2 from same state file
+    repo2 = build_repository(settings)
+    service2 = PortalService(settings, repo2)
+
+    # Calling create_document with same idempotency key must return cached response, NOT create another doc
+    doc_reloaded = await service2.create_document(
+        platform_admin, req, correlation_id="c-2", idempotency_key="idemp-persist-1"
+    )
+    assert doc_reloaded.document.document_id == doc_created.document.document_id
+
+    # And documents list contains exactly 1 document
+    all_docs = await service2.list_documents(platform_admin)
+    assert len(all_docs.items) == 1
+
+    # Conflict with altered payload raises IdempotencyConflictError
+    req_conflict = CreateDocumentRequest(
+        title="Altered Doc",
+        summary="Summary",
+        category="General",
+        owner_unit_id="UNIT-A",
+        effective_at="2026-09-01",
+        review_due_at="2027-09-01",
+        change_reason="Init",
+        markdown_content="Different content",
+    )
+    with pytest.raises(IdempotencyConflictError):
+        await service2.create_document(
+            platform_admin, req_conflict, correlation_id="c-3", idempotency_key="idemp-persist-1"
+        )
+
+
+# --------------------------------------------------------------------------
+# 13. BU Handoff: Entra Login UI, JWT expiry tracking and zero window.prompt
+# --------------------------------------------------------------------------
+def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
+    api_js_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_ops_backoffice"
+        / "static"
+        / "js"
+        / "api.js"
+    )
+    content = api_js_path.read_text(encoding="utf-8")
+    assert "window.prompt" not in content
+    assert "showEntraLoginModal" in content
+    assert "isTokenExpired" in content
+    assert "getTokenExpiryDetails" in content
+    assert "logout" in content
+
+    node_script = """
+    import { parseJwt, isTokenExpired, getTokenExpiryDetails, authHeaders, saveAuthHeaders } from './src/ai_ops_backoffice/static/js/api.js';
+
+    const store = {};
+    global.sessionStorage = {
+      getItem: (k) => store[k] || null,
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    };
+
+    function makeJwt(payload) {
+      const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString('base64url');
+      const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      return `${header}.${body}.mockSignature`;
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expiredJwt = makeJwt({
+      name: "Expired User",
+      preferred_username: "expired@example.com",
+      exp: nowSec - 3600,
+      roles: ["SYSTEM_ADMIN"],
+    });
+
+    const validJwt = makeJwt({
+      name: "Valid User",
+      preferred_username: "valid@example.com",
+      exp: nowSec + 3600,
+      roles: ["KNOWLEDGE_ADMIN"],
+    });
+
+    const results = {
+      expiredIsExpired: isTokenExpired(expiredJwt),
+      validIsExpired: isTokenExpired(validJwt),
+      expiredDetails: getTokenExpiryDetails(expiredJwt),
+      validDetails: getTokenExpiryDetails(validJwt),
+    };
+
+    saveAuthHeaders({ bearerToken: validJwt });
+    const headersWithBearer = authHeaders();
+    results.bearerHeader = headersWithBearer.Authorization;
+
+    global.sessionStorage.removeItem("ai_ops_backoffice_auth");
+    const fallbackHeaders = authHeaders();
+    results.hasFallback = !!fallbackHeaders["X-Backoffice-Role"];
+
+    console.log(JSON.stringify(results));
+    """
+    proc = subprocess.run(
+        ["node", "--input-type=module", "-e", node_script],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    data = json.loads(proc.stdout.strip())
+    assert data["expiredIsExpired"] is True
+    assert data["validIsExpired"] is False
+    assert data["expiredDetails"]["isExpired"] is True
+    assert data["validDetails"]["isExpired"] is False
+    assert data["validDetails"]["name"] == "Valid User"
+    assert "Bearer " in data["bearerHeader"]
+    assert data["hasFallback"] is True
+

@@ -332,3 +332,33 @@ class _MemoryFilter(PortalRepository):
 
     async def dashboard_summary(self, actor):
         return await self._inner.dashboard_summary(actor)
+
+    async def acquire_publish_lease(self, owner: str, ttl_seconds: float = 30.0) -> bool:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        doc_ref = self._config().document("publish_lease")
+        doc = await doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict() or {}
+            curr_owner = data.get("owner")
+            curr_exp = data.get("expires_at")
+            if curr_owner and curr_exp:
+                if isinstance(curr_exp, str):
+                    curr_exp_dt = datetime.fromisoformat(curr_exp)
+                elif hasattr(curr_exp, "to_datetime"):
+                    curr_exp_dt = curr_exp.to_datetime()
+                else:
+                    curr_exp_dt = curr_exp
+                if curr_owner != owner and now < curr_exp_dt:
+                    return False
+        await doc_ref.set({"owner": owner, "expires_at": expires_at.isoformat()})
+        return True
+
+    async def release_publish_lease(self, owner: str) -> None:
+        doc_ref = self._config().document("publish_lease")
+        doc = await doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict() or {}
+            if data.get("owner") == owner:
+                await doc_ref.delete()

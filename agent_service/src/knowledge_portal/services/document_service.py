@@ -144,103 +144,109 @@ class DocumentService:
         if idempotency_key:
             scope_key = f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
             payload_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
-            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
-            if cached is not None:
+            status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
+            if status == "CACHED" and cached is not None:
                 if isinstance(cached, dict):
                     return DocumentDetailResponse.model_validate(cached)
                 return cached
-        document_id = new_id("doc")
-        version_id = new_id("ver")
-        asset_slug = slug_from_title(request.title)
-        _, assets_root = self._ctx.validation_context(
-            document_id=document_id,
-            version_id=version_id,
-            title=request.title,
-            asset_slug=asset_slug,
-        )
-        validation = validate_draft(
-            title=request.title,
-            owner_unit_id=request.owner_unit_id,
-            change_reason=request.change_reason,
-            effective_at=request.effective_at,
-            review_due_at=request.review_due_at,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            markdown_content=request.markdown_content,
-            asset_slug=asset_slug,
-            draft_assets_root=assets_root,
-        )
-        if validation.has_blocking:
-            raise ValueError(validation)
 
-        now = utc_now()
-        canonical = build_front_matter_markdown(
-            title=request.title,
-            owner_unit_id=request.owner_unit_id,
-            effective_at=request.effective_at,
-            review_due_at=request.review_due_at,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            version_number=1,
-            body=request.markdown_content,
-        )
-        digest = content_hash(canonical)
-        version = KnowledgeVersionRecord(
-            version_id=version_id,
-            document_id=document_id,
-            version_number=1,
-            source_type=request.source_type,
-            content_hash=digest,
-            canonical_content=canonical,
-            change_summary=request.change_summary,
-            change_reason=request.change_reason,
-            effective_at=request.effective_at,
-            review_due_at=request.review_due_at,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            owner_unit_id=request.owner_unit_id,
-            business_contact=request.business_contact,
-            category=request.category,
-            summary=request.summary,
-            title=request.title,
-            asset_slug=asset_slug,
-            validation_summary=validation,
-            parse_preview=build_parse_preview(canonical, request.title),
-            etag=new_etag(digest),
-            created_at=now,
-            created_by=actor.user_id,
-        )
-        document = KnowledgeDocumentRecord(
-            document_id=document_id,
-            title=request.title,
-            summary=request.summary,
-            category=request.category,
-            owner_unit_id=request.owner_unit_id,
-            business_contact=request.business_contact,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            draft_version_id=version_id,
-            status="DRAFT",
-            etag=new_etag(document_id, 1),
-            created_at=now,
-            created_by=actor.user_id,
-            updated_at=now,
-            updated_by=actor.user_id,
-            tenant_id=actor.tenant_id,
-        )
-        await self._repository.save_version(version)
-        await self._repository.save_document(document)
-        await self._ctx.audit(
-            actor=actor,
-            action="document.create",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-        )
-        response = await self.get_document(actor, document_id)
-        if idempotency_key:
-            await self._ctx.save_idempotency(scope_key, payload_hash, response)
-        return response
+        try:
+            document_id = new_id("doc")
+            version_id = new_id("ver")
+            asset_slug = slug_from_title(request.title)
+            _, assets_root = self._ctx.validation_context(
+                document_id=document_id,
+                version_id=version_id,
+                title=request.title,
+                asset_slug=asset_slug,
+            )
+            validation = validate_draft(
+                title=request.title,
+                owner_unit_id=request.owner_unit_id,
+                change_reason=request.change_reason,
+                effective_at=request.effective_at,
+                review_due_at=request.review_due_at,
+                audience_type=request.audience_type,
+                audience_group_ids=request.audience_group_ids,
+                markdown_content=request.markdown_content,
+                asset_slug=asset_slug,
+                draft_assets_root=assets_root,
+            )
+            if validation.has_blocking:
+                raise ValueError(validation)
+
+            now = utc_now()
+            canonical = build_front_matter_markdown(
+                title=request.title,
+                owner_unit_id=request.owner_unit_id,
+                effective_at=request.effective_at,
+                review_due_at=request.review_due_at,
+                audience_type=request.audience_type,
+                audience_group_ids=request.audience_group_ids,
+                version_number=1,
+                body=request.markdown_content,
+            )
+            digest = content_hash(canonical)
+            version = KnowledgeVersionRecord(
+                version_id=version_id,
+                document_id=document_id,
+                version_number=1,
+                source_type=request.source_type,
+                content_hash=digest,
+                canonical_content=canonical,
+                change_summary=request.change_summary,
+                change_reason=request.change_reason,
+                effective_at=request.effective_at,
+                review_due_at=request.review_due_at,
+                audience_type=request.audience_type,
+                audience_group_ids=request.audience_group_ids,
+                owner_unit_id=request.owner_unit_id,
+                business_contact=request.business_contact,
+                category=request.category,
+                summary=request.summary,
+                title=request.title,
+                asset_slug=asset_slug,
+                validation_summary=validation,
+                parse_preview=build_parse_preview(canonical, request.title),
+                etag=new_etag(digest),
+                created_at=now,
+                created_by=actor.user_id,
+            )
+            document = KnowledgeDocumentRecord(
+                document_id=document_id,
+                title=request.title,
+                summary=request.summary,
+                category=request.category,
+                owner_unit_id=request.owner_unit_id,
+                business_contact=request.business_contact,
+                audience_type=request.audience_type,
+                audience_group_ids=request.audience_group_ids,
+                draft_version_id=version_id,
+                status="DRAFT",
+                etag=new_etag(document_id, 1),
+                created_at=now,
+                created_by=actor.user_id,
+                updated_at=now,
+                updated_by=actor.user_id,
+                tenant_id=actor.tenant_id,
+            )
+            await self._repository.save_version(version)
+            await self._repository.save_document(document)
+            await self._ctx.audit(
+                actor=actor,
+                action="document.create",
+                target_type="document",
+                target_id=document_id,
+                correlation_id=correlation_id,
+            )
+            response = await self.get_document(actor, document_id)
+            if idempotency_key:
+                await self._ctx.complete_idempotency(scope_key, payload_hash, response)
+            return response
+        except Exception:
+            if idempotency_key:
+                await self._ctx.fail_idempotency(scope_key)
+            raise
 
     async def update_draft(
         self,

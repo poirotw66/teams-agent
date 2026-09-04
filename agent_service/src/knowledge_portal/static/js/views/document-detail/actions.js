@@ -151,6 +151,7 @@ export async function handleAction(documentId, action, detail) {
       "發布後 Teams 將引用此版本。確定要發布？",
       { confirmLabel: "發布" },
     );
+    if (!ok) return false;
     const versionId = detail.draft_version?.version_id || detail.document.current_published_version_id;
     const idempotencyKey = "pub-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
     await api(`/api/documents/${documentId}/publish`, {

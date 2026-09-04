@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -45,6 +46,28 @@ class ReleaseService:
         self._documents = documents
         self._publish_lock = asyncio.Lock()
 
+    @asynccontextmanager
+    async def _coordination_lock(self, action_name: str, timeout: float = 30.0):
+        lease_owner = f"{action_name}::{new_id('worker')}"
+        async with self._publish_lock:
+            start = asyncio.get_event_loop().time()
+            acquired = False
+            while not acquired:
+                acquired = await self._ctx.repository.acquire_publish_lease(
+                    lease_owner, ttl_seconds=timeout
+                )
+                if acquired:
+                    break
+                if asyncio.get_event_loop().time() - start > timeout:
+                    raise TimeoutError(
+                        f"Could not acquire publish coordination lease for {action_name}"
+                    )
+                await asyncio.sleep(0.05)
+            try:
+                yield
+            finally:
+                await self._ctx.repository.release_publish_lease(lease_owner)
+
     async def publish_version(
         self,
         actor: PortalActor,
@@ -56,70 +79,75 @@ class ReleaseService:
         if idempotency_key:
             scope_key = f"publish::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
             payload_hash = hashlib.sha256(f"{document_id}::{request.model_dump_json()}".encode()).hexdigest()
-            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
-            if cached is not None:
+            status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
+            if status == "CACHED" and cached is not None:
                 if isinstance(cached, dict):
                     return ReleaseRecord.model_validate(cached)
                 return cached
 
-        ensure_can_publish(actor)
-        detail = await self._documents.get_document(actor, document_id)
-        document = detail.document
-        version = await self._ctx.repository.get_version(request.version_id)
-        ensure_not_found("version", request.version_id, version)
-        if version.document_id != document_id:
-            raise ValueError("Version does not belong to this document.")
-        if version.status != "APPROVED":
-            raise ValueError("Only approved versions can be published.")
-        if (
-            self._ctx.settings.require_dual_approval
-            and actor.user_id == version.created_by
-            and actor.role != "PLATFORM"
-        ):
-            raise ValueError("Contributors cannot publish their own approved content.")
+        try:
+            ensure_can_publish(actor)
+            async with self._coordination_lock("publish"):
+                detail = await self._documents.get_document(actor, document_id)
+                document = detail.document
+                version = await self._ctx.repository.get_version(request.version_id)
+                ensure_not_found("version", request.version_id, version)
+                if version.document_id != document_id:
+                    raise ValueError("Version does not belong to this document.")
+                if version.status != "APPROVED":
+                    raise ValueError("Only approved versions can be published.")
+                if (
+                    self._ctx.settings.require_dual_approval
+                    and actor.user_id == version.created_by
+                    and actor.role != "PLATFORM"
+                ):
+                    raise ValueError("Contributors cannot publish their own approved content.")
 
-        async with self._publish_lock:
-            published_versions = await self._collect_active_published_versions(
-                actor,
-                exclude_document_ids={document_id},
-            )
-            published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
+                published_versions = await self._collect_active_published_versions(
+                    actor,
+                    exclude_document_ids={document_id},
+                )
+                published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
 
-            release = await self._activate_release(
+                release = await self._activate_release(
+                    actor=actor,
+                    published_versions=published_versions,
+                    correlation_id=correlation_id,
+                    reason=request.reason,
+                    metadata={"documentId": document_id, "versionId": version.version_id},
+                )
+                if release is None:
+                    raise ValueError("Publishing failed to produce an active release.")
+
+                updated_version = version.model_copy(update={"status": "PUBLISHED"})
+                updated_document = document.model_copy(
+                    update={
+                        "status": "PUBLISHED",
+                        "current_published_version_id": version.version_id,
+                        "draft_version_id": None,
+                        "updated_at": utc_now(),
+                        "updated_by": actor.user_id,
+                    }
+                )
+                await self._ctx.repository.save_version(updated_version)
+                await self._ctx.repository.save_document(updated_document)
+
+            await self._ctx.audit(
                 actor=actor,
-                published_versions=published_versions,
+                action="document.publish",
+                target_type="document",
+                target_id=document_id,
                 correlation_id=correlation_id,
                 reason=request.reason,
-                metadata={"documentId": document_id, "versionId": version.version_id},
+                metadata={"versionId": version.version_id, "releaseId": release.release_id},
             )
-            if release is None:
-                raise ValueError("Publishing failed to produce an active release.")
-
-            updated_version = version.model_copy(update={"status": "PUBLISHED"})
-            updated_document = document.model_copy(
-                update={
-                    "status": "PUBLISHED",
-                    "current_published_version_id": version.version_id,
-                    "draft_version_id": None,
-                    "updated_at": utc_now(),
-                    "updated_by": actor.user_id,
-                }
-            )
-            await self._ctx.repository.save_version(updated_version)
-            await self._ctx.repository.save_document(updated_document)
-
-        await self._ctx.audit(
-            actor=actor,
-            action="document.publish",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            reason=request.reason,
-            metadata={"versionId": version.version_id, "releaseId": release.release_id},
-        )
-        if idempotency_key:
-            await self._ctx.save_idempotency(scope_key, payload_hash, release)
-        return release
+            if idempotency_key:
+                await self._ctx.complete_idempotency(scope_key, payload_hash, release)
+            return release
+        except Exception:
+            if idempotency_key:
+                await self._ctx.fail_idempotency(scope_key)
+            raise
 
     async def unpublish_document(
         self,
@@ -128,23 +156,13 @@ class ReleaseService:
         request: RemoveDocumentRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        detail = await self._documents.get_document(actor, document_id)
-        document = detail.document
-        if document.status != "PUBLISHED":
-            raise ValueError("Only published documents can be unpublished.")
         ensure_can_publish(actor)
+        async with self._coordination_lock("unpublish"):
+            detail = await self._documents.get_document(actor, document_id)
+            document = detail.document
+            if document.status != "PUBLISHED" and not document.current_published_version_id:
+                raise ValueError("Only published documents can be unpublished.")
 
-        now = utc_now()
-        async with self._publish_lock:
-            updated_document = document.model_copy(
-                update={
-                    "status": "UNPUBLISHED",
-                    "current_published_version_id": None,
-                    "updated_at": now,
-                    "updated_by": actor.user_id,
-                }
-            )
-            await self._ctx.repository.save_document(updated_document)
             published_versions = await self._collect_active_published_versions(
                 actor,
                 exclude_document_ids={document_id},
@@ -156,6 +174,18 @@ class ReleaseService:
                 reason=request.reason,
                 metadata={"documentId": document_id, "action": "unpublish"},
             )
+
+            now = utc_now()
+            updated_document = document.model_copy(
+                update={
+                    "status": "UNPUBLISHED",
+                    "current_published_version_id": None,
+                    "updated_at": now,
+                    "updated_by": actor.user_id,
+                }
+            )
+            await self._ctx.repository.save_document(updated_document)
+
         await self._ctx.audit(
             actor=actor,
             action="document.unpublish",
@@ -193,119 +223,132 @@ class ReleaseService:
         if idempotency_key:
             scope_key = f"rollback::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
             payload_hash = hashlib.sha256(f"{request.release_id}::{request.reason}".encode()).hexdigest()
-            cached = await self._ctx.get_idempotency(scope_key, payload_hash)
-            if cached is not None:
+            status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
+            if status == "CACHED" and cached is not None:
                 if isinstance(cached, dict):
                     return ReleaseRecord.model_validate(cached)
                 return cached
 
-        ensure_can_publish(actor)
-        target = await self._ctx.repository.get_release(request.release_id)
-        ensure_not_found("release", request.release_id, target)
-        previous_active_id = await self._ctx.repository.get_active_release_id()
-        previous_release = (
-            await self._ctx.repository.get_release(previous_active_id)
-            if previous_active_id
-            else None
-        )
-
-        target_manifest = {entry.document_id: entry.version_id for entry in target.manifest}
-        prev_manifest = (
-            {entry.document_id: entry.version_id for entry in previous_release.manifest}
-            if previous_release
-            else {}
-        )
-
-        # Issue 1: Unit managers cannot perform global rollbacks affecting documents from other units
-        if actor.role != "PLATFORM":
-            affected_doc_ids = set(target_manifest.keys()) | set(prev_manifest.keys())
-            for doc_id in affected_doc_ids:
-                doc = await self._ctx.repository.get_document(doc_id)
-                if doc and not can_edit_document(
-                    actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
-                ):
-                    raise PortalPermissionError(
-                        "Global rollback affects documents from other units. Only platform administrators can perform global rollbacks."
-                    )
-
-        async with self._publish_lock:
-            await self._deactivate_other_releases(target.release_id)
-            await self._ctx.repository.set_active_release_id(target.release_id)
-            write_active_release_pointer(
-                self._ctx.settings.release_artifact_dir,
-                target.release_id,
+        try:
+            ensure_can_publish(actor)
+            target = await self._ctx.repository.get_release(request.release_id)
+            ensure_not_found("release", request.release_id, target)
+            previous_active_id = await self._ctx.repository.get_active_release_id()
+            previous_release = (
+                await self._ctx.repository.get_release(previous_active_id)
+                if previous_active_id
+                else None
             )
-            rolled_back = target.model_copy(
-                update={"status": "DEPLOYING", "activated_at": utc_now()}
-            )
-            await self._ctx.repository.save_release(rolled_back)
 
-            # Synchronize repository document records to match target release manifest
-            now = utc_now()
-            for doc_id in prev_manifest:
-                if doc_id not in target_manifest:
+            target_manifest = {entry.document_id: entry.version_id for entry in target.manifest}
+            prev_manifest = (
+                {entry.document_id: entry.version_id for entry in previous_release.manifest}
+                if previous_release
+                else {}
+            )
+
+            # Issue 1: Unit managers cannot perform global rollbacks affecting documents from other units
+            if actor.role != "PLATFORM":
+                affected_doc_ids = set(target_manifest.keys()) | set(prev_manifest.keys())
+                for doc_id in affected_doc_ids:
+                    doc = await self._ctx.repository.get_document(doc_id)
+                    if doc and not can_edit_document(
+                        actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+                    ):
+                        raise PortalPermissionError(
+                            "Global rollback affects documents from other units. Only platform administrators can perform global rollbacks."
+                        )
+
+            async with self._coordination_lock("rollback"):
+                await self._deactivate_other_releases(target.release_id)
+                await self._ctx.repository.set_active_release_id(target.release_id)
+                write_active_release_pointer(
+                    self._ctx.settings.release_artifact_dir,
+                    target.release_id,
+                )
+                rolled_back = target.model_copy(
+                    update={"status": "DEPLOYING", "activated_at": utc_now()}
+                )
+                await self._ctx.repository.save_release(rolled_back)
+
+                # Synchronize repository document records to match target release manifest
+                now = utc_now()
+                for doc_id in prev_manifest:
+                    if doc_id not in target_manifest:
+                        doc = await self._ctx.repository.get_document(doc_id)
+                        if doc is not None:
+                            update_fields: dict[str, Any] = {
+                                "current_published_version_id": None,
+                                "updated_at": now,
+                                "updated_by": actor.user_id,
+                            }
+                            if doc.status == "PUBLISHED":
+                                update_fields["status"] = "UNPUBLISHED"
+                            await self._ctx.repository.save_document(
+                                doc.model_copy(update=update_fields)
+                            )
+
+                for doc_id, version_id in target_manifest.items():
                     doc = await self._ctx.repository.get_document(doc_id)
                     if doc is not None:
-                        update_fields: dict[str, Any] = {
-                            "current_published_version_id": None,
+                        update_fields = {
+                            "current_published_version_id": version_id,
                             "updated_at": now,
                             "updated_by": actor.user_id,
                         }
-                        if doc.status == "PUBLISHED":
-                            update_fields["status"] = "UNPUBLISHED"
+                        if doc.status == "UNPUBLISHED":
+                            update_fields["status"] = "PUBLISHED"
                         await self._ctx.repository.save_document(
                             doc.model_copy(update=update_fields)
                         )
 
-            for doc_id, version_id in target_manifest.items():
-                doc = await self._ctx.repository.get_document(doc_id)
-                if doc is not None:
-                    update_fields = {
-                        "current_published_version_id": version_id,
-                        "updated_at": now,
-                        "updated_by": actor.user_id,
-                    }
-                    if doc.status == "UNPUBLISHED":
-                        update_fields["status"] = "PUBLISHED"
-                    await self._ctx.repository.save_document(
-                        doc.model_copy(update=update_fields)
+                reload_success, reload_error = await self._notify_agent_reload(
+                    target.release_id, correlation_id
+                )
+                current_active = await self._ctx.repository.get_active_release_id()
+                if current_active == target.release_id:
+                    if reload_success:
+                        rolled_back = rolled_back.model_copy(
+                            update={
+                                "status": "ACTIVE",
+                                "verified_at": utc_now(),
+                                "failure_summary": "",
+                            }
+                        )
+                    else:
+                        rolled_back = rolled_back.model_copy(
+                            update={
+                                "status": "RELOAD_FAILED",
+                                "failure_summary": reload_error or "Agent reload failed",
+                            }
+                        )
+                    await self._ctx.repository.save_release(rolled_back)
+                else:
+                    logger.warning(
+                        "Rollback %s reload finished, but active pointer has transitioned to %s.",
+                        target.release_id,
+                        current_active,
                     )
 
-            reload_success, reload_error = await self._notify_agent_reload(
-                target.release_id, correlation_id
+            await self._ctx.audit(
+                actor=actor,
+                action="release.rollback",
+                target_type="release",
+                target_id=target.release_id,
+                correlation_id=correlation_id,
+                reason=request.reason,
+                metadata={
+                    "previousReleaseId": previous_active_id,
+                    "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
+                },
             )
-            if reload_success:
-                rolled_back = rolled_back.model_copy(
-                    update={
-                        "status": "ACTIVE",
-                        "verified_at": utc_now(),
-                        "failure_summary": "",
-                    }
-                )
-            else:
-                rolled_back = rolled_back.model_copy(
-                    update={
-                        "status": "RELOAD_FAILED",
-                        "failure_summary": reload_error or "Agent reload failed",
-                    }
-                )
-            await self._ctx.repository.save_release(rolled_back)
-
-        await self._ctx.audit(
-            actor=actor,
-            action="release.rollback",
-            target_type="release",
-            target_id=target.release_id,
-            correlation_id=correlation_id,
-            reason=request.reason,
-            metadata={
-                "previousReleaseId": previous_active_id,
-                "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
-            },
-        )
-        if idempotency_key:
-            await self._ctx.save_idempotency(scope_key, payload_hash, rolled_back)
-        return rolled_back
+            if idempotency_key:
+                await self._ctx.complete_idempotency(scope_key, payload_hash, rolled_back)
+            return rolled_back
+        except Exception:
+            if idempotency_key:
+                await self._ctx.fail_idempotency(scope_key)
+            raise
 
     async def sync_agent_release(
         self,
@@ -325,23 +368,34 @@ class ReleaseService:
         reload_success, reload_error = await self._notify_agent_reload(
             release_id, correlation_id
         )
-        if reload_success:
-            updated = release.model_copy(
-                update={
-                    "status": "ACTIVE",
-                    "verified_at": utc_now(),
-                    "failure_summary": "",
-                }
-            )
-            await self._deactivate_other_releases(release_id)
-        else:
-            updated = release.model_copy(
-                update={
-                    "status": "RELOAD_FAILED",
-                    "failure_summary": reload_error or "Agent reload failed",
-                }
-            )
-        await self._ctx.repository.save_release(updated)
+        async with self._coordination_lock("sync_agent"):
+            current_active = await self._ctx.repository.get_active_release_id()
+            if current_active != release_id:
+                logger.warning(
+                    "Agent reload completed for release %s, but active release has transitioned to %s; discarding stale state mutation.",
+                    release_id,
+                    current_active,
+                )
+                return release
+
+            if reload_success:
+                updated = release.model_copy(
+                    update={
+                        "status": "ACTIVE",
+                        "verified_at": utc_now(),
+                        "failure_summary": "",
+                    }
+                )
+                await self._deactivate_other_releases(release_id)
+            else:
+                updated = release.model_copy(
+                    update={
+                        "status": "RELOAD_FAILED",
+                        "failure_summary": reload_error or "Agent reload failed",
+                    }
+                )
+            await self._ctx.repository.save_release(updated)
+
         await self._ctx.audit(
             actor=actor,
             action="release.sync_agent",
@@ -624,22 +678,30 @@ class ReleaseService:
         reload_success, reload_error = await self._notify_agent_reload(
             release.release_id, correlation_id
         )
-        if reload_success:
-            release = release.model_copy(
-                update={
-                    "status": "ACTIVE",
-                    "verified_at": utc_now(),
-                    "failure_summary": "",
-                }
-            )
+        current_active = await self._ctx.repository.get_active_release_id()
+        if current_active == release.release_id:
+            if reload_success:
+                release = release.model_copy(
+                    update={
+                        "status": "ACTIVE",
+                        "verified_at": utc_now(),
+                        "failure_summary": "",
+                    }
+                )
+            else:
+                release = release.model_copy(
+                    update={
+                        "status": "RELOAD_FAILED",
+                        "failure_summary": reload_error or "Agent reload failed",
+                    }
+                )
+            await self._ctx.repository.save_release(release)
         else:
-            release = release.model_copy(
-                update={
-                    "status": "RELOAD_FAILED",
-                    "failure_summary": reload_error or "Agent reload failed",
-                }
+            logger.warning(
+                "Release %s reload finished, but active pointer has transitioned to %s.",
+                release.release_id,
+                current_active,
             )
-        await self._ctx.repository.save_release(release)
 
         audit_meta = dict(metadata or {})
         audit_meta["reloadStatus"] = "SUCCESS" if reload_success else "FAILURE"
