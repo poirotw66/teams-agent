@@ -1356,7 +1356,6 @@ async function renderConversations(state = {}) {
     const convScroll = el("div", "table-responsive");
     convScroll.append(table);
     panel.append(convScroll);
-    const history = state.history || [];
     const pager = el("div", "filter-bar");
     if (history.length) {
       const previous = el("button", "", "上一頁");

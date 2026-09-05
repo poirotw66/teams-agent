@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-05T03:23:53.180802+00:00",
+  "updatedAt": "2026-09-05T15:59:12.384884+00:00",
   "items": [
     {
       "day": "2026-08-05",
@@ -1298,14 +1298,14 @@
       "day": "2026-09-04",
       "tenantId": "tenant-1",
       "environment": "dev",
-      "turnCount": 468,
-      "issueCount": 364,
-      "handoffCount": 182,
-      "feedbackCount": 26,
-      "noAnswerCount": 78,
+      "turnCount": 504,
+      "issueCount": 392,
+      "handoffCount": 196,
+      "feedbackCount": 28,
+      "noAnswerCount": 84,
       "issueTypeCounts": {
-        "vpn.connection_failed": 286,
-        "other.unclassified": 78
+        "vpn.connection_failed": 308,
+        "other.unclassified": 84
       },
       "modelTokenCounts": {
         "unknown": 0
@@ -1317,15 +1317,16 @@
       "day": "2026-09-04",
       "tenantId": "00000000-0000-0000-0000-0000000000001",
       "environment": "dev",
-      "turnCount": 10,
-      "issueCount": 10,
+      "turnCount": 12,
+      "issueCount": 12,
       "handoffCount": 1,
       "feedbackCount": 0,
       "noAnswerCount": 1,
       "issueTypeCounts": {
         "password.account_locked": 6,
         "vpn.connection_failed": 2,
-        "other.unclassified": 2
+        "other.unclassified": 2,
+        "other.greeting": 2
       },
       "modelTokenCounts": {
         "gemini-3.7-flash": 0,
@@ -1367,13 +1368,18 @@
       "day": "2026-09-05",
       "tenantId": "tenant-1",
       "environment": "dev",
-      "turnCount": 0,
-      "issueCount": 0,
-      "handoffCount": 0,
-      "feedbackCount": 0,
-      "noAnswerCount": 0,
-      "issueTypeCounts": {},
-      "modelTokenCounts": {},
+      "turnCount": 43,
+      "issueCount": 35,
+      "handoffCount": 14,
+      "feedbackCount": 2,
+      "noAnswerCount": 6,
+      "issueTypeCounts": {
+        "vpn.connection_failed": 29,
+        "other.unclassified": 6
+      },
+      "modelTokenCounts": {
+        "unknown": 0
+      },
       "estimatedCostUsd": 0.0,
       "schemaVersion": "daily-ops-aggregate-v1"
     }
