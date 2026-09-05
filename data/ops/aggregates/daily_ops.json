@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-04T10:24:18.752983+00:00",
+  "updatedAt": "2026-09-05T03:23:53.180802+00:00",
   "items": [
     {
       "day": "2026-08-05",
@@ -1298,14 +1298,14 @@
       "day": "2026-09-04",
       "tenantId": "tenant-1",
       "environment": "dev",
-      "turnCount": 216,
-      "issueCount": 168,
-      "handoffCount": 84,
-      "feedbackCount": 12,
-      "noAnswerCount": 36,
+      "turnCount": 468,
+      "issueCount": 364,
+      "handoffCount": 182,
+      "feedbackCount": 26,
+      "noAnswerCount": 78,
       "issueTypeCounts": {
-        "vpn.connection_failed": 132,
-        "other.unclassified": 36
+        "vpn.connection_failed": 286,
+        "other.unclassified": 78
       },
       "modelTokenCounts": {
         "unknown": 0
@@ -1333,6 +1333,48 @@
         "unknown": 0
       },
       "estimatedCostUsd": 0.005449,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-05",
+      "tenantId": "",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-05",
+      "tenantId": "00000000-0000-0000-0000-0000000000001",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-05",
+      "tenantId": "tenant-1",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
       "schemaVersion": "daily-ops-aggregate-v1"
     }
   ]

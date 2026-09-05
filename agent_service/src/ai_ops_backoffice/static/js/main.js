@@ -845,7 +845,10 @@ function firstVisibleView(workspaceId) {
   return workspace?.items[0]?.[0] || null;
 }
 
+let currentActiveView = "overview";
+
 function renderNav(active, options = {}) {
+  currentActiveView = active;
   const nav = document.getElementById("nav");
   nav.replaceChildren();
   const visible = visibleWorkspaces();
@@ -1036,6 +1039,13 @@ async function renderOverview(forceRefresh = false) {
 
 let conversationPollTimer = null;
 let conversationAutoRefresh = false;
+let conversationPollInFlight = false;
+let currentConversationState = {
+  period: { preset: "30d" },
+  filters: {},
+  cursor: "",
+  history: [],
+};
 
 function stopConversationPolling() {
   if (conversationPollTimer) {
@@ -1044,6 +1054,39 @@ function stopConversationPolling() {
   }
 }
 
+function startConversationPolling() {
+  stopConversationPolling();
+  if (!conversationAutoRefresh) return;
+  conversationPollTimer = setInterval(async () => {
+    if (document.hidden || conversationPollInFlight || currentActiveView !== "conversations") return;
+    try {
+      conversationPollInFlight = true;
+      await renderConversations({
+        ...currentConversationState,
+        forceRefresh: true,
+        isPolling: true,
+      });
+    } finally {
+      conversationPollInFlight = false;
+    }
+  }, 5000);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopConversationPolling();
+  } else if (conversationAutoRefresh && currentActiveView === "conversations") {
+    startConversationPolling();
+    if (!conversationPollInFlight) {
+      renderConversations({
+        ...currentConversationState,
+        forceRefresh: true,
+        isPolling: true,
+      });
+    }
+  }
+});
+
 async function renderConversations(state = {}) {
   const app = document.getElementById("app");
   if (!state.isPolling) {
@@ -1051,11 +1094,21 @@ async function renderConversations(state = {}) {
   }
   try {
     const navFilters = loadNavFilters();
-    const period = state.period || { preset: "30d" };
-    const savedFilters = state.filters || {};
+    const period = state.period || currentConversationState.period || { preset: "30d" };
+    const savedFilters = state.filters || currentConversationState.filters || {};
+    const cursor = state.cursor !== undefined ? state.cursor : currentConversationState.cursor;
+    const history = state.history !== undefined ? state.history : currentConversationState.history;
+
+    currentConversationState = {
+      period,
+      filters: savedFilters,
+      cursor,
+      history,
+    };
+
     const filters = periodParams(period);
     filters.set("limit", "25");
-    if (state.cursor) filters.set("cursor", state.cursor);
+    if (cursor) filters.set("cursor", cursor);
     const issueTypeId =
       savedFilters.issueTypeId ||
       (navFilters.view === "conversations" ? navFilters.issueTypeId : "");
@@ -1075,6 +1128,19 @@ async function renderConversations(state = {}) {
     if (state.forceRefresh) filters.set("refresh", "true");
 
     const data = await api(`/api/conversations?${filters.toString()}`);
+
+    if (state.isPolling) {
+      const activeId = document.activeElement?.id;
+      if (activeId && activeId.startsWith("conversation-")) {
+        const badge = document.getElementById("conversations-freshness");
+        if (badge) {
+          const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+          badge.textContent = `最後更新：${nowTime}`;
+        }
+        return;
+      }
+    }
+
     const panel = el("section", "panel");
 
     // Header with Title & Real-time Live Controls
@@ -1124,24 +1190,13 @@ async function renderConversations(state = {}) {
 
     autoRefreshCheckbox.addEventListener("change", () => {
       conversationAutoRefresh = autoRefreshCheckbox.checked;
-      stopConversationPolling();
       if (conversationAutoRefresh) {
-        conversationPollTimer = setInterval(() => {
-          renderConversations({
-            period,
-            filters: currentFilters(),
-            cursor: state.cursor || "",
-            history: state.history || [],
-            forceRefresh: true,
-            isPolling: true,
-          });
-        }, 5000);
+        startConversationPolling();
+      } else {
+        stopConversationPolling();
       }
       renderConversations({
-        period,
-        filters: currentFilters(),
-        cursor: state.cursor || "",
-        history: state.history || [],
+        ...currentConversationState,
         forceRefresh: true,
       });
     });
@@ -1151,10 +1206,7 @@ async function renderConversations(state = {}) {
     refreshButton.title = "即刻向後端取得最新對話記錄（繞過暫存）";
     refreshButton.addEventListener("click", () => {
       renderConversations({
-        period,
-        filters: currentFilters(),
-        cursor: state.cursor || "",
-        history: state.history || [],
+        ...currentConversationState,
         forceRefresh: true,
       });
     });
@@ -1167,7 +1219,7 @@ async function renderConversations(state = {}) {
     const channelSelect = el("select", "");
     channelSelect.id = "conversation-channel-scope";
     channelSelect.innerHTML =
-      '<option value="">全部通道</option><option value="playground">Playground 測試</option><option value="personal">Teams 個人 (1:1)</option><option value="channel">Teams 頻道</option><option value="groupchat">群組對話</option>';
+      '<option value="">全部通道</option><option value="playground">Playground 測試</option><option value="personal">Teams 個人 (1:1)</option><option value="channel">Teams 頻道</option><option value="group_chat">群組對話</option>';
     if (channelScope) channelSelect.value = channelScope;
 
     const issueInput = el("input");
@@ -1288,7 +1340,7 @@ async function renderConversations(state = {}) {
         channelTag.textContent = "Teams 個人";
       } else if (item.channelScope === "channel") {
         channelTag.textContent = "Teams 頻道";
-      } else if (item.channelScope === "groupchat") {
+      } else if (item.channelScope === "group_chat" || item.channelScope === "groupchat") {
         channelTag.textContent = "群組";
       } else {
         channelTag.textContent = item.channelScope || "-";

@@ -85,7 +85,8 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
         else:
             raise ValueError("unsupported_delivery_store_mode")
         store = CompositeOperationalStore(
-            primary, sinks, journal=journal, sink_names=sink_names, inline_sinks=False,
+            primary, sinks, journal=journal, sink_names=sink_names,
+            inline_sinks=resolved.delivery_inline_sinks,
             worker_options={
                 "lease_seconds": resolved.delivery_lease_seconds,
                 "timeout_seconds": resolved.delivery_timeout_seconds,

@@ -100,6 +100,7 @@ class ExportRequest(BaseModel):
     feedback_reason: str | None = None
     resolved_status: str | None = None
     idempotency_key: str | None = None
+    channel_scope: str | None = None
 
 
 class FaqCreateRequest(BaseModel):
@@ -300,6 +301,9 @@ def create_app(
     knowledge_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
+    prod_issues = resolved_settings.validate_for_production()
+    if prod_issues:
+        raise ValueError(f"Invalid production configuration: {'; '.join(prod_issues)}")
     query_service = BackofficeQueryService(resolved_settings)
     export_rate_limiter = ExportRateLimiter()
 
@@ -1235,6 +1239,7 @@ def create_app(
                 feedback_reason=payload.feedback_reason,
                 resolved_status=payload.resolved_status,
                 idempotency_key=idempotency,
+                channel_scope=payload.channel_scope,
             )
         except Exception as exc:
             from ai_ops_backoffice.services.export_authorization import (

@@ -42,6 +42,7 @@ class OpsSettings:
     delivery_retry_max_seconds: float = 300.0
     delivery_poll_seconds: float = 1.0
     delivery_batch_size: int = 100
+    delivery_inline_sinks: bool = False
 
     @classmethod
     def from_env(cls, data_dir: Path | None = None) -> OpsSettings:
@@ -93,4 +94,5 @@ class OpsSettings:
             ),
             delivery_poll_seconds=float(environ.get("OPS_DELIVERY_POLL_SECONDS", "1")),
             delivery_batch_size=int(environ.get("OPS_DELIVERY_BATCH_SIZE", "100")),
+            delivery_inline_sinks=_bool_env("OPS_DELIVERY_INLINE_SINKS", False),
         )

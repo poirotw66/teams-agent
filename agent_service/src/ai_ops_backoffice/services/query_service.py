@@ -324,8 +324,29 @@ class BackofficeQueryService:
         return period.start_at, until
 
     def _cache_key(self, period: ResolvedPeriod | None) -> str:
-        since, until = self._period_bounds(period)
-        return f"{since.isoformat() if since else ''}|{until.isoformat() if until else ''}"
+        if period is None:
+            return "all"
+        if period.explicit_range:
+            since = period.start_at.isoformat() if period.start_at else ""
+            until = period.end_at.isoformat() if period.end_at else ""
+            return f"explicit:{since}|{until}"
+        window_bucket = int(utc_now().timestamp() // 30)
+        return f"rolling:{period.preset}:{period.days}d:{window_bucket}"
+
+    def _prune_cache(self, now: datetime, cache_ttl: timedelta) -> None:
+        expired_keys = [
+            k for k, (ts, _) in self._event_caches.items()
+            if now - ts >= cache_ttl
+        ]
+        for k in expired_keys:
+            self._event_caches.pop(k, None)
+        if len(self._event_caches) >= 50:
+            sorted_keys = sorted(
+                self._event_caches.keys(),
+                key=lambda k: self._event_caches[k][0],
+            )
+            for k in sorted_keys[: len(self._event_caches) - 49]:
+                self._event_caches.pop(k, None)
 
     async def _events(
         self,
@@ -358,6 +379,7 @@ class BackofficeQueryService:
             events.extend(page)
             if cursor is None:
                 break
+        self._prune_cache(now, cache_ttl)
         self._event_caches[cache_key] = (now, events)
         return events
 
@@ -571,7 +593,7 @@ class BackofficeQueryService:
         # then expanding aggregates with auth dimensions + watermarks before
         # skipping the scan for eligible cross-unit queries.
         coverage_complete = False
-        if self._actor_may_use_daily_aggregates(actor):
+        if not force_refresh and self._actor_may_use_daily_aggregates(actor):
             aggregate_rows = self._aggregate_store.list_range(
                 start_day=period.start_at.date().isoformat(),
                 end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
@@ -2241,6 +2263,7 @@ class BackofficeQueryService:
         feedback_reason: str | None = None,
         resolved_status: str | None = None,
         idempotency_key: str | None = None,
+        channel_scope: str | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
             "preset": preset,
@@ -2262,6 +2285,7 @@ class BackofficeQueryService:
                 "rating": rating,
                 "reason": feedback_reason,
                 "resolvedStatus": resolved_status,
+                "channelScope": channel_scope,
             }.items()
             if value is not None
         }
@@ -2278,6 +2302,7 @@ class BackofficeQueryService:
                 "rating": rating,
                 "feedback_reason": feedback_reason,
                 "resolved_status": resolved_status,
+                "channel_scope": channel_scope,
             },
             "reason": reason,
         }
@@ -2355,6 +2380,7 @@ class BackofficeQueryService:
                 model=filters.get("model"),
                 has_feedback=filters.get("has_feedback"),
                 handoff=filters.get("handoff"),
+                channel_scope=filters.get("channel_scope"),
             )
         else:
             raise ValueError(f"Unsupported export type: {export_type}")
@@ -2371,6 +2397,7 @@ class BackofficeQueryService:
                 "rating": filters.get("rating"),
                 "reason": filters.get("feedback_reason"),
                 "resolvedStatus": filters.get("resolved_status"),
+                "channelScope": filters.get("channel_scope"),
             }.items()
             if value is not None
         }

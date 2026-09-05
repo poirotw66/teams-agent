@@ -75,6 +75,7 @@ locals {
     OPS_BIGQUERY_ENABLED               = "true"
     OPS_BIGQUERY_DATASET               = var.ops_bigquery_dataset
     OPS_BIGQUERY_TABLE                 = var.ops_bigquery_table
+    OPS_DELIVERY_INLINE_SINKS          = "true"
   }
 
   backoffice_env = {
@@ -91,6 +92,22 @@ locals {
     OPS_FIRESTORE_PROJECT           = var.project_id
     GCP_PROJECT_ID                  = var.project_id
     AI_OPS_GCP_PROJECT              = var.project_id
+    AI_OPS_EXPORT_JOB_STORE_MODE    = "FIRESTORE"
+    AI_OPS_EXPORT_JOB_COLLECTION    = "ai_ops_export_jobs"
+    AI_OPS_FAQ_STORE_MODE           = "FIRESTORE"
+    AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX = "ai_ops_faq"
+    AI_OPS_EXAMPLE_STORE_MODE       = "FIRESTORE"
+    AI_OPS_EXAMPLE_FIRESTORE_COLLECTION_PREFIX = "ai_ops_faq"
+    AI_OPS_QUALITY_STORE_MODE       = "FIRESTORE"
+    AI_OPS_QUALITY_FIRESTORE_COLLECTION = "ai_ops_quality_state"
+    AI_OPS_SYNC_STORE_MODE          = "FIRESTORE"
+    AI_OPS_SYNC_FIRESTORE_COLLECTION = "ai_ops_sync_state"
+    AI_OPS_BUDGET_STORE_MODE        = "FIRESTORE"
+    AI_OPS_BUDGET_FIRESTORE_COLLECTION = "ai_ops_budget_state"
+    AI_OPS_GOVERNANCE_STORE_MODE    = "FIRESTORE"
+    AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION = "ai_ops_governance_state"
+    AI_OPS_PROMPT_STORE_MODE        = "FIRESTORE"
+    AI_OPS_PROMPT_FIRESTORE_COLLECTION = "ai_ops_prompt_state"
     KNOWLEDGE_PORTAL_PUBLIC_URL     = var.knowledge_portal_public_url
     KNOWLEDGE_PORTAL_URL_CONFIGURED = tostring(var.knowledge_portal_public_url != "")
     KNOWLEDGE_PORTAL_INTERNAL_URL   = var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : var.knowledge_portal_public_url

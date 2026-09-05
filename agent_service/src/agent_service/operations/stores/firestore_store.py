@@ -51,7 +51,7 @@ class FirestoreOperationalStore:
                 query = query.start_after(cursor_doc)
         snapshots = [item async for item in query.limit(limit + 1).stream()]
         events = [OperationalEvent.model_validate(item.to_dict()) for item in snapshots[:limit]]
-        next_cursor = snapshots[limit].id if len(snapshots) > limit else None
+        next_cursor = snapshots[limit - 1].id if len(snapshots) > limit > 0 else None
         return events, next_cursor
 
     async def find_events(self, *, correlation_id: str) -> list[OperationalEvent]:

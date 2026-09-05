@@ -81,15 +81,34 @@ def test_bigquery_sink_writes_schema_aligned_row() -> None:
     assert table_id == "ai_ops_analytics.operational_events"
     assert len(rows) == 1
     row = rows[0]
-    assert set(row.keys()) == {
+    expected_fields = {
         "event_id",
         "event_type",
+        "schema_version",
         "occurred_at",
+        "ingested_at",
+        "environment",
+        "tenant_id",
+        "team_id",
+        "channel_scope",
         "conversation_id",
+        "turn_id",
+        "request_id",
         "correlation_id",
+        "issue_occurrence_id",
         "issue_type_id",
+        "taxonomy_version",
+        "actor_ref",
+        "data_classification",
+        "masking_policy_version",
+        "retention_expires_at",
         "payload",
     }
+    assert set(row.keys()) == expected_fields
+    assert row["schema_version"] == 1
+    assert row["environment"] == "dev"
+    assert row["data_classification"] == "INTERNAL"
+    assert row["retention_expires_at"] is not None
     assert row["payload"] == json.dumps({"messageMasked": "hello"}, ensure_ascii=False)
     assert "payload_json" not in row
 

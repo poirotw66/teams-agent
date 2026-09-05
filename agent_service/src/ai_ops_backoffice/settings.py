@@ -72,6 +72,29 @@ class BackofficeSettings:
     deployment_tenant_id: str = "local-development"
     relaxed_workflow: bool = False
     min_test_cases_for_review: int = 3
+    environment: str = "dev"
+
+    def validate_for_production(self) -> list[str]:
+        """Validate settings for production deployment to prevent ephemeral data loss."""
+        issues: list[str] = []
+        is_prod = self.environment in {"prod", "production"}
+        if is_prod and self.auth_mode == "ENTRA":
+            file_stores = [
+                ("ops_store_mode", self.ops_store_mode),
+                ("ops_audit_store_mode", self.ops_audit_store_mode),
+                ("export_job_store_mode", self.export_job_store_mode),
+                ("faq_store_mode", self.faq_store_mode),
+                ("example_store_mode", self.example_store_mode),
+                ("quality_store_mode", self.quality_store_mode),
+                ("sync_store_mode", self.sync_store_mode),
+                ("budget_store_mode", self.budget_store_mode),
+                ("governance_store_mode", self.governance_store_mode),
+                ("prompt_poc_store_mode", self.prompt_poc_store_mode),
+            ]
+            for name, mode in file_stores:
+                if mode == "FILE":
+                    issues.append(f"{name} must not be FILE in production; configure FIRESTORE.")
+        return issues
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -286,4 +309,10 @@ class BackofficeSettings:
                     else "3"
                 )
             ),
+            environment=(
+                os.environ.get("AI_OPS_DEPLOYMENT_ENV")
+                or os.environ.get("AGENT_DEPLOYMENT_ENV")
+                or os.environ.get("ENV")
+                or "dev"
+            ).lower(),
         )

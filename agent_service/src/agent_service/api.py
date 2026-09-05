@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import json
 import logging
@@ -31,8 +32,10 @@ from .knowledge_release import (
     release_index_path,
     resolve_knowledge_index,
 )
-from .operations.emitter import OperationalEventReplayConflict
+from .operations.contracts import OperationalEvent, utc_now
+from .operations.emitter import OperationalEventReplayConflict, _channel_scope
 from .operations.event_identity import LogicalRequestIdentity
+from .operations.masking import mask_text, pseudonymous_actor_id
 from .operations.runtime import OpsRuntime, build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
@@ -443,19 +446,56 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         return correlation_id
 
     def _log_chat_failure(
-        payload: AgentRequest, correlation_id: str, error: BaseException, started_at: float
+        payload: AgentRequest,
+        correlation_id: str,
+        error: BaseException,
+        started_at: float,
+        *,
+        ops_runtime: OpsRuntime | None = None,
     ) -> None:
         # Spec §17/§15.2: never a stack trace to the caller, and log the
         # error TYPE only (never the exception's raw text, which could
         # embed request content).
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        error_type = type(error).__name__
         logger.error(
             "Agent request failed: request_id=%s correlation_id=%s "
             "error_type=%s elapsed_ms=%s",
             payload.requestId,
             correlation_id,
-            type(error).__name__,
-            round((time.perf_counter() - started_at) * 1000, 1),
+            error_type,
+            elapsed_ms,
         )
+        if ops_runtime is not None and ops_runtime.settings.enabled:
+            now = utc_now()
+            conversation_id = payload.conversation.conversationId
+            channel_scope = _channel_scope(payload.channel)
+            tenant_id = payload.conversation.tenantId
+            if (
+                channel_scope == "playground"
+                and ops_runtime.settings.environment in {"dev", "test"}
+                and (not tenant_id or tenant_id in {"00000000-0000-0000-0000-0000000000001", "local-development"})
+            ):
+                tenant_id = "local-development"
+            failed_event = OperationalEvent(
+                event_id=f"{payload.requestId}:request.failed",
+                event_type="request.failed",
+                occurred_at=now,
+                environment=ops_runtime.settings.environment,
+                tenant_id=tenant_id,
+                team_id=payload.conversation.teamId,
+                channel_scope=channel_scope,
+                conversation_id=conversation_id,
+                turn_id=f"{payload.conversation.tenantId}:{conversation_id}:{payload.requestId}",
+                request_id=payload.requestId,
+                correlation_id=correlation_id,
+                payload={
+                    "component": "agent-service",
+                    "errorType": error_type,
+                    "elapsedMs": elapsed_ms,
+                },
+            )
+            asyncio.create_task(ops_runtime.ingestion.ingest(failed_event))
 
     async def _log_chat_success(
         payload: AgentRequest,
@@ -576,7 +616,10 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                     state = await workflow.run(payload, correlation_id=correlation_id)
                 usage_metadata = usage_callback.usage_metadata
             except Exception as error:
-                _log_chat_failure(payload, correlation_id, error, started_at)
+                _log_chat_failure(
+                    payload, correlation_id, error, started_at,
+                    ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                )
                 raise HTTPException(
                     status_code=503,
                     detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
@@ -593,7 +636,10 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                     knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
                 )
             except Exception as error:
-                _log_chat_failure(payload, correlation_id, error, started_at)
+                _log_chat_failure(
+                    payload, correlation_id, error, started_at,
+                    ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                )
                 raise HTTPException(
                     status_code=503,
                     detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
@@ -662,7 +708,10 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                                 state = value
                     usage_metadata = usage_callback.usage_metadata
                 except Exception as error:  # noqa: BLE001 - cannot re-raise mid-stream, see docstring
-                    _log_chat_failure(payload, correlation_id, error, started_at)
+                    _log_chat_failure(
+                        payload, correlation_id, error, started_at,
+                        ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                    )
                     yield _sse(
                         "error",
                         {
@@ -676,7 +725,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                     # The graph completed without yielding a terminal state. Treat
                     # it as a failure rather than shipping an empty answer.
                     _log_chat_failure(
-                        payload, correlation_id, RuntimeError("no state"), started_at
+                        payload, correlation_id, RuntimeError("no state"), started_at,
+                        ops_runtime=getattr(request.app.state, "ops_runtime", None),
                     )
                     yield _sse(
                         "error",
@@ -698,7 +748,10 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
                         knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
                     )
                 except Exception as error:  # noqa: BLE001 - HTTP status is already committed
-                    _log_chat_failure(payload, correlation_id, error, started_at)
+                    _log_chat_failure(
+                        payload, correlation_id, error, started_at,
+                        ops_runtime=getattr(request.app.state, "ops_runtime", None),
+                    )
                     yield _sse(
                         "error",
                         {
@@ -733,6 +786,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
         dependencies=[Depends(authorize)],
     )
     async def feedback(payload: FeedbackRequest, request: Request) -> dict[str, str]:
+        masked_reason = mask_text(payload.reason).text if payload.reason else None
+        pseudo_user = pseudonymous_actor_id(payload.userId) if payload.userId else None
         logger.info(
             "Feedback recorded: correlation_id=%s conversation_id=%s issue_id=%s "
             "rating=%s user_id=%s reason=%s resolved=%s",
@@ -740,8 +795,8 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
             payload.conversationId,
             payload.issueId,
             payload.rating,
-            payload.userId,
-            payload.reason,
+            pseudo_user,
+            masked_reason,
             payload.resolvedStatus,
         )
         ops_runtime = getattr(request.app.state, "ops_runtime", None)

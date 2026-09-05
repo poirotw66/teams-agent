@@ -56,12 +56,10 @@ def tenant_allows_event(actor: ActorContext, event: OperationalEvent) -> bool:
     if not actor_tenant:
         return False
     event_tenant = (event.tenant_id or "").strip() or "local-development"
-    if actor_tenant == event_tenant:
-        return True
-    if actor_tenant in LOCAL_SANDBOX_TENANTS:
-        if event_tenant in LOCAL_SANDBOX_TENANTS or event.channel_scope == "playground":
-            return True
-    return False
+    return (
+        actor_tenant == event_tenant
+        or (actor_tenant in LOCAL_SANDBOX_TENANTS and event_tenant in LOCAL_SANDBOX_TENANTS)
+    )
 
 
 def event_in_actor_scope(

@@ -2297,3 +2297,194 @@ def test_playground_visibility_for_bu_role_in_local_development(tmp_path: Path) 
     assert detail_res.json()["conversationId"] == "conv-playground-bu"
 
 
+def test_query_cache_key_stability_and_pruning(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    svc = BackofficeQueryService(settings)
+    p1 = svc._resolve_period(preset="24h")
+    p2 = svc._resolve_period(preset="24h")
+    assert svc._cache_key(p1) == svc._cache_key(p2)
+
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)
+    for i in range(60):
+        svc._event_caches[f"key-{i}"] = (now, [])
+    svc._prune_cache(now, timedelta(seconds=30))
+    assert len(svc._event_caches) <= 50
+
+
+@pytest.mark.asyncio
+async def test_export_job_supports_channel_scope(tmp_path: Path) -> None:
+    from unittest.mock import AsyncMock
+
+    from agent_service.operations.access import ActorContext
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    svc = BackofficeQueryService(settings)
+    actor = ActorContext(
+        user_id="owner.1",
+        display_name="Owner",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="local-development",
+    )
+    res = await svc.create_export_job(
+        actor=actor,
+        export_type="conversations",
+        reason="Testing channel scope export",
+        days=7,
+        channel_scope="group_chat",
+    )
+    job = await svc.export_jobs.get_job(res["jobId"], actor=actor)
+    assert job.request_params["queryFilters"]["channel_scope"] == "group_chat"
+
+    svc.list_conversations = AsyncMock(return_value={"items": [], "page": {"limit": 25, "hasMore": False}})
+    await svc.execute(actor=actor, job=job)
+    svc.list_conversations.assert_awaited_once()
+    assert svc.list_conversations.call_args.kwargs.get("channel_scope") == "group_chat"
+
+
+def test_production_store_mode_validation(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    prod_file_settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="ENTRA",
+        ops_store_mode="FILE",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id="entra-tenant",
+        entra_client_id="entra-client",
+        environment="production",
+    )
+    issues = prod_file_settings.validate_for_production()
+    assert len(issues) > 0
+    assert any("ops_store_mode must not be FILE" in issue for issue in issues)
+
+    with pytest.raises(ValueError, match="Invalid production configuration"):
+        create_app(prod_file_settings)
+
+    prod_cloud_settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="ENTRA",
+        ops_store_mode="FIRESTORE",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FIRESTORE",
+        export_job_store_mode="FIRESTORE",
+        faq_store_mode="FIRESTORE",
+        example_store_mode="FIRESTORE",
+        quality_store_mode="FIRESTORE",
+        sync_store_mode="FIRESTORE",
+        budget_store_mode="FIRESTORE",
+        governance_store_mode="FIRESTORE",
+        prompt_poc_store_mode="FIRESTORE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id="entra-tenant",
+        entra_client_id="entra-client",
+        environment="production",
+    )
+    assert prod_cloud_settings.validate_for_production() == []
+
+
+@pytest.mark.asyncio
+async def test_operations_summary_force_refresh_bypasses_aggregates(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from agent_service.operations.access import ActorContext
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    svc = BackofficeQueryService(settings)
+    actor = ActorContext(
+        user_id="admin.1",
+        display_name="Admin",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=(),
+        tenant_id="local-development",
+    )
+    svc._aggregate_store = MagicMock()
+    summary = await svc.operations_summary(actor, preset="7d", force_refresh=True)
+    assert summary["metricsSource"] == "event_scan"
+    svc._aggregate_store.list_range.assert_not_called()
+
+
+
+

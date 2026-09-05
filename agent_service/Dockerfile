@@ -13,11 +13,9 @@ COPY agent_service/pyproject.toml agent_service/README.md ./agent_service/
 COPY agent_service/src ./agent_service/src
 COPY data ./data
 
-# The 'firestore' extra ships the persistent Conversation Repository
-# backend (spec §10.3). It is installed here because Cloud Run is exactly
-# where CONVERSATION_REPOSITORY_MODE=MEMORY loses context on scale-to-zero;
-# the extra stays optional for local MEMORY/FILE runs and for the tests.
-RUN pip install --no-cache-dir "./agent_service[firestore]"
+# The 'firestore', 'bigquery', and 'portal' extras ship cloud persistence,
+# operational analytics sink, and token/auth verification for Cloud Run.
+RUN pip install --no-cache-dir "./agent_service[firestore,bigquery,portal]"
 
 RUN mkdir -p /app/data/index \
     && chown -R 65532:65532 /app/data

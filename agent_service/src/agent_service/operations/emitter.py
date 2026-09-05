@@ -152,7 +152,13 @@ class OperationalEventEmitter:
             events = self.build_turn_events(payload, state, cost_summary=cost_summary)
         except OperationalEventReplayDuplicate:
             return
-        await self._ingestion.ingest_many(events)
+        conversation_id = getattr(state.get("conversation"), "conversationId", None) or payload.conversation.conversationId
+        request_key = LogicalRequestIdentity(payload.conversation.tenantId, conversation_id, payload.requestId).value
+        try:
+            await self._ingestion.ingest_many(events)
+        except Exception:
+            self._final_usage.pop(request_key, None)
+            raise
 
     def schedule_turn(
         self, payload: AgentRequest, state: dict[str, Any], *,
@@ -164,7 +170,17 @@ class OperationalEventEmitter:
             events = self.build_turn_events(payload, state, cost_summary=cost_summary)
         except OperationalEventReplayDuplicate:
             return
-        asyncio.create_task(self._ingestion.ingest_many(events))
+        conversation_id = getattr(state.get("conversation"), "conversationId", None) or payload.conversation.conversationId
+        request_key = LogicalRequestIdentity(payload.conversation.tenantId, conversation_id, payload.requestId).value
+
+        async def _ingest_with_rollback() -> None:
+            try:
+                await self._ingestion.ingest_many(events)
+            except Exception:
+                self._final_usage.pop(request_key, None)
+                raise
+
+        asyncio.create_task(_ingest_with_rollback())
 
     def build_feedback_event(
         self, payload: FeedbackRequest, *,
@@ -334,11 +350,19 @@ class OperationalEventEmitter:
         conversation_id = getattr(conversation, "conversationId", None) or payload.conversation.conversationId
         identity = LogicalRequestIdentity(payload.conversation.tenantId, conversation_id, payload.requestId)
         occurred_at = self._occurred_at(state, conversation)
+        channel_scope = _channel_scope(payload.channel)
+        event_tenant_id = payload.conversation.tenantId
+        if (
+            channel_scope == "playground"
+            and self._settings.environment in {"dev", "test"}
+            and (not event_tenant_id or event_tenant_id in {"00000000-0000-0000-0000-0000000000001", "local-development"})
+        ):
+            event_tenant_id = "local-development"
         base = {
             "environment": self._settings.environment,
-            "tenant_id": payload.conversation.tenantId,
+            "tenant_id": event_tenant_id,
             "team_id": payload.conversation.teamId,
-            "channel_scope": _channel_scope(payload.channel),
+            "channel_scope": channel_scope,
             "conversation_id": conversation_id,
             "turn_id": identity.value,
             "request_id": payload.requestId,
