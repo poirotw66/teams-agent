@@ -338,9 +338,9 @@ class FakeHandoffRouter:
         **_kwargs,
     ) -> HandoffAction:
         from agent_service.confirmation import TicketIntent, classify_ticket_intent
-        from agent_service.handoff_flow import _protocol_close_command
+        from agent_service.handoff_flow import is_protocol_close_command
 
-        if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
+        if case_status == "DEMO_ACTIVE" and is_protocol_close_command(message):
             return HandoffAction.CLOSE
         if case_status == "DEMO_ACTIVE":
             if (

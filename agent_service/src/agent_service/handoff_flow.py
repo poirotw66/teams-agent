@@ -171,7 +171,7 @@ def validate_handoff_action(case_status: str, action: HandoffAction) -> HandoffA
     return action
 
 
-def _protocol_close_command(message: str) -> bool:
+def is_protocol_close_command(message: str) -> bool:
     normalized = message.strip().casefold()
     return normalized in {"/close", "close"}
 
@@ -191,7 +191,7 @@ class AgenticHandoffRouter:
         conversation_turns: Sequence[str] = (),
         execution_context: ExecutionContext | None = None,
     ) -> HandoffAction:
-        if case_status == "DEMO_ACTIVE" and _protocol_close_command(message):
+        if case_status == "DEMO_ACTIVE" and is_protocol_close_command(message):
             return HandoffAction.CLOSE
 
         fallback = (

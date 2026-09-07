@@ -33,6 +33,7 @@ function createKnowledgeBackendState({ defaultBackend = "HYBRID", geminiAvailabl
   return {
     defaultBackend,
     sessionBackends: new Map(),
+    sessionPlaygroundIds: new Map(),
     options: knowledgeBackendOptions(geminiAvailable, geminiReason),
   };
 }
@@ -81,7 +82,7 @@ async function handleKnowledgeBackendRequest(req, res, state) {
   res.end(JSON.stringify(buildKnowledgeBackendStatus(state, form.backend)));
 }
 
-function injectPlaygroundEvaluation(activity, backend) {
+function injectPlaygroundEvaluation(activity, backend, playgroundSessionId) {
   if (!activity || typeof activity !== "object" || Array.isArray(activity)) {
     return activity;
   }
@@ -95,6 +96,11 @@ function injectPlaygroundEvaluation(activity, backend) {
     channelData.evaluationKnowledgeBackend = backend;
   } else {
     delete channelData.evaluationKnowledgeBackend;
+  }
+  if (typeof playgroundSessionId === "string" && playgroundSessionId.trim()) {
+    channelData.playgroundSessionId = playgroundSessionId.trim();
+  } else {
+    delete channelData.playgroundSessionId;
   }
   next.channelData = channelData;
   return next;
@@ -145,4 +151,5 @@ module.exports = {
   handleKnowledgeBackendRequest,
   injectPlaygroundEvaluation,
   proxyKnowledgeControl,
+  resolveEvaluationBackend,
 };

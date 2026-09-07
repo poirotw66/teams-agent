@@ -74,7 +74,8 @@ function knowledgeControlScript() {
     } catch (error) {
       status.textContent = "無法讀取後端狀態";
       applyButton.disabled = true;
-      resetButton.disabled = true;
+      // Keep「新對話」usable even when knowledge-backend status is unavailable.
+      resetButton.disabled = false;
     }
   }
 

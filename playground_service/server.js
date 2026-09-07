@@ -17,6 +17,7 @@ const {
   buildSessionCookie,
   clearSessionCookie,
   isAuthenticated,
+  resolvePlaygroundSessionId,
 } = require("./lib/auth");
 const { requiredEnv, securityHeaders, clientAddress, readForm } = require("./lib/http");
 const { loginPage, knowledgeControlScript, proxyIndex } = require("./lib/pages");
@@ -26,6 +27,7 @@ const {
   handleKnowledgeBackendRequest,
   injectPlaygroundEvaluation,
   proxyKnowledgeControl,
+  resolveEvaluationBackend,
 } = require("./lib/knowledge-control");
 const {
   resetPlaygroundConversation,
@@ -138,7 +140,13 @@ function createGateway({
         return;
       }
       if (req.method === "POST") {
-        await proxyAdapterMessages(req, res, adapterTarget, knowledgeState.defaultBackend);
+        await proxyAdapterMessages(
+          req,
+          res,
+          adapterTarget,
+          resolveEvaluationBackend(req, knowledgeState),
+          resolvePlaygroundSessionId(req, knowledgeState),
+        );
         return;
       }
       res.writeHead(405, { "content-type": "text/plain; charset=utf-8", ...securityHeaders() });

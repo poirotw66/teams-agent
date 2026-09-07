@@ -101,6 +101,18 @@ class AgentRequest:
         if evaluation_backend not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
             evaluation_backend = None
 
+        conversation_id = conversation.id if conversation else None
+        playground_session = getattr(channel_data, "playgroundSessionId", None)
+        if (
+            isinstance(playground_session, str)
+            and playground_session.strip()
+            and (activity.channel_id or "").casefold() == "playground"
+            and conversation_id
+        ):
+            # Playground "新對話" keeps the same personal-chat id; rotate the
+            # logical conversation key so handoff + history do not stick.
+            conversation_id = f"{conversation_id}::{playground_session.strip()}"
+
         return cls(
             requestId=resolved_correlation_id,
             correlationId=resolved_correlation_id,
@@ -109,7 +121,7 @@ class AgentRequest:
                 tenantId=tenant_id,
                 teamId=_info_id(getattr(channel_data, "team", None)),
                 channelId=_info_id(getattr(channel_data, "channel", None)),
-                conversationId=conversation.id if conversation else None,
+                conversationId=conversation_id,
             ),
             user=UserIdentity(
                 teamsUserId=sender.id if sender else None,

@@ -1,17 +1,23 @@
 "use strict";
 
-const { rotateSessionCookie } = require("./auth");
+const { rotateSessionCookie, rotatePlaygroundSessionId } = require("./auth");
 const { securityHeaders } = require("./http");
 const { injectPlaygroundEvaluation } = require("./knowledge-control");
 
+function personalChatIdFromConfig(config) {
+  return config?.config?.personalChat?.id || config?.personalChat?.id || null;
+}
+
 async function resetPlaygroundConversation(playgroundTarget) {
   const base = playgroundTarget.replace(/\/$/, "");
-  const configResponse = await fetch(`${base}/_internal/v1/config`, { signal: AbortSignal.timeout(5000) });
+  const configResponse = await fetch(`${base}/_internal/v1/config`, {
+    signal: AbortSignal.timeout(20000),
+  });
   if (!configResponse.ok) {
     throw new Error(`playground config failed (${configResponse.status})`);
   }
   const config = await configResponse.json();
-  const personalChatId = config?.personalChat?.id;
+  const personalChatId = personalChatIdFromConfig(config);
   if (!personalChatId) {
     throw new Error("playground config missing personalChat.id");
   }
@@ -47,19 +53,26 @@ async function resetPlaygroundConversation(playgroundTarget) {
 async function handleNewConversationRequest(req, res, state, sessionSecret, secureCookie, playgroundTarget) {
   try {
     const created = await resetPlaygroundConversation(playgroundTarget);
+    const playgroundSessionId = rotatePlaygroundSessionId(req, state);
     res.writeHead(200, {
       "content-type": "application/json; charset=utf-8",
       "set-cookie": rotateSessionCookie(req, state, sessionSecret, secureCookie),
       ...securityHeaders(),
     });
-    res.end(JSON.stringify({ ok: true, conversationId: created.conversationId }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        conversationId: created.conversationId,
+        playgroundSessionId,
+      }),
+    );
   } catch (error) {
     res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
     res.end(JSON.stringify({ detail: error instanceof Error ? error.message : "無法重設 Playground 對話" }));
   }
 }
 
-async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend) {
+async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend, playgroundSessionId) {
   if (!adapterTarget) {
     res.writeHead(503, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
     res.end(JSON.stringify({ detail: "Adapter proxy 尚未設定" }));
@@ -78,7 +91,7 @@ async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend) 
     }
     let payload = body ? JSON.parse(body) : {};
     if (typeof payload === "object" && payload !== null) {
-      payload = injectPlaygroundEvaluation(payload, evaluationBackend);
+      payload = injectPlaygroundEvaluation(payload, evaluationBackend, playgroundSessionId);
       body = JSON.stringify(payload);
     }
     const headers = {
@@ -109,6 +122,7 @@ async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend) 
 }
 
 module.exports = {
+  personalChatIdFromConfig,
   resetPlaygroundConversation,
   handleNewConversationRequest,
   proxyAdapterMessages,

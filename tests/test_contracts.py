@@ -42,6 +42,34 @@ def test_agent_request_reads_evaluation_knowledge_backend_from_channel_data() ->
     assert payload["evaluationKnowledgeBackend"] == "GEMINI_FILE_SEARCH"
 
 
+def test_agent_request_scopes_playground_session_into_conversation_id() -> None:
+    activity = make_message_activity(
+        channelId="playground",
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "playgroundSessionId": "sess-42",
+        },
+    )
+
+    request = AgentRequest.from_activity(activity, "你好")
+
+    assert request.conversation.conversationId == "conversation-1::sess-42"
+
+
+def test_agent_request_ignores_playground_session_outside_playground_channel() -> None:
+    activity = make_message_activity(
+        channelId="msteams",
+        channelData={
+            "tenant": {"id": "tenant-1"},
+            "playgroundSessionId": "sess-42",
+        },
+    )
+
+    request = AgentRequest.from_activity(activity, "你好")
+
+    assert request.conversation.conversationId == "conversation-1"
+
+
 def test_agent_request_ignores_invalid_evaluation_knowledge_backend() -> None:
     activity = make_message_activity(
         channelData={

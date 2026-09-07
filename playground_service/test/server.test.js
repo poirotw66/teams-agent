@@ -274,7 +274,13 @@ test("new conversation resets playground direct line conversation and rotates se
     for await (const chunk of req) body += chunk;
     if (req.url === "/_internal/v1/config" && req.method === "GET") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ personalChat: { id: "personal-chat-1", name: "Personal" } }));
+      // Match the live Agents Playground shape: personalChat is nested under config.
+      res.end(
+        JSON.stringify({
+          config: { personalChat: { id: "personal-chat-1", name: "Personal" } },
+          internalConfig: {},
+        }),
+      );
       return;
     }
     if (req.url === "/v3/conversations" && req.method === "POST") {
@@ -316,7 +322,11 @@ test("new conversation resets playground direct line conversation and rotates se
       headers: { cookie },
     });
     assert.equal(reset.status, 200);
-    assert.deepEqual(await reset.json(), { ok: true, conversationId: "conv-1" });
+    const payload = await reset.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.conversationId, "conv-1");
+    assert.equal(typeof payload.playgroundSessionId, "string");
+    assert.ok(payload.playgroundSessionId.length > 0);
     assert.equal(createCount, 1);
     assert.deepEqual(linkBody, {
       conversationId: "personal-chat-1",
@@ -326,5 +336,59 @@ test("new conversation resets playground direct line conversation and rotates se
   } finally {
     await close(gateway);
     await close(upstream);
+  }
+});
+
+test("adapter proxy injects playgroundSessionId for logical conversation reset", async () => {
+  let receivedBody = null;
+  const adapter = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    receivedBody = JSON.parse(body);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"status":"accepted"}');
+  });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("ok");
+  });
+  const adapterPort = await listen(adapter);
+  const upstreamPort = await listen(upstream);
+  const gateway = createGateway({
+    password: "test-password",
+    sessionSecret: "a sufficiently long test session secret",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    adapterTarget: `http://127.0.0.1:${adapterPort}`,
+  });
+  const gatewayPort = await listen(gateway);
+  const baseUrl = `http://127.0.0.1:${gatewayPort}`;
+
+  try {
+    const login = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "password=test-password",
+    });
+    const cookie = login.headers.get("set-cookie").split(";", 1)[0];
+
+    const proxied = await fetch(`${baseUrl}/_adapter/api/messages`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "message",
+        channelId: "msteams",
+        text: "你好",
+        channelData: { tenant: { id: "tenant-1" } },
+      }),
+    });
+    assert.equal(proxied.status, 200);
+    assert.equal(receivedBody.channelId, "playground");
+    assert.equal(typeof receivedBody.channelData.playgroundSessionId, "string");
+    assert.ok(receivedBody.channelData.playgroundSessionId.length > 0);
+  } finally {
+    await close(gateway);
+    await close(upstream);
+    await close(adapter);
   }
 });

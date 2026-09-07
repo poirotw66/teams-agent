@@ -90,11 +90,42 @@ function clearSessionCookie(secureCookie) {
 function rotateSessionCookie(req, state, sessionSecret, secureCookie) {
   const oldToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   const backend = oldToken ? state.sessionBackends.get(oldToken) : undefined;
+  const playgroundSessionId = oldToken
+    ? state.sessionPlaygroundIds.get(oldToken)
+    : undefined;
   const token = signSession(sessionSecret);
   if (backend) {
     state.sessionBackends.set(token, backend);
   }
+  if (playgroundSessionId) {
+    state.sessionPlaygroundIds.set(token, playgroundSessionId);
+  }
+  if (oldToken) {
+    state.sessionBackends.delete(oldToken);
+    state.sessionPlaygroundIds.delete(oldToken);
+  }
   return buildSessionCookie(token, secureCookie);
+}
+
+function resolvePlaygroundSessionId(req, state) {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (token && state.sessionPlaygroundIds.has(token)) {
+    return state.sessionPlaygroundIds.get(token);
+  }
+  const sessionId = crypto.randomUUID();
+  if (token) {
+    state.sessionPlaygroundIds.set(token, sessionId);
+  }
+  return sessionId;
+}
+
+function rotatePlaygroundSessionId(req, state) {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  const sessionId = crypto.randomUUID();
+  if (token) {
+    state.sessionPlaygroundIds.set(token, sessionId);
+  }
+  return sessionId;
 }
 
 function isAuthenticated(req, sessionSecret) {
@@ -116,5 +147,7 @@ module.exports = {
   buildSessionCookie,
   clearSessionCookie,
   rotateSessionCookie,
+  resolvePlaygroundSessionId,
+  rotatePlaygroundSessionId,
   isAuthenticated,
 };

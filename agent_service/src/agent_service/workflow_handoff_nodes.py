@@ -29,6 +29,7 @@ from .handoff_flow import (
     HandoffResumeReason,
     agentic_supplement_summary,
     deterministic_summary,
+    is_protocol_close_command,
     offer_message,
     offer_message_from_summary_text,
     validate_handoff_action,
@@ -258,6 +259,24 @@ class HandoffWorkflowMixin:
             HandoffStatus.DEMO_ACTIVE,
         }:
             return case
+        # DEMO_ACTIVE may only leave via CLOSED (not CANCELLED). Ticket-query /
+        # assistant-scope supersede must close the demo session instead.
+        if case.status == HandoffStatus.DEMO_ACTIVE:
+            closed = await self.handoff_repository.close_case(
+                case.caseId, requester_id, case.version
+            )
+            await self._append_handoff_event(
+                closed,
+                "handoff.superseded",
+                ActorType.USER,
+                requester_id,
+                {
+                    "fromStatus": "DEMO_ACTIVE",
+                    "toStatus": "CLOSED",
+                    "reason": reason,
+                },
+            )
+            return closed
         cancelled = await self.handoff_repository.transition(
             case.caseId,
             case.status,
@@ -527,6 +546,30 @@ class HandoffWorkflowMixin:
         case = await self.handoff_repository.get_active_case(
             tenant_id, conversation_id, requester_id
         )
+
+        # Protocol /close must win before supervisor supersede. Otherwise
+        # ASSISTANT_META on "/close" tries DEMO_ACTIVE→CANCELLED and crashes.
+        if (
+            case is not None
+            and case.status == HandoffStatus.DEMO_ACTIVE
+            and is_protocol_close_command(request.message.text)
+        ):
+            closed = await self.handoff_repository.close_case(
+                case.caseId, requester_id, case.version
+            )
+            await self._append_handoff_event(
+                closed,
+                "handoff.closed",
+                ActorType.USER,
+                requester_id,
+                {"fromStatus": "DEMO_ACTIVE", "toStatus": "CLOSED"},
+            )
+            return {
+                "handoff_handled": True,
+                "handoff_case": closed,
+                "final_response": DEMO_CLOSED_MESSAGE,
+                "ticket_intent": ticket_intent,
+            }
 
         if case is not None and case.status in {
             HandoffStatus.SUMMARY_REVIEW,

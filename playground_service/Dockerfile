@@ -9,6 +9,7 @@ COPY playground_service/package.json playground_service/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
 COPY playground_service/server.js playground_service/patch-playground.js ./
+COPY playground_service/lib ./lib
 RUN node patch-playground.js
 
 USER node

@@ -367,6 +367,72 @@ async def test_assistant_scope_question_supersedes_handoff_review(
 
 
 @pytest.mark.asyncio
+async def test_close_during_demo_wins_over_assistant_meta_supervisor(
+    tmp_path: Path,
+) -> None:
+    """Regression: /close must not crash via DEMO_ACTIVE→CANCELLED supersede."""
+    from agent_service.supervisor import ConversationSupervisorDecision
+
+    workflow, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description="大州系統無法顯示")]],
+        knowledge=tw.FakeKnowledgeService(
+            default=KnowledgeResult(found=False, answer="", backend="HYBRID"),
+        ),
+        handoff_repository=InMemoryHandoffRepository(
+            clock=lambda: datetime.now(timezone.utc)
+        ),
+        handoff_router=tw.FakeHandoffRouter([HandoffAction.CONTACT_HUMAN]),
+        supervisor_by_message={
+            "/close": ConversationSupervisorDecision(
+                intent="ASSISTANT_META",
+                requestedAction="CLOSE",
+                confidence=0.99,
+            )
+        },
+    )
+
+    await workflow.respond(tw.make_request("大州無法顯示"))
+    demo = await workflow.respond(tw.make_request("聯絡線上客服"))
+    assert "真人客服模式" in demo.answer
+
+    closed = await workflow.respond(tw.make_request("/close"))
+    assert "已結束" in closed.answer
+
+
+@pytest.mark.asyncio
+async def test_assistant_scope_during_demo_closes_without_invalid_transition(
+    tmp_path: Path,
+) -> None:
+    from agent_service.supervisor import ConversationSupervisorDecision
+
+    workflow, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description="大州系統無法顯示")]],
+        knowledge=tw.FakeKnowledgeService(
+            default=KnowledgeResult(found=False, answer="", backend="HYBRID"),
+        ),
+        handoff_repository=InMemoryHandoffRepository(
+            clock=lambda: datetime.now(timezone.utc)
+        ),
+        handoff_router=tw.FakeHandoffRouter([HandoffAction.CONTACT_HUMAN]),
+        supervisor_by_message={
+            "你能做什麼": ConversationSupervisorDecision(
+                intent="ASSISTANT_META",
+                requestedAction="ANSWER",
+                confidence=0.95,
+            )
+        },
+    )
+
+    await workflow.respond(tw.make_request("大州無法顯示"))
+    await workflow.respond(tw.make_request("聯絡線上客服"))
+    response = await workflow.respond(tw.make_request("你能做什麼"))
+
+    assert "我目前專門協助處理公司 IT 問題" in response.answer
+
+
+@pytest.mark.asyncio
 async def test_assistant_scope_question_does_not_trigger_handoff(tmp_path: Path) -> None:
     from agent_service.supervisor import ConversationSupervisorDecision
 
