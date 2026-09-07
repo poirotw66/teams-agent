@@ -90,9 +90,9 @@ function clearSessionCookie(secureCookie) {
 function rotateSessionCookie(req, state, sessionSecret, secureCookie) {
   const oldToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   const backend = oldToken ? state.sessionBackends.get(oldToken) : undefined;
-  const playgroundSessionId = oldToken
-    ? state.sessionPlaygroundIds.get(oldToken)
-    : undefined;
+  const playgroundSessionId =
+    (oldToken ? state.sessionPlaygroundIds.get(oldToken) : undefined) ||
+    state.playgroundSessionId;
   const token = signSession(sessionSecret);
   if (backend) {
     state.sessionBackends.set(token, backend);
@@ -112,16 +112,14 @@ function resolvePlaygroundSessionId(req, state) {
   if (token && state.sessionPlaygroundIds.has(token)) {
     return state.sessionPlaygroundIds.get(token);
   }
-  const sessionId = crypto.randomUUID();
-  if (token) {
-    state.sessionPlaygroundIds.set(token, sessionId);
-  }
-  return sessionId;
+  // Bot→adapter traffic has no cookie; reuse the process-wide session.
+  return state.playgroundSessionId;
 }
 
 function rotatePlaygroundSessionId(req, state) {
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   const sessionId = crypto.randomUUID();
+  state.playgroundSessionId = sessionId;
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (token) {
     state.sessionPlaygroundIds.set(token, sessionId);
   }

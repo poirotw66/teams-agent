@@ -326,6 +326,14 @@ test("new conversation resets playground direct line conversation and rotates se
       directLineConversationId: payload.conversationId,
     });
     assert.match(reset.headers.get("set-cookie"), /playground_session=/);
+
+    const resetAgain = await fetch(`${baseUrl}/api/new-conversation`, {
+      method: "POST",
+      headers: { cookie: reset.headers.get("set-cookie").split(";", 1)[0] },
+    });
+    assert.equal(resetAgain.status, 200);
+    const again = await resetAgain.json();
+    assert.notEqual(again.playgroundSessionId, payload.playgroundSessionId);
   } finally {
     await close(gateway);
     await close(upstream);
@@ -333,11 +341,11 @@ test("new conversation resets playground direct line conversation and rotates se
 });
 
 test("adapter proxy injects playgroundSessionId for logical conversation reset", async () => {
-  let receivedBody = null;
+  const receivedBodies = [];
   const adapter = http.createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
-    receivedBody = JSON.parse(body);
+    receivedBodies.push(JSON.parse(body));
     res.writeHead(200, { "content-type": "application/json" });
     res.end('{"status":"accepted"}');
   });
@@ -357,28 +365,28 @@ test("adapter proxy injects playgroundSessionId for logical conversation reset",
   const baseUrl = `http://127.0.0.1:${gatewayPort}`;
 
   try {
-    const login = await fetch(`${baseUrl}/login`, {
-      method: "POST",
-      redirect: "manual",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: "password=test-password",
-    });
-    const cookie = login.headers.get("set-cookie").split(";", 1)[0];
-
-    const proxied = await fetch(`${baseUrl}/_adapter/api/messages`, {
-      method: "POST",
-      headers: { cookie, "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "message",
-        channelId: "msteams",
-        text: "你好",
-        channelData: { tenant: { id: "tenant-1" } },
-      }),
-    });
-    assert.equal(proxied.status, 200);
-    assert.equal(receivedBody.channelId, "playground");
-    assert.equal(typeof receivedBody.channelData.playgroundSessionId, "string");
-    assert.ok(receivedBody.channelData.playgroundSessionId.length > 0);
+    // Bot Framework posts have no browser session cookie. Session id must stay
+    // stable across turns so clarification / handoff context survives.
+    for (const text of ["你好", "大州系統無法點選"]) {
+      const proxied = await fetch(`${baseUrl}/_adapter/api/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "message",
+          channelId: "msteams",
+          text,
+          channelData: { tenant: { id: "tenant-1" } },
+        }),
+      });
+      assert.equal(proxied.status, 200);
+    }
+    assert.equal(receivedBodies.length, 2);
+    assert.equal(receivedBodies[0].channelId, "playground");
+    assert.equal(typeof receivedBodies[0].channelData.playgroundSessionId, "string");
+    assert.equal(
+      receivedBodies[0].channelData.playgroundSessionId,
+      receivedBodies[1].channelData.playgroundSessionId,
+    );
   } finally {
     await close(gateway);
     await close(upstream);

@@ -34,6 +34,7 @@ env_value() {
   awk -v target="${key}" '
     index($0, target "=") == 1 {
       sub("^[^=]*=", "")
+      gsub(/\r/, "")
       print
       exit
     }

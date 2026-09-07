@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { SESSION_COOKIE, parseCookies } = require("./auth");
 const { securityHeaders, readJson } = require("./http");
 
@@ -34,6 +35,10 @@ function createKnowledgeBackendState({ defaultBackend = "HYBRID", geminiAvailabl
     defaultBackend,
     sessionBackends: new Map(),
     sessionPlaygroundIds: new Map(),
+    // Bot Framework posts to /_adapter have no browser cookie. Keep one
+    // process-wide session so multi-turn handoff/clarification stay stable
+    // until the user clicks「新對話」.
+    playgroundSessionId: crypto.randomUUID(),
     options: knowledgeBackendOptions(geminiAvailable, geminiReason),
   };
 }
