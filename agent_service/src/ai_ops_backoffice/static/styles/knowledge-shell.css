@@ -1,0 +1,130 @@
+/* Knowledge portal integration shell */
+/* ==========================================================================
+   8. NATIVE KNOWLEDGE PORTAL INTEGRATION SHELL
+   ========================================================================== */
+body.view-knowledge-portal {
+  overflow: hidden;
+}
+
+body.view-knowledge-portal .app {
+  padding: 0;
+  display: block;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.view-knowledge-portal .workspace-hint {
+  display: none;
+}
+
+.kp-native-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  height: 100%;
+  min-height: 550px;
+  padding: 1rem 1.75rem 2rem;
+  overflow-y: auto;
+}
+
+/* Floating Glass Subnav Island */
+.kp-subnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.5rem 0.85rem;
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm), var(--specular-inner);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.kp-subnav-left {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.kp-subnav-btn {
+  padding: 0.38rem 0.95rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.kp-subnav-btn:hover {
+  background: var(--panel-muted);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.kp-subnav-btn.active {
+  background: var(--text);
+  color: #ffffff;
+  border-color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+}
+
+.kp-subnav-right {
+  display: flex;
+  align-items: center;
+}
+
+.kp-subnav-action {
+  font-size: 0.8125rem;
+  padding: 0.4rem 1.05rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-gradient);
+  color: #ffffff;
+  border: 1px solid transparent;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+              0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.kp-subnav-action:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.kp-subnav-action:active {
+  transform: scale(0.98);
+}
+
+.kp-provider {
+  display: block;
+  width: 100%;
+}
+
+.kp-native-host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 400px;
+}
+
+.knowledge-embed-shell {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 12rem;
+}
+

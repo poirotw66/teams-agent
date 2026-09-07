@@ -1,0 +1,486 @@
+/* Shared components: tables, callouts, modal, forms */
+/* ==========================================================================
+   4. DATA TABLES — Frictionless High-Precision Layout
+   ========================================================================== */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+}
+
+th {
+  text-align: left;
+  padding: 0.72rem 0.95rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--panel-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th:first-child {
+  border-top-left-radius: var(--radius-xs);
+}
+
+th:last-child {
+  border-top-right-radius: var(--radius-xs);
+}
+
+td {
+  text-align: left;
+  padding: 0.78rem 0.95rem;
+  border-bottom: 1px solid rgba(241, 245, 249, 1);
+  vertical-align: middle;
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) ease;
+  line-height: 1.5;
+}
+
+tbody tr:hover td {
+  background: rgba(239, 246, 255, 0.6);
+  color: var(--text);
+}
+
+tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-xs);
+}
+
+tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-xs);
+}
+
+td > button,
+td .button-link,
+td .drill-link {
+  white-space: nowrap;
+}
+
+td .metric-label {
+  margin-top: 0.25rem;
+  font-size: 0.725rem;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* Responsive Table Wrapper & Sticky Scrollbox */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: #ffffff;
+}
+
+.table-responsive table {
+  margin-top: 0;
+}
+
+.table-scroll-box {
+  width: 100%;
+  max-height: 480px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: #ffffff;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.table-scroll-box table {
+  margin-top: 0;
+}
+
+.table-scroll-box th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.candidate-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+  background: var(--panel-muted);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.candidate-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.65rem 0.25rem 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.candidate-table {
+  width: 100%;
+}
+
+.candidate-table th:first-child,
+.candidate-table td:first-child {
+  width: 44px;
+  text-align: center;
+}
+
+.candidate-table tr.is-selected td {
+  background: rgba(239, 246, 255, 0.95);
+  color: var(--text);
+}
+
+pre {
+  margin: 0.65rem 0 0;
+  padding: 0.95rem 1.15rem;
+  border-radius: var(--radius-sm);
+  background: #090d16;
+  color: #e2e8f0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  overflow: auto;
+  max-height: 28rem;
+}
+
+/* ==========================================================================
+   5. SEMANTIC CALLOUTS & PILLS
+   ========================================================================== */
+.empty,
+.error,
+.forbidden,
+.warning {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.empty {
+  background: var(--panel-muted);
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+}
+
+.error {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
+.forbidden,
+.warning {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.725rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+}
+
+.badge-success {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success-border);
+}
+
+.badge-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: var(--warning-border);
+}
+
+.badge-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.badge-neutral {
+  background: rgba(241, 245, 249, 0.85);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+/* ==========================================================================
+   6. MODAL & DIALOGS — Cinematic Backdrop & Hardware Window
+   ========================================================================== */
+.modal-backdrop,
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  z-index: 50;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: fadeIn var(--duration-normal) var(--ease-spring);
+}
+
+.modal-backdrop[hidden],
+.dialog-backdrop[hidden] {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal,
+.dialog-box {
+  width: min(1040px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  padding: 1.85rem 2.25rem;
+  box-shadow: var(--shadow-modal), var(--specular-inner);
+  animation: modalScaleIn 280ms var(--ease-spring);
+}
+
+.modal > button {
+  margin: 0.45rem 0 0.85rem;
+}
+
+/* ==========================================================================
+   7. FORMS, FILTERS & BUTTON ARCHITECTURE
+   ========================================================================== */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+
+.quality-filters,
+.knowledge-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  background: var(--panel-muted);
+  padding: 1rem 1.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.quality-filters input,
+.knowledge-filters input {
+  min-width: 240px;
+  flex: 1 1 220px;
+}
+
+.quality-filters select,
+.knowledge-filters select {
+  min-width: 140px;
+  flex: 0 1 auto;
+}
+
+.filter-bar label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.filter-bar select,
+.filter-bar input,
+.filter-bar button,
+.modal button,
+.panel > button,
+.form-actions button {
+  padding: 0.48rem 0.95rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: #ffffff;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.filter-bar select:hover,
+.filter-bar input:hover,
+.filter-bar button:hover,
+.modal button:hover,
+.panel > button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.filter-bar button:active,
+.modal button:active,
+.panel > button:active {
+  transform: scale(0.98);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.95rem;
+  margin-top: 1.25rem;
+}
+
+.form-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.form-field label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.form-field input,
+.form-field textarea,
+.form-field select {
+  width: 100%;
+  padding: 0.62rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+  outline: none;
+}
+
+.form-field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* Kinetic Drill Links */
+.button-link,
+.drill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  margin-right: 0.4rem;
+  padding: 0.38rem 0.85rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: all var(--duration-fast) var(--ease-spring);
+}
+
+.button-link:hover,
+.drill-link:hover {
+  background: #dbeafe;
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-link:active,
+.drill-link:active {
+  transform: scale(0.98);
+}
+
+.button-primary,
+.btn.primary {
+  border: 1px solid transparent;
+  background: var(--accent-gradient);
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+              0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.button-primary:hover,
+.btn.primary:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.button-primary:disabled,
+.btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  filter: grayscale(40%);
+}
+
+.issue-tree {
+  list-style: none;
+  padding-left: 0;
+}
+
+.issue-tree ul {
+  list-style: none;
+  padding-left: 1.25rem;
+}
+
+.issue-tree li {
+  margin: 0.45rem 0;
+}
+
