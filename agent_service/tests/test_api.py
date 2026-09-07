@@ -227,7 +227,7 @@ def test_playground_omits_turn_cost_by_default_but_still_logs(tmp_path: Path, mo
     def _capture(summary: object) -> None:
         logged.append(summary)
 
-    monkeypatch.setattr("agent_service.api.log_request_cost", _capture)
+    monkeypatch.setattr("agent_service.routers.chat_support.log_request_cost", _capture)
     payload = {**CHAT_PAYLOAD, "channel": "playground"}
     with TestClient(create_app(make_settings(tmp_path))) as client:
         response = client.post("/agent/chat", json=payload)
