@@ -1,0 +1,109 @@
+import { api, el, metric } from "../api.js";
+import { createPageController } from "../app/lifecycle.js";
+
+export async function renderHealth() {
+  const app = document.getElementById("app");
+  app.replaceChildren(el("div", "empty", "載入中…"));
+  try {
+    const data = await api("/api/health/summary");
+    const panel = el("section", "panel");
+    panel.append(el("h2", "", "系統健康度"));
+
+    const components = data.components || [];
+    const healthyCount = components.filter((c) => ["READY", "AVAILABLE", "OK"].includes(c.status?.toUpperCase())).length;
+    const abnormalCount = components.length - healthyCount;
+
+    const grid = el("div", "grid");
+    grid.append(
+      metric("監控元件總數", components.length),
+      metric("運作正常", healthyCount),
+      metric("異常／降級", abnormalCount),
+      metric("遙測視窗", `${data.telemetryWindowHours || 24} 小時`),
+    );
+    panel.append(grid);
+
+    if (data.simulatedAnomalies) {
+      panel.append(
+        el("div", "warning", "目前為模擬異常模式，部分元件狀態為測試用途。"),
+      );
+    }
+    if (data.monitoringLinks?.cloudMonitoring) {
+      const links = el("div", "filter-bar");
+      const monitoringLink = el("a", "button-link", "Cloud Monitoring");
+      monitoringLink.href = data.monitoringLinks.cloudMonitoring;
+      monitoringLink.target = "_blank";
+      const loggingLink = el("a", "button-link", "Cloud Logging");
+      loggingLink.href = data.monitoringLinks.cloudLogging;
+      loggingLink.target = "_blank";
+      links.append(monitoringLink, loggingLink);
+      panel.append(links);
+    }
+    const table = el("table");
+    table.innerHTML = [
+      "<thead><tr><th>Component</th><th>Status</th><th>24h Requests</th>",
+      "<th>Availability</th><th>Error</th><th>Timeout</th>",
+      "<th>P50 ms</th><th>P95 ms</th><th>Note</th></tr></thead>",
+    ].join("");
+    const body = el("tbody");
+    for (const item of components) {
+      const row = el("tr");
+      row.append(el("td", "", item.id));
+      const statusCell = el("td");
+      const isOk = ["READY", "AVAILABLE", "OK"].includes(item.status?.toUpperCase());
+      const statusChip = el("span", "badge", item.status);
+      if (!isOk) {
+        statusChip.style.background = "var(--danger-soft)";
+        statusChip.style.borderColor = "var(--danger-border)";
+        statusChip.style.color = "var(--danger)";
+      }
+      statusCell.append(statusChip);
+      row.append(statusCell);
+      row.append(
+        el(
+          "td",
+          "",
+          item.telemetryStatus === "AVAILABLE" ? String(item.requestCount) : "NO DATA",
+        ),
+      );
+      for (const value of [item.availabilityRate, item.errorRate, item.timeoutRate]) {
+        row.append(el("td", "", value == null ? "-" : `${(value * 100).toFixed(1)}%`));
+      }
+      row.append(el("td", "", item.p50LatencyMs == null ? "-" : String(item.p50LatencyMs)));
+      row.append(el("td", "", item.p95LatencyMs == null ? "-" : String(item.p95LatencyMs)));
+      row.append(el("td", "", item.note || item.url || ""));
+      body.append(row);
+    }
+    table.append(body);
+    const tableScroll = el("div", "table-responsive");
+    tableScroll.append(table);
+    panel.append(tableScroll);
+
+    if ((data.recentAnomalies || []).length) {
+      const anomalyTable = el("table");
+      anomalyTable.innerHTML = "<thead><tr><th>時間</th><th>Component</th><th>Status</th><th>Error Type</th><th>Correlation</th></tr></thead>";
+      const anomalyBody = el("tbody");
+      for (const item of data.recentAnomalies) {
+        const row = el("tr");
+        row.append(el("td", "", item.occurredAt));
+        row.append(el("td", "", item.component));
+        row.append(el("td", "", item.status));
+        row.append(el("td", "", item.errorType));
+        row.append(el("td", "", item.correlationId || "-"));
+        anomalyBody.append(row);
+      }
+      anomalyTable.append(anomalyBody);
+      const anomalyScroll = el("div", "table-responsive");
+      anomalyScroll.append(anomalyTable);
+      panel.append(el("h3", "", "最近異常"), anomalyScroll);
+    }
+    app.replaceChildren(panel);
+  } catch (error) {
+    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+  }
+}
+
+export const healthPage = createPageController({
+  enter: async () => renderHealth(),
+  update: async () => renderHealth(),
+  leave: async () => {},
+});
