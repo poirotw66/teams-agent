@@ -303,10 +303,10 @@ GOOGLE_API_KEY=<secret> \
 ```
 
 同一個 Google key 可用時，若 shell 與 `agent_service/.env` 都沒有設定
-`RAG_MODEL`，腳本會啟用 `google_genai:gemini-3.5-flash-lite` 作為本機 agentic
-model，讓 issue extractor、relevance grading 與 handoff 語意路由可運作；這不會改寫
-`.env`，且任何明確 `RAG_MODEL` 都優先。沒有 Google key 時仍維持不需外部模型的
-extractive-local 模式。
+`RAG_MODEL` 與 `AGENT_MODEL`，腳本會啟用 `google_genai:gemini-3.1-flash-lite` 作為本機 RAG
+查詢模型、`google_genai:gemini-3.8-flash` 作為 Orchestrator 核心模型，讓 issue extractor、
+relevance grading 與 handoff 語意路由可運作；這不會改寫 `.env`，且任何明確設定都優先。
+沒有 Google key 時仍維持不需外部模型的 extractive-local 模式。
 
 共用 legacy store 缺少可供本機測試身分比對的 ACL metadata 時，未開啟 tunnel 的
 Playground 預設不套用 metadata filter（與既有 Cloud Run 設定相同）。shell 的
@@ -839,7 +839,8 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `RAG_DATA_DIR` | `<repo>/data` | 知識文件、索引、FAQ、conversation 檔案的根目錄 |
 | `RAG_INDEX_PATH` | `<RAG_DATA_DIR>/index/chunks.json` | 建立好的檢索索引 |
 | `RAG_AUTO_BUILD_INDEX` | `true` | 索引不存在時是否自動建立 |
-| `RAG_MODEL` | 空（本機 extractive 模式） | 例：`google_genai:gemini-3.5-flash-lite` |
+| `RAG_MODEL` | 空（本機 extractive 模式） | RAG 查詢與相關性評分模型，例：`google_genai:gemini-3.1-flash-lite` |
+| `AGENT_MODEL` | 沿用 `RAG_MODEL` | Orchestrator 主要模型（問題拆解、轉單判斷），例：`google_genai:gemini-3.8-flash` |
 | `RAG_EMBEDDING_MODEL` | 空（純 BM25） | 例：`google_genai:gemini-embedding-2` |
 | `RAG_TOP_K` | `4` | 檢索筆數，範圍 1–20 |
 | `RAG_MIN_SCORE` | `0.08` | 相關性門檻，範圍 0–1 |

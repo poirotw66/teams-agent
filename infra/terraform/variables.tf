@@ -144,12 +144,12 @@ variable "adapter_image" {
 
 variable "rag_model" {
   type    = string
-  default = "gemini-2.5-flash"
+  default = "gemini-3.1-flash-lite"
 }
 
 variable "agent_model" {
   type    = string
-  default = ""
+  default = "gemini-3.8-flash"
 }
 
 variable "rag_embedding_model" {

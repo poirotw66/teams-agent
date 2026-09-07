@@ -24,10 +24,15 @@ MAX_PERIOD_DAYS = 186
 
 PRESET_DAYS = {
     "today": 1,
+    "1d": 1,
     "7d": 7,
+    "1w": 7,
     "30d": 30,
+    "1m": 30,
     "180d": 180,
     "6m": 180,
+    "186d": 186,
+    "6months": 180,
 }
 
 
@@ -68,6 +73,17 @@ def resolve_period(
         )
 
     normalized = (preset or "").strip().lower()
+    if normalized == "today":
+        local_now = utc_now().astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+        start_at = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_at = start_at + timedelta(days=1)
+        return ResolvedPeriod(
+            days=1,
+            preset="today",
+            start_at=start_at,
+            end_at=end_at,
+            explicit_range=True,
+        )
     if normalized == "month":
         end_at = utc_now()
         local_now = end_at.astimezone(ZoneInfo(DEFAULT_TIMEZONE))

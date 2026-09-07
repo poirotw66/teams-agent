@@ -306,10 +306,11 @@ GOOGLE_API_KEY=<secret> \
 ```
 
 When that Google key is available and neither the shell nor
-`agent_service/.env` sets `RAG_MODEL`, the script enables
-`google_genai:gemini-3.5-flash-lite` as the local agentic model. This gives
+`agent_service/.env` sets `RAG_MODEL` or `AGENT_MODEL`, the script enables
+`google_genai:gemini-3.1-flash-lite` as the local RAG query model and
+`google_genai:gemini-3.8-flash` as the main orchestrator agent model. This gives
 the issue extractor, relevance grader, and handoff semantic router a model;
-it does not rewrite `.env`, and any explicit `RAG_MODEL` wins. Without a
+it does not rewrite `.env`, and any explicit configuration wins. Without a
 Google key, the no-external-model extractive-local mode remains available.
 
 When the shared legacy store lacks ACL metadata that can be matched to the
@@ -842,7 +843,8 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `RAG_DATA_DIR` | `<repo>/data` | Root for knowledge docs, index, FAQ, and conversation files |
 | `RAG_INDEX_PATH` | `<RAG_DATA_DIR>/index/chunks.json` | Built retrieval index |
 | `RAG_AUTO_BUILD_INDEX` | `true` | Whether to auto-build the index when missing |
-| `RAG_MODEL` | empty (local extractive mode) | e.g. `google_genai:gemini-3.5-flash-lite` |
+| `RAG_MODEL` | empty (local extractive mode) | RAG query and relevance grading model, e.g. `google_genai:gemini-3.1-flash-lite` |
+| `AGENT_MODEL` | inherits `RAG_MODEL` | Main orchestrator agent model (issue extraction, handoff routing), e.g. `google_genai:gemini-3.8-flash` |
 | `RAG_EMBEDDING_MODEL` | empty (BM25 only) | e.g. `google_genai:gemini-embedding-2` |
 | `RAG_TOP_K` | `4` | Retrieval count, range 1–20 |
 | `RAG_MIN_SCORE` | `0.08` | Relevance threshold, range 0–1 |

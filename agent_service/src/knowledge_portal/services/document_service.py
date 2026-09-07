@@ -238,6 +238,8 @@ class DocumentService:
                 target_type="document",
                 target_id=document_id,
                 correlation_id=correlation_id,
+                before=None,
+                after={"status": document.status, "title": document.title},
             )
             response = await self.get_document(actor, document_id)
             if idempotency_key:
@@ -356,6 +358,8 @@ class DocumentService:
             target_type="document",
             target_id=document_id,
             correlation_id=correlation_id,
+            before={"status": document.status, "title": document.title, "category": document.category},
+            after={"status": updated_document.status, "title": updated_document.title, "category": updated_document.category},
         )
         return await self.get_document(actor, document_id)
 
@@ -433,6 +437,8 @@ class DocumentService:
             target_id=document_id,
             correlation_id=correlation_id,
             reason=request.reason,
+            before={"status": document.status},
+            after={"status": "DISCARDED"},
         )
         return {"document_id": document_id, "status": "DISCARDED"}
 
@@ -710,6 +716,8 @@ class DocumentService:
             target_type="document",
             target_id=document_id,
             correlation_id=correlation_id,
+            before={"status": document.status, "draftVersionId": document.draft_version_id},
+            after={"status": updated_document.status, "draftVersionId": updated_document.draft_version_id},
         )
         return await self.get_document(actor, document_id)
 

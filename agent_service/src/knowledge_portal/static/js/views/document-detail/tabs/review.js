@@ -2,6 +2,7 @@ import { audienceLabel, testResultLabel } from "../../../labels.js";
 import { renderLineDiffHtml } from "../../../diff.js";
 import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831e";
 import { can, renderIssues } from "../shared.js";
+import { renderDocumentViewer } from "../../../markdown.js";
 
 export function renderReviewTab(detail, cases, runsByCase) {
   const draft = detail.draft_version;
@@ -55,11 +56,15 @@ export function renderReviewTab(detail, cases, runsByCase) {
       <div class="compare-grid">
         <div class="panel">
           <h3>正式版本內容</h3>
-          <pre class="content-preview content-preview--full">${escapeHtml(publishedBody || "（首次送審，無正式版本）")}</pre>
+          ${published?.canonical_content
+            ? renderDocumentViewer({ content: published.canonical_content, compact: true, id: "reviewPublishedViewer" })
+            : '<p class="muted">（首次送審，無正式版本）</p>'}
         </div>
         <div class="panel">
           <h3>草稿版本內容</h3>
-          <pre class="content-preview content-preview--full">${escapeHtml(draftBody || "（無內容）")}</pre>
+          ${draft?.canonical_content
+            ? renderDocumentViewer({ content: draft.canonical_content, compact: true, id: "reviewDraftViewer" })
+            : '<p class="muted">（無內容）</p>'}
         </div>
       </div>
       ${can("APPROVE", detail.allowed_actions) || can("REJECT", detail.allowed_actions) ? `

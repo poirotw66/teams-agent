@@ -117,7 +117,8 @@ OPENAI_API_KEY=<secret>
 Google Gemini:
 
 ```dotenv
-RAG_MODEL=google_genai:gemini-3.5-flash-lite
+RAG_MODEL=google_genai:gemini-3.1-flash-lite
+AGENT_MODEL=google_genai:gemini-3.8-flash
 GOOGLE_API_KEY=<secret>
 ```
 

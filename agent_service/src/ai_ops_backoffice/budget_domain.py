@@ -50,18 +50,18 @@ class BudgetPolicy(StrictModel):
 
 class AlertEvent(StrictModel):
     alert_id: str
-    policy_id: str
-    alert_type: Literal["BUDGET_THRESHOLD"] = "BUDGET_THRESHOLD"
+    policy_id: str | None = None
+    alert_type: Literal["BUDGET_THRESHOLD", "SYNC_FAILURE", "API_ANOMALY"] = "BUDGET_THRESHOLD"
     severity: Literal["WARNING", "CRITICAL"]
     scope_type: str
     scope_id: str
     period_key: str
     suppression_key: str
-    threshold: float
-    actual_value: float
-    coverage: float = Field(ge=0, le=1)
-    pricing_version: str
-    exchange_rate_version: str
+    threshold: float = 0.0
+    actual_value: float = 0.0
+    coverage: float = Field(default=1.0, ge=0, le=1)
+    pricing_version: str = "v1"
+    exchange_rate_version: str = "v1"
     status: Literal["OPEN", "ACKNOWLEDGED", "RESOLVED"] = "OPEN"
     owner_unit_id: str
     first_triggered_at: datetime
@@ -71,6 +71,7 @@ class AlertEvent(StrictModel):
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     resolution_note: str | None = None
+    message: str | None = None
     etag: int = Field(default=1, ge=1)
 
 
@@ -528,20 +529,183 @@ class BudgetService:
 
         return self._repository.mutate(operation)
 
-    def list_alerts(self, *, actor: ActorContext) -> list[dict[str, Any]]:
+    def trigger_operational_alert(
+        self,
+        *,
+        alert_type: Literal["SYNC_FAILURE", "API_ANOMALY"],
+        severity: Literal["WARNING", "CRITICAL"],
+        scope_type: str,
+        scope_id: str,
+        period_key: str,
+        owner_unit_id: str,
+        summary: str,
+        actor: ActorContext,
+        notification_target_ids: tuple[str, ...] | None = None,
+        threshold: float = 0.0,
+        actual_value: float = 0.0,
+        coverage: float = 1.0,
+        pricing_version: str = "v1",
+        exchange_rate_version: str = "v1",
+    ) -> dict[str, Any]:
+        self._authorize(actor, "ops.alerts.manage", owner_unit_id)
+        suppression_key = f"{alert_type}:{scope_type}:{scope_id}:{period_key}"
+        target_ids = notification_target_ids or tuple(self._notification_targets.keys())
+
+        def operation(state: BudgetState) -> tuple[BudgetState, dict[str, Any]]:
+            current = next(
+                (
+                    item for item in state.alerts
+                    if item.suppression_key == suppression_key and item.status != "RESOLVED"
+                ),
+                None,
+            )
+            now = datetime.now(UTC)
+            if current:
+                alert = current.model_copy(
+                    update={
+                        "severity": severity,
+                        "threshold": threshold,
+                        "actual_value": actual_value,
+                        "coverage": coverage,
+                        "pricing_version": pricing_version,
+                        "exchange_rate_version": exchange_rate_version,
+                        "message": mask_text(summary).text,
+                        "last_triggered_at": now,
+                        "etag": current.etag + 1,
+                    }
+                )
+                alerts = tuple(alert if item.alert_id == alert.alert_id else item for item in state.alerts)
+                deliveries = state.deliveries
+                action = "OPERATIONAL_ALERT_MERGED"
+            else:
+                alert = AlertEvent(
+                    alert_id=str(uuid.uuid4()),
+                    policy_id=f"op:{alert_type.lower()}:{scope_id}",
+                    alert_type=alert_type,
+                    severity=severity,
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    period_key=period_key,
+                    suppression_key=suppression_key,
+                    threshold=threshold,
+                    actual_value=actual_value,
+                    coverage=coverage,
+                    pricing_version=pricing_version,
+                    exchange_rate_version=exchange_rate_version,
+                    owner_unit_id=owner_unit_id,
+                    message=mask_text(summary).text,
+                    first_triggered_at=now,
+                    last_triggered_at=now,
+                )
+                alerts = (*state.alerts, alert)
+                deliveries = (*state.deliveries, *(
+                    NotificationDelivery(
+                        delivery_id=str(uuid.uuid4()),
+                        alert_id=alert.alert_id,
+                        target_id=target_id,
+                        channel=self._notification_targets[target_id],
+                        status=(
+                            "SENT"
+                            if self._notification_targets[target_id] == "NOTIFICATION_CENTER"
+                            else "PENDING"
+                        ),
+                        summary=mask_text(summary).text,
+                        attempt_count=(
+                            1
+                            if self._notification_targets[target_id] == "NOTIFICATION_CENTER"
+                            else 0
+                        ),
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    for target_id in target_ids
+                    if target_id in self._notification_targets
+                ))
+                action = "OPERATIONAL_ALERT_TRIGGERED"
+            audit = self._audit("ALERT", alert.alert_id, action, actor, owner_unit_id, summary)
+            return BudgetState(
+                revision=state.revision + 1,
+                policies=state.policies,
+                alerts=alerts,
+                deliveries=deliveries,
+                audits=(*state.audits, audit),
+            ), {"alert": alert.model_dump(mode="json"), "triggered": True}
+
+        return self._repository.mutate(operation)
+
+    def ensure_personal_policy(
+        self,
+        user_id: str,
+        *,
+        owner_unit_id: str = "IT",
+        warning_threshold: float = 40.0,
+        critical_threshold: float = 50.0,
+        notification_target_ids: tuple[str, ...] | None = None,
+        pricing_version: str = "v1",
+        exchange_rate_version: str = "twd-v1",
+        actor: ActorContext,
+    ) -> dict[str, Any]:
         state = self._repository.load()
-        return [
-            {
+        existing = next(
+            (
+                p for p in state.policies
+                if p.scope_type == "PERSONAL" and p.scope_id == user_id and p.period == "DAILY" and p.measure == "TWD"
+            ),
+            None,
+        )
+        if existing:
+            return existing.model_dump(mode="json")
+
+        target_ids = notification_target_ids or tuple(self._notification_targets.keys())
+        created = self.create_policy(
+            scope_type="PERSONAL",
+            scope_id=user_id,
+            period="DAILY",
+            measure="TWD",
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold,
+            owner_unit_id=owner_unit_id,
+            notification_target_ids=target_ids,
+            pricing_version=pricing_version,
+            exchange_rate_version=exchange_rate_version,
+            actor=actor,
+        )
+        return created["policy"]
+
+    def list_alerts(
+        self,
+        *,
+        actor: ActorContext,
+        alert_type: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        state = self._repository.load()
+        results: list[dict[str, Any]] = []
+        for item in reversed(state.alerts):
+            if not actor.has_capability("ops.alerts.read") or not actor.allows_owner_unit(item.owner_unit_id):
+                continue
+            if alert_type and item.alert_type != alert_type:
+                continue
+            if severity and item.severity != severity:
+                continue
+            if status and item.status != status:
+                continue
+            if scope_type and item.scope_type != scope_type:
+                continue
+            if scope_id and item.scope_id != scope_id:
+                continue
+            results.append({
                 **item.model_dump(mode="json"),
                 "deliveries": [
                     delivery.model_dump(mode="json")
                     for delivery in state.deliveries
                     if delivery.alert_id == item.alert_id
                 ],
-            }
-            for item in reversed(state.alerts)
-            if actor.has_capability("ops.alerts.read") and actor.allows_owner_unit(item.owner_unit_id)
-        ]
+            })
+        return results
 
     def alert_detail(self, alert_id: str, *, actor: ActorContext) -> dict[str, Any]:
         item = next(

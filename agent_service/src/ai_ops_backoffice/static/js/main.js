@@ -1396,7 +1396,7 @@ async function renderRoutes(period = { preset: "30d" }) {
     const panel = el("section", "panel");
     panel.append(el("h2", "", "路由來源分析"));
     panel.append(createPeriodControls(period, renderRoutes));
-    panel.append(createExportButton("routes_summary", 30));
+    panel.append(createExportButton("routes_summary", period));
     const table = el("table");
     table.innerHTML = "<thead><tr><th>Route</th><th>Count</th><th>實際來源</th></tr></thead>";
     const body = el("tbody");
@@ -1433,7 +1433,7 @@ async function renderIssues(period = { preset: "30d" }) {
       panel.append(createPeriodControls(period, renderIssues));
       panel.append(drillLink("返回 Issue 總覽", "issues", { clear: true }));
       panel.append(
-        createExportButton("routes_summary", 30, {
+        createExportButton("routes_summary", period, {
           issue_type_id: data.issueTypeId,
         }),
       );
@@ -1470,7 +1470,7 @@ async function renderIssues(period = { preset: "30d" }) {
     const panel = el("section", "panel");
     panel.append(el("h2", "", `Issue 分析 (${data.taxonomyVersion})`));
     panel.append(createPeriodControls(period, renderIssues));
-    panel.append(createExportButton("issues_summary", 30));
+    panel.append(createExportButton("issues_summary", period));
     panel.append(el("p", "", `未分類：${data.unclassifiedCount}`));
     const table = el("table");
     table.innerHTML =
@@ -4365,7 +4365,33 @@ async function renderBudgets() {
       api("/api/alerts"),
     ]);
     const policyPanel = el("section", "panel");
-    policyPanel.append(el("h2", "", "Budget Policies"));
+    const policyHeader = el("div", "section-header-row");
+    policyHeader.style.display = "flex";
+    policyHeader.style.justifyContent = "space-between";
+    policyHeader.style.alignItems = "center";
+    policyHeader.append(el("h2", "", "Budget Policies"));
+    if (allowed.has("ops.budget.evaluate")) {
+      const evalAllBtn = el("button", "btn", "全部自動評估（含個人50元門檻）");
+      evalAllBtn.addEventListener("click", async () => {
+        try {
+          evalAllBtn.disabled = true;
+          evalAllBtn.textContent = "評估中…";
+          const res = await api("/api/budget-policies/evaluate-all", { method: "POST" });
+          showContentModal(
+            "自動評估結果",
+            el("p", "", `已評估 ${res.evaluatedPolicies} 項政策、${res.evaluatedUsers} 位使用者每日額度；產生 ${res.triggeredAlerts} 項告警，已發送 ${res.dispatchedDeliveries} 筆通知。`),
+          );
+          await renderBudgets();
+        } catch (err) {
+          showContentModal("評估失敗", el("div", "error", err.message));
+        } finally {
+          evalAllBtn.disabled = false;
+          evalAllBtn.textContent = "全部自動評估（含個人50元門檻）";
+        }
+      });
+      policyHeader.append(evalAllBtn);
+    }
+    policyPanel.append(policyHeader);
     if (allowed.has("ops.budget.write")) {
       const form = el("form", "form-grid");
       const ownerOptions = (capabilities.ownerUnitIds || []).map((item) => [item, item]);
@@ -4471,7 +4497,7 @@ async function renderBudgets() {
     alertPanel.append(el("h2", "", `Alerts（${alertData.total || 0}）`));
     if ((alertData.items || []).length) {
       const table = el("table");
-      table.innerHTML = "<thead><tr><th>Severity</th><th>Scope</th><th>Actual / Threshold</th><th>Coverage</th><th>狀態</th><th>通知</th><th>操作</th></tr></thead>";
+      table.innerHTML = "<thead><tr><th>Type</th><th>Severity</th><th>Scope</th><th>Actual / Threshold / 說明</th><th>Coverage</th><th>狀態</th><th>通知</th><th>操作</th></tr></thead>";
       const body = el("tbody");
       for (const alert of alertData.items) {
         const actions = el("td");
@@ -4505,12 +4531,20 @@ async function renderBudgets() {
         }
         const delivery = (alert.deliveries || [])
           .map((item) => `${item.target_id}:${item.status}`).join(", ") || "-";
+        const typeBadge = alert.alert_type || "BUDGET_THRESHOLD";
+        const detailText = alert.alert_type === "BUDGET_THRESHOLD"
+          ? `${alert.actual_value} / ${alert.threshold}`
+          : (alert.message || `${alert.actual_value} / ${alert.threshold}`);
         const row = el("tr");
         row.append(
-          el("td", "", alert.severity), el("td", "", `${alert.scope_type}:${alert.scope_id}`),
-          el("td", "", `${alert.actual_value} / ${alert.threshold}`),
+          el("td", "", typeBadge),
+          el("td", "", alert.severity),
+          el("td", "", `${alert.scope_type}:${alert.scope_id}`),
+          el("td", "", detailText),
           el("td", "", `${(alert.coverage * 100).toFixed(1)}%`),
-          el("td", "", alert.status), el("td", "", delivery), actions,
+          el("td", "", alert.status),
+          el("td", "", delivery),
+          actions,
         );
         body.append(row);
       }
@@ -4742,20 +4776,43 @@ async function renderQuality(state = {}) {
 async function runExport(
   exportFormat,
   exportType = "operations_summary",
-  days = 7,
+  periodOrDays = 7,
   queryFilters = {},
 ) {
+  let days = 7;
+  let preset = undefined;
+  let startDate = undefined;
+  let endDate = undefined;
+
+  if (typeof periodOrDays === "number") {
+    days = periodOrDays;
+    preset = `${days}d`;
+  } else if (typeof periodOrDays === "object" && periodOrDays !== null) {
+    preset = periodOrDays.preset;
+    days = periodOrDays.days || (
+      preset === "today" || preset === "1d" ? 1 :
+      preset === "7d" || preset === "1w" ? 7 :
+      preset === "180d" || preset === "6m" || preset === "186d" ? 180 : 30
+    );
+    startDate = periodOrDays.startDate || periodOrDays.start_date;
+    endDate = periodOrDays.endDate || periodOrDays.end_date;
+  }
+
+  const payload = {
+    export_type: exportType,
+    reason: "UAT export",
+    days,
+    export_format: exportFormat,
+    preset: preset || `${days}d`,
+    start_date: startDate,
+    end_date: endDate,
+    ...queryFilters,
+  };
+
   const created = await api("/api/exports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      export_type: exportType,
-      reason: "UAT export",
-      days,
-      export_format: exportFormat,
-      preset: `${days}d`,
-      ...queryFilters,
-    }),
+    body: JSON.stringify(payload),
   });
   const job = await pollExport(created.jobId);
   if (job.status === "COMPLETED") {
@@ -4776,14 +4833,15 @@ async function runExport(
   return job;
 }
 
-function createExportButton(exportType, days, queryFilters = {}) {
+function createExportButton(exportType, periodOrDays, queryFilters = {}) {
   const button = el("button", "", "匯出 CSV");
   button.addEventListener("click", async () => {
     button.disabled = true;
     button.textContent = "匯出中…";
     try {
+      const resolvedPeriod = typeof periodOrDays === "function" ? periodOrDays() : periodOrDays;
       const filters = typeof queryFilters === "function" ? queryFilters() : queryFilters;
-      await runExport("csv", exportType, days, filters);
+      await runExport("csv", exportType, resolvedPeriod, filters);
     } catch (error) {
       showContentModal("匯出失敗", el("div", "error", error.message));
     } finally {

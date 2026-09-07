@@ -25,6 +25,7 @@ PRICING_VERSION = "2026-08-31"
 #
 # OpenAI chat/embedding rates below are approximate PoC references, not re-verified on 2026-08-31.
 _MODEL_RATES_USD: dict[str, tuple[float, float]] = {
+    "gemini-3.8-flash": (0.75, 3.75),
     "gemini-3.7-flash": (0.75, 3.75),
     "gemini-3.6-flash": (1.50, 7.50),
     "gemini-3.5-flash": (1.50, 9.00),

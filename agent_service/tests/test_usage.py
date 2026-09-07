@@ -55,6 +55,18 @@ def test_estimate_cost_usd_for_gemini_3_7_flash_intro_pricing() -> None:
     assert cost == 0.75 + 3.75
 
 
+def test_estimate_cost_usd_for_gemini_3_8_flash() -> None:
+    cost = estimate_cost_usd("gemini-3.8-flash", input_tokens=1_000_000, output_tokens=1_000_000)
+
+    assert cost == 0.75 + 3.75
+
+
+def test_estimate_cost_usd_for_gemini_3_1_flash_lite() -> None:
+    cost = estimate_cost_usd("gemini-3.1-flash-lite", input_tokens=1_000_000, output_tokens=1_000_000)
+
+    assert cost == 0.25 + 1.50
+
+
 def test_build_usage_report_sums_llm_and_embedding() -> None:
     report = build_usage_report(
         {

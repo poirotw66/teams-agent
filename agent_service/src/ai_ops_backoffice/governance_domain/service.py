@@ -348,7 +348,8 @@ class GovernanceService:
             audit = self._audit(
                 action="PROMPT_EVALUATED", actor=actor, target_type="PROMPT",
                 target_id=prompt_id, version_id=version_id,
-                after={"criticalPassed": run.critical_passed, "qualityPassed": run.quality_passed},
+                before={"status": current.status},
+                after={"status": "EVALUATED", "criticalPassed": run.critical_passed, "qualityPassed": run.quality_passed},
             )
             result = {
                 "eval": run.model_dump(mode="json"),
@@ -415,7 +416,8 @@ class GovernanceService:
             audit = self._audit(
                 action="PROMPT_CANARY_STARTED", actor=actor, target_type="PROMPT",
                 target_id=prompt_id, version_id=version_id, reason=reason,
-                after={"percent": percent, "environment": environment},
+                before={"status": version.status, "canaryVersionId": prompt.canary_version_id},
+                after={"status": "CANARY", "percent": percent, "environment": environment, "canaryVersionId": version_id},
             )
             result = {
                 "prompt": next_prompt.model_dump(mode="json"),
@@ -577,6 +579,11 @@ class GovernanceService:
             "secretRef": version.secret_ref,
             "fallbackModelId": version.fallback_model_id,
             "fallbackOn": list(version.fallback_on),
+            "temperature": version.temperature,
+            "maxOutputTokens": version.max_output_tokens,
+            "timeoutSeconds": version.timeout_seconds,
+            "retry": version.retry,
+            "maxAttempts": version.max_attempts,
         }
 
     def peek_runtime_flag(
@@ -654,6 +661,8 @@ class GovernanceService:
                     target_id=prompt_id,
                     version_id=canary.version_id,
                     reason=reason,
+                    before={"status": canary.status, "canaryPercent": canary.canary_percent},
+                    after={"status": stopped.status, "canaryStopped": True},
                 )
             ]
             if rollback and prompt.previous_healthy_version_id:
@@ -684,6 +693,8 @@ class GovernanceService:
                         target_id=prompt_id,
                         version_id=previous.version_id,
                         reason=reason,
+                        before={"activeVersionId": current.version_id},
+                        after={"activeVersionId": previous.version_id},
                     )
                 )
                 result = {
@@ -871,7 +882,8 @@ class GovernanceService:
             audit = self._audit(
                 action="MODEL_EVALUATED", actor=actor, target_type="MODEL",
                 target_id=config_id, version_id=version_id,
-                after={"criticalPassed": run.critical_passed},
+                before={"status": version.status},
+                after={"status": "EVALUATED", "criticalPassed": run.critical_passed},
             )
             return replace_model(
                 state,
@@ -917,6 +929,8 @@ class GovernanceService:
             audit = self._audit(
                 action="MODEL_ROLLED_BACK", actor=actor, target_type="MODEL",
                 target_id=config_id, version_id=previous.version_id, reason=reason,
+                before={"activeVersionId": current.version_id},
+                after={"activeVersionId": previous.version_id},
             )
             return replace_model(
                 state,
@@ -1125,13 +1139,17 @@ class GovernanceService:
                 change, status="APPROVED", decided_by=actor.user_id, decided_at=self._clock(), reason=reason,
             )
             granted = dict(state.granted_capabilities)
-            current = set(granted.get(change.target_principal, ()))
+            before_caps = tuple(sorted(granted.get(change.target_principal, ())))
+            current = set(before_caps)
             current.update(change.add_capabilities)
             current.difference_update(change.remove_capabilities)
-            granted[change.target_principal] = tuple(sorted(current))
+            after_caps = tuple(sorted(current))
+            granted[change.target_principal] = after_caps
             audit = self._audit(
                 action="ROLE_MAPPING_APPROVED", actor=actor, target_type="ROLE_MAPPING",
-                target_id=change_id, reason=reason, after=updated.model_dump(mode="json"),
+                target_id=change_id, reason=reason,
+                before={"principal": change.target_principal, "capabilities": list(before_caps), "status": "REQUESTED"},
+                after={"principal": change.target_principal, "capabilities": list(after_caps), "status": "APPROVED"},
             )
             return replace_model(
                 state,
@@ -1153,6 +1171,8 @@ class GovernanceService:
             audit = self._audit(
                 action="PRINCIPAL_REVOKED", actor=actor, target_type="ROLE_MAPPING",
                 target_id=principal, reason=reason,
+                before={"principal": principal, "revoked": False},
+                after={"principal": principal, "revoked": True},
             )
             return replace_model(
                 state,
@@ -1255,6 +1275,8 @@ class GovernanceService:
                 target_id=version.policy_version,
                 version_id=version_id,
                 reason=reason,
+                before={"status": version.status},
+                after={"status": "APPROVED", "approvedBy": actor.user_id},
             )
             return replace_model(
                 state,
@@ -1296,6 +1318,8 @@ class GovernanceService:
                 target_id=version.policy_version,
                 version_id=version_id,
                 reason=reason,
+                before={"status": version.status},
+                after={"status": "ACTIVE", "activatedBy": actor.user_id},
             )
             return replace_model(
                 state,
@@ -1358,6 +1382,8 @@ class GovernanceService:
             audit = self._audit(
                 action="RETENTION_APPROVED", actor=actor, target_type="RETENTION",
                 target_id=version.policy_id, version_id=version_id, reason=reason,
+                before={"status": version.status},
+                after={"status": "APPROVED", "approvedBy": actor.user_id},
             )
             return replace_model(
                 state,
@@ -1376,6 +1402,7 @@ class GovernanceService:
                 raise GovernanceNotFoundError(version_id)
             if version.status != "APPROVED":
                 raise GovernanceTransitionError("activation requires an approved retention policy")
+            prev_active = next((item for item in state.retention_policies if item.policy_id == version.policy_id and item.status == "ACTIVE"), None)
             retired = [
                 replace_model(item, status="RETIRED")
                 if item.policy_id == version.policy_id and item.status == "ACTIVE"
@@ -1389,6 +1416,8 @@ class GovernanceService:
             audit = self._audit(
                 action="RETENTION_ACTIVATED", actor=actor, target_type="RETENTION",
                 target_id=version.policy_id, version_id=version_id, reason=reason,
+                before={"status": version.status, "ttl_days": prev_active.ttl_days if prev_active else None},
+                after={"status": "ACTIVE", "ttl_days": updated.ttl_days, "activatedBy": actor.user_id},
             )
             return replace_model(
                 state,
@@ -1534,6 +1563,7 @@ class GovernanceService:
             )
             return replace_model(current, audits=(*current.audits, audit)), {
                 "items": hits,
+                "hits": hits,
                 "count": len(hits),
             }
 
@@ -1796,6 +1826,15 @@ def _approve_prompt(
         policy_exception_reason=policy_exception_reason,
         policy_exception_expires_at=policy_exception_expires_at,
     )
+    audit = replace_model(
+        audit,
+        before={"status": version.status},
+        after={
+            "status": "APPROVED",
+            "approvedBy": actor.user_id,
+            "policyExceptionReason": policy_exception_reason,
+        },
+    )
     result = {"version": public_prompt(updated, include_content=False)}
     return replace_model(
         state,
@@ -1831,6 +1870,15 @@ def _activate_prompt(
         canary_version_id=None,
         previous_healthy_version_id=current.version_id,
         etag=prompt.etag + 1,
+    )
+    audit = replace_model(
+        audit,
+        before={"activeVersionId": current.version_id, "status": current.status},
+        after={
+            "activeVersionId": version_id,
+            "status": "ACTIVE",
+            "activatedBy": actor.user_id,
+        },
     )
     result = {
         "prompt": next_prompt.model_dump(mode="json"),
@@ -1883,6 +1931,11 @@ def _approve_model(
     updated = replace_model(
         version, status="APPROVED", approved_by=actor.user_id, approved_at=utc_now(), change_reason=reason,
     )
+    audit = replace_model(
+        audit,
+        before={"status": version.status},
+        after={"status": "APPROVED", "approvedBy": actor.user_id},
+    )
     return replace_model(
         state,
         model_versions=_upsert(state.model_versions, updated, "version_id"),
@@ -1914,6 +1967,11 @@ def _activate_model(
         previous_healthy_version_id=current.version_id if current else version_id,
         etag=config.etag + 1,
     )
+    audit = replace_model(
+        audit,
+        before={"activeVersionId": current.version_id if current else None, "status": current.status if current else None},
+        after={"activeVersionId": version_id, "status": "ACTIVE", "activatedBy": actor.user_id},
+    )
     versions = state.model_versions
     if retired is not None:
         versions = _upsert(versions, retired, "version_id")
@@ -1942,6 +2000,11 @@ def _approve_flag(
         raise GovernanceTransitionError("flag is not awaiting approval")
     updated = replace_model(
         version, status="APPROVED", approved_by=actor.user_id, approved_at=utc_now(), change_reason=reason,
+    )
+    audit = replace_model(
+        audit,
+        before={"status": version.status},
+        after={"status": "APPROVED", "approvedBy": actor.user_id},
     )
     return replace_model(
         state,
@@ -1975,6 +2038,11 @@ def _activate_flag(
         version, status="ACTIVE", activated_by=actor.user_id, activated_at=now, change_reason=reason,
     )
     next_flag = replace_model(flag, active_version_id=version_id, etag=flag.etag + 1)
+    audit = replace_model(
+        audit,
+        before={"activeVersionId": flag.active_version_id, "value": previous.value if previous else None},
+        after={"activeVersionId": version_id, "value": updated.value, "status": "ACTIVE"},
+    )
     versions = state.flag_versions
     if retired is not None:
         versions = _upsert(versions, retired, "version_id")

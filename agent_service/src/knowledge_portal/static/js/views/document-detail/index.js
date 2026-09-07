@@ -20,6 +20,7 @@ import { renderTestsTab } from "./tabs/tests.js";
 import { renderVersionsTab } from "./tabs/versions.js";
 import { wireActions } from "./wiring.js";
 import { focusPendingTab, wireTabList } from "./tabs.js";
+import { wireDocumentViewer } from "../../markdown.js";
 
 function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   if (tab === "overview") return renderOverviewTab(detail);
@@ -116,6 +117,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
     );
 
     wireActions(app, documentId, detail, refresh);
+    wireDocumentViewer(app.querySelector("#detailTabContent"));
     if (tab === "content") {
       captureDraftBaseline();
       registerDirtyChecker(isDraftEditorDirty);

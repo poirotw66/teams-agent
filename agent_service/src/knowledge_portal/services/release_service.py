@@ -139,6 +139,8 @@ class ReleaseService:
                 target_id=document_id,
                 correlation_id=correlation_id,
                 reason=request.reason,
+                before={"status": document.status, "currentPublishedVersionId": document.current_published_version_id},
+                after={"status": "PUBLISHED", "currentPublishedVersionId": version.version_id, "releaseId": release.release_id},
                 metadata={"versionId": version.version_id, "releaseId": release.release_id},
             )
             if idempotency_key:
@@ -337,6 +339,8 @@ class ReleaseService:
                 target_id=target.release_id,
                 correlation_id=correlation_id,
                 reason=request.reason,
+                before={"activeReleaseId": previous_active_id},
+                after={"activeReleaseId": target.release_id},
                 metadata={
                     "previousReleaseId": previous_active_id,
                     "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
@@ -727,4 +731,27 @@ class ReleaseService:
                 await self._ctx.repository.save_release(
                     item.model_copy(update={"status": "ROLLED_BACK"})
                 )
+
+    async def reindex_all_published(
+        self,
+        actor: PortalActor,
+        *,
+        scope_type: str = "ALL",
+        scope_ids: list[str] | None = None,
+        correlation_id: str | None = None,
+        reason: str = "Manual knowledge reindex and synchronization",
+    ) -> ReleaseRecord:
+        async with self._coordination_lock("reindex_knowledge"):
+            published_versions = await self._collect_active_published_versions(actor)
+            if scope_type == "DOCUMENTS" and scope_ids:
+                published_versions = [
+                    v for v in published_versions if v.document_id in scope_ids
+                ]
+            release = await self._activate_release(
+                actor=actor,
+                published_versions=published_versions,
+                correlation_id=correlation_id or new_id("corr"),
+                reason=reason,
+            )
+            return release
 

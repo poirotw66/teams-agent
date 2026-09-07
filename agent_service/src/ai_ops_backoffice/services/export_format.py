@@ -25,12 +25,115 @@ def sanitize_csv_cell(value: Any) -> str:
     return text
 
 
+def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else None
+    if not data:
+        rows = [["key", "value"]]
+        for key, value in payload.items():
+            rows.append([sanitize_csv_cell(key), sanitize_csv_cell(value)])
+        return rows
+
+    export_meta = payload.get("exportMetadata") if isinstance(payload.get("exportMetadata"), dict) else {}
+    export_type = str(export_meta.get("exportType") or "")
+    items = data.get("items") or data.get("records") or data.get("routeDistribution")
+
+    if export_type == "conversations" or (isinstance(items, list) and items and any(isinstance(it, dict) and "turns" in it for it in items)):
+        headers = [
+            "conversationId",
+            "turnId",
+            "occurredAt",
+            "actorRef",
+            "userMessage",
+            "aiReply",
+            "model",
+            "issueTypeId",
+            "route",
+            "faqKey",
+            "documentIds",
+            "feedbackRating",
+            "feedbackReason",
+            "handoffStatus",
+            "channelScope",
+        ]
+        rows: list[list[str]] = [headers]
+        if isinstance(items, list):
+            for conv in items:
+                if not isinstance(conv, dict):
+                    continue
+                conv_id = str(conv.get("conversationId") or "")
+                actor_ref = str(conv.get("actorRef") or "")
+                channel_scope = str(conv.get("channelScope") or "")
+                turns = conv.get("turns")
+                if isinstance(turns, list) and turns:
+                    for turn in turns:
+                        if not isinstance(turn, dict):
+                            continue
+                        docs = turn.get("documentIds")
+                        docs_str = ",".join(docs) if isinstance(docs, (list, tuple)) else str(docs or "")
+                        rows.append([
+                            sanitize_csv_cell(conv_id),
+                            sanitize_csv_cell(turn.get("turnId") or ""),
+                            sanitize_csv_cell(turn.get("occurredAt") or ""),
+                            sanitize_csv_cell(turn.get("actorRef") or actor_ref),
+                            sanitize_csv_cell(turn.get("userMessage") or ""),
+                            sanitize_csv_cell(turn.get("aiReply") or ""),
+                            sanitize_csv_cell(turn.get("model") or ""),
+                            sanitize_csv_cell(turn.get("issueTypeId") or ""),
+                            sanitize_csv_cell(turn.get("route") or ""),
+                            sanitize_csv_cell(turn.get("faqKey") or ""),
+                            sanitize_csv_cell(docs_str),
+                            sanitize_csv_cell(turn.get("feedbackRating") or ""),
+                            sanitize_csv_cell(turn.get("feedbackReason") or ""),
+                            sanitize_csv_cell(turn.get("handoffStatus") or ""),
+                            sanitize_csv_cell(channel_scope),
+                        ])
+                else:
+                    routes = conv.get("routes")
+                    routes_str = ",".join(routes) if isinstance(routes, (list, tuple)) else str(routes or "")
+                    rows.append([
+                        sanitize_csv_cell(conv_id),
+                        "",
+                        sanitize_csv_cell(conv.get("lastOccurredAt") or ""),
+                        sanitize_csv_cell(actor_ref),
+                        "",
+                        "",
+                        "",
+                        "",
+                        sanitize_csv_cell(routes_str),
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        sanitize_csv_cell(channel_scope),
+                    ])
+        return rows
+
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        keys = list(items[0].keys())
+        for it in items[1:]:
+            if isinstance(it, dict):
+                for k in it:
+                    if k not in keys:
+                        keys.append(k)
+        rows = [keys]
+        for it in items:
+            if isinstance(it, dict):
+                rows.append([sanitize_csv_cell(it.get(k)) for k in keys])
+        return rows
+
+    rows = [["key", "value"]]
+    for key, value in payload.items():
+        rows.append([sanitize_csv_cell(key), sanitize_csv_cell(value)])
+    return rows
+
+
 def flatten_for_csv(payload: dict[str, Any]) -> str:
+    rows = _extract_tabular_rows(payload)
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["key", "value"])
-    for key, value in payload.items():
-        writer.writerow([sanitize_csv_cell(key), sanitize_csv_cell(value)])
+    for row in rows:
+        writer.writerow(row)
     return buffer.getvalue()
 
 
@@ -60,9 +163,7 @@ def _sheet_xml(rows: list[list[str]]) -> str:
 
 
 def flatten_for_xlsx(payload: dict[str, Any]) -> bytes:
-    rows = [["key", "value"]]
-    for key, value in payload.items():
-        rows.append([sanitize_csv_cell(key), sanitize_csv_cell(value)])
+    rows = _extract_tabular_rows(payload)
     sheet = _sheet_xml(rows)
     workbook = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'

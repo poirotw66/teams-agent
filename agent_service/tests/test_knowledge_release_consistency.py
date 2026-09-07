@@ -10,10 +10,14 @@ from knowledge_portal.settings import PortalSettings
 
 
 @pytest.fixture
-def portal_client() -> TestClient:
+def portal_client(tmp_path: Path) -> TestClient:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "data_dir", tmp_path / "data")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "drafts")
+    object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     object.__setattr__(settings, "require_dual_approval", False)
     object.__setattr__(settings, "delegation_secret", "test-secret")
     object.__setattr__(settings, "require_service_token_with_delegation", False)

@@ -185,6 +185,23 @@ class PortalService:
             actor, release_id, correlation_id
         )
 
+    async def reindex_all_published(
+        self,
+        actor: PortalActor,
+        *,
+        scope_type: str = "ALL",
+        scope_ids: list[str] | None = None,
+        correlation_id: str | None = None,
+        reason: str = "Manual knowledge reindex and synchronization",
+    ) -> ReleaseRecord:
+        return await self._releases.reindex_all_published(
+            actor,
+            scope_type=scope_type,
+            scope_ids=scope_ids,
+            correlation_id=correlation_id,
+            reason=reason,
+        )
+
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
         return await self._releases.list_releases(actor)
 

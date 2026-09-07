@@ -47,5 +47,6 @@ data/ops/exports/
 infra/terraform/terraform.tfvars
 crash.log
 crash.*.log
+*.lock
 .agents/
 skills-lock.json

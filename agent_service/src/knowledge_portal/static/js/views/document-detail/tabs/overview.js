@@ -1,20 +1,29 @@
 import { nextActionLabel } from "../../../labels.js";
-import { escapeHtml, renderStatusBadge, stripFrontMatter } from "../../../ui.js?v=20260831e";
+import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831e";
+import { renderDocumentViewer } from "../../../markdown.js";
 
 function renderPublishedPreview(document, published) {
   if (!published) return "<p class=\"muted\">尚無正式版本內容。</p>";
-  const body = stripFrontMatter(published.canonical_content || "");
-  const preview = body.length > 1200 ? `${body.slice(0, 1200)}\n…` : body;
   const audience = document.audience_type === "ALL_EMPLOYEES"
     ? "全體員工"
     : (document.audience_group_ids || []).join(", ") || "特定群組";
   return `
-    <div class="panel">
-      <h3>正式版本預覽</h3>
-      <p class="muted">版本 ${published.version_number} · 生效 ${published.effective_at} · 下次檢視 ${published.review_due_at}</p>
-      <p>擁有單位：${escapeHtml(document.owner_unit_id)} · 適用範圍：${escapeHtml(audience)}</p>
-      ${document.summary ? `<p>${escapeHtml(document.summary)}</p>` : ""}
-      <pre class="content-preview">${escapeHtml(preview)}</pre>
+    <div class="panel doc-preview-panel">
+      <div class="doc-preview-meta">
+        <div class="doc-preview-title-row">
+          <h3>正式版本內容</h3>
+          <span class="badge badge--success" style="background:#e7f5eb;color:#0e7030;border:1px solid #b7e1c1;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600;">v${published.version_number} 正式發佈</span>
+        </div>
+        <p class="muted">生效時間：${published.effective_at} · 下次檢視：${published.review_due_at}</p>
+        <p class="muted">擁有單位：${escapeHtml(document.owner_unit_id)} · 適用範圍：${escapeHtml(audience)}</p>
+        ${document.summary ? `<p class="doc-summary-text">${escapeHtml(document.summary)}</p>` : ""}
+      </div>
+      ${renderDocumentViewer({
+        content: published.canonical_content || "",
+        document,
+        published,
+        id: "overviewDocViewer",
+      })}
     </div>`;
 }
 

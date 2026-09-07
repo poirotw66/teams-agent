@@ -510,6 +510,33 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         except Exception as exc:
             raise handle_errors(exc) from exc
 
+    @app.post("/api/sync")
+    async def sync_knowledge(
+        payload: dict[str, Any] | None = None,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ) -> dict[str, Any]:
+        try:
+            scope_type = (payload or {}).get("scopeType") or "ALL"
+            scope_ids = list((payload or {}).get("scopeIds") or [])
+            corr = (payload or {}).get("correlationId") or correlation_id_value
+            release = await service.reindex_all_published(
+                actor,
+                scope_type=scope_type,
+                scope_ids=scope_ids,
+                correlation_id=corr,
+                reason="Backoffice sync job triggered reindex",
+            )
+            return {
+                "targetRelease": release.release_id,
+                "indexSettingVersion": "v1",
+                "documentCount": len(release.manifest),
+                "warnings": [release.failure_summary] if release.failure_summary else [],
+            }
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
     @app.get("/api/releases")
     async def list_releases(
         actor: PortalActor = Depends(current_actor),

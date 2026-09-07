@@ -56,6 +56,17 @@ class BackofficeSettings:
     budget_notification_targets: tuple[str, ...] = (
         "notification-center=NOTIFICATION_CENTER",
     )
+    teams_webhook_url: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "ai-ops@example.com"
+    budget_eval_interval_seconds: int = 300
+    default_personal_daily_budget_enabled: bool = True
+    default_personal_daily_budget_threshold: float = 50.0
+    default_personal_daily_warning_threshold: float = 40.0
+    api_anomaly_check_enabled: bool = True
     prompt_poc_store_mode: str = "FILE"
     prompt_poc_store_path: Path | None = None
     prompt_poc_firestore_collection: str = "ai_ops_prompt_poc_state"
@@ -223,7 +234,12 @@ class BackofficeSettings:
             sync_firestore_collection=os.environ.get(
                 "AI_OPS_SYNC_FIRESTORE_COLLECTION", "ai_ops_sync_state"
             ),
-            sync_adapter_url=os.environ.get("AI_OPS_SYNC_ADAPTER_URL") or None,
+            sync_adapter_url=(
+                os.environ.get("AI_OPS_SYNC_ADAPTER_URL")
+                or os.environ.get("KNOWLEDGE_PORTAL_INTERNAL_URL")
+                or os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL")
+                or "http://127.0.0.1:8091"
+            ),
             budget_store_mode=(
                 os.environ.get("AI_OPS_BUDGET_STORE_MODE", "FILE") or "FILE"
             ).upper(),
@@ -243,6 +259,27 @@ class BackofficeSettings:
                 ).split(",")
                 if item.strip()
             ),
+            teams_webhook_url=os.environ.get("AI_OPS_TEAMS_WEBHOOK_URL", ""),
+            smtp_host=os.environ.get("AI_OPS_SMTP_HOST", ""),
+            smtp_port=int(os.environ.get("AI_OPS_SMTP_PORT", "587")),
+            smtp_user=os.environ.get("AI_OPS_SMTP_USER", ""),
+            smtp_password=os.environ.get("AI_OPS_SMTP_PASSWORD", ""),
+            smtp_from=os.environ.get("AI_OPS_SMTP_FROM", "ai-ops@example.com"),
+            budget_eval_interval_seconds=int(
+                os.environ.get("AI_OPS_BUDGET_EVAL_INTERVAL_SECONDS", "300")
+            ),
+            default_personal_daily_budget_enabled=os.environ.get(
+                "AI_OPS_DEFAULT_PERSONAL_DAILY_BUDGET_ENABLED", "true"
+            ).lower() in {"1", "true", "yes"},
+            default_personal_daily_budget_threshold=float(
+                os.environ.get("AI_OPS_DEFAULT_PERSONAL_DAILY_BUDGET_THRESHOLD", "50.0")
+            ),
+            default_personal_daily_warning_threshold=float(
+                os.environ.get("AI_OPS_DEFAULT_PERSONAL_DAILY_WARNING_THRESHOLD", "40.0")
+            ),
+            api_anomaly_check_enabled=os.environ.get(
+                "AI_OPS_API_ANOMALY_CHECK_ENABLED", "true"
+            ).lower() in {"1", "true", "yes"},
             prompt_poc_store_mode=(
                 os.environ.get("AI_OPS_PROMPT_POC_STORE_MODE", "FILE") or "FILE"
             ).upper(),

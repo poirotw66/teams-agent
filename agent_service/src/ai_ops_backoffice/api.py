@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import logging
 import uuid
+from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ from .budget_domain import (
     FileBudgetRepository,
     FirestoreBudgetRepository,
 )
+from .notification_dispatcher import NotificationDispatcher
 from .example_domain import (
     ExampleService,
     FileExampleRepository,
@@ -299,6 +301,9 @@ def create_app(
     *,
     eval_flow_harness: object | None = None,
     knowledge_transport: httpx.AsyncBaseTransport | None = None,
+    notification_transport: httpx.AsyncBaseTransport | None = None,
+    sync_transport: httpx.AsyncBaseTransport | None = None,
+    email_sender: Callable[[str, str, str], None] | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     prod_issues = resolved_settings.validate_for_production()
@@ -414,6 +419,12 @@ def create_app(
         budget_repository,
         notification_targets=configured_targets,
     )
+    notification_dispatcher = NotificationDispatcher(
+        resolved_settings,
+        budget_service,
+        http_transport=notification_transport,
+        email_sender=email_sender,
+    )
     prompt_store_mode = resolved_settings.prompt_poc_store_mode.upper()
     if prompt_store_mode == "FILE":
         prompt_store_path = resolved_settings.prompt_poc_store_path or (
@@ -498,23 +509,54 @@ def create_app(
     )
 
     async def run_sync_job(job_id: str) -> None:
+        async def record_sync_failure(error_summary: str) -> None:
+            failed = sync_service.set_stage(
+                job_id,
+                status="FAILED",
+                actor=sync_worker,
+                error_summary=error_summary,
+            )
+            failed_job = failed["job"]
+            try:
+                alert_result = budget_service.trigger_operational_alert(
+                    alert_type="SYNC_FAILURE",
+                    severity="CRITICAL",
+                    scope_type="SYNC_JOB",
+                    scope_id=job_id,
+                    period_key=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    owner_unit_id=failed_job.get("owner_unit_id", "IT"),
+                    summary=f"Knowledge sync failed for {failed_job.get('scope_type', 'ALL')} (job {job_id}): {error_summary}",
+                    actor=sync_worker,
+                )
+                if alert_result.get("triggered") and alert_result.get("alert"):
+                    await notification_dispatcher.dispatch_for_alert(
+                        alert_result["alert"]["alert_id"],
+                        actor=sync_worker,
+                    )
+            except Exception:
+                logger.exception("Failed to trigger sync failure alert for %s", job_id)
+
         try:
             validating = sync_service.set_stage(job_id, status="VALIDATING", actor=sync_worker)
             job = validating["job"]
             adapter_url = resolved_settings.sync_adapter_url
+            if not adapter_url and sync_transport is not None:
+                adapter_url = resolved_settings.knowledge_portal_url
             if not adapter_url:
-                sync_service.set_stage(
-                    job_id,
-                    status="FAILED",
-                    actor=sync_worker,
-                    error_summary="SYNC_ADAPTER_UNAVAILABLE",
-                )
+                await record_sync_failure("SYNC_ADAPTER_UNAVAILABLE")
                 return
             sync_service.set_stage(job_id, status="BUILDING", actor=sync_worker)
-            headers = {}
+            headers = {
+                "X-Portal-User-Id": "ai-ops-sync-worker",
+                "X-Portal-User-Name": "AI Ops Sync Worker",
+                "X-Portal-Role": "PLATFORM",
+            }
             if resolved_settings.service_token:
                 headers["Authorization"] = f"Bearer {resolved_settings.service_token}"
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            effective_sync_transport = sync_transport
+            if effective_sync_transport is None and adapter_url == resolved_settings.knowledge_portal_url:
+                effective_sync_transport = knowledge_transport
+            async with httpx.AsyncClient(timeout=120.0, transport=effective_sync_transport) as client:
                 response = await client.post(
                     f"{adapter_url.rstrip('/')}/api/sync",
                     headers=headers,
@@ -526,21 +568,11 @@ def create_app(
                     },
                 )
             if response.status_code >= 400:
-                sync_service.set_stage(
-                    job_id,
-                    status="FAILED",
-                    actor=sync_worker,
-                    error_summary=f"Adapter returned HTTP {response.status_code}",
-                )
+                await record_sync_failure(f"Adapter returned HTTP {response.status_code}")
                 return
             result = response.json()
             if not result.get("targetRelease") or not result.get("indexSettingVersion"):
-                sync_service.set_stage(
-                    job_id,
-                    status="FAILED",
-                    actor=sync_worker,
-                    error_summary="SYNC_RELEASE_EVIDENCE_MISSING",
-                )
+                await record_sync_failure("SYNC_RELEASE_EVIDENCE_MISSING")
                 return
             sync_service.set_stage(
                 job_id,
@@ -562,12 +594,151 @@ def create_app(
         except Exception as error:
             logger.exception("Sync job %s failed", job_id)
             with suppress(FaqDomainError):
-                sync_service.set_stage(
-                    job_id,
-                    status="FAILED",
-                    actor=sync_worker,
-                    error_summary=type(error).__name__,
+                await record_sync_failure(type(error).__name__)
+
+    async def check_api_health_alerts(actor: ActorContext) -> list[dict[str, Any]]:
+        health = await query_service.health_summary()
+        triggered_alerts: list[dict[str, Any]] = []
+        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        for comp in health.get("components", []):
+            comp_id = str(comp.get("id") or "")
+            if not comp_id:
+                continue
+            status = str(comp.get("status", "READY")).upper()
+            note = str(comp.get("note", ""))
+            error_rate = float(comp.get("errorRate") or 0.0)
+
+            is_down = status in {"DOWN", "FAILED", "UNAVAILABLE"}
+            is_degraded = status in {"DEGRADED"} or error_rate >= 0.05
+
+            if is_down or is_degraded:
+                severity = "CRITICAL" if is_down else "WARNING"
+                summary = f"API anomaly in {comp_id}: status={status}, errorRate={error_rate:.2%}; {note}".strip()
+                try:
+                    alert_res = budget_service.trigger_operational_alert(
+                        alert_type="API_ANOMALY",
+                        severity=severity,
+                        scope_type="SERVICE",
+                        scope_id=comp_id,
+                        period_key=today_key,
+                        owner_unit_id="IT",
+                        summary=summary,
+                        actual_value=error_rate,
+                        actor=actor,
+                    )
+                    if alert_res.get("triggered") and alert_res.get("alert"):
+                        triggered_alerts.append(alert_res["alert"])
+                        await notification_dispatcher.dispatch_for_alert(
+                            alert_res["alert"]["alert_id"],
+                            actor=actor,
+                        )
+                except Exception:
+                    logger.exception("Failed to record API anomaly alert for %s", comp_id)
+        return triggered_alerts
+
+    async def evaluate_all_budgets(actor: ActorContext) -> dict[str, Any]:
+        evaluated_policies = 0
+        evaluated_users = 0
+        triggered_alerts: list[dict[str, Any]] = []
+
+        policies = budget_service.list_policies(actor=actor)
+        for policy in policies:
+            if not policy.get("enabled", True):
+                continue
+            try:
+                usage = await query_service.budget_usage(
+                    actor,
+                    scope_type=str(policy["scope_type"]),
+                    scope_id=str(policy["scope_id"]),
+                    period_type=str(policy["period"]),
+                    measure=str(policy["measure"]),
                 )
+                res = budget_service.evaluate(
+                    str(policy["policy_id"]),
+                    period_key=str(usage["periodKey"]),
+                    actual_value=float(usage["actualValue"]),
+                    coverage=float(usage["coverage"]),
+                    pricing_version=str(usage["pricingVersion"]),
+                    exchange_rate_version=str(usage["exchangeRateVersion"]),
+                    actor=actor,
+                )
+                evaluated_policies += 1
+                if res.get("triggered") and res.get("alert"):
+                    triggered_alerts.append(res["alert"])
+                    await notification_dispatcher.dispatch_for_alert(
+                        res["alert"]["alert_id"],
+                        actor=actor,
+                    )
+            except Exception:
+                logger.exception("Failed to evaluate policy %s", policy.get("policy_id"))
+
+        if resolved_settings.default_personal_daily_budget_enabled:
+            today_period = query_service._resolve_period(preset="today")
+            active_actors = await query_service.list_active_actors_for_budget(actor, today_period)
+            definitions = query_service.metrics_definitions()
+            pricing_ver = str(definitions.get("pricingVersion", "v1"))
+            rate_ver = str(definitions.get("metricsDefinitionVersion", "v1"))
+
+            covered_users = {
+                p["scope_id"]
+                for p in policies
+                if p.get("scope_type") == "PERSONAL"
+                and p.get("period") == "DAILY"
+                and p.get("measure") == "TWD"
+                and p.get("enabled", True)
+            }
+
+            for user_id in active_actors:
+                if user_id in covered_users:
+                    continue
+                try:
+                    personal_policy = budget_service.ensure_personal_policy(
+                        user_id=user_id,
+                        warning_threshold=resolved_settings.default_personal_daily_warning_threshold,
+                        critical_threshold=resolved_settings.default_personal_daily_budget_threshold,
+                        pricing_version=pricing_ver,
+                        exchange_rate_version=rate_ver,
+                        actor=actor,
+                    )
+                    usage = await query_service.budget_usage(
+                        actor,
+                        scope_type="PERSONAL",
+                        scope_id=user_id,
+                        period_type="DAILY",
+                        measure="TWD",
+                    )
+                    res = budget_service.evaluate(
+                        str(personal_policy["policy_id"]),
+                        period_key=str(usage["periodKey"]),
+                        actual_value=float(usage["actualValue"]),
+                        coverage=float(usage["coverage"]),
+                        pricing_version=str(usage["pricingVersion"]),
+                        exchange_rate_version=str(usage["exchangeRateVersion"]),
+                        actor=actor,
+                    )
+                    evaluated_users += 1
+                    if res.get("triggered") and res.get("alert"):
+                        triggered_alerts.append(res["alert"])
+                        await notification_dispatcher.dispatch_for_alert(
+                            res["alert"]["alert_id"],
+                            actor=actor,
+                        )
+                except Exception:
+                    logger.exception("Failed to evaluate personal daily budget for user %s", user_id)
+
+        if resolved_settings.api_anomaly_check_enabled:
+            anomaly_alerts = await check_api_health_alerts(actor)
+            triggered_alerts.extend(anomaly_alerts)
+
+        dispatched = await notification_dispatcher.dispatch_pending(actor=actor)
+
+        return {
+            "evaluatedPolicies": evaluated_policies,
+            "evaluatedUsers": evaluated_users,
+            "triggeredAlerts": len(triggered_alerts),
+            "alerts": triggered_alerts,
+            "dispatchedDeliveries": len(dispatched),
+        }
 
     async def quality_metrics_by_issue(actor: ActorContext) -> dict[str, dict[str, float]]:
         summary = await query_service.issues_summary(actor, days=30)
@@ -687,16 +858,36 @@ def create_app(
                 except TimeoutError:
                     continue
 
+        async def budget_evaluation_worker() -> None:
+            first_delay_seconds = 5
+            interval_seconds = resolved_settings.budget_eval_interval_seconds
+            try:
+                await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
+                return
+            except TimeoutError:
+                pass
+            while not stop_sweeper.is_set():
+                try:
+                    res = await evaluate_all_budgets(sync_worker)
+                    logger.info("Auto budget & anomaly evaluation completed: %s", res)
+                except Exception:
+                    logger.exception("Failed to run auto budget evaluation.")
+                try:
+                    await asyncio.wait_for(stop_sweeper.wait(), timeout=interval_seconds)
+                except TimeoutError:
+                    continue
+
         sweeper = asyncio.create_task(sweep_expired_exports())
         recovery = asyncio.create_task(
             query_service.export_jobs.run_recovery_scanner(stop_sweeper)
         )
         aggregate_worker = asyncio.create_task(materialize_daily_aggregates_worker())
+        budget_worker = asyncio.create_task(budget_evaluation_worker())
         try:
             yield
         finally:
             stop_sweeper.set()
-            for task in (sweeper, recovery, aggregate_worker):
+            for task in (sweeper, recovery, aggregate_worker, budget_worker):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -796,6 +987,9 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        model: str | None = None,
+        issue_type_id: str | None = None,
+        interval: str = Query(default="DAY"),
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -806,6 +1000,9 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            model=model,
+            issue_type_id=issue_type_id,
+            interval=interval,
             force_refresh=refresh,
         )
         project = (resolved_settings.gcp_project_id or "").lower()
@@ -833,7 +1030,15 @@ def create_app(
             actor,
             "query.operations_summary",
             "operations_summary",
-            after={"days": days, "preset": preset, "startDate": start_date, "endDate": end_date},
+            after={
+                "days": days,
+                "preset": preset,
+                "startDate": start_date,
+                "endDate": end_date,
+                "model": model,
+                "issueTypeId": issue_type_id,
+                "interval": interval,
+            },
         )
         return result
 
@@ -875,6 +1080,7 @@ def create_app(
         end_date: str | None = None,
         cursor: str | None = None,
         actor_ref: str | None = None,
+        user_id: str | None = None,
         issue_type_id: str | None = None,
         route: str | None = None,
         conversation_id: str | None = None,
@@ -882,6 +1088,7 @@ def create_app(
         has_feedback: bool | None = None,
         handoff: bool | None = None,
         channel_scope: str | None = None,
+        query: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -894,6 +1101,7 @@ def create_app(
             end_date=end_date,
             cursor=cursor,
             actor_ref=actor_ref,
+            user_id=user_id,
             issue_type_id=issue_type_id,
             route=route,
             conversation_id=conversation_id,
@@ -901,6 +1109,7 @@ def create_app(
             has_feedback=has_feedback,
             handoff=handoff,
             channel_scope=channel_scope,
+            query=query,
             force_refresh=refresh,
         )
         await audit_read(actor, "query.conversations", "conversations")
@@ -945,6 +1154,7 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        query: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -955,6 +1165,7 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            query=query,
             force_refresh=refresh,
         )
         await audit_read(actor, "query.issues_summary", "issues_summary")
@@ -1188,6 +1399,11 @@ def create_app(
         document_id: str,
         days: int = Query(default=30, ge=1, le=186),
         preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        issue_type_id: str | None = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        cursor: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.knowledge.read")
@@ -1196,6 +1412,11 @@ def create_app(
             document_id,
             preset=preset,
             days=days,
+            start_date=start_date,
+            end_date=end_date,
+            issue_type_id=issue_type_id,
+            limit=limit,
+            cursor=cursor,
         )
 
     @app.post("/api/admin/retention/purge")
@@ -1295,6 +1516,7 @@ def create_app(
     async def list_faqs(
         status: str | None = None,
         owner_unit_id: str | None = None,
+        category: str | None = None,
         query: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -1307,15 +1529,24 @@ def create_app(
                 item for item in items
                 if item["version"]["content"]["owner_unit_id"] == owner_unit_id
             ]
+        if category:
+            cat_needle = category.casefold()
+            items = [
+                item for item in items
+                if str(item["version"]["content"].get("category") or "").casefold() == cat_needle
+            ]
         if query:
             needle = query.casefold()
             items = [
                 item for item in items
                 if any(
-                    needle in value.casefold()
+                    needle in str(value).casefold()
                     for value in (
                         item["faq"]["faq_key"],
                         item["version"]["content"]["question"],
+                        item["version"]["content"].get("answer") or "",
+                        item["version"]["content"].get("category") or "",
+                        " ".join(item["version"]["content"].get("keywords") or ()),
                     )
                 )
             ]
@@ -1329,12 +1560,24 @@ def create_app(
     @app.get("/api/faqs/{faq_id}/performance")
     async def get_faq_performance(
         faq_id: str,
+        days: int | None = None,
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.faq.read")
         detail = faq_service.detail(faq_id=faq_id, actor=actor)
         faq_key = detail["faq"]["faq_key"]
-        return await query_service.faq_performance(actor, faq_key=faq_key)
+        return await query_service.faq_performance(
+            actor,
+            faq_key=faq_key,
+            faq_id=faq_id,
+            days=days,
+            preset=preset,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     @app.post("/api/faqs")
     async def create_faq(
@@ -2271,12 +2514,46 @@ def create_app(
             exchange_rate_version=str(usage["exchangeRateVersion"]),
             actor=actor,
         )
+        if result.get("triggered") and result.get("alert"):
+            await notification_dispatcher.dispatch_for_alert(
+                result["alert"]["alert_id"],
+                actor=actor,
+            )
         return {**result, "usage": usage}
 
+    @app.post("/api/budget-policies/evaluate-all")
+    async def evaluate_all_policies(
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.budget.evaluate")
+        return await evaluate_all_budgets(actor)
+
+    @app.post("/api/health/check-alerts")
+    async def trigger_health_check_alerts(
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.health.read")
+        alerts = await check_api_health_alerts(actor)
+        return {"checked": True, "triggeredAlerts": alerts}
+
     @app.get("/api/alerts")
-    async def list_alerts(actor=Depends(current_actor)) -> dict[str, object]:
+    async def list_alerts(
+        alert_type: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
         require_capability(actor, "ops.alerts.read")
-        items = budget_service.list_alerts(actor=actor)
+        items = budget_service.list_alerts(
+            actor=actor,
+            alert_type=alert_type,
+            severity=severity,
+            status=status,
+            scope_type=scope_type,
+            scope_id=scope_id,
+        )
         return {"items": items, "total": len(items)}
 
     @app.get("/api/alerts/{alert_id}")
@@ -2309,7 +2586,15 @@ def create_app(
         alert = budget_service.alert_detail(alert_id, actor=actor)
         if delivery_id not in {item["delivery_id"] for item in alert["deliveries"]}:
             raise FaqNotFoundError(delivery_id)
-        return budget_service.retry_delivery(delivery_id, actor=actor)
+        result = budget_service.retry_delivery(delivery_id, actor=actor)
+        delivery_item = result.get("delivery")
+        if delivery_item:
+            await notification_dispatcher.dispatch_delivery(delivery_item, actor=actor)
+        updated_alert = budget_service.alert_detail(alert_id, actor=actor)
+        updated_delivery = next(
+            item for item in updated_alert["deliveries"] if item["delivery_id"] == delivery_id
+        )
+        return {"delivery": updated_delivery}
 
     @app.post("/api/alerts/{alert_id}/resolve")
     async def resolve_alert(

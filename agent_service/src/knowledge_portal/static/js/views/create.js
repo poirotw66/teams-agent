@@ -4,6 +4,7 @@ import { fluentButton } from "../fluent.js";
 import { audienceLabel } from "../labels.js";
 import { navigate } from "../router.js";
 import { escapeHtml, openDialog, showToast } from "../ui.js?v=20260831e";
+import { renderDocumentViewer, wireDocumentViewer } from "../markdown.js";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
@@ -64,7 +65,9 @@ function renderConfirmPanel(formValues) {
       </dl>
       <div class="confirm-preview">
         <h3>正文預覽</h3>
-        <pre class="content-preview">${escapeHtml(previewText || "（空白）")}</pre>
+        ${formValues.markdown_content
+          ? renderDocumentViewer({ content: formValues.markdown_content, compact: true, id: "createConfirmDocViewer" })
+          : '<p class="muted">（空白）</p>'}
       </div>
     </div>`;
 }
@@ -329,6 +332,7 @@ export async function renderCreateView(app) {
     } else {
       clearDirtyChecker();
       createBaseline = null;
+      wireDocumentViewer(app);
     }
   }
 

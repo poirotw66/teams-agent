@@ -546,15 +546,58 @@ def register_governance_routes(
                 for issue in taxonomy.list_active():
                     issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
                     display = getattr(issue, "display_name", None) or getattr(issue, "name", issue_id)
+                    desc = getattr(issue, "description", "") or getattr(issue, "category", "") or ""
                     extras.append(
                         {
                             "type": "ISSUE_TYPE",
                             "id": str(issue_id),
                             "title": str(display),
-                            "snippet": str(getattr(issue, "category", "") or ""),
+                            "snippet": f"{issue_id} {desc}"[:160],
                             "requiredCapability": "ops.issues.read",
                         }
                     )
+        if query_service is not None and actor.has_capability("ops.knowledge.read"):
+            try:
+                doc_inv = await query_service._fetch_document_inventory()
+                for doc in doc_inv.get("items", []):
+                    doc_id = str(doc.get("document_id") or "")
+                    title = str(doc.get("title") or doc.get("filename") or doc_id)
+                    desc = str(doc.get("description") or doc.get("category") or doc.get("owner_unit_id") or "")
+                    extras.append(
+                        {
+                            "type": "KNOWLEDGE",
+                            "id": doc_id,
+                            "title": title,
+                            "snippet": f"{doc_id} {desc}"[:160],
+                            "requiredCapability": "ops.knowledge.read",
+                        }
+                    )
+            except Exception:
+                pass
+        if query_service is not None and actor.has_capability("ops.conversations.read") and q:
+            try:
+                conv_result = await query_service.list_conversations(
+                    actor, days=186, query=q, limit=20
+                )
+                for item in conv_result.get("items", []):
+                    turn_texts = []
+                    for t in item.get("turns", []):
+                        if t.get("userMessage"):
+                            turn_texts.append(str(t["userMessage"]))
+                        if t.get("aiReply"):
+                            turn_texts.append(str(t["aiReply"]))
+                    matched_snippet = " ".join(turn_texts) if turn_texts else f"{item.get('actorRef') or ''} {q}"
+                    extras.append(
+                        {
+                            "type": "CONVERSATION",
+                            "id": item["conversationId"],
+                            "title": f"對話 {item['conversationId']}",
+                            "snippet": matched_snippet[:160],
+                            "requiredCapability": "ops.conversations.read",
+                        }
+                    )
+            except Exception:
+                pass
         if quality_service is not None and actor.has_capability("ops.quality.read"):
             for case in quality_service.list_cases(actor=actor)[:200]:
                 extras.append(

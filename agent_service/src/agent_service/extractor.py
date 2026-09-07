@@ -19,6 +19,7 @@ call returns, because a prompt alone is not a security boundary (spec §17).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -303,6 +304,10 @@ class ExtractionOutcome:
     prompt_version_id: str | None = None
     prompt_version: str | None = None
     prompt_canary: bool = False
+    model_source: str = "settings_baseline"
+    model_version_id: str | None = None
+    model_used: str | None = None
+    model_fallback_applied: bool = False
 
 
 class IssueExtractor:
@@ -381,7 +386,15 @@ class IssueExtractor:
             resolved.canary,
             correlation_id,
         )
-        active_model = self._resolve_chat_model()
+        active_model, resolved_model = self._resolve_chat_model()
+        timeout_val = (
+            float(resolved_model.timeout_seconds)
+            if (resolved_model and getattr(resolved_model, "timeout_seconds", None))
+            else None
+        )
+        model_used = getattr(resolved_model, "model_name", None) or self.default_model_name
+        fallback_applied = False
+        raw: IssueExtraction | None = None
 
         try:
             raw = await self._call_model(
@@ -391,24 +404,80 @@ class IssueExtractor:
                 system_prompt_template=resolved.template,
                 model=active_model,
                 execution_context=execution_context,
+                timeout_seconds=timeout_val,
             )
             llm_calls = 1
         except Exception as exc:  # noqa: BLE001 - never let one bad call fail the request
-            logger.error(
-                "IssueExtractor LLM call failed with %s; using deterministic "
-                "fallback. correlation_id=%s",
-                type(exc).__name__,
-                correlation_id,
-            )
-            return ExtractionOutcome(
-                issues=[self._fallback_issue(normalized_text)],
-                too_many_issues=False,
-                llm_calls=1,
-                prompt_source=resolved.source,
-                prompt_version_id=resolved.version_id,
-                prompt_version=resolved.version,
-                prompt_canary=resolved.canary,
-            )
+            llm_calls = 1
+            trigger = self._classify_error(exc)
+            fallback_model_id = getattr(resolved_model, "fallback_model_id", None)
+            fallback_on = tuple(getattr(resolved_model, "fallback_on", ()) or ())
+
+            can_fallback = bool(fallback_model_id) and (not fallback_on or trigger in fallback_on)
+            if can_fallback:
+                logger.warning(
+                    "IssueExtractor primary model call failed with trigger '%s' (%s); attempting fallback model %s. correlation_id=%s",
+                    trigger,
+                    type(exc).__name__,
+                    fallback_model_id,
+                    correlation_id,
+                )
+                try:
+                    from .graph import build_chat_model
+
+                    fallback_name = fallback_model_id
+                    if ":" not in fallback_name and getattr(resolved_model, "provider", None):
+                        fallback_name = f"{resolved_model.provider}:{fallback_name}"
+
+                    fallback_chat_model = build_chat_model(
+                        fallback_name,
+                        temperature=getattr(resolved_model, "temperature", None),
+                        max_tokens=getattr(resolved_model, "max_output_tokens", None),
+                        timeout=timeout_val,
+                        max_retries=getattr(resolved_model, "retry", None),
+                    )
+                    if fallback_chat_model is not None:
+                        raw = await self._call_model(
+                            text=normalized_text,
+                            history=history,
+                            faq_keys=faq_keys,
+                            system_prompt_template=resolved.template,
+                            model=fallback_chat_model,
+                            execution_context=execution_context,
+                            timeout_seconds=timeout_val,
+                        )
+                        llm_calls += 1
+                        fallback_applied = True
+                        model_used = fallback_name
+                except Exception as fallback_exc:  # noqa: BLE001
+                    logger.error(
+                        "IssueExtractor fallback model %s failed with %s; using deterministic fallback. correlation_id=%s",
+                        fallback_model_id,
+                        type(fallback_exc).__name__,
+                        correlation_id,
+                    )
+                    llm_calls += 1
+
+            if raw is None:
+                logger.error(
+                    "IssueExtractor LLM call failed with %s; using deterministic "
+                    "fallback. correlation_id=%s",
+                    type(exc).__name__,
+                    correlation_id,
+                )
+                return ExtractionOutcome(
+                    issues=[self._fallback_issue(normalized_text)],
+                    too_many_issues=False,
+                    llm_calls=llm_calls,
+                    prompt_source=resolved.source,
+                    prompt_version_id=resolved.version_id,
+                    prompt_version=resolved.version,
+                    prompt_canary=resolved.canary,
+                    model_source=getattr(resolved_model, "source", "settings_baseline") if resolved_model else "settings_baseline",
+                    model_version_id=getattr(resolved_model, "version_id", None) if resolved_model else None,
+                    model_used=model_used,
+                    model_fallback_applied=False,
+                )
 
         issues, too_many = self._postprocess(raw.issues, faq_keys)
         return ExtractionOutcome(
@@ -419,36 +488,57 @@ class IssueExtractor:
             prompt_version_id=resolved.version_id,
             prompt_version=resolved.version,
             prompt_canary=resolved.canary,
+            model_source=getattr(resolved_model, "source", "settings_baseline") if resolved_model else "settings_baseline",
+            model_version_id=getattr(resolved_model, "version_id", None) if resolved_model else None,
+            model_used=model_used,
+            model_fallback_applied=fallback_applied,
         )
 
-    def _resolve_chat_model(self) -> BaseChatModel | None:
-        runtime = getattr(self.prompt_runtime, "_runtime", None)
-        if runtime is None:
-            return self.model
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        name = type(exc).__name__.lower()
+        msg = str(exc).lower()
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or "timeout" in name or "timed out" in msg:
+            return "TIMEOUT"
+        if "ratelimit" in name or "rate_limit" in msg or "429" in msg or "resourceexhausted" in name:
+            return "RATE_LIMIT"
+        if "unavailable" in name or "connect" in name or any(code in msg for code in ("500", "502", "503", "504")):
+            return "UNAVAILABLE"
+        return "ERROR"
+
+    def _resolve_chat_model(self) -> tuple[BaseChatModel | None, Any | None]:
+        runtime = getattr(self.prompt_runtime, "_runtime", None) or self.prompt_runtime
+        resolve_fn = getattr(runtime, "resolve_model", None)
+        if resolve_fn is None:
+            return self.model, None
         try:
-            resolved = runtime.resolve_model()
+            resolved = resolve_fn()
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "IssueExtractor model lookup failed (%s); using startup model",
                 type(exc).__name__,
             )
-            return self.model
-        if resolved.source != "governance" or not resolved.model_name:
-            return self.model
-        if resolved.model_name == self.default_model_name:
-            return self.model
+            return self.model, None
+        if getattr(resolved, "source", None) != "governance" or not getattr(resolved, "model_name", None):
+            return self.model, resolved
         try:
             from .graph import build_chat_model
 
-            built = build_chat_model(resolved.model_name)
-            return built or self.model
+            built = build_chat_model(
+                resolved.model_name,
+                temperature=getattr(resolved, "temperature", None),
+                max_tokens=getattr(resolved, "max_output_tokens", None),
+                timeout=float(resolved.timeout_seconds) if getattr(resolved, "timeout_seconds", None) is not None else None,
+                max_retries=getattr(resolved, "retry", None),
+            )
+            return built or self.model, resolved
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "IssueExtractor failed to build governed model %s (%s); using startup model",
                 resolved.model_name,
                 type(exc).__name__,
             )
-            return self.model
+            return self.model, resolved
 
     async def _call_model(
         self,
@@ -459,6 +549,7 @@ class IssueExtractor:
         system_prompt_template: str,
         model: BaseChatModel | None,
         execution_context: ExecutionContext | None = None,
+        timeout_seconds: float | None = None,
     ) -> IssueExtraction:
         if model is None:
             raise RuntimeError("IssueExtractor model is not configured")
@@ -473,12 +564,16 @@ class IssueExtractor:
         )
 
         async def _invoke() -> IssueExtraction:
-            result = await model.with_structured_output(IssueExtraction).ainvoke(
+            invocation = model.with_structured_output(IssueExtraction).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=human_content),
                 ]
             )
+            if timeout_seconds is not None and timeout_seconds > 0:
+                result = await asyncio.wait_for(invocation, timeout=timeout_seconds)
+            else:
+                result = await invocation
             if isinstance(result, IssueExtraction):
                 return result
             return IssueExtraction.model_validate(result)

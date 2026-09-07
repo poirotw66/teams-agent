@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -500,6 +501,9 @@ class BackofficeQueryService:
         days: int = 7,
         start_date: str | None = None,
         end_date: str | None = None,
+        model: str | None = None,
+        issue_type_id: str | None = None,
+        interval: str = "DAY",
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
@@ -509,6 +513,33 @@ class BackofficeQueryService:
             end_date=end_date,
         )
         events = await self._scoped_events(actor, period, force_refresh=force_refresh)
+        if model:
+            model_correlations = {
+                event.correlation_id
+                for event in events
+                if event.correlation_id
+                and event.event_type == "usage.recorded"
+                and str(event.payload.get("model") or "") == model
+            }
+            events = [
+                event
+                for event in events
+                if (event.correlation_id and event.correlation_id in model_correlations)
+                or (event.event_type == "usage.recorded" and str(event.payload.get("model") or "") == model)
+            ]
+        if issue_type_id:
+            issue_correlations = {
+                event.correlation_id
+                for event in events
+                if event.correlation_id
+                and event.issue_type_id == issue_type_id
+            }
+            events = [
+                event
+                for event in events
+                if event.issue_type_id == issue_type_id
+                or (event.correlation_id and event.correlation_id in issue_correlations)
+            ]
         turns = [event for event in events if event.event_type == "turn.received"]
         issues = [event for event in events if event.event_type == "issue.extracted"]
         faq_hits = [event for event in events if event.event_type == "faq.answered"]
@@ -581,19 +612,54 @@ class BackofficeQueryService:
             for key, value in issue_types.most_common(5)
         ]
         estimated_cost = known_cost_total(usage_events)
+
+        # Compute Trends by requested interval (DAY, WEEK, MONTH)
+        def _trend_bucket(occurred_at: datetime) -> str:
+            inv = (interval or "DAY").upper()
+            if inv == "WEEK":
+                year, week, _ = occurred_at.isocalendar()
+                return f"{year}-W{week:02d}"
+            if inv == "MONTH":
+                return occurred_at.strftime("%Y-%m")
+            return occurred_at.date().isoformat()
+
+        bucket_turns: dict[str, list[OperationalEvent]] = defaultdict(list)
+        bucket_issues: dict[str, list[OperationalEvent]] = defaultdict(list)
+        bucket_usage: dict[str, list[OperationalEvent]] = defaultdict(list)
+
+        for event in turns:
+            bucket_turns[_trend_bucket(event.occurred_at)].append(event)
+        for event in issues:
+            bucket_issues[_trend_bucket(event.occurred_at)].append(event)
+        for u_ev in usage_events:
+            bucket_usage[_trend_bucket(u_ev.occurred_at)].append(u_ev)
+
+        all_buckets = sorted(set(bucket_turns.keys()) | set(bucket_issues.keys()) | set(bucket_usage.keys()))
+        trends = []
+        for b_key in all_buckets:
+            b_turn_events = bucket_turns[b_key]
+            b_convs = {e.conversation_id for e in b_turn_events if e.conversation_id}
+            b_actors = {e.actor_ref for e in b_turn_events if e.actor_ref}
+            b_u_events = bucket_usage[b_key]
+            b_cost = known_cost_total(b_u_events)
+            b_tokens = sum(int(e.payload.get("totalTokens") or 0) for e in b_u_events)
+            trends.append({
+                "period": b_key,
+                "conversationCount": len(b_convs),
+                "turnCount": len(b_turn_events),
+                "activeUserCount": len(b_actors),
+                "issueOccurrenceCount": len(bucket_issues[b_key]),
+                "totalTokens": b_tokens,
+                "estimatedCostUsd": b_cost,
+            })
+
         # Tenant-wide aggregates omit owner-unit slices. Overlaying them on a
         # scoped event scan would mix authorization boundaries in one report.
         # Rolling windows also stay on event_scan: whole-day rollups would
         # inflate the leading partial day. Aggregates apply only to fresh,
         # midnight-aligned explicit ranges for cross-unit actors.
-        #
-        # Perf note: the event scan above still runs first because many summary
-        # fields (conversation/FAQ/ticket rates, latency, freshness) are not yet
-        # answered by the aggregate read model. Prefer measuring real volume,
-        # then expanding aggregates with auth dimensions + watermarks before
-        # skipping the scan for eligible cross-unit queries.
         coverage_complete = False
-        if not force_refresh and self._actor_may_use_daily_aggregates(actor):
+        if not force_refresh and model is None and issue_type_id is None and self._actor_may_use_daily_aggregates(actor):
             aggregate_rows = self._aggregate_store.list_range(
                 start_day=period.start_at.date().isoformat(),
                 end_day=(period.end_at - timedelta(microseconds=1)).date().isoformat(),
@@ -634,6 +700,10 @@ class BackofficeQueryService:
             "periodPreset": period.preset,
             "periodStart": period.start_at.isoformat(),
             "periodEnd": period.end_at.isoformat(),
+            "interval": (interval or "DAY").upper(),
+            "trends": trends,
+            "model": model,
+            "issueTypeId": issue_type_id,
             "timezone": DEFAULT_TIMEZONE,
             "metricsDefinitionVersion": METRICS_DEFINITION_VERSION,
             "metricDefinitions": self._metrics.get("definitions", {}),
@@ -683,6 +753,7 @@ class BackofficeQueryService:
         limit: int = 25,
         cursor: str | None = None,
         actor_ref: str | None = None,
+        user_id: str | None = None,
         issue_type_id: str | None = None,
         route: str | None = None,
         conversation_id: str | None = None,
@@ -690,11 +761,17 @@ class BackofficeQueryService:
         has_feedback: bool | None = None,
         handoff: bool | None = None,
         channel_scope: str | None = None,
+        query: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
+        effective_days = (
+            186
+            if conversation_id and days == 30 and start_date is None and preset is None
+            else days
+        )
         period = self._resolve_period(
             preset=preset,
-            days=days,
+            days=effective_days,
             start_date=start_date,
             end_date=end_date,
         )
@@ -708,6 +785,7 @@ class BackofficeQueryService:
             key=lambda cid: max(item.occurred_at for item in grouped[cid]),
             reverse=True,
         )
+        user_filter = actor_ref or user_id
         filtered_ids: list[str] = []
         for cid in conversation_ids:
             if conversation_id and cid != conversation_id:
@@ -717,8 +795,27 @@ class BackofficeQueryService:
                 event.channel_scope == channel_scope for event in conv_events
             ):
                 continue
-            if actor_ref and not any(event.actor_ref == actor_ref for event in conv_events):
+            if user_filter and not any(
+                event.actor_ref == user_filter
+                or str(event.payload.get("userId") or "") == user_filter
+                or str(event.payload.get("user") or "") == user_filter
+                for event in conv_events
+            ):
                 continue
+            if query:
+                needle = query.casefold()
+                matches_query = False
+                for event in conv_events:
+                    payload = event.payload or {}
+                    for field in ("messageMasked", "answerMasked", "descriptionMasked", "userMessage", "aiReply", "text"):
+                        val = payload.get(field)
+                        if val and needle in str(val).casefold():
+                            matches_query = True
+                            break
+                    if matches_query:
+                        break
+                if not matches_query:
+                    continue
             if issue_type_id and not any(
                 event.issue_type_id == issue_type_id for event in conv_events
             ):
@@ -763,6 +860,40 @@ class BackofficeQueryService:
                 for event in conv_events
                 if event.event_type == "route.selected" and event.payload.get("route")
             }
+            turn_records = []
+            for t_event in sorted(turns, key=lambda x: x.occurred_at):
+                t_summary = _summarize_turn_events(t_event, conv_events)
+                fb_reason = next(
+                    (
+                        item.payload.get("reason")
+                        for item in conv_events
+                        if item.event_type == "feedback.recorded"
+                        and (
+                            item.correlation_id == t_event.correlation_id
+                            or (item.turn_id and item.turn_id == t_event.turn_id)
+                        )
+                        and item.payload.get("reason")
+                    ),
+                    None,
+                )
+                turn_records.append(
+                    {
+                        "turnId": t_event.turn_id,
+                        "occurredAt": t_event.occurred_at.isoformat(),
+                        "correlationId": t_event.correlation_id,
+                        "actorRef": t_event.actor_ref or turn_actor or latest.actor_ref,
+                        "userMessage": t_event.payload.get("messageMasked"),
+                        "aiReply": t_summary.get("answerMasked"),
+                        "model": t_summary.get("model"),
+                        "issueTypeId": t_summary.get("issueTypeId"),
+                        "route": t_summary.get("route"),
+                        "faqKey": t_summary.get("faqKey"),
+                        "documentIds": t_summary.get("documentIds") or [],
+                        "feedbackRating": t_summary.get("feedbackRating"),
+                        "feedbackReason": fb_reason,
+                        "handoffStatus": t_summary.get("handoffStatus"),
+                    }
+                )
             items.append(
                 {
                     "conversationId": conv_id,
@@ -771,6 +902,7 @@ class BackofficeQueryService:
                     "actorRef": turn_actor or latest.actor_ref,
                     "channelScope": latest.channel_scope,
                     "routes": sorted(routes),
+                    "turns": turn_records,
                 }
             )
         next_index = start + len(page_ids)
@@ -835,11 +967,14 @@ class BackofficeQueryService:
             # Mixed-permission turns redact the shared user message; never fall
             # back to releasing foreign-unit business text via messageMasked.
             message_masked = None if message_hidden else event.payload.get("messageMasked")
+            raw_ai_reply = next((str(item.payload.get("aiReply")) for item in related if item.payload.get("aiReply")), None)
             turns.append(
                 {
                     "turnId": event.turn_id,
                     "occurredAt": event.occurred_at.isoformat(),
                     "correlationId": event.correlation_id,
+                    "userMessage": event.payload.get("userMessage") if allow_unmasked else message_masked,
+                    "message": event.payload.get("userMessage") if allow_unmasked else message_masked,
                     "messageMasked": message_masked,
                     "messageHidden": message_hidden,
                     "messageHiddenReason": event.payload.get("messageHiddenReason"),
@@ -847,10 +982,14 @@ class BackofficeQueryService:
                     "maskingPolicyVersion": event.payload.get("maskingPolicyVersion"),
                     "masked": not allow_unmasked,
                     **summary,
+                    "aiReply": (raw_ai_reply or summary.get("answerMasked")) if allow_unmasked else summary.get("answerMasked"),
                     "events": [
                         {
                             "eventType": item.event_type,
-                            "payload": item.payload,
+                            "payload": item.payload if allow_unmasked else {
+                                k: v for k, v in item.payload.items()
+                                if k not in {"userMessage", "aiReply", "rawText"}
+                            },
                             "issueTypeId": item.issue_type_id,
                         }
                         for item in related
@@ -872,6 +1011,7 @@ class BackofficeQueryService:
         days: int = 30,
         start_date: str | None = None,
         end_date: str | None = None,
+        query: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
@@ -935,6 +1075,18 @@ class BackofficeQueryService:
                     "estimatedCostUsd": round(issue_costs.get(issue_type_id, 0.0), 6),
                 }
             )
+        if query:
+            needle = query.casefold()
+            items = [
+                item
+                for item in items
+                if needle in item["issueTypeId"].casefold()
+                or needle in item["displayName"].casefold()
+                or (
+                    (rec := self.taxonomy.get(item["issueTypeId"])) is not None
+                    and needle in rec.description.casefold()
+                )
+            ]
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
@@ -1278,10 +1430,15 @@ class BackofficeQueryService:
             coverage = 1.0
         else:
             raise ValueError(f"Unsupported budget measure: {measure}")
+        local_start = (
+            period.start_at.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+            if period.start_at.tzinfo
+            else period.start_at
+        )
         return {
             "actualValue": round(actual_value, 6),
             "coverage": coverage,
-            "periodKey": period.start_at.strftime(
+            "periodKey": local_start.strftime(
                 "%Y-%m-%d" if period_type == "DAILY" else "%Y-%m"
             ),
             "pricingVersion": self._metrics.get("pricingVersion", "v1"),
@@ -1291,18 +1448,62 @@ class BackofficeQueryService:
             ),
         }
 
+    async def list_active_actors_for_budget(
+        self,
+        actor: ActorContext,
+        period: ResolvedPeriod,
+    ) -> list[str]:
+        scoped_events = await self._scoped_events(actor, period)
+        actors: set[str] = set()
+        for event in scoped_events:
+            if event.actor_ref:
+                actors.add(event.actor_ref)
+        return sorted(actors)
+
     async def faq_performance(
         self,
         actor: ActorContext,
         *,
         faq_key: str,
+        faq_id: str | None = None,
+        days: int | None = None,
+        preset: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         events = filter_events_by_scope(await self._events(), actor, self.taxonomy)
-        hits = [
+        all_hits = [
             event
             for event in events
             if event.event_type == "faq.answered" and event.payload.get("faqKey") == faq_key
         ]
+        now = utc_now()
+        today_date = now.date().isoformat()
+        current_iso = now.isocalendar()[:2]
+        current_month = now.strftime("%Y-%m")
+
+        today_hit_count = sum(
+            1 for e in all_hits if e.occurred_at.date().isoformat() == today_date
+        )
+        this_week_hit_count = sum(
+            1 for e in all_hits if e.occurred_at.isocalendar()[:2] == current_iso
+        )
+        this_month_hit_count = sum(
+            1 for e in all_hits if e.occurred_at.strftime("%Y-%m") == current_month
+        )
+        total_hit_count = len(all_hits)
+
+        if days or preset or start_date or end_date:
+            period = self._resolve_period(
+                preset=preset,
+                days=days or 30,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            hits = [e for e in all_hits if event_in_period(e.occurred_at, period)]
+        else:
+            hits = all_hits
+
         by_day: Counter[str] = Counter()
         by_week: Counter[str] = Counter()
         by_month: Counter[str] = Counter()
@@ -1314,9 +1515,22 @@ class BackofficeQueryService:
             by_week[f"{iso_year}-W{iso_week:02d}"] += 1
             by_month[occurred.strftime("%Y-%m")] += 1
             by_version[str(event.payload.get("faqVersionId") or "legacy-unattributed")] += 1
+
+        resolved_faq_id = faq_id or next(
+            (str(e.payload.get("faqId")) for e in all_hits if e.payload.get("faqId")), None
+        )
         return {
             "faqKey": faq_key,
-            "totalHitCount": len(hits),
+            "faqId": resolved_faq_id,
+            "totalHitCount": total_hit_count,
+            "totalHits": total_hit_count,
+            "todayHitCount": today_hit_count,
+            "hitsToday": today_hit_count,
+            "thisWeekHitCount": this_week_hit_count,
+            "hitsThisWeek": this_week_hit_count,
+            "thisMonthHitCount": this_month_hit_count,
+            "hitsThisMonth": this_month_hit_count,
+            "rangeHitCount": len(hits),
             "byDay": [{"period": key, "hitCount": value} for key, value in sorted(by_day.items())],
             "byWeek": [{"period": key, "hitCount": value} for key, value in sorted(by_week.items())],
             "byMonth": [
@@ -1332,7 +1546,7 @@ class BackofficeQueryService:
                     "conversationId": event.conversation_id,
                     "turnId": event.turn_id,
                     "correlationId": event.correlation_id,
-                    "faqId": event.payload.get("faqId"),
+                    "faqId": event.payload.get("faqId") or resolved_faq_id,
                     "versionId": event.payload.get("faqVersionId"),
                 }
                 for event in sorted(hits, key=lambda item: item.occurred_at, reverse=True)[:50]
@@ -1954,10 +2168,21 @@ class BackofficeQueryService:
         *,
         preset: str | None = None,
         days: int = 30,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        issue_type_id: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
-        period = self._resolve_period(preset=preset, days=days)
-        events = await self._scoped_events(actor, period)
-        hits = [
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        events = await self._scoped_events(actor, period, force_refresh=force_refresh)
+        all_hits = [
             event
             for event in events
             if event.event_type in {"knowledge.retrieved", "knowledge.answered"}
@@ -1971,40 +2196,94 @@ class BackofficeQueryService:
                 )
             )
         ]
-        hit_conversations = {event.conversation_id for event in hits if event.conversation_id}
+        hit_conversations = {event.conversation_id for event in all_hits if event.conversation_id}
+        hit_correlations = {event.correlation_id for event in all_hits if event.correlation_id}
+        hit_turns = {event.turn_id for event in all_hits if event.turn_id}
+
         feedback_events = [
             event
             for event in events
             if event.event_type == "feedback.recorded"
-            and event.conversation_id in hit_conversations
+            and (
+                (event.correlation_id and event.correlation_id in hit_correlations)
+                or (event.turn_id and event.turn_id in hit_turns)
+                or (not event.correlation_id and not event.turn_id and event.conversation_id in hit_conversations)
+            )
         ]
         issue_counts = Counter(
             event.issue_type_id or "other.unclassified"
-            for event in hits
+            for event in all_hits
             if event.issue_type_id
         )
         release_counts = Counter(
             str(event.payload.get("releaseId"))
-            for event in hits
+            for event in all_hits
             if event.payload.get("releaseId")
         )
         up = sum(1 for event in feedback_events if event.payload.get("rating") == "UP")
         down = sum(1 for event in feedback_events if event.payload.get("rating") == "DOWN")
         issue_distribution = []
-        for issue_type_id, count in issue_counts.most_common():
-            record = self.taxonomy.get(issue_type_id)
+        for itype_id, count in issue_counts.most_common():
+            record = self.taxonomy.get(itype_id)
             issue_distribution.append(
                 {
-                    "issueTypeId": issue_type_id,
-                    "displayName": record.display_name if record else issue_type_id,
+                    "issueTypeId": itype_id,
+                    "displayName": record.display_name if record else itype_id,
                     "count": count,
                 }
             )
+
+        filtered_hits = (
+            [h for h in all_hits if h.issue_type_id == issue_type_id]
+            if issue_type_id
+            else all_hits
+        )
+        sorted_hits = sorted(filtered_hits, key=lambda item: item.occurred_at, reverse=True)
+        start_idx = int(cursor) if cursor and cursor.isdigit() else 0
+        page_hits = sorted_hits[start_idx : start_idx + limit]
+        next_cursor = (
+            str(start_idx + len(page_hits))
+            if start_idx + len(page_hits) < len(sorted_hits)
+            else None
+        )
+
+        hit_records = [
+            {
+                "occurredAt": event.occurred_at.isoformat(),
+                "conversationId": event.conversation_id,
+                "correlationId": event.correlation_id,
+                "turnId": event.turn_id,
+                "chunkId": event.payload.get("chunkId"),
+                "releaseId": event.payload.get("releaseId"),
+                "issueTypeId": event.issue_type_id,
+                "issueTypeDisplayName": (
+                    self.taxonomy.get(event.issue_type_id).display_name
+                    if event.issue_type_id and self.taxonomy.get(event.issue_type_id)
+                    else event.issue_type_id
+                ),
+            }
+            for event in page_hits
+        ]
+
+        recent_hits = [
+            {
+                "occurredAt": event.occurred_at.isoformat(),
+                "conversationId": event.conversation_id,
+                "correlationId": event.correlation_id,
+                "chunkId": event.payload.get("chunkId"),
+                "releaseId": event.payload.get("releaseId"),
+                "issueTypeId": event.issue_type_id,
+            }
+            for event in sorted(all_hits, key=lambda item: item.occurred_at, reverse=True)[:10]
+        ]
+
         return {
             "documentId": document_id,
             "periodDays": period.days,
             "periodPreset": period.preset,
-            "hitCount": len(hits),
+            "startAt": period.start_at.isoformat(),
+            "endAt": period.end_at.isoformat(),
+            "hitCount": len(all_hits),
             "conversationCount": len(hit_conversations),
             "positiveFeedbackCount": up,
             "negativeFeedbackCount": down,
@@ -2013,17 +2292,14 @@ class BackofficeQueryService:
                 {"releaseId": release_id, "hitCount": count}
                 for release_id, count in release_counts.most_common()
             ],
-            "recentHits": [
-                {
-                    "occurredAt": event.occurred_at.isoformat(),
-                    "conversationId": event.conversation_id,
-                    "correlationId": event.correlation_id,
-                    "chunkId": event.payload.get("chunkId"),
-                    "releaseId": event.payload.get("releaseId"),
-                    "issueTypeId": event.issue_type_id,
-                }
-                for event in sorted(hits, key=lambda item: item.occurred_at, reverse=True)[:10]
-            ],
+            "totalHits": len(filtered_hits),
+            "hits": hit_records,
+            "recentHits": recent_hits,
+            "cursor": str(start_idx),
+            "nextCursor": next_cursor,
+            "hasMore": next_cursor is not None,
+            "limit": limit,
+            "filterIssueTypeId": issue_type_id,
             "governance": await self._fetch_document_governance(document_id),
         }
 
@@ -2105,11 +2381,17 @@ class BackofficeQueryService:
             )
         ]
         hit_conversations = {event.conversation_id for event in hits if event.conversation_id}
+        hit_correlations = {event.correlation_id for event in hits if event.correlation_id}
+        hit_turns = {event.turn_id for event in hits if event.turn_id}
         feedback = [
             event
             for event in events
             if event.event_type == "feedback.recorded"
-            and event.conversation_id in hit_conversations
+            and (
+                (event.correlation_id and event.correlation_id in hit_correlations)
+                or (event.turn_id and event.turn_id in hit_turns)
+                or (not event.correlation_id and not event.turn_id and event.conversation_id in hit_conversations)
+            )
         ]
         issue_counts = Counter(
             event.issue_type_id or "other.unclassified"
@@ -2374,6 +2656,7 @@ class BackofficeQueryService:
                 **period_kwargs,
                 limit=self._settings.export_max_records + 1,
                 actor_ref=filters.get("actor_ref"),
+                user_id=filters.get("user_id"),
                 issue_type_id=filters.get("issue_type_id"),
                 route=filters.get("route"),
                 conversation_id=filters.get("conversation_id"),
@@ -2388,6 +2671,7 @@ class BackofficeQueryService:
             key: value
             for key, value in {
                 "actorRef": filters.get("actor_ref"),
+                "userId": filters.get("user_id"),
                 "issueTypeId": filters.get("issue_type_id"),
                 "route": filters.get("route"),
                 "conversationId": filters.get("conversation_id"),

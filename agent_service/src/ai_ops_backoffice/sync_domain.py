@@ -65,6 +65,8 @@ class SyncAuditEvent(StrictModel):
     actor_role: str
     owner_unit_id: str
     reason: str | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
     occurred_at: datetime
 
 
@@ -205,7 +207,15 @@ class SyncService:
             raise FaqAuthorizationError("sync operation is outside actor capability or scope")
 
     @staticmethod
-    def _audit(job: SyncJob, action: str, actor: ActorContext, reason: str | None = None) -> SyncAuditEvent:
+    def _audit(
+        job: SyncJob,
+        action: str,
+        actor: ActorContext,
+        reason: str | None = None,
+        *,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+    ) -> SyncAuditEvent:
         return SyncAuditEvent(
             audit_id=str(uuid.uuid4()),
             job_id=job.job_id,
@@ -214,6 +224,8 @@ class SyncService:
             actor_role=actor.role,
             owner_unit_id=job.owner_unit_id,
             reason=mask_text(reason).text if reason else None,
+            before=before,
+            after=after,
             occurred_at=datetime.now(UTC),
         )
 
@@ -298,7 +310,14 @@ class SyncService:
                         job_id=job.job_id,
                     ),
                 )
-            audit = self._audit(job, "SYNC_REQUESTED", actor, reason)
+            audit = self._audit(
+                job,
+                "SYNC_REQUESTED",
+                actor,
+                reason,
+                before={"retryOfJobId": retry_of_job_id} if retry_of_job_id else None,
+                after={"status": job.status, "scopeKey": job.scope_key},
+            )
             next_state = SyncState(
                 revision=state.revision + 1,
                 jobs=(*state.jobs, job),
@@ -363,7 +382,22 @@ class SyncService:
                 }
             )
             jobs = tuple(updated if item.job_id == job_id else item for item in state.jobs)
-            audit = self._audit(updated, f"SYNC_{status}", actor, error_summary)
+            audit = self._audit(
+                updated,
+                f"SYNC_{status}",
+                actor,
+                error_summary,
+                before={
+                    "status": current.status,
+                    "currentStage": current.current_stage,
+                    "progressPercent": current.progress_percent,
+                },
+                after={
+                    "status": updated.status,
+                    "currentStage": updated.current_stage,
+                    "progressPercent": updated.progress_percent,
+                },
+            )
             return SyncState(
                 revision=state.revision + 1,
                 jobs=jobs,
@@ -400,7 +434,14 @@ class SyncService:
                 }
             )
             jobs = tuple(updated if item.job_id == job_id else item for item in state.jobs)
-            audit = self._audit(updated, "SYNC_CANCELLED", actor, reason)
+            audit = self._audit(
+                updated,
+                "SYNC_CANCELLED",
+                actor,
+                reason,
+                before={"status": current.status, "currentStage": current.current_stage},
+                after={"status": "CANCELLED", "currentStage": "CANCELLED"},
+            )
             return SyncState(
                 revision=state.revision + 1,
                 jobs=jobs,

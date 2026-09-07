@@ -37,11 +37,27 @@ from .settings import RagSettings
 from .usage import UsageReport, build_usage_report, estimate_text_tokens
 
 
-def build_chat_model(model_name: str | None) -> BaseChatModel | None:
+def build_chat_model(
+    model_name: str | None,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    max_retries: int | None = None,
+) -> BaseChatModel | None:
     """Return a LangChain chat model, or ``None`` when no model is configured."""
     if not model_name:
         return None
-    return init_chat_model(model_name)
+    kwargs: dict[str, Any] = {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    return init_chat_model(model_name, **kwargs)
 
 
 class RouteDecision(BaseModel):

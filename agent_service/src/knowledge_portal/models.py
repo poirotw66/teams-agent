@@ -206,6 +206,8 @@ class AuditEventRecord(StrictModel):
     reason: str = ""
     result: Literal["SUCCESS", "FAILURE"] = "SUCCESS"
     occurred_at: datetime
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

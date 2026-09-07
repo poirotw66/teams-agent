@@ -42,6 +42,11 @@ class ResolvedModelConfig:
     secret_ref: str | None = None
     fallback_model_id: str | None = None
     fallback_on: tuple[str, ...] = ()
+    temperature: float | None = None
+    max_output_tokens: int | None = None
+    timeout_seconds: int | None = None
+    retry: int | None = None
+    max_attempts: int = 1
 
 
 def _build_governance(settings: RagSettings) -> GovernanceService | None:
@@ -174,6 +179,11 @@ class GovernanceRuntime:
             secret_ref=str(peeked.get("secretRef") or "") or None,
             fallback_model_id=str(peeked.get("fallbackModelId") or "") or None,
             fallback_on=tuple(peeked.get("fallbackOn") or ()),
+            temperature=float(peeked["temperature"]) if peeked.get("temperature") is not None else None,
+            max_output_tokens=int(peeked["maxOutputTokens"]) if peeked.get("maxOutputTokens") is not None else None,
+            timeout_seconds=int(peeked["timeoutSeconds"]) if peeked.get("timeoutSeconds") is not None else None,
+            retry=int(peeked["retry"]) if peeked.get("retry") is not None else None,
+            max_attempts=int(peeked.get("maxAttempts") or 1),
         )
 
     def resolve_flag(self, flag_id: str) -> str:
@@ -232,3 +242,8 @@ class ExtractorPromptRuntime:
         return self._runtime.resolve_prompt(
             tenant_id=tenant_id, conversation_id=conversation_id
         )
+
+    def resolve_model(
+        self, *, config_id: str = "issue-extractor-model"
+    ) -> ResolvedModelConfig:
+        return self._runtime.resolve_model(config_id=config_id)

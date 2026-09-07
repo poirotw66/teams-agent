@@ -74,13 +74,13 @@ def test_agent_model_loads_from_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _minimal_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("RAG_MODEL", "google_genai:gemini-3.5-flash-lite")
-    monkeypatch.setenv("AGENT_MODEL", "google_genai:gemini-3.7-flash")
+    monkeypatch.setenv("RAG_MODEL", "google_genai:gemini-3.1-flash-lite")
+    monkeypatch.setenv("AGENT_MODEL", "google_genai:gemini-3.8-flash")
 
     settings = RagSettings.from_env()
 
-    assert settings.model == "google_genai:gemini-3.5-flash-lite"
-    assert settings.agent_model == "google_genai:gemini-3.7-flash"
+    assert settings.model == "google_genai:gemini-3.1-flash-lite"
+    assert settings.agent_model == "google_genai:gemini-3.8-flash"
 
 
 def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

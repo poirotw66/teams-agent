@@ -171,3 +171,93 @@ def test_publish_action_cancels_when_confirmation_declined() -> None:
     result = json.loads(proc.stdout.strip())
     assert result["result"] is False
     assert result["apiCalled"] is False
+
+
+def test_markdown_js_and_styles_served(portal_client: TestClient) -> None:
+    res_js = portal_client.get("/static/js/markdown.js")
+    assert res_js.status_code == 200
+    assert "parseDocumentSections" in res_js.text
+    assert "renderDocumentViewer" in res_js.text
+
+    res_css = portal_client.get("/static/styles.css")
+    assert res_css.status_code == 200
+    assert ".doc-viewer" in res_css.text
+    assert ".doc-archive-accordion" in res_css.text
+    assert ".doc-img-fallback" in res_css.text
+
+
+def test_markdown_parser_and_document_viewer_behavior() -> None:
+    import json
+    import subprocess
+
+    sample_doc = """# 郵件為亂碼
+
+## Archive metadata
+
+- **base-slug**：`郵件為亂碼`
+- **archive-slug**：`郵件為亂碼`
+- **原件**：`raw/originals/郵件為亂碼.md`
+- **SHA-256**：`2074e9350234ef3a4369409108a591fc39549e184fa7bd1a9a636d3c62363e2d`
+- **檔型**：Markdown（知識庫匯出）
+- **轉檔**：自 originals 剝 HTML／雜訊
+- **archived**：2026-07-24
+
+---
+
+## 正文（canonical）
+
+郵件為亂碼
+2025年2月21日
+上午 09:45
+**點開發出的電郵，在"動作 (Actions)"欄，按步驟選取繁體中文(Big 5)，查看是否能排除，**
+**如現有設定已經是繁體中文(Big 5), 請嘗試轉到Unicode(UTF-8)，**
+
+![image1](../../../resources/3206fe4993934c3481422c2bdbb40825.png)
+
+## Limitations / Gaps
+
+- 原文引用圖片／附件路徑不在本倉：
+  - `../../../resources/3206fe4993934c3481422c2bdbb40825.png`
+"""
+
+    markdown_js_path = str(STATIC_DIR / "js/markdown.js")
+
+    doc_json = json.dumps(sample_doc)
+    node_script = f"""
+    import('{markdown_js_path}').then(({{ parseDocumentSections, renderMarkdown, renderDocumentViewer }}) => {{
+      const doc = {doc_json};
+      const parsed = parseDocumentSections(doc);
+      const html = renderDocumentViewer({{ content: doc, id: "testViewer" }});
+
+      console.log(JSON.stringify({{
+        docTitle: parsed.docTitle,
+        metaCount: parsed.archiveMetadata.length,
+        hasLimitations: Boolean(parsed.limitationsText),
+        canonicalContainsActions: parsed.canonicalBody.includes("點開發出的電郵"),
+        hasAccordion: html.includes("doc-archive-accordion"),
+        hasLimitationsBox: html.includes("doc-limitations-box"),
+        hasViewerToolbar: html.includes("doc-viewer-toolbar"),
+        hasImageFallback: html.includes("doc-img-fallback"),
+      }}));
+    }}).catch(err => {{
+      console.error(err);
+      process.exit(1);
+    }});
+    """
+
+    proc = subprocess.run(
+        ["node", "--input-type=module", "-e", node_script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    result = json.loads(proc.stdout.strip())
+    assert result["docTitle"] == "郵件為亂碼"
+    assert result["metaCount"] >= 6
+    assert result["hasLimitations"] is True
+    assert result["canonicalContainsActions"] is True
+    assert result["hasAccordion"] is True
+    assert result["hasLimitationsBox"] is True
+    assert result["hasViewerToolbar"] is True
+    assert result["hasImageFallback"] is True
+

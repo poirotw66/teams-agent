@@ -222,6 +222,8 @@ class PortalServiceContext:
         target_id: str,
         correlation_id: str,
         reason: str = "",
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
         result: str = "SUCCESS",
     ) -> None:
@@ -237,6 +239,8 @@ class PortalServiceContext:
                 reason=reason,
                 result=result,
                 occurred_at=utc_now(),
+                before=before,
+                after=after,
                 metadata=metadata or {},
             )
         )
