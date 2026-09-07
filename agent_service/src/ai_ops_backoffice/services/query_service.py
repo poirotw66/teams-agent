@@ -25,7 +25,7 @@ from agent_service.operations.scope import (
 )
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
-from agent_service.usage import convert_usd_to_twd
+from agent_service.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
 
 from ..settings import BackofficeSettings
 from .daily_aggregates import (
@@ -1562,6 +1562,7 @@ class BackofficeQueryService:
         days: int = 30,
         start_date: str | None = None,
         end_date: str | None = None,
+        model: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
@@ -1573,6 +1574,13 @@ class BackofficeQueryService:
         all_events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         usage_dimensions = UsageDimensions(all_events)
         events = list(project_usage(all_events).detail_events)
+        model_filter = (model or "").strip()
+        if model_filter:
+            events = [
+                event
+                for event in events
+                if str(event.payload.get("model") or "") == model_filter
+            ]
         by_day: dict[str, float] = defaultdict(float)
         by_backend: Counter[str] = Counter()
         by_route_cost: dict[str, float] = defaultdict(float)
@@ -1605,9 +1613,23 @@ class BackofficeQueryService:
             pricing_versions[pricing_version] += 1
         known_total = known_cost_total(events)
         exchange_rate = float(self._metrics.get("usdTwdExchangeRate", 31.70))
+        by_model: list[dict[str, Any]] = []
+        for item in usage_breakdown(events, "model"):
+            input_count = int(item.get("inputTokens") or 0)
+            output_count = int(item.get("outputTokens") or 0)
+            rate = lookup_rate(str(item.get("model") or ""))
+            by_model.append(
+                {
+                    **item,
+                    "totalTokens": input_count + output_count,
+                    "inputUsdPer1MTokens": rate[0] if rate else None,
+                    "outputUsdPer1MTokens": rate[1] if rate else None,
+                }
+            )
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
+            "model": model_filter or None,
             "totalEstimatedCostUsd": known_total,
             "totalEstimatedCostTwd": (
                 convert_usd_to_twd(known_total, exchange_rate) if known_total is not None else None
@@ -1623,7 +1645,8 @@ class BackofficeQueryService:
                 {"date": day, "estimatedCostUsd": round(value, 6)}
                 for day, value in sorted(by_day.items())
             ],
-            "byModel": usage_breakdown(events, "model"),
+            "byModel": by_model,
+            "modelRates": list_model_rates_usd(),
             "byProvider": usage_breakdown(events, "provider"),
             "byComponent": usage_breakdown(events, "component"),
             "byBackend": [
@@ -2626,7 +2649,11 @@ class BackofficeQueryService:
         elif export_type == "issues_summary":
             data = await self.issues_summary(actor, **period_kwargs)
         elif export_type == "costs_summary":
-            data = await self.costs_summary(actor, **period_kwargs)
+            data = await self.costs_summary(
+                actor,
+                **period_kwargs,
+                model=filters.get("model"),
+            )
         elif export_type == "feedback":
             data = await self.list_feedback(
                 actor,

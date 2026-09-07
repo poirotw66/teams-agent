@@ -110,6 +110,19 @@ def lookup_rate(model: str) -> tuple[float, float] | None:
     return None
 
 
+def list_model_rates_usd() -> list[dict[str, float | str]]:
+    """Return the configured per-model USD rates used for cost estimates."""
+    return [
+        {
+            "model": name,
+            "inputUsdPer1MTokens": input_rate,
+            "outputUsdPer1MTokens": output_rate,
+            "pricingVersion": PRICING_VERSION,
+        }
+        for name, (input_rate, output_rate) in sorted(_MODEL_RATES_USD.items())
+    ]
+
+
 def estimate_text_tokens(text: str) -> int:
     """Rough token estimate for embedding calls without provider usage metadata."""
     if not text:

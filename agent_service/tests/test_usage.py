@@ -6,12 +6,23 @@ from agent_service.usage import (
     convert_usd_to_twd,
     estimate_cost_usd,
     estimate_text_tokens,
+    list_model_rates_usd,
     normalize_model_name,
 )
 
 
 def test_pricing_version_is_set() -> None:
     assert PRICING_VERSION == "2026-08-31"
+
+
+def test_list_model_rates_usd_includes_configured_models() -> None:
+    rates = list_model_rates_usd()
+    assert rates
+    flash = next(item for item in rates if item["model"] == "gemini-3.8-flash")
+    assert flash["inputUsdPer1MTokens"] == 0.75
+    assert flash["outputUsdPer1MTokens"] == 3.75
+    assert flash["pricingVersion"] == PRICING_VERSION
+    assert rates == sorted(rates, key=lambda item: str(item["model"]))
 
 
 def test_normalize_model_name_strips_provider_prefix() -> None:

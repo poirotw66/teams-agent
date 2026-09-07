@@ -1612,6 +1612,41 @@ def test_costs_summary_groups_by_route_and_issue(seeded_backoffice_client: TestC
     assert body["byRoute"][0]["estimatedCostUsd"] == 0.0025
     assert body["byIssueType"][0]["issueTypeId"] == "vpn.connection_failed"
     assert body["byIssueType"][0]["estimatedCostUsd"] == 0.0025
+    assert body["byModel"]
+    model_row = body["byModel"][0]
+    assert "inputTokens" in model_row
+    assert "outputTokens" in model_row
+    assert "totalTokens" in model_row
+    assert body["modelRates"]
+    assert any(item["model"] == "gemini-3.8-flash" for item in body["modelRates"])
+
+
+def test_costs_summary_filters_by_model(seeded_backoffice_client: TestClient) -> None:
+    all_models = seeded_backoffice_client.get(
+        "/api/costs/summary?days=30",
+        headers=headers(),
+    ).json()["byModel"]
+    assert all_models
+    target_model = all_models[0]["model"]
+    filtered = seeded_backoffice_client.get(
+        f"/api/costs/summary?days=30&model={target_model}",
+        headers=headers(),
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["model"] == target_model
+    assert body["byModel"]
+    assert all(item["model"] == target_model for item in body["byModel"])
+    missing = seeded_backoffice_client.get(
+        "/api/costs/summary?days=30&model=totally-missing-model",
+        headers=headers(),
+    )
+    assert missing.status_code == 200
+    empty = missing.json()
+    assert empty["model"] == "totally-missing-model"
+    assert empty["byModel"] == []
+    assert empty["inputTokens"] == 0
+    assert empty["totalEstimatedCostUsd"] in {0, 0.0, None}
 
 
 def test_issues_summary_includes_hierarchy(seeded_backoffice_client: TestClient) -> None:

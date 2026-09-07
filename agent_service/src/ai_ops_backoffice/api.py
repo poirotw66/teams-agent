@@ -1221,6 +1221,7 @@ def create_app(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        model: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -1231,9 +1232,21 @@ def create_app(
             days=days,
             start_date=start_date,
             end_date=end_date,
+            model=model,
             force_refresh=refresh,
         )
-        await audit_read(actor, "query.costs_summary", "costs_summary")
+        await audit_read(
+            actor,
+            "query.costs_summary",
+            "costs_summary",
+            after={
+                "days": days,
+                "preset": preset,
+                "startDate": start_date,
+                "endDate": end_date,
+                "model": model,
+            },
+        )
         return result
 
     @app.get("/api/health/summary")
