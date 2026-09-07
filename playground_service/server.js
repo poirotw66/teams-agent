@@ -1,522 +1,37 @@
 "use strict";
 
-const crypto = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const httpProxy = require("http-proxy");
 
-const SESSION_COOKIE = "playground_session";
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const MAX_LOGIN_ATTEMPTS = 5;
-const attempts = new Map();
-
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
-
-function digest(value) {
-  return crypto.createHash("sha256").update(value).digest();
-}
-
-function safeEqual(left, right) {
-  return crypto.timingSafeEqual(digest(left), digest(right));
-}
-
-function signSession(secret, now = Date.now(), ttlSeconds = 8 * 60 * 60) {
-  const expiresAt = Math.floor(now / 1000) + ttlSeconds;
-  const nonce = crypto.randomBytes(18).toString("base64url");
-  const payload = `${expiresAt}.${nonce}`;
-  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
-  return `${payload}.${signature}`;
-}
-
-function verifySession(token, secret, now = Date.now()) {
-  if (!token) return false;
-  const parts = token.split(".");
-  if (parts.length !== 3) return false;
-  const [expiresAt, nonce, signature] = parts;
-  if (!/^\d+$/.test(expiresAt) || !nonce || !signature) return false;
-  if (Number(expiresAt) <= Math.floor(now / 1000)) return false;
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(`${expiresAt}.${nonce}`)
-    .digest("base64url");
-  return safeEqual(signature, expected);
-}
-
-function parseCookies(header = "") {
-  return Object.fromEntries(
-    header
-      .split(";")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((item) => {
-        const separator = item.indexOf("=");
-        if (separator < 0) return [item, ""];
-        return [item.slice(0, separator), decodeURIComponent(item.slice(separator + 1))];
-      }),
-  );
-}
-
-function securityHeaders() {
-  return {
-    "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
-  };
-}
-
-function loginPage(error = "") {
-  const message = error ? `<p class="error">${error}</p>` : "";
-  return `<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Microsoft 365 Agents Playground 測試登入</title>
-  <style>
-    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f6fb; color: #242424; }
-    main { width: min(88vw, 390px); padding: 32px; background: white; border-radius: 14px; box-shadow: 0 12px 34px #0002; }
-    h1 { margin: 0 0 10px; font-size: 22px; }
-    p { color: #616161; line-height: 1.5; }
-    label { display: block; margin: 24px 0 8px; font-weight: 600; }
-    input, button { width: 100%; box-sizing: border-box; border-radius: 7px; font: inherit; }
-    input { padding: 11px 12px; border: 1px solid #8a8886; }
-    button { margin-top: 16px; padding: 11px; border: 0; background: #5b5fc7; color: white; font-weight: 700; cursor: pointer; }
-    .error { color: #a4262c; font-weight: 600; }
-  </style>
-</head>
-<body><main>
-  <h1>Agents Playground 測試環境</h1>
-  <p>此環境僅供短期驗收。請輸入測試密碼。</p>
-  ${message}
-  <form method="post" action="/login">
-    <label for="password">密碼</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-    <button type="submit">進入測試</button>
-  </form>
-</main></body></html>`;
-}
-
-function clientAddress(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  return (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "") || req.socket.remoteAddress || "unknown";
-}
-
-function isPublicAssetPath(pathname) {
-  // ponytail: SPA bundles are not secret; gating them breaks boot when a browser
-  // omits the session cookie on the first script request after login.
-  return pathname.startsWith("/static/") || pathname === "/favicon.ico";
-}
-
-function isRateLimited(address, now = Date.now()) {
-  const entry = attempts.get(address);
-  if (!entry || now - entry.startedAt >= LOGIN_WINDOW_MS) {
-    attempts.set(address, { count: 0, startedAt: now });
-    return false;
-  }
-  return entry.count >= MAX_LOGIN_ATTEMPTS;
-}
-
-function recordFailure(address, now = Date.now()) {
-  const entry = attempts.get(address);
-  if (!entry || now - entry.startedAt >= LOGIN_WINDOW_MS) {
-    attempts.set(address, { count: 1, startedAt: now });
-  } else {
-    entry.count += 1;
-  }
-}
-
-function readForm(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 4096) reject(new Error("Request body too large"));
-    });
-    req.on("end", () => resolve(new URLSearchParams(body)));
-    req.on("error", reject);
-  });
-}
-
-async function resetPlaygroundConversation(playgroundTarget) {
-  const base = playgroundTarget.replace(/\/$/, "");
-  const configResponse = await fetch(`${base}/_internal/v1/config`, { signal: AbortSignal.timeout(5000) });
-  if (!configResponse.ok) {
-    throw new Error(`playground config failed (${configResponse.status})`);
-  }
-  const config = await configResponse.json();
-  const personalChatId = config?.personalChat?.id;
-  if (!personalChatId) {
-    throw new Error("playground config missing personalChat.id");
-  }
-
-  const createResponse = await fetch(`${base}/v3/conversations`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!createResponse.ok) {
-    throw new Error(`playground create conversation failed (${createResponse.status})`);
-  }
-  const created = await createResponse.json();
-  const conversationId = created?.id;
-  if (!conversationId) {
-    throw new Error("playground create conversation returned no id");
-  }
-
-  const linkResponse = await fetch(`${base}/_debug/conversation/addDirectLineConversationLink`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ directLineConversationId: conversationId, conversationId: personalChatId }),
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!linkResponse.ok) {
-    throw new Error(`playground conversation link failed (${linkResponse.status})`);
-  }
-
-  return { personalChatId, conversationId };
-}
-
-function buildSessionCookie(token, secureCookie) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; HttpOnly;${secureCookie ? " Secure;" : ""} SameSite=Lax`;
-}
-
-function rotateSessionCookie(req, state, sessionSecret, secureCookie) {
-  const oldToken = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  const backend = oldToken ? state.sessionBackends.get(oldToken) : undefined;
-  const token = signSession(sessionSecret);
-  if (backend) {
-    state.sessionBackends.set(token, backend);
-  }
-  return buildSessionCookie(token, secureCookie);
-}
-
-async function handleNewConversationRequest(req, res, state, sessionSecret, secureCookie, playgroundTarget) {
-  try {
-    const created = await resetPlaygroundConversation(playgroundTarget);
-    res.writeHead(200, {
-      "content-type": "application/json; charset=utf-8",
-      "set-cookie": rotateSessionCookie(req, state, sessionSecret, secureCookie),
-      ...securityHeaders(),
-    });
-    res.end(JSON.stringify({ ok: true, conversationId: created.conversationId }));
-  } catch (error) {
-    res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: error instanceof Error ? error.message : "無法重設 Playground 對話" }));
-  }
-}
-
-function knowledgeControlScript() {
-  return `"use strict";
-(function () {
-  const host = document.createElement("aside");
-  host.id = "knowledge-backend-control";
-  host.innerHTML = '<strong>知識後端</strong><select aria-label="知識後端"></select><button type="button" data-action="apply">套用</button><button type="button" data-action="reset">新對話</button><span role="status">載入中…</span>';
-  const warning = document.createElement("aside");
-  warning.id = "multi-window-warning";
-  warning.setAttribute("role", "note");
-  warning.textContent = "⚠ 多視窗提示：Playground 會將回覆同步顯示於所有已開啟視窗。測試時請只使用一個視窗，避免對話互相影響。刷新頁面不會重設 Bot 對話；請按「新對話」。";
-  const style = document.createElement("style");
-  style.textContent = '#knowledge-backend-control{position:fixed;z-index:2147483647;top:10px;right:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:min(720px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d1d1d1;border-radius:8px;background:#fff;box-shadow:0 4px 14px #0002;font:13px system-ui,-apple-system,"Segoe UI",sans-serif;color:#242424}#knowledge-backend-control select,#knowledge-backend-control button{font:inherit;padding:5px 8px;border:1px solid #8a8886;border-radius:5px;background:#fff}#knowledge-backend-control button[data-action="apply"],#knowledge-backend-control button[data-action="reset"]{border-color:#5b5fc7;background:#5b5fc7;color:#fff;cursor:pointer}#knowledge-backend-control button[data-action="reset"]{border-color:#8a8886;background:#fff;color:#242424}#knowledge-backend-control button:disabled{opacity:.55;cursor:wait}#knowledge-backend-control span{max-width:230px;color:#616161}#multi-window-warning{position:fixed;z-index:2147483646;top:62px;right:16px;box-sizing:border-box;max-width:min(560px,calc(100vw - 32px));padding:9px 12px;border:1px solid #d83b01;border-radius:8px;background:#fff4ce;box-shadow:0 4px 14px #0002;color:#5c2d00;font:600 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}';
-  document.head.appendChild(style);
-  document.body.appendChild(host);
-  document.body.appendChild(warning);
-  const select = host.querySelector("select");
-  const applyButton = host.querySelector('[data-action="apply"]');
-  const resetButton = host.querySelector('[data-action="reset"]');
-  const status = host.querySelector("span");
-
-  function render(data) {
-    select.replaceChildren(...data.options.map(function (option) {
-      const node = document.createElement("option");
-      node.value = option.id;
-      node.textContent = option.available ? option.label : option.label + "（未設定）";
-      node.disabled = !option.available;
-      node.title = option.reason || "";
-      node.selected = option.id === data.activeBackend;
-      return node;
-    }));
-    status.textContent = "目前：" + (select.selectedOptions[0] ? select.selectedOptions[0].textContent : data.activeBackend);
-  }
-
-  async function load() {
-    try {
-      const response = await fetch("/api/knowledge-backend", { cache: "no-store" });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      render(await response.json());
-    } catch (error) {
-      status.textContent = "無法讀取後端狀態";
-      applyButton.disabled = true;
-      resetButton.disabled = true;
-    }
-  }
-
-  applyButton.addEventListener("click", async function () {
-    applyButton.disabled = true;
-    resetButton.disabled = true;
-    status.textContent = "切換中…";
-    try {
-      const response = await fetch("/api/knowledge-backend", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ backend: select.value }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "切換失敗");
-      render(data);
-    } catch (error) {
-      status.textContent = error.message || "切換失敗";
-    } finally {
-      applyButton.disabled = false;
-      resetButton.disabled = false;
-    }
-  });
-
-  resetButton.addEventListener("click", async function () {
-    applyButton.disabled = true;
-    resetButton.disabled = true;
-    status.textContent = "重設對話中…";
-    try {
-      const response = await fetch("/api/new-conversation", { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "重設失敗");
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch (_error) {}
-      window.location.assign("/");
-    } catch (error) {
-      status.textContent = error.message || "重設失敗";
-      applyButton.disabled = false;
-      resetButton.disabled = false;
-    }
-  });
-  load();
-})();`;
-}
-
-async function googleIdentityToken(audience) {
-  if (!audience || !audience.startsWith("https://")) {
-    throw new Error("KNOWLEDGE_CONTROL_AUDIENCE must be an HTTPS URL");
-  }
-  const url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity" +
-    `?audience=${encodeURIComponent(audience)}&format=full`;
-  const response = await fetch(url, {
-    headers: { "metadata-flavor": "Google" },
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!response.ok) throw new Error(`Metadata identity endpoint returned ${response.status}`);
-  return (await response.text()).trim();
-}
-
-function knowledgeBackendOptions(geminiAvailable, geminiReason) {
-  return [
-    { id: "HYBRID", label: "HYBRID（本機索引）", available: true, reason: null },
-    {
-      id: "GEMINI_FILE_SEARCH",
-      label: "Gemini File Search",
-      available: geminiAvailable,
-      reason: geminiReason,
-    },
-  ];
-}
-
-function createKnowledgeBackendState({ defaultBackend = "HYBRID", geminiAvailable = true, geminiReason = null } = {}) {
-  return {
-    defaultBackend,
-    sessionBackends: new Map(),
-    options: knowledgeBackendOptions(geminiAvailable, geminiReason),
-  };
-}
-
-function resolveEvaluationBackend(req, state) {
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (token && state.sessionBackends.has(token)) {
-    return state.sessionBackends.get(token);
-  }
-  return state.defaultBackend;
-}
-
-function buildKnowledgeBackendStatus(state, activeBackend) {
-  return {
-    activeBackend,
-    options: state.options,
-  };
-}
-
-async function handleKnowledgeBackendRequest(req, res, state) {
-  if (req.method === "GET") {
-    const activeBackend = resolveEvaluationBackend(req, state);
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify(buildKnowledgeBackendStatus(state, activeBackend)));
-    return;
-  }
-
-  const form = await readJson(req);
-  if (!["HYBRID", "GEMINI_FILE_SEARCH"].includes(form.backend)) {
-    res.writeHead(400, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: "不支援的知識後端" }));
-    return;
-  }
-  const selected = state.options.find((option) => option.id === form.backend);
-  if (!selected?.available) {
-    res.writeHead(409, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: selected?.reason || "知識後端尚未設定" }));
-    return;
-  }
-
-  state.defaultBackend = form.backend;
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (token) state.sessionBackends.set(token, form.backend);
-
-  res.writeHead(200, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-  res.end(JSON.stringify(buildKnowledgeBackendStatus(state, form.backend)));
-}
-
-function injectPlaygroundEvaluation(activity, backend) {
-  if (!activity || typeof activity !== "object" || Array.isArray(activity)) {
-    return activity;
-  }
-  const next = { ...activity, channelId: "playground" };
-  const channelData = {
-    ...(activity.channelData && typeof activity.channelData === "object" && !Array.isArray(activity.channelData)
-      ? activity.channelData
-      : {}),
-  };
-  if (backend === "GEMINI_FILE_SEARCH") {
-    channelData.evaluationKnowledgeBackend = backend;
-  } else {
-    delete channelData.evaluationKnowledgeBackend;
-  }
-  next.channelData = channelData;
-  return next;
-}
-
-async function proxyAdapterMessages(req, res, adapterTarget, evaluationBackend) {
-  if (!adapterTarget) {
-    res.writeHead(503, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: "Adapter proxy 尚未設定" }));
-    return;
-  }
-  try {
-    let body = "";
-    req.setEncoding("utf8");
-    for await (const chunk of req) {
-      body += chunk;
-      if (body.length > 1024 * 1024) {
-        res.writeHead(413, { "content-type": "text/plain; charset=utf-8", ...securityHeaders() });
-        res.end("Request body too large\n");
-        return;
-      }
-    }
-    let payload = body ? JSON.parse(body) : {};
-    if (typeof payload === "object" && payload !== null) {
-      payload = injectPlaygroundEvaluation(payload, evaluationBackend);
-      body = JSON.stringify(payload);
-    }
-    const headers = {
-      accept: req.headers.accept || "application/json",
-      "content-type": req.headers["content-type"] || "application/json",
-    };
-    for (const name of ["authorization", "x-ms-conversation-id", "x-ms-correlation-id"]) {
-      const value = req.headers[name];
-      if (typeof value === "string" && value) headers[name] = value;
-    }
-    const response = await fetch(`${adapterTarget.replace(/\/$/, "")}/api/messages`, {
-      method: req.method,
-      headers,
-      body: body || undefined,
-      signal: AbortSignal.timeout(30000),
-    });
-    const responseBody = await response.text();
-    const responseHeaders = {
-      "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
-      ...securityHeaders(),
-    };
-    res.writeHead(response.status, responseHeaders);
-    res.end(responseBody);
-  } catch (_error) {
-    res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: "無法連線到 Teams Adapter" }));
-  }
-}
-
-async function proxyKnowledgeControl(req, res, controlUrl, controlToken, controlAuthMode, controlAudience) {
-  if (!controlUrl) {
-    res.writeHead(503, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: "知識後端控制尚未設定" }));
-    return;
-  }
-  try {
-    let body;
-    if (req.method === "PUT") {
-      const form = await readJson(req);
-      if (!["HYBRID", "GEMINI_FILE_SEARCH"].includes(form.backend)) {
-        res.writeHead(400, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-        res.end(JSON.stringify({ detail: "不支援的知識後端" }));
-        return;
-      }
-      body = JSON.stringify({ backend: form.backend });
-    }
-    const headers = { accept: "application/json" };
-    if (body) headers["content-type"] = "application/json";
-    if (controlAuthMode === "google_id_token") {
-      headers.authorization = `Bearer ${await googleIdentityToken(controlAudience)}`;
-    } else if (controlToken) {
-      headers.authorization = `Bearer ${controlToken}`;
-    }
-    const response = await fetch(controlUrl, {
-      method: req.method,
-      headers,
-      body,
-      signal: AbortSignal.timeout(5000),
-    });
-    const responseBody = await response.text();
-    res.writeHead(response.status, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(responseBody);
-  } catch (_error) {
-    res.writeHead(502, { "content-type": "application/json; charset=utf-8", ...securityHeaders() });
-    res.end(JSON.stringify({ detail: "無法連線到 Agent 知識後端" }));
-  }
-}
-
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 4096) reject(new Error("Request body too large"));
-    });
-    req.on("end", () => {
-      try { resolve(JSON.parse(body || "{}")); } catch (error) { reject(error); }
-    });
-    req.on("error", reject);
-  });
-}
-
-async function proxyIndex(res, target) {
-  try {
-    const response = await fetch(`${target}/`);
-    let body = await response.text();
-    body = body.replace("</body>", '<script src="/_knowledge-control.js"></script></body>');
-    const headers = { "content-type": response.headers.get("content-type") || "text/html; charset=utf-8", "cache-control": "no-store" };
-    res.writeHead(response.status, headers);
-    res.end(body);
-  } catch (_error) {
-    res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Agents Playground 尚未就緒，請稍後重試。\n");
-  }
-}
+const {
+  safeEqual,
+  signSession,
+  verifySession,
+  parseCookies,
+  isPublicAssetPath,
+  isRateLimited,
+  recordFailure,
+  clearLoginAttempts,
+  buildSessionCookie,
+  clearSessionCookie,
+  isAuthenticated,
+} = require("./lib/auth");
+const { requiredEnv, securityHeaders, clientAddress, readForm } = require("./lib/http");
+const { loginPage, knowledgeControlScript, proxyIndex } = require("./lib/pages");
+const {
+  createKnowledgeBackendState,
+  buildKnowledgeBackendStatus,
+  handleKnowledgeBackendRequest,
+  injectPlaygroundEvaluation,
+  proxyKnowledgeControl,
+} = require("./lib/knowledge-control");
+const {
+  resetPlaygroundConversation,
+  handleNewConversationRequest,
+  proxyAdapterMessages,
+} = require("./lib/proxy");
 
 function createGateway({
   password,
@@ -543,10 +58,7 @@ function createGateway({
     }
   });
 
-  const authenticated = (req) => {
-    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-    return verifySession(token, sessionSecret);
-  };
+  const authenticated = (req) => isAuthenticated(req, sessionSecret);
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://gateway.local");
@@ -583,11 +95,11 @@ function createGateway({
           res.end(loginPage("密碼錯誤。"));
           return;
         }
-        attempts.delete(address);
+        clearLoginAttempts(address);
         const token = signSession(sessionSecret);
         res.writeHead(303, {
           location: "/",
-          "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=28800; HttpOnly;${secureCookie ? " Secure;" : ""} SameSite=Lax`,
+          "set-cookie": buildSessionCookie(token, secureCookie),
           ...securityHeaders(),
         });
         res.end();
@@ -601,7 +113,7 @@ function createGateway({
     if (url.pathname === "/logout") {
       res.writeHead(303, {
         location: "/login",
-        "set-cookie": `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly;${secureCookie ? " Secure;" : ""} SameSite=Lax`,
+        "set-cookie": clearSessionCookie(secureCookie),
         ...securityHeaders(),
       });
       res.end();
