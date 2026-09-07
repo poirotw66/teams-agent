@@ -1,5 +1,5 @@
 {
-  "revision": 112,
+  "revision": 159,
   "policies": [
     {
       "policy_id": "014952f9-2510-451f-9453-3b3c614162b3",
@@ -66,14 +66,14 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.042456Z",
-      "last_triggered_at": "2026-09-07T07:28:52.298910Z",
+      "last_triggered_at": "2026-09-07T08:54:10.006600Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
-      "etag": 22
+      "etag": 30
     },
     {
       "alert_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
@@ -92,14 +92,14 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.044256Z",
-      "last_triggered_at": "2026-09-07T07:28:52.300640Z",
+      "last_triggered_at": "2026-09-07T08:54:10.008522Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
-      "etag": 22
+      "etag": 30
     },
     {
       "alert_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
@@ -118,14 +118,40 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.045921Z",
-      "last_triggered_at": "2026-09-07T07:28:52.303624Z",
+      "last_triggered_at": "2026-09-07T08:54:10.010257Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
-      "etag": 22
+      "etag": 30
+    },
+    {
+      "alert_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "policy_id": "op:api_anomaly:agent-service",
+      "alert_type": "API_ANOMALY",
+      "severity": "WARNING",
+      "scope_type": "SERVICE",
+      "scope_id": "agent-service",
+      "period_key": "2026-09-07",
+      "suppression_key": "API_ANOMALY:SERVICE:agent-service:2026-09-07",
+      "threshold": 0.0,
+      "actual_value": 0.7222,
+      "coverage": 1.0,
+      "pricing_version": "v1",
+      "exchange_rate_version": "v1",
+      "status": "OPEN",
+      "owner_unit_id": "IT",
+      "first_triggered_at": "2026-09-07T08:32:07.528335Z",
+      "last_triggered_at": "2026-09-07T08:54:10.004220Z",
+      "acknowledged_by": null,
+      "acknowledged_at": null,
+      "resolved_by": null,
+      "resolved_at": null,
+      "resolution_note": null,
+      "message": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "etag": 7
     }
   ],
   "deliveries": [
@@ -164,6 +190,18 @@
       "last_error": null,
       "created_at": "2026-09-07T05:50:58.045921Z",
       "updated_at": "2026-09-07T05:50:58.045921Z"
+    },
+    {
+      "delivery_id": "e4b6694d-a36e-40ce-b46b-e23a90ffa949",
+      "alert_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "target_id": "notification-center",
+      "channel": "NOTIFICATION_CENTER",
+      "status": "SENT",
+      "summary": "API anomaly in agent-service: status=READY, errorRate=73.58%; HTTP 200",
+      "attempt_count": 1,
+      "last_error": null,
+      "created_at": "2026-09-07T08:32:07.528335Z",
+      "updated_at": "2026-09-07T08:32:07.528335Z"
     }
   ],
   "audits": [
@@ -914,6 +952,347 @@
       "owner_unit_id": "IT",
       "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
       "occurred_at": "2026-09-07T07:28:52.304226Z"
+    },
+    {
+      "audit_id": "d7ba890b-2fc5-4d38-a228-a6e7e666ee4e",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T07:33:52.542278Z"
+    },
+    {
+      "audit_id": "13fd2b81-d7c5-42c9-b9e5-f9ec7323babe",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T07:33:52.543860Z"
+    },
+    {
+      "audit_id": "c8a2c151-2849-4e9f-936b-d79e181d74d2",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T07:33:52.545748Z"
+    },
+    {
+      "audit_id": "b94b5f83-2252-4b8a-9131-97acda30b7f6",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_TRIGGERED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=73.58%; HTTP 200",
+      "occurred_at": "2026-09-07T08:32:07.529120Z"
+    },
+    {
+      "audit_id": "a13636f0-b180-4e08-b9bc-38573a404c8a",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:32:07.531917Z"
+    },
+    {
+      "audit_id": "25852b96-8598-4400-8883-a4189b8db0ec",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:32:07.534150Z"
+    },
+    {
+      "audit_id": "c67f806a-37d3-4145-83c5-333518601961",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:32:07.536146Z"
+    },
+    {
+      "audit_id": "6b54c3a2-a3cc-4486-9323-d6f135eaf308",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=73.58%; HTTP 200",
+      "occurred_at": "2026-09-07T08:36:48.721235Z"
+    },
+    {
+      "audit_id": "e55c7176-4f00-446d-bab9-84328b36da07",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:36:48.722976Z"
+    },
+    {
+      "audit_id": "f954ca4d-7ed8-4452-acac-9fdbdaf7ccd7",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:36:48.724634Z"
+    },
+    {
+      "audit_id": "af1952b8-db51-4fb3-ae21-af49a3321a3e",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:36:48.726068Z"
+    },
+    {
+      "audit_id": "7faa148e-71bc-44ae-8aab-62e97487f356",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "occurred_at": "2026-09-07T08:41:48.891279Z"
+    },
+    {
+      "audit_id": "0ecf8c82-b73f-4449-8f30-3f2743242761",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:41:48.894322Z"
+    },
+    {
+      "audit_id": "96f30601-9bc8-40b2-ba42-474a2ec3c659",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:41:48.896796Z"
+    },
+    {
+      "audit_id": "9182a033-84d5-4bca-b806-f2d00e0f02c2",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:41:48.899220Z"
+    },
+    {
+      "audit_id": "554b2467-d2d9-4217-b470-c8b40746ea21",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "occurred_at": "2026-09-07T08:42:20.669295Z"
+    },
+    {
+      "audit_id": "4e9c294f-ca43-4d60-afb9-b165411c5c8c",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:42:20.678004Z"
+    },
+    {
+      "audit_id": "a4d9388d-9a0d-4ff6-a822-336f3abee44f",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:42:20.691980Z"
+    },
+    {
+      "audit_id": "a6b2127c-c0c4-4bb0-88f0-1120f0db2ed9",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:42:20.699898Z"
+    },
+    {
+      "audit_id": "562fc45a-a9c0-4d1a-be65-c3c5795e5064",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "occurred_at": "2026-09-07T08:47:20.783636Z"
+    },
+    {
+      "audit_id": "0371314a-5bac-4b63-ad08-8580b38fb2f5",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:47:20.785847Z"
+    },
+    {
+      "audit_id": "9987b187-e6c2-480f-85aa-a8d2d89b8d87",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:47:20.787962Z"
+    },
+    {
+      "audit_id": "79795d1c-3590-4192-92ce-9dc2c61cb69f",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:47:20.789884Z"
+    },
+    {
+      "audit_id": "800ab27a-fb3f-49a1-ba41-c694402c45cb",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "occurred_at": "2026-09-07T08:49:08.040407Z"
+    },
+    {
+      "audit_id": "472b15f1-a6e3-4711-a7e6-3ce7f756902c",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:49:08.043095Z"
+    },
+    {
+      "audit_id": "d4ec180e-aac6-426b-ae32-86975dafb5d8",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:49:08.045136Z"
+    },
+    {
+      "audit_id": "3986cfde-98b5-41a9-ad99-b73acb71f43f",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:49:08.047250Z"
+    },
+    {
+      "audit_id": "e654655c-206d-40b1-8ce2-bc66d661fef4",
+      "target_type": "ALERT",
+      "target_id": "7031175f-05de-4c53-aca9-d27c0978fa6e",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-service: status=READY, errorRate=72.22%; HTTP 200",
+      "occurred_at": "2026-09-07T08:54:10.004745Z"
+    },
+    {
+      "audit_id": "b03a664f-eb96-446b-866f-0c011acc1788",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:54:10.007022Z"
+    },
+    {
+      "audit_id": "2bc88346-4d3f-4b56-81af-f1cb85a8c3fd",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T08:54:10.008973Z"
+    },
+    {
+      "audit_id": "255fbe5c-5cab-48b2-aae8-aa60f19c3773",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T08:54:10.010646Z"
     }
   ]
 }

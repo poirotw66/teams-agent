@@ -78,13 +78,51 @@ def derive_request_outcome(state: Mapping[str, object]) -> str:
     return "other"
 
 
+def _usage_from_mapping(token_usage: Mapping[str, object]) -> dict[str, int | str] | None:
+    input_tokens = _safe_int(
+        token_usage.get("input_tokens")
+        or token_usage.get("prompt_tokens")
+        or token_usage.get("prompt_token_count")
+        or token_usage.get("inputTokenCount")
+    )
+    output_tokens = _safe_int(
+        token_usage.get("output_tokens")
+        or token_usage.get("completion_tokens")
+        or token_usage.get("candidates_token_count")
+        or token_usage.get("outputTokenCount")
+    )
+    total_tokens = _safe_int(
+        token_usage.get("total_tokens") or token_usage.get("total_token_count")
+    )
+    if not (input_tokens or output_tokens or total_tokens):
+        return None
+    return {
+        "input_tokens": input_tokens or max(0, total_tokens - output_tokens),
+        "output_tokens": output_tokens,
+        "usage_source": "PROVIDER",
+    }
+
+
 def extract_provider_usage_from_result(result: object) -> dict[str, int | str] | None:
     """Best-effort token extraction from a single LLM response object."""
     usage_metadata = getattr(result, "usage_metadata", None)
     if usage_metadata is not None:
-        input_tokens = _safe_int(getattr(usage_metadata, "input_tokens", None))
-        output_tokens = _safe_int(getattr(usage_metadata, "output_tokens", None))
-        total_tokens = _safe_int(getattr(usage_metadata, "total_tokens", None))
+        if isinstance(usage_metadata, Mapping):
+            mapped = _usage_from_mapping(usage_metadata)
+            if mapped:
+                return mapped
+        input_tokens = _safe_int(
+            getattr(usage_metadata, "input_tokens", None)
+            or getattr(usage_metadata, "prompt_token_count", None)
+        )
+        output_tokens = _safe_int(
+            getattr(usage_metadata, "output_tokens", None)
+            or getattr(usage_metadata, "candidates_token_count", None)
+        )
+        total_tokens = _safe_int(
+            getattr(usage_metadata, "total_tokens", None)
+            or getattr(usage_metadata, "total_token_count", None)
+        )
         if input_tokens or output_tokens or total_tokens:
             return {
                 "input_tokens": input_tokens or max(0, total_tokens - output_tokens),
@@ -94,18 +132,15 @@ def extract_provider_usage_from_result(result: object) -> dict[str, int | str] |
 
     response_metadata = getattr(result, "response_metadata", None) or {}
     if isinstance(response_metadata, Mapping):
-        token_usage = response_metadata.get("token_usage") or response_metadata.get("usage")
+        token_usage = (
+            response_metadata.get("token_usage")
+            or response_metadata.get("usage")
+            or response_metadata.get("usage_metadata")
+        )
         if isinstance(token_usage, Mapping):
-            input_tokens = _safe_int(token_usage.get("input_tokens") or token_usage.get("prompt_tokens"))
-            output_tokens = _safe_int(
-                token_usage.get("output_tokens") or token_usage.get("completion_tokens")
-            )
-            if input_tokens or output_tokens:
-                return {
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "usage_source": "PROVIDER",
-                }
+            mapped = _usage_from_mapping(token_usage)
+            if mapped:
+                return mapped
         model_name = response_metadata.get("model_name") or response_metadata.get("model")
         if isinstance(model_name, str) and model_name.strip():
             return {"model": normalize_model_name(model_name)}
@@ -222,6 +257,7 @@ class RequestCostSummary:
     cost_complete: bool
     usage_coverage: float
     pricing_version: str
+    by_model: tuple[dict[str, object], ...] = ()
 
     def to_log_dict(self) -> dict[str, object]:
         return {
@@ -244,6 +280,7 @@ class RequestCostSummary:
             "cost_complete": self.cost_complete,
             "usage_coverage": round(self.usage_coverage, 4),
             "pricing_version": self.pricing_version,
+            "models": list(self.by_model),
         }
 
 
@@ -408,6 +445,38 @@ def build_request_cost_summary(
     ):
         cost_complete = False
 
+    by_model: list[dict[str, object]] = [
+        {
+            "model": item.model,
+            "inputTokens": item.input_tokens,
+            "outputTokens": item.output_tokens,
+            "totalTokens": item.total_tokens,
+            "estimatedCostUsd": item.estimated_cost_usd,
+            "llmCallCount": 1 if item.total_tokens or item.estimated_cost_usd else 0,
+        }
+        for item in report.by_model
+    ]
+    for event in file_search_events:
+        if not event.model:
+            continue
+        by_model.append(
+            {
+                "model": event.model,
+                "provider": event.provider,
+                "inputTokens": event.input_tokens + event.tool_context_tokens + event.embedding_tokens,
+                "outputTokens": event.output_tokens,
+                "totalTokens": (
+                    event.input_tokens
+                    + event.tool_context_tokens
+                    + event.embedding_tokens
+                    + event.output_tokens
+                ),
+                "embeddingTokens": event.embedding_tokens,
+                "estimatedCostUsd": event.estimated_cost_usd,
+                "llmCallCount": event.llm_call_count,
+            }
+        )
+
     return RequestCostSummary(
         request_id=collector.request_id,
         correlation_id=collector.correlation_id,
@@ -427,6 +496,7 @@ def build_request_cost_summary(
         cost_complete=cost_complete,
         usage_coverage=usage_coverage,
         pricing_version=collector.pricing_version,
+        by_model=tuple(by_model),
     )
 
 

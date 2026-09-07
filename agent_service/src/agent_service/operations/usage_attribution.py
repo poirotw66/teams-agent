@@ -110,6 +110,7 @@ def request_summary_payload(
             "knowledgeBackend": summary.knowledge_backend,
             "pricingVersion": summary.pricing_version,
             "elapsedMs": round(summary.elapsed_ms, 1),
+            "byModel": list(summary.by_model),
         },
         "perCallReconciliation": {
             "collectorEventCount": len(call_events),

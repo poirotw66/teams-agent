@@ -22,16 +22,173 @@ def request_key(event: OperationalEvent) -> tuple[str, ...]:
     return (*scope, "correlation", event.correlation_id)
 
 
-def _summary_event(event: OperationalEvent) -> OperationalEvent:
+def _summary_event(
+    event: OperationalEvent,
+    *,
+    calls: list[OperationalEvent] | None = None,
+) -> OperationalEvent:
     summary = event.payload.get("summary")
     if not isinstance(summary, dict):
         raise TypeError("REQUEST_SUMMARY usage event requires an object summary")
-    return event.model_copy(update={
-        "payload": {
-            **summary, "costComplete": _cost_complete(summary),
-            "attributionScope": "REQUEST_SUMMARY",
+    payload: dict[str, Any] = {
+        **summary,
+        "costComplete": _cost_complete(summary),
+        "attributionScope": "REQUEST_SUMMARY",
+    }
+    # DROP nested byModel from the flattened request-level payload; callers that
+    # need per-model rows use _detail_events_from_summary instead.
+    payload.pop("byModel", None)
+    if not payload.get("model") and calls:
+        models = {
+            str(call.payload.get("model"))
+            for call in calls
+            if call.payload.get("model")
         }
-    })
+        if len(models) == 1:
+            payload["model"] = next(iter(models))
+            providers = {
+                str(call.payload.get("provider"))
+                for call in calls
+                if call.payload.get("provider")
+            }
+            if len(providers) == 1:
+                payload["provider"] = next(iter(providers))
+    return event.model_copy(update={"payload": payload})
+
+
+def _share_ints(total: int, weights: list[int]) -> list[int]:
+    if not weights:
+        return []
+    weight_sum = sum(weights) or len(weights)
+    shares = [int(total * weight / weight_sum) for weight in weights]
+    shares[-1] += total - sum(shares)
+    return shares
+
+
+def _share_cost(total: float | None, weights: list[int]) -> list[float | None]:
+    if total is None:
+        return [None for _ in weights]
+    if not weights:
+        return []
+    weight_sum = sum(weights) or len(weights)
+    shares = [round(total * weight / weight_sum, 8) for weight in weights]
+    if shares:
+        shares[-1] = round(total - sum(shares[:-1]), 8)
+    return shares
+
+
+def _detail_events_from_summary(
+    event: OperationalEvent,
+    *,
+    calls: list[OperationalEvent] | None = None,
+) -> list[OperationalEvent]:
+    """Expand a request summary into cost-detail rows with model attribution."""
+    summary = event.payload.get("summary")
+    if not isinstance(summary, dict):
+        raise TypeError("REQUEST_SUMMARY usage event requires an object summary")
+
+    by_model = summary.get("byModel")
+    if isinstance(by_model, list) and by_model:
+        rows: list[OperationalEvent] = []
+        for item in by_model:
+            if not isinstance(item, dict):
+                continue
+            model = str(item.get("model") or "").strip()
+            if not model:
+                continue
+            base = _summary_event(event, calls=calls)
+            rows.append(
+                base.model_copy(
+                    update={
+                        "payload": {
+                            **base.payload,
+                            "model": model,
+                            "provider": item.get("provider") or base.payload.get("provider"),
+                            "inputTokens": int(item.get("inputTokens") or 0),
+                            "outputTokens": int(item.get("outputTokens") or 0),
+                            "totalTokens": int(
+                                item.get("totalTokens")
+                                or (
+                                    int(item.get("inputTokens") or 0)
+                                    + int(item.get("outputTokens") or 0)
+                                )
+                            ),
+                            "embeddingTokens": int(item.get("embeddingTokens") or 0),
+                            "estimatedCostUsd": item.get("estimatedCostUsd"),
+                            "llmCallCount": int(
+                                item.get("llmCallCount") or base.payload.get("llmCallCount") or 0
+                            ),
+                            "modelAllocation": "SUMMARY_BY_MODEL",
+                        }
+                    }
+                )
+            )
+        if rows:
+            return rows
+
+    base = _summary_event(event, calls=calls)
+    if base.payload.get("model") or not calls:
+        return [base]
+
+    weights_by_model: dict[str, int] = {}
+    provider_by_model: dict[str, str] = {}
+    for call in calls:
+        model = call.payload.get("model")
+        if not model:
+            continue
+        name = str(model)
+        weights_by_model[name] = weights_by_model.get(name, 0) + max(
+            int(call.payload.get("llmCallCount") or 1), 1
+        )
+        provider = call.payload.get("provider")
+        if provider and name not in provider_by_model:
+            provider_by_model[name] = str(provider)
+    if len(weights_by_model) <= 1:
+        return [base]
+
+    models = sorted(weights_by_model)
+    weights = [weights_by_model[name] for name in models]
+    input_shares = _share_ints(int(base.payload.get("inputTokens") or 0), weights)
+    output_shares = _share_ints(int(base.payload.get("outputTokens") or 0), weights)
+    total_shares = _share_ints(int(base.payload.get("totalTokens") or 0), weights)
+    embed_shares = _share_ints(int(base.payload.get("embeddingTokens") or 0), weights)
+    call_shares = _share_ints(int(base.payload.get("llmCallCount") or 0), weights)
+    cost_shares = _share_cost(
+        float(base.payload["estimatedCostUsd"])
+        if base.payload.get("estimatedCostUsd") is not None
+        else None,
+        weights,
+    )
+    return [
+        base.model_copy(
+            update={
+                "payload": {
+                    **base.payload,
+                    "model": model,
+                    "provider": provider_by_model.get(model),
+                    "inputTokens": input_shares[index],
+                    "outputTokens": output_shares[index],
+                    "totalTokens": total_shares[index],
+                    "embeddingTokens": embed_shares[index],
+                    "llmCallCount": call_shares[index],
+                    "estimatedCostUsd": cost_shares[index],
+                    "modelAllocation": "CALL_COUNT_SHARE",
+                }
+            }
+        )
+        for index, model in enumerate(models)
+    ]
+
+
+def _call_has_usable_usage(payload: dict[str, Any]) -> bool:
+    """Return True when a CALL payload has tokens/cost or confirmed provider usage."""
+    if int(payload.get("totalTokens") or 0) > 0:
+        return True
+    if payload.get("estimatedCostUsd") is not None:
+        return True
+    if payload.get("usageSource") == "MISSING":
+        return False
+    return payload.get("usageComplete") is True
 
 
 def _cost_complete(payload: dict[str, Any]) -> bool:
@@ -114,15 +271,24 @@ def project_usage(events: list[OperationalEvent]) -> UsageProjection:
         if len(summaries) > 1:
             raise ValueError("multiple request usage summaries for one logical request")
         if calls:
-            detail.extend(calls)
+            usable_calls = [event for event in calls if _call_has_usable_usage(event.payload)]
+            if usable_calls:
+                detail.extend(usable_calls)
+            elif summaries:
+                # Gemini/LangChain often records tokens only on the request
+                # callback while early CALL rows stay MISSING/zero. Prefer the
+                # request summary so costs_summary matches operations_summary.
+                detail.extend(_detail_events_from_summary(summaries[0], calls=calls))
+            else:
+                detail.extend(calls)
         elif summaries:
-            # Summary-only is an explicit request fallback. Its model/provider
-            # dimensions remain unknown; no first-model allocation is made.
-            detail.append(_summary_event(summaries[0]))
+            # Summary-only is an explicit request fallback. Expand byModel when
+            # present; otherwise model may remain unknown.
+            detail.extend(_detail_events_from_summary(summaries[0]))
         else:
             detail.extend(legacy)
         if summaries:
-            summary = _summary_event(summaries[0])
+            summary = _summary_event(summaries[0], calls=calls or None)
             requests.append(summary)
             if summary.payload.get("elapsedMs") is not None:
                 latencies.append(summary)

@@ -118,7 +118,16 @@ async def reconcile_costs_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    usage_events = project_usage(events).detail_events
+    usage_events = [
+        event
+        for event in project_usage(events).detail_events
+        if int(event.payload.get("totalTokens") or 0) > 0
+        or int(event.payload.get("llmCallCount") or 0) > 0
+        or (
+            event.payload.get("estimatedCostUsd") is not None
+            and float(event.payload["estimatedCostUsd"]) != 0.0
+        )
+    ]
     usage_dimensions = UsageDimensions(events)
     by_route: dict[str, float] = defaultdict(float)
     by_issue: dict[str, float] = defaultdict(float)

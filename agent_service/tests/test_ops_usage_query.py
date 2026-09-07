@@ -114,7 +114,70 @@ async def test_summary_only_legacy_and_call_only_fallbacks():
 
 
 @pytest.mark.asyncio
-async def test_unknown_price_and_zero_calls_are_distinct():
+async def test_missing_call_usage_falls_back_to_request_summary_for_costs():
+    """When CALL rows are MISSING/zero but REQUEST_SUMMARY has tokens, costs use summary."""
+    missing_call = _event("missing-call", {
+        "attributionScope": "CALL",
+        "collectorEventId": "missing-call",
+        "model": "gemini-3.8-flash",
+        "provider": "google",
+        "component": "conversation_supervisor",
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "llmCallCount": 1,
+        "estimatedCostUsd": None,
+        "costComplete": False,
+        "usageComplete": False,
+        "usageSource": "MISSING",
+        "pricingVersion": "2026-08-31",
+    })
+    summary = _summary(cost=0.000711, calls=1, tokens=456)
+    query = _query([missing_call, summary])
+    costs = await query.costs_summary(ACTOR)
+    ops = await query.operations_summary(ACTOR)
+    assert costs["totalEstimatedCostUsd"] == ops["estimatedCostUsd"] == 0.000711
+    assert costs["inputTokens"] == 342  # 456 * 3 // 4 from _summary helper
+    assert costs["outputTokens"] == 114
+    assert costs["byModel"][0]["model"] == "gemini-3.8-flash"
+    assert costs["byModel"][0]["estimatedCostUsd"] == 0.000711
+    assert (await reconcile_costs_summary(query, ACTOR))["allMatch"]
+
+
+@pytest.mark.asyncio
+async def test_multi_model_missing_calls_split_summary_by_call_count():
+    """Historical multi-model requests should not collapse into an unknown model row."""
+    calls = [
+        _event("c1", {
+            "attributionScope": "CALL", "model": "gemini-3.8-flash", "provider": "google",
+            "inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "llmCallCount": 1,
+            "estimatedCostUsd": None, "usageSource": "MISSING", "usageComplete": False,
+            "costComplete": False,
+        }),
+        _event("c2", {
+            "attributionScope": "CALL", "model": "gemini-3.8-flash", "provider": "google",
+            "inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "llmCallCount": 1,
+            "estimatedCostUsd": None, "usageSource": "MISSING", "usageComplete": False,
+            "costComplete": False,
+        }),
+        _event("c3", {
+            "attributionScope": "CALL", "model": "gemini-3.1-flash-lite", "provider": "google",
+            "inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "llmCallCount": 1,
+            "estimatedCostUsd": None, "usageSource": "MISSING", "usageComplete": False,
+            "costComplete": False,
+        }),
+    ]
+    summary = _summary(cost=0.003, calls=3, tokens=300)
+    query = _query([*calls, summary])
+    costs = await query.costs_summary(ACTOR)
+    by_model = {item["model"]: item for item in costs["byModel"]}
+    assert set(by_model) == {"gemini-3.1-flash-lite", "gemini-3.8-flash"}
+    assert "unknown" not in by_model
+    assert by_model["gemini-3.8-flash"]["totalTokens"] == 200
+    assert by_model["gemini-3.1-flash-lite"]["totalTokens"] == 100
+    assert round(by_model["gemini-3.8-flash"]["estimatedCostUsd"] + by_model["gemini-3.1-flash-lite"]["estimatedCostUsd"], 6) == 0.003
+    assert costs["totalEstimatedCostUsd"] == 0.003
+
     query = _query([_call(cost=None), _summary(cost=None, calls=1, tokens=20)])
     costs = await query.costs_summary(ACTOR)
     ops = await query.operations_summary(ACTOR)

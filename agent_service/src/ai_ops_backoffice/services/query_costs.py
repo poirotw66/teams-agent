@@ -17,6 +17,18 @@ from .usage_projection import (
 )
 
 
+def _cost_event_is_relevant(payload: dict) -> bool:
+    """Drop empty seed/replay summaries that only inflate an unknown model row."""
+    if int(payload.get("totalTokens") or 0) > 0:
+        return True
+    if int(payload.get("llmCallCount") or 0) > 0:
+        return True
+    cost = payload.get("estimatedCostUsd")
+    if cost is None:
+        return False
+    return float(cost) != 0.0
+
+
 class CostsQueryMixin:
     """Mixin providing cost summary helpers for BackofficeQueryService."""
 
@@ -39,7 +51,11 @@ class CostsQueryMixin:
         )
         all_events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         usage_dimensions = UsageDimensions(all_events)
-        events = list(project_usage(all_events).detail_events)
+        events = [
+            event
+            for event in project_usage(all_events).detail_events
+            if _cost_event_is_relevant(event.payload)
+        ]
         model_filter = (model or "").strip()
         if model_filter:
             events = [
