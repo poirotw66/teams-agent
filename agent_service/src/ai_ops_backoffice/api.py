@@ -86,7 +86,7 @@ EXPORT_CAPABILITIES = {
 class ExportRequest(BaseModel):
     export_type: str = Field(default="operations_summary")
     reason: str = Field(min_length=3)
-    days: int = Field(default=30, ge=1, le=186)
+    days: int = Field(default=30, ge=1, le=365)
     export_format: str = Field(default="json")
     preset: str | None = None
     start_date: str | None = None
@@ -179,7 +179,7 @@ class ExampleRetireRequest(BaseModel):
 
 
 class QualityCandidateRefreshRequest(BaseModel):
-    days: int = Field(default=30, ge=1, le=186)
+    days: int = Field(default=30, ge=1, le=365)
 
 
 class QualityCandidateMergeRequest(BaseModel):
@@ -983,7 +983,7 @@ def create_app(
 
     @app.get("/api/operations/summary")
     async def operations_summary(
-        days: int = Query(default=7, ge=1, le=186),
+        days: int = Query(default=7, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1044,7 +1044,7 @@ def create_app(
 
     @app.get("/api/aggregates/summary")
     async def aggregates_summary(
-        days: int = Query(default=7, ge=1, le=186),
+        days: int = Query(default=7, ge=1, le=365),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.summary.read")
@@ -1059,7 +1059,7 @@ def create_app(
 
     @app.post("/api/aggregates/rebuild")
     async def aggregates_rebuild(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.summary.read")
@@ -1074,7 +1074,7 @@ def create_app(
 
     @app.get("/api/conversations")
     async def conversations(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1150,7 +1150,7 @@ def create_app(
 
     @app.get("/api/issues/summary")
     async def issues_summary(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1174,7 +1174,7 @@ def create_app(
     @app.get("/api/issues/{issue_type_id}/routes")
     async def issue_routes(
         issue_type_id: str,
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1194,7 +1194,7 @@ def create_app(
 
     @app.get("/api/routes/summary")
     async def routes_summary(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1217,7 +1217,7 @@ def create_app(
 
     @app.get("/api/costs/summary")
     async def costs_summary(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1256,7 +1256,7 @@ def create_app(
 
     @app.get("/api/feedback")
     async def feedback_list(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1287,7 +1287,7 @@ def create_app(
 
     @app.get("/api/admin/reconciliation/operations-summary")
     async def reconciliation_operations_summary(
-        days: int = Query(default=7, ge=1, le=186),
+        days: int = Query(default=7, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1312,7 +1312,7 @@ def create_app(
 
     @app.get("/api/admin/reconciliation/costs-summary")
     async def reconciliation_costs_summary(
-        days: int = Query(default=7, ge=1, le=186),
+        days: int = Query(default=7, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1337,7 +1337,7 @@ def create_app(
 
     @app.get("/api/admin/reconciliation/issues-summary")
     async def reconciliation_issues_summary(
-        days: int = Query(default=7, ge=1, le=186),
+        days: int = Query(default=7, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -1365,7 +1365,7 @@ def create_app(
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         limit: int = Query(default=50, ge=1, le=100),
         cursor: str | None = None,
@@ -1397,7 +1397,7 @@ def create_app(
     @app.get("/api/knowledge/{document_id}/performance")
     async def knowledge_performance(
         document_id: str,
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -2282,7 +2282,7 @@ def create_app(
 
     @app.get("/api/gaps/summary")
     async def gap_summary(
-        days: int = Query(default=30, ge=1, le=186),
+        days: int = Query(default=30, ge=1, le=365),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")

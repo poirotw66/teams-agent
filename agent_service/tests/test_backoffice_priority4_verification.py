@@ -242,6 +242,39 @@ async def test_conversation_volume_daily_weekly_monthly_trends(tmp_path: Path) -
     assert vpn_data["turnCount"] == 2
     assert vpn_data["conversationCount"] == 1
 
+    # 4. Weekly / monthly trend buckets remain available for dashboard controls
+    week_resp = client.get(
+        "/api/operations/summary?days=7&interval=WEEK",
+        headers=backoffice_headers(),
+    )
+    assert week_resp.status_code == 200
+    week_data = week_resp.json()
+    assert week_data["interval"] == "WEEK"
+    assert week_data["conversationCount"] == 2
+    assert len(week_data["trends"]) >= 1
+
+    month_resp = client.get(
+        "/api/operations/summary?days=7&interval=MONTH",
+        headers=backoffice_headers(),
+    )
+    assert month_resp.status_code == 200
+    month_data = month_resp.json()
+    assert month_data["interval"] == "MONTH"
+    assert month_data["conversationCount"] == 2
+    assert len(month_data["trends"]) >= 1
+
+    # 5. One-year query window is accepted for REQ-001 retention alignment
+    year_resp = client.get(
+        "/api/operations/summary?preset=1y&interval=MONTH",
+        headers=backoffice_headers(),
+    )
+    assert year_resp.status_code == 200
+    year_data = year_resp.json()
+    assert year_data["periodPreset"] == "1y"
+    assert year_data["periodDays"] == 365
+    assert year_data["interval"] == "MONTH"
+    assert year_data["conversationCount"] == 2
+
 
 # =========================================================================
 # REQ-005: FAQ 命中統計 (總命中、當月、當週、當日命中次數與追溯)

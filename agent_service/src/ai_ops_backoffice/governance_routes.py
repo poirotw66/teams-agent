@@ -577,7 +577,7 @@ def register_governance_routes(
         if query_service is not None and actor.has_capability("ops.conversations.read") and q:
             try:
                 conv_result = await query_service.list_conversations(
-                    actor, days=186, query=q, limit=20
+                    actor, days=365, query=q, limit=20
                 )
                 for item in conv_result.get("items", []):
                     turn_texts = []

@@ -233,10 +233,36 @@ function periodSelect(current = "7d") {
     <option value="30d">最近 30 天</option>
     <option value="month">本月</option>
     <option value="6m">最近 6 個月</option>
+    <option value="1y">最近 1 年</option>
     <option value="custom">自訂期間</option>
   `;
   select.value = current;
   return select;
+}
+
+function intervalSelect(current = "DAY") {
+  const select = el("select", "");
+  select.innerHTML = `
+    <option value="DAY">依日</option>
+    <option value="WEEK">依週</option>
+    <option value="MONTH">依月</option>
+  `;
+  select.value = ["DAY", "WEEK", "MONTH"].includes(current) ? current : "DAY";
+  select.setAttribute("aria-label", "趨勢粒度");
+  return select;
+}
+
+function formatLocalClock(isoValue, timeZone = "Asia/Taipei") {
+  if (!isoValue) return "-";
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleTimeString("zh-TW", {
+    timeZone,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function customPeriodInputs(startValue = "", endValue = "") {
@@ -253,18 +279,18 @@ function customPeriodInputs(startValue = "", endValue = "") {
   return wrap;
 }
 
-function buildPeriodQuery(prefix = "") {
+function buildPeriodQuery(prefix = "", period = null) {
+  if (period) {
+    return periodParams(period).toString();
+  }
   const presetEl = document.getElementById(`${prefix}overview-preset`);
-  const preset = presetEl?.value || "7d";
+  const preset = presetEl?.value || currentOverviewPreset || "7d";
   if (preset === "custom") {
     const start = document.getElementById(`${prefix}custom-start-date`)?.value;
     const end = document.getElementById(`${prefix}custom-end-date`)?.value;
-    const params = new URLSearchParams();
-    if (start) params.set("start_date", `${start}T00:00:00+08:00`);
-    if (end) params.set("end_date", `${end}T23:59:59+08:00`);
-    return params.toString();
+    return periodParams({ preset, start, end }).toString();
   }
-  return `preset=${encodeURIComponent(preset)}`;
+  return periodParams({ preset }).toString();
 }
 
 function periodParams(state = { preset: "30d" }) {
@@ -924,6 +950,9 @@ function renderNav(active, options = {}) {
 
 let currentOverviewPreset = "7d";
 let currentOverviewTrendTab = "conv";
+let currentOverviewInterval = "DAY";
+let currentOverviewModel = "";
+let currentOverviewIssueTypeId = "";
 
 const OVERVIEW_ISSUE_NAMES = {
   "vpn.connection_failed": "VPN 連線異常與斷線",
@@ -1225,11 +1254,33 @@ async function renderOverview(forceRefresh = false) {
   const savedStart = startEl?.value || "";
   const savedEnd = endEl?.value || "";
 
+  const intervalEl = document.getElementById("overview-interval");
+  const interval = (intervalEl?.value || currentOverviewInterval || "DAY").toUpperCase();
+  currentOverviewInterval = ["DAY", "WEEK", "MONTH"].includes(interval) ? interval : "DAY";
+
+  const modelEl = document.getElementById("overview-model");
+  const issueEl = document.getElementById("overview-issue-type");
+  const model = (modelEl?.value || currentOverviewModel || "").trim();
+  const issueTypeId = (issueEl?.value || currentOverviewIssueTypeId || "").trim();
+  currentOverviewModel = model;
+  currentOverviewIssueTypeId = issueTypeId;
+
+  // Capture period before clearing the DOM — buildPeriodQuery must not read
+  // controls that replaceChildren is about to remove.
+  const query = new URLSearchParams(buildPeriodQuery("", {
+    preset,
+    start: savedStart,
+    end: savedEnd,
+  }));
+  query.set("interval", currentOverviewInterval);
+  if (model) query.set("model", model);
+  if (issueTypeId) query.set("issue_type_id", issueTypeId);
+  if (forceRefresh) query.set("refresh", "true");
+
   app.replaceChildren(el("div", "empty", "載入營運數據中…"));
 
   try {
-    const refreshQuery = forceRefresh ? "&refresh=true" : "";
-    const data = await api(`/api/operations/summary?${buildPeriodQuery()}${refreshQuery}`);
+    const data = await api(`/api/operations/summary?${query.toString()}`);
 
     const dashboard = el("div", "overview-dashboard");
 
@@ -1241,15 +1292,33 @@ async function renderOverview(forceRefresh = false) {
     const statusPill = el("span", "overview-status-pill");
     statusPill.innerHTML = '<span class="live-dot pulse"></span> 平台即時營運中控';
 
-    let updateTimeStr = data.updatedAt ? data.updatedAt.slice(11, 19) : "-";
-    const freshnessChip = el("span", "overview-freshness-chip", `資料更新：${updateTimeStr}（時區：${data.timezone || "Asia/Taipei"}）`);
+    const tz = data.timezone || "Asia/Taipei";
+    const updateTimeStr = formatLocalClock(data.updatedAt, tz);
+    const freshnessChip = el("span", "overview-freshness-chip", `摘要更新：${updateTimeStr}（時區：${tz}）`);
+    freshnessChip.title = "本次營運摘要 API 產生時間（非事件管線最後寫入時間）";
     badgeRow.append(statusPill, freshnessChip);
 
     if (data.dataFreshnessMinutes != null) {
-      if (data.dataFreshnessMinutes > 15) {
-        badgeRow.append(el("span", "overview-warning-chip", `⚠️ 管線延遲 ${data.dataFreshnessMinutes} 分鐘`));
+      const idleMinutes = data.dataFreshnessMinutes;
+      const latestEventHint = data.latestEventAt
+        ? `期間內最近一筆營運事件時間：${formatLocalClock(data.latestEventAt, tz)}（${tz}）。此指標反映「多久沒有新事件」，不代表批次管線故障。`
+        : "此指標反映期間內多久沒有新營運事件，不代表批次管線故障。";
+      if (idleMinutes > 15) {
+        const idleChip = el(
+          "span",
+          "overview-warning-chip",
+          `⚠️ 最近事件：${idleMinutes} 分鐘前`,
+        );
+        idleChip.title = latestEventHint;
+        badgeRow.append(idleChip);
       } else {
-        badgeRow.append(el("span", "overview-freshness-chip", `🟢 即時管線 (延遲 ${data.dataFreshnessMinutes} 分鐘)`));
+        const idleChip = el(
+          "span",
+          "overview-freshness-chip",
+          `🟢 最近事件：${idleMinutes} 分鐘前`,
+        );
+        idleChip.title = latestEventHint;
+        badgeRow.append(idleChip);
       }
     }
     titleGroup.append(
@@ -1267,35 +1336,85 @@ async function renderOverview(forceRefresh = false) {
     customPeriod.id = "overview-custom-period";
     customPeriod.hidden = preset !== "custom";
 
+    const intervalControl = intervalSelect(currentOverviewInterval);
+    intervalControl.id = "overview-interval";
+
+    const modelInput = el("input");
+    modelInput.type = "text";
+    modelInput.id = "overview-model";
+    modelInput.placeholder = "Model（選填）";
+    modelInput.value = model;
+    modelInput.setAttribute("aria-label", "模型篩選");
+
+    const issueInput = el("input");
+    issueInput.type = "text";
+    issueInput.id = "overview-issue-type";
+    issueInput.placeholder = "Issue Type（選填）";
+    issueInput.value = issueTypeId;
+    issueInput.setAttribute("aria-label", "Issue 篩選");
+
     select.addEventListener("change", () => {
       currentOverviewPreset = select.value;
       customPeriod.hidden = select.value !== "custom";
       if (select.value !== "custom") {
+        currentOverviewModel = modelInput.value.trim();
+        currentOverviewIssueTypeId = issueInput.value.trim();
+        currentOverviewInterval = intervalControl.value;
         renderOverview(false);
       }
     });
 
+    intervalControl.addEventListener("change", () => {
+      currentOverviewInterval = intervalControl.value;
+      currentOverviewModel = modelInput.value.trim();
+      currentOverviewIssueTypeId = issueInput.value.trim();
+      renderOverview(false);
+    });
+
     const apply = el("button", "btn", "套用");
     apply.type = "button";
-    apply.addEventListener("click", () => renderOverview(false));
+    apply.addEventListener("click", () => {
+      currentOverviewModel = modelInput.value.trim();
+      currentOverviewIssueTypeId = issueInput.value.trim();
+      currentOverviewInterval = intervalControl.value;
+      renderOverview(false);
+    });
 
     const refresh = el("button", "btn button-primary", "🔄 重新整理");
     refresh.type = "button";
     refresh.title = "即刻向後端取得最新營運數據（繞過快取）";
-    refresh.addEventListener("click", () => renderOverview(true));
+    refresh.addEventListener("click", () => {
+      currentOverviewModel = modelInput.value.trim();
+      currentOverviewIssueTypeId = issueInput.value.trim();
+      currentOverviewInterval = intervalControl.value;
+      renderOverview(true);
+    });
 
     const exportBtn = el("button", "btn", "📥 匯出 CSV");
     exportBtn.type = "button";
-    exportBtn.title = "下載本期營運摘要與每日趨勢報表";
+    exportBtn.title = "下載本期營運摘要與趨勢報表";
     exportBtn.addEventListener("click", () => exportOverviewCsv(data));
 
-    periodControl.append(select, customPeriod, apply, refresh, exportBtn);
+    periodControl.append(
+      select,
+      customPeriod,
+      intervalControl,
+      modelInput,
+      issueInput,
+      apply,
+      refresh,
+      exportBtn,
+    );
     actionsGroup.append(periodControl);
     header.append(titleGroup, actionsGroup);
     dashboard.append(header);
 
-    if (data.dataDelayWarning) {
-      const warnBox = el("div", "warning", data.dataDelayWarning);
+    if (data.dataFreshnessMinutes != null && data.dataFreshnessMinutes > 15) {
+      const warnBox = el(
+        "div",
+        "warning",
+        `期間內最近一筆營運事件已是 ${data.dataFreshnessMinutes} 分鐘前；若這段時間本來就沒有新對話，屬正常閒置，不代表查詢管線故障。`,
+      );
       warnBox.style.margin = "0";
       dashboard.append(warnBox);
     }
@@ -1489,9 +1608,12 @@ async function renderOverview(forceRefresh = false) {
     const trendPanel = el("div", "trend-chart-panel");
     const trendHeader = el("div", "trend-panel-header");
     const trendTitleCol = el("div", "trend-title-col");
+    const intervalLabel =
+      currentOverviewInterval === "WEEK" ? "每週" :
+      currentOverviewInterval === "MONTH" ? "每月" : "每日";
     trendTitleCol.append(
       el("h3", "trend-title", "營運趨勢走勢分析"),
-      el("p", "trend-desc", "追蹤每日對話進線量、問題發生頻率與 Token / 成本消耗曲線"),
+      el("p", "trend-desc", `追蹤${intervalLabel}對話進線量、問題發生頻率與 Token / 成本消耗曲線`),
     );
 
     const tabGroup = el("div", "trend-tab-group");
@@ -5562,7 +5684,8 @@ async function runExport(
     days = periodOrDays.days || (
       preset === "today" || preset === "1d" ? 1 :
       preset === "7d" || preset === "1w" ? 7 :
-      preset === "180d" || preset === "6m" || preset === "186d" ? 180 : 30
+      preset === "180d" || preset === "6m" || preset === "186d" ? 180 :
+      preset === "365d" || preset === "1y" || preset === "12m" ? 365 : 30
     );
     startDate = periodOrDays.startDate || periodOrDays.start_date;
     endDate = periodOrDays.endDate || periodOrDays.end_date;

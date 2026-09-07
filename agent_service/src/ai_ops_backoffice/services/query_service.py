@@ -599,8 +599,9 @@ class BackofficeQueryService:
             data_freshness_minutes = max(0, int(freshness_delta.total_seconds() // 60))
             if data_freshness_minutes > 15:
                 data_delay_warning = (
-                    f"Analytics data is {data_freshness_minutes} minutes old; "
-                    "pipeline delay may affect dashboard accuracy."
+                    f"Latest operational event in the selected period is "
+                    f"{data_freshness_minutes} minutes old; this usually means "
+                    "no recent traffic, not a batch pipeline failure."
                 )
 
         metrics_source = "event_scan"
@@ -765,7 +766,7 @@ class BackofficeQueryService:
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         effective_days = (
-            186
+            365
             if conversation_id and days == 30 and start_date is None and preset is None
             else days
         )

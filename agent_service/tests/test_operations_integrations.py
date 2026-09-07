@@ -275,3 +275,14 @@ def test_period_policy_rejects_long_custom_range() -> None:
             start_date="2020-01-01T00:00:00+00:00",
             end_date="2026-01-01T00:00:00+00:00",
         )
+
+
+def test_period_policy_allows_one_year_preset() -> None:
+    from ai_ops_backoffice.services.periods import PeriodPolicyError, resolve_period
+
+    period = resolve_period(preset="1y")
+    assert period.preset == "1y"
+    assert period.days == 365
+
+    with pytest.raises(PeriodPolicyError):
+        resolve_period(days=366)

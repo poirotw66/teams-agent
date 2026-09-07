@@ -20,7 +20,7 @@ class PeriodPolicyError(ValueError):
     pass
 
 
-MAX_PERIOD_DAYS = 186
+MAX_PERIOD_DAYS = 365
 
 PRESET_DAYS = {
     "today": 1,
@@ -33,6 +33,9 @@ PRESET_DAYS = {
     "6m": 180,
     "186d": 186,
     "6months": 180,
+    "365d": 365,
+    "1y": 365,
+    "12m": 365,
 }
 
 

@@ -1333,6 +1333,17 @@ body.view-knowledge-portal .workspace-hint {
   flex-wrap: wrap;
 }
 
+.overview-period-control input[type="text"] {
+  min-width: 9.5rem;
+  max-width: 12rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
 /* SLA & Health Status Strip */
 .sla-health-strip {
   display: grid;
