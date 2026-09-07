@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import mask_text
 
-from .faq_domain.errors import (
+from ..faq_domain.errors import (
     FaqAuthorizationError,
     FaqIdempotencyConflictError,
     FaqNotFoundError,
@@ -24,176 +24,8 @@ from .faq_domain.errors import (
 )
 
 
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class SyncJob(StrictModel):
-    job_id: str
-    scope_type: Literal["ALL", "FAQ", "DOCUMENT", "FAILED"]
-    scope_ids: tuple[str, ...] = ()
-    scope_key: str
-    requested_by: str
-    owner_unit_id: str
-    reason: str
-    status: Literal[
-        "QUEUED", "VALIDATING", "BUILDING", "VERIFYING", "COMPLETED", "FAILED", "CANCELLED"
-    ] = "QUEUED"
-    current_stage: str = "QUEUED"
-    progress_percent: int = Field(default=0, ge=0, le=100)
-    checkpoint_stage: str | None = None
-    document_count: int = 0
-    warnings: tuple[str, ...] = ()
-    error_summary: str | None = None
-    correlation_id: str
-    target_release: str | None = None
-    index_setting_version: str | None = None
-    artifact_uri: str | None = None
-    retry_of_job_id: str | None = None
-    retry_checkpoint_stage: str | None = None
-    etag: int = Field(default=1, ge=1)
-    requested_at: datetime
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-
-
-class SyncAuditEvent(StrictModel):
-    audit_id: str
-    job_id: str
-    action: str
-    actor_id: str
-    actor_role: str
-    owner_unit_id: str
-    reason: str | None = None
-    before: dict[str, Any] | None = None
-    after: dict[str, Any] | None = None
-    occurred_at: datetime
-
-
-class SyncIdempotency(StrictModel):
-    key: str
-    actor_id: str
-    fingerprint: str
-    job_id: str
-
-
-class SyncState(StrictModel):
-    revision: int = 0
-    jobs: tuple[SyncJob, ...] = ()
-    audits: tuple[SyncAuditEvent, ...] = ()
-    idempotency: tuple[SyncIdempotency, ...] = ()
-
-
-Mutation = Callable[[SyncState], tuple[SyncState, dict[str, Any]]]
-
-
-class SyncRepository(Protocol):
-    def load(self) -> SyncState: ...
-
-    def mutate(self, operation: Mutation) -> dict[str, Any]: ...
-
-
-class InMemorySyncRepository:
-    def __init__(self) -> None:
-        self._state = SyncState()
-        self._lock = threading.RLock()
-
-    def load(self) -> SyncState:
-        with self._lock:
-            return self._state.model_copy(deep=True)
-
-    def mutate(self, operation: Mutation) -> dict[str, Any]:
-        with self._lock:
-            next_state, result = operation(self._state.model_copy(deep=True))
-            if next_state.revision != self._state.revision + 1:
-                raise FaqVersionConflictError("sync state revision must increment")
-            self._state = next_state
-            return result
-
-
-class FileSyncRepository(InMemorySyncRepository):
-    def __init__(self, path: Path) -> None:
-        super().__init__()
-        self._path = path
-        self._lock_path = path.with_suffix(f"{path.suffix}.lock")
-
-    def _read(self) -> SyncState:
-        if not self._path.exists():
-            return SyncState()
-        return SyncState.model_validate_json(self._path.read_text(encoding="utf-8"))
-
-    def load(self) -> SyncState:
-        with self._lock:
-            return self._read()
-
-    def _write(self, state: SyncState) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self._path.with_suffix(f"{self._path.suffix}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("x", encoding="utf-8") as handle:
-                handle.write(state.model_dump_json(indent=2))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self._path)
-            directory = os.open(self._path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-        finally:
-            temporary.unlink(missing_ok=True)
-
-    def mutate(self, operation: Mutation) -> dict[str, Any]:
-        import fcntl
-
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock, self._lock_path.open("a+") as lock_handle:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-            try:
-                current = self._read()
-                next_state, result = operation(current)
-                if next_state.revision != current.revision + 1:
-                    raise FaqVersionConflictError("sync state revision must increment")
-                self._write(next_state)
-                return result
-            finally:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-
-
-class FirestoreSyncRepository:
-    def __init__(
-        self,
-        client: Any,
-        *,
-        collection: str = "ai_ops_sync_state",
-        transaction_runner: Any | None = None,
-    ) -> None:
-        self._client = client
-        self._state = client.collection(collection).document("current")
-        self._transaction_runner = transaction_runner
-
-    def load(self) -> SyncState:
-        snapshot = self._state.get()
-        return SyncState.model_validate(snapshot.to_dict()) if snapshot.exists else SyncState()
-
-    def mutate(self, operation: Mutation) -> dict[str, Any]:
-        def transaction_operation(transaction: Any) -> dict[str, Any]:
-            snapshot = self._state.get(transaction=transaction)
-            current = SyncState.model_validate(snapshot.to_dict()) if snapshot.exists else SyncState()
-            next_state, result = operation(current)
-            if next_state.revision != current.revision + 1:
-                raise FaqVersionConflictError("sync state revision must increment")
-            transaction.set(self._state, next_state.model_dump(mode="python"))
-            return result
-
-        if self._transaction_runner is not None:
-            return self._transaction_runner(transaction_operation, self._client.transaction())
-        try:
-            from google.cloud.firestore_v1.transaction import transactional
-        except ImportError as error:  # pragma: no cover
-            raise RuntimeError("FIRESTORE sync repository requires google-cloud-firestore") from error
-        return transactional(transaction_operation)(self._client.transaction())
-
+from .models import *  # noqa: F403
+from .repository import *  # noqa: F403
 
 class SyncService:
     ACTIVE = frozenset({"QUEUED", "VALIDATING", "BUILDING", "VERIFYING"})
@@ -474,3 +306,4 @@ class SyncService:
             retry_of_job_id=job_id,
             retry_checkpoint_stage=current["checkpoint_stage"],
         )
+
