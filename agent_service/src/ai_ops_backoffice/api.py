@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 from agent_service.operations.audit_errors import AuditWriteError
 
@@ -66,6 +70,45 @@ from .sync_domain import FileSyncRepository, FirestoreSyncRepository, SyncServic
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+UI_ASSET_VERSION = "ops-ui-20260907k"
+
+
+def _js_import_map_script(version: str) -> str:
+    """Remap bare module URLs so nested ES imports share one cache-busted URL."""
+    js_root = STATIC_DIR / "js"
+    imports = {
+        f"/static/js/{path.relative_to(js_root).as_posix()}": (
+            f"/static/js/{path.relative_to(js_root).as_posix()}?v={version}"
+        )
+        for path in sorted(js_root.rglob("*.js"))
+    }
+    payload = json.dumps({"imports": imports}, ensure_ascii=True, indent=2)
+    return f'<script type="importmap">\n{payload}\n</script>'
+
+
+def _render_index_html(version: str = UI_ASSET_VERSION) -> str:
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = html.replace("__UI_ASSET_VERSION__", version)
+    marker = "<!-- AI_OPS_IMPORT_MAP -->"
+    import_map = _js_import_map_script(version)
+    if marker in html:
+        return html.replace(marker, import_map, 1)
+    return html.replace("</head>", f"    {import_map}\n  </head>", 1)
+
+
+class _NoStoreStaticCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/static/") or path.startswith("/knowledge-ui"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 def create_app(
     settings: BackofficeSettings | None = None,
     *,
@@ -436,8 +479,11 @@ def create_app(
         return {"items": governance_service.list_flags(actor=actor)}
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    async def index() -> HTMLResponse:
+        return HTMLResponse(
+            _render_index_html(),
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     portal_static = Path(__file__).resolve().parents[1] / "knowledge_portal" / "static"
     if portal_static.is_dir():
@@ -451,9 +497,13 @@ def create_app(
     @app.get("/knowledge-ui/")
     async def knowledge_ui() -> FileResponse:
         """Same-origin Knowledge Portal UI hosted inside the ops console."""
-        return FileResponse(STATIC_DIR / "knowledge-ui.html")
+        return FileResponse(
+            STATIC_DIR / "knowledge-ui.html",
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.add_middleware(_NoStoreStaticCacheMiddleware)
     return app
 
 

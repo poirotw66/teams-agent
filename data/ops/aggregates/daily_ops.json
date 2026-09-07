@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-07T08:54:09.911005+00:00",
+  "updatedAt": "2026-09-07T09:46:11.772543+00:00",
   "items": [
     {
       "day": "2026-08-08",
@@ -425,22 +425,22 @@
       "day": "2026-09-07",
       "tenantId": "local-development",
       "environment": "dev",
-      "turnCount": 5,
-      "issueCount": 5,
+      "turnCount": 7,
+      "issueCount": 7,
       "handoffCount": 0,
       "feedbackCount": 0,
       "noAnswerCount": 0,
       "issueTypeCounts": {
         "other.greeting": 2,
-        "other.unclassified": 1,
+        "other.unclassified": 3,
         "vpn.connection_failed": 2
       },
       "modelTokenCounts": {
-        "gemini-3.8-flash": 0,
+        "gemini-3.8-flash": 2850,
         "unknown": 0,
         "gemini-3.1-flash-lite": 0
       },
-      "estimatedCostUsd": 0.0,
+      "estimatedCostUsd": 0.002953,
       "schemaVersion": "daily-ops-aggregate-v1"
     },
     {
