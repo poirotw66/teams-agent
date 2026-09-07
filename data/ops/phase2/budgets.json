@@ -1,5 +1,5 @@
 {
-  "revision": 42,
+  "revision": 47,
   "policies": [
     {
       "policy_id": "014952f9-2510-451f-9453-3b3c614162b3",
@@ -66,14 +66,14 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.042456Z",
-      "last_triggered_at": "2026-09-07T06:17:58.772192Z",
+      "last_triggered_at": "2026-09-07T06:32:02.854640Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
-      "etag": 8
+      "etag": 9
     },
     {
       "alert_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
@@ -92,14 +92,14 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.044256Z",
-      "last_triggered_at": "2026-09-07T06:17:58.773869Z",
+      "last_triggered_at": "2026-09-07T06:32:02.856855Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
-      "etag": 8
+      "etag": 9
     },
     {
       "alert_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
@@ -118,14 +118,14 @@
       "status": "OPEN",
       "owner_unit_id": "IT",
       "first_triggered_at": "2026-09-07T05:50:58.045921Z",
-      "last_triggered_at": "2026-09-07T06:17:58.775430Z",
+      "last_triggered_at": "2026-09-07T06:32:02.858698Z",
       "acknowledged_by": null,
       "acknowledged_at": null,
       "resolved_by": null,
       "resolved_at": null,
       "resolution_note": null,
       "message": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
-      "etag": 8
+      "etag": 9
     }
   ],
   "deliveries": [
@@ -452,6 +452,39 @@
       "owner_unit_id": "IT",
       "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
       "occurred_at": "2026-09-07T06:17:58.775825Z"
+    },
+    {
+      "audit_id": "463a83b7-016a-4de8-8745-2729c50d377e",
+      "target_type": "ALERT",
+      "target_id": "2eb45c4f-907f-4cd8-9ec0-dc853ba3d3a7",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-index: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T06:32:02.855312Z"
+    },
+    {
+      "audit_id": "9bab3b11-d999-44a7-a3b7-b205012a0763",
+      "target_type": "ALERT",
+      "target_id": "3d368a04-aa86-45b2-8b3e-d4533b63a660",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in agent-retrieval-search: status=DEGRADED, errorRate=0.00%; Agent health ok but retrieval index is empty.",
+      "occurred_at": "2026-09-07T06:32:02.857471Z"
+    },
+    {
+      "audit_id": "0ba374bf-6bcd-4841-8163-e9ed0c64ba8e",
+      "target_type": "ALERT",
+      "target_id": "ae2ee15e-9d9c-4c38-b66a-766624f9b6b0",
+      "action": "OPERATIONAL_ALERT_MERGED",
+      "actor_id": "ai-ops-sync-worker",
+      "actor_role": "SYSTEM_ADMIN",
+      "owner_unit_id": "IT",
+      "reason": "API anomaly in ticket-service: status=DOWN, errorRate=0.00%; [Errno 8] nodename nor servname provided, or not known",
+      "occurred_at": "2026-09-07T06:32:02.859181Z"
     }
   ]
 }
