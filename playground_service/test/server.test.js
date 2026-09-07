@@ -267,7 +267,6 @@ test("adapter proxy injects evaluation backend without browser session cookie", 
 });
 
 test("new conversation resets playground direct line conversation and rotates session", async () => {
-  let createCount = 0;
   let linkBody = null;
   const upstream = http.createServer(async (req, res) => {
     let body = "";
@@ -281,12 +280,6 @@ test("new conversation resets playground direct line conversation and rotates se
           internalConfig: {},
         }),
       );
-      return;
-    }
-    if (req.url === "/v3/conversations" && req.method === "POST") {
-      createCount += 1;
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ id: `conv-${createCount}` }));
       return;
     }
     if (req.url === "/_debug/conversation/addDirectLineConversationLink" && req.method === "POST") {
@@ -324,13 +317,13 @@ test("new conversation resets playground direct line conversation and rotates se
     assert.equal(reset.status, 200);
     const payload = await reset.json();
     assert.equal(payload.ok, true);
-    assert.equal(payload.conversationId, "conv-1");
+    assert.equal(typeof payload.conversationId, "string");
+    assert.match(payload.conversationId, /^[0-9a-f-]{36}$/i);
     assert.equal(typeof payload.playgroundSessionId, "string");
     assert.ok(payload.playgroundSessionId.length > 0);
-    assert.equal(createCount, 1);
     assert.deepEqual(linkBody, {
       conversationId: "personal-chat-1",
-      directLineConversationId: "conv-1",
+      directLineConversationId: payload.conversationId,
     });
     assert.match(reset.headers.get("set-cookie"), /playground_session=/);
   } finally {

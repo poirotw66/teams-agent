@@ -1,5 +1,6 @@
 "use strict";
 
+const { randomUUID } = require("node:crypto");
 const { rotateSessionCookie, rotatePlaygroundSessionId } = require("./auth");
 const { securityHeaders } = require("./http");
 const { injectPlaygroundEvaluation } = require("./knowledge-control");
@@ -22,21 +23,9 @@ async function resetPlaygroundConversation(playgroundTarget) {
     throw new Error("playground config missing personalChat.id");
   }
 
-  const createResponse = await fetch(`${base}/v3/conversations`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!createResponse.ok) {
-    throw new Error(`playground create conversation failed (${createResponse.status})`);
-  }
-  const created = await createResponse.json();
-  const conversationId = created?.id;
-  if (!conversationId) {
-    throw new Error("playground create conversation returned no id");
-  }
-
+  // Mint a DirectLine conversation id locally. POST /v3/conversations lives under
+  // /_connector and requires Bot JWT; the debug link API only needs a unique id.
+  const conversationId = randomUUID();
   const linkResponse = await fetch(`${base}/_debug/conversation/addDirectLineConversationLink`, {
     method: "POST",
     headers: { "content-type": "application/json" },
