@@ -226,7 +226,7 @@ async def test_gateway_failure_mid_stream_becomes_the_standard_error_reply(
     assert delivered is True
     emitted = [value for name, value in ctx.stream.calls if name == "emit"]
     assert len(emitted) == 1
-    assert "暫時無法回應" in emitted[0]
+    assert "服務暫時無法使用，請稍後再試。" in emitted[0]
     assert "c-1" in emitted[0]
 
 
@@ -248,7 +248,7 @@ async def test_a_dead_stream_delivers_the_error_as_a_normal_message(
 
     assert delivered is True
     assert len(ctx.sent) == 1
-    assert "暫時無法回應" in ctx.sent[0]
+    assert "服務暫時無法使用，請稍後再試。" in ctx.sent[0]
 
 
 @pytest.mark.asyncio

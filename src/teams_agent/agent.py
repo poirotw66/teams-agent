@@ -22,6 +22,14 @@ load_dotenv()
 agent_settings = AgentSettings.from_env()
 agent_gateway = AgentGateway(agent_settings)
 
+
+def _service_unavailable_message(correlation_id: str) -> str:
+    """Standard user-facing reply when the agent path cannot complete."""
+    return (
+        "服務暫時無法使用，請稍後再試。"
+        f"\n\n追蹤編號：`{correlation_id}`"
+    )
+
 # The Microsoft Teams SDK reads CLIENT_ID / CLIENT_SECRET / TENANT_ID from the
 # environment itself and validates the inbound Bot Framework JWT on
 # `POST /api/messages`. `build_http_adapter` hands it the same FastAPI app
@@ -143,8 +151,13 @@ async def on_message(ctx: ActivityContext[MessageActivity]) -> None:
     try:
         await _handle_message(ctx)
     except Exception:
-        logger.exception("Unhandled error while processing a message activity")
-        await ctx.send("Bot 處理訊息時發生錯誤，請稍後再試。")
+        correlation_id = str(uuid4())
+        logger.exception(
+            "Unhandled error while processing a message activity: "
+            "correlation_id=%s",
+            correlation_id,
+        )
+        await ctx.send(_service_unavailable_message(correlation_id))
 
 
 async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
@@ -221,10 +234,7 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
         response = await agent_gateway.answer(request)
     except AgentGatewayError:
         logger.exception("Agent Gateway failed: correlation_id=%s", correlation_id)
-        await ctx.send(
-            "AI Agent 暫時無法回應，請稍後再試。"
-            f"\n\n追蹤編號：`{correlation_id}`"
-        )
+        await ctx.send(_service_unavailable_message(correlation_id))
         return
 
     await ctx.send(_build_activity(response, request))
@@ -309,7 +319,7 @@ async def _fail_stream(
     ctx: ActivityContext[MessageActivity], correlation_id: str
 ) -> None:
     """Turn a half-streamed turn into the standard error reply."""
-    text = "AI Agent 暫時無法回應，請稍後再試。" f"\n\n追蹤編號：`{correlation_id}`"
+    text = _service_unavailable_message(correlation_id)
     try:
         ctx.stream.clear_text()
         ctx.stream.emit(text)
