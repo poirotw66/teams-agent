@@ -14,6 +14,7 @@ import {
 function buildQuery(filters) {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
+  if (filters.format) params.set("format", filters.format);
   if (filters.query) params.set("query", filters.query);
   if (filters.owner_unit_id) params.set("owner_unit_id", filters.owner_unit_id);
   const query = params.toString();
@@ -30,7 +31,7 @@ function renderFilters(filters) {
       <label>
         狀態
         <fluent-select id="knowledgeStatus">
-          <fluent-option value="">全部</fluent-option>
+          <fluent-option value="">全部狀態</fluent-option>
           ${Object.entries({
             DRAFT: "草稿",
             IN_REVIEW: "待審核",
@@ -42,6 +43,18 @@ function renderFilters(filters) {
           }).map(([value, label]) => `
             <fluent-option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</fluent-option>`).join("")}
         </fluent-select>
+      </label>
+      <label>
+        格式
+        <fluent-select id="knowledgeFormat">
+          <fluent-option value="">全部格式</fluent-option>
+          <fluent-option value="MARKDOWN" ${filters.format === "MARKDOWN" ? "selected" : ""}>Markdown</fluent-option>
+          <fluent-option value="PDF" ${filters.format === "PDF" ? "selected" : ""}>PDF</fluent-option>
+        </fluent-select>
+      </label>
+      <label>
+        擁有單位
+        <fluent-text-field id="knowledgeOwner" placeholder="擁有單位…" value="${escapeHtml(filters.owner_unit_id || "")}"></fluent-text-field>
       </label>
       ${can("create_document") ? fluentButton("新增文件", { appearance: "accent", dataset: { route: "#/knowledge/new" } }) : ""}
     </div>`;
@@ -58,6 +71,7 @@ function renderTable(items) {
           <tr>
             <th>標題</th>
             <th>狀態</th>
+            <th>格式</th>
             <th>擁有單位</th>
             <th>最後更新</th>
             <th></th>
@@ -72,6 +86,7 @@ function renderTable(items) {
                 </fluent-button>
               </td>
               <td>${renderStatusBadge(doc.status, statusLabel(doc.status))}</td>
+              <td><span class="badge ${doc.format === "PDF" ? "badge-neutral" : "badge-outline"}">${escapeHtml(doc.format || "MARKDOWN")}</span></td>
               <td>${escapeHtml(doc.owner_unit_id)}</td>
               <td>${new Date(doc.updated_at).toLocaleString("zh-TW")}</td>
               <td class="table-actions">
@@ -86,10 +101,11 @@ function renderTable(items) {
 export async function renderKnowledgeListView(app, query) {
   const filters = {
     status: query.get("status") || "",
+    format: query.get("format") || "",
     query: query.get("query") || "",
     owner_unit_id: query.get("owner_unit_id") || "",
   };
-  const hasFilters = Boolean(filters.status || filters.query || filters.owner_unit_id);
+  const hasFilters = Boolean(filters.status || filters.format || filters.query || filters.owner_unit_id);
 
   app.innerHTML = `
     <section class="page">
@@ -105,6 +121,8 @@ export async function renderKnowledgeListView(app, query) {
   const container = app.querySelector("#knowledgeContent");
   const searchInput = app.querySelector("#knowledgeSearch");
   const statusSelect = app.querySelector("#knowledgeStatus");
+  const formatSelect = app.querySelector("#knowledgeFormat");
+  const ownerInput = app.querySelector("#knowledgeOwner");
 
   async function loadList() {
     container.innerHTML = renderSkeleton(5);
@@ -136,13 +154,19 @@ export async function renderKnowledgeListView(app, query) {
   function applyFilters() {
     filters.query = searchInput?.value?.trim?.() || searchInput?.currentValue || "";
     filters.status = statusSelect?.value || "";
+    filters.format = formatSelect?.value || "";
+    filters.owner_unit_id = ownerInput?.value?.trim?.() || ownerInput?.currentValue || "";
     navigate(`#/knowledge${buildQuery(filters)}`);
   }
 
   searchInput?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") applyFilters();
   });
+  ownerInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyFilters();
+  });
   statusSelect?.addEventListener("change", applyFilters);
+  formatSelect?.addEventListener("change", applyFilters);
   app.querySelectorAll("[data-route]").forEach((node) => {
     node.addEventListener("click", () => navigate(node.dataset.route));
   });

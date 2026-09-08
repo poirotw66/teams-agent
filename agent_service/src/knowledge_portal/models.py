@@ -102,6 +102,7 @@ class KnowledgeDocumentRecord(StrictModel):
     current_published_version_id: str | None = None
     draft_version_id: str | None = None
     status: DocumentLifecycleStatus = "DRAFT"
+    format: str | None = None
     etag: str
     created_at: datetime
     created_by: str

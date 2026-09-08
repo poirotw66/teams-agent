@@ -94,6 +94,7 @@ class GovernanceSearchAuditMixin:
         query: str,
         actor: ActorContext,
         doc_type: str | None = None,
+        owner_unit_id: str | None = None,
         extra_documents: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         self._require(actor, READ["search"])
@@ -200,6 +201,8 @@ class GovernanceSearchAuditMixin:
             actual_type = str(document.get("type") or "EXTERNAL")
             if doc_type not in {None, actual_type}:
                 continue
+            if owner_unit_id and document.get("owner_unit_id") and document.get("owner_unit_id") != owner_unit_id:
+                continue
             if required and not actor.has_capability(required):
                 continue
             haystack = f"{document.get('title', '')} {document.get('snippet', '')}"
@@ -211,6 +214,7 @@ class GovernanceSearchAuditMixin:
                     "id": str(document.get("id") or ""),
                     "title": str(document.get("title") or ""),
                     "snippet": str(document.get("snippet") or ""),
+                    "owner_unit_id": document.get("owner_unit_id"),
                 }
             )
 

@@ -54,12 +54,14 @@ class PortalService:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
     ) -> DocumentListResponse:
         return await self._documents.list_documents(
             actor,
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
 
     async def list_pending_reviews(self, actor: PortalActor):

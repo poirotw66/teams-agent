@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -30,13 +30,45 @@ class MemoryAuditStore:
         *,
         limit: int = 50,
         cursor: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        target_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[AuditEventRecord], str | None]:
         with self._lock:
             self._ensure_synced()
+            filtered = list(self._events)
+            if actor_id:
+                needle = actor_id.casefold()
+                filtered = [e for e in filtered if needle in e.actor_id.casefold()]
+            if action:
+                needle = action.casefold()
+                filtered = [e for e in filtered if needle in e.action.casefold()]
+            if target_type:
+                needle = target_type.casefold()
+                filtered = [e for e in filtered if needle in e.target_type.casefold()]
+            if start_date:
+                try:
+                    start_dt = datetime.fromisoformat(start_date)
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=UTC)
+                    filtered = [e for e in filtered if e.occurred_at >= start_dt]
+                except Exception:
+                    pass
+            if end_date:
+                try:
+                    end_dt = datetime.fromisoformat(end_date)
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=UTC)
+                    filtered = [e for e in filtered if e.occurred_at <= end_dt]
+                except Exception:
+                    pass
+            sorted_events = sorted(filtered, key=lambda e: e.occurred_at, reverse=True)
             start = int(cursor or "0")
-            page = self._events[start : start + limit]
+            page = sorted_events[start : start + limit]
             next_index = start + len(page)
-            next_cursor = str(next_index) if next_index < len(self._events) else None
+            next_cursor = str(next_index) if next_index < len(sorted_events) else None
             return page, next_cursor
 
 
@@ -125,6 +157,11 @@ class FirestoreAuditStore:
         *,
         limit: int = 50,
         cursor: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        target_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[AuditEventRecord], str | None]:
         query = self._collection.order_by("occurred_at")
         if cursor:

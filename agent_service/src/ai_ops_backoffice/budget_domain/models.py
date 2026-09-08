@@ -21,7 +21,7 @@ class StrictModel(BaseModel):
 
 class BudgetPolicy(StrictModel):
     policy_id: str
-    scope_type: Literal["PERSONAL", "SERVICE", "TEAM", "TENANT", "GLOBAL"]
+    scope_type: Literal["PERSONAL", "SERVICE", "TEAM", "TENANT", "GLOBAL", "MODEL"]
     scope_id: str
     period: Literal["DAILY", "MONTHLY"]
     measure: Literal["TWD", "USD", "TOKEN", "LLM_CALL_COUNT"]

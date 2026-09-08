@@ -15,7 +15,15 @@ export async function renderQuality(state = {}) {
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const navFilters = loadNavFilters();
-    const period = state.period || { preset: "30d" };
+    const period =
+      state.period ||
+      (navFilters.view === "quality" && (navFilters.preset || navFilters.start)
+        ? {
+            preset: navFilters.preset || (navFilters.start ? "custom" : "30d"),
+            start: navFilters.start || "",
+            end: navFilters.end || "",
+          }
+        : { preset: "30d" });
     const savedFilters = state.filters || {};
     const filters = periodParams(period);
     filters.set("limit", "25");
@@ -29,11 +37,15 @@ export async function renderQuality(state = {}) {
     const reason = savedFilters.reason || "";
     const resolved = savedFilters.resolved || "";
     const handoff = savedFilters.handoff || "";
+    const model = savedFilters.model || "";
+    const route = savedFilters.route || "";
     if (rating) filters.set("rating", rating);
     if (issueTypeId) filters.set("issue_type_id", issueTypeId);
     if (reason) filters.set("reason", reason);
     if (resolved) filters.set("resolved", resolved);
     if (handoff) filters.set("handoff", handoff);
+    if (model) filters.set("model", model);
+    if (route) filters.set("route", route);
 
     const [qualityLoopPanel, gapPanel, feedback] = await Promise.all([
       buildQualityLoopPanel(),
@@ -86,12 +98,23 @@ export async function renderQuality(state = {}) {
     handoffSelect.innerHTML =
       '<option value="">全部轉人工</option><option value="true">有轉人工</option><option value="false">無轉人工</option>';
     if (handoff) handoffSelect.value = handoff;
+    const routeSelect = el("select", "");
+    routeSelect.id = "feedback-route";
+    routeSelect.innerHTML =
+      '<option value="">全部處理方式</option><option value="FAQ">FAQ</option><option value="KNOWLEDGE">知識檢索 (RAG)</option><option value="DIRECT">直接回覆</option><option value="ESCALATE">轉人工</option>';
+    if (route) routeSelect.value = route;
+    const modelInput = el("input");
+    modelInput.id = "feedback-model";
+    modelInput.placeholder = "模型 (Model)";
+    modelInput.value = model || "";
     const currentFilters = () => ({
       issueTypeId: issueInput.value.trim(),
       rating: ratingSelect.value,
       reason: reasonInput.value.trim(),
       resolved: resolvedSelect.value,
       handoff: handoffSelect.value,
+      model: modelInput.value.trim(),
+      route: routeSelect.value,
     });
     const applyFilters = el("button", "", "套用篩選");
     applyFilters.addEventListener("click", () =>
@@ -103,11 +126,15 @@ export async function renderQuality(state = {}) {
       feedback_reason: reasonInput.value || undefined,
       resolved_status: resolvedSelect.value || undefined,
       handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
+      model: modelInput.value || undefined,
+      route: routeSelect.value || undefined,
       ...Object.fromEntries(periodParams(period)),
     }));
     filterBar.append(
       issueInput,
       ratingSelect,
+      routeSelect,
+      modelInput,
       reasonInput,
       resolvedSelect,
       handoffSelect,

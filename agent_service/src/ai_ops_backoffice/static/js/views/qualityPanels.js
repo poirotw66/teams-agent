@@ -324,14 +324,60 @@ export async function buildQualityLoopPanel() {
     panel.append(el("p", "empty", "目前沒有待處理候選。"));
   }
 
-  // Ongoing cases section
-  panel.append(el("h3", "", `進行中案件（${caseData.total || 0}）`));
-  if ((caseData.items || []).length) {
+  // Ongoing cases section (REQ-018)
+  const casesSection = el("div", "quality-cases-section");
+  const casesHeading = el("h3", "", `進行中案件（${caseData.total || 0}）`);
+  casesSection.append(casesHeading);
+
+  const caseFilterBar = el("div", "filter-bar");
+  caseFilterBar.style.marginBottom = "0.75rem";
+
+  const caseStatusSelect = el("select");
+  caseStatusSelect.setAttribute("aria-label", "案件狀態篩選");
+  const allStatusOpt = el("option", "", "全部狀態");
+  allStatusOpt.value = "";
+  caseStatusSelect.append(allStatusOpt);
+  for (const [val, lab] of Object.entries(statusLabels)) {
+    const opt = el("option", "", lab);
+    opt.value = val;
+    caseStatusSelect.append(opt);
+  }
+
+  const caseTypeSelect = el("select");
+  caseTypeSelect.setAttribute("aria-label", "案件類型篩選");
+  const allTypeOpt = el("option", "", "全部類型");
+  allTypeOpt.value = "";
+  caseTypeSelect.append(allTypeOpt);
+  for (const [val, lab] of Object.entries(caseTypeLabels)) {
+    const opt = el("option", "", lab);
+    opt.value = val;
+    caseTypeSelect.append(opt);
+  }
+
+  const caseOwnerInput = el("input");
+  caseOwnerInput.placeholder = "篩選負責單位…";
+  caseOwnerInput.style.minWidth = "160px";
+  caseOwnerInput.setAttribute("aria-label", "負責單位篩選");
+
+  const caseFilterBtn = el("button", "", "篩選案件");
+  caseFilterBar.append(caseStatusSelect, caseTypeSelect, caseOwnerInput, caseFilterBtn);
+  casesSection.append(caseFilterBar);
+
+  const caseScroll = el("div", "table-responsive");
+  casesSection.append(caseScroll);
+  panel.append(casesSection);
+
+  function renderCasesTable(items, total) {
+    casesHeading.textContent = `進行中案件（${total}）`;
+    if (!items.length) {
+      caseScroll.replaceChildren(el("p", "empty", "目前沒有符合條件的進行中案件。"));
+      return;
+    }
     const table = el("table");
     table.innerHTML =
-      "<thead><tr><th>案件</th><th>狀態</th><th>優先級</th><th>負責單位／承辦</th><th>下一步</th></tr></thead>";
+      "<thead><tr><th>案件</th><th>類型</th><th>狀態</th><th>優先級</th><th>負責單位／承辦</th><th>下一步</th></tr></thead>";
     const body = el("tbody");
-    for (const item of caseData.items) {
+    for (const item of items) {
       const action = el("td");
       const detail = el("button", "", "查看與處理");
       detail.addEventListener("click", () => showQualityCaseDetail(item.case_id));
@@ -339,6 +385,7 @@ export async function buildQualityLoopPanel() {
       const row = el("tr");
       row.append(
         el("td", "", item.title),
+        el("td", "", caseTypeLabels[item.case_type] || item.case_type || "-"),
         el("td", "", statusLabels[item.status] || item.status),
         el("td", "", item.priority),
         el("td", "", `${item.owner_unit_id} / ${item.assignee_id || "未指派"}`),
@@ -347,91 +394,33 @@ export async function buildQualityLoopPanel() {
       body.append(row);
     }
     table.append(body);
-    const caseScroll = el("div", "table-responsive");
-    caseScroll.append(table);
-    panel.append(caseScroll);
-  } else {
-    panel.append(el("p", "empty", "目前沒有進行中案件。"));
+    caseScroll.replaceChildren(table);
   }
+
+  async function loadFilteredCases() {
+    caseScroll.replaceChildren(el("p", "empty", "載入中…"));
+    const params = new URLSearchParams();
+    if (caseStatusSelect.value) params.set("status", caseStatusSelect.value);
+    if (caseTypeSelect.value) params.set("case_type", caseTypeSelect.value);
+    if (caseOwnerInput.value.trim()) params.set("owner_unit_id", caseOwnerInput.value.trim());
+    try {
+      const data = await api(`/api/quality-cases?${params.toString()}`);
+      renderCasesTable(data.items || [], data.total || (data.items || []).length);
+    } catch (err) {
+      caseScroll.replaceChildren(el("div", "error", err.message));
+    }
+  }
+
+  caseFilterBtn.addEventListener("click", loadFilteredCases);
+  caseStatusSelect.addEventListener("change", loadFilteredCases);
+  caseTypeSelect.addEventListener("change", loadFilteredCases);
+  caseOwnerInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadFilteredCases();
+  });
+
+  renderCasesTable(caseData.items || [], caseData.total || (caseData.items || []).length);
+
   return panel;
 }
 
-export async function buildGapPanel() {
-  const panel = el("section", "panel");
-  panel.append(el("h2", "", "Knowledge Gap 排序"));
-  const data = await api("/api/gaps/summary?days=30");
-  panel.append(el("p", "metric-label", `規則版本：${data.scoreVersion}｜Taxonomy：${data.taxonomyVersion}`));
-  if (!(data.items || []).length) {
-    panel.append(el("p", "empty", "目前沒有可評分的 Gap。"));
-    return panel;
-  }
-  const table = el("table");
-  table.innerHTML = "<thead><tr><th>Issue</th><th>Gap Score</th><th>頻率</th><th>無答案</th><th>負評</th><th>轉人工</th><th>成本</th></tr></thead>";
-  const body = el("tbody");
-  for (const item of data.items) {
-    const row = el("tr");
-    row.append(
-      el("td", "", item.displayName || item.issueTypeId),
-      el("td", "", item.gapScore.toFixed(2)),
-      el("td", "", item.components.frequency.toFixed(2)),
-      el("td", "", item.components.noAnswerRate.toFixed(2)),
-      el("td", "", item.components.negativeFeedbackRate.toFixed(2)),
-      el("td", "", item.components.handoffRate.toFixed(2)),
-      el("td", "", item.components.estimatedCostUsd.toFixed(2)),
-    );
-    body.append(row);
-  }
-  table.append(body);
-  const gapScroll = el("div", "table-responsive");
-  gapScroll.append(table);
-  panel.append(gapScroll);
-  const clusterData = await api("/api/question-clusters");
-  const allowed = actorCapabilities();
-  const clusterActions = el("div", "filter-bar");
-  if (allowed.has("ops.quality.write")) {
-    const generate = el("button", "", "產生單位／問題類型分組");
-    generate.addEventListener("click", async () => {
-      await api("/api/question-clusters/generate", { method: "POST" });
-      await refreshQuality();
-    });
-    clusterActions.append(generate);
-  }
-  panel.append(
-    el("h3", "", `單位／問題類型分組（${clusterData.total || 0}）`),
-    el(
-      "p",
-      "metric-label",
-      "依 owner unit + issue type 分組，不是語意聚類。確認需求後再導入 embedding／人工審核。",
-    ),
-    clusterActions,
-  );
-  for (const cluster of (clusterData.items || []).filter((item) => item.status !== "SUPERSEDED")) {
-    const row = el("div", "filter-bar");
-    row.append(
-      el("strong", "", cluster.name),
-      el(
-        "span",
-        "metric-label",
-        `${cluster.status}｜${cluster.grouping_method || "OWNER_UNIT_ISSUE_TYPE"}｜頻率 ${cluster.frequency}｜rev ${cluster.revision}`,
-      ),
-    );
-    if (allowed.has("ops.quality.write") && cluster.status === "CANDIDATE") {
-      for (const [action, label] of [["ACCEPT", "接受"], ["REJECT", "拒絕"], ["RENAME", "重新命名"]]) {
-        const button = el("button", "", label);
-        button.addEventListener("click", async () => {
-          const name = action === "RENAME" ? window.prompt("Cluster 名稱", cluster.name) : null;
-          if (action === "RENAME" && !name?.trim()) return;
-          await api("/api/question-clusters/correct", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cluster_ids: [cluster.cluster_id], action, name }),
-          });
-          await refreshQuality();
-        });
-        row.append(button);
-      }
-    }
-    panel.append(row);
-  }
-  return panel;
-}
+export { buildGapPanel } from "./gapPanel.js";

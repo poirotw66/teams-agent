@@ -189,7 +189,7 @@ class SyncJobActionRequest(BaseModel):
 class BudgetPolicyCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    scope_type: Literal["PERSONAL", "SERVICE", "TEAM", "TENANT", "GLOBAL"]
+    scope_type: Literal["PERSONAL", "SERVICE", "TEAM", "TENANT", "GLOBAL", "MODEL"]
     scope_id: str = Field(min_length=1)
     period: Literal["DAILY", "MONTHLY"]
     measure: Literal["TWD", "USD", "TOKEN", "LLM_CALL_COUNT"]

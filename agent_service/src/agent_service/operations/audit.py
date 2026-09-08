@@ -18,6 +18,11 @@ class AuditStore(Protocol):
         *,
         limit: int = 50,
         cursor: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        target_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> tuple[list[AuditEventRecord], str | None]: ...
 
 

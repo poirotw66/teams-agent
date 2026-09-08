@@ -511,6 +511,7 @@ def register_governance_routes(
     async def governance_search(
         q: str = Query(default=""),
         doc_type: str | None = Query(default=None),
+        owner_unit_id: str | None = Query(default=None),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.search.read")
@@ -526,6 +527,7 @@ def register_governance_routes(
                         "id": str(faq.get("faq_id") or ""),
                         "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
                         "snippet": str(content.get("question") or version.get("status") or "")[:160],
+                        "owner_unit_id": str(faq.get("owner_unit_id") or ""),
                         "requiredCapability": "ops.faq.read",
                     }
                 )
@@ -537,6 +539,7 @@ def register_governance_routes(
                         "id": str(item.get("example_id") or ""),
                         "title": str(item.get("expected_issue_type_id") or item.get("label") or ""),
                         "snippet": str(item.get("text") or "")[:160],
+                        "owner_unit_id": str(item.get("owner_unit_id") or ""),
                         "requiredCapability": "ops.examples.read",
                     }
                 )
@@ -553,6 +556,7 @@ def register_governance_routes(
                             "id": str(issue_id),
                             "title": str(display),
                             "snippet": f"{issue_id} {desc}"[:160],
+                            "owner_unit_id": str(getattr(issue, "owner_unit_id", "") or ""),
                             "requiredCapability": "ops.issues.read",
                         }
                     )
@@ -569,6 +573,7 @@ def register_governance_routes(
                             "id": doc_id,
                             "title": title,
                             "snippet": f"{doc_id} {desc}"[:160],
+                            "owner_unit_id": str(doc.get("owner_unit_id") or ""),
                             "requiredCapability": "ops.knowledge.read",
                         }
                     )
@@ -593,6 +598,7 @@ def register_governance_routes(
                             "id": item["conversationId"],
                             "title": f"對話 {item['conversationId']}",
                             "snippet": matched_snippet[:160],
+                            "owner_unit_id": str(item.get("ownerUnitId") or ""),
                             "requiredCapability": "ops.conversations.read",
                         }
                     )
@@ -608,11 +614,12 @@ def register_governance_routes(
                         "snippet": str(case.get("description") or case.get("issue_type_id") or "")[
                             :160
                         ],
+                        "owner_unit_id": str(case.get("owner_unit_id") or ""),
                         "requiredCapability": "ops.quality.read",
                     }
                 )
         return governance.search(
-            query=q, actor=actor, doc_type=doc_type, extra_documents=extras
+            query=q, actor=actor, doc_type=doc_type, owner_unit_id=owner_unit_id, extra_documents=extras
         )
 
     @app.get("/api/governance/audit")

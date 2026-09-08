@@ -70,12 +70,14 @@ class DocumentService:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
     ) -> DocumentListResponse:
         items = await self._repository.list_documents(
             actor=actor,
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
         return DocumentListResponse(items=items, total=len(items))
 

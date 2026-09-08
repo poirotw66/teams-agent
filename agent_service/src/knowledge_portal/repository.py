@@ -40,6 +40,7 @@ class PortalRepository(Protocol):
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
     ) -> list[KnowledgeDocumentRecord]: ...
 
     async def get_document(self, document_id: str) -> KnowledgeDocumentRecord | None: ...
@@ -138,6 +139,7 @@ class InMemoryPortalRepository:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
     ) -> list[KnowledgeDocumentRecord]:
         items = list(self.documents.values())
         items = [item for item in items if item.status != "DISCARDED"]
@@ -165,6 +167,32 @@ class InMemoryPortalRepository:
                 item
                 for item in items
                 if needle in item.title.casefold() or needle in item.summary.casefold()
+            ]
+        populated_items: list[KnowledgeDocumentRecord] = []
+        for item in items:
+            v_id = item.current_published_version_id or item.draft_version_id
+            v = self.versions.get(v_id) if v_id else None
+            if not v:
+                for candidate_v in self.versions.values():
+                    if candidate_v.document_id == item.document_id:
+                        v = candidate_v
+                        break
+            doc_format = "PDF" if (v and v.source_type == "PDF") else "MARKDOWN"
+            if item.format != doc_format:
+                item = item.model_copy(update={"format": doc_format})
+            populated_items.append(item)
+        items = populated_items
+
+        if format:
+            fmt_upper = format.upper()
+            items = [
+                item
+                for item in items
+                if (
+                    (fmt_upper == "PDF" and item.format == "PDF")
+                    or (fmt_upper in ("MARKDOWN", "MD") and item.format == "MARKDOWN")
+                    or item.format == fmt_upper
+                )
             ]
         return sorted(items, key=lambda item: item.updated_at, reverse=True)
 

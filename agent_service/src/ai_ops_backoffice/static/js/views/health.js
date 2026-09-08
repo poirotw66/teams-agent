@@ -1,13 +1,34 @@
 import { api, el, metric } from "../api.js";
 import { createPageController } from "../app/lifecycle.js";
 
-export async function renderHealth() {
+export async function renderHealth(targetDate = null) {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
-    const data = await api("/api/health/summary");
+    const url = targetDate ? `/api/health/summary?date=${encodeURIComponent(targetDate)}` : "/api/health/summary";
+    const data = await api(url);
     const panel = el("section", "panel");
     panel.append(el("h2", "", "系統健康度"));
+
+    // Date filter bar (REQ-024)
+    const filterBar = el("div", "filter-bar");
+    filterBar.style.marginBottom = "1rem";
+    const dateLabel = el("label", "", "歷史日期查詢：");
+    dateLabel.style.marginRight = "0.5rem";
+    const dateInput = el("input");
+    dateInput.type = "date";
+    if (targetDate) dateInput.value = targetDate;
+    const queryBtn = el("button", "button-primary", "查詢日期");
+    const liveBtn = el("button", "", "即時 (最近 24 小時)");
+    queryBtn.addEventListener("click", () => {
+      if (dateInput.value) renderHealth(dateInput.value);
+    });
+    dateInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && dateInput.value) renderHealth(dateInput.value);
+    });
+    liveBtn.addEventListener("click", () => renderHealth(null));
+    filterBar.append(dateLabel, dateInput, queryBtn, liveBtn);
+    panel.append(filterBar);
 
     const components = data.components || [];
     const healthyCount = components.filter((c) => ["READY", "AVAILABLE", "OK"].includes(c.status?.toUpperCase())).length;
@@ -18,7 +39,7 @@ export async function renderHealth() {
       metric("監控元件總數", components.length),
       metric("運作正常", healthyCount),
       metric("異常／降級", abnormalCount),
-      metric("遙測視窗", `${data.telemetryWindowHours || 24} 小時`),
+      metric("遙測視窗", targetDate ? `歷史日期：${targetDate}` : `${data.telemetryWindowHours || 24} 小時`),
     );
     panel.append(grid);
 
@@ -39,8 +60,9 @@ export async function renderHealth() {
       panel.append(links);
     }
     const table = el("table");
+    const windowCol = targetDate ? "Requests" : "24h Requests";
     table.innerHTML = [
-      "<thead><tr><th>Component</th><th>Status</th><th>24h Requests</th>",
+      `<thead><tr><th>Component</th><th>Status</th><th>${windowCol}</th>`,
       "<th>Availability</th><th>Error</th><th>Timeout</th>",
       "<th>P50 ms</th><th>P95 ms</th><th>Note</th></tr></thead>",
     ].join("");

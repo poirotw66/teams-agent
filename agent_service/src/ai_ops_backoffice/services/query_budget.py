@@ -58,6 +58,12 @@ class BudgetQueryMixin:
             ]
         elif scope_type == "TENANT":
             scoped_events = [event for event in scoped_events if event.tenant_id == scope_id]
+        elif scope_type == "MODEL":
+            scoped_events = [
+                event
+                for event in scoped_events
+                if str(event.payload.get("model") or event.payload.get("modelId") or "") == scope_id
+            ]
         elif scope_type != "GLOBAL":
             raise ValueError(f"Unsupported budget scope: {scope_type}")
         usage_events = list(project_usage(scoped_events).detail_events)

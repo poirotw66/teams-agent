@@ -265,12 +265,15 @@ class _MemoryFilter(PortalRepository):
         for document in documents:
             self._inner.documents[document.document_id] = document
 
-    async def list_documents(self, *, actor, status=None, owner_unit_id=None, query=None):
+    async def list_documents(
+        self, *, actor, status=None, owner_unit_id=None, query=None, format=None
+    ):
         return await self._inner.list_documents(
             actor=actor,
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
 
     async def list_pending_reviews(self, actor):

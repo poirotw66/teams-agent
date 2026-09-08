@@ -292,6 +292,7 @@ def register_ops_read_routes(
         start_date: str | None = None,
         end_date: str | None = None,
         query: str | None = None,
+        owner_unit_id: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -303,9 +304,21 @@ def register_ops_read_routes(
             start_date=start_date,
             end_date=end_date,
             query=query,
+            owner_unit_id=owner_unit_id,
             force_refresh=refresh,
         )
-        await audit_read(actor, "query.issues_summary", "issues_summary")
+        await audit_read(
+            actor,
+            "query.issues_summary",
+            "issues_summary",
+            after={
+                "days": days,
+                "preset": preset,
+                "query": query,
+                "ownerUnitId": owner_unit_id,
+                "resultCount": len(result.get("items") or []),
+            },
+        )
         return result
 
     @app.get("/api/issues/{issue_type_id}/routes")
@@ -389,17 +402,34 @@ def register_ops_read_routes(
         return result
 
     @app.get("/api/health/summary")
-    async def health_summary(actor=Depends(current_actor)) -> dict[str, object]:
+    async def health_summary(
+        date: str | None = None,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
         require_capability(actor, "ops.health.read")
-        return await query_service.health_summary()
+        return await query_service.health_summary(target_date=date)
 
     @app.get("/api/audit-events")
     async def audit_events(
+        actor_id: str | None = None,
+        action: str | None = None,
+        target_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = Query(default=50, ge=1, le=100),
         cursor: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.audit.read")
-        items, next_cursor = await query_service.audit_store.list_events(cursor=cursor)
+        items, next_cursor = await query_service.audit_store.list_events(
+            cursor=cursor,
+            limit=limit,
+            actor_id=actor_id,
+            action=action,
+            target_type=target_type,
+            start_date=start_date,
+            end_date=end_date,
+        )
         return {
             "items": [item.model_dump(mode="json") for item in items],
             "nextCursor": next_cursor,
@@ -417,6 +447,8 @@ def register_ops_read_routes(
         reason: str | None = None,
         resolved_status: str | None = Query(default=None, alias="resolved"),
         handoff: bool | None = None,
+        model: str | None = None,
+        route: str | None = None,
         limit: int = Query(default=50, ge=1, le=100),
         cursor: str | None = None,
         actor=Depends(current_actor),
@@ -433,6 +465,8 @@ def register_ops_read_routes(
             reason=reason,
             resolved_status=resolved_status,
             handoff=handoff,
+            model=model,
+            route=route,
             limit=limit,
             cursor=cursor,
         )

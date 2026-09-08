@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
-from ..faq_domain import FaqContent
+from ..faq_domain import FaqContent, FaqNotFoundError, FaqValidationError
 from ..knowledge_bridge.capabilities import has_knowledge_capability
 from ..request_models import (
+    FaqTransitionRequest,
     QualityCandidateMergeRequest,
     QualityCandidateRefreshRequest,
     QualityCaseTransitionRequest,
@@ -36,12 +38,21 @@ def register_quality_routes(
     @app.get("/api/quality-cases")
     async def list_quality_cases(
         status: str | None = None,
+        case_type: str | None = None,
+        owner_unit_id: str | None = None,
+        issue_type_id: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
         items = [
             _enrich_quality_issue_display(item)
-            for item in quality_service.list_cases(actor=actor, status=status)
+            for item in quality_service.list_cases(
+                actor=actor,
+                status=status,
+                case_type=case_type,
+                owner_unit_id=owner_unit_id,
+                issue_type_id=issue_type_id,
+            )
         ]
         return {"items": items, "total": len(items)}
 
@@ -350,11 +361,23 @@ def register_quality_routes(
 
     @app.get("/api/gaps/summary")
     async def gap_summary(
+        preset: str | None = None,
         days: int = Query(default=30, ge=1, le=365),
+        start_date: str | None = None,
+        end_date: str | None = None,
+        issue_type_id: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.quality.read")
-        issues = await query_service.issues_summary(actor, days=days)
+        issues = await query_service.issues_summary(
+            actor,
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
         weights = {
             "frequency": 30.0,
             "noAnswerRate": 20.0,
@@ -378,7 +401,28 @@ def register_quality_routes(
                 ),
             }
             items.append({**issue, "gapScore": round(sum(components.values()), 4), "components": components})
-        items.sort(key=lambda item: item["gapScore"], reverse=True)
+
+        if issue_type_id:
+            needle = issue_type_id.casefold()
+            items = [
+                item for item in items
+                if needle in str(item.get("issueTypeId", "")).casefold()
+                or needle in str(item.get("displayName", "")).casefold()
+            ]
+
+        reverse = sort_order.lower() != "asc"
+        if sort_by == "frequency":
+            items.sort(key=lambda item: item["count"], reverse=reverse)
+        elif sort_by == "negativeFeedbackRate":
+            items.sort(key=lambda item: item["negativeFeedbackRate"], reverse=reverse)
+        elif sort_by == "noAnswerRate":
+            items.sort(key=lambda item: item["noAnswerRate"], reverse=reverse)
+        elif sort_by == "handoffRate":
+            items.sort(key=lambda item: item["handoffRate"], reverse=reverse)
+        elif sort_by == "cost":
+            items.sort(key=lambda item: item["estimatedCostUsd"], reverse=reverse)
+        else:
+            items.sort(key=lambda item: item["gapScore"], reverse=reverse)
         return {
             "scoreVersion": "gap-score-v1",
             "weights": weights,

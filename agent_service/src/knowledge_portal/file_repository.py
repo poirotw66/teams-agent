@@ -153,13 +153,16 @@ class FilePortalRepository(InMemoryPortalRepository):
         await self._persist()
         return result
 
-    async def list_documents(self, *, actor, status=None, owner_unit_id=None, query=None):
+    async def list_documents(
+        self, *, actor, status=None, owner_unit_id=None, query=None, format=None
+    ):
         await self._ensure_loaded()
         return await super().list_documents(
             actor=actor,
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
 
     async def get_document(self, document_id: str):

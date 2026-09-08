@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from agent_service.operations.access import ActorContext
-from collections import Counter
-from agent_service.operations.contracts import OperationalEvent
+from agent_service.operations.contracts import (
+    DEFAULT_TIMEZONE,
+    OperationalEvent,
+    utc_now,
+)
 from agent_service.operations.scope import filter_events_by_scope
-from agent_service.operations.contracts import utc_now
+from .periods import event_in_period
 
 class FeedbackQueryMixin:
     async def faq_performance(
@@ -28,19 +34,25 @@ class FeedbackQueryMixin:
             for event in events
             if event.event_type == "faq.answered" and event.payload.get("faqKey") == faq_key
         ]
-        now = utc_now()
-        today_date = now.date().isoformat()
-        current_iso = now.isocalendar()[:2]
-        current_month = now.strftime("%Y-%m")
+        local_tz = ZoneInfo(DEFAULT_TIMEZONE)
+        local_now = utc_now().astimezone(local_tz)
+        today_date = local_now.date().isoformat()
+        current_iso = local_now.isocalendar()[:2]
+        current_month = local_now.strftime("%Y-%m")
+
+        def _to_local(dt: datetime) -> datetime:
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC).astimezone(local_tz)
+            return dt.astimezone(local_tz)
 
         today_hit_count = sum(
-            1 for e in all_hits if e.occurred_at.date().isoformat() == today_date
+            1 for e in all_hits if _to_local(e.occurred_at).date().isoformat() == today_date
         )
         this_week_hit_count = sum(
-            1 for e in all_hits if e.occurred_at.isocalendar()[:2] == current_iso
+            1 for e in all_hits if _to_local(e.occurred_at).isocalendar()[:2] == current_iso
         )
         this_month_hit_count = sum(
-            1 for e in all_hits if e.occurred_at.strftime("%Y-%m") == current_month
+            1 for e in all_hits if _to_local(e.occurred_at).strftime("%Y-%m") == current_month
         )
         total_hit_count = len(all_hits)
 
@@ -60,7 +72,7 @@ class FeedbackQueryMixin:
         by_month: Counter[str] = Counter()
         by_version: Counter[str] = Counter()
         for event in hits:
-            occurred = event.occurred_at
+            occurred = _to_local(event.occurred_at)
             iso_year, iso_week, _ = occurred.isocalendar()
             by_day[occurred.date().isoformat()] += 1
             by_week[f"{iso_year}-W{iso_week:02d}"] += 1
@@ -118,6 +130,8 @@ class FeedbackQueryMixin:
         reason: str | None = None,
         resolved_status: str | None = None,
         handoff: bool | None = None,
+        model: str | None = None,
+        route: str | None = None,
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -159,6 +173,10 @@ class FeedbackQueryMixin:
             trace = self._build_feedback_trace(event, conversation_cache=conversation_cache)
             if issue_type_id and trace.get("issueTypeId") != issue_type_id:
                 continue
+            if route and trace.get("route") != route:
+                continue
+            if model and trace.get("model") != model:
+                continue
             if handoff is True and not trace.get("handoffOccurred"):
                 continue
             if handoff is False and trace.get("handoffOccurred"):
@@ -172,6 +190,8 @@ class FeedbackQueryMixin:
                     "reason": event.payload.get("reason"),
                     "resolvedStatus": event.payload.get("resolvedStatus"),
                     "issueId": event.payload.get("issueId"),
+                    "route": trace.get("route"),
+                    "model": trace.get("model"),
                     "trace": trace,
                 }
             )
@@ -206,6 +226,8 @@ class FeedbackQueryMixin:
                 "releaseIds": [],
                 "handoffOccurred": False,
                 "handoffStatus": None,
+                "route": None,
+                "model": None,
             }
 
         conv_events = conversation_cache.get(conversation_id, [])
@@ -224,18 +246,28 @@ class FeedbackQueryMixin:
         release_ids: list[str] = []
         handoff_status = None
         handoff_occurred = False
+        detected_route = None
+        detected_model = None
 
         for event in scoped:
-            if event.event_type == "issue.extracted":
+            if event.event_type == "route.selected" and event.payload.get("route"):
+                detected_route = str(event.payload.get("route"))
+            elif event.event_type == "issue.extracted":
                 payload_issue_id = event.payload.get("issueId")
                 if issue_id is None or payload_issue_id == issue_id:
                     issue_extracted = event
+                if event.payload.get("route") and not detected_route:
+                    detected_route = str(event.payload.get("route"))
             if (
                 event.event_type == "issue.classified"
                 and issue_extracted
                 and event.issue_occurrence_id == issue_extracted.issue_occurrence_id
             ):
                 issue_classified = event
+            if event.event_type == "usage.recorded" and event.payload.get("model"):
+                detected_model = str(event.payload.get("model"))
+            elif "model" in event.payload and not detected_model:
+                detected_model = str(event.payload.get("model"))
             if event.event_type == "faq.answered":
                 faq_key = event.payload.get("faqKey") or faq_key
             if event.event_type in {"knowledge.retrieved", "knowledge.answered"}:
@@ -254,6 +286,14 @@ class FeedbackQueryMixin:
             if event.event_type.startswith("handoff."):
                 handoff_occurred = True
                 handoff_status = event.payload.get("status") or event.event_type
+
+        if not detected_route:
+            if faq_key:
+                detected_route = "FAQ"
+            elif document_ids:
+                detected_route = "KNOWLEDGE"
+            elif handoff_occurred:
+                detected_route = "ESCALATE"
 
         issue_type_id = None
         classification_source = None
@@ -276,5 +316,7 @@ class FeedbackQueryMixin:
             "releaseIds": release_ids,
             "handoffOccurred": handoff_occurred,
             "handoffStatus": handoff_status,
+            "route": detected_route,
+            "model": detected_model,
         }
 

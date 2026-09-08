@@ -48,7 +48,7 @@ export async function renderBudgets() {
       form.append(
         exampleSelect("Scope", "scope_type", [
           ["PERSONAL", "Personal"], ["SERVICE", "Service"], ["TEAM", "Team"],
-          ["TENANT", "Tenant"], ["GLOBAL", "Global"],
+          ["TENANT", "Tenant"], ["GLOBAL", "Global"], ["MODEL", "Model"],
         ]),
         faqField("Scope ID", "scope_id", ""),
         exampleSelect("Period", "period", [["DAILY", "Daily"], ["MONTHLY", "Monthly"]]),

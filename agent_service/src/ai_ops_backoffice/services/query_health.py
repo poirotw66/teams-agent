@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -173,12 +173,32 @@ class HealthQueryMixin:
 
     async def _health_telemetry(
         self,
+        target_date: str | None = None,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
-        window_start = utc_now() - timedelta(hours=24)
-        events = [
-            event for event in await self._events()
-            if event.occurred_at >= window_start
-        ]
+        if target_date:
+            try:
+                dt = datetime.fromisoformat(target_date)
+                window_start = dt.replace(
+                    hour=0, minute=0, second=0, microsecond=0,
+                    tzinfo=UTC if dt.tzinfo is None else dt.tzinfo,
+                )
+                window_end = window_start + timedelta(days=1)
+                events = [
+                    event for event in await self._events()
+                    if window_start <= event.occurred_at < window_end
+                ]
+            except Exception:
+                window_start = utc_now() - timedelta(hours=24)
+                events = [
+                    event for event in await self._events()
+                    if event.occurred_at >= window_start
+                ]
+        else:
+            window_start = utc_now() - timedelta(hours=24)
+            events = [
+                event for event in await self._events()
+                if event.occurred_at >= window_start
+            ]
         failures = [event for event in events if event.event_type == "request.failed"]
         anomalies = [
             {
@@ -289,7 +309,7 @@ class HealthQueryMixin:
         return telemetry, anomalies[:10]
 
 
-    async def health_summary(self) -> dict[str, Any]:
+    async def health_summary(self, target_date: str | None = None) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
         agent_functional = await self._probe_agent_functional(self._settings.agent_api_url)
         internal_portal = (
@@ -299,7 +319,7 @@ class HealthQueryMixin:
         knowledge_release = await self._probe_knowledge_release(internal_portal)
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
-        telemetry, recent_anomalies = await self._health_telemetry()
+        telemetry, recent_anomalies = await self._health_telemetry(target_date=target_date)
         no_telemetry = self._health_metric_summary([])
         retrieval = dict(agent_functional)
         if self._settings.simulate_health_anomalies:
@@ -345,7 +365,8 @@ class HealthQueryMixin:
                 {"id": "knowledge-release", **knowledge_release, **no_telemetry},
                 {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
             ],
-            "telemetryWindowHours": 24,
+            "targetDate": target_date,
+            "telemetryWindowHours": 24 if not target_date else None,
             "recentAnomalies": recent_anomalies,
             "monitoringLinks": monitoring_links,
             "simulatedAnomalies": self._settings.simulate_health_anomalies,

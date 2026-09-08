@@ -135,6 +135,8 @@ class ExportsQueryMixin:
                 reason=filters.get("feedback_reason"),
                 resolved_status=filters.get("resolved_status"),
                 handoff=filters.get("handoff"),
+                model=filters.get("model"),
+                route=filters.get("route"),
                 limit=self._settings.export_max_records + 1,
             )
         elif export_type == "routes_summary":
