@@ -43,6 +43,9 @@ import { maskingPage } from "./views/masking.js";
 import { modelsPage } from "./views/models.js";
 import { examplesPage } from "./views/examples.js";
 import {
+  faqPage,
+  syncPage,
+  knowledgeSectionPage,
   knowledgeDocumentPage,
   knowledgePage,
   knowledgePortalPage,
@@ -73,12 +76,28 @@ const LIFECYCLE_VIEWS = new Set([
   "conversations",
   "quality",
   "knowledge",
+  "faq",
+  "sync",
+  "knowledgeWork",
+  "knowledgeReviews",
+  "knowledgeReleases",
+  "knowledgeAudit",
   "knowledgeDocument",
   "knowledgePortal",
   "examples",
 ]);
 
+const knowledgeSections = {
+  knowledgeWork: knowledgeSectionPage("work"),
+  knowledgeReviews: knowledgeSectionPage("reviews"),
+  knowledgeReleases: knowledgeSectionPage("releases"),
+  knowledgeAudit: knowledgeSectionPage("audit"),
+};
+
 const routes = {
+  ...Object.fromEntries(Object.entries(knowledgeSections).map(([view, page]) => [view, () => enterPage(page)])),
+  faq: () => enterPage(faqPage),
+  sync: () => enterPage(syncPage),
   overview: () => enterPage(overviewPage),
   conversations: (state) => enterPage(conversationsPage, { state: state || {} }),
   issues: (state) => enterPage(issuesPage, { state: state || { preset: "30d" } }),

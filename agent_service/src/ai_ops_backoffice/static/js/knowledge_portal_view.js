@@ -132,50 +132,8 @@ export async function renderNativeKnowledgePortal(app, capabilities, navigateTo,
     }
   }
 
-  const activeSection = segments[0] || "knowledge";
-  const userCaps = window.__AI_OPS_EMBED_SESSION__.capabilities;
-
   // Render native shell
   const shell = el("div", "kp-native-shell");
-
-  // Subnav bar
-  const subnav = el("nav", "kp-subnav");
-  subnav.setAttribute("aria-label", "知識營運子導覽");
-
-  const navItems = [
-    { id: "knowledge", label: "知識文件庫", visible: true },
-    { id: "reviews", label: "待審清單", visible: userCaps.list_pending_reviews },
-    { id: "releases", label: "發布紀錄", visible: userCaps.list_releases },
-    { id: "audit", label: "稽核紀錄", visible: userCaps.view_audit },
-    { id: "work", label: "我的工作", visible: true },
-  ];
-
-  const leftNav = el("div", "kp-subnav-left");
-  for (const item of navItems) {
-    if (!item.visible) continue;
-    const btn = el(
-      "button",
-      `kp-subnav-btn${activeSection === item.id ? " active" : ""}`,
-      item.label,
-    );
-    btn.type = "button";
-    btn.addEventListener("click", () => {
-      navigateTo("knowledgePortal", { sub: item.id });
-    });
-    leftNav.append(btn);
-  }
-  subnav.append(leftNav);
-
-  if (userCaps.create_document) {
-    const rightActions = el("div", "kp-subnav-right");
-    const newDocBtn = el("button", "button button-primary kp-subnav-action", "＋ 新增文件");
-    newDocBtn.type = "button";
-    newDocBtn.addEventListener("click", () => {
-      navigateTo("knowledgePortal", { sub: "knowledge/new" });
-    });
-    rightActions.append(newDocBtn);
-    subnav.append(rightActions);
-  }
 
   // Content host
   const hostWrap = el("fluent-design-system-provider", "kp-provider");
@@ -183,7 +141,7 @@ export async function renderNativeKnowledgePortal(app, capabilities, navigateTo,
   const host = el("div", "kp-native-host");
   hostWrap.append(host);
 
-  shell.append(subnav, hostWrap);
+  shell.append(hostWrap);
   app.replaceChildren(shell);
 
   // Mount the appropriate view

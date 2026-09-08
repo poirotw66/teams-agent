@@ -1,7 +1,6 @@
 import { el } from "../api.js";
 import {
   actorHasCapability,
-  canUseKnowledgeUi,
 } from "./capabilities.js";
 import {
   WORKSPACE_KEY,
@@ -61,14 +60,11 @@ export function renderNav(active, options = {}) {
     button.type = "button";
     button.title = item.hint;
     button.addEventListener("click", () => {
-      const preferred =
-        item.id === "knowledge_ops" && canUseKnowledgeUi()
-          ? "knowledgePortal"
-          : item.items[0]?.[0] || "overview";
+      const preferred = item.items[0]?.[0] || "overview";
       const nextView = item.items.some(([id]) => id === preferred)
         ? preferred
         : item.items[0]?.[0] || "overview";
-      navigateTo(nextView);
+      navigateTo(nextView, {}, { workspace: item.id });
     });
     switcher.append(button);
   }
@@ -85,6 +81,7 @@ export function renderNav(active, options = {}) {
     }
     const button = el("a", active === id ? "active" : "", label);
     button.href = buildLocationHash(workspaceId, id);
+    if (active === id) button.setAttribute("aria-current", "page");
     button.addEventListener("click", (event) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
         return;
@@ -97,7 +94,7 @@ export function renderNav(active, options = {}) {
   }
   nav.append(itemRow);
 
-  document.body.classList.toggle("view-knowledge-portal", active === "knowledgePortal");
+  document.body.classList.toggle("view-knowledge-portal", ["knowledgePortal", "knowledgeWork", "knowledgeReviews", "knowledgeReleases", "knowledgeAudit"].includes(active));
   const title = VIEW_TITLES[active] || active;
   document.title = `${title}｜AI 資訊客服營運後台`;
 

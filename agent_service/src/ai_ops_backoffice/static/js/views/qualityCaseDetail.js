@@ -104,7 +104,8 @@ export async function showQualityCaseDetail(caseId) {
     loopHints.style.marginBottom = "1rem";
     loopHints.append(
       el("span", "metric-label", "閉環捷徑："),
-      drillLink("修正文件／FAQ", "knowledge"),
+      drillLink("修正文件", "knowledgePortal"),
+      drillLink("修正 FAQ", "faq"),
       drillLink("案例驗證", "examples"),
       drillLink("對話驗證", "conversations", {
         issueTypeId: qualityCase.issue_type_id || "",

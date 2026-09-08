@@ -14,7 +14,7 @@ import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js";
 import { createPageController } from "../app/lifecycle.js";
 
 
-export async function renderKnowledgePortalEntry() {
+export async function renderKnowledgePortalEntry(sub) {
   const app = document.getElementById("app");
   if (!canUseKnowledgeUi()) {
     app.replaceChildren(
@@ -27,7 +27,7 @@ export async function renderKnowledgePortalEntry() {
     return;
   }
 
-  const filters = loadNavFilters();
+  const filters = { ...loadNavFilters(), ...(sub ? { sub } : {}) };
   await renderNativeKnowledgePortal(app, getCapabilities(), navigateTo, filters);
 }
 
@@ -93,15 +93,13 @@ export async function renderKnowledgeDocument() {
 async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
-  const faqPanel = el("section", "panel");
-  const syncPanel = el("section", "panel");
-  panel.append(el("h2", "", "知識營運"));
+  panel.append(el("h2", "", "內容成效"));
   if (getCapabilities()?.knowledgeBridgeEnabled) {
     panel.append(
       el(
         "p",
         "",
-        "文件編輯、審核與發布請使用上方「知識文件庫」分頁（內嵌於營運後台）。本頁保留 FAQ 與成效查詢。",
+        "查看文件使用情況與回答成效；編輯內容請前往知識文件庫。",
       ),
     );
     const openPortal = el("a", "button-link", "開啟知識文件庫");
@@ -157,7 +155,7 @@ async function renderKnowledge() {
   filters.append(query, status, submit);
   const result = el("div", "");
   panel.append(filters, result);
-  app.replaceChildren(panel, faqPanel, syncPanel);
+  app.replaceChildren(panel);
 
   async function loadDocuments(cursor = "") {
     result.replaceChildren(el("p", "empty", "載入中…"));
@@ -189,11 +187,7 @@ async function renderKnowledge() {
       exportButton.textContent = "匯出 CSV";
     }
   });
-  await Promise.all([
-    loadDocuments(),
-    renderFaqManagement(faqPanel),
-    renderSyncManagement(syncPanel),
-  ]);
+  await loadDocuments();
 }
 
 async function showSyncDetail(jobId, panel) {
@@ -250,7 +244,7 @@ async function showSyncDetail(jobId, panel) {
 }
 
 async function renderSyncManagement(panel) {
-  panel.replaceChildren(el("h2", "", "重新同步 / 索引"), el("p", "empty", "載入中…"));
+  panel.replaceChildren(el("h2", "", "同步工作"), el("p", "empty", "載入中…"));
   const allowed = actorCapabilities();
   try {
     const data = await api("/api/sync-jobs");
@@ -302,21 +296,21 @@ async function renderSyncManagement(panel) {
       scrollWrapper.append(table);
       result.append(scrollWrapper);
     }
-    panel.replaceChildren(el("h2", "", "重新同步 / 索引"), actions, result);
+    panel.replaceChildren(el("h2", "", "同步工作"), actions, result);
   } catch (error) {
-    panel.replaceChildren(el("h2", "", "重新同步 / 索引"), el("div", "error", error.message));
+    panel.replaceChildren(el("h2", "", "同步工作"), el("div", "error", error.message));
   }
 }
 
 async function renderFaqManagement(panel) {
-  panel.replaceChildren(el("h2", "", "FAQ 治理"), el("p", "empty", "載入中…"));
+  panel.replaceChildren(el("h2", "", "FAQ 管理"), el("p", "empty", "載入中…"));
   const allowed = actorCapabilities();
   if (!allowed.has("ops.faq.read")) {
-    panel.replaceChildren(el("h2", "", "FAQ 治理"), el("div", "forbidden", "FORBIDDEN"));
+    panel.replaceChildren(el("h2", "", "FAQ 管理"), el("div", "forbidden", "FORBIDDEN"));
     return;
   }
   try {
-    const heading = el("h2", "", "FAQ 治理");
+    const heading = el("h2", "", "FAQ 管理");
     const actions = el("div", "filter-bar");
     const query = el("input");
     query.placeholder = "搜尋 FAQ Key 或問題";
@@ -385,7 +379,7 @@ async function renderFaqManagement(panel) {
     panel.replaceChildren(heading, actions, result);
     await load();
   } catch (error) {
-    panel.replaceChildren(el("h2", "", "FAQ 治理"), el("div", "error", error.message));
+    panel.replaceChildren(el("h2", "", "FAQ 管理"), el("div", "error", error.message));
   }
 }
 
@@ -810,3 +804,23 @@ export const knowledgeDocumentPage = createPageController({
   update: async () => renderKnowledgeDocument(),
   leave: async () => {},
 });
+
+
+function standaloneKnowledgePage(render) {
+  const show = async () => {
+    const panel = el("section", "panel");
+    document.getElementById("app").replaceChildren(panel);
+    await render(panel);
+  };
+  return createPageController({ enter: show, update: show, leave: async () => {} });
+}
+
+export const faqPage = standaloneKnowledgePage(renderFaqManagement);
+export const syncPage = standaloneKnowledgePage(renderSyncManagement);
+export function knowledgeSectionPage(sub) {
+  return createPageController({
+    enter: async () => renderKnowledgePortalEntry(sub),
+    update: async () => renderKnowledgePortalEntry(sub),
+    leave: async () => {},
+  });
+}

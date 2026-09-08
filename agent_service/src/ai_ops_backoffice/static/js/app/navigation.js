@@ -6,6 +6,15 @@ import {
   workspaces,
 } from "./workspaces.js";
 
+// Preserve old portal sub-route links while selecting their new shell entry.
+export function canonicalRoute(view, filters = {}) {
+  if (view !== "knowledgePortal") return { view, filters };
+  const sub = String(filters.sub || filters.k || "").replace(/^#?\/?/, "");
+  const section = sub.split(/[/?]/)[0];
+  const target = { work: "knowledgeWork", reviews: "knowledgeReviews", releases: "knowledgeReleases", audit: "knowledgeAudit" }[section];
+  return { view: target || view, filters };
+}
+
 /** Avoid re-entrancy when we write location.hash from renderNav. */
 let syncingLocationHash = false;
 let knownViews = new Set();
@@ -43,7 +52,9 @@ export function clearNavFilters() {
   sessionStorage.removeItem(NAV_FILTERS_KEY);
 }
 
-export function workspaceForView(view) {
+export function workspaceForView(view, preferred = activeWorkspaceId()) {
+  const current = workspaces.find((workspace) => workspace.id === preferred);
+  if (current?.items.some(([id]) => id === view)) return current.id;
   for (const workspace of workspaces) {
     if (workspace.items.some(([id]) => id === view)) {
       return workspace.id;
@@ -79,13 +90,12 @@ export function parseLocationHash() {
   const parts = pathPart.split("/").filter(Boolean).map(decodeURIComponent);
   const filters = Object.fromEntries(new URLSearchParams(queryPart));
   if (parts.length >= 2) {
-    return { workspace: parts[0], view: parts[1], filters };
+    return { workspace: parts[0], ...canonicalRoute(parts[1], filters) };
   }
   if (parts.length === 1 && knownViews.has(parts[0])) {
     return {
       workspace: workspaceForView(parts[0]),
-      view: parts[0],
-      filters,
+      ...canonicalRoute(parts[0], filters),
     };
   }
   return null;
@@ -111,7 +121,8 @@ export function routeFiltersForHash(filters = {}) {
   return next;
 }
 
-export async function navigateTo(view, filters = {}) {
+export async function navigateTo(view, filters = {}, options = {}) {
+  ({ view, filters } = canonicalRoute(view, filters));
   if (typeof window.__isKnowledgeDirty === "function" && window.__isKnowledgeDirty()) {
     if (typeof window.__confirmKnowledgeDirty === "function") {
       const ok = await window.__confirmKnowledgeDirty();
@@ -123,7 +134,7 @@ export async function navigateTo(view, filters = {}) {
       }
     }
   }
-  const workspace = workspaceForView(view);
+  const workspace = workspaceForView(view, options.workspace || activeWorkspaceId());
   if (workspace) {
     sessionStorage.setItem(WORKSPACE_KEY, workspace);
   }

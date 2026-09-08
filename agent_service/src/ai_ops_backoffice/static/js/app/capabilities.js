@@ -25,6 +25,9 @@ export function actorHasCapability(capability) {
   if (!capability) {
     return true;
   }
+  if (capability === "knowledge.review.ui") {
+    return canUseKnowledgeUi() && (capabilities.knowledgeCapabilities || []).includes("knowledge.review");
+  }
   if (capability === "knowledge.ui") {
     return canUseKnowledgeUi();
   }

@@ -32,6 +32,11 @@ jobs:
           enable-cache: true
       - name: Install dependencies
         run: uv sync --all-extras
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Frontend navigation tests
+        run: node --experimental-vm-modules --test tests/frontend/*.test.mjs
       - name: Ruff
         run: uv run ruff check src tests
       - name: Pytest

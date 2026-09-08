@@ -56,7 +56,8 @@ export async function renderQuality(state = {}) {
     );
     const shortcuts = el("div", "filter-bar");
     shortcuts.append(
-      drillLink("文件／FAQ 修正", "knowledge"),
+      drillLink("修正文件", "knowledgePortal"),
+      drillLink("修正 FAQ", "faq"),
       drillLink("案例集驗證", "examples"),
       drillLink("對話驗證", "conversations"),
     );
