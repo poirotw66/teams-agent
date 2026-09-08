@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import threading
 import uuid
 from collections.abc import Callable
@@ -25,6 +26,45 @@ from ..faq_domain.errors import (
 
 from .models import *  # noqa: F403
 from .repository import *  # noqa: F403
+
+
+def _cluster_candidates_by_similarity(
+    candidates: list[QualityCandidate],
+) -> list[list[QualityCandidate]]:
+    """Cluster candidates based on normalized token overlap of their question texts."""
+    if len(candidates) <= 1:
+        return [candidates]
+
+    def tokenize(text: str) -> set[str]:
+        tokens = set(re.findall(r"[a-zA-Z0-9]+", text.lower()))
+        cjk_chars = [ch for ch in text if "\u4e00" <= ch <= "\u9fff"]
+        tokens.update(cjk_chars)
+        for i in range(len(cjk_chars) - 1):
+            tokens.add(cjk_chars[i] + cjk_chars[i + 1])
+        return {t for t in tokens if len(t) > 1 or ("\u4e00" <= t <= "\u9fff")}
+
+    clusters: list[list[QualityCandidate]] = []
+    cluster_tokens: list[set[str]] = []
+
+    for candidate in candidates:
+        text = f"{candidate.title} {candidate.description}"
+        cand_tokens = tokenize(text)
+        assigned = False
+        for idx, c_tokens in enumerate(cluster_tokens):
+            intersection = cand_tokens & c_tokens
+            union = cand_tokens | c_tokens
+            jaccard = len(intersection) / len(union) if union else 0.0
+            if jaccard >= 0.3 or len(intersection) >= 2:
+                clusters[idx].append(candidate)
+                cluster_tokens[idx].update(cand_tokens)
+                assigned = True
+                break
+        if not assigned:
+            clusters.append([candidate])
+            cluster_tokens.append(set(cand_tokens))
+
+    return clusters
+
 
 class QualityService:
     TRANSITIONS: ClassVar[dict[str, set[str]]] = {
@@ -84,7 +124,15 @@ class QualityService:
             visible.append(item.model_dump(mode="json"))
         return visible
 
-    def list_cases(self, *, actor: ActorContext, status: str | None = None) -> list[dict[str, Any]]:
+    def list_cases(
+        self,
+        *,
+        actor: ActorContext,
+        status: str | None = None,
+        case_type: str | None = None,
+        owner_unit_id: str | None = None,
+        issue_type_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         visible = []
         for item in self._repository.load().cases:
             try:
@@ -92,6 +140,12 @@ class QualityService:
             except FaqAuthorizationError:
                 continue
             if status and item.status != status:
+                continue
+            if case_type and item.case_type != case_type:
+                continue
+            if owner_unit_id and item.owner_unit_id != owner_unit_id:
+                continue
+            if issue_type_id and item.issue_type_id != issue_type_id:
                 continue
             visible.append(item.model_dump(mode="json"))
         return visible
@@ -524,7 +578,7 @@ class QualityService:
         return self._repository.mutate(operation)
 
     def generate_clusters(self, *, actor: ActorContext) -> dict[str, Any]:
-        """Group open candidates by owner unit + issue type (not semantic clustering)."""
+        """Group open candidates by owner unit + issue type and question similarity."""
 
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
             groups: dict[tuple[str, str], list[QualityCandidate]] = {}
@@ -542,44 +596,48 @@ class QualityService:
             now = datetime.now(UTC)
             created = []
             audits = list(state.audits)
-            for (owner_unit_id, issue_type_id), candidates in groups.items():
-                candidate_ids = tuple(sorted(item.candidate_id for item in candidates))
-                cluster_key = hashlib.sha256(
-                    f"{owner_unit_id}|{issue_type_id}|{'|'.join(candidate_ids)}".encode()
-                ).hexdigest()[:24]
-                if cluster_key in active_keys:
-                    continue
-                issue_distribution: dict[str, int] = {}
-                for candidate in candidates:
-                    issue = candidate.issue_type_id or "other.unclassified"
-                    issue_distribution[issue] = issue_distribution.get(issue, 0) + candidate.frequency
-                cluster = QuestionCluster(
-                    cluster_id=str(uuid.uuid4()),
-                    cluster_key=cluster_key,
-                    revision=1,
-                    name=f"{owner_unit_id}｜{issue_type_id}",
-                    representative_question=candidates[0].description or candidates[0].title,
-                    owner_unit_id=owner_unit_id,
-                    source_candidate_ids=candidate_ids,
-                    issue_type_distribution=issue_distribution,
-                    frequency=sum(item.frequency for item in candidates),
-                    grouping_method="OWNER_UNIT_ISSUE_TYPE",
-                    created_by=actor.user_id,
-                    created_at=now,
-                )
-                created.append(cluster)
-                audits.append(
-                    self._audit(
-                        target_type="QUESTION_CLUSTER",
-                        target_id=cluster.cluster_id,
-                        action="QUESTION_GROUP_GENERATED",
-                        actor=actor,
+            for (owner_unit_id, issue_type_id), group_candidates in groups.items():
+                sub_clusters = _cluster_candidates_by_similarity(group_candidates)
+                for sub_idx, candidates in enumerate(sub_clusters):
+                    candidate_ids = tuple(sorted(item.candidate_id for item in candidates))
+                    cluster_key = hashlib.sha256(
+                        f"{owner_unit_id}|{issue_type_id}|{'|'.join(candidate_ids)}".encode()
+                    ).hexdigest()[:24]
+                    if cluster_key in active_keys:
+                        continue
+                    issue_distribution: dict[str, int] = {}
+                    for candidate in candidates:
+                        issue = candidate.issue_type_id or "other.unclassified"
+                        issue_distribution[issue] = issue_distribution.get(issue, 0) + candidate.frequency
+                    name_suffix = f" #{sub_idx + 1}" if len(sub_clusters) > 1 else ""
+                    method = "LEXICAL_SIMILARITY" if len(sub_clusters) > 1 else "OWNER_UNIT_ISSUE_TYPE"
+                    cluster = QuestionCluster(
+                        cluster_id=str(uuid.uuid4()),
+                        cluster_key=cluster_key,
+                        revision=1,
+                        name=f"{owner_unit_id}｜{issue_type_id}{name_suffix}",
+                        representative_question=candidates[0].description or candidates[0].title,
                         owner_unit_id=owner_unit_id,
-                        before=None,
-                        after=cluster,
-                        reason="owner_unit_issue_type_grouping",
+                        source_candidate_ids=candidate_ids,
+                        issue_type_distribution=issue_distribution,
+                        frequency=sum(item.frequency for item in candidates),
+                        grouping_method=method,
+                        created_by=actor.user_id,
+                        created_at=now,
                     )
-                )
+                    created.append(cluster)
+                    audits.append(
+                        self._audit(
+                            target_type="QUESTION_CLUSTER",
+                            target_id=cluster.cluster_id,
+                            action="QUESTION_GROUP_GENERATED",
+                            actor=actor,
+                            owner_unit_id=owner_unit_id,
+                            before=None,
+                            after=cluster,
+                            reason="lexical_similarity_grouping" if len(sub_clusters) > 1 else "owner_unit_issue_type_grouping",
+                        )
+                    )
             next_state = QualityState(
                 revision=state.revision + 1,
                 candidates=state.candidates,

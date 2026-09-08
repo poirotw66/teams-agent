@@ -230,11 +230,40 @@ def _verified_examples(examples: list[dict[str, Any]], dataset_version: str) -> 
 
 def _candidate_template(baseline: str, dataset_version: str, examples: list[dict[str, Any]]) -> str:
     counts = Counter((str(item["expected_route"]), str(item["label"])) for item in examples)
-    guidance = "\n".join(
+    guidance_lines = [
         f"- {route} {label}: {count} verified examples"
         for (route, label), count in sorted(counts.items())
-    )
-    template = f"{baseline}\n\nVerified dataset guidance ({dataset_version}):\n{guidance}\n"
+    ]
+
+    failure_patterns: Counter[str] = Counter()
+    unresolved_topics: list[str] = []
+    for item in examples:
+        reason = str(item.get("failure_reason") or item.get("reason") or "").strip()
+        if reason and reason.lower() not in {"none", "null", "n/a", "ok"}:
+            failure_patterns[reason] += 1
+        label = str(item.get("label") or "").lower()
+        if "negative" in label or "unresolved" in label or item.get("resolved") is False:
+            text = str(item.get("text") or "").strip()
+            if text and len(text) <= 80 and text not in unresolved_topics:
+                unresolved_topics.append(text)
+
+    refinement_sections = []
+    if failure_patterns:
+        pattern_lines = [
+            f"- Address failure pattern '{pat}': verify domain boundaries before answering ({cnt} cases)"
+            for pat, cnt in failure_patterns.most_common(5)
+        ]
+        refinement_sections.append("Failure mitigation instructions:\n" + "\n".join(pattern_lines))
+
+    if unresolved_topics:
+        topic_lines = [f"- Prioritize clarity and explicit escalation for: {t}" for t in unresolved_topics[:3]]
+        refinement_sections.append("Unresolved query safeguards:\n" + "\n".join(topic_lines))
+
+    guidance_str = "\n".join(guidance_lines)
+    if refinement_sections:
+        guidance_str += "\n\n" + "\n\n".join(refinement_sections)
+
+    template = f"{baseline}\n\nVerified dataset guidance ({dataset_version}):\n{guidance_str}\n"
     reject_secrets_and_injection(template, label="candidate")
     if "{max_issues}" not in template or "{faq_keys}" not in template:
         raise GovernanceValidationError("candidate failed prompt schema inspection")
