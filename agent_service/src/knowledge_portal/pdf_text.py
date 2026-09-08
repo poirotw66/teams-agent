@@ -9,10 +9,21 @@ class ScannedPdfError(ValueError):
     """Raised when a PDF has no extractable text (likely scanned)."""
 
 
+def count_pdf_pages(payload: bytes) -> int:
+    """Return page count for routing sync vs async conversion."""
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:  # pragma: no cover - dependency guard
+        raise RuntimeError("pypdf is required for PDF import") from exc
+    reader = PdfReader(BytesIO(payload))
+    return len(reader.pages)
+
+
 def extract_text_pdf(payload: bytes, *, min_chars_per_page: int = 12) -> tuple[str, int]:
     """Extract text from a text-based PDF.
 
-    Scanned PDFs without a text layer are rejected per Phase 1 scope (no OCR).
+    Scanned PDFs without a text layer are rejected when the converter service is
+    not configured. Prefer the PDF converter Cloud Run for OCR / vision pages.
     """
     try:
         from pypdf import PdfReader
@@ -33,7 +44,8 @@ def extract_text_pdf(payload: bytes, *, min_chars_per_page: int = 12) -> tuple[s
     text = "\n\n".join(chunks).strip()
     if not text or len(text) < min(min_chars_per_page, min_chars_per_page * page_count):
         raise ScannedPdfError(
-            "Scanned PDF is not supported. Upload a text-based PDF or convert with OCR first."
+            "Scanned PDF is not supported without the PDF converter service. "
+            "Configure KNOWLEDGE_PORTAL_PDF_CONVERTER_URL or upload a text-based PDF."
         )
     return text, page_count
 

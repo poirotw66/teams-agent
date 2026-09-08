@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import shutil
 from pathlib import Path
+from typing import Any
 
 from ..draft_assets import (
     DraftAssetStore,
     asset_content_type,
     markdown_asset_ref,
     parse_markdown_import,
+    rewrite_local_image_refs,
     slug_from_title,
 )
 from ..draft_retrieval import evaluate_test_case, search_draft_version
@@ -116,6 +120,33 @@ class DocumentService:
                     slug,
                 ),
             )
+            # Rebuild stale asset-path warnings saved before the path-check fix.
+            if any(
+                issue.code == "ASSET_PATH_UNEXPECTED"
+                for issue in draft_version.validation_summary.issues
+            ):
+                asset_slug, assets_root = self._ctx.validation_context(
+                    document_id=document.document_id,
+                    version_id=draft_version.version_id,
+                    title=draft_version.title,
+                    asset_slug=draft_version.asset_slug,
+                )
+                refreshed = validate_draft(
+                    title=draft_version.title,
+                    owner_unit_id=draft_version.owner_unit_id,
+                    change_reason=draft_version.change_reason,
+                    effective_at=draft_version.effective_at,
+                    review_due_at=draft_version.review_due_at,
+                    audience_type=draft_version.audience_type,
+                    audience_group_ids=draft_version.audience_group_ids,
+                    markdown_content=draft_version.canonical_content,
+                    asset_slug=asset_slug,
+                    draft_assets_root=assets_root,
+                )
+                draft_version = draft_version.model_copy(
+                    update={"validation_summary": refreshed}
+                )
+                await self._repository.save_version(draft_version)
         return self._ctx.document_detail_response(
             document=document,
             draft_version=draft_version,
@@ -152,6 +183,7 @@ class DocumentService:
                     return DocumentDetailResponse.model_validate(cached)
                 return cached
 
+        assets_written = False
         try:
             document_id = new_id("doc")
             version_id = new_id("ver")
@@ -162,6 +194,28 @@ class DocumentService:
                 title=request.title,
                 asset_slug=asset_slug,
             )
+            markdown_content = request.markdown_content
+            if request.assets:
+                store = DraftAssetStore(self._settings)
+                for asset in request.assets:
+                    try:
+                        payload = base64.b64decode(asset.content_base64, validate=False)
+                    except Exception as exc:
+                        raise ValueError(
+                            f"Invalid base64 for asset {asset.filename}."
+                        ) from exc
+                    store.save_asset(
+                        document_id=document_id,
+                        version_id=version_id,
+                        asset_slug=asset_slug,
+                        filename=asset.filename,
+                        payload=payload,
+                    )
+                assets_written = True
+                markdown_content = rewrite_local_image_refs(
+                    markdown_content,
+                    asset_slug=asset_slug,
+                )
             validation = validate_draft(
                 title=request.title,
                 owner_unit_id=request.owner_unit_id,
@@ -170,7 +224,7 @@ class DocumentService:
                 review_due_at=request.review_due_at,
                 audience_type=request.audience_type,
                 audience_group_ids=request.audience_group_ids,
-                markdown_content=request.markdown_content,
+                markdown_content=markdown_content,
                 asset_slug=asset_slug,
                 draft_assets_root=assets_root,
             )
@@ -186,7 +240,7 @@ class DocumentService:
                 audience_type=request.audience_type,
                 audience_group_ids=request.audience_group_ids,
                 version_number=1,
-                body=request.markdown_content,
+                body=markdown_content,
             )
             digest = content_hash(canonical)
             version = KnowledgeVersionRecord(
@@ -248,6 +302,11 @@ class DocumentService:
                 await self._ctx.complete_idempotency(scope_key, payload_hash, response)
             return response
         except Exception:
+            if assets_written:
+                shutil.rmtree(
+                    DraftAssetStore(self._settings).bundle_dir(document_id, version_id),
+                    ignore_errors=True,
+                )
             if idempotency_key:
                 await self._ctx.fail_idempotency(scope_key)
             raise
@@ -519,7 +578,67 @@ class DocumentService:
             asset_slug=slug_from_title(stem),
             page_count=page_count,
             warnings=["已從文字型 PDF 擷取內容並轉為 Markdown 草稿。"],
+            conversion_mode="legacy",
+            conversion_engine="legacy_text",
+            assets=[],
+            mode="sync",
         )
+
+    async def import_pdf_smart(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+        async_mode: str | None = "auto",
+        job_store: Any | None = None,
+        background_tasks: Any | None = None,
+    ) -> ImportPdfResponse | dict[str, object]:
+        """Import PDF via converter service when configured; else legacy text extract."""
+        from ..pdf_convert_jobs import (
+            conversion_to_import_dict,
+            convert_pdf_bytes,
+            should_convert_async,
+        )
+        from ..pdf_text import count_pdf_pages
+
+        ensure_can_import_markdown(actor)
+        safe_name = filename or "document.pdf"
+        try:
+            page_count = count_pdf_pages(payload)
+        except Exception:
+            page_count = None
+        if should_convert_async(
+            self._settings,
+            byte_size=len(payload),
+            page_count=page_count,
+            force=async_mode,
+        ):
+            if job_store is None:
+                raise ValueError("Async PDF conversion requires a job store.")
+            job = job_store.create_job(
+                payload=payload,
+                filename=safe_name,
+                actor_id=actor.user_id,
+                page_count=page_count,
+            )
+            job_store.schedule(job.job_id, background_tasks)
+            return {
+                "mode": "async",
+                "jobId": job.job_id,
+                "status": job.status,
+                "filename": job.filename,
+                "pageCount": job.page_count,
+                "byteSize": job.byte_size,
+                "message": "PDF conversion queued. Poll /api/documents/pdf-jobs/{jobId}.",
+            }
+        result = await convert_pdf_bytes(self._settings, payload, filename=safe_name)
+        data = conversion_to_import_dict(
+            result,
+            filename=safe_name,
+            owner_unit_id=self._settings.default_owner_unit_id,
+        )
+        return ImportPdfResponse(**data)
 
     async def _require_editable_draft(
         self, actor: PortalActor, document_id: str

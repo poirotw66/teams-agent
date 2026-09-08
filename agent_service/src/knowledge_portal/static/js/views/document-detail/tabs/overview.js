@@ -1,30 +1,33 @@
 import { nextActionLabel } from "../../../labels.js";
 import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831e";
-import { renderDocumentViewer } from "../../../markdown.js";
+import { renderDocumentViewer } from "../../../markdown.js?v=pdf-img-20260908c";
 
 function renderPublishedPreview(document, published) {
-  if (!published) return "<p class=\"muted\">尚無正式版本內容。</p>";
+  if (!published) return "";
   const audience = document.audience_type === "ALL_EMPLOYEES"
     ? "全體員工"
     : (document.audience_group_ids || []).join(", ") || "特定群組";
   return `
-    <div class="panel doc-preview-panel">
-      <div class="doc-preview-meta">
-        <div class="doc-preview-title-row">
-          <h3>正式版本內容</h3>
-          <span class="badge badge--success" style="background:#e7f5eb;color:#0e7030;border:1px solid #b7e1c1;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600;">v${published.version_number} 正式發佈</span>
+    <details class="panel doc-preview-panel collapsible-panel">
+      <summary class="collapsible-panel__summary">
+        <span class="collapsible-panel__title">正式版本內容</span>
+        <span class="badge badge--success" style="background:#e7f5eb;color:#0e7030;border:1px solid #b7e1c1;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600;">v${published.version_number} 正式發佈</span>
+        <span class="collapsible-panel__hint muted">點擊展開／收合</span>
+      </summary>
+      <div class="collapsible-panel__body">
+        <div class="doc-preview-meta">
+          <p class="muted">生效時間：${published.effective_at} · 下次檢視：${published.review_due_at}</p>
+          <p class="muted">擁有單位：${escapeHtml(document.owner_unit_id)} · 適用範圍：${escapeHtml(audience)}</p>
+          ${document.summary ? `<p class="doc-summary-text">${escapeHtml(document.summary)}</p>` : ""}
         </div>
-        <p class="muted">生效時間：${published.effective_at} · 下次檢視：${published.review_due_at}</p>
-        <p class="muted">擁有單位：${escapeHtml(document.owner_unit_id)} · 適用範圍：${escapeHtml(audience)}</p>
-        ${document.summary ? `<p class="doc-summary-text">${escapeHtml(document.summary)}</p>` : ""}
+        ${renderDocumentViewer({
+          content: published.canonical_content || "",
+          document,
+          published,
+          id: "overviewDocViewer",
+        })}
       </div>
-      ${renderDocumentViewer({
-        content: published.canonical_content || "",
-        document,
-        published,
-        id: "overviewDocViewer",
-      })}
-    </div>`;
+    </details>`;
 }
 
 export function renderOverviewTab(detail) {

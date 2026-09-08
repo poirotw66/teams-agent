@@ -4,6 +4,8 @@
  * and renders formatted, accessible, enterprise-grade typography.
  */
 
+import { loadAssetPreviewUrl } from "./api.js";
+
 export function escapeHtml(str) {
   return String(str ?? "")
     .replace(/&/g, "&amp;")
@@ -214,19 +216,29 @@ export function renderMarkdown(md) {
     return `<ol class="doc-ordered-list">${items.map((it) => it.replace(/<ol-item>(.+?)<\/ol-item>/, "<li>$1</li>")).join("")}</ol>`;
   });
 
-  // 9. Images ![alt](url) with fallback on broken / unhosted assets
+  // 9. Images ![alt](url) — local draft assets are hydrated after render
   text = text.replace(/!\[(.*?)\]\((.*?)\)/g, (match, alt, url) => {
     const safeUrl = sanitizeUrl(url);
-    const filename = (url || "").split("/").pop() || alt || "圖片附件";
+    const rawUrl = String(url || "").trim();
+    const filename = rawUrl.split("/").pop() || alt || "圖片附件";
+    const isRemote = /^https?:\/\//i.test(rawUrl) || rawUrl.startsWith("data:");
+    const isLocalAsset = !isRemote && Boolean(filename);
+    const dataAttr = isLocalAsset
+      ? ` data-asset-filename="${escapeHtml(filename)}"`
+      : "";
+    const initialSrc = isLocalAsset ? "" : safeUrl;
+    const onError = isLocalAsset
+      ? ""
+      : ` onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';"`;
     return `
       <figure class="doc-figure">
-        <img class="doc-img" src="${safeUrl}" alt="${alt || filename}" loading="lazy" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
-        <div class="doc-img-fallback">
+        <img class="doc-img${isLocalAsset ? " doc-img--pending" : ""}" src="${initialSrc}" alt="${escapeHtml(alt || filename)}" loading="lazy"${dataAttr}${onError}>
+        <div class="doc-img-fallback"${isLocalAsset ? ' data-asset-fallback="true"' : ""}>
           <span class="img-badge">📷 附件圖片</span>
-          <span class="img-name">${alt || filename}</span>
+          <span class="img-name">${escapeHtml(alt || filename)}</span>
           <span class="img-path font-mono">${escapeHtml(url)}</span>
         </div>
-        ${alt ? `<figcaption class="doc-figcaption">${alt}</figcaption>` : ""}
+        ${alt ? `<figcaption class="doc-figcaption">${escapeHtml(alt)}</figcaption>` : ""}
       </figure>`;
   });
 
@@ -278,6 +290,52 @@ export function renderMarkdown(md) {
   });
 
   return text;
+}
+
+function highlightYamlFrontMatter(raw) {
+  return escapeHtml(raw)
+    .replace(/^(---)$/gm, '<span class="doc-tok doc-tok--fence">$1</span>')
+    .replace(
+      /^([A-Za-z_][\w-]*)(:)(\s*)(.*)$/gm,
+      '<span class="doc-tok doc-tok--key">$1</span>$2$3<span class="doc-tok doc-tok--val">$4</span>',
+    )
+    .replace(/^(\s*-\s+)(.+)$/gm, '$1<span class="doc-tok doc-tok--val">$2</span>');
+}
+
+function highlightMarkdownSource(raw) {
+  return escapeHtml(raw)
+    .replace(/^(#{1,6}\s.+)$/gm, '<span class="doc-tok doc-tok--heading">$1</span>')
+    .replace(/(!?\[[^\]]*\]\([^)]+\))/g, '<span class="doc-tok doc-tok--link">$1</span>')
+    .replace(/(`[^`\n]+`)/g, '<span class="doc-tok doc-tok--code">$1</span>')
+    .replace(/^(\s*(?:[-*+]|\d+\.)\s)/gm, '<span class="doc-tok doc-tok--list">$1</span>')
+    .replace(/^(&gt;\s.+)$/gm, '<span class="doc-tok doc-tok--quote">$1</span>');
+}
+
+function renderRawMarkdownView(content) {
+  const text = String(content || "");
+  let frontmatter = "";
+  let body = text;
+  if (text.startsWith("---")) {
+    const end = text.indexOf("\n---", 3);
+    if (end !== -1) {
+      frontmatter = text.slice(0, end + 4);
+      body = text.slice(end + 4).replace(/^\r?\n/, "");
+    }
+  }
+  return `
+    <div class="doc-raw">
+      <textarea class="doc-raw-source" hidden readonly>${escapeHtml(text)}</textarea>
+      ${frontmatter
+        ? `<section class="doc-raw-block">
+            <header class="doc-raw-block__label">Front matter</header>
+            <pre class="doc-raw-pre" tabindex="0">${highlightYamlFrontMatter(frontmatter)}</pre>
+          </section>`
+        : ""}
+      <section class="doc-raw-block">
+        <header class="doc-raw-block__label">Markdown 正文</header>
+        <pre class="doc-raw-pre" tabindex="0">${body ? highlightMarkdownSource(body) : '<span class="doc-tok doc-tok--muted">（空白）</span>'}</pre>
+      </section>
+    </div>`;
 }
 
 /**
@@ -372,7 +430,7 @@ export function renderDocumentViewer({
           ${limitationsHtml}
         </div>
         <div class="doc-view-raw hidden">
-          <pre class="content-preview content-preview--code font-mono">${escapeHtml(content)}</pre>
+          ${renderRawMarkdownView(content)}
         </div>
       </div>
     </div>`;
@@ -383,8 +441,9 @@ export function renderDocumentViewer({
  * - View mode toggling (Formatted vs Raw)
  * - Copy content button
  * - Code snippet copy buttons
+ * - Optional hydration of local draft/PDF asset images
  */
-export function wireDocumentViewer(root = document) {
+export function wireDocumentViewer(root = document, options = {}) {
   if (!root) return;
 
   // 1. View mode toggle buttons
@@ -413,8 +472,11 @@ export function wireDocumentViewer(root = document) {
     const copyBtn = viewer.querySelector("[data-doc-copy]");
     if (copyBtn) {
       copyBtn.addEventListener("click", async () => {
+        const rawSource = viewer.querySelector(".doc-raw-source");
         const rawPre = viewer.querySelector(".content-preview--code");
-        const textToCopy = rawPre ? rawPre.textContent : "";
+        const textToCopy = rawSource
+          ? rawSource.value
+          : (rawPre ? rawPre.textContent : "");
         if (!textToCopy) return;
 
         try {
@@ -461,4 +523,76 @@ export function wireDocumentViewer(root = document) {
       }
     });
   });
+
+  void hydrateDocumentImages(root, options);
+}
+
+function base64ToObjectUrl(contentBase64, filename = "image.png") {
+  const normalized = String(contentBase64 || "").replace(/^data:[^;]+;base64,/, "");
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const lower = String(filename).toLowerCase();
+  const type = lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+    ? "image/jpeg"
+    : lower.endsWith(".gif")
+      ? "image/gif"
+      : lower.endsWith(".webp")
+        ? "image/webp"
+        : "image/png";
+  return URL.createObjectURL(new Blob([bytes], { type }));
+}
+
+/**
+ * Replace local markdown asset placeholders with real image bytes.
+ * Prefer inline base64 (create flow); otherwise fetch draft assets by documentId.
+ */
+export async function hydrateDocumentImages(root = document, {
+  documentId = null,
+  inlineAssets = [],
+} = {}) {
+  if (!root) return;
+  const images = [...root.querySelectorAll("img.doc-img[data-asset-filename]")];
+  if (!images.length) return;
+
+  const inlineMap = new Map();
+  for (const item of inlineAssets || []) {
+    const name = item.filename || item.name;
+    const b64 = item.content_base64 || item.contentBase64;
+    if (name && b64) inlineMap.set(name, b64);
+  }
+
+  let resolvePreview = null;
+  if (documentId) {
+    resolvePreview = loadAssetPreviewUrl;
+  }
+
+  await Promise.all(images.map(async (img) => {
+    const filename = img.dataset.assetFilename;
+    if (!filename) return;
+    const fallback = img.parentElement?.querySelector(".doc-img-fallback");
+    try {
+      let objectUrl = "";
+      if (inlineMap.has(filename)) {
+        objectUrl = base64ToObjectUrl(inlineMap.get(filename), filename);
+      } else if (documentId && resolvePreview) {
+        objectUrl = await resolvePreview(documentId, filename);
+      } else {
+        throw new Error("No asset source");
+      }
+      img.src = objectUrl;
+      img.classList.remove("doc-img--pending");
+      img.style.display = "";
+      if (fallback) fallback.style.display = "none";
+      img.onerror = () => {
+        img.style.display = "none";
+        if (fallback) fallback.style.display = "flex";
+      };
+    } catch {
+      img.style.display = "none";
+      if (fallback) fallback.style.display = "flex";
+    }
+  }));
 }

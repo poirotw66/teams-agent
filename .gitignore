@@ -50,3 +50,6 @@ crash.*.log
 *.lock
 .agents/
 skills-lock.json
+
+# Local checkout of poirotw66/pdf-to-markdown-converter (Gemini Vision)
+services/pdf_converter/upstream/

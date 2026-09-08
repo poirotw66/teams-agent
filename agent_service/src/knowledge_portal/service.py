@@ -241,6 +241,25 @@ class PortalService:
     ):
         return self._documents.import_pdf(actor, payload, filename=filename)
 
+    async def import_pdf_smart(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+        async_mode: str | None = "auto",
+        job_store=None,
+        background_tasks=None,
+    ):
+        return await self._documents.import_pdf_smart(
+            actor,
+            payload,
+            filename=filename,
+            async_mode=async_mode,
+            job_store=job_store,
+            background_tasks=background_tasks,
+        )
+
     async def list_draft_assets(
         self, actor: PortalActor, document_id: str
     ) -> DraftAssetListResponse:

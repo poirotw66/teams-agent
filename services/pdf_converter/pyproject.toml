@@ -1,0 +1,19 @@
+[project]
+name = "teams-pdf-converter"
+version = "0.1.0"
+description = "PDF to Markdown converter Cloud Run service for teams-agent Knowledge Portal"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "httpx>=0.27.0",
+  "python-multipart>=0.0.9",
+  "pypdf>=5.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

@@ -11,11 +11,13 @@ RAG_PORT="${RAG_PORT:-8000}"
 MOCK_TICKET_PORT="${MOCK_TICKET_PORT:-8090}"
 PORTAL_PORT="${KNOWLEDGE_PORTAL_PORT:-8091}"
 AI_OPS_PORT="${AI_OPS_BACKOFFICE_PORT:-8092}"
+PDF_CONVERTER_PORT="${PDF_CONVERTER_PORT:-8095}"
 PLAYGROUND_PORT="${PLAYGROUND_PORT:-3979}"
 PLAYGROUND_INTERNAL_PORT="${PLAYGROUND_INTERNAL_PORT:-56150}"
 
 START_MOCK_TICKET="${START_MOCK_TICKET:-true}"
 START_PORTAL="${START_PORTAL:-true}"
+START_PDF_CONVERTER="${START_PDF_CONVERTER:-true}"
 START_BACKOFFICE="${START_AI_OPS_BACKOFFICE:-true}"
 START_PLAYGROUND="${START_PLAYGROUND:-true}"
 START_TUNNEL="${START_TUNNEL:-false}"
@@ -39,7 +41,9 @@ PUBLIC_OPS_URL="http://127.0.0.1:${AI_OPS_PORT}"
 export PORTAL_INTERNAL_URL="http://${PORTAL_BIND_HOST}:${PORTAL_PORT}"
 # Prefer 127.0.0.1 in printed URLs even if bind host is localhost.
 PORTAL_INTERNAL_PRINT_URL="http://127.0.0.1:${PORTAL_PORT}"
-
+PDF_CONVERTER_URL_DEFAULT="http://127.0.0.1:${PDF_CONVERTER_PORT}"
+PDF_CONVERTER_URL="${KNOWLEDGE_PORTAL_PDF_CONVERTER_URL:-${PDF_CONVERTER_URL:-${PDF_CONVERTER_URL_DEFAULT}}}"
+PDF_CONVERTER_DIR="${PROJECT_DIR}/services/pdf_converter"
 # Keep local Playground aligned with the deployed Gemini File Search setup
 # without putting a key in this repository. These are the same project, secret
 # and store defaults used by deploy/deploy-gcp.sh. Every value remains
@@ -361,6 +365,13 @@ if [[ "${START_PORTAL}" == "true" ]]; then
   require_free_port "Knowledge Portal (internal)" "${PORTAL_PORT}"
 fi
 
+if [[ "${START_PDF_CONVERTER}" == "true" ]]; then
+  require_free_port "PDF Converter (internal)" "${PDF_CONVERTER_PORT}"
+  if [[ ! -d "${PDF_CONVERTER_DIR}/app" ]]; then
+    fail "找不到 PDF converter：${PDF_CONVERTER_DIR}/app"
+  fi
+fi
+
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
   require_free_port "AI Ops Backoffice (public entry)" "${AI_OPS_PORT}"
   if [[ "${KNOWLEDGE_BRIDGE_ENABLED}" == "true" && -z "${KNOWLEDGE_DELEGATION_SECRET}" ]]; then
@@ -427,6 +438,59 @@ wait_for_url "Agent Service" "http://127.0.0.1:${RAG_PORT}/readyz" 45
 export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
 export KNOWLEDGE_PORTAL_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
 
+if [[ "${START_PDF_CONVERTER}" == "true" ]]; then
+  # auto → gemini when a Google/Gemini API key is available; otherwise legacy text shim.
+  PDF_CONVERTER_MODE_VALUE="${PDF_CONVERTER_MODE:-auto}"
+  if [[ "${PDF_CONVERTER_MODE_VALUE}" == "auto" ]]; then
+    if [[ -n "${GOOGLE_API_KEY_VALUE}" ]]; then
+      PDF_CONVERTER_MODE_VALUE="gemini"
+    else
+      PDF_CONVERTER_MODE_VALUE="legacy"
+    fi
+  fi
+  PDF_CONVERTER_ENGINE_VALUE="legacy_text"
+  log "啟動 PDF Converter（mode=${PDF_CONVERTER_MODE_VALUE}）：${PDF_CONVERTER_URL}/"
+  if [[ "${PDF_CONVERTER_MODE_VALUE}" == "gemini" ]]; then
+    [[ -n "${GOOGLE_API_KEY_VALUE}" ]] \
+      || fail "PDF_CONVERTER_MODE=gemini 需要 GOOGLE_API_KEY 或 GEMINI_API_KEY。"
+    require_command git
+    if ! command -v pdftoppm >/dev/null 2>&1; then
+      fail "Gemini Vision 轉換需要 poppler（pdftoppm）。macOS：brew install poppler"
+    fi
+    ensure_script="${PDF_CONVERTER_DIR}/scripts/ensure_upstream.sh"
+    [[ -x "${ensure_script}" ]] || chmod +x "${ensure_script}"
+    UPSTREAM_DIR="$("${ensure_script}")"
+    PDF_CONVERTER_ENGINE_VALUE="gemini_vision"
+    (
+      cd "${UPSTREAM_DIR}"
+      export GOOGLE_API_KEY="${GOOGLE_API_KEY_VALUE}"
+      export GEMINI_API_KEY="${GOOGLE_API_KEY_VALUE}"
+      export GEMINI_MODEL="${PDF_CONVERTER_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-flash-latest}}"
+      export API_HOST=127.0.0.1
+      export API_PORT="${PDF_CONVERTER_PORT}"
+      export PDF_PRESERVE_VISION_ASSETS="${PDF_PRESERVE_VISION_ASSETS:-true}"
+      exec uv run uvicorn app.main:app \
+        --host 127.0.0.1 --port "${PDF_CONVERTER_PORT}"
+    ) &
+  else
+    if [[ ! -x "${AGENT_SERVICE_DIR}/.venv/bin/uvicorn" ]]; then
+      fail "找不到 ${AGENT_SERVICE_DIR}/.venv/bin/uvicorn。請先在 agent_service 執行 uv sync。"
+    fi
+    (
+      cd "${PDF_CONVERTER_DIR}"
+      export PORT="${PDF_CONVERTER_PORT}"
+      export PDF_CONVERTER_MODE=legacy
+      export PYTHONPATH="${PDF_CONVERTER_DIR}"
+      exec "${AGENT_SERVICE_DIR}/.venv/bin/uvicorn" app.main:app \
+        --host 127.0.0.1 --port "${PDF_CONVERTER_PORT}"
+    ) &
+  fi
+  CHILD_PIDS+=("$!")
+  wait_for_url "PDF Converter" "${PDF_CONVERTER_URL}/health" 90
+  export KNOWLEDGE_PORTAL_PDF_CONVERTER_URL="${PDF_CONVERTER_URL}"
+  export KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE="${PDF_CONVERTER_ENGINE_VALUE}"
+fi
+
 if [[ "${START_PORTAL}" == "true" ]]; then
   log "啟動 Knowledge Portal 內部 API（僅供 8092 bridge；請勿當產品入口）：${PORTAL_INTERNAL_PRINT_URL}/"
   (
@@ -440,12 +504,18 @@ if [[ "${START_PORTAL}" == "true" ]]; then
     # Local start remains HEADER-capable for break-glass; BFF uses delegation.
     export KNOWLEDGE_PORTAL_AUTH_MODE="${KNOWLEDGE_PORTAL_AUTH_MODE:-HEADER}"
     export KNOWLEDGE_PORTAL_DEMO_MODE="${KNOWLEDGE_PORTAL_DEMO_MODE:-true}"
+    if [[ -n "${KNOWLEDGE_PORTAL_PDF_CONVERTER_URL:-}" ]]; then
+      export KNOWLEDGE_PORTAL_PDF_CONVERTER_URL
+      export KNOWLEDGE_PORTAL_PDF_CONVERTER_TOKEN="${KNOWLEDGE_PORTAL_PDF_CONVERTER_TOKEN:-${PDF_CONVERTER_TOKEN:-}}"
+      export KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE="${KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE:-legacy_text}"
+      export KNOWLEDGE_PORTAL_PDF_SYNC_MAX_BYTES="${KNOWLEDGE_PORTAL_PDF_SYNC_MAX_BYTES:-5242880}"
+      export KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES="${KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES:-20}"
+    fi
     exec uv run knowledge-portal
   ) &
   CHILD_PIDS+=("$!")
   wait_for_url "Knowledge Portal (internal API)" "${PORTAL_INTERNAL_PRINT_URL}/healthz" 45
 fi
-
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
   log "啟動 AI 資訊客服營運後台（唯一操作入口）：${PUBLIC_OPS_URL}/"
   (
@@ -549,6 +619,10 @@ fi
 if [[ "${START_PORTAL}" == "true" ]]; then
   printf '[start] Portal 程序：仍會在 %s 啟動，但僅 loopback 內部 API，請不要開瀏覽器進 8091。\n' \
     "${PORTAL_INTERNAL_PRINT_URL}"
+fi
+if [[ "${START_PDF_CONVERTER}" == "true" ]]; then
+  printf '[start] PDF Converter：%s （engine=%s；Portal 匯入 PDF 會呼叫此服務）\n' \
+    "${PDF_CONVERTER_URL}" "${KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE:-unknown}"
 fi
 if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   printf '[start] Mock Ticket：http://127.0.0.1:%s/\n' "${MOCK_TICKET_PORT}"

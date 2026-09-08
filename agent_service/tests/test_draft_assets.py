@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from knowledge_portal.api import create_app
-from knowledge_portal.draft_assets import slug_from_title
+from knowledge_portal.draft_assets import slug_from_title, validate_asset_bundle
 from knowledge_portal.settings import PortalSettings
 
 
@@ -345,3 +345,75 @@ def test_start_revision_copies_legacy_assets(
     assert revision.status_code == 200
     assets = revision.json()["draft_assets"]["items"]
     assert any(item["filename"] == "p01.png" for item in assets)
+
+
+def test_create_document_accepts_inline_pdf_assets(draft_asset_client: TestClient) -> None:
+    import base64
+
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+        b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    payload = sample_document_payload()
+    payload["title"] = "2026-0819 AI in IT與AI SDLC"
+    payload["source_type"] = "PDF"
+    payload["markdown_content"] = (
+        "# Slide\n\n![page](assets/p01.png)\n\n更多說明。\n"
+    )
+    payload["assets"] = [
+        {
+            "filename": "p01.png",
+            "content_base64": base64.b64encode(png_bytes).decode("ascii"),
+        }
+    ]
+    response = draft_asset_client.post(
+        "/api/documents",
+        json=payload,
+        headers=portal_headers(user_id="author.one", name="Author One"),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    markdown = body["draft_version"]["canonical_content"]
+    slug = slug_from_title(payload["title"])
+    assert f"assets/{slug}/p01.png" in markdown
+    assets = body["draft_assets"]["items"]
+    assert any(item["filename"] == "p01.png" for item in assets)
+    blocking = [
+        issue
+        for issue in body["draft_version"]["validation_summary"]["issues"]
+        if issue["severity"] == "BLOCKING"
+    ]
+    assert not blocking
+    path_warnings = [
+        issue
+        for issue in body["draft_version"]["validation_summary"]["issues"]
+        if issue["code"] == "ASSET_PATH_UNEXPECTED"
+    ]
+    assert not path_warnings
+
+
+def test_validate_asset_bundle_accepts_canonical_path(tmp_path) -> None:
+    slug = "2026-0819 AI in IT與AI SDLC"
+    assets_root = tmp_path / "assets"
+    asset_dir = assets_root / slug
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "p01.png").write_bytes(b"png")
+    markdown = f"![page](assets/{slug}/p01.png)\n"
+    issues = validate_asset_bundle(markdown, asset_slug=slug, assets_root=assets_root)
+    assert not any(code == "ASSET_PATH_UNEXPECTED" for code, _, _ in issues)
+    assert not any(code == "MISSING_ASSET" for code, _, _ in issues)
+
+
+def test_validate_asset_bundle_warns_on_short_path(tmp_path) -> None:
+    slug = "demo-doc"
+    assets_root = tmp_path / "assets"
+    asset_dir = assets_root / slug
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "p01.png").write_bytes(b"png")
+    issues = validate_asset_bundle(
+        "![page](assets/p01.png)\n",
+        asset_slug=slug,
+        assets_root=assets_root,
+    )
+    assert any(code == "ASSET_PATH_UNEXPECTED" for code, _, _ in issues)

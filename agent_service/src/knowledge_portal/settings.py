@@ -45,6 +45,14 @@ class PortalSettings:
     max_assets_per_version: int
     delegation_secret: str = ""
     require_service_token_with_delegation: bool = True
+    pdf_converter_url: str | None = None
+    pdf_converter_token: str | None = None
+    pdf_converter_timeout_seconds: float = 120.0
+    pdf_converter_engine: str = "legacy_text"
+    pdf_sync_max_bytes: int = 5 * 1024 * 1024
+    pdf_sync_max_pages: int = 20
+    pdf_jobs_dir: Path | None = None
+    pdf_prompt_template: str = "slide"
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -66,6 +74,12 @@ class PortalSettings:
             repository_mode = "FILE"
         else:
             repository_mode = "MEMORY"
+        pdf_jobs_dir = Path(
+            os.environ.get(
+                "KNOWLEDGE_PORTAL_PDF_JOBS_DIR",
+                data_dir / "portal_pdf_jobs",
+            )
+        ).expanduser().resolve()
         return cls(
             host=os.environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
             port=int(os.environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
@@ -183,6 +197,33 @@ class PortalSettings:
                 "KNOWLEDGE_PORTAL_REQUIRE_SERVICE_TOKEN_WITH_DELEGATION", "true"
             ).lower()
             in {"1", "true", "yes", "on"},
+            pdf_converter_url=(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_URL")
+                or os.environ.get("PDF_CONVERTER_URL")
+                or None
+            ),
+            pdf_converter_token=(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_TOKEN")
+                or os.environ.get("PDF_CONVERTER_TOKEN")
+                or None
+            ),
+            pdf_converter_timeout_seconds=float(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_TIMEOUT_SECONDS", "120")
+            ),
+            pdf_converter_engine=(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE")
+                or os.environ.get("PDF_CONVERTER_ENGINE")
+                or "legacy_text"
+            ).strip()
+            or "legacy_text",
+            pdf_sync_max_bytes=int(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_SYNC_MAX_BYTES", str(5 * 1024 * 1024))
+            ),
+            pdf_sync_max_pages=int(os.environ.get("KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES", "20")),
+            pdf_jobs_dir=pdf_jobs_dir,
+            pdf_prompt_template=os.environ.get(
+                "KNOWLEDGE_PORTAL_PDF_PROMPT_TEMPLATE", "slide"
+            ),
         )
 
     def effective_relaxed_workflow(self) -> bool:

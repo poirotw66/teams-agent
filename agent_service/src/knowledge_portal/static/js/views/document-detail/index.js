@@ -14,13 +14,13 @@ import { hydrateAssetPreviews, loadTestData } from "./data.js";
 import { captureDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";
 import { renderContentTab } from "./tabs/content.js";
-import { renderOverviewTab } from "./tabs/overview.js";
-import { renderReviewTab } from "./tabs/review.js";
+import { renderOverviewTab } from "./tabs/overview.js?v=collapse-20260908a";
+import { renderReviewTab } from "./tabs/review.js?v=collapse-20260908a";
 import { renderTestsTab } from "./tabs/tests.js";
 import { renderVersionsTab } from "./tabs/versions.js";
 import { wireActions } from "./wiring.js";
 import { focusPendingTab, wireTabList } from "./tabs.js";
-import { wireDocumentViewer } from "../../markdown.js";
+import { wireDocumentViewer } from "../../markdown.js?v=pdf-img-20260908c";
 
 function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   if (tab === "overview") return renderOverviewTab(detail);
@@ -117,7 +117,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
     );
 
     wireActions(app, documentId, detail, refresh);
-    wireDocumentViewer(app.querySelector("#detailTabContent"));
+    wireDocumentViewer(app.querySelector("#detailTabContent"), { documentId });
     if (tab === "content") {
       captureDraftBaseline();
       registerDirtyChecker(isDraftEditorDirty);

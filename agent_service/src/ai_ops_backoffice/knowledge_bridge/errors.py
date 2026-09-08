@@ -13,6 +13,7 @@ _ALLOWED = (
     re.compile(r"^documents$"),
     re.compile(r"^documents/import-pdf$"),
     re.compile(r"^documents/import-markdown$"),
+    re.compile(r"^documents/pdf-jobs/[^/]+$"),
     re.compile(r"^documents/[^/]+$"),
     re.compile(r"^documents/[^/]+/start-revision$"),
     re.compile(r"^documents/[^/]+/draft$"),

@@ -102,6 +102,8 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
         return "knowledge.create"
     if path.startswith("documents/") and path.endswith("/import-markdown") and method == "POST":
         return "knowledge.create"
+    if path.startswith("documents/pdf-jobs/") and method == "GET":
+        return "knowledge.create"
     if "/draft/assets" in path and method in {"POST", "DELETE"}:
         return "knowledge.assets.write"
     if "/draft/asset-ref" in path and method == "POST":

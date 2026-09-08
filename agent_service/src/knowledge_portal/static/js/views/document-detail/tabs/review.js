@@ -2,7 +2,7 @@ import { audienceLabel, testResultLabel } from "../../../labels.js";
 import { renderLineDiffHtml } from "../../../diff.js";
 import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831e";
 import { can, renderIssues } from "../shared.js";
-import { renderDocumentViewer } from "../../../markdown.js";
+import { renderDocumentViewer } from "../../../markdown.js?v=pdf-img-20260908c";
 
 export function renderReviewTab(detail, cases, runsByCase) {
   const draft = detail.draft_version;
@@ -53,13 +53,17 @@ export function renderReviewTab(detail, cases, runsByCase) {
           <p class="muted">以下列出與正式版本不同的段落；完整內容請見下方並排檢視。</p>
           ${renderLineDiffHtml(publishedBody, draftBody)}
         </div>` : ""}
-      <div class="compare-grid">
-        <div class="panel">
-          <h3>正式版本內容</h3>
-          ${published?.canonical_content
-            ? renderDocumentViewer({ content: published.canonical_content, compact: true, id: "reviewPublishedViewer" })
-            : '<p class="muted">（首次送審，無正式版本）</p>'}
-        </div>
+      <div class="compare-grid${published?.canonical_content ? "" : " compare-grid--draft-only"}">
+        ${published?.canonical_content ? `
+          <details class="panel collapsible-panel review-published-panel">
+            <summary class="collapsible-panel__summary">
+              <span class="collapsible-panel__title">正式版本內容</span>
+              <span class="collapsible-panel__hint muted">點擊展開／收合 · v${published.version_number}</span>
+            </summary>
+            <div class="collapsible-panel__body">
+              ${renderDocumentViewer({ content: published.canonical_content, compact: true, id: "reviewPublishedViewer" })}
+            </div>
+          </details>` : ""}
         <div class="panel">
           <h3>草稿版本內容</h3>
           ${draft?.canonical_content

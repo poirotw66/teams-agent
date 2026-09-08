@@ -221,6 +221,11 @@ class IdempotencyRecord(StrictModel):
     updated_at: datetime | None = None
 
 
+class CreateDocumentAsset(StrictModel):
+    filename: str = Field(min_length=1, max_length=256)
+    content_base64: str = Field(min_length=1)
+
+
 class CreateDocumentRequest(StrictModel):
     title: str = Field(min_length=1, max_length=256)
     summary: str = Field(default="", max_length=2000)
@@ -235,6 +240,7 @@ class CreateDocumentRequest(StrictModel):
     change_reason: str = Field(min_length=1, max_length=2000)
     markdown_content: str = Field(min_length=1)
     source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
+    assets: list[CreateDocumentAsset] = Field(default_factory=list)
 
     @field_validator("audience_group_ids")
     @classmethod
@@ -330,6 +336,33 @@ class ImportPdfResponse(StrictModel):
     page_count: int
     source_type: Literal["PDF"] = "PDF"
     warnings: list[str] = Field(default_factory=list)
+    conversion_mode: Literal["legacy", "converter"] = "legacy"
+    conversion_engine: Literal["legacy_text", "gemini_vision", "unknown"] = "legacy_text"
+    assets: list[dict[str, str]] = Field(default_factory=list)
+    mode: Literal["sync"] = "sync"
+
+
+class PdfConvertJobAccepted(StrictModel):
+    mode: Literal["async"] = "async"
+    jobId: str
+    status: Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED"]
+    filename: str
+    pageCount: int | None = None
+    byteSize: int = 0
+    message: str = "PDF conversion queued. Poll job status until COMPLETED."
+
+
+class PdfConvertJobStatusResponse(StrictModel):
+    jobId: str
+    status: Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED"]
+    filename: str
+    createdAt: str
+    updatedAt: str
+    pageCount: int | None = None
+    byteSize: int = 0
+    mode: str = "converter"
+    error: str | None = None
+    result: ImportPdfResponse | None = None
 
 
 class ImportMarkdownResponse(StrictModel):

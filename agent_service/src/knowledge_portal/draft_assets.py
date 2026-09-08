@@ -98,6 +98,26 @@ def markdown_asset_ref(*, asset_slug: str, filename: str, alt_text: str = "") ->
     return f"![{alt}](assets/{asset_slug}/{filename})"
 
 
+def rewrite_local_image_refs(markdown_content: str, *, asset_slug: str) -> str:
+    """Normalize local image refs to assets/<slug>/<filename> for draft validation."""
+
+    def _replace(match: re.Match[str]) -> str:
+        alt_text = match.group(1)
+        target_path = normalize_markdown_target(match.group(2))
+        if "://" in target_path or target_path.startswith("data:"):
+            return match.group(0)
+        filename = Path(target_path.replace("\\", "/")).name
+        if not filename:
+            return match.group(0)
+        return markdown_asset_ref(
+            asset_slug=asset_slug,
+            filename=filename,
+            alt_text=alt_text,
+        )
+
+    return _IMAGE_REF_PATTERN.sub(_replace, markdown_content)
+
+
 @dataclass(frozen=True)
 class DraftAssetStore:
     settings: PortalSettings
@@ -314,6 +334,26 @@ def resolve_local_asset_path(
     return None
 
 
+def is_expected_asset_markdown_path(
+    target_path: str,
+    *,
+    asset_slug: str,
+    filename: str,
+) -> bool:
+    """Return True when the markdown image target matches assets/<slug>/<file>."""
+    from urllib.parse import unquote
+
+    normalized = unquote(target_path.replace("\\", "/")).strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    expected = f"assets/{asset_slug}/{filename}"
+    if normalized == expected:
+        return True
+    # Accept equivalent paths when only the final filename is compared under assets/<slug>/.
+    parts = [part for part in normalized.split("/") if part and part != "."]
+    return len(parts) >= 3 and parts[0] == "assets" and parts[1] == asset_slug and parts[-1] == filename
+
+
 def validate_asset_bundle(
     markdown_content: str,
     *,
@@ -322,7 +362,6 @@ def validate_asset_bundle(
 ) -> list[tuple[str, str, str]]:
     issues: list[tuple[str, str, str]] = []
     referenced: set[str] = set()
-    source_path = Path("sources/document.md")
 
     for alt_text, target in _IMAGE_REF_PATTERN.findall(markdown_content):
         target_path = normalize_markdown_target(target)
@@ -330,16 +369,17 @@ def validate_asset_bundle(
             continue
         filename = Path(target_path.replace("\\", "/")).name
         referenced.add(filename)
-        resolved = (source_path.parent / target_path).resolve()
         expected_root = (assets_root / asset_slug).resolve()
-        try:
-            resolved.relative_to(expected_root.parent)
-        except ValueError:
+        if not is_expected_asset_markdown_path(
+            target_path,
+            asset_slug=asset_slug,
+            filename=filename,
+        ):
             issues.append(
                 (
                     "ASSET_PATH_UNEXPECTED",
                     "WARNING",
-                    f"圖片路徑建議使用 assets/{asset_slug}/：{target_path}",
+                    f"圖片路徑建議使用 assets/{asset_slug}/{filename}（目前為 {target_path}）",
                 )
             )
         candidate = expected_root / filename

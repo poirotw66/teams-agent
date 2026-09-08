@@ -291,3 +291,26 @@ variable "knowledge_portal_internal_url" {
   type        = string
   default     = ""
 }
+
+variable "enable_pdf_converter" {
+  description = "Deploy the standalone PDF-to-Markdown converter Cloud Run service (option B)."
+  type        = bool
+  default     = false
+}
+
+variable "pdf_converter_service_name" {
+  description = "Cloud Run service name for the PDF converter."
+  type        = string
+  default     = "teams-pdf-converter"
+}
+
+variable "pdf_converter_image" {
+  description = "Container image for the PDF converter. Prefer building services/pdf_converter/Dockerfile.upstream for Gemini Vision."
+  type        = string
+  default     = ""
+}
+
+variable "pdf_converter_max_instances" {
+  type    = number
+  default = 2
+}

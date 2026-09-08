@@ -234,7 +234,14 @@ export function closeDialog() {
   document.body.classList.remove("dialog-open");
 }
 
-export function openDialog({ title, bodyHtml, confirmLabel = "確認", cancelLabel = "取消", danger = false }) {
+export function openDialog({
+  title,
+  bodyHtml,
+  confirmLabel = "確認",
+  cancelLabel = "取消",
+  danger = false,
+  showCancel = true,
+}) {
   closeDialog();
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
@@ -247,7 +254,9 @@ export function openDialog({ title, bodyHtml, confirmLabel = "確認", cancelLab
         </header>
         <div class="portal-dialog-body">${bodyHtml}</div>
         <footer class="portal-dialog-actions">
-          <button type="button" style="${DIALOG_CANCEL_STYLE}" data-dialog-cancel>${escapeHtml(cancelLabel)}</button>
+          ${showCancel
+            ? `<button type="button" style="${DIALOG_CANCEL_STYLE}" data-dialog-cancel>${escapeHtml(cancelLabel)}</button>`
+            : ""}
           <button type="button" style="${dialogConfirmStyle(danger)}" data-dialog-confirm>${escapeHtml(confirmLabel)}</button>
         </footer>
       </div>`;

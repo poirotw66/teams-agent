@@ -14,7 +14,7 @@ import {
   loadNavFilters,
   navigateTo,
 } from "../app/navigation.js";
-import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js";
+import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js?v=pdf-img-20260908d";
 import { createPageController } from "../app/lifecycle.js";
 
 

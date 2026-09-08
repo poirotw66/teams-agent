@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -29,6 +29,8 @@ from .models import (
     ValidationSummary,
 )
 from .pdf_text import ScannedPdfError
+from .pdf_convert_jobs import PdfConvertJobStore
+from .pdf_converter_client import PdfConverterError
 from .rbac import PortalPermissionError
 from .repository import PortalNotFoundError, VersionConflictError, build_repository
 from .service import PortalService
@@ -43,6 +45,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
     resolved_settings = settings or PortalSettings.from_env()
     repository = build_repository(resolved_settings)
     service = PortalService(resolved_settings, repository)
+    pdf_job_store = PdfConvertJobStore(resolved_settings)
 
     def authorize(authorization: str | None = Header(default=None)) -> None:
         expected = resolved_settings.service_token
@@ -134,6 +137,14 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
                     "message": str(exc),
                 },
             )
+        if isinstance(exc, PdfConverterError):
+            return HTTPException(
+                status_code=502,
+                detail={
+                    "code": PortalErrorCode.INVALID_STATE.value,
+                    "message": str(exc),
+                },
+            )
         if isinstance(exc, ValueError):
             message = str(exc)
             if hasattr(exc, "args") and exc.args and isinstance(exc.args[0], ValidationSummary):
@@ -187,16 +198,39 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
 
     @app.post("/api/documents/import-pdf")
     async def import_pdf(
+        background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
+        async_mode: str = "auto",
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
         payload = await file.read()
         try:
-            return service.import_pdf(actor, payload, filename=file.filename)
+            return await service.import_pdf_smart(
+                actor,
+                payload,
+                filename=file.filename,
+                async_mode=async_mode,
+                job_store=pdf_job_store,
+                background_tasks=background_tasks,
+            )
         except Exception as exc:
             raise handle_errors(exc) from exc
 
+    @app.get("/api/documents/pdf-jobs/{job_id}")
+    async def get_pdf_job(
+        job_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        del actor  # auth already enforced
+        job = pdf_job_store.get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": "PDF job not found"},
+            )
+        return pdf_job_store.to_public_dict(job)
     @app.post("/api/documents/import-markdown")
     async def import_markdown(
         file: UploadFile = File(...),

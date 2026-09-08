@@ -3,8 +3,8 @@ import { clearDirtyChecker, registerDirtyChecker } from "../dirty-state.js";
 import { fluentButton } from "../fluent.js";
 import { audienceLabel } from "../labels.js";
 import { navigate } from "../router.js";
-import { escapeHtml, openDialog, showToast } from "../ui.js?v=20260831e";
-import { renderDocumentViewer, wireDocumentViewer } from "../markdown.js";
+import { escapeHtml, openDialog, showToast } from "../ui.js?v=20260908a";
+import { renderDocumentViewer, wireDocumentViewer } from "../markdown.js?v=pdf-img-20260908c";
 
 const STEPS = [
   { id: 1, label: "基本資料" },
@@ -72,25 +72,204 @@ function renderConfirmPanel(formValues) {
     </div>`;
 }
 
+function applyImportedPdf(formValues, imported) {
+  const result = imported?.result || imported;
+  Object.assign(formValues, {
+    title: result.title,
+    owner_unit_id: result.owner_unit_id,
+    effective_at: result.effective_at,
+    review_due_at: result.review_due_at,
+    audience_type: result.audience_type || "ALL_EMPLOYEES",
+    audience_group_ids: (result.audience_group_ids || []).join(", "),
+    markdown_content: result.markdown_content,
+    change_reason: formValues.change_reason || "由 PDF 匯入新增知識文件",
+    source_type: "PDF",
+    conversion_mode: result.conversion_mode || "converter",
+    conversion_engine: result.conversion_engine || "unknown",
+    import_entry: "pdf",
+  });
+  formValues._pdfAssets = result.assets || [];
+  return result;
+}
+
+async function pollPdfJob(jobId, onProgress) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const job = await api(`/api/documents/pdf-jobs/${encodeURIComponent(jobId)}`);
+    if (job.status === "COMPLETED" && job.result) {
+      return job.result;
+    }
+    if (job.status === "FAILED") {
+      throw new Error(job.error || "PDF 轉換失敗");
+    }
+    const pct = Math.min(92, 18 + attempt * 2.2);
+    const statusLabel = job.status === "QUEUED" ? "排隊中" : "轉換中";
+    if (typeof onProgress === "function") {
+      onProgress(pct, `${statusLabel}…（工作 ${job.jobId || jobId}，第 ${attempt + 1} 次查詢）`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error("PDF 轉換逾時，請稍後在發布前重試匯入。");
+}
+
+function createPdfProgressController(root) {
+  const wrap = root.querySelector("#pdfImportProgress");
+  const fill = root.querySelector("#pdfImportProgressFill");
+  const meter = root.querySelector("#pdfImportProgressMeter");
+  const label = root.querySelector("#pdfImportProgressLabel");
+  const statusEl = root.querySelector("#pdfImportStatus");
+  const fileInput = root.querySelector("#importPdfFile");
+  let timer = null;
+  let current = 0;
+
+  function show() {
+    wrap?.classList.remove("is-hidden");
+    wrap?.setAttribute("aria-hidden", "false");
+    if (fileInput) fileInput.disabled = true;
+  }
+
+  function set(percent, text) {
+    current = Math.max(0, Math.min(100, Number(percent) || 0));
+    const rounded = Math.round(current);
+    if (fill) fill.style.width = `${current}%`;
+    if (meter) meter.setAttribute("aria-valuenow", String(rounded));
+    if (label) label.textContent = `${rounded}%`;
+    if (typeof text === "string" && statusEl) statusEl.textContent = text;
+  }
+
+  function startSoftProgress({ from = 6, ceiling = 90, durationMs = 55000 } = {}) {
+    show();
+    set(from);
+    const startedAt = Date.now();
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const t = Math.min(1, elapsed / durationMs);
+      const eased = 1 - (1 - t) ** 2.4;
+      set(from + (ceiling - from) * eased);
+    }, 180);
+  }
+
+  function stopSoftProgress() {
+    if (timer) clearInterval(timer);
+    timer = null;
+  }
+
+  async function complete(text) {
+    stopSoftProgress();
+    set(100, text);
+    await new Promise((resolve) => setTimeout(resolve, 280));
+  }
+
+  function fail(text) {
+    stopSoftProgress();
+    wrap?.classList.add("is-error");
+    set(current || 8, text);
+    if (fileInput) fileInput.disabled = false;
+  }
+
+  function reset() {
+    stopSoftProgress();
+    wrap?.classList.add("is-hidden");
+    wrap?.classList.remove("is-error");
+    wrap?.setAttribute("aria-hidden", "true");
+    set(0, "上傳後會呼叫 PDF Converter；大檔會自動改背景工作並輪詢。");
+    if (fileInput) fileInput.disabled = false;
+  }
+
+  return { show, set, startSoftProgress, stopSoftProgress, complete, fail, reset };
+}
+
+function renderImportBanner(formValues) {
+  if (formValues.import_entry !== "pdf" || !formValues.markdown_content) return "";
+  const engine = formValues.conversion_engine || "";
+  let modeLabel = "本機文字抽取（未連上 Converter 時的後備）";
+  if (formValues.conversion_mode === "converter") {
+    modeLabel =
+      engine === "gemini_vision"
+        ? "上游 PDF Converter（PyMuPDF + Gemini Vision）"
+        : engine === "legacy_text"
+          ? "PDF Converter 服務（文字抽取模式）"
+          : "PDF Converter 服務";
+  }
+  const preview = (formValues.markdown_content || "").trim();
+  const short = preview.length > 220 ? `${preview.slice(0, 220)}…` : preview;
+  return `
+    <div class="create-import-banner panel">
+      <p><strong>已從 PDF 轉換完成</strong>（${escapeHtml(modeLabel)}）</p>
+      <p class="muted">請繼續填寫治理資訊，確認正文後建立草稿。發布後才會進入 Bot 知識索引。</p>
+      <pre class="create-import-preview">${escapeHtml(short)}</pre>
+    </div>`;
+}
+
 function renderStepPanel(step, formValues) {
   if (step === 1) {
+    const entry = formValues.import_entry || "manual";
     return `
-      <div class="panel form-grid">
-        <label class="full">
-          匯入文件（可選）
-          <input id="importMarkdownFile" type="file" accept=".md,text/markdown">
-        </label>
-        <p class="muted full">匯入後會自動填入標題、適用範圍與內容。</p>
-        <label>標題<input name="title" required></label>
-        <label>摘要<textarea name="summary" rows="2"></textarea></label>
-        <label>擁有單位<input name="owner_unit_id" value="IT Service Desk" required></label>
-        <label>分類<input name="category"></label>
+      <div class="panel">
+        <p class="muted">先選擇建立方式。若選 PDF，會呼叫內部 PDF Converter 轉成 Markdown 草稿。</p>
+        <div class="create-entry-grid" role="radiogroup" aria-label="建立方式">
+          <label class="create-entry-card ${entry === "manual" ? "active" : ""}">
+            <input type="radio" name="import_entry" value="manual" ${entry === "manual" ? "checked" : ""}>
+            <strong>手動撰寫</strong>
+            <span class="muted">直接填標題與正文</span>
+          </label>
+          <label class="create-entry-card ${entry === "pdf" ? "active" : ""}">
+            <input type="radio" name="import_entry" value="pdf" ${entry === "pdf" ? "checked" : ""}>
+            <strong>從 PDF 匯入</strong>
+            <span class="muted">經 PDF Converter → Markdown 草稿</span>
+          </label>
+          <label class="create-entry-card ${entry === "markdown" ? "active" : ""}">
+            <input type="radio" name="import_entry" value="markdown" ${entry === "markdown" ? "checked" : ""}>
+            <strong>從 Markdown 匯入</strong>
+            <span class="muted">上傳 .md 後自動帶入欄位</span>
+          </label>
+        </div>
+        ${entry === "pdf" ? `
+          <div class="create-import-box">
+            <label class="full">
+              選擇 PDF 檔案
+              <input id="importPdfFile" type="file" accept=".pdf,application/pdf">
+            </label>
+            <div id="pdfImportProgress" class="pdf-import-progress is-hidden" aria-hidden="true">
+              <div class="pdf-import-progress__meta">
+                <span>轉換進度</span>
+                <span id="pdfImportProgressLabel">0%</span>
+              </div>
+              <div
+                id="pdfImportProgressMeter"
+                class="pdf-import-progress__track"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+                aria-labelledby="pdfImportStatus"
+              >
+                <div id="pdfImportProgressFill" class="pdf-import-progress__fill"></div>
+              </div>
+            </div>
+            <p class="muted" id="pdfImportStatus">上傳後會呼叫 PDF Converter；大檔會自動改背景工作並輪詢。</p>
+          </div>` : ""}
+        ${entry === "markdown" ? `
+          <div class="create-import-box">
+            <label class="full">
+              選擇 Markdown 檔案
+              <input id="importMarkdownFile" type="file" accept=".md,text/markdown">
+            </label>
+          </div>` : ""}
+        ${renderImportBanner(formValues)}
+        <div class="form-grid" style="margin-top:1rem">
+          <label>標題<input name="title" required value="${escapeHtml(formValues.title || "")}"></label>
+          <label>摘要<textarea name="summary" rows="2">${escapeHtml(formValues.summary || "")}</textarea></label>
+          <label>擁有單位<input name="owner_unit_id" value="${escapeHtml(formValues.owner_unit_id || "IT Service Desk")}" required></label>
+          <label>分類<input name="category" value="${escapeHtml(formValues.category || "")}"></label>
+        </div>
       </div>`;
   }
   if (step === 2) {
     const restricted = formValues.audience_type === "RESTRICTED_GROUPS";
     return `
       <div class="panel form-grid">
+        ${renderImportBanner(formValues)}
         <label>生效日<input name="effective_at" type="date" required></label>
         <label>下次檢視日<input name="review_due_at" type="date" required></label>
         <label class="full">變更原因<textarea name="change_reason" rows="2" required>${escapeHtml(formValues.change_reason || "新增知識文件")}</textarea></label>
@@ -109,12 +288,13 @@ function renderStepPanel(step, formValues) {
   if (step === 3) {
     return `
       <div class="panel">
+        ${renderImportBanner(formValues)}
         <label class="full">正文內容
-          <textarea name="markdown_content" rows="14" required># 範例標題
+          <textarea name="markdown_content" rows="14" required>${escapeHtml(formValues.markdown_content || `# 範例標題
 
 ## 正文
 
-請在此撰寫知識內容。</textarea>
+請在此撰寫知識內容。`)}</textarea>
         </label>
       </div>`;
   }
@@ -146,6 +326,12 @@ function validateStepThree(formValues) {
 
 function buildCreatePayload(formValues) {
   const audienceGroupIds = parseAudienceGroupIds(formValues.audience_group_ids);
+  const assets = (formValues._pdfAssets || [])
+    .map((item) => ({
+      filename: item.filename || item.name,
+      content_base64: item.content_base64 || item.contentBase64 || "",
+    }))
+    .filter((item) => item.filename && item.content_base64);
   return {
     title: formValues.title,
     summary: formValues.summary || "",
@@ -156,9 +342,11 @@ function buildCreatePayload(formValues) {
     audience_group_ids: audienceGroupIds,
     effective_at: formValues.effective_at,
     review_due_at: formValues.review_due_at,
-    change_summary: "Initial draft",
+    change_summary: formValues.import_entry === "pdf" ? "Initial draft from PDF" : "Initial draft",
     change_reason: formValues.change_reason,
     markdown_content: formValues.markdown_content,
+    source_type: formValues.source_type || (formValues.import_entry === "markdown" ? "MARKDOWN_UPLOAD" : "MARKDOWN_PASTE"),
+    assets,
   };
 }
 
@@ -176,11 +364,20 @@ function resetSubmissionKey() {
 }
 
 async function submitCreate(formValues) {
+  const payload = buildCreatePayload(formValues);
+  if (
+    formValues.import_entry === "pdf"
+    && /!\[[^\]]*\]\((?:assets\/)?[^)]+\.(?:png|jpe?g|gif)\)/i.test(payload.markdown_content || "")
+    && !(payload.assets || []).length
+  ) {
+    showToast("PDF 轉換結果含圖片，但未取得圖檔資產；請重新匯入 PDF 後再建立草稿。", true);
+    return;
+  }
   const idempotencyKey = getOrCreateSubmissionKey();
   const created = await api("/api/documents", {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify(buildCreatePayload(formValues)),
+    body: JSON.stringify(payload),
   });
   resetSubmissionKey();
   showToast("草稿已建立");
@@ -197,6 +394,7 @@ export async function renderCreateView(app) {
   const formValues = {
     audience_type: "ALL_EMPLOYEES",
     change_reason: "新增知識文件",
+    import_entry: "pdf",
   };
 
   function render() {
@@ -206,6 +404,7 @@ export async function renderCreateView(app) {
         <header class="page-header">
           <div>
             <h2>新增知識文件</h2>
+            <p class="muted">建議：內部 SOP／手冊用「從 PDF 匯入」；短文可用手動撰寫。</p>
           </div>
           ${fluentButton("返回列表", { appearance: "outline", dataset: { back: "true" } })}
         </header>
@@ -224,7 +423,18 @@ export async function renderCreateView(app) {
     app.querySelector("[data-back]")?.addEventListener("click", () => navigate("#/knowledge"));
     const form = app.querySelector("#createForm");
     Object.entries(formValues).forEach(([key, value]) => {
-      if (form[key]) form[key].value = value;
+      if (key.startsWith("_")) return;
+      if (form[key] && typeof value === "string") form[key].value = value;
+    });
+
+    form.querySelectorAll('input[name="import_entry"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        formValues.import_entry = radio.value;
+        if (radio.value !== "pdf") {
+          formValues.conversion_mode = undefined;
+        }
+        render();
+      });
     });
 
     app.querySelector("#createAudienceType")?.addEventListener("change", (event) => {
@@ -246,7 +456,11 @@ export async function renderCreateView(app) {
       event.preventDefault();
       Object.assign(formValues, Object.fromEntries(new FormData(form).entries()));
       if (currentStep === 1 && !formValues.title?.trim()) {
-        showToast("請先填寫標題", true);
+        showToast("請先填寫標題（或先匯入 PDF／Markdown）", true);
+        return;
+      }
+      if (currentStep === 1 && formValues.import_entry === "pdf" && !formValues.markdown_content?.trim()) {
+        showToast("請先選擇 PDF 並完成轉換，再按下一步", true);
         return;
       }
       if (currentStep === 2 && !validateStepTwo(formValues)) {
@@ -279,14 +493,64 @@ export async function renderCreateView(app) {
           audience_group_ids: (imported.audience_group_ids || []).join(", "),
           markdown_content: imported.markdown_content,
           change_reason: formValues.change_reason || "新增知識文件",
+          source_type: "MARKDOWN_UPLOAD",
+          import_entry: "markdown",
         });
         const warnings = [...(imported.warnings || [])];
         if (imported.audience_type === "RESTRICTED_GROUPS") {
           warnings.push("已保留匯入文件的特定群組設定。");
         }
         showToast(warnings.length ? warnings.join(" ") : "已匯入文件");
+        currentStep = 2;
         render();
       } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    app.querySelector("#importPdfFile")?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const progress = createPdfProgressController(app);
+      const filenameTitle = file.name.replace(/\.pdf$/i, "").trim();
+      if (filenameTitle) {
+        formValues.title = filenameTitle;
+      }
+      try {
+        progress.startSoftProgress({ from: 4, ceiling: 88, durationMs: 60000 });
+        progress.set(6, `正在上傳「${file.name}」…`);
+        const formData = new FormData();
+        formData.append("file", file);
+        let imported = await apiForm("/api/documents/import-pdf?async_mode=auto", formData);
+        if (imported?.mode === "async" && imported.jobId) {
+          progress.stopSoftProgress();
+          progress.set(16, `已進入背景轉換（${imported.jobId}）…`);
+          imported = await pollPdfJob(imported.jobId, (pct, text) => progress.set(pct, text));
+        } else {
+          progress.set(92, "正在整理轉換結果…");
+        }
+        applyImportedPdf(formValues, imported);
+        const assetCount = (formValues._pdfAssets || []).length;
+        const mode =
+          formValues.conversion_engine === "gemini_vision"
+            ? "Gemini Vision"
+            : formValues.conversion_mode === "converter"
+              ? "PDF Converter"
+              : "後備文字抽取";
+        const warnings = [...(imported.warnings || [])];
+        if (assetCount) {
+          warnings.push(`已附帶 ${assetCount} 張圖片資產，建立草稿時會一併上傳。`);
+        } else if (/!\[[^\]]*\]\([^)]+\.(?:png|jpe?g|gif)\)/i.test(formValues.markdown_content || "")) {
+          warnings.push("正文含圖片引用，但轉換結果未附圖檔；建立草稿前請確認。");
+        }
+        await progress.complete(`轉換完成（${mode}${assetCount ? `，${assetCount} 張圖` : ""}）`);
+        showToast(warnings.length ? warnings.join(" ") : `已透過 ${mode} 匯入 PDF`);
+        currentStep = 2;
+        render();
+      } catch (error) {
+        progress.fail(error.message || "PDF 轉換失敗");
         showToast(error.message, true);
       } finally {
         event.target.value = "";
@@ -317,6 +581,7 @@ export async function renderCreateView(app) {
             title: "建立文件未通過驗證",
             bodyHtml: `<p>${escapeHtml(error.message)}</p><ul class="issue-list" style="margin:8px 0;padding-left:20px;text-align:left;">${listHtml}</ul>`,
             confirmLabel: "關閉",
+            showCancel: false,
           });
           return;
         }
@@ -332,7 +597,7 @@ export async function renderCreateView(app) {
     } else {
       clearDirtyChecker();
       createBaseline = null;
-      wireDocumentViewer(app);
+      wireDocumentViewer(app, { inlineAssets: formValues._pdfAssets || [] });
     }
   }
 
