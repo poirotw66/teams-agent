@@ -20,7 +20,7 @@ No retrieval/answer-generation code is duplicated between this module and
 """
 
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 from uuid import uuid4
 
 from langchain.chat_models import init_chat_model

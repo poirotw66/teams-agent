@@ -91,8 +91,8 @@ def test_version_conflict_message_is_traditional_chinese(portal_client: TestClie
 def test_index_html_exposes_portal_build(portal_client: TestClient) -> None:
     response = portal_client.get("/")
     assert response.status_code == 200
-    assert 'name="portal-build" content="20260831e"' in response.text
-    assert "/static/js/main.js?v=20260831e" in response.text
+    assert 'name="portal-build" content="20260907a"' in response.text
+    assert "/static/js/main.js?v=20260907a" in response.text
 
 
 def test_static_portal_assets_disable_cache(portal_client: TestClient) -> None:
@@ -181,9 +181,13 @@ def test_markdown_js_and_styles_served(portal_client: TestClient) -> None:
 
     res_css = portal_client.get("/static/styles.css")
     assert res_css.status_code == 200
-    assert ".doc-viewer" in res_css.text
-    assert ".doc-archive-accordion" in res_css.text
-    assert ".doc-img-fallback" in res_css.text
+    assert "@import" in res_css.text
+
+    res_doc = portal_client.get("/static/styles/document.css")
+    assert res_doc.status_code == 200
+    assert ".doc-viewer" in res_doc.text
+    assert ".doc-archive-accordion" in res_doc.text
+    assert ".doc-img-fallback" in res_doc.text
 
 
 def test_markdown_parser_and_document_viewer_behavior() -> None:

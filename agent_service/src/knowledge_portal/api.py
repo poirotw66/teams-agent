@@ -5,6 +5,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -172,6 +173,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
@@ -180,6 +182,7 @@ def create_app(settings: PortalSettings | None = None) -> FastAPI:
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
 
     @app.post("/api/documents/import-pdf")

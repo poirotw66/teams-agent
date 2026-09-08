@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
+from ..faq_domain.errors import FaqNotFoundError, FaqValidationError
 from ..request_models import SyncJobActionRequest, SyncJobCreateRequest
 
 
@@ -15,6 +16,8 @@ def register_sync_routes(
     run_sync_job,
     current_actor,
     require_capability,
+    faq_service=None,
+    query_service=None,
 ) -> None:
     @app.get("/api/sync-jobs")
     async def list_sync_jobs(actor=Depends(current_actor)) -> dict[str, object]:

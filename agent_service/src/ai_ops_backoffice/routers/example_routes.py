@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from ..faq_domain import FaqNotFoundError
+from ..faq_domain import FaqNotFoundError, FaqValidationError
 from ..request_models import (
     ExampleCreateRequest,
     ExampleRetireRequest,

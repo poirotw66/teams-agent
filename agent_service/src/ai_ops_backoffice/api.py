@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -431,6 +432,8 @@ def create_app(
         run_sync_job=run_sync_job,
         current_actor=current_actor,
         require_capability=require_capability,
+        faq_service=faq_service,
+        query_service=query_service,
     )
     register_budget_routes(
         app,
