@@ -94,7 +94,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.max_history_messages == 10
     assert settings.conversation_history_rounds == 5
     assert settings.conversation_timeout_hours == 24
-    assert settings.conversation_retention_days == 730
+    assert settings.conversation_retention_days == 365
     assert settings.max_llm_calls_per_request == 6
     assert settings.max_retrieval_rewrites == 1
     assert settings.knowledge_service_mode == "HYBRID"
@@ -116,7 +116,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.handoff_firestore_database is None
     assert settings.handoff_firestore_collection == "handoffs"
     assert settings.handoff_demo_timeout_hours == 24
-    assert settings.handoff_retention_days == 730
+    assert settings.handoff_retention_days == 365
     assert settings.faq_path == (tmp_path / "faq.json").resolve()
     assert settings.faq_runtime_mode == "LEGACY_JSON"
     assert settings.faq_governed_store_mode == "FILE"
@@ -169,6 +169,7 @@ def test_max_retrieval_rewrites_explicit_overrides_fallback(
         ("CONVERSATION_TIMEOUT_HOURS", "0"),
         ("CONVERSATION_TIMEOUT_HOURS", "169"),
         ("CONVERSATION_RETENTION_DAYS", "0"),
+        ("CONVERSATION_RETENTION_DAYS", "366"),
         ("MAX_LLM_CALLS_PER_REQUEST", "0"),
         ("MAX_LLM_CALLS_PER_REQUEST", "21"),
         ("MAX_RETRIEVAL_REWRITES", "-1"),
@@ -419,6 +420,7 @@ def test_handoff_firestore_settings_are_configurable(
         ("HANDOFF_FIRESTORE_COLLECTION", "handoffs/nested"),
         ("HANDOFF_DEMO_TIMEOUT_HOURS", "0"),
         ("HANDOFF_RETENTION_DAYS", "0"),
+        ("HANDOFF_RETENTION_DAYS", "366"),
     ],
 )
 def test_invalid_handoff_settings_raise(

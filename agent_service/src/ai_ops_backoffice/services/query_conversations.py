@@ -36,6 +36,7 @@ class ConversationsQueryMixin:
         handoff: bool | None = None,
         channel_scope: str | None = None,
         query: str | None = None,
+        source: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         effective_days = (
@@ -81,7 +82,15 @@ class ConversationsQueryMixin:
                 matches_query = False
                 for event in conv_events:
                     payload = event.payload or {}
-                    for field in ("messageMasked", "answerMasked", "descriptionMasked", "userMessage", "aiReply", "text"):
+                    for field in (
+                        "messageMasked",
+                        "answerMasked",
+                        "descriptionMasked",
+                        "userMessage",
+                        "aiReply",
+                        "text",
+                        "ticketId",
+                    ):
                         val = payload.get(field)
                         if val and needle in str(val).casefold():
                             matches_query = True
@@ -89,6 +98,29 @@ class ConversationsQueryMixin:
                     if matches_query:
                         break
                 if not matches_query:
+                    continue
+            if source:
+                needle = source.casefold()
+                matches_source = False
+                for event in conv_events:
+                    payload = event.payload or {}
+                    for field in ("documentId", "sourcePath", "faqKey", "releaseId"):
+                        val = payload.get(field)
+                        if val and needle in str(val).casefold():
+                            matches_source = True
+                            break
+                    if not matches_source and "citations" in payload:
+                        for cit in payload.get("citations") or []:
+                            if isinstance(cit, dict):
+                                if any(
+                                    needle in str(cit.get(k) or "").casefold()
+                                    for k in ("documentId", "sourcePath", "title", "chunkId")
+                                ):
+                                    matches_source = True
+                                    break
+                    if matches_source:
+                        break
+                if not matches_source:
                     continue
             if issue_type_id and not any(
                 event.issue_type_id == issue_type_id for event in conv_events
@@ -163,11 +195,44 @@ class ConversationsQueryMixin:
                         "route": t_summary.get("route"),
                         "faqKey": t_summary.get("faqKey"),
                         "documentIds": t_summary.get("documentIds") or [],
+                        "sourcePaths": t_summary.get("sourcePaths") or [],
                         "feedbackRating": t_summary.get("feedbackRating"),
                         "feedbackReason": fb_reason,
+                        "resolvedStatus": t_summary.get("resolvedStatus"),
                         "handoffStatus": t_summary.get("handoffStatus"),
+                        "ticketId": t_summary.get("ticketId"),
+                        "ticketStatus": t_summary.get("ticketStatus"),
+                        "ticketBackend": t_summary.get("ticketBackend"),
                     }
                 )
+            conv_ticket_ids = sorted(
+                {
+                    str(t["ticketId"])
+                    for t in turn_records
+                    if t.get("ticketId")
+                }
+                | {
+                    str(event.payload.get("ticketId"))
+                    for event in conv_events
+                    if event.event_type == "ticket.created" and event.payload.get("ticketId")
+                }
+            )
+            conv_ticket_status = next(
+                (
+                    t["ticketStatus"]
+                    for t in reversed(turn_records)
+                    if t.get("ticketStatus")
+                ),
+                None,
+            )
+            conv_handoff_status = next(
+                (
+                    t["handoffStatus"]
+                    for t in reversed(turn_records)
+                    if t.get("handoffStatus")
+                ),
+                None,
+            )
             items.append(
                 {
                     "conversationId": conv_id,
@@ -176,6 +241,10 @@ class ConversationsQueryMixin:
                     "actorRef": turn_actor or latest.actor_ref,
                     "channelScope": latest.channel_scope,
                     "routes": sorted(routes),
+                    "ticketIds": conv_ticket_ids,
+                    "ticketCount": len(conv_ticket_ids),
+                    "ticketStatus": conv_ticket_status,
+                    "handoffStatus": conv_handoff_status,
                     "turns": turn_records,
                 }
             )

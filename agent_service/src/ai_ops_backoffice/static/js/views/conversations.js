@@ -80,6 +80,11 @@ export async function renderConversations(state = {}) {
     const filters = periodParams(period);
     filters.set("limit", "25");
     if (cursor) filters.set("cursor", cursor);
+    const conversationId =
+      savedFilters.conversationId ||
+      (navFilters.view === "conversations" ? navFilters.conversationId : "");
+    const query = savedFilters.query || "";
+    const source = savedFilters.source || "";
     const issueTypeId =
       savedFilters.issueTypeId ||
       (navFilters.view === "conversations" ? navFilters.issueTypeId : "");
@@ -89,6 +94,9 @@ export async function renderConversations(state = {}) {
     const hasFeedback = savedFilters.hasFeedback || "";
     const handoff = savedFilters.handoff || "";
     const channelScope = savedFilters.channelScope || "";
+    if (conversationId) filters.set("conversation_id", conversationId);
+    if (query) filters.set("query", query);
+    if (source) filters.set("source", source);
     if (issueTypeId) filters.set("issue_type_id", issueTypeId);
     if (route) filters.set("route", route);
     if (model) filters.set("model", model);
@@ -187,6 +195,21 @@ export async function renderConversations(state = {}) {
     panel.append(headerRow);
 
     const filterBar = el("div", "filter-bar");
+    const convIdInput = el("input");
+    convIdInput.id = "conversation-id-filter";
+    convIdInput.placeholder = "Conversation ID";
+    convIdInput.value = conversationId || "";
+
+    const queryInput = el("input");
+    queryInput.id = "conversation-query-filter";
+    queryInput.placeholder = "訊息關鍵字 (Query)";
+    queryInput.value = query || "";
+
+    const sourceInput = el("input");
+    sourceInput.id = "conversation-source-filter";
+    sourceInput.placeholder = "來源 (Doc / Path / FAQ)";
+    sourceInput.value = source || "";
+
     const channelSelect = el("select", "");
     channelSelect.id = "conversation-channel-scope";
     channelSelect.innerHTML =
@@ -207,7 +230,7 @@ export async function renderConversations(state = {}) {
     modelInput.value = model;
     const actorRefInput = el("input");
     actorRefInput.id = "conversation-actor-ref";
-    actorRefInput.placeholder = "Actor Ref";
+    actorRefInput.placeholder = "Actor Ref / User ID";
     actorRefInput.value = actorRef || "";
     const feedbackSelect = el("select", "");
     feedbackSelect.id = "conversation-has-feedback";
@@ -220,6 +243,9 @@ export async function renderConversations(state = {}) {
       '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
     if (handoff) handoffSelect.value = handoff;
     const currentFilters = () => ({
+      conversationId: convIdInput.value.trim(),
+      query: queryInput.value.trim(),
+      source: sourceInput.value.trim(),
       channelScope: channelSelect.value,
       issueTypeId: issueInput.value.trim(),
       route: routeInput.value.trim(),
@@ -234,20 +260,30 @@ export async function renderConversations(state = {}) {
     );
     const exportButton = el("button", "", "匯出 CSV");
     exportButton.addEventListener("click", async () => {
+      const reasonPrompt = window.prompt("請輸入匯出原因（至少 3 個字元，將寫入資安稽核紀錄）：", "對話紀錄分析與稽核");
+      if (!reasonPrompt || reasonPrompt.trim().length < 3) {
+        if (reasonPrompt !== null) {
+          alert("匯出原因必須至少 3 個字元。");
+        }
+        return;
+      }
       exportButton.disabled = true;
       exportButton.textContent = "匯出中…";
       const queryFilters = {
+        conversation_id: convIdInput.value.trim() || undefined,
+        query: queryInput.value.trim() || undefined,
+        source: sourceInput.value.trim() || undefined,
         channel_scope: channelSelect.value || undefined,
-        issue_type_id: issueInput.value || undefined,
-        route: routeInput.value || undefined,
-        model: modelInput.value || undefined,
-        actor_ref: actorRefInput.value || undefined,
+        issue_type_id: issueInput.value.trim() || undefined,
+        route: routeInput.value.trim() || undefined,
+        model: modelInput.value.trim() || undefined,
+        actor_ref: actorRefInput.value.trim() || undefined,
         has_feedback: feedbackSelect.value ? feedbackSelect.value === "true" : undefined,
         handoff: handoffSelect.value ? handoffSelect.value === "true" : undefined,
         ...Object.fromEntries(periodParams(period)),
       };
       try {
-        await runExport("csv", "conversations", 30, queryFilters);
+        await runExport("csv", "conversations", 30, queryFilters, reasonPrompt.trim());
       } catch (error) {
         showContentModal("匯出失敗", el("div", "error", error.message));
       } finally {
@@ -256,6 +292,9 @@ export async function renderConversations(state = {}) {
       }
     });
     filterBar.append(
+      convIdInput,
+      queryInput,
+      sourceInput,
       channelSelect,
       issueInput,
       routeInput,
@@ -285,7 +324,7 @@ export async function renderConversations(state = {}) {
     }
     const table = el("table");
     table.innerHTML =
-      "<thead><tr><th>Conversation</th><th>Turns</th><th>Actor</th><th>Channel</th><th>Routes</th><th>Last Seen</th></tr></thead>";
+      "<thead><tr><th>Conversation</th><th>Turns</th><th>Actor</th><th>Channel</th><th>Routes</th><th>派工／工單</th><th>Last Seen</th></tr></thead>";
     const body = el("tbody");
     for (const item of data.items) {
       const row = el("tr");
@@ -320,6 +359,25 @@ export async function renderConversations(state = {}) {
       row.append(channelCell);
 
       row.append(el("td", "", (item.routes || []).join(", ") || "-"));
+
+      const dispatchCell = el("td");
+      const badges = [];
+      if (item.ticketIds && item.ticketIds.length > 0) {
+        const tBadge = el("span", "meta-chip is-ok", `🎫 ${item.ticketIds.join(", ")}`);
+        tBadge.title = `Ticket: ${item.ticketIds.join(", ")} (狀態: ${item.ticketStatus || "CREATED"})`;
+        badges.push(tBadge);
+      }
+      if (item.handoffStatus) {
+        const hBadge = el("span", "meta-chip", `🤝 ${item.handoffStatus}`);
+        badges.push(hBadge);
+      }
+      if (badges.length > 0) {
+        for (const b of badges) dispatchCell.append(b);
+      } else {
+        dispatchCell.textContent = "-";
+      }
+      row.append(dispatchCell);
+
       row.append(el("td", "", item.lastOccurredAt));
       body.append(row);
     }

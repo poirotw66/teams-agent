@@ -860,7 +860,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `MAX_HISTORY_MESSAGES` | `10` | Max history messages loaded into workflow context, range 0–50 |
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | Rounds treated as “recent conversation,” range 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | Start a new conversation after timeout, range 1–168 |
-| `CONVERSATION_RETENTION_DAYS` | `730` | Firestore message retention; separate from the 24-hour conversation timeout |
+| `CONVERSATION_RETENTION_DAYS` | `365` | Firestore message retention; separate from the 24-hour conversation timeout |
 | `MAX_LLM_CALLS_PER_REQUEST` | `5` | Max LLM calls per request, range 1–20 |
 | `MAX_RETRIEVAL_REWRITES` | same as `RAG_MAX_REWRITES` (default 1) | Range 0–3; independent of `RAG_MAX_REWRITES` but defaults to it |
 | `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH` (spike-only; see above) |
@@ -878,7 +878,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `HANDOFF_STORE_PATH` | `<RAG_DATA_DIR>/handoffs` | Local persistence path in `FILE` mode |
 | `HANDOFF_FIRESTORE_COLLECTION` | `handoffs` | Root collection for Handoff cases; audit events use `<name>_events` |
 | `HANDOFF_DEMO_TIMEOUT_HOURS` | `24` | Demo session timeout; expiration restores AI routing without deleting the case |
-| `HANDOFF_RETENTION_DAYS` | `730` | Case/summary/audit retention period, separate from session timeout |
+| `HANDOFF_RETENTION_DAYS` | `365` | Case/summary/audit retention period, separate from session timeout |
 | `FAQ_PATH` | `<RAG_DATA_DIR>/faq.json` | Legacy FAQ bootstrap path used only with `FAQ_RUNTIME_MODE=LEGACY_JSON` |
 | `FAQ_RUNTIME_MODE` | `LEGACY_JSON` | `LEGACY_JSON` or `GOVERNED`; governed mode reads only ACTIVE immutable versions |
 | `AI_OPS_FAQ_STORE_MODE` | `FILE` | Governed FAQ backend: `FILE` locally or `FIRESTORE` for multi-instance environments |

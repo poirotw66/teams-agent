@@ -87,6 +87,18 @@ export function showConversationModal(detail, conversationId = detail.conversati
         ),
       );
     }
+    if ((turn.sourcePaths || []).length > 0) {
+      const spP = el("p", "");
+      const spLabel = el("span", "", "來源路徑：");
+      spLabel.style.fontWeight = "bold";
+      spP.append(spLabel);
+      for (const sp of turn.sourcePaths) {
+        const chip = el("span", "meta-chip", sp);
+        chip.style.marginRight = "0.3rem";
+        spP.append(chip);
+      }
+      block.append(spP);
+    }
     block.append(
       el(
         "p",
@@ -94,6 +106,16 @@ export function showConversationModal(detail, conversationId = detail.conversati
         `Feedback: ${turn.feedbackRating || "-"}｜Resolved: ${turn.resolvedStatus || "-"}｜Handoff: ${turn.handoffStatus || "-"}｜Masked: ${turn.masked !== false}`,
       ),
     );
+    if (turn.ticketId || turn.ticketStatus) {
+      const ticketP = el("p", "");
+      const chip = el(
+        "span",
+        "meta-chip is-ok",
+        `🎫 工單／派工：${turn.ticketId || "-"}${turn.ticketStatus ? ` [${turn.ticketStatus}]` : ""}${turn.ticketBackend ? ` (${turn.ticketBackend})` : ""}`,
+      );
+      ticketP.append(chip);
+      block.append(ticketP);
+    }
     if (turn.answerMasked) {
       block.append(el("p", "", `AI：${turn.answerMasked}`));
     }

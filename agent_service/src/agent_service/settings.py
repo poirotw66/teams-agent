@@ -57,7 +57,7 @@ class RagSettings:
     max_history_messages: int = 10
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
-    conversation_retention_days: int = 730
+    conversation_retention_days: int = 365
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
 
@@ -108,7 +108,7 @@ class RagSettings:
     handoff_firestore_database: str | None = None
     handoff_firestore_collection: str = "handoffs"
     handoff_demo_timeout_hours: int = 24
-    handoff_retention_days: int = 730
+    handoff_retention_days: int = 365
 
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
@@ -181,7 +181,7 @@ class RagSettings:
             max_history_messages=_int_env("MAX_HISTORY_MESSAGES", 10),
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
-            conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 730),
+            conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 365),
             max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
             max_retrieval_rewrites=_int_env(
                 "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
@@ -252,7 +252,7 @@ class RagSettings:
                 _str_env("HANDOFF_FIRESTORE_COLLECTION") or "handoffs"
             ),
             handoff_demo_timeout_hours=_int_env("HANDOFF_DEMO_TIMEOUT_HOURS", 24),
-            handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 730),
+            handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 365),
             faq_path=faq_path.expanduser().resolve(),
             faq_runtime_mode=(
                 _str_env("FAQ_RUNTIME_MODE") or "LEGACY_JSON"
@@ -339,8 +339,8 @@ class RagSettings:
             raise ValueError("MAX_CLARIFICATION_ROUNDS must be between 1 and 3.")
         if not 1 <= self.conversation_timeout_hours <= 168:
             raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
-        if self.conversation_retention_days < 1:
-            raise ValueError("CONVERSATION_RETENTION_DAYS must be at least 1.")
+        if not 1 <= self.conversation_retention_days <= 365:
+            raise ValueError("CONVERSATION_RETENTION_DAYS must be between 1 and 365.")
         if not 1 <= self.max_llm_calls_per_request <= 20:
             raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
         if not 0 <= self.max_retrieval_rewrites <= 3:
@@ -452,8 +452,8 @@ class RagSettings:
             raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not contain '/'.")
         if self.handoff_demo_timeout_hours < 1:
             raise ValueError("HANDOFF_DEMO_TIMEOUT_HOURS must be at least 1.")
-        if self.handoff_retention_days < 1:
-            raise ValueError("HANDOFF_RETENTION_DAYS must be at least 1.")
+        if not 1 <= self.handoff_retention_days <= 365:
+            raise ValueError("HANDOFF_RETENTION_DAYS must be between 1 and 365.")
         if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
             raise ValueError(
                 "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."

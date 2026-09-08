@@ -50,9 +50,14 @@ def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
             "route",
             "faqKey",
             "documentIds",
+            "sourcePaths",
             "feedbackRating",
             "feedbackReason",
+            "resolvedStatus",
             "handoffStatus",
+            "ticketId",
+            "ticketStatus",
+            "ticketBackend",
             "channelScope",
         ]
         rows: list[list[str]] = [headers]
@@ -70,6 +75,8 @@ def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
                             continue
                         docs = turn.get("documentIds")
                         docs_str = ",".join(docs) if isinstance(docs, (list, tuple)) else str(docs or "")
+                        sources = turn.get("sourcePaths")
+                        sources_str = ",".join(sources) if isinstance(sources, (list, tuple)) else str(sources or "")
                         rows.append([
                             sanitize_csv_cell(conv_id),
                             sanitize_csv_cell(turn.get("turnId") or ""),
@@ -82,14 +89,21 @@ def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
                             sanitize_csv_cell(turn.get("route") or ""),
                             sanitize_csv_cell(turn.get("faqKey") or ""),
                             sanitize_csv_cell(docs_str),
+                            sanitize_csv_cell(sources_str),
                             sanitize_csv_cell(turn.get("feedbackRating") or ""),
                             sanitize_csv_cell(turn.get("feedbackReason") or ""),
+                            sanitize_csv_cell(turn.get("resolvedStatus") or ""),
                             sanitize_csv_cell(turn.get("handoffStatus") or ""),
+                            sanitize_csv_cell(turn.get("ticketId") or ""),
+                            sanitize_csv_cell(turn.get("ticketStatus") or ""),
+                            sanitize_csv_cell(turn.get("ticketBackend") or ""),
                             sanitize_csv_cell(channel_scope),
                         ])
                 else:
                     routes = conv.get("routes")
                     routes_str = ",".join(routes) if isinstance(routes, (list, tuple)) else str(routes or "")
+                    ticket_ids = conv.get("ticketIds")
+                    ticket_str = ",".join(ticket_ids) if isinstance(ticket_ids, (list, tuple)) else str(ticket_ids or "")
                     rows.append([
                         sanitize_csv_cell(conv_id),
                         "",
@@ -104,6 +118,11 @@ def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
                         "",
                         "",
                         "",
+                        "",
+                        "",
+                        sanitize_csv_cell(conv.get("handoffStatus") or ""),
+                        sanitize_csv_cell(ticket_str),
+                        sanitize_csv_cell(conv.get("ticketStatus") or ""),
                         "",
                         sanitize_csv_cell(channel_scope),
                     ])

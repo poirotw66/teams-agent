@@ -31,6 +31,8 @@ class ExportsQueryMixin:
         resolved_status: str | None = None,
         idempotency_key: str | None = None,
         channel_scope: str | None = None,
+        query: str | None = None,
+        source: str | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
             "preset": preset,
@@ -53,6 +55,8 @@ class ExportsQueryMixin:
                 "reason": feedback_reason,
                 "resolvedStatus": resolved_status,
                 "channelScope": channel_scope,
+                "query": query,
+                "source": source,
             }.items()
             if value is not None
         }
@@ -70,6 +74,8 @@ class ExportsQueryMixin:
                 "feedback_reason": feedback_reason,
                 "resolved_status": resolved_status,
                 "channel_scope": channel_scope,
+                "query": query,
+                "source": source,
             },
             "reason": reason,
         }
@@ -154,6 +160,8 @@ class ExportsQueryMixin:
                 has_feedback=filters.get("has_feedback"),
                 handoff=filters.get("handoff"),
                 channel_scope=filters.get("channel_scope"),
+                query=filters.get("query"),
+                source=filters.get("source"),
             )
         else:
             raise ValueError(f"Unsupported export type: {export_type}")
@@ -172,6 +180,8 @@ class ExportsQueryMixin:
                 "reason": filters.get("feedback_reason"),
                 "resolvedStatus": filters.get("resolved_status"),
                 "channelScope": filters.get("channel_scope"),
+                "query": filters.get("query"),
+                "source": filters.get("source"),
             }.items()
             if value is not None
         }
@@ -202,6 +212,7 @@ class ExportsQueryMixin:
             "status": job.status,
             "exportType": job.export_type,
             "exportFormat": job.export_format,
+            "reason": job.reason,
             "attemptCount": job.attempt_count,
             "maxAttempts": job.max_attempts,
             "error": job.error,

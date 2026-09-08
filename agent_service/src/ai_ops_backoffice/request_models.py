@@ -28,6 +28,8 @@ class ExportRequest(BaseModel):
     resolved_status: str | None = None
     idempotency_key: str | None = None
     channel_scope: str | None = None
+    query: str | None = None
+    source: str | None = None
 
 
 class FaqCreateRequest(BaseModel):

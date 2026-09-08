@@ -200,6 +200,7 @@ def register_ops_read_routes(
         handoff: bool | None = None,
         channel_scope: str | None = None,
         query: str | None = None,
+        source: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -221,9 +222,34 @@ def register_ops_read_routes(
             handoff=handoff,
             channel_scope=channel_scope,
             query=query,
+            source=source,
             force_refresh=refresh,
         )
-        await audit_read(actor, "query.conversations", "conversations")
+        filter_details = {
+            "days": days,
+            "preset": preset,
+            "startDate": start_date,
+            "endDate": end_date,
+            "cursor": cursor,
+            "actorRef": actor_ref,
+            "userId": user_id,
+            "issueTypeId": issue_type_id,
+            "route": route,
+            "conversationId": conversation_id,
+            "model": model,
+            "hasFeedback": has_feedback,
+            "handoff": handoff,
+            "channelScope": channel_scope,
+            "query": query,
+            "source": source,
+            "resultCount": len(result.get("items", [])),
+        }
+        await audit_read(
+            actor,
+            "query.conversations",
+            "conversations",
+            after={k: v for k, v in filter_details.items() if v is not None},
+        )
         return result
 
     @app.get("/api/conversations/{conversation_id}")
@@ -589,6 +615,8 @@ def register_ops_read_routes(
                 resolved_status=payload.resolved_status,
                 idempotency_key=idempotency,
                 channel_scope=payload.channel_scope,
+                query=payload.query,
+                source=payload.source,
             )
         except Exception as exc:
             from ai_ops_backoffice.services.export_authorization import (

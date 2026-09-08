@@ -123,7 +123,7 @@ production) — never pass these as plain `--set-env-vars`:
 `TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
 `CONVERSATION_FIRESTORE_COLLECTION=conversations` and
 `HANDOFF_REPOSITORY_MODE=FIRESTORE`, `HANDOFF_FIRESTORE_COLLECTION=handoffs`,
-`HANDOFF_DEMO_TIMEOUT_HOURS=24`, `HANDOFF_RETENTION_DAYS=730` and
+`HANDOFF_DEMO_TIMEOUT_HOURS=24`, `HANDOFF_RETENTION_DAYS=365` and
 `FEEDBACK_ENABLED=true` explicitly on the Agent Cloud Run service. Most of
 these match the code defaults in
 `agent_service/src/agent_service/settings.py` and are stated anyway so the

@@ -72,16 +72,28 @@ def _summarize_turn_events(
         None,
     )
     document_ids: list[str] = []
+    source_paths: list[str] = []
     release_ids: list[str] = []
     for item in related:
         if item.event_type not in {"knowledge.retrieved", "knowledge.answered"}:
             continue
         document_id = item.payload.get("documentId")
-        if document_id and document_id not in document_ids:
+        if document_id and str(document_id) not in document_ids:
             document_ids.append(str(document_id))
+        source_path = item.payload.get("sourcePath")
+        if source_path and str(source_path) not in source_paths:
+            source_paths.append(str(source_path))
         release_id = item.payload.get("releaseId")
-        if release_id and release_id not in release_ids:
+        if release_id and str(release_id) not in release_ids:
             release_ids.append(str(release_id))
+        for cit in item.payload.get("citations") or []:
+            if isinstance(cit, dict):
+                sp = cit.get("sourcePath")
+                if sp and str(sp) not in source_paths:
+                    source_paths.append(str(sp))
+                did = cit.get("documentId")
+                if did and str(did) not in document_ids:
+                    document_ids.append(str(did))
     latest_feedback = max(
         (item for item in related if item.event_type == "feedback.recorded"),
         key=lambda item: item.occurred_at,
@@ -100,6 +112,45 @@ def _summarize_turn_events(
         ),
         None,
     )
+    ticket_created = next(
+        (item for item in related if item.event_type == "ticket.created"),
+        None,
+    )
+    ticket_failed = next(
+        (item for item in related if item.event_type == "ticket.failed"),
+        None,
+    )
+    ticket_event = ticket_created or ticket_failed
+    ticket_id = (
+        str(ticket_created.payload.get("ticketId"))
+        if ticket_created and ticket_created.payload.get("ticketId")
+        else next(
+            (
+                str(item.payload.get("ticketId"))
+                for item in related
+                if item.payload.get("ticketId")
+            ),
+            None,
+        )
+    )
+    ticket_status = (
+        "CREATED"
+        if ticket_created
+        else (
+            "FAILED"
+            if ticket_failed
+            else (
+                str(ticket_event.payload.get("status"))
+                if ticket_event and ticket_event.payload.get("status")
+                else None
+            )
+        )
+    )
+    ticket_backend = (
+        str(ticket_event.payload.get("backend"))
+        if ticket_event and ticket_event.payload.get("backend")
+        else None
+    )
     resolved_status = (
         str(latest_feedback.payload["resolvedStatus"])
         if latest_feedback and latest_feedback.payload.get("resolvedStatus")
@@ -113,10 +164,14 @@ def _summarize_turn_events(
         "answerMasked": answer_masked,
         "faqKey": faq_key,
         "documentIds": document_ids,
+        "sourcePaths": source_paths,
         "releaseIds": release_ids,
         "feedbackRating": feedback_rating,
         "resolvedStatus": resolved_status,
         "handoffStatus": handoff_status,
+        "ticketId": ticket_id,
+        "ticketStatus": ticket_status,
+        "ticketBackend": ticket_backend,
     }
 
 

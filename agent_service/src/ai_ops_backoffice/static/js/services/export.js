@@ -17,7 +17,20 @@ export async function runExport(
   exportType = "operations_summary",
   periodOrDays = 7,
   queryFilters = {},
+  customReason = "",
 ) {
+  let reason = (customReason || "").trim();
+  if (!reason) {
+    const input = window.prompt("請輸入匯出原因（至少 3 個字元，將寫入資安稽核紀錄）：", "營運分析與合規稽核");
+    if (!input || input.trim().length < 3) {
+      if (input !== null) {
+        alert("匯出原因必須至少 3 個字元。");
+      }
+      return null;
+    }
+    reason = input.trim();
+  }
+
   let days = 7;
   let preset = undefined;
   let startDate = undefined;
@@ -47,7 +60,7 @@ export async function runExport(
 
   const payload = {
     export_type: exportType,
-    reason: "UAT export",
+    reason,
     days,
     export_format: exportFormat,
     preset: preset || `${days}d`,

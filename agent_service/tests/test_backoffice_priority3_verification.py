@@ -119,6 +119,7 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
                 "resultType": "KNOWLEDGE_ANSWERED",
                 "answerMasked": "請至 IT Portal 填寫 VPN 申請單。",
                 "documentId": "vpn-guide-doc",
+                "sourcePath": "docs/vpn/quickstart.md",
                 "releaseId": "release-v1",
             },
         ),
@@ -129,9 +130,9 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
             conversation_id="conv-user-1",
             correlation_id="corr-t1",
             turn_id="turn-t1",
-            payload={"rating": "UP", "reason": "說明清楚"},
+            payload={"rating": "UP", "reason": "說明清楚", "resolvedStatus": "RESOLVED"},
         ),
-        # Turn 2 with handoff
+        # Turn 2 with handoff and ticket creation
         _event(
             event_id="t2:turn.received",
             event_type="turn.received",
@@ -173,6 +174,16 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
             issue_type_id="vpn.connection_failed",
             payload={"status": "OFFERED"},
         ),
+        _event(
+            event_id="t2:ticket.created",
+            event_type="ticket.created",
+            occurred_at=five_months_ago + timedelta(minutes=7),
+            conversation_id="conv-user-1",
+            correlation_id="corr-t2",
+            turn_id="turn-t2",
+            issue_type_id="vpn.connection_failed",
+            payload={"ticketId": "TCK-VPN-9001", "backend": "JIRA"},
+        ),
     ]
 
     query_svc = BackofficeQueryService(settings)
@@ -193,6 +204,10 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
     conv = data["items"][0]
     assert conv["conversationId"] == "conv-user-1"
     assert conv["turnCount"] == 2
+    assert conv["ticketIds"] == ["TCK-VPN-9001"]
+    assert conv["ticketCount"] == 1
+    assert conv["ticketStatus"] == "CREATED"
+    assert conv["handoffStatus"] == "OFFERED"
     assert "turns" in conv
     assert len(conv["turns"]) == 2
 
@@ -203,13 +218,18 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
     assert turn1["model"] == "gemini-2.5-flash"
     assert turn1["issueTypeId"] == "vpn.connection_failed"
     assert "vpn-guide-doc" in turn1["documentIds"]
+    assert "docs/vpn/quickstart.md" in turn1["sourcePaths"]
     assert turn1["feedbackRating"] == "UP"
     assert turn1["feedbackReason"] == "說明清楚"
+    assert turn1["resolvedStatus"] == "RESOLVED"
 
     turn2 = conv["turns"][1]
     assert turn2["turnId"] == "turn-t2"
     assert turn2["route"] == "HANDOFF"
     assert turn2["handoffStatus"] == "OFFERED"
+    assert turn2["ticketId"] == "TCK-VPN-9001"
+    assert turn2["ticketStatus"] == "CREATED"
+    assert turn2["ticketBackend"] == "JIRA"
 
     # 2. Query by conversation_id directly
     direct_resp = client.get(
@@ -218,6 +238,43 @@ async def test_user_conversation_history_query_and_6_months_range(tmp_path: Path
     )
     assert direct_resp.status_code == 200
     assert len(direct_resp.json()["items"]) == 1
+
+    # 3. Query by source filter
+    source_hit_resp = client.get(
+        "/api/conversations?days=186&source=quickstart.md",
+        headers=backoffice_headers(),
+    )
+    assert source_hit_resp.status_code == 200
+    assert len(source_hit_resp.json()["items"]) == 1
+
+    source_miss_resp = client.get(
+        "/api/conversations?days=186&source=nonexistent.pdf",
+        headers=backoffice_headers(),
+    )
+    assert source_miss_resp.status_code == 200
+    assert len(source_miss_resp.json()["items"]) == 0
+
+    # 4. Query by message / query filter (matches ticketId or question)
+    query_hit_resp = client.get(
+        "/api/conversations?days=186&query=9001",
+        headers=backoffice_headers(),
+    )
+    assert query_hit_resp.status_code == 200
+    assert len(query_hit_resp.json()["items"]) == 1
+
+    # 5. Verify query audit logging captures filter details and resultCount
+    audit_events, _ = await query_svc.audit_store.list_events(limit=100)
+    query_audits = [
+        event
+        for event in audit_events
+        if event.action == "query.conversations"
+    ]
+    assert len(query_audits) >= 1
+    # Check latest audit record has filter details in `after`
+    latest_audit = query_audits[-1]
+    assert latest_audit.target_id == "conversations"
+    assert latest_audit.after is not None
+    assert "resultCount" in latest_audit.after
 
 
 def test_conversations_export_csv_and_xlsx_full_dialogue(tmp_path: Path) -> None:
@@ -247,9 +304,14 @@ def test_conversations_export_csv_and_xlsx_full_dialogue(tmp_path: Path) -> None
                             "route": "KNOWLEDGE",
                             "faqKey": None,
                             "documentIds": ["mail-quota-faq"],
+                            "sourcePaths": ["kb/mail/quota.pdf"],
                             "feedbackRating": "UP",
                             "feedbackReason": "解決了收信問題",
+                            "resolvedStatus": "RESOLVED",
                             "handoffStatus": None,
+                            "ticketId": "TCK-MAIL-404",
+                            "ticketStatus": "CREATED",
+                            "ticketBackend": "SERVICE_NOW",
                         }
                     ],
                 }
@@ -270,12 +332,137 @@ def test_conversations_export_csv_and_xlsx_full_dialogue(tmp_path: Path) -> None
     assert row["model"] == "gemini-2.5-pro"
     assert row["issueTypeId"] == "mail.mailbox_full"
     assert row["documentIds"] == "mail-quota-faq"
+    assert row["sourcePaths"] == "kb/mail/quota.pdf"
     assert row["feedbackRating"] == "UP"
     assert row["feedbackReason"] == "解決了收信問題"
+    assert row["resolvedStatus"] == "RESOLVED"
+    assert row["ticketId"] == "TCK-MAIL-404"
+    assert row["ticketStatus"] == "CREATED"
+    assert row["ticketBackend"] == "SERVICE_NOW"
 
     # XLSX output verification
     xlsx_bytes = flatten_for_xlsx(payload)
     assert xlsx_bytes.startswith(b"PK")
+
+
+@pytest.mark.asyncio
+async def test_export_conversations_api_with_operator_reason_and_filters(tmp_path: Path) -> None:
+    """REQ-003: Verify operator reason is persisted in export job and filter parameters are forwarded."""
+    settings = _backoffice_settings(tmp_path)
+    now = datetime.now(UTC)
+
+    events = [
+        _event(
+            event_id="e1:turn.received",
+            event_type="turn.received",
+            occurred_at=now - timedelta(days=10),
+            conversation_id="conv-exp-test",
+            correlation_id="corr-exp-1",
+            turn_id="turn-exp-1",
+            actor_ref="user.bob@corp.local",
+            issue_type_id="hardware.laptop_issue",
+            payload={"messageMasked": "需要申請新筆電", "userId": "user.bob@corp.local"},
+        ),
+        _event(
+            event_id="e1:issue.extracted",
+            event_type="issue.extracted",
+            occurred_at=now - timedelta(days=10),
+            conversation_id="conv-exp-test",
+            correlation_id="corr-exp-1",
+            turn_id="turn-exp-1",
+            issue_type_id="hardware.laptop_issue",
+            payload={"descriptionMasked": "需要申請新筆電"},
+        ),
+        _event(
+            event_id="e1:knowledge.answered",
+            event_type="knowledge.answered",
+            occurred_at=now - timedelta(days=10),
+            conversation_id="conv-exp-test",
+            correlation_id="corr-exp-1",
+            turn_id="turn-exp-1",
+            issue_type_id="hardware.laptop_issue",
+            payload={
+                "resultType": "KNOWLEDGE_ANSWERED",
+                "answerMasked": "請至設備入口網站申請。",
+                "documentId": "laptop-policy-doc",
+                "sourcePath": "docs/hardware/laptop.md",
+            },
+        ),
+        _event(
+            event_id="e1:ticket.created",
+            event_type="ticket.created",
+            occurred_at=now - timedelta(days=10),
+            conversation_id="conv-exp-test",
+            correlation_id="corr-exp-1",
+            turn_id="turn-exp-1",
+            issue_type_id="hardware.laptop_issue",
+            payload={"ticketId": "TCK-LAPTOP-101", "backend": "SERVICE_NOW"},
+        ),
+    ]
+
+    query_svc = BackofficeQueryService(settings)
+    for ev in events:
+        await query_svc._runtime.store.append(ev)
+
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    # Trigger export with operator reason, source filter, and query filter
+    export_payload = {
+        "export_type": "conversations",
+        "reason": "Q3 2026 BU IT Audit - Hardware Requests",
+        "days": 30,
+        "export_format": "csv",
+        "source": "laptop",
+        "query": "筆電",
+    }
+    resp = client.post(
+        "/api/exports",
+        json=export_payload,
+        headers=backoffice_headers(),
+    )
+    assert resp.status_code == 200
+    job_info = resp.json()
+    job_id = job_info["jobId"]
+
+    # Verify export status and retrieve job detail
+    job_resp = client.get(f"/api/exports/{job_id}", headers=backoffice_headers())
+    assert job_resp.status_code == 200
+    job_data = job_resp.json()
+    assert job_data["reason"] == "Q3 2026 BU IT Audit - Hardware Requests"
+    assert job_data["exportType"] == "conversations"
+
+    # Download export content and verify rows contain ticket and source details
+    download_resp = client.get(f"/api/exports/{job_id}/download", headers=backoffice_headers())
+    assert download_resp.status_code == 200
+    csv_text = download_resp.text.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["conversationId"] == "conv-exp-test"
+    assert rows[0]["ticketId"] == "TCK-LAPTOP-101"
+    assert rows[0]["ticketStatus"] == "CREATED"
+    assert "laptop.md" in rows[0]["sourcePaths"]
+
+
+def test_conversation_retention_ttl_alignment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """REQ-003: Verify runtime conversation and handoff retention policies align to 365 days (1 year max)."""
+    monkeypatch.delenv("CONVERSATION_RETENTION_DAYS", raising=False)
+    monkeypatch.delenv("HANDOFF_RETENTION_DAYS", raising=False)
+    from agent_service.settings import RagSettings
+
+    # Default retention is 365 days
+    settings = RagSettings.from_env()
+    assert settings.conversation_retention_days == 365
+    assert settings.handoff_retention_days == 365
+
+    # Values exceeding 365 days violate the 1-year policy bound and raise ValueError
+    with pytest.raises(ValueError, match="CONVERSATION_RETENTION_DAYS must be between 1 and 365"):
+        RagSettings(data_dir=tmp_path, index_path=tmp_path / "idx", conversation_retention_days=366).validate()
+
+    with pytest.raises(ValueError, match="HANDOFF_RETENTION_DAYS must be between 1 and 365"):
+        RagSettings(data_dir=tmp_path, index_path=tmp_path / "idx", handoff_retention_days=366).validate()
+
 
 
 # =========================================================================
