@@ -284,6 +284,11 @@ class GovernanceModelsMixin:
                 "active": _public_model(_find_model_version(state, item.active_version_id))
                 if item.active_version_id
                 else None,
+                "versions": [
+                    _public_model(v)
+                    for v in state.model_versions
+                    if v.config_id == item.config_id
+                ],
             }
             for item in state.model_configs
         ]

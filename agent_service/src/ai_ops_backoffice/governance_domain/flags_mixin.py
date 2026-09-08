@@ -232,6 +232,11 @@ class GovernanceFlagsMixin:
             {
                 "flag": item.model_dump(mode="json"),
                 "effective": self.effective_flag(item.flag_id, actor=actor)["value"],
+                "versions": [
+                    v.model_dump(mode="json")
+                    for v in state.flag_versions
+                    if v.flag_id == item.flag_id
+                ],
             }
             for item in state.flags
         ]
