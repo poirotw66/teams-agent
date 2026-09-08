@@ -1249,6 +1249,26 @@ def test_routes_summary(seeded_backoffice_client: TestClient) -> None:
     attribution = body["routeDistribution"][0]["attribution"]
     assert attribution["documentIds"] == [{"id": "vpn-password-lockout", "count": 1}]
     assert attribution["releaseIds"] == [{"id": "release-2025-09-01", "count": 1}]
+    assert "faqIds" in attribution
+    assert "faqKeys" in attribution
+
+    filtered = seeded_backoffice_client.get(
+        "/api/routes/summary?days=30&route=KNOWLEDGE&issue_type_id=vpn.connection_failed",
+        headers=headers(),
+    )
+    assert filtered.status_code == 200
+    filtered_body = filtered.json()
+    assert filtered_body["filterRoute"] == "KNOWLEDGE"
+    assert filtered_body["filterIssueTypeId"] == "vpn.connection_failed"
+    assert filtered_body["routeDistribution"][0]["route"] == "KNOWLEDGE"
+    assert filtered_body["byIssueType"][0]["issueTypeId"] == "vpn.connection_failed"
+
+    empty = seeded_backoffice_client.get(
+        "/api/routes/summary?days=30&route=FAQ",
+        headers=headers(),
+    )
+    assert empty.status_code == 200
+    assert empty.json()["routeDistribution"] == []
 
 
 def test_query_audit_recorded(seeded_backoffice_client: TestClient) -> None:

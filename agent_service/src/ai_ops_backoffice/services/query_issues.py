@@ -6,10 +6,9 @@ from collections import Counter, defaultdict
 from typing import Any
 
 from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import utc_now
 
 from .query_helpers import _build_issue_hierarchy
-from .usage_projection import UsageDimensions, known_cost_total, project_usage
+from .usage_projection import UsageDimensions, project_usage
 
 
 class IssuesQueryMixin:
@@ -87,6 +86,7 @@ class IssuesQueryMixin:
                     "estimatedCostUsd": round(issue_costs.get(issue_type_id, 0.0), 6),
                 }
             )
+        matched_issue_ids: set[str] | None = None
         if query:
             needle = query.casefold()
             items = [
@@ -99,25 +99,24 @@ class IssuesQueryMixin:
                     and needle in rec.description.casefold()
                 )
             ]
+            matched_issue_ids = {item["issueTypeId"] for item in items}
+        trends = []
+        for day, day_counts in sorted(by_day.items()):
+            day_items = [
+                {"issueTypeId": issue_type_id, "count": issue_count}
+                for issue_type_id, issue_count in day_counts.most_common()
+                if matched_issue_ids is None or issue_type_id in matched_issue_ids
+            ]
+            if day_items:
+                trends.append({"date": day, "counts": day_items})
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
             "taxonomyVersion": self.taxonomy.version,
             "items": items,
             "hierarchy": _build_issue_hierarchy(items, self.taxonomy),
-            "trends": [
-                {
-                    "date": day,
-                    "counts": [
-                        {
-                            "issueTypeId": issue_type_id,
-                            "count": issue_count,
-                        }
-                        for issue_type_id, issue_count in day_counts.most_common()
-                    ],
-                }
-                for day, day_counts in sorted(by_day.items())
-            ],
+            "trends": trends,
+            "filterQuery": query,
             "unclassifiedCount": counts.get("other.unclassified", 0),
         }
 
@@ -203,6 +202,7 @@ class IssuesQueryMixin:
         start_date: str | None = None,
         end_date: str | None = None,
         issue_type_id: str | None = None,
+        route: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
@@ -212,11 +212,16 @@ class IssuesQueryMixin:
             end_date=end_date,
         )
         events = await self._scoped_events(actor, period, force_refresh=force_refresh)
+        route_filter = (route or "").strip().upper() or None
         route_events = [
             event
             for event in events
             if event.event_type == "route.selected"
             and (issue_type_id is None or event.issue_type_id == issue_type_id)
+            and (
+                route_filter is None
+                or str(event.payload.get("route") or "UNKNOWN").upper() == route_filter
+            )
         ]
         route_counts = Counter(str(event.payload.get("route") or "UNKNOWN") for event in route_events)
         by_issue: dict[str, Counter[str]] = defaultdict(Counter)
@@ -225,28 +230,25 @@ class IssuesQueryMixin:
             for event in events
             if event.event_type in {"faq.answered", "knowledge.retrieved", "knowledge.answered"}
         ]
-        attribution_by_route: dict[str, dict[str, Counter[str]]] = defaultdict(
-            lambda: {
-                "faqKeys": Counter(),
-                "documentIds": Counter(),
-                "versionIds": Counter(),
-                "releaseIds": Counter(),
-            }
-        )
+        empty_attribution = {
+            "faqIds": Counter(),
+            "faqKeys": Counter(),
+            "documentIds": Counter(),
+            "versionIds": Counter(),
+            "releaseIds": Counter(),
+        }
+
+        def new_attribution() -> dict[str, Counter[str]]:
+            return {key: Counter() for key in empty_attribution}
+
+        attribution_by_route: dict[str, dict[str, Counter[str]]] = defaultdict(new_attribution)
         attribution_by_issue_route: dict[
             tuple[str, str], dict[str, Counter[str]]
-        ] = defaultdict(
-            lambda: {
-                "faqKeys": Counter(),
-                "documentIds": Counter(),
-                "versionIds": Counter(),
-                "releaseIds": Counter(),
-            }
-        )
+        ] = defaultdict(new_attribution)
         for event in route_events:
             key = event.issue_type_id or "other.unclassified"
-            route = str(event.payload.get("route") or "UNKNOWN")
-            by_issue[key][route] += 1
+            selected_route = str(event.payload.get("route") or "UNKNOWN")
+            by_issue[key][selected_route] += 1
             matching_sources = [
                 source
                 for source in source_events
@@ -264,8 +266,11 @@ class IssuesQueryMixin:
             observed: dict[str, set[str]] = defaultdict(set)
             for source in matching_sources:
                 payload = source.payload
-                if source.event_type == "faq.answered" and payload.get("faqKey"):
-                    observed["faqKeys"].add(str(payload["faqKey"]))
+                if source.event_type == "faq.answered":
+                    if payload.get("faqId"):
+                        observed["faqIds"].add(str(payload["faqId"]))
+                    if payload.get("faqKey"):
+                        observed["faqKeys"].add(str(payload["faqKey"]))
                 for field, key_name in (
                     ("documentId", "documentIds"),
                     ("versionId", "versionIds"),
@@ -284,8 +289,8 @@ class IssuesQueryMixin:
                         if citation.get(field):
                             observed[key_name].add(str(citation[field]))
             for key_name, values in observed.items():
-                attribution_by_route[route][key_name].update(values)
-                attribution_by_issue_route[(key, route)][key_name].update(values)
+                attribution_by_route[selected_route][key_name].update(values)
+                attribution_by_issue_route[(key, selected_route)][key_name].update(values)
 
         def serialize_attribution(counters: dict[str, Counter[str]]) -> dict[str, list[dict[str, Any]]]:
             return {
@@ -305,26 +310,28 @@ class IssuesQueryMixin:
                     "displayName": record.display_name if record else issue_id,
                     "routes": [
                         {
-                            "route": route,
+                            "route": selected_route,
                             "count": count,
                             "attribution": serialize_attribution(
-                                attribution_by_issue_route[(issue_id, route)]
+                                attribution_by_issue_route[(issue_id, selected_route)]
                             ),
                         }
-                        for route, count in routes.most_common()
+                        for selected_route, count in routes.most_common()
                     ],
                 }
             )
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
+            "filterIssueTypeId": issue_type_id,
+            "filterRoute": route_filter,
             "routeDistribution": [
                 {
-                    "route": route,
+                    "route": selected_route,
                     "count": count,
-                    "attribution": serialize_attribution(attribution_by_route[route]),
+                    "attribution": serialize_attribution(attribution_by_route[selected_route]),
                 }
-                for route, count in route_counts.most_common()
+                for selected_route, count in route_counts.most_common()
             ],
             "byIssueType": issue_items,
         }

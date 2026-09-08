@@ -29,6 +29,7 @@ def register_faq_routes(
         status: str | None = None,
         owner_unit_id: str | None = None,
         category: str | None = None,
+        keyword: str | None = None,
         query: str | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -46,6 +47,15 @@ def register_faq_routes(
             items = [
                 item for item in items
                 if str(item["version"]["content"].get("category") or "").casefold() == cat_needle
+            ]
+        if keyword:
+            keyword_needle = keyword.casefold()
+            items = [
+                item for item in items
+                if any(
+                    keyword_needle in str(value).casefold()
+                    for value in (item["version"]["content"].get("keywords") or ())
+                )
             ]
         if query:
             needle = query.casefold()

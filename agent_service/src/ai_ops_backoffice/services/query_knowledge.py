@@ -2,14 +2,49 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter
 from typing import Any
 
-from agent_service.operations.access import ActorContext
-from collections import Counter
-from agent_service.operations.contracts import OperationalEvent
-from .query_helpers import _is_published_knowledge_hit
-import asyncio
 import httpx
+
+from agent_service.operations.access import ActorContext
+from agent_service.operations.contracts import OperationalEvent
+
+from .query_helpers import _is_published_knowledge_hit
+
+
+def _normalize_format_type(raw: str | None) -> str:
+    value = str(raw or "UNKNOWN").upper()
+    if value == "PDF":
+        return "PDF"
+    if value.startswith("MARKDOWN"):
+        return "MARKDOWN"
+    return value or "UNKNOWN"
+
+
+def _derive_index_status(
+    *,
+    lifecycle_status: str | None,
+    has_published_version: bool,
+    parse_status: str,
+    indexed_document_ids: set[str] | None,
+    document_id: str,
+) -> str:
+    """Return RAG index status distinct from document lifecycle."""
+    lifecycle = str(lifecycle_status or "").upper()
+    if not has_published_version:
+        return "NOT_INDEXED"
+    if parse_status != "READY":
+        return "NOT_PARSED"
+    if indexed_document_ids is None:
+        # Portal release probe unavailable: published+parsed is treated as indexed
+        # for local/single-node setups where publish activates the release.
+        return "INDEXED" if lifecycle == "PUBLISHED" else "PENDING_INDEX"
+    if document_id in indexed_document_ids:
+        return "INDEXED"
+    return "PENDING_INDEX"
+
 
 class KnowledgeQueryMixin:
     async def document_performance(
@@ -151,7 +186,10 @@ class KnowledgeQueryMixin:
             "hasMore": next_cursor is not None,
             "limit": limit,
             "filterIssueTypeId": issue_type_id,
-            "governance": await self._fetch_document_governance(document_id),
+            "governance": await self._fetch_document_governance(
+                document_id,
+                indexed_document_ids=await self._fetch_active_release_document_ids(),
+            ),
         }
 
 
@@ -162,6 +200,7 @@ class KnowledgeQueryMixin:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format_type: str | None = None,
         preset: str | None = None,
         days: int = 30,
         limit: int = 50,
@@ -179,6 +218,31 @@ class KnowledgeQueryMixin:
             for document in inventory["items"]
             if actor.allows_owner_unit(document.get("owner_unit_id"))
         ]
+        indexed_document_ids = await self._fetch_active_release_document_ids()
+        format_needle = _normalize_format_type(format_type) if format_type else None
+
+        if format_needle and format_needle != "UNKNOWN":
+            governance_all = await asyncio.gather(
+                *(
+                    self._fetch_document_governance(
+                        str(document["document_id"]),
+                        indexed_document_ids=indexed_document_ids,
+                    )
+                    for document in documents
+                )
+            )
+            paired = [
+                (document, governance)
+                for document, governance in zip(documents, governance_all, strict=True)
+                if _normalize_format_type(governance.get("formatType")) == format_needle
+            ]
+            documents = [document for document, _ in paired]
+            governance_by_id = {
+                str(document["document_id"]): governance for document, governance in paired
+            }
+        else:
+            governance_by_id = None
+
         documents.sort(key=lambda item: str(item.get("document_id") or ""))
         total = len(documents)
         if cursor:
@@ -188,12 +252,18 @@ class KnowledgeQueryMixin:
                 if str(document.get("document_id") or "") > cursor
             ]
         page = documents[:limit]
-        governance = await asyncio.gather(
-            *(
-                self._fetch_document_governance(str(document["document_id"]))
-                for document in page
+        if governance_by_id is None:
+            governance = await asyncio.gather(
+                *(
+                    self._fetch_document_governance(
+                        str(document["document_id"]),
+                        indexed_document_ids=indexed_document_ids,
+                    )
+                    for document in page
+                )
             )
-        )
+        else:
+            governance = [governance_by_id[str(document["document_id"])] for document in page]
         items = [
             self._document_inventory_item(document, governance_item, events)
             for document, governance_item in zip(page, governance, strict=True)
@@ -209,6 +279,7 @@ class KnowledgeQueryMixin:
             "periodPreset": period.preset,
             "portalStatus": inventory["status"],
             "warning": inventory.get("warning"),
+            "filterFormatType": format_needle,
         }
 
 
@@ -257,8 +328,12 @@ class KnowledgeQueryMixin:
             "ownerUnitId": document.get("owner_unit_id"),
             "lifecycleStatus": document.get("status"),
             "formatType": governance.get("formatType", "UNKNOWN"),
+            "formatFamily": governance.get(
+                "formatFamily",
+                _normalize_format_type(governance.get("formatType")),
+            ),
             "parseStatus": governance.get("parseStatus", "UNKNOWN"),
-            "indexStatus": governance.get("indexStatus", document.get("status")),
+            "indexStatus": governance.get("indexStatus", "UNKNOWN"),
             "currentPublishedVersionId": document.get("current_published_version_id"),
             "draftVersionId": document.get("draft_version_id"),
             "updatedAt": document.get("updated_at"),
@@ -326,7 +401,49 @@ class KnowledgeQueryMixin:
             return {"status": "unavailable", "items": [], "warning": str(exc)}
 
 
-    async def _fetch_document_governance(self, document_id: str) -> dict[str, Any]:
+    async def _fetch_active_release_document_ids(self) -> set[str] | None:
+        portal_url = (
+            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
+        ).rstrip("/")
+        headers = {
+            "X-Portal-User-Id": "ai-ops-backoffice",
+            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
+            "X-Portal-Role": "PLATFORM",
+            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(
+                    f"{portal_url}/api/releases",
+                    headers=headers,
+                )
+            if response.status_code >= 400:
+                return None
+            payload = response.json()
+            releases = payload.get("items") if isinstance(payload, dict) else payload
+            releases = [item for item in (releases or []) if isinstance(item, dict)]
+            active = next(
+                (item for item in releases if item.get("status") == "ACTIVE"),
+                None,
+            )
+            if active is None:
+                return set()
+            manifest = active.get("manifest") or []
+            return {
+                str(entry.get("document_id"))
+                for entry in manifest
+                if isinstance(entry, dict) and entry.get("document_id")
+            }
+        except Exception:
+            # Release probe is best-effort; inventory must still render.
+            return None
+
+    async def _fetch_document_governance(
+        self,
+        document_id: str,
+        *,
+        indexed_document_ids: set[str] | None = None,
+    ) -> dict[str, Any]:
         portal_url = (
             self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
         ).rstrip("/")
@@ -355,18 +472,32 @@ class KnowledgeQueryMixin:
             published = payload.get("published_version") or {}
             draft = payload.get("draft_version") or {}
             raw_format = published.get("source_type") or draft.get("source_type") or "UNKNOWN"
-            format_type = "PDF" if raw_format == "PDF" else raw_format
+            format_type = _normalize_format_type(raw_format)
+            # Preserve original source label for display while normalizing family.
+            display_format = "PDF" if str(raw_format).upper() == "PDF" else str(raw_format or "UNKNOWN")
+            parse_status = (
+                "READY"
+                if (published.get("parse_preview") or draft.get("parse_preview"))
+                else "NOT_PARSED"
+            )
+            has_published = bool(
+                document.get("current_published_version_id") or published.get("version_id")
+            )
+            index_status = _derive_index_status(
+                lifecycle_status=document.get("status"),
+                has_published_version=has_published,
+                parse_status=parse_status,
+                indexed_document_ids=indexed_document_ids,
+                document_id=document_id,
+            )
             return {
                 "status": "available",
                 "portalUrl": f"{portal_url}/#document/{document_id}",
                 "lifecycleStatus": document.get("status"),
-                "formatType": format_type,
-                "parseStatus": (
-                    "READY"
-                    if (published.get("parse_preview") or draft.get("parse_preview"))
-                    else "NOT_PARSED"
-                ),
-                "indexStatus": document.get("status"),
+                "formatType": display_format if display_format != "UNKNOWN" else format_type,
+                "formatFamily": format_type,
+                "parseStatus": parse_status,
+                "indexStatus": index_status,
                 "currentPublishedVersionId": document.get("current_published_version_id"),
                 "draftVersionId": document.get("draft_version_id"),
                 "statusLabel": payload.get("status_label") or document.get("status"),

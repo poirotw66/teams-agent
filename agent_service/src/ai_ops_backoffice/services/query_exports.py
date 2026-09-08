@@ -115,7 +115,11 @@ class ExportsQueryMixin:
         if export_type == "operations_summary":
             data = await self.operations_summary(actor, **period_kwargs)
         elif export_type == "issues_summary":
-            data = await self.issues_summary(actor, **period_kwargs)
+            data = await self.issues_summary(
+                actor,
+                **period_kwargs,
+                query=filters.get("query"),
+            )
         elif export_type == "costs_summary":
             data = await self.costs_summary(
                 actor,
@@ -138,6 +142,7 @@ class ExportsQueryMixin:
                 actor,
                 **period_kwargs,
                 issue_type_id=filters.get("issue_type_id"),
+                route=filters.get("route"),
             )
         elif export_type == "knowledge_performance":
             data = await self.list_documents(

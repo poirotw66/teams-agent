@@ -4,6 +4,7 @@ Covers:
 - REQ-001: 對話量統計 (日/週/月趨勢、模型與 Issue 篩選)
 - REQ-005: FAQ 命中統計 (總命中、當月、當週、當日命中次數與追溯)
 - REQ-011: Issue Dashboard (支援最近6個月、1個月、1週、1日檢視及匯出一致性)
+- REQ-012: Issue 路由來源分析 (FAQ／RAG attribution、Issue／Route 篩選)
 - REQ-027: 全域搜尋與篩選 (FAQ、文件、Issue、對話關鍵字搜尋與分類篩選)
 """
 
@@ -72,6 +73,7 @@ def _event(
     turn_id: str,
     actor_ref: str = "user-1",
     issue_type_id: str | None = None,
+    issue_occurrence_id: str | None = None,
     payload: dict[str, object] | None = None,
 ) -> OperationalEvent:
     return OperationalEvent(
@@ -85,6 +87,7 @@ def _event(
         correlation_id=correlation_id,
         turn_id=turn_id,
         issue_type_id=issue_type_id,
+        issue_occurrence_id=issue_occurrence_id,
         payload=dict(payload or {}),
         retention_expires_at=occurred_at + timedelta(days=365),
     )
@@ -343,14 +346,29 @@ async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None
     assert perf["faqKey"] == "faq-vpn-setup"
     assert perf["totalHitCount"] == 2
     assert perf["todayHitCount"] == 1
+    assert perf["thisWeekHitCount"] >= 1
+    assert perf["thisMonthHitCount"] >= 1
     assert "recentHits" in perf
     assert len(perf["recentHits"]) == 2
     assert perf["recentHits"][0]["faqId"] == faq_id
+    assert isinstance(perf.get("byDay"), list)
+    assert isinstance(perf.get("byWeek"), list)
+    assert isinstance(perf.get("byMonth"), list)
 
     # Test category filtering and keyword search in list_faqs
     list_resp = client.get("/api/faqs?category=網路與連線", headers=backoffice_headers())
     assert list_resp.status_code == 200
     assert len(list_resp.json()["items"]) == 1
+
+    owner_resp = client.get(
+        "/api/faqs?owner_unit_id=IT Service Desk", headers=backoffice_headers()
+    )
+    assert owner_resp.status_code == 200
+    assert len(owner_resp.json()["items"]) == 1
+
+    keyword_resp = client.get("/api/faqs?keyword=AnyConnect", headers=backoffice_headers())
+    assert keyword_resp.status_code == 200
+    assert len(keyword_resp.json()["items"]) == 1
 
     search_resp = client.get("/api/faqs?query=AnyConnect", headers=backoffice_headers())
     assert search_resp.status_code == 200
@@ -436,6 +454,112 @@ async def test_issue_dashboard_presets_and_export_consistency(tmp_path: Path) ->
     assert payload["exportMetadata"]["exportType"] == "issues_summary"
     assert len(payload["data"]["items"]) == 1
     assert payload["data"]["items"][0]["issueTypeId"] == "vpn.connection_failed"
+
+    # 5. Query filter also scopes trends
+    trends = query_resp.json()["trends"]
+    for day in trends:
+        assert all(item["issueTypeId"] == "vpn.connection_failed" for item in day["counts"])
+
+
+# =========================================================================
+# REQ-012: Issue 路由來源分析（FAQ／RAG attribution）
+# =========================================================================
+
+@pytest.mark.asyncio
+async def test_issue_route_source_analysis_faq_and_documents(tmp_path: Path) -> None:
+    """REQ-012: Route summary exposes FAQ ID / Document ID attribution and filters."""
+    settings = _backoffice_settings(tmp_path)
+    now = datetime.now(UTC)
+    occurrence = "turn-faq:issue:1"
+    events = [
+        _event(
+            event_id="route-faq-selected",
+            event_type="route.selected",
+            occurred_at=now,
+            conversation_id="c-faq",
+            correlation_id="cor-faq",
+            turn_id="turn-faq",
+            issue_type_id="vpn.connection_failed",
+            issue_occurrence_id=occurrence,
+            payload={"route": "FAQ"},
+        ),
+        _event(
+            event_id="faq-answered-1",
+            event_type="faq.answered",
+            occurred_at=now,
+            conversation_id="c-faq",
+            correlation_id="cor-faq",
+            turn_id="turn-faq",
+            issue_type_id="vpn.connection_failed",
+            issue_occurrence_id=occurrence,
+            payload={
+                "faqId": "faq-id-vpn-001",
+                "faqKey": "faq-vpn-setup",
+                "resultType": "FAQ_ANSWERED",
+            },
+        ),
+        _event(
+            event_id="route-rag-selected",
+            event_type="route.selected",
+            occurred_at=now,
+            conversation_id="c-rag",
+            correlation_id="cor-rag",
+            turn_id="turn-rag",
+            issue_type_id="network.internet_slow",
+            issue_occurrence_id="turn-rag:issue:1",
+            payload={"route": "KNOWLEDGE"},
+        ),
+        _event(
+            event_id="knowledge-answered-1",
+            event_type="knowledge.answered",
+            occurred_at=now,
+            conversation_id="c-rag",
+            correlation_id="cor-rag",
+            turn_id="turn-rag",
+            issue_type_id="network.internet_slow",
+            issue_occurrence_id="turn-rag:issue:1",
+            payload={
+                "documentId": "doc-network-slow",
+                "versionId": "v3",
+                "releaseId": "rel-1",
+                "resultType": "KNOWLEDGE_ANSWERED",
+            },
+        ),
+    ]
+
+    query_svc = BackofficeQueryService(settings)
+    for ev in events:
+        await query_svc._runtime.store.append(ev)
+
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    all_routes = client.get("/api/routes/summary?preset=30d", headers=backoffice_headers())
+    assert all_routes.status_code == 200
+    body = all_routes.json()
+    by_route = {item["route"]: item for item in body["routeDistribution"]}
+    assert by_route["FAQ"]["attribution"]["faqIds"] == [{"id": "faq-id-vpn-001", "count": 1}]
+    assert by_route["FAQ"]["attribution"]["faqKeys"] == [{"id": "faq-vpn-setup", "count": 1}]
+    assert by_route["KNOWLEDGE"]["attribution"]["documentIds"] == [
+        {"id": "doc-network-slow", "count": 1}
+    ]
+
+    faq_only = client.get(
+        "/api/routes/summary?preset=30d&route=FAQ&issue_type_id=vpn.connection_failed",
+        headers=backoffice_headers(),
+    )
+    assert faq_only.status_code == 200
+    faq_body = faq_only.json()
+    assert len(faq_body["routeDistribution"]) == 1
+    assert faq_body["routeDistribution"][0]["route"] == "FAQ"
+    assert faq_body["byIssueType"][0]["issueTypeId"] == "vpn.connection_failed"
+
+    issue_routes = client.get(
+        "/api/issues/vpn.connection_failed/routes?preset=30d",
+        headers=backoffice_headers(),
+    )
+    assert issue_routes.status_code == 200
+    assert issue_routes.json()["routes"][0]["attribution"]["faqIds"][0]["id"] == "faq-id-vpn-001"
 
 
 # =========================================================================

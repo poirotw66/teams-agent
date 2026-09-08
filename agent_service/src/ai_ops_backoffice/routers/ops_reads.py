@@ -336,6 +336,7 @@ def register_ops_read_routes(
         start_date: str | None = None,
         end_date: str | None = None,
         issue_type_id: str | None = None,
+        route: str | None = None,
         refresh: bool = False,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
@@ -347,6 +348,7 @@ def register_ops_read_routes(
             start_date=start_date,
             end_date=end_date,
             issue_type_id=issue_type_id,
+            route=route,
             force_refresh=refresh,
         )
         await audit_read(actor, "query.routes_summary", "routes_summary")
@@ -515,6 +517,7 @@ def register_ops_read_routes(
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format_type: str | None = None,
         days: int = Query(default=30, ge=1, le=365),
         preset: str | None = None,
         limit: int = Query(default=50, ge=1, le=100),
@@ -527,6 +530,7 @@ def register_ops_read_routes(
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format_type=format_type,
             preset=preset,
             days=days,
             limit=limit,
@@ -539,6 +543,7 @@ def register_ops_read_routes(
             after={
                 "status": status,
                 "ownerUnitId": owner_unit_id,
+                "formatType": format_type,
                 "resultCount": len(result["items"]),
             },
         )

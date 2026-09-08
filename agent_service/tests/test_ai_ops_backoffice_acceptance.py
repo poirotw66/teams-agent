@@ -201,6 +201,16 @@ def test_uat_knowledge_inventory_enriches_governance_and_performance(
     client.get = AsyncMock(
         side_effect=[
             _mock_portal_response(payload={"items": [document], "total": 1}),
+            _mock_portal_response(
+                payload={
+                    "items": [
+                        {
+                            "status": "ACTIVE",
+                            "manifest": [{"document_id": "vpn-password-lockout"}],
+                        }
+                    ]
+                }
+            ),
             _mock_portal_response(payload=detail),
         ]
     )
@@ -219,9 +229,12 @@ def test_uat_knowledge_inventory_enriches_governance_and_performance(
     item = body["items"][0]
     assert item["documentId"] == "vpn-password-lockout"
     assert item["formatType"] == "MARKDOWN_UPLOAD"
+    assert item["formatFamily"] == "MARKDOWN"
     assert item["parseStatus"] == "READY"
+    assert item["indexStatus"] == "INDEXED"
     assert item["hitCount"] >= 1
     assert item["negativeFeedbackCount"] == 1
+    assert item["positiveFeedbackCount"] >= 0
     assert item["issueTypeDistribution"][0]["issueTypeId"] == "vpn.connection_failed"
 
 
@@ -262,6 +275,19 @@ def test_uat_knowledge_inventory_applies_owner_scope_and_cursor(
         client.get = AsyncMock(
             side_effect=[
                 _mock_portal_response(payload={"items": documents, "total": 3}),
+                _mock_portal_response(
+                    payload={
+                        "items": [
+                            {
+                                "status": "ACTIVE",
+                                "manifest": [
+                                    {"document_id": "doc-a"},
+                                    {"document_id": "doc-b"},
+                                ],
+                            }
+                        ]
+                    }
+                ),
                 detail_response,
             ]
         )
@@ -309,10 +335,14 @@ def test_uat_knowledge_performance_export_uses_scoped_inventory(
     client.get = AsyncMock(
         side_effect=[
             _mock_portal_response(payload={"items": [document], "total": 1}),
+            _mock_portal_response(payload={"items": []}),
             _mock_portal_response(
                 payload={
                     "document": document,
-                    "published_version": {"source_type": "MARKDOWN_PASTE"},
+                    "published_version": {
+                        "source_type": "MARKDOWN_PASTE",
+                        "parse_preview": {"segments": []},
+                    },
                 }
             ),
         ]
