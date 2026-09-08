@@ -37,6 +37,7 @@ class FaqContent(StrictModel):
     issue_type_ids: tuple[str, ...] = Field(min_length=1, max_length=30)
     audience_type: AudienceType
     audience_group_ids: tuple[str, ...] = ()
+    related_document_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=40)
     effective_at: datetime | None = None
     review_due_at: datetime | None = None
 
@@ -53,7 +54,14 @@ class FaqContent(StrictModel):
             raise ValueError("GROUPS audience requires audience_group_ids")
         if len(set(self.issue_type_ids)) != len(self.issue_type_ids):
             raise ValueError("issue_type_ids must be unique")
-        for value in (*self.keywords, *self.issue_type_ids, *self.audience_group_ids):
+        if len(set(self.related_document_ids)) != len(self.related_document_ids):
+            raise ValueError("related_document_ids must be unique")
+        for value in (
+            *self.keywords,
+            *self.issue_type_ids,
+            *self.audience_group_ids,
+            *self.related_document_ids,
+        ):
             if not value.strip() or value != value.strip():
                 raise ValueError("list values must be non-blank and trimmed")
         for value in (self.effective_at, self.review_due_at):

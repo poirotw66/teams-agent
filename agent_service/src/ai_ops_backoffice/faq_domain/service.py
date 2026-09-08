@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import MASKING_POLICY_VERSION, mask_text
 
+from .artifacts import write_faq_activation_artifact
 from .authorization import (
     AccessPolicyAuthorization,
     DenySelfApprovalException,
@@ -43,11 +45,13 @@ class FaqDomainService:
         authorization: FaqAuthorizationPort | None = None,
         taxonomy: FaqTaxonomyPort | None = None,
         self_approval_exception: FaqSelfApprovalExceptionPort | None = None,
+        artifact_dir: Path | None = None,
     ) -> None:
         self._repository = repository
         self._authorization = authorization or AccessPolicyAuthorization()
         self._taxonomy = taxonomy or DenyUnknownTaxonomy()
         self._self_approval_exception = self_approval_exception or DenySelfApprovalException()
+        self._artifact_dir = artifact_dir
 
     def _authorize(self, actor: ActorContext, capability: str, owner_unit_id: str) -> None:
         self._authorization.require(actor=actor, capability=capability, owner_unit_id=owner_unit_id)
@@ -616,7 +620,7 @@ class FaqDomainService:
             updated_at=now,
             etag=faq.etag + 1,
         )
-        return self._commit_transition(
+        result = self._commit_transition(
             action,
             faq,
             next_faq,
@@ -630,6 +634,18 @@ class FaqDomainService:
             primary_version_id=version_id,
             request_fingerprint=request_fingerprint,
         )
+        self._write_activation_artifact(result)
+        return result
+
+    def _write_activation_artifact(self, result: dict[str, Any]) -> None:
+        """Persist a versioned FAQ file export; never indexes into Knowledge RAG."""
+        if self._artifact_dir is None:
+            return
+        faq = result.get("faq")
+        version = result.get("version")
+        if not isinstance(faq, dict) or not isinstance(version, dict):
+            return
+        write_faq_activation_artifact(self._artifact_dir, faq=faq, version=version)
 
     def disable(
         self,

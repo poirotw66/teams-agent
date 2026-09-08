@@ -2,6 +2,11 @@ import { api, el, metric } from "../api.js";
 import { badge, statusBadge } from "../components/badges.js";
 import { showContentModal } from "../components/modal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
+import {
+  recommendContentType,
+  renderContentPolicyBanner,
+  renderDecisionGuide,
+} from "../components/contentGuide.js";
 import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
 import { drillLink, navigateTo } from "../app/navigation.js";
 async function refreshQuality(state) {
@@ -128,6 +133,10 @@ export async function showQualityCaseDetail(caseId) {
       loopHints.append(portal);
     }
     content.append(headerRow, metricsGrid, infoPanel, loopHints);
+    content.append(
+      renderContentPolicyBanner(),
+      renderDecisionGuide({ recommended: recommendContentType(qualityCase) }),
+    );
     const transitions = {
       NEW: ["TRIAGED", "WONT_FIX", "DUPLICATE"],
       TRIAGED: ["IN_PROGRESS", "WONT_FIX", "DUPLICATE"],

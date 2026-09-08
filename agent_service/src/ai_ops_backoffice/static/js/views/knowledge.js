@@ -2,6 +2,10 @@ import { api, el, metric } from "../api.js";
 import { showContentModal } from "../components/modal.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
+import {
+  renderContentPolicyBanner,
+  renderDecisionGuide,
+} from "../components/contentGuide.js";
 import { runExport } from "../services/export.js";
 import { actorCapabilities, canUseKnowledgeUi, getCapabilities } from "../app/capabilities.js";
 import {
@@ -94,6 +98,7 @@ async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
   panel.append(el("h2", "", "內容成效"));
+  panel.append(renderContentPolicyBanner());
   if (getCapabilities()?.knowledgeBridgeEnabled) {
     panel.append(
       el(
@@ -311,6 +316,13 @@ async function renderFaqManagement(panel) {
   }
   try {
     const heading = el("h2", "", "FAQ 管理");
+    const policy = renderContentPolicyBanner();
+    const decision = renderDecisionGuide();
+    const governedNote = el(
+      "p",
+      "metric-label",
+      "正式環境請將 Agent 設為 FAQ_RUNTIME_MODE=GOVERNED。啟用後會落檔至 FAQ artifact 目錄（稽核用，不進 RAG）。",
+    );
     const actions = el("div", "filter-bar");
     const query = el("input");
     query.placeholder = "搜尋 FAQ Key 或問題";
@@ -376,7 +388,7 @@ async function renderFaqManagement(panel) {
     }
     const summary = el("span", "metric-label", "");
     actions.append(query, status, searchButton, summary);
-    panel.replaceChildren(heading, actions, result);
+    panel.replaceChildren(heading, policy, decision, governedNote, actions, result);
     await load();
   } catch (error) {
     panel.replaceChildren(el("h2", "", "FAQ 管理"), el("div", "error", error.message));
@@ -454,6 +466,11 @@ async function showFaqDetail(faqId, panel) {
       el("p", "", `問題：${current.content.question}`),
       el("p", "", `答案：${current.content.answer}`),
       el("p", "", `Owner：${current.content.owner_unit_id}｜Issue：${current.content.issue_type_ids.join(", ")}`),
+      el(
+        "p",
+        "metric-label",
+        `相關知識文件：${(current.content.related_document_ids || []).join(", ") || "（尚未手動關聯）"}`,
+      ),
     );
     const actions = el("div", "filter-bar");
     const run = async (path, payload) => {

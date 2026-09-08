@@ -7,8 +7,9 @@ export const workspaces = [
   {
     id: "knowledge_ops",
     label: "知識營運",
-    hint: "處理待辦、維護內容、審核發布與追蹤成效",
+    hint: "固定答案 FAQ 與知識文件分開維護；可手動關聯，不會自動互抄內文",
     items: [
+      ["contentHub", "內容維護", "content.hub"],
       ["quality", "品質案件", "ops.feedback.read"],
       ["knowledgeWork", "文件待辦", "knowledge.ui"],
       ["knowledgePortal", "知識文件庫", "knowledge.ui"],

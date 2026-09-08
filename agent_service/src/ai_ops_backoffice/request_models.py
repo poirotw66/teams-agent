@@ -43,6 +43,7 @@ class FaqCreateRequest(BaseModel):
     issue_type_ids: tuple[str, ...]
     audience_type: Literal["ALL", "GROUPS"]
     audience_group_ids: tuple[str, ...] = ()
+    related_document_ids: tuple[str, ...] = ()
     effective_at: datetime | None = None
     review_due_at: datetime | None = None
 
@@ -153,6 +154,7 @@ class QualityFaqDraftRequest(BaseModel):
     business_contact: str
     audience_type: Literal["ALL", "GROUPS"]
     audience_group_ids: tuple[str, ...] = ()
+    related_document_ids: tuple[str, ...] = ()
     effective_at: datetime | None = None
     review_due_at: datetime | None = None
 

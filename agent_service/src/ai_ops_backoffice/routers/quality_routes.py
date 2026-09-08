@@ -274,6 +274,7 @@ def register_quality_routes(
             issue_type_ids=(case["issue_type_id"],),
             audience_type=payload.audience_type,
             audience_group_ids=payload.audience_group_ids,
+            related_document_ids=payload.related_document_ids,
             effective_at=payload.effective_at,
             review_due_at=payload.review_due_at,
         )

@@ -51,7 +51,12 @@ def service(repository) -> FaqDomainService:
     )
 
 
-def content(*, audience: str = "GROUPS", answer: str = "原文固定答案") -> FaqContent:
+def content(
+    *,
+    audience: str = "GROUPS",
+    answer: str = "原文固定答案",
+    related_docs: tuple[str, ...] = (),
+) -> FaqContent:
     return FaqContent(
         faq_key="VPN_LOCKED",
         question="VPN 被鎖住怎麼辦？",
@@ -63,6 +68,7 @@ def content(*, audience: str = "GROUPS", answer: str = "原文固定答案") -> 
         issue_type_ids=("vpn.account_locked",),
         audience_type=audience,
         audience_group_ids=("employees",) if audience == "GROUPS" else (),
+        related_document_ids=related_docs,
     )
 
 

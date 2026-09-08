@@ -31,5 +31,11 @@ export function actorHasCapability(capability) {
   if (capability === "knowledge.ui") {
     return canUseKnowledgeUi();
   }
+  if (capability === "content.hub") {
+    return (
+      canUseKnowledgeUi() ||
+      (capabilities?.capabilities || []).includes("ops.faq.read")
+    );
+  }
   return (capabilities?.capabilities || []).includes(capability);
 }

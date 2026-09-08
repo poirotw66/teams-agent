@@ -50,6 +50,7 @@ import {
   knowledgePage,
   knowledgePortalPage,
 } from "./views/knowledge.js";
+import { contentHubPage } from "./views/contentHub.js";
 import { overviewPage } from "./views/overview.js";
 import { promptsPage } from "./views/prompts.js";
 import { qualityPage, showQualityCaseDetail } from "./views/quality.js";
@@ -77,6 +78,7 @@ const LIFECYCLE_VIEWS = new Set([
   "quality",
   "knowledge",
   "faq",
+  "contentHub",
   "sync",
   "knowledgeWork",
   "knowledgeReviews",
@@ -97,6 +99,7 @@ const knowledgeSections = {
 const routes = {
   ...Object.fromEntries(Object.entries(knowledgeSections).map(([view, page]) => [view, () => enterPage(page)])),
   faq: () => enterPage(faqPage),
+  contentHub: () => enterPage(contentHubPage),
   sync: () => enterPage(syncPage),
   overview: () => enterPage(overviewPage),
   conversations: (state) => enterPage(conversationsPage, { state: state || {} }),

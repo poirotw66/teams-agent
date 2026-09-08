@@ -39,6 +39,7 @@ class BackofficeSettings:
     export_worker_max_attempts: int = 3
     faq_store_mode: str = "FILE"
     faq_store_path: Path | None = None
+    faq_artifact_dir: Path | None = None
     faq_firestore_collection_prefix: str = "ai_ops_faq"
     example_store_mode: str = "FILE"
     example_store_path: Path | None = None
@@ -197,6 +198,11 @@ class BackofficeSettings:
             ).upper(),
             faq_store_path=Path(
                 os.environ.get("AI_OPS_FAQ_STORE_PATH", ops_dir / "phase2" / "faqs.json")
+            ).expanduser().resolve(),
+            faq_artifact_dir=Path(
+                os.environ.get(
+                    "AI_OPS_FAQ_ARTIFACT_DIR", ops_dir / "phase2" / "faq-artifacts"
+                )
             ).expanduser().resolve(),
             faq_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"

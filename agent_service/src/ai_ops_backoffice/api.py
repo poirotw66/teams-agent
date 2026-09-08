@@ -146,7 +146,11 @@ def create_app(
         )
     else:
         raise ValueError(f"Unsupported FAQ store mode: {faq_store_mode}")
-    faq_service = FaqDomainService(faq_repository, taxonomy=ActiveFaqTaxonomy())
+    faq_service = FaqDomainService(
+        faq_repository,
+        taxonomy=ActiveFaqTaxonomy(),
+        artifact_dir=resolved_settings.faq_artifact_dir,
+    )
 
     example_store_mode = resolved_settings.example_store_mode.upper()
     if example_store_mode == "FILE":
