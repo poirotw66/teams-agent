@@ -65,7 +65,15 @@ export async function renderConversations(state = {}) {
   }
   try {
     const navFilters = loadNavFilters();
-    const period = state.period || currentConversationState.period || { preset: "30d" };
+    const period =
+      state.period ||
+      (navFilters.view === "conversations" && (navFilters.preset || navFilters.start)
+        ? {
+            preset: navFilters.preset || (navFilters.start ? "custom" : "30d"),
+            start: navFilters.start || "",
+            end: navFilters.end || "",
+          }
+        : currentConversationState.period || { preset: "30d" });
     const savedFilters = state.filters || currentConversationState.filters || {};
     const cursor = state.cursor !== undefined ? state.cursor : currentConversationState.cursor;
     const history = state.history !== undefined ? state.history : currentConversationState.history;

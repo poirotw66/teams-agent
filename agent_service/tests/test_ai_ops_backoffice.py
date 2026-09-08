@@ -1463,6 +1463,12 @@ def test_issue_routes_endpoint(seeded_backoffice_client: TestClient) -> None:
     body = response.json()
     assert body["issueTypeId"] == "vpn.connection_failed"
     assert body["routes"]
+    assert body["totalCount"] >= 1
+    assert body["negativeFeedbackCount"] == 1
+    assert len(body["negativeFeedbacks"]) == 1
+    assert body["negativeFeedbacks"][0]["reason"]
+    assert body["negativeFeedbacks"][0]["userMessage"]
+
 
 
 def test_export_audit_fail_closed(tmp_path: Path) -> None:
@@ -1675,12 +1681,38 @@ def test_issues_summary_includes_hierarchy(seeded_backoffice_client: TestClient)
     body = response.json()
     assert body["hierarchy"]
     assert body["trends"]
+    assert "categories" in body
+    assert body["totalNegativeFeedbackCount"] >= 1
     vpn_issue = next(
         item for item in body["items"] if item["issueTypeId"] == "vpn.connection_failed"
     )
+    assert vpn_issue["feedbackCount"] == 2
+    assert vpn_issue["positiveFeedbackCount"] == 1
+    assert vpn_issue["negativeFeedbackCount"] == 1
     assert vpn_issue["negativeFeedbackRate"] == 1.0
     assert vpn_issue["handoffRate"] >= 1.0
+
+
     assert vpn_issue["estimatedCostUsd"] == 0.0025
+    assert "ownerUnitId" in vpn_issue
+
+
+def test_issues_summary_filter_by_owner_unit(seeded_backoffice_client: TestClient) -> None:
+    resp_all = seeded_backoffice_client.get("/api/issues/summary?days=30", headers=headers())
+    assert resp_all.status_code == 200
+    categories = resp_all.json().get("categories", [])
+    if categories:
+        target_unit = categories[0]
+        resp_filtered = seeded_backoffice_client.get(
+            f"/api/issues/summary?days=30&owner_unit_id={target_unit}",
+            headers=headers(),
+        )
+        assert resp_filtered.status_code == 200
+        items = resp_filtered.json()["items"]
+        assert len(items) > 0
+        for item in items:
+            assert item["ownerUnitId"] == target_unit
+
 
 
 def test_costs_summary_includes_twd(seeded_backoffice_client: TestClient) -> None:

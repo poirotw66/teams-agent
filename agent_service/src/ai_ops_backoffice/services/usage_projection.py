@@ -360,12 +360,14 @@ class UsageDimensions:
         scope = (event.environment, event.tenant_id, event.conversation_id)
         if event.issue_occurrence_id:
             key = (*scope, "occurrence", event.issue_occurrence_id)
-        elif usage_scope(event) == "LEGACY":
-            key = (*scope, "correlation", event.correlation_id)
         else:
-            return str(event.payload.get("route") or "unknown"), event.issue_type_id or "unknown"
+            key = (*scope, "correlation", event.correlation_id)
         issues = self._issues.get(key, set())
         routes = self._routes.get(key, set())
         issue = event.issue_type_id or (next(iter(issues)) if len(issues) == 1 else "unknown")
-        route = next(iter(routes)) if len(routes) == 1 else "unknown"
+        route = (
+            str(event.payload.get("route") or "")
+            or (next(iter(routes)) if len(routes) == 1 else "unknown")
+        )
         return route, issue
+

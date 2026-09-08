@@ -4,9 +4,10 @@ import { drillLink } from "../app/navigation.js";
 const ATTRIBUTION_LABELS = {
   faqIds: "FAQ ID",
   faqKeys: "FAQ Key",
-  documentIds: "Document",
-  versionIds: "Version",
-  releaseIds: "Release",
+  documentIds: "文件 (Doc)",
+  sourcePaths: "來源路徑 (Source)",
+  versionIds: "版本 (Version)",
+  releaseIds: "發佈 (Release)",
 };
 
 export function attributionText(attribution = {}) {
@@ -33,6 +34,8 @@ export function attributionCell(attribution = {}, extras = {}) {
       if (index > 0) group.append(document.createTextNode(", "));
       if (key === "documentIds") {
         group.append(drillLink(`${item.id} (${item.count})`, "knowledge", { documentId: item.id }));
+      } else if (key === "sourcePaths") {
+        group.append(drillLink(`${item.id} (${item.count})`, "knowledge", { query: item.id }));
       } else if (key === "faqIds") {
         group.append(drillLink(`${item.id} (${item.count})`, "faq", { faqId: item.id }));
       } else if (key === "faqKeys") {

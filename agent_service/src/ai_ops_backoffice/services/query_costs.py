@@ -21,12 +21,15 @@ def _cost_event_is_relevant(payload: dict) -> bool:
     """Drop empty seed/replay summaries that only inflate an unknown model row."""
     if int(payload.get("totalTokens") or 0) > 0:
         return True
+    if int(payload.get("inputTokens") or 0) > 0 or int(payload.get("outputTokens") or 0) > 0:
+        return True
     if int(payload.get("llmCallCount") or 0) > 0:
         return True
     cost = payload.get("estimatedCostUsd")
     if cost is None:
         return False
     return float(cost) != 0.0
+
 
 
 class CostsQueryMixin:

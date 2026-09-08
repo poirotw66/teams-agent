@@ -7,6 +7,7 @@ from typing import Any
 
 from agent_service.operations.access import ActorContext
 
+from .periods import ResolvedPeriod
 from .query_helpers import _build_issue_hierarchy
 from .usage_projection import UsageDimensions, project_usage
 
@@ -23,6 +24,7 @@ class IssuesQueryMixin:
         start_date: str | None = None,
         end_date: str | None = None,
         query: str | None = None,
+        owner_unit_id: str | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         period = self._resolve_period(
@@ -33,24 +35,54 @@ class IssuesQueryMixin:
         )
         all_events = await self._scoped_events(actor, period, force_refresh=force_refresh)
         events = [event for event in all_events if event.event_type == "issue.extracted"]
+
+        # Resolve previous period for trend comparisons
+        duration = period.end_at - period.start_at
+        prev_start_at = period.start_at - duration
+        prev_end_at = period.start_at
+        prev_period = ResolvedPeriod(
+            days=period.days,
+            preset="custom",
+            start_at=prev_start_at,
+            end_at=prev_end_at,
+            explicit_range=True,
+        )
+        try:
+            prev_events = await self._scoped_events(actor, prev_period, force_refresh=force_refresh)
+            prev_extracted = [event for event in prev_events if event.event_type == "issue.extracted"]
+            prev_counts = Counter(event.issue_type_id or "other.unclassified" for event in prev_extracted)
+            prev_total = len(prev_extracted)
+        except Exception:
+            prev_counts = Counter()
+            prev_total = 0
+
         correlation_to_issue: dict[str, str] = {}
         for event in all_events:
             if not event.correlation_id or not event.issue_type_id:
                 continue
             if event.event_type in {"issue.extracted", "issue.classified"}:
                 correlation_to_issue[event.correlation_id] = event.issue_type_id
+
         issue_feedback_down: Counter[str] = Counter()
+        issue_feedback_up: Counter[str] = Counter()
+        issue_feedback_total: Counter[str] = Counter()
         issue_handoffs: Counter[str] = Counter()
         issue_no_answers: Counter[str] = Counter()
         issue_costs: dict[str, float] = defaultdict(float)
+
         for event in all_events:
             issue_type_id = event.issue_type_id or correlation_to_issue.get(
                 event.correlation_id or "", "",
             )
             if not issue_type_id:
                 continue
-            if event.event_type == "feedback.recorded" and event.payload.get("rating") == "DOWN":
-                issue_feedback_down[issue_type_id] += 1
+            if event.event_type == "feedback.recorded":
+                issue_feedback_total[issue_type_id] += 1
+                rating = event.payload.get("rating")
+                if rating == "DOWN":
+                    issue_feedback_down[issue_type_id] += 1
+                elif rating == "UP":
+                    issue_feedback_up[issue_type_id] += 1
             if event.event_type.startswith("handoff."):
                 issue_handoffs[issue_type_id] += 1
             if (
@@ -58,34 +90,70 @@ class IssuesQueryMixin:
                 and event.payload.get("resultType") in {"NO_KNOWLEDGE", "FAILED"}
             ):
                 issue_no_answers[issue_type_id] += 1
+
         usage_dimensions = UsageDimensions(all_events)
         for event in project_usage(all_events).detail_events:
             _, issue_type_id = usage_dimensions.resolve(event)
             cost = event.payload.get("estimatedCostUsd")
             if issue_type_id != "unknown" and cost is not None:
                 issue_costs[issue_type_id] += float(cost)
+
         counts = Counter(event.issue_type_id or "other.unclassified" for event in events)
         total = sum(counts.values()) or 1
         by_day: dict[str, Counter[str]] = defaultdict(Counter)
         for event in events:
             day = event.occurred_at.date().isoformat()
             by_day[day][event.issue_type_id or "other.unclassified"] += 1
+
         items = []
         for issue_type_id, count in counts.most_common():
             record = self.taxonomy.get(issue_type_id)
+            prev_c = prev_counts.get(issue_type_id, 0)
+            change_count = count - prev_c
+            if prev_c > 0:
+                change_rate = round((count - prev_c) / prev_c, 4)
+            elif count > 0 and prev_total > 0:
+                change_rate = 1.0
+            else:
+                change_rate = 0.0
+
+            fb_total = issue_feedback_total[issue_type_id]
+            fb_down = issue_feedback_down[issue_type_id]
+            fb_up = issue_feedback_up[issue_type_id]
             items.append(
                 {
                     "issueTypeId": issue_type_id,
                     "displayName": record.display_name if record else issue_type_id,
                     "parentIssueTypeId": record.parent_issue_type_id if record else None,
+                    "ownerUnitId": record.owner_unit_id if record else None,
+                    "description": record.description if record else "",
                     "count": count,
+                    "previousCount": prev_c,
+                    "changeCount": change_count,
+                    "changeRate": change_rate,
                     "share": round(count / total, 4),
-                    "negativeFeedbackRate": round(issue_feedback_down[issue_type_id] / count, 4),
-                    "noAnswerRate": round(issue_no_answers[issue_type_id] / count, 4),
+                    "feedbackCount": fb_total,
+                    "positiveFeedbackCount": fb_up,
+                    "negativeFeedbackCount": fb_down,
+                    "negativeFeedbackRate": round(fb_down / count, 4),
+                    "handoffCount": issue_handoffs[issue_type_id],
                     "handoffRate": round(issue_handoffs[issue_type_id] / count, 4),
+                    "noAnswerCount": issue_no_answers[issue_type_id],
+                    "noAnswerRate": round(issue_no_answers[issue_type_id] / count, 4),
                     "estimatedCostUsd": round(issue_costs.get(issue_type_id, 0.0), 6),
                 }
             )
+
+        categories = sorted(
+            list(
+                {
+                    item["ownerUnitId"]
+                    for item in items
+                    if item.get("ownerUnitId")
+                }
+            )
+        )
+
         matched_issue_ids: set[str] | None = None
         if query:
             needle = query.casefold()
@@ -100,6 +168,14 @@ class IssuesQueryMixin:
                 )
             ]
             matched_issue_ids = {item["issueTypeId"] for item in items}
+
+        if owner_unit_id:
+            if owner_unit_id in {"other.unclassified", "unclassified"}:
+                items = [it for it in items if it["issueTypeId"] == "other.unclassified" or not it.get("ownerUnitId")]
+            else:
+                items = [it for it in items if it.get("ownerUnitId") == owner_unit_id]
+            matched_issue_ids = {item["issueTypeId"] for item in items}
+
         trends = []
         for day, day_counts in sorted(by_day.items()):
             day_items = [
@@ -109,14 +185,35 @@ class IssuesQueryMixin:
             ]
             if day_items:
                 trends.append({"date": day, "counts": day_items})
+
+        total_count = len(events)
+        total_change_count = total_count - prev_total
+        total_change_rate = (
+            round((total_count - prev_total) / prev_total, 4)
+            if prev_total > 0
+            else (1.0 if total_count > 0 and prev_total == 0 else 0.0)
+        )
+
         return {
             "periodDays": period.days,
             "periodPreset": period.preset,
+            "periodStart": period.start_at.isoformat(),
+            "periodEnd": period.end_at.isoformat(),
             "taxonomyVersion": self.taxonomy.version,
+            "totalCount": total_count,
+            "previousTotalCount": prev_total,
+            "totalChangeCount": total_change_count,
+            "totalChangeRate": total_change_rate,
+            "totalNegativeFeedbackCount": sum(issue_feedback_down.values()),
+            "totalFeedbackCount": sum(issue_feedback_total.values()),
+            "totalHandoffCount": sum(issue_handoffs.values()),
+            "totalNoAnswerCount": sum(issue_no_answers.values()),
+            "categories": categories,
             "items": items,
             "hierarchy": _build_issue_hierarchy(items, self.taxonomy),
             "trends": trends,
             "filterQuery": query,
+            "filterOwnerUnitId": owner_unit_id,
             "unclassifiedCount": counts.get("other.unclassified", 0),
         }
 
@@ -234,6 +331,7 @@ class IssuesQueryMixin:
             "faqIds": Counter(),
             "faqKeys": Counter(),
             "documentIds": Counter(),
+            "sourcePaths": Counter(),
             "versionIds": Counter(),
             "releaseIds": Counter(),
         }
@@ -273,6 +371,7 @@ class IssuesQueryMixin:
                         observed["faqKeys"].add(str(payload["faqKey"]))
                 for field, key_name in (
                     ("documentId", "documentIds"),
+                    ("sourcePath", "sourcePaths"),
                     ("versionId", "versionIds"),
                     ("releaseId", "releaseIds"),
                 ):
@@ -283,6 +382,7 @@ class IssuesQueryMixin:
                         continue
                     for field, key_name in (
                         ("documentId", "documentIds"),
+                        ("sourcePath", "sourcePaths"),
                         ("versionId", "versionIds"),
                         ("releaseId", "releaseIds"),
                     ):
@@ -347,6 +447,13 @@ class IssuesQueryMixin:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict[str, Any]:
+        period = self._resolve_period(
+            preset=preset,
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        all_events = await self._scoped_events(actor, period)
         summary = await self.routes_summary(
             actor,
             preset=preset,
@@ -360,11 +467,93 @@ class IssuesQueryMixin:
             (item for item in summary["byIssueType"] if item["issueTypeId"] == issue_type_id),
             None,
         )
+
+        turn_messages: dict[str, str] = {}
+        turn_answers: dict[str, str] = {}
+        for event in all_events:
+            tid = event.turn_id or event.correlation_id or ""
+            if not tid:
+                continue
+            payload = event.payload or {}
+            if event.event_type == "turn.received":
+                msg = payload.get("messageMasked") or payload.get("userMessage") or payload.get("text")
+                if msg:
+                    if event.turn_id:
+                        turn_messages[event.turn_id] = str(msg)
+                    if event.correlation_id:
+                        turn_messages[event.correlation_id] = str(msg)
+            elif event.event_type in {"answer.completed", "knowledge.answered", "faq.answered"}:
+                ans = payload.get("answerMasked") or payload.get("aiReply") or payload.get("text")
+                if ans:
+                    if event.turn_id:
+                        turn_answers[event.turn_id] = str(ans)
+                    if event.correlation_id:
+                        turn_answers[event.correlation_id] = str(ans)
+
+
+        correlation_to_issue: dict[str, str] = {}
+        turn_to_issue: dict[str, str] = {}
+        for event in all_events:
+            if not event.issue_type_id:
+                continue
+            if event.correlation_id:
+                correlation_to_issue[event.correlation_id] = event.issue_type_id
+            if event.turn_id:
+                turn_to_issue[event.turn_id] = event.issue_type_id
+
+        negative_feedbacks: list[dict[str, Any]] = []
+        handoff_count = 0
+        no_answer_count = 0
+        issue_event_count = 0
+
+        for event in all_events:
+            ev_issue = (
+                event.issue_type_id
+                or turn_to_issue.get(event.turn_id or "")
+                or correlation_to_issue.get(event.correlation_id or "")
+            )
+            if ev_issue != issue_type_id:
+                continue
+            if event.event_type == "issue.extracted":
+                issue_event_count += 1
+            if event.event_type.startswith("handoff."):
+                handoff_count += 1
+            if (
+                event.event_type in {"answer.completed", "faq.answered", "knowledge.answered"}
+                and event.payload.get("resultType") in {"NO_KNOWLEDGE", "FAILED"}
+            ):
+                no_answer_count += 1
+            if event.event_type == "feedback.recorded" and event.payload.get("rating") == "DOWN":
+                tid = event.turn_id or event.correlation_id or ""
+                payload = event.payload or {}
+                negative_feedbacks.append({
+                    "eventId": event.event_id,
+                    "occurredAt": event.occurred_at.isoformat(),
+                    "conversationId": event.conversation_id,
+                    "turnId": event.turn_id,
+                    "reason": str(payload.get("reason") or "未填寫原因"),
+                    "resolvedStatus": payload.get("resolvedStatus"),
+                    "userMessage": turn_messages.get(event.turn_id or "") or turn_messages.get(event.correlation_id or "") or "",
+                    "aiReply": turn_answers.get(event.turn_id or "") or turn_answers.get(event.correlation_id or "") or "",
+
+                })
+
+        negative_feedbacks.sort(key=lambda x: x["occurredAt"], reverse=True)
+
         return {
             "issueTypeId": issue_type_id,
             "displayName": record.display_name if record else issue_type_id,
+            "description": record.description if record else "",
+            "ownerUnitId": record.owner_unit_id if record else None,
             "periodPreset": summary["periodPreset"],
             "periodDays": summary["periodDays"],
+            "periodStart": period.start_at.isoformat(),
+            "periodEnd": period.end_at.isoformat(),
+            "totalCount": issue_event_count,
             "routes": issue_item["routes"] if issue_item else [],
+            "negativeFeedbackCount": len(negative_feedbacks),
+            "negativeFeedbacks": negative_feedbacks[:10],
+            "handoffCount": handoff_count,
+            "noAnswerCount": no_answer_count,
         }
 
