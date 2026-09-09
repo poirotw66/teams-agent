@@ -10,6 +10,28 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Protocol
+
+
+class PricingProvider(Protocol):
+    def lookup_rate(self, model: str, at: datetime | None = None) -> tuple[float, float] | None: ...
+    def get_exchange_rate(self, at: datetime | None = None) -> float: ...
+    def get_pricing_version(self, at: datetime | None = None) -> str: ...
+    def list_rates(self, at: datetime | None = None) -> list[dict[str, Any]]: ...
+
+
+_PRICING_PROVIDER: PricingProvider | None = None
+
+
+def configure_pricing_provider(provider: PricingProvider | None) -> None:
+    global _PRICING_PROVIDER
+    _PRICING_PROVIDER = provider
+
+
+def get_pricing_provider() -> PricingProvider | None:
+    return _PRICING_PROVIDER
+
 
 # Bump when _MODEL_RATES_USD changes so historical usage events stay priced consistently.
 PRICING_VERSION = "2026-08-31"
@@ -100,7 +122,11 @@ def normalize_model_name(model: str | None) -> str:
     return name or "unknown"
 
 
-def lookup_rate(model: str) -> tuple[float, float] | None:
+def lookup_rate(model: str, at: datetime | None = None) -> tuple[float, float] | None:
+    if _PRICING_PROVIDER is not None:
+        rate = _PRICING_PROVIDER.lookup_rate(model, at=at)
+        if rate is not None:
+            return rate
     key = normalize_model_name(model).lower()
     if key in _MODEL_RATES_USD:
         return _MODEL_RATES_USD[key]
@@ -110,8 +136,10 @@ def lookup_rate(model: str) -> tuple[float, float] | None:
     return None
 
 
-def list_model_rates_usd() -> list[dict[str, float | str]]:
+def list_model_rates_usd(at: datetime | None = None) -> list[dict[str, Any]]:
     """Return the configured per-model USD rates used for cost estimates."""
+    if _PRICING_PROVIDER is not None:
+        return _PRICING_PROVIDER.list_rates(at=at)
     return [
         {
             "model": name,
@@ -136,17 +164,28 @@ def estimate_cost_usd(
     model: str,
     input_tokens: int,
     output_tokens: int = 0,
+    at: datetime | None = None,
 ) -> float | None:
-    rate = lookup_rate(model)
+    rate = lookup_rate(model, at=at)
     if rate is None:
         return None
     input_price, output_price = rate
     return (input_tokens * input_price + output_tokens * output_price) / 1_000_000
 
 
-def convert_usd_to_twd(amount_usd: float, exchange_rate: float) -> float:
+def convert_usd_to_twd(
+    amount_usd: float,
+    exchange_rate: float | None = None,
+    at: datetime | None = None,
+) -> float:
     """Convert a USD amount to TWD for user-facing cost display."""
-    return round(amount_usd * exchange_rate, 3)
+    if exchange_rate is not None:
+        rate = exchange_rate
+    elif _PRICING_PROVIDER is not None:
+        rate = _PRICING_PROVIDER.get_exchange_rate(at=at)
+    else:
+        rate = 31.70
+    return round(amount_usd * rate, 3)
 
 
 def build_usage_report(
@@ -154,6 +193,7 @@ def build_usage_report(
     *,
     embedding_tokens: int = 0,
     embedding_model: str | None = None,
+    at: datetime | None = None,
 ) -> UsageReport:
     by_model: list[ModelUsage] = []
     input_tokens = 0
@@ -165,7 +205,7 @@ def build_usage_report(
         model_input = int(usage.get("input_tokens") or 0)
         model_output = int(usage.get("output_tokens") or 0)
         model_total = int(usage.get("total_tokens") or (model_input + model_output))
-        cost = estimate_cost_usd(model_name, model_input, model_output)
+        cost = estimate_cost_usd(model_name, model_input, model_output, at=at)
         if cost is None:
             cost_complete = False
         else:

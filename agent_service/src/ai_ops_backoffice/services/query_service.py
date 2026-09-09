@@ -25,10 +25,16 @@ from agent_service.operations.scope import (
 )
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
-from agent_service.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
+from agent_service.usage import (
+    configure_pricing_provider,
+    convert_usd_to_twd,
+    list_model_rates_usd,
+    lookup_rate,
+)
 
 from ..pricing_domain import (
     FilePricingRepository,
+    FirestorePricingRepository,
     InMemoryPricingRepository,
     PricingService,
 )
@@ -154,6 +160,13 @@ class BackofficeQueryService(
         )
         if settings.pricing_store_mode == "FILE":
             self._pricing_repository = FilePricingRepository(pricing_store_path)
+        elif settings.pricing_store_mode == "FIRESTORE":
+            from google.cloud import firestore
+
+            self._pricing_repository = FirestorePricingRepository(
+                firestore.Client(project=settings.gcp_project_id),
+                collection=settings.pricing_firestore_collection,
+            )
         else:
             self._pricing_repository = InMemoryPricingRepository()
         self._pricing_service = PricingService(
@@ -161,6 +174,7 @@ class BackofficeQueryService(
             audit_store=self._runtime.audit_store,
             environment=self._environment,
         )
+        configure_pricing_provider(self._pricing_service)
 
     @property
     def pricing_service(self) -> PricingService:

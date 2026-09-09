@@ -98,3 +98,51 @@ class FilePricingRepository(InMemoryPricingRepository):
                 return result
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+class FirestorePricingRepository:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        collection: str = "ai_ops_pricing_state",
+        transaction_runner: Any | None = None,
+    ) -> None:
+        self._client = client
+        self._state = client.collection(collection).document("current")
+        self._transaction_runner = transaction_runner
+
+    def load(self) -> PricingState:
+        snapshot = self._state.get()
+        return (
+            PricingState.model_validate(snapshot.to_dict())
+            if snapshot.exists
+            else _initial_pricing_state()
+        )
+
+    def mutate(self, operation: Mutation) -> dict[str, Any]:
+        def transaction_operation(transaction: Any) -> dict[str, Any]:
+            snapshot = self._state.get(transaction=transaction)
+            current = (
+                PricingState.model_validate(snapshot.to_dict())
+                if snapshot.exists
+                else _initial_pricing_state()
+            )
+            next_state, result = operation(current)
+            if next_state.revision != current.revision + 1:
+                raise RuntimeError("Pricing state revision must increment")
+            transaction.set(self._state, next_state.model_dump(mode="python"))
+            return result
+
+        if self._transaction_runner is not None:
+            return self._transaction_runner(
+                transaction_operation, self._client.transaction()
+            )
+        try:
+            from google.cloud.firestore_v1.transaction import transactional
+        except ImportError as error:
+            raise RuntimeError(
+                "FIRESTORE pricing repository requires google-cloud-firestore"
+            ) from error
+        return transactional(transaction_operation)(self._client.transaction())
+

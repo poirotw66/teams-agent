@@ -86,6 +86,7 @@ class BackofficeSettings:
     min_test_cases_for_review: int = 3
     pricing_store_mode: str = "FILE"
     pricing_store_path: Path | None = None
+    pricing_firestore_collection: str = "ai_ops_pricing_state"
     environment: str = "dev"
 
     def validate_for_production(self) -> list[str]:
@@ -363,6 +364,9 @@ class BackofficeSettings:
                     ops_dir / "phase2" / "pricing_rules.json",
                 )
             ).expanduser().resolve(),
+            pricing_firestore_collection=os.environ.get(
+                "AIOPS_PRICING_FIRESTORE_COLLECTION", "ai_ops_pricing_state"
+            ),
             environment=(
                 os.environ.get("AI_OPS_DEPLOYMENT_ENV")
                 or os.environ.get("AGENT_DEPLOYMENT_ENV")

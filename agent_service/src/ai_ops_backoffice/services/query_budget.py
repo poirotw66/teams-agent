@@ -76,12 +76,23 @@ class BudgetQueryMixin:
             round(complete_cost_events / len(usage_events), 4) if usage_events else 1.0
         )
         known_total = known_cost_total(usage_events) or 0.0
+        pricing_svc = getattr(self, "_pricing_service", None)
+        exchange_rate = (
+            pricing_svc.get_exchange_rate(at=period.end_at)
+            if pricing_svc is not None
+            else float(self._metrics.get("usdTwdExchangeRate", 31.70))
+        )
+        pricing_version = (
+            pricing_svc.get_pricing_version(at=period.end_at)
+            if pricing_svc is not None
+            else str(self._metrics.get("pricingVersion", "v1"))
+        )
         if measure == "USD":
             actual_value = known_total
         elif measure == "TWD":
             actual_value = convert_usd_to_twd(
                 known_total,
-                float(self._metrics.get("usdTwdExchangeRate", 31.70)),
+                exchange_rate,
             )
         elif measure == "TOKEN":
             actual_value = float(
@@ -115,11 +126,8 @@ class BudgetQueryMixin:
             "periodKey": local_start.strftime(
                 "%Y-%m-%d" if period_type == "DAILY" else "%Y-%m"
             ),
-            "pricingVersion": self._metrics.get("pricingVersion", "v1"),
-            "exchangeRateVersion": self._metrics.get(
-                "exchangeRateVersion",
-                self._metrics.get("metrics_definition_version", METRICS_DEFINITION_VERSION),
-            ),
+            "pricingVersion": pricing_version,
+            "exchangeRateVersion": pricing_version,
         }
 
 

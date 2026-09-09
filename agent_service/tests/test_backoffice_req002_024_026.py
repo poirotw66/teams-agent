@@ -11,6 +11,12 @@ from agent_service.operations.access import ActorContext
 from agent_service.operations.contracts import OperationalEvent
 from agent_service.operations.ingestion import EventIngestionService
 from agent_service.operations.stores.file_store import FileOperationalStore
+from agent_service.usage import (
+    configure_pricing_provider,
+    convert_usd_to_twd,
+    estimate_cost_usd,
+    lookup_rate,
+)
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.budget_domain.models import AlertEvent
 from ai_ops_backoffice.budget_domain.repository import InMemoryBudgetRepository
@@ -18,11 +24,15 @@ from ai_ops_backoffice.budget_domain.service import BudgetService
 from ai_ops_backoffice.example_domain.models import ExampleRecord
 from ai_ops_backoffice.example_domain.repository import InMemoryExampleRepository
 from ai_ops_backoffice.example_domain.service import ExampleService
-from ai_ops_backoffice.pricing_domain.repository import InMemoryPricingRepository
+from ai_ops_backoffice.pricing_domain.repository import (
+    FirestorePricingRepository,
+    InMemoryPricingRepository,
+)
 from ai_ops_backoffice.pricing_domain.service import PricingService
 from ai_ops_backoffice.quality_domain.models import QualityCase
 from ai_ops_backoffice.quality_domain.repository import InMemoryQualityRepository
 from ai_ops_backoffice.quality_domain.service import QualityService
+from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 from ai_ops_backoffice.sync_domain.models import SyncJob
 from ai_ops_backoffice.sync_domain.repository import InMemorySyncRepository
@@ -172,6 +182,205 @@ def test_cost_rates_api_endpoints_and_rbac(tmp_path: Path) -> None:
     assert len(history["audits"]) >= 1
     assert history["audits"][0]["target_id"] == "gemini-2.0-flash"
     assert history["audits"][0]["change_type"] == "MODEL_RATE"
+
+
+@pytest.mark.asyncio
+async def test_pricing_future_effective_date_and_auto_generated_version() -> None:
+    repo = InMemoryPricingRepository()
+    service = PricingService(repo)
+    actor = ActorContext(
+        user_id="fin.ops",
+        display_name="Finance Ops",
+        role="AI_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    now = datetime.now(UTC)
+    future_time = now + timedelta(days=7)
+
+    # 1. Update without version -> auto-generates version snapshot
+    res_model = await service.update_model_rate(
+        model="gpt-4o-mini",
+        input_rate=0.20,
+        output_rate=0.80,
+        actor=actor,
+        reason="Immediate rate adjustment without version",
+    )
+    auto_ver = res_model["after"]["pricingVersion"]
+    assert auto_ver.startswith("2026-08-31.") or ".2" in auto_ver or "v1." in auto_ver
+    assert service.get_pricing_version() == auto_ver
+
+    after_step1 = datetime.now(UTC)
+
+    # 2. Update with future effective date
+    future_ver = "2026-Q4-future"
+    future_time = after_step1 + timedelta(days=7)
+    await service.update_model_rate(
+        model="gpt-4o-mini",
+        input_rate=0.50,
+        output_rate=2.00,
+        effective_at=future_time,
+        pricing_version=future_ver,
+        actor=actor,
+        reason="Scheduled Q4 rate increase",
+    )
+
+    # Currently active (at step 1) must still be the previous rate, not the future rate
+    current_lookup = service.lookup_rate("gpt-4o-mini", at=after_step1)
+    assert current_lookup == (0.20, 0.80)
+    assert service.get_pricing_version(at=after_step1) == auto_ver
+
+    # At future time, the new rate activates
+    future_lookup = service.lookup_rate("gpt-4o-mini", at=future_time + timedelta(hours=1))
+    assert future_lookup == (0.50, 2.00)
+    assert service.get_pricing_version(at=future_time + timedelta(hours=1)) == future_ver
+
+
+@pytest.mark.asyncio
+async def test_usage_module_integrates_with_governed_pricing_provider() -> None:
+    repo = InMemoryPricingRepository()
+    service = PricingService(repo)
+    actor = ActorContext(
+        user_id="fin.ops",
+        display_name="Finance Ops",
+        role="AI_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+
+    await service.update_model_rate(
+        model="custom-governed-llm",
+        input_rate=2.0,
+        output_rate=8.0,
+        actor=actor,
+        reason="Register governed rate",
+    )
+    await service.update_exchange_rate(
+        exchange_rate=33.50,
+        actor=actor,
+        reason="Adjust USD/TWD rate",
+    )
+
+    configure_pricing_provider(service)
+    try:
+        assert lookup_rate("custom-governed-llm") == (2.0, 8.0)
+        cost_usd = estimate_cost_usd("custom-governed-llm", input_tokens=1_000_000, output_tokens=500_000)
+        assert cost_usd == 6.0  # 2.0*1 + 8.0*0.5 = 6.0 USD
+        cost_twd = convert_usd_to_twd(10.0)
+        assert cost_twd == 335.0  # 10.0 * 33.50
+    finally:
+        configure_pricing_provider(None)
+
+
+@pytest.mark.asyncio
+async def test_budget_usage_dynamic_exchange_rate_synchronization(tmp_path: Path) -> None:
+    from agent_service.operations.taxonomy import TaxonomyRepository
+
+    settings = _make_settings(tmp_path, ops_mode="FILE")
+    ingestion = EventIngestionService(FileOperationalStore(settings.ops_store_path), settings)
+    now = datetime.now(UTC)
+
+    event = OperationalEvent(
+        event_id="ev-budget-1",
+        event_type="usage.recorded",
+        occurred_at=now,
+        conversation_id="conv-b1",
+        correlation_id="corr-b1",
+        actor_ref="user-123",
+        issue_type_id="vpn.connection_failed",
+        payload={
+            "model": "gpt-4.1",
+            "inputTokens": 1000,
+            "outputTokens": 500,
+            "estimatedCostUsd": 1.0,
+        },
+    )
+    await ingestion.ingest_many([event])
+
+    query_svc = BackofficeQueryService(settings)
+    actor = ActorContext(
+        user_id="fin.ops",
+        display_name="Finance Ops",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    # Update exchange rate to 35.00
+    await query_svc.pricing_service.update_exchange_rate(
+        exchange_rate=35.00,
+        actor=actor,
+        reason="New exchange rate for budget test",
+    )
+
+    res = await query_svc.budget_usage(
+        actor=actor,
+        scope_type="PERSONAL",
+        scope_id="user-123",
+        period_type="DAILY",
+        measure="TWD",
+    )
+    # 1.0 USD * 35.00 = 35.0 TWD
+    assert res["actualValue"] == 35.0
+
+
+def test_firestore_pricing_repository_mock_transactions() -> None:
+    class FakeDocSnapshot:
+        def __init__(self, data: dict[str, Any] | None) -> None:
+            self._data = data
+            self.exists = data is not None
+
+        def to_dict(self) -> dict[str, Any] | None:
+            return self._data
+
+    class FakeDocRef:
+        def __init__(self) -> None:
+            self.stored: dict[str, Any] | None = None
+
+        def get(self, transaction: Any = None) -> FakeDocSnapshot:
+            return FakeDocSnapshot(self.stored)
+
+    class FakeCollectionRef:
+        def __init__(self) -> None:
+            self.docs: dict[str, FakeDocRef] = {}
+
+        def document(self, name: str) -> FakeDocRef:
+            if name not in self.docs:
+                self.docs[name] = FakeDocRef()
+            return self.docs[name]
+
+    class FakeFirestoreClient:
+        def __init__(self) -> None:
+            self.collections: dict[str, FakeCollectionRef] = {}
+
+        def collection(self, name: str) -> FakeCollectionRef:
+            if name not in self.collections:
+                self.collections[name] = FakeCollectionRef()
+            return self.collections[name]
+
+        def transaction(self) -> Any:
+            return self
+
+        def set(self, doc_ref: FakeDocRef, data: dict[str, Any]) -> None:
+            doc_ref.stored = data
+
+    fake_client = FakeFirestoreClient()
+
+    def fake_transaction_runner(fn: Any, transaction: Any) -> Any:
+        return fn(transaction)
+
+    repo = FirestorePricingRepository(
+        fake_client,
+        collection="test_pricing_state",
+        transaction_runner=fake_transaction_runner,
+    )
+    state = repo.load()
+    assert state.revision == 1
+    assert state.exchange_rate == 31.70
+
+    def op(st: Any) -> tuple[Any, dict[str, Any]]:
+        return st.model_copy(update={"revision": st.revision + 1, "exchange_rate": 34.0}), {"ok": True}
+
+    res = repo.mutate(op)
+    assert res["ok"] is True
+    assert repo.load().exchange_rate == 34.0
+    assert repo.load().revision == 2
 
 
 def test_cost_status_classification_estimated_zero_unknown(tmp_path: Path) -> None:
