@@ -27,7 +27,15 @@ import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { withReturnTo } from "../app/returnTo.js";
 
+function stillOnIssues() {
+  const view = loadNavFilters().view;
+  return !view || view === "issues";
+}
+
 function finishIssuesPage(panel) {
+  if (!stillOnIssues()) {
+    return;
+  }
   if (isBuShellEnabled()) {
     presentAnalyticsPage(
       "issues",
@@ -1006,7 +1014,10 @@ export async function renderIssues(state = { preset: "30d" }) {
 
     finishIssuesPage(panel);
   } catch (error) {
-    app.replaceChildren(
+    if (!stillOnIssues()) {
+      return;
+    }
+    document.getElementById("app").replaceChildren(
       el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),
     );
   }

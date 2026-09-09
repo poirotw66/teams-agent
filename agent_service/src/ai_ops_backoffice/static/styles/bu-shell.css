@@ -262,6 +262,20 @@ body.bu-shell-v1 .bu-case-page .bu-case-crumb {
   color: var(--muted);
 }
 
+body.bu-shell-v1 .bu-return-bar {
+  margin: 0 0 0.65rem;
+}
+
+body.bu-shell-v1 .bu-return-bar a {
+  font-size: 0.8125rem;
+  color: var(--brand-700);
+  text-decoration: none;
+}
+
+body.bu-shell-v1 .bu-return-bar a:hover {
+  text-decoration: underline;
+}
+
 body.bu-shell-v1 .bu-case-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;

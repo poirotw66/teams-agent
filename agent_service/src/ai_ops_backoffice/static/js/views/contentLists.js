@@ -6,10 +6,44 @@ import { el } from "../api.js";
 import { createPageController } from "../app/lifecycle.js";
 import { actorCapabilities, canUseKnowledgeUi } from "../app/capabilities.js";
 import { drillLink, loadNavFilters, saveNavFilters, syncLocationHash } from "../app/navigation.js";
+import { navigateReturnTo, parseReturnTo } from "../app/returnTo.js";
 import {
   renderFaqManagement,
   renderKnowledgePortalEntry,
 } from "./knowledge.js";
+
+function returnLabel(view) {
+  if (view === "quality") return "← 返回改善案件";
+  if (view === "conversations") return "← 返回對話紀錄";
+  if (view === "workHub") return "← 返回我的工作";
+  if (view === "evaluations") return "← 返回品質驗收";
+  return "← 返回上一頁";
+}
+
+function buildReturnBar() {
+  const parsed = parseReturnTo(loadNavFilters().returnTo);
+  if (!parsed) {
+    return null;
+  }
+  const bar = el("div", "bu-return-bar");
+  const back = el("a", "button-link", returnLabel(parsed.view));
+  back.href = "#";
+  back.addEventListener("click", (event) => {
+    event.preventDefault();
+    navigateReturnTo(parsed.view, parsed.filters);
+  });
+  bar.append(back);
+  return bar;
+}
+
+function filtersWithReturn(tab) {
+  const current = loadNavFilters();
+  const next = { view: "contentLists", tab };
+  if (current.returnTo) {
+    next.returnTo = current.returnTo;
+  }
+  return next;
+}
 
 async function renderContentLists(state = {}) {
   const app = document.getElementById("app");
@@ -18,6 +52,10 @@ async function renderContentLists(state = {}) {
   const allowed = actorCapabilities();
 
   const header = el("div");
+  const returnBar = buildReturnBar();
+  if (returnBar) {
+    header.append(returnBar);
+  }
   header.append(el("h2", "", "知識內容"));
   header.append(
     el("p", "metric-label", "直接維護使用者會讀到的答案與引用依據。"),
@@ -55,8 +93,12 @@ async function renderContentLists(state = {}) {
     const button = el("button", key === activeTab ? "active" : "", label);
     button.type = "button";
     button.addEventListener("click", () => {
-      saveNavFilters({ view: "contentLists", tab: key });
-      syncLocationHash("contentLists", { tab: key });
+      const next = filtersWithReturn(key);
+      saveNavFilters(next);
+      syncLocationHash("contentLists", {
+        tab: key,
+        ...(next.returnTo ? { returnTo: next.returnTo } : {}),
+      });
       void renderContentLists({ tab: key });
     });
     tabs.append(button);

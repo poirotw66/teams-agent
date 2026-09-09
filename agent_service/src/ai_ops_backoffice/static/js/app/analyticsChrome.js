@@ -46,6 +46,11 @@ export function buildAnalyticsTabs(activeView) {
 
 /** Wrap page content with BU analytics header + tabs when shell is on. */
 export function presentAnalyticsPage(activeView, title, subtitle, ...nodes) {
+  // Ignore late completions after the user already navigated away.
+  const currentView = loadNavFilters().view;
+  if (currentView && currentView !== activeView) {
+    return;
+  }
   const app = document.getElementById("app");
   if (!isBuShellEnabled()) {
     app.replaceChildren(...nodes);

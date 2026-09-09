@@ -201,7 +201,10 @@ async function renderKnowledge() {
       panel,
     );
   } else {
-    app.replaceChildren(panel);
+    const view = loadNavFilters().view;
+    if (!view || view === "knowledge") {
+      app.replaceChildren(panel);
+    }
   }
 
   async function loadDocuments(cursor = "") {

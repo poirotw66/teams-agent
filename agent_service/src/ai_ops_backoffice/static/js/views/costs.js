@@ -4,6 +4,12 @@ import { createExportButton } from "../services/export.js";
 import { createPageController } from "../app/lifecycle.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { loadNavFilters } from "../app/navigation.js";
+
+function stillOnCosts() {
+  const view = loadNavFilters().view;
+  return !view || view === "costs";
+}
 
 export async function renderCosts(state = { preset: "30d" }) {
   const app = document.getElementById("app");
@@ -260,6 +266,9 @@ export async function renderCosts(state = { preset: "30d" }) {
       dimScroll.append(dimensionTable);
       panel.append(el("h3", "", heading), dimScroll);
     }
+    if (!stillOnCosts()) {
+      return;
+    }
     if (isBuShellEnabled()) {
       presentAnalyticsPage(
         "costs",
@@ -271,6 +280,9 @@ export async function renderCosts(state = { preset: "30d" }) {
       app.replaceChildren(panel);
     }
   } catch (error) {
+    if (!stillOnCosts()) {
+      return;
+    }
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
 }

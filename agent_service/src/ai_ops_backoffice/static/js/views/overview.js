@@ -15,12 +15,18 @@ import {
 } from "./overviewSections.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { loadNavFilters } from "../app/navigation.js";
 
 let currentOverviewPreset = "7d";
 let currentOverviewTrendTab = "conv";
 let currentOverviewInterval = "DAY";
 let currentOverviewModel = "";
 let currentOverviewIssueTypeId = "";
+
+function stillOnOverview() {
+  const view = loadNavFilters().view;
+  return !view || view === "overview";
+}
 
 export async function renderOverview(forceRefresh = false) {
   const app = document.getElementById("app");
@@ -126,6 +132,9 @@ export async function renderOverview(forceRefresh = false) {
     const glossary = buildMetricsGlossary(data.metricDefinitions || {});
     if (glossary) dashboard.append(glossary);
 
+    if (!stillOnOverview()) {
+      return;
+    }
     if (isBuShellEnabled()) {
       presentAnalyticsPage(
         "overview",
@@ -137,6 +146,9 @@ export async function renderOverview(forceRefresh = false) {
       app.replaceChildren(dashboard);
     }
   } catch (error) {
+    if (!stillOnOverview()) {
+      return;
+    }
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }
 }

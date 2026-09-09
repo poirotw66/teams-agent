@@ -17,6 +17,11 @@ import { createPageController } from "../app/lifecycle.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 
+function stillOnRoutes() {
+  const view = loadNavFilters().view;
+  return !view || view === "routes";
+}
+
 const ROUTE_OPTIONS = [
   "",
   "FAQ",
@@ -243,6 +248,9 @@ export async function renderRoutes(state = { preset: "30d" }) {
       panel.append(byIssueScroll);
     }
 
+    if (!stillOnRoutes()) {
+      return;
+    }
     if (isBuShellEnabled()) {
       presentAnalyticsPage(
         "routes",
@@ -254,6 +262,9 @@ export async function renderRoutes(state = { preset: "30d" }) {
       app.replaceChildren(panel);
     }
   } catch (error) {
+    if (!stillOnRoutes()) {
+      return;
+    }
     app.replaceChildren(
       el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),
     );
