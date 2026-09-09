@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from .candidate_generator import CandidateGenerationManager
+from .errors import (
+    EvaluationAuditWriteError,
+    EvaluationAuthorizationError,
+    EvaluationDomainError,
+    EvaluationIdempotencyConflictError,
+    EvaluationNotFoundError,
+    EvaluationTransitionError,
+    EvaluationValidationError,
+    EvaluationVersionConflictError,
+)
+from .import_export import EvaluationImportExportManager
+from .models import (
+    CandidateGenerationJob,
+    CaseRevision,
+    CriterionItem,
+    EvalBehaviorType,
+    EvalCase,
+    EvalSet,
+    EvalSetVersion,
+    EvaluationAuditEvent,
+    EvaluationCriteria,
+    EvaluationIdempotencyRecord,
+    EvaluationState,
+    EvidenceItem,
+    EvidenceRequirement,
+    ImportValidationResult,
+    ProvenanceSpec,
+    ToolConstraintsSpec,
+    TurnSpec,
+    calculate_manifest_hash,
+    calculate_revision_content_hash,
+)
+from .repository import (
+    EvaluationRepository,
+    FileEvaluationRepository,
+    InMemoryEvaluationRepository,
+)
+from .service import EvaluationService
+
+__all__ = [
+    "CandidateGenerationJob",
+    "CandidateGenerationManager",
+    "CaseRevision",
+    "CriterionItem",
+    "EvalBehaviorType",
+    "EvalCase",
+    "EvalSet",
+    "EvalSetVersion",
+    "EvaluationAuditEvent",
+    "EvaluationAuditWriteError",
+    "EvaluationAuthorizationError",
+    "EvaluationCriteria",
+    "EvaluationDomainError",
+    "EvaluationIdempotencyConflictError",
+    "EvaluationIdempotencyRecord",
+    "EvaluationImportExportManager",
+    "EvaluationNotFoundError",
+    "EvaluationRepository",
+    "EvaluationService",
+    "EvaluationState",
+    "EvaluationTransitionError",
+    "EvaluationValidationError",
+    "EvaluationVersionConflictError",
+    "EvidenceItem",
+    "EvidenceRequirement",
+    "FileEvaluationRepository",
+    "ImportValidationResult",
+    "InMemoryEvaluationRepository",
+    "ProvenanceSpec",
+    "ToolConstraintsSpec",
+    "TurnSpec",
+    "calculate_manifest_hash",
+    "calculate_revision_content_hash",
+]

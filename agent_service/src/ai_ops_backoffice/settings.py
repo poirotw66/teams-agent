@@ -87,6 +87,9 @@ class BackofficeSettings:
     pricing_store_mode: str = "FILE"
     pricing_store_path: Path | None = None
     pricing_firestore_collection: str = "ai_ops_pricing_state"
+    eval_store_mode: str = "FILE"
+    eval_store_path: Path | None = None
+    eval_firestore_collection: str = "ai_ops_evaluation_state"
     environment: str = "dev"
 
     def validate_for_production(self) -> list[str]:
@@ -366,6 +369,18 @@ class BackofficeSettings:
             ).expanduser().resolve(),
             pricing_firestore_collection=os.environ.get(
                 "AIOPS_PRICING_FIRESTORE_COLLECTION", "ai_ops_pricing_state"
+            ),
+            eval_store_mode=(
+                os.environ.get("AI_OPS_EVAL_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            eval_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_EVAL_STORE_PATH",
+                    ops_dir / "evaluations" / "golden_evals.json",
+                )
+            ).expanduser().resolve(),
+            eval_firestore_collection=os.environ.get(
+                "AI_OPS_EVAL_FIRESTORE_COLLECTION", "ai_ops_evaluation_state"
             ),
             environment=(
                 os.environ.get("AI_OPS_DEPLOYMENT_ENV")

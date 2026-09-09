@@ -45,8 +45,24 @@ from .governance_domain import (
 )
 from .governance_routes import register_governance_routes
 from .deps import build_dependencies
+from .evaluation_domain import (
+    CandidateGenerationManager,
+    EvaluationAuditWriteError,
+    EvaluationAuthorizationError,
+    EvaluationDomainError,
+    EvaluationIdempotencyConflictError,
+    EvaluationImportExportManager,
+    EvaluationNotFoundError,
+    EvaluationService,
+    EvaluationTransitionError,
+    EvaluationValidationError,
+    EvaluationVersionConflictError,
+    FileEvaluationRepository,
+    InMemoryEvaluationRepository,
+)
 from .routers import (
     register_budget_routes,
+    register_evaluation_routes,
     register_example_routes,
     register_faq_routes,
     register_ops_read_routes,
@@ -319,6 +335,21 @@ def create_app(
     configure_policy_runtime(
         PolicyRuntime(settings=policy_settings, governance=governance_service)
     )
+    eval_store_mode = resolved_settings.eval_store_mode.upper()
+    if eval_store_mode == "MEMORY":
+        eval_repository: EvaluationRepository = InMemoryEvaluationRepository()
+    else:
+        eval_store_path = resolved_settings.eval_store_path or (
+            resolved_settings.ops_store_path.parent / "evaluations" / "golden_evals.json"
+        )
+        eval_repository = FileEvaluationRepository(eval_store_path)
+
+    evaluation_service = EvaluationService(
+        eval_repository,
+        default_tenant_id=resolved_settings.deployment_tenant_id,
+    )
+    import_export_manager = EvaluationImportExportManager(evaluation_service)
+    candidate_manager = CandidateGenerationManager(evaluation_service)
     (
         sync_worker,
         run_sync_job,
@@ -383,6 +414,28 @@ def create_app(
     @app.exception_handler(KnowledgeBridgeError)
     async def knowledge_bridge_error_handler(_request, exc: KnowledgeBridgeError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+    @app.exception_handler(EvaluationAuthorizationError)
+    async def evaluation_authorization_handler(_request, exc: EvaluationAuthorizationError) -> JSONResponse:
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    @app.exception_handler(EvaluationNotFoundError)
+    async def evaluation_not_found_handler(_request, exc: EvaluationNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(EvaluationVersionConflictError)
+    @app.exception_handler(EvaluationIdempotencyConflictError)
+    @app.exception_handler(EvaluationTransitionError)
+    async def evaluation_conflict_handler(_request, exc: EvaluationDomainError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(EvaluationValidationError)
+    async def evaluation_validation_handler(_request, exc: EvaluationValidationError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(EvaluationAuditWriteError)
+    async def evaluation_audit_write_handler(_request, exc: EvaluationAuditWriteError) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     register_ops_read_routes(
         app,
@@ -472,6 +525,15 @@ def create_app(
     app.state.quality_service = quality_service
     app.state.sync_service = sync_service
     app.state.budget_service = budget_service
+    app.state.evaluation_service = evaluation_service
+    register_evaluation_routes(
+        app,
+        evaluation_service=evaluation_service,
+        import_export_manager=import_export_manager,
+        candidate_manager=candidate_manager,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
     register_governance_routes(
         app,
         governance=governance_service,

@@ -58,6 +58,7 @@ import { retentionPage } from "./views/retention.js";
 import { rolesPage } from "./views/roles.js";
 import { routesPage } from "./views/routes.js";
 import { searchPage } from "./views/search.js";
+import { evaluationsPage } from "./views/evaluations.js";
 
 const LIFECYCLE_VIEWS = new Set([
   "costs",
@@ -87,6 +88,7 @@ const LIFECYCLE_VIEWS = new Set([
   "knowledgeDocument",
   "knowledgePortal",
   "examples",
+  "evaluations",
 ]);
 
 const knowledgeSections = {
@@ -112,6 +114,7 @@ const routes = {
   knowledgeDocument: () => enterPage(knowledgeDocumentPage),
   knowledgePortal: () => enterPage(knowledgePortalPage),
   examples: () => enterPage(examplesPage),
+  evaluations: () => enterPage(evaluationsPage),
   quality: (state) => enterPage(qualityPage, { state: state || {} }),
   prompts: () => enterPage(promptsPage),
   models: () => enterPage(modelsPage),

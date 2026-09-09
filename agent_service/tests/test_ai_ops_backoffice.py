@@ -2071,6 +2071,7 @@ def test_health_summary_includes_active_knowledge_release(tmp_path: Path) -> Non
         "timeoutRate": None,
         "p50LatencyMs": None,
         "p95LatencyMs": None,
+        "latencySampleCount": 0,
     }
 
 

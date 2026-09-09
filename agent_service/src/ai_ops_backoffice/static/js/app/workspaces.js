@@ -19,6 +19,7 @@ export const workspaces = [
       ["knowledge", "內容成效", "ops.knowledge.read"],
       ["sync", "同步工作", "ops.sync.read"],
       ["knowledgeAudit", "知識稽核", "knowledge.ui"],
+      ["evaluations", "品質驗收", "ops.evals.read"],
       ["examples", "案例集驗證", "ops.examples.read"],
       ["conversations", "回答驗證", "ops.conversations.read"],
     ],
@@ -28,6 +29,7 @@ export const workspaces = [
     label: "AI 管理",
     hint: "資料集、評測、Prompt、模型與發布",
     items: [
+      ["evaluations", "品質驗收", "ops.evals.read"],
       ["examples", "資料集／案例", "ops.examples.read"],
       ["prompts", "Prompt 與評測", "ops.prompts.read"],
       ["models", "模型設定", "ops.models.read"],

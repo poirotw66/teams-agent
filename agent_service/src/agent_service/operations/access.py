@@ -70,6 +70,15 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.retention.write",
             "ops.exports.create",
             "ops.exports.read",
+            "ops.evals.read",
+            "ops.evals.write",
+            "ops.evals.review",
+            "ops.evals.sets.publish",
+            "ops.evals.run",
+            "ops.evals.results.review",
+            "ops.evals.export",
+            "ops.evals.holdout.read",
+            "ops.evals.gates.manage",
         }
     ),
     "AI_ADMIN": frozenset(
@@ -107,6 +116,12 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.retention.write",
             "ops.exports.create",
             "ops.exports.read",
+            "ops.evals.read",
+            "ops.evals.write",
+            "ops.evals.run",
+            "ops.evals.results.review",
+            "ops.evals.export",
+            "ops.evals.gates.manage",
         }
     ),
     "KNOWLEDGE_ADMIN": frozenset(
@@ -127,6 +142,9 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.sync.write",
             "ops.exports.create",
             "ops.exports.read",
+            "ops.evals.read",
+            "ops.evals.write",
+            "ops.evals.export",
         }
     ),
     "SERVICE_OWNER": frozenset(
@@ -152,6 +170,11 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.search.read",
             "ops.exports.create",
             "ops.exports.read",
+            "ops.evals.read",
+            "ops.evals.review",
+            "ops.evals.sets.publish",
+            "ops.evals.results.review",
+            "ops.evals.export",
         }
     ),
     "ANALYST": frozenset(
@@ -162,6 +185,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.cost.read",
             "ops.conversations.read",
             "ops.exports.read",
+            "ops.evals.read",
         }
     ),
     "AUDITOR": frozenset(
@@ -178,6 +202,8 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.search.read",
             "ops.roles.read",
             "ops.retention.read",
+            "ops.evals.read",
+            "ops.evals.export",
         }
     ),
 }
