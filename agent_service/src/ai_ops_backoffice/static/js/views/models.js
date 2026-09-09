@@ -231,6 +231,8 @@ export async function renderModels() {
     presentSystemPage("模型治理", null, el("div", "error", error.message));
   }
 }
+
+function createMetricBox(label, value, badgeVariant = null) {
   const box = el("div");
   box.append(el("div", "metric-label", label));
   if (badgeVariant) {

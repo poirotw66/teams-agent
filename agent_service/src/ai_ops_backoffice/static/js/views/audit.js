@@ -441,3 +441,9 @@ export async function renderAudit() {
     );
   }
 }
+
+export const auditPage = createPageController({
+  enter: async () => renderAudit(),
+  update: async () => renderAudit(),
+  leave: async () => {},
+});

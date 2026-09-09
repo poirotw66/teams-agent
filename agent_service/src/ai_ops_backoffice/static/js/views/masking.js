@@ -100,3 +100,9 @@ export async function renderMasking() {
     presentSystemPage("遮罩政策", null, el("div", "error", error.message));
   }
 }
+
+export const maskingPage = createPageController({
+  enter: async () => renderMasking(),
+  update: async () => renderMasking(),
+  leave: async () => {},
+});

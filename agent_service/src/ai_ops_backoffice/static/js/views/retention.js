@@ -104,3 +104,9 @@ export async function renderRetention() {
     presentSystemPage("資料保存", null, el("div", "error", error.message));
   }
 }
+
+export const retentionPage = createPageController({
+  enter: async () => renderRetention(),
+  update: async () => renderRetention(),
+  leave: async () => {},
+});

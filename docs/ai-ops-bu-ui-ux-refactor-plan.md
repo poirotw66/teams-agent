@@ -1,6 +1,6 @@
 # AI資訊客服營運後臺：BU任務導向UI／UX重構規劃
 
-> v0.6｜2026-09-09｜U1–U4 主線落地；剩餘為端到端任務驗收與更廣權限矩陣
+> v0.7｜2026-09-09｜U1–U4 已 commit；補 syntax／export 修復＋Chrome live E2E smoke
 >
 > 盤點基準：HEAD c4ea1ad。Golden Eval Set持續開發中，本文件不判定其四階段已完成，也不改寫既有Golden spec。
 >
@@ -9,7 +9,8 @@
 > 對話全頁詳情、營運分析頁籤（總覽／問題／處理方式／內容成效／成本）、品質驗收 tab URL 化、
 > 安全 returnTo 任務連續、知識內容進階連結（審核／發布）、驗收結果轉案件深鏈、系統管理頁共用 header、
 > 分析期間跨頁籤保留、問題分析→案件／對話 returnTo、contentGuide 精簡（BU）、contentHub 在 BU 直轉清單、
-> 固定任務命名、系統管理含分類正反例、BU 導覽／舊 URL／最小權限測試擴充。
+> 固定任務命名、系統管理含分類正反例、BU 導覽／舊 URL／最小權限／角色矩陣測試、
+> Chrome live E2E smoke（`bu-shell-e2e.mjs`，需本機 :8092）。
 
 ## 1. 重構目標
 

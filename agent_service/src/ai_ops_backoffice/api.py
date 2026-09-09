@@ -98,7 +98,7 @@ from .workers import install_background_runtime
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_ASSET_VERSION = "ops-ui-20260909b"
+UI_ASSET_VERSION = "ops-ui-20260909c"
 
 
 def _js_import_map_script(version: str) -> str:

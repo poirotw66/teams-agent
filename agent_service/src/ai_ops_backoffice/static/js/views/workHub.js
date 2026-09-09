@@ -284,8 +284,23 @@ async function renderWorkHub(state = {}) {
   const stats = el("div", "stats");
   for (const [label, value] of [
     ["我的待處理", String(mineRows.length)],
-    ["待我審核", reviewRows.length ? String(reviewRows.length) : reviews.ok || evals.ok ? "0" : "—"),
-    ["追蹤中", String(trackingRows.length || (cases.ok ? cases.rows.filter((r) => r.status === "OBSERVING").length : 0))],
+    [
+      "待我審核",
+      reviewRows.length
+        ? String(reviewRows.length)
+        : reviews.ok || evals.ok
+          ? "0"
+          : "—",
+    ],
+    [
+      "追蹤中",
+      String(
+        trackingRows.length ||
+          (cases.ok
+            ? cases.rows.filter((r) => r.status === "OBSERVING").length
+            : 0),
+      ),
+    ],
   ]) {
     const card = el("div", "stat");
     card.append(el("span", "", label), el("b", "", value));
