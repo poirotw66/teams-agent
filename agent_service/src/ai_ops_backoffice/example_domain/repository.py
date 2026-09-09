@@ -6,7 +6,7 @@ import os
 import threading
 import uuid
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -46,6 +46,14 @@ class ExampleRepository(Protocol):
         action: str,
         request_fingerprint: str,
         result: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
+    def purge_expired(
+        self,
+        *,
+        now: datetime,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
     ) -> dict[str, Any]: ...
 
 class InMemoryExampleRepository:
@@ -134,6 +142,55 @@ class InMemoryExampleRepository:
             )
             return deepcopy(result)
 
+    def purge_expired(
+        self,
+        *,
+        now: datetime,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            state = self._load()
+            cutoff = now - timedelta(days=retention_days)
+            kept_examples: list[ExampleRecord] = []
+            removed_ids: list[str] = []
+            for ex in state.examples:
+                if ex.status == "RETIRED":
+                    retention_start = ex.retired_at or ex.updated_at
+                    if retention_start < cutoff:
+                        removed_ids.append(ex.example_id)
+                        continue
+                elif ex.status == "REJECTED":
+                    retention_start = ex.updated_at
+                    if retention_start < cutoff:
+                        removed_ids.append(ex.example_id)
+                        continue
+                kept_examples.append(ex)
+
+            if not removed_ids:
+                return {"removed": 0, "removed_ids": []}
+
+            audit = ExampleAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                example_id="RETENTION_PURGE",
+                action="EXAMPLE_RETENTION_PURGED",
+                actor_id=actor.user_id if actor else "system.retention",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id="ALL",
+                before={"exampleCount": len(state.examples), "purgedCount": len(removed_ids)},
+                after={"exampleCount": len(kept_examples), "purgedIds": removed_ids},
+                reason=f"Purged {len(removed_ids)} retired/rejected examples past {retention_days} days retention.",
+                occurred_at=now,
+            )
+            self._save(
+                ExampleState(
+                    examples=tuple(kept_examples),
+                    audits=(*state.audits, audit),
+                    idempotency=state.idempotency,
+                )
+            )
+            return {"removed": len(removed_ids), "removed_ids": removed_ids}
+
 class FileExampleRepository(InMemoryExampleRepository):
     def __init__(self, path: Path) -> None:
         super().__init__()
@@ -170,6 +227,27 @@ class FileExampleRepository(InMemoryExampleRepository):
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             try:
                 return super().commit(*args, **kwargs)
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def purge_expired(
+        self,
+        *,
+        now: datetime,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+    ) -> dict[str, Any]:
+        import fcntl
+
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock, self._lock_path.open("a+") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                return super().purge_expired(
+                    now=now,
+                    retention_days=retention_days,
+                    actor=actor,
+                )
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
@@ -278,4 +356,44 @@ class FirestoreExampleRepository:
             return deepcopy(result)
 
         return self._run_transaction(operation)
+
+    def purge_expired(
+        self,
+        *,
+        now: datetime,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+    ) -> dict[str, Any]:
+        cutoff = now - timedelta(days=retention_days)
+        removed_ids: list[str] = []
+        for doc in self._examples.stream():
+            data = doc.to_dict()
+            status = data.get("status")
+            if status in ("RETIRED", "REJECTED"):
+                ret_val = data.get("retired_at") or data.get("updated_at")
+                if ret_val:
+                    ret_dt = (
+                        datetime.fromisoformat(ret_val)
+                        if isinstance(ret_val, str)
+                        else ret_val
+                    )
+                    if ret_dt < cutoff:
+                        removed_ids.append(doc.id)
+                        doc.reference.delete()
+        if removed_ids:
+            audit = ExampleAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                example_id="RETENTION_PURGE",
+                action="EXAMPLE_RETENTION_PURGED",
+                actor_id=actor.user_id if actor else "system.retention",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id="ALL",
+                before={"purgedCount": len(removed_ids)},
+                after={"purgedIds": removed_ids},
+                reason=f"Purged {len(removed_ids)} retired/rejected examples past {retention_days} days retention.",
+                occurred_at=now,
+            )
+            self._audits.document(audit.audit_id).set(audit.model_dump(mode="python"))
+        return {"removed": len(removed_ids), "removed_ids": removed_ids}
+
 

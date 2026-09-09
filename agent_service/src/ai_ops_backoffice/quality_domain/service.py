@@ -6,7 +6,7 @@ import re
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol
 
@@ -758,4 +758,111 @@ class QualityService:
             }
 
         return self._repository.mutate(operation)
+
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        target_now = now or datetime.now(UTC)
+        cutoff = target_now - timedelta(days=retention_days)
+
+        current = self._repository.load()
+        has_expired_candidates = any(
+            c.status in ("MERGED", "REJECTED") and c.updated_at < cutoff
+            for c in current.candidates
+        )
+        has_expired_cases = any(
+            cs.status in ("RESOLVED", "WONT_FIX", "DUPLICATE")
+            and (cs.resolved_at or cs.updated_at) < cutoff
+            for cs in current.cases
+        )
+        has_expired_clusters = any(
+            cl.status in ("REJECTED", "SUPERSEDED") and cl.created_at < cutoff
+            for cl in current.clusters
+        )
+        if not (has_expired_candidates or has_expired_cases or has_expired_clusters):
+            return {
+                "purged_candidates": 0,
+                "purged_cases": 0,
+                "purged_clusters": 0,
+                "total": 0,
+            }
+
+        def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
+            kept_candidates: list[QualityCandidate] = []
+            purged_candidate_ids: list[str] = []
+            for c in state.candidates:
+                if c.status in ("MERGED", "REJECTED") and c.updated_at < cutoff:
+                    purged_candidate_ids.append(c.candidate_id)
+                else:
+                    kept_candidates.append(c)
+
+            kept_cases: list[QualityCase] = []
+            purged_case_ids: list[str] = []
+            for cs in state.cases:
+                if cs.status in ("RESOLVED", "WONT_FIX", "DUPLICATE"):
+                    ret_time = cs.resolved_at or cs.updated_at
+                    if ret_time < cutoff:
+                        purged_case_ids.append(cs.case_id)
+                        continue
+                kept_cases.append(cs)
+
+            kept_clusters: list[QuestionCluster] = []
+            purged_cluster_ids: list[str] = []
+            for cl in state.clusters:
+                if cl.status in ("REJECTED", "SUPERSEDED") and cl.created_at < cutoff:
+                    purged_cluster_ids.append(cl.cluster_id)
+                else:
+                    kept_clusters.append(cl)
+
+            total_purged = len(purged_candidate_ids) + len(purged_case_ids) + len(purged_cluster_ids)
+            if total_purged == 0:
+                return state.model_copy(update={"revision": state.revision + 1}), {
+                    "purged_candidates": 0,
+                    "purged_cases": 0,
+                    "purged_clusters": 0,
+                    "total": 0,
+                }
+
+            audit = QualityAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                target_type="QUALITY_CASE",
+                target_id="RETENTION_PURGE",
+                action="QUALITY_RETENTION_PURGED",
+                actor_id=actor.user_id if actor else "system.retention",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id="ALL",
+                before={
+                    "candidate_count": len(state.candidates),
+                    "case_count": len(state.cases),
+                    "cluster_count": len(state.clusters),
+                },
+                after={
+                    "purged_candidates": purged_candidate_ids,
+                    "purged_cases": purged_case_ids,
+                    "purged_clusters": purged_cluster_ids,
+                },
+                reason=f"Purged {total_purged} quality records past {retention_days} days retention.",
+                occurred_at=target_now,
+            )
+
+            next_state = QualityState(
+                revision=state.revision + 1,
+                candidates=tuple(kept_candidates),
+                cases=tuple(kept_cases),
+                clusters=tuple(kept_clusters),
+                audits=(*state.audits, audit),
+            )
+            return next_state, {
+                "purged_candidates": len(purged_candidate_ids),
+                "purged_cases": len(purged_case_ids),
+                "purged_clusters": len(purged_cluster_ids),
+                "total": total_purged,
+            }
+
+        return self._repository.mutate(operation)
+
 

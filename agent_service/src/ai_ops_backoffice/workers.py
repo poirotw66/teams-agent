@@ -27,6 +27,8 @@ def install_background_runtime(
     notification_dispatcher,
     knowledge_transport,
     sync_transport,
+    example_service=None,
+    quality_service=None,
 ):
     """Build sync worker callbacks and FastAPI lifespan."""
 
@@ -338,17 +340,47 @@ def install_background_runtime(
                 except TimeoutError:
                     continue
 
+        async def retention_sweep_worker() -> None:
+            first_delay_seconds = 10
+            interval_seconds = getattr(resolved_settings, "retention_eval_interval_seconds", 3600)
+            try:
+                await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
+                return
+            except TimeoutError:
+                pass
+            while not stop_sweeper.is_set():
+                try:
+                    await query_service.purge_expired_events()
+                    if hasattr(query_service, "export_jobs") and query_service.export_jobs:
+                        await query_service.export_jobs.purge_expired_jobs()
+                    if example_service:
+                        example_service.purge_expired(actor=sync_worker)
+                    if quality_service:
+                        quality_service.purge_expired(actor=sync_worker)
+                    if sync_service:
+                        sync_service.purge_expired(actor=sync_worker)
+                    if budget_service:
+                        budget_service.purge_expired(actor=sync_worker)
+                    logger.info("Scheduled cross-domain retention sweep completed successfully.")
+                except Exception:
+                    logger.exception("Failed to run scheduled retention sweep.")
+                try:
+                    await asyncio.wait_for(stop_sweeper.wait(), timeout=interval_seconds)
+                except TimeoutError:
+                    continue
+
         sweeper = asyncio.create_task(sweep_expired_exports())
         recovery = asyncio.create_task(
             query_service.export_jobs.run_recovery_scanner(stop_sweeper)
         )
         aggregate_worker = asyncio.create_task(materialize_daily_aggregates_worker())
         budget_worker = asyncio.create_task(budget_evaluation_worker())
+        retention_worker = asyncio.create_task(retention_sweep_worker())
         try:
             yield
         finally:
             stop_sweeper.set()
-            for task in (sweeper, recovery, aggregate_worker, budget_worker):
+            for task in (sweeper, recovery, aggregate_worker, budget_worker, retention_worker):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task

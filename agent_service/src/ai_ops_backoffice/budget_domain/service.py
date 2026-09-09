@@ -4,7 +4,7 @@ import os
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -654,4 +654,90 @@ class BudgetService:
             ), {"alert": updated.model_dump(mode="json")}
 
         return self._repository.mutate(operation)
+
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        target_now = now or datetime.now(UTC)
+        cutoff = target_now - timedelta(days=retention_days)
+
+        state = self._repository.load()
+        expired_alert_ids = {
+            a.alert_id
+            for a in state.alerts
+            if a.status == "RESOLVED" and (a.resolved_at or a.last_triggered_at) < cutoff
+        }
+        expired_delivery_ids = {
+            d.delivery_id
+            for d in state.deliveries
+            if (d.status in ("SENT", "FAILED") and (d.updated_at or d.created_at) < cutoff)
+            or d.alert_id in expired_alert_ids
+        }
+        expired_policy_ids = {
+            p.policy_id
+            for p in state.policies
+            if p.expires_at is not None and p.expires_at < cutoff
+        }
+
+        total = len(expired_alert_ids) + len(expired_delivery_ids) + len(expired_policy_ids)
+        if total == 0:
+            return {
+                "purged_alerts": 0,
+                "purged_deliveries": 0,
+                "purged_policies": 0,
+                "total": 0,
+            }
+
+        def operation(curr: BudgetState) -> tuple[BudgetState, dict[str, Any]]:
+            kept_alerts = [a for a in curr.alerts if a.alert_id not in expired_alert_ids]
+            kept_deliveries = [
+                d for d in curr.deliveries if d.delivery_id not in expired_delivery_ids
+            ]
+            kept_policies = [p for p in curr.policies if p.policy_id not in expired_policy_ids]
+
+            purged_alerts_count = len(curr.alerts) - len(kept_alerts)
+            purged_deliveries_count = len(curr.deliveries) - len(kept_deliveries)
+            purged_policies_count = len(curr.policies) - len(kept_policies)
+            total_purged = purged_alerts_count + purged_deliveries_count + purged_policies_count
+
+            if total_purged == 0:
+                return curr.model_copy(update={"revision": curr.revision + 1}), {
+                    "purged_alerts": 0,
+                    "purged_deliveries": 0,
+                    "purged_policies": 0,
+                    "total": 0,
+                }
+
+            audit = BudgetAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                target_type="ALERT",
+                target_id="RETENTION_PURGE",
+                action="BUDGET_RETENTION_PURGED",
+                actor_id=actor.user_id if actor else "system.retention",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id="ALL",
+                reason=f"Purged {total_purged} budget records (alerts: {purged_alerts_count}, deliveries: {purged_deliveries_count}, policies: {purged_policies_count}) past {retention_days} days retention.",
+                occurred_at=target_now,
+            )
+
+            next_state = BudgetState(
+                revision=curr.revision + 1,
+                policies=tuple(kept_policies),
+                alerts=tuple(kept_alerts),
+                deliveries=tuple(kept_deliveries),
+                audits=(*curr.audits, audit),
+            )
+            return next_state, {
+                "purged_alerts": purged_alerts_count,
+                "purged_deliveries": purged_deliveries_count,
+                "purged_policies": purged_policies_count,
+                "total": total_purged,
+            }
+
+        return self._repository.mutate(operation)
+
 

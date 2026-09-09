@@ -333,6 +333,8 @@ def create_app(
         notification_dispatcher=notification_dispatcher,
         knowledge_transport=knowledge_transport,
         sync_transport=sync_transport,
+        example_service=example_service,
+        quality_service=quality_service,
     )
 
     deps = build_dependencies(
@@ -390,6 +392,10 @@ def create_app(
         require_capability=require_capability,
         audit_read=audit_read,
         export_rate_limiter=export_rate_limiter,
+        example_service=example_service,
+        quality_service=quality_service,
+        sync_service=sync_service,
+        budget_service=budget_service,
     )
 
     register_faq_routes(

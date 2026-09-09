@@ -325,6 +325,7 @@ class ConversationsQueryMixin:
                     "authorizedFragments": authorized_fragments,
                     "maskingPolicyVersion": event.payload.get("maskingPolicyVersion"),
                     "masked": not allow_unmasked,
+                    "dataState": "UNMASKED_WITH_REASON" if allow_unmasked else "MASKED",
                     **summary,
                     "aiReply": (raw_ai_reply or summary.get("answerMasked")) if allow_unmasked else summary.get("answerMasked"),
                     "events": [
@@ -344,6 +345,7 @@ class ConversationsQueryMixin:
             "conversationId": conversation_id,
             "ownerUnitId": next(iter(owner_unit_ids)) if len(owner_unit_ids) == 1 else None,
             "unmaskAuthorized": allow_unmasked,
+            "dataState": "UNMASKED_WITH_REASON" if allow_unmasked else "MASKED",
             "turns": turns,
         }
 

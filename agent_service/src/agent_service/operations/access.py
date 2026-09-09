@@ -24,6 +24,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.roles.revoke",
             "ops.summary.read",
             "ops.cost.read",
+            "ops.cost.write",
             "ops.issues.read",
             "ops.conversations.read",
             "ops.conversations.unmasked",
@@ -75,6 +76,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
         {
             "ops.summary.read",
             "ops.cost.read",
+            "ops.cost.write",
             "ops.issues.read",
             "ops.health.read",
             "ops.conversations.read",

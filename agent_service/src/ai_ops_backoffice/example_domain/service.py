@@ -376,3 +376,18 @@ class ExampleService:
             result=result,
         )
 
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        target_now = now or datetime.now(UTC)
+        return self._repository.purge_expired(
+            now=target_now,
+            retention_days=retention_days,
+            actor=actor,
+        )
+
+

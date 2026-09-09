@@ -54,8 +54,16 @@ export function showConversationModal(detail, conversationId = detail.conversati
   header.append(heading, headerActions);
   modal.append(header);
   const allowed = actorCapabilities();
+  const stateBadge = el(
+    "div",
+    "meta-chip",
+    detail.dataState === "UNMASKED_WITH_REASON"
+      ? "資料狀態：有理由未遮罩（已記錄稽核）"
+      : "資料狀態：敏感資訊已遮罩"
+  );
+  modal.append(stateBadge);
   if (allowed.has("ops.conversations.unmasked") && !detail.unmaskAuthorized) {
-    const unmaskButton = el("button", "", "查看未遮罩內容");
+    const unmaskButton = el("button", "btn btn-sm", "申請查看未遮罩內容");
     unmaskButton.addEventListener("click", async () => {
       const reason = window.prompt("請輸入查看未遮罩內容的原因（至少 3 字）：");
       if (!reason || reason.trim().length < 3) {

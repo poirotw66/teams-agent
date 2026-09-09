@@ -699,11 +699,101 @@ def register_ops_read_routes(
             cursor=cursor,
         )
 
+    @app.get("/api/admin/retention/status")
+    async def retention_status(actor=Depends(current_actor)) -> dict[str, object]:
+        require_capability(actor, "ops.config.read")
+        policy_info = (
+            governance_service.peek_runtime_retention("operational-events")
+            if governance_service
+            else None
+        )
+        return {
+            "policy": policy_info or {"policyId": "operational-events", "ttlDays": 365, "status": "ACTIVE"},
+            "domains": {
+                "operationalEvents": {
+                    "retentionDays": 365,
+                    "retentionStart": "occurred_at",
+                    "description": "Operational event log TTL",
+                },
+                "exportJobs": {
+                    "retentionDays": 30,
+                    "retentionStart": "created_at / finished_at",
+                    "description": "Export job artifacts TTL",
+                },
+                "examples": {
+                    "retentionDays": 365,
+                    "retentionStart": "retired_at (RETIRED) or updated_at (REJECTED)",
+                    "description": "Few-shot examples domain",
+                },
+                "quality": {
+                    "retentionDays": 365,
+                    "retentionStart": "updated_at (candidates), resolved_at (cases), created_at (clusters)",
+                    "description": "Quality cases, candidates, and clusters",
+                },
+                "sync": {
+                    "retentionDays": 365,
+                    "retentionStart": "finished_at or requested_at (COMPLETED, FAILED, CANCELLED)",
+                    "description": "Knowledge sync jobs and checkpoints",
+                },
+                "budget": {
+                    "retentionDays": 365,
+                    "retentionStart": "resolved_at (alerts), updated_at (deliveries), expires_at (policies)",
+                    "description": "Budget alerts, delivery attempts, and expired policies",
+                },
+            },
+            "dataStates": [
+                {"code": "UNAUTHORIZED", "label": "未授權", "description": "使用者無權限存取該領域或部門範疇之資料"},
+                {"code": "MASKED", "label": "已遮罩", "description": "敏感個資與金鑰依脫敏規則遮蔽 [REDACTED]"},
+                {"code": "UNMASKED_WITH_REASON", "label": "有理由未遮罩", "description": "具備稽核權限並具體填寫理由申請查閱未遮罩明細，已記錄稽核紀錄"},
+                {"code": "EXPIRED_OR_PURGED", "label": "已過期／清除", "description": "超過資料保存期限或已被排程安全清除"},
+            ],
+        }
+
     @app.post("/api/admin/retention/purge")
     async def purge_retention(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.config.read")
-        result = await query_service.purge_expired_events()
-        await audit_read(actor, "retention.purge", "operational_events", after=result)
+        events_res = await query_service.purge_expired_events()
+        events_removed = events_res.get("removed", 0)
+
+        export_removed = 0
+        if hasattr(query_service, "export_jobs") and query_service.export_jobs:
+            try:
+                export_removed = await query_service.export_jobs.purge_expired_jobs()
+            except Exception:
+                pass
+
+        examples_res = example_service.purge_expired(actor=actor) if example_service else {"removed": 0}
+        examples_removed = examples_res.get("removed", 0)
+
+        quality_res = quality_service.purge_expired(actor=actor) if quality_service else {"total": 0}
+        quality_removed = quality_res.get("total", 0)
+
+        sync_res = sync_service.purge_expired(actor=actor) if sync_service else {"total": 0}
+        sync_removed = sync_res.get("total", 0)
+
+        budget_res = budget_service.purge_expired(actor=actor) if budget_service else {"total": 0}
+        budget_removed = budget_res.get("total", 0)
+
+        total_removed = (
+            events_removed
+            + export_removed
+            + examples_removed
+            + quality_removed
+            + sync_removed
+            + budget_removed
+        )
+
+        result = {
+            "removed": events_removed,
+            "operationalEvents": events_removed,
+            "exportJobs": export_removed,
+            "examples": examples_removed,
+            "quality": quality_removed,
+            "sync": sync_removed,
+            "budget": budget_removed,
+            "totalRemoved": total_removed,
+        }
+        await audit_read(actor, "retention.purge", "all_domains", after=result)
         return result
 
     @app.post("/api/exports")

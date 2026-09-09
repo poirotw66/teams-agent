@@ -6,7 +6,7 @@ import os
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -306,4 +306,56 @@ class SyncService:
             retry_of_job_id=job_id,
             retry_checkpoint_stage=current["checkpoint_stage"],
         )
+
+    def purge_expired(
+        self,
+        *,
+        retention_days: int = 365,
+        actor: ActorContext | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        target_now = now or datetime.now(UTC)
+        cutoff = target_now - timedelta(days=retention_days)
+
+        state = self._repository.load()
+        expired_ids = {
+            job.job_id
+            for job in state.jobs
+            if job.status in ("COMPLETED", "FAILED", "CANCELLED")
+            and (job.finished_at or job.requested_at) < cutoff
+        }
+        if not expired_ids:
+            return {"purged_jobs": 0, "total": 0}
+
+        def operation(curr: SyncState) -> tuple[SyncState, dict[str, Any]]:
+            kept_jobs = [j for j in curr.jobs if j.job_id not in expired_ids]
+            purged_count = len(curr.jobs) - len(kept_jobs)
+            if purged_count == 0:
+                return curr.model_copy(update={"revision": curr.revision + 1}), {
+                    "purged_jobs": 0,
+                    "total": 0,
+                }
+            kept_idem = [i for i in curr.idempotency if i.job_id not in expired_ids]
+            audit = SyncAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                job_id="RETENTION_PURGE",
+                action="SYNC_RETENTION_PURGED",
+                actor_id=actor.user_id if actor else "system.retention",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id="ALL",
+                reason=f"Purged {purged_count} terminal sync jobs past {retention_days} days retention.",
+                before={"job_count": len(curr.jobs)},
+                after={"purged_job_ids": sorted(expired_ids)},
+                occurred_at=target_now,
+            )
+            next_state = SyncState(
+                revision=curr.revision + 1,
+                jobs=tuple(kept_jobs),
+                audits=(*curr.audits, audit),
+                idempotency=tuple(kept_idem),
+            )
+            return next_state, {"purged_jobs": purged_count, "total": purged_count}
+
+        return self._repository.mutate(operation)
+
 
