@@ -136,6 +136,20 @@ def build_lifespan(resolved_settings: RagSettings):
                 ops_runtime.settings.store_mode,
                 ops_runtime.taxonomy.version,
             )
+            from .pricing_bootstrap import build_and_configure_pricing_service
+
+            app.state.pricing_service = build_and_configure_pricing_service(
+                ops_store_path=ops_runtime.settings.store_path,
+                audit_store=ops_runtime.audit_store,
+                environment=ops_runtime.settings.environment,
+            )
+        else:
+            # Ops disabled: still prefer governed rates when a pricing store exists.
+            from .pricing_bootstrap import build_and_configure_pricing_service
+
+            app.state.pricing_service = build_and_configure_pricing_service(
+                environment=resolved_settings.deployment_environment,
+            )
         logger.info(
             "Agentic RAG ready: chunks=%s agent_model=%s rag_model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",

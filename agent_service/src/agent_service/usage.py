@@ -36,6 +36,14 @@ def get_pricing_provider() -> PricingProvider | None:
 # Bump when _MODEL_RATES_USD changes so historical usage events stay priced consistently.
 PRICING_VERSION = "2026-08-31"
 
+
+def active_pricing_version(at: datetime | None = None) -> str:
+    """Return the governed pricing version when a provider is configured."""
+    if _PRICING_PROVIDER is not None:
+        return _PRICING_PROVIDER.get_pricing_version(at=at)
+    return PRICING_VERSION
+
+
 # Input / output USD per 1M tokens (Standard paid tier). Embeddings use input only (output=0).
 #
 # Primary source (queried 2026-08-31):

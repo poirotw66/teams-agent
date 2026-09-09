@@ -18,7 +18,7 @@ from typing import Literal
 from .file_search_usage import FileSearchUsage
 from .file_search_usage import estimate_cost as estimate_file_search_cost
 from .usage import (
-    PRICING_VERSION,
+    active_pricing_version,
     build_usage_report,
     estimate_cost_usd,
     normalize_model_name,
@@ -292,7 +292,7 @@ class UsageEventCollector:
     tenant_id: str | None
     team_id: str | None
     knowledge_backend: str | None
-    pricing_version: str = PRICING_VERSION
+    pricing_version: str = field(default_factory=active_pricing_version)
     _events: list[UsageEvent] = field(default_factory=list, repr=False)
 
     def events(self) -> tuple[UsageEvent, ...]:
@@ -332,6 +332,9 @@ class UsageEventCollector:
                 output_tokens,
             )
 
+        # Prefer live governed version at emit time so mid-process rate updates stamp correctly.
+        pricing_version = active_pricing_version() or self.pricing_version
+
         event = UsageEvent(
             event_id=str(uuid.uuid4()),
             timestamp=_iso_timestamp(),
@@ -350,7 +353,7 @@ class UsageEventCollector:
             embedding_tokens=embedding_tokens,
             llm_call_count=llm_call_count,
             estimated_cost_usd=cost,
-            pricing_version=self.pricing_version,
+            pricing_version=pricing_version,
             usage_source=usage_source,
             status=status,
             latency_ms=latency_ms,
@@ -495,7 +498,7 @@ def build_request_cost_summary(
         estimated_cost_usd=estimated_cost,
         cost_complete=cost_complete,
         usage_coverage=usage_coverage,
-        pricing_version=collector.pricing_version,
+        pricing_version=active_pricing_version() or collector.pricing_version,
         by_model=tuple(by_model),
     )
 

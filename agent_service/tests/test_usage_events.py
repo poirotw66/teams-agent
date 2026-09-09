@@ -149,3 +149,83 @@ def test_derive_request_outcome_prefers_handoff() -> None:
     )
 
     assert outcome == "handoff"
+
+
+@pytest.mark.asyncio
+async def test_usage_collector_uses_governed_pricing_provider(tmp_path, monkeypatch) -> None:
+    from agent_service.operations.access import ActorContext
+    from agent_service.usage import (
+        configure_pricing_provider,
+        estimate_cost_usd,
+        get_pricing_provider,
+        lookup_rate,
+    )
+    from ai_ops_backoffice.pricing_domain import InMemoryPricingRepository, PricingService
+
+    monkeypatch.setenv("AI_OPS_PRICING_STORE_MODE", "MEMORY")
+    repo = InMemoryPricingRepository()
+    service = PricingService(repo)
+    actor = ActorContext(
+        user_id="pricing.admin",
+        display_name="Pricing Admin",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    await service.update_model_rate(
+        "gpt-4o-mini",
+        input_rate=9.0,
+        output_rate=18.0,
+        actor=actor,
+        reason="Agent emit must use governed rates",
+        pricing_version="agent-governed-v9",
+    )
+    configure_pricing_provider(service)
+    try:
+        assert get_pricing_provider() is service
+        assert lookup_rate("gpt-4o-mini") == (9.0, 18.0)
+        assert estimate_cost_usd("gpt-4o-mini", 1_000_000, 0) == 9.0
+
+        collector = UsageEventCollector(
+            environment="poc",
+            request_id="req-gov",
+            correlation_id="corr-gov",
+            tenant_id="tenant-gov",
+            team_id=None,
+            knowledge_backend="HYBRID",
+        )
+        event = collector.record(
+            component="issue_extractor",
+            status="SUCCESS",
+            latency_ms=12.0,
+            model="gpt-4o-mini",
+            input_tokens=1_000_000,
+            output_tokens=0,
+            usage_source="PROVIDER",
+        )
+        assert event.pricing_version == "agent-governed-v9"
+        assert event.estimated_cost_usd == 9.0
+
+        summary = build_request_cost_summary(
+            collector,
+            langchain_usage={},
+            outcome="other",
+            elapsed_ms=20.0,
+            llm_call_count=1,
+        )
+        assert summary.pricing_version == "agent-governed-v9"
+    finally:
+        configure_pricing_provider(None)
+
+
+def test_pricing_bootstrap_configures_shared_provider(tmp_path, monkeypatch) -> None:
+    from agent_service.pricing_bootstrap import build_and_configure_pricing_service
+    from agent_service.usage import configure_pricing_provider, get_pricing_provider, lookup_rate
+
+    monkeypatch.setenv("AI_OPS_PRICING_STORE_MODE", "MEMORY")
+    try:
+        service = build_and_configure_pricing_service(environment="test")
+        assert get_pricing_provider() is service
+        assert lookup_rate("gpt-4.1-mini") == (0.40, 1.60)
+        assert service.get_pricing_version()
+    finally:
+        configure_pricing_provider(None)
