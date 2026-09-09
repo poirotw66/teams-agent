@@ -7,11 +7,13 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI
 
 from agent_service.operations.access import ActorContext
+from agent_service.operations.contracts import DEFAULT_TIMEZONE
 
 from .faq_domain import FaqDomainError
 
@@ -29,6 +31,7 @@ def install_background_runtime(
     sync_transport,
     example_service=None,
     quality_service=None,
+    governance_service=None,
 ):
     """Build sync worker callbacks and FastAPI lifespan."""
 
@@ -122,6 +125,22 @@ def install_background_runtime(
                 index_setting_version=result.get("indexSettingVersion"),
                 artifact_uri=result.get("artifactUri"),
             )
+            try:
+                await query_service.record_component_usage(
+                    component="knowledge_index",
+                    status="SUCCESS",
+                    correlation_id=job.get("correlation_id") or job_id,
+                    payload={
+                        "targetRelease": result.get("targetRelease"),
+                        "indexSettingVersion": result.get("indexSettingVersion"),
+                        "documentCount": int(result.get("documentCount") or 0),
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to emit knowledge_index health telemetry for sync job %s",
+                    job_id,
+                )
         except Exception as error:
             logger.exception("Sync job %s failed", job_id)
             with suppress(FaqDomainError):
@@ -130,7 +149,9 @@ def install_background_runtime(
     async def check_api_health_alerts(actor: ActorContext) -> list[dict[str, Any]]:
         health = await query_service.health_summary()
         triggered_alerts: list[dict[str, Any]] = []
-        today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_key = datetime.now(timezone.utc).astimezone(ZoneInfo(DEFAULT_TIMEZONE)).strftime(
+            "%Y-%m-%d"
+        )
         for comp in health.get("components", []):
             comp_id = str(comp.get("id") or "")
             if not comp_id:
@@ -208,7 +229,9 @@ def install_background_runtime(
             active_actors = await query_service.list_active_actors_for_budget(actor, today_period)
             definitions = query_service.metrics_definitions()
             pricing_ver = str(definitions.get("pricingVersion", "v1"))
-            rate_ver = str(definitions.get("metricsDefinitionVersion", "v1"))
+            rate_ver = str(
+                definitions.get("exchangeRateVersion") or definitions.get("pricingVersion", "v1")
+            )
 
             covered_users = {
                 p["scope_id"]
@@ -341,6 +364,8 @@ def install_background_runtime(
                     continue
 
         async def retention_sweep_worker() -> None:
+            from .retention_runtime import resolve_active_retention_ttls
+
             first_delay_seconds = 10
             interval_seconds = getattr(resolved_settings, "retention_eval_interval_seconds", 3600)
             try:
@@ -350,18 +375,42 @@ def install_background_runtime(
                 pass
             while not stop_sweeper.is_set():
                 try:
+                    ttls = resolve_active_retention_ttls(governance_service)
+                    retention_days = int(ttls["retention_days"])
+                    audit_retention_days = int(ttls["audit_retention_days"])
                     await query_service.purge_expired_events()
                     if hasattr(query_service, "export_jobs") and query_service.export_jobs:
                         await query_service.export_jobs.purge_expired_jobs()
                     if example_service:
-                        example_service.purge_expired(actor=sync_worker)
+                        example_service.purge_expired(
+                            actor=sync_worker, retention_days=retention_days
+                        )
                     if quality_service:
-                        quality_service.purge_expired(actor=sync_worker)
+                        quality_service.purge_expired(
+                            actor=sync_worker, retention_days=retention_days
+                        )
                     if sync_service:
-                        sync_service.purge_expired(actor=sync_worker)
+                        sync_service.purge_expired(
+                            actor=sync_worker, retention_days=retention_days
+                        )
                     if budget_service:
-                        budget_service.purge_expired(actor=sync_worker)
-                    logger.info("Scheduled cross-domain retention sweep completed successfully.")
+                        budget_service.purge_expired(
+                            actor=sync_worker, retention_days=retention_days
+                        )
+                    if governance_service is not None and hasattr(
+                        governance_service, "purge_expired"
+                    ):
+                        governance_service.purge_expired(
+                            actor=sync_worker,
+                            retention_days=retention_days,
+                            audit_retention_days=audit_retention_days,
+                        )
+                    logger.info(
+                        "Scheduled cross-domain retention sweep completed successfully "
+                        "(retentionDays=%s auditRetentionDays=%s).",
+                        retention_days,
+                        audit_retention_days,
+                    )
                 except Exception:
                     logger.exception("Failed to run scheduled retention sweep.")
                 try:

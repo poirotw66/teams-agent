@@ -193,16 +193,60 @@ class BackofficeQueryService(
         return self._environment
 
     def metrics_definitions(self) -> dict[str, Any]:
+        pricing_svc = self._pricing_service
+        pricing_version = (
+            pricing_svc.get_pricing_version()
+            if pricing_svc is not None
+            else str(self._metrics.get("pricingVersion", "v1"))
+        )
+        exchange_rate = (
+            pricing_svc.get_exchange_rate()
+            if pricing_svc is not None
+            else float(self._metrics.get("usdTwdExchangeRate", 31.70))
+        )
+        # HistoricalPricingRule versions stamp both model rates and FX together.
+        exchange_rate_version = pricing_version
         return {
             "metricsDefinitionVersion": self._metrics.get(
                 "metrics_definition_version",
                 METRICS_DEFINITION_VERSION,
             ),
-            "pricingVersion": self._metrics.get("pricingVersion", "v1"),
+            "pricingVersion": pricing_version,
+            "exchangeRateVersion": exchange_rate_version,
             "timezone": self._metrics.get("timezone", DEFAULT_TIMEZONE),
-            "usdTwdExchangeRate": float(self._metrics.get("usdTwdExchangeRate", 31.70)),
+            "usdTwdExchangeRate": float(exchange_rate),
             "definitions": self._metrics.get("definitions", {}),
         }
+
+    async def record_component_usage(
+        self,
+        *,
+        component: str,
+        status: str = "SUCCESS",
+        elapsed_ms: float | None = None,
+        correlation_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        occurred_at: datetime | None = None,
+    ) -> None:
+        """Append a synthetic usage.recorded event for health telemetry producers."""
+        timestamp = occurred_at or utc_now()
+        event_payload: dict[str, Any] = {
+            "component": component,
+            "status": status,
+            **(payload or {}),
+        }
+        if elapsed_ms is not None:
+            event_payload["elapsedMs"] = elapsed_ms
+        event = OperationalEvent(
+            event_id=f"health:{component}:{correlation_id or timestamp.isoformat()}",
+            event_type="usage.recorded",
+            occurred_at=timestamp,
+            environment=self._environment,  # type: ignore[arg-type]
+            correlation_id=correlation_id or f"health-{component}",
+            payload=event_payload,
+        )
+        await self._runtime.store.append(event)
+        self._invalidate_cache()
 
     def _period_bounds(
         self,

@@ -370,14 +370,23 @@ class GovernancePoliciesMixin:
         *,
         actor: ActorContext | None = None,
         retention_days: int = 365,
+        audit_retention_days: int | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
-        """Purge expired non-core versions and audits with permanent retention exception for active/approved versions."""
+        """Purge expired non-core versions and audits with permanent retention exception for active/approved versions.
+
+        Audit records use ``audit_retention_days`` when provided (typically longer than
+        operational TTL). Active/approved versions are retained permanently.
+        """
         if actor is not None:
             self._require(actor, WRITE["retention_write"])
 
         target_now = now or self._clock()
         cutoff = target_now - timedelta(days=retention_days)
+        effective_audit_days = (
+            retention_days if audit_retention_days is None else max(1, int(audit_retention_days))
+        )
+        audit_cutoff = target_now - timedelta(days=effective_audit_days)
 
         def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
             active_prompt_ids = {p.active_version_id for p in state.prompts if p.active_version_id}
@@ -415,7 +424,7 @@ class GovernancePoliciesMixin:
             )
             pruned_models = len(state.model_versions) - len(new_model_versions)
 
-            new_audits = tuple(a for a in state.audits if a.occurred_at >= cutoff)
+            new_audits = tuple(a for a in state.audits if a.occurred_at >= audit_cutoff)
             pruned_audits = len(state.audits) - len(new_audits)
 
             new_idempotency = tuple(i for i in state.idempotency if i.created_at >= cutoff)
@@ -439,6 +448,8 @@ class GovernancePoliciesMixin:
                         "prunedAudits": pruned_audits,
                         "prunedIdempotency": pruned_idempotency,
                         "totalRemoved": total_removed,
+                        "retentionDays": retention_days,
+                        "auditRetentionDays": effective_audit_days,
                     },
                 )
                 audit_events.append(audit_record)
@@ -459,9 +470,12 @@ class GovernancePoliciesMixin:
                 "audits": pruned_audits,
                 "idempotency": pruned_idempotency,
                 "totalRemoved": total_removed,
+                "retentionDays": retention_days,
+                "auditRetentionDays": effective_audit_days,
                 "retentionPolicy": (
                     "Core active and approved versions retained permanently for rollback capability; "
-                    "expired candidate and retired versions older than 365 days purged."
+                    f"expired candidate and retired versions older than {retention_days} days purged; "
+                    f"audits retained for {effective_audit_days} days."
                 ),
             }
             return new_state, result

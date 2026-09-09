@@ -335,6 +335,7 @@ def create_app(
         sync_transport=sync_transport,
         example_service=example_service,
         quality_service=quality_service,
+        governance_service=governance_service,
     )
 
     deps = build_dependencies(

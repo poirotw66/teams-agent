@@ -702,16 +702,22 @@ def register_ops_read_routes(
     @app.get("/api/admin/retention/status")
     async def retention_status(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.config.read")
-        policy_info = (
-            governance_service.peek_runtime_retention("operational-events")
-            if governance_service
-            else None
-        )
+        from ..retention_runtime import resolve_active_retention_ttls
+
+        ttls = resolve_active_retention_ttls(governance_service)
+        retention_days = int(ttls["retention_days"])
+        audit_retention_days = int(ttls["audit_retention_days"])
+        policy_info = ttls.get("policy") or {
+            "policyId": "operational-events",
+            "ttlDays": retention_days,
+            "status": "ACTIVE",
+        }
         return {
-            "policy": policy_info or {"policyId": "operational-events", "ttlDays": 365, "status": "ACTIVE"},
+            "policy": policy_info,
+            "auditRetentionDays": audit_retention_days,
             "domains": {
                 "operationalEvents": {
-                    "retentionDays": 365,
+                    "retentionDays": retention_days,
                     "retentionStart": "occurred_at",
                     "description": "Operational event log TTL",
                 },
@@ -721,24 +727,34 @@ def register_ops_read_routes(
                     "description": "Export job artifacts TTL",
                 },
                 "examples": {
-                    "retentionDays": 365,
+                    "retentionDays": retention_days,
                     "retentionStart": "retired_at (RETIRED) or updated_at (REJECTED)",
                     "description": "Few-shot examples domain",
                 },
                 "quality": {
-                    "retentionDays": 365,
+                    "retentionDays": retention_days,
                     "retentionStart": "updated_at (candidates), resolved_at (cases), created_at (clusters)",
                     "description": "Quality cases, candidates, and clusters",
                 },
                 "sync": {
-                    "retentionDays": 365,
+                    "retentionDays": retention_days,
                     "retentionStart": "finished_at or requested_at (COMPLETED, FAILED, CANCELLED)",
                     "description": "Knowledge sync jobs and checkpoints",
                 },
                 "budget": {
-                    "retentionDays": 365,
+                    "retentionDays": retention_days,
                     "retentionStart": "resolved_at (alerts), updated_at (deliveries), expires_at (policies)",
                     "description": "Budget alerts, delivery attempts, and expired policies",
+                },
+                "governance": {
+                    "retentionDays": retention_days,
+                    "auditRetentionDays": audit_retention_days,
+                    "retentionStart": "created_at (versions/idempotency), occurred_at (audits)",
+                    "description": (
+                        "Governance versions use ACTIVE policy TTL; "
+                        "ACTIVE/APPROVED versions retained permanently; "
+                        "audits use longer audit retention"
+                    ),
                 },
             },
             "dataStates": [
@@ -752,6 +768,12 @@ def register_ops_read_routes(
     @app.post("/api/admin/retention/purge")
     async def purge_retention(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.config.read")
+        from ..retention_runtime import resolve_active_retention_ttls
+
+        ttls = resolve_active_retention_ttls(governance_service)
+        retention_days = int(ttls["retention_days"])
+        audit_retention_days = int(ttls["audit_retention_days"])
+
         events_res = await query_service.purge_expired_events()
         events_removed = events_res.get("removed", 0)
 
@@ -762,20 +784,40 @@ def register_ops_read_routes(
             except Exception:
                 pass
 
-        examples_res = example_service.purge_expired(actor=actor) if example_service else {"removed": 0}
+        examples_res = (
+            example_service.purge_expired(actor=actor, retention_days=retention_days)
+            if example_service
+            else {"removed": 0}
+        )
         examples_removed = examples_res.get("removed", 0)
 
-        quality_res = quality_service.purge_expired(actor=actor) if quality_service else {"total": 0}
+        quality_res = (
+            quality_service.purge_expired(actor=actor, retention_days=retention_days)
+            if quality_service
+            else {"total": 0}
+        )
         quality_removed = quality_res.get("total", 0)
 
-        sync_res = sync_service.purge_expired(actor=actor) if sync_service else {"total": 0}
+        sync_res = (
+            sync_service.purge_expired(actor=actor, retention_days=retention_days)
+            if sync_service
+            else {"total": 0}
+        )
         sync_removed = sync_res.get("total", 0)
 
-        budget_res = budget_service.purge_expired(actor=actor) if budget_service else {"total": 0}
+        budget_res = (
+            budget_service.purge_expired(actor=actor, retention_days=retention_days)
+            if budget_service
+            else {"total": 0}
+        )
         budget_removed = budget_res.get("total", 0)
 
         gov_res = (
-            governance_service.purge_expired(actor=actor)
+            governance_service.purge_expired(
+                actor=actor,
+                retention_days=retention_days,
+                audit_retention_days=audit_retention_days,
+            )
             if governance_service and hasattr(governance_service, "purge_expired")
             else {"totalRemoved": 0}
         )
@@ -801,6 +843,9 @@ def register_ops_read_routes(
             "budget": budget_removed,
             "governance": gov_res,
             "totalRemoved": total_removed,
+            "retentionDays": retention_days,
+            "auditRetentionDays": audit_retention_days,
+            "policy": ttls.get("policy"),
         }
         await audit_read(actor, "retention.purge", "all_domains", after=result)
         return result
