@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { faqField } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -94,14 +95,12 @@ export async function renderRetention() {
       scroll.append(table);
       panel.append(scroll);
     }
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "資料保存",
+      "管理資料保留政策版本。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("資料保存", null, el("div", "error", error.message));
   }
 }
-
-export const retentionPage = createPageController({
-  enter: async () => renderRetention(),
-  update: async () => renderRetention(),
-  leave: async () => {},
-});

@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { showContentModal, closeContentModal } from "../components/modal.js";
 import { exampleSelect, faqField } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -298,9 +299,14 @@ export async function renderBudgets() {
     } else {
       alertPanel.append(el("p", "empty", "目前沒有 Alert。"));
     }
-    app.replaceChildren(policyPanel, alertPanel);
+    presentSystemPage(
+      "預算與警示",
+      "管理用量預算政策與告警。",
+      policyPanel,
+      alertPanel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("預算與警示", null, el("div", "error", error.message));
   }
 }
 

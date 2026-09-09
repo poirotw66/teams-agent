@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { showContentModal } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -427,14 +428,16 @@ export async function renderAudit() {
       return scroll;
     }
 
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "稽核紀錄",
+      "查詢營運與治理相關操作紀錄。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+    presentSystemPage(
+      "稽核紀錄",
+      null,
+      el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),
+    );
   }
 }
-
-export const auditPage = createPageController({
-  enter: async () => renderAudit(),
-  update: async () => renderAudit(),
-  leave: async () => {},
-});

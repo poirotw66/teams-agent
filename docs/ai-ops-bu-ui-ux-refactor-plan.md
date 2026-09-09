@@ -1,10 +1,15 @@
 # AI資訊客服營運後臺：BU任務導向UI／UX重構規劃
 
-> v0.1｜2026-09-09｜待確認，尚未進行介面實作
+> v0.6｜2026-09-09｜U1–U4 主線落地；剩餘為端到端任務驗收與更廣權限矩陣
 >
 > 盤點基準：HEAD c4ea1ad。Golden Eval Set持續開發中，本文件不判定其四階段已完成，也不改寫既有Golden spec。
 >
-> 本次只新增規劃文件；8092本地頁面回報ERR_CONNECTION_REFUSED，未取得實際畫面。以下區分原始碼可確認的结构與待實際操作驗證的假設。
+> 核准原型作為外觀／IA／任務流基準。正式遷移以 feature flag `bu_ui_shell_v1`（及本機「新介面」切換）啟用新殼層。
+> 已落地：左側導覽、Teams tokens、route aliases、改善案件分頁＋全頁詳情、workHub、contentLists、
+> 對話全頁詳情、營運分析頁籤（總覽／問題／處理方式／內容成效／成本）、品質驗收 tab URL 化、
+> 安全 returnTo 任務連續、知識內容進階連結（審核／發布）、驗收結果轉案件深鏈、系統管理頁共用 header、
+> 分析期間跨頁籤保留、問題分析→案件／對話 returnTo、contentGuide 精簡（BU）、contentHub 在 BU 直轉清單、
+> 固定任務命名、系統管理含分類正反例、BU 導覽／舊 URL／最小權限測試擴充。
 
 ## 1. 重構目標
 

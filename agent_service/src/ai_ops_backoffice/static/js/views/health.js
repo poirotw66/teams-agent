@@ -1,5 +1,6 @@
 import { api, el, metric } from "../api.js";
 import { createPageController } from "../app/lifecycle.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 
 export async function renderHealth(targetDate = null) {
   const app = document.getElementById("app");
@@ -155,9 +156,17 @@ export async function renderHealth(targetDate = null) {
       anomalyScroll.append(anomalyTable);
       panel.append(el("h3", "", "最近異常"), anomalyScroll);
     }
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "系統健康",
+      "查看服務狀態與最近異常。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+    presentSystemPage(
+      "系統健康",
+      null,
+      el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),
+    );
   }
 }
 

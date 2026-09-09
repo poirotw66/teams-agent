@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { createPageController } from "../app/lifecycle.js";
 import { badge } from "../components/badges.js";
 import { showContentModal } from "../components/modal.js";
@@ -238,9 +239,13 @@ export async function renderGovernanceSearch() {
       }
     });
     panel.append(form, results);
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "全域搜尋",
+      "依權限搜尋對話、案件與知識內容。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("全域搜尋", null, el("div", "error", error.message));
   }
 }
 

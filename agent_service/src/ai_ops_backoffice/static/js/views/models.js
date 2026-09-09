@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge, badge } from "../components/badges.js";
 import { showContentModal, closeContentModal } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -25,7 +26,11 @@ export async function renderModels() {
     const items = data.items || [];
     if (!items.length) {
       panel.append(el("p", "empty", "目前無模型配置。"));
-      app.replaceChildren(panel);
+      presentSystemPage(
+        "模型治理",
+        "管理模型與 Provider 的生效設定。",
+        panel,
+      );
       return;
     }
 
@@ -217,13 +222,15 @@ export async function renderModels() {
       }
       panel.append(card);
     }
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "模型治理",
+      "管理模型與 Provider 的生效設定。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("模型治理", null, el("div", "error", error.message));
   }
 }
-
-function createMetricBox(label, value, badgeVariant = null) {
   const box = el("div");
   box.append(el("div", "metric-label", label));
   if (badgeVariant) {

@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { showContentModal } from "../components/modal.js";
 import { exampleSelect } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -226,9 +227,14 @@ export async function renderPrompts() {
     if ((candidateData.items || []).length) {
       candidatePanel.append(el("p", "metric-label", `Phase 2 POC candidates: ${candidateData.items.length}`));
     }
-    app.replaceChildren(activePanel, candidatePanel);
+    presentSystemPage(
+      "Prompt 管理",
+      "管理問題抽取 Prompt 的生效版本與候選稿。",
+      activePanel,
+      candidatePanel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("Prompt 管理", null, el("div", "error", error.message));
   }
 }
 

@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { faqField } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -101,9 +102,13 @@ export async function renderRoles() {
       scroll.append(table);
       panel.append(scroll);
     }
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "角色權限",
+      "處理角色映射申請與核准。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("角色權限", null, el("div", "error", error.message));
   }
 }
 

@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { faqField } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -90,14 +91,12 @@ export async function renderMasking() {
       scroll.append(table);
       panel.append(scroll);
     }
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "遮罩政策",
+      "管理敏感資料遮罩政策版本。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("遮罩政策", null, el("div", "error", error.message));
   }
 }
-
-export const maskingPage = createPageController({
-  enter: async () => renderMasking(),
-  update: async () => renderMasking(),
-  leave: async () => {},
-});

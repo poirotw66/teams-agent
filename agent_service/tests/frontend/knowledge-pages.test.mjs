@@ -13,7 +13,11 @@ async function setup() {
   }
   const app = el('main');
   const calls = [];
-  const context = vm.createContext({ URLSearchParams, document: { getElementById: () => app } });
+  const context = vm.createContext({
+    URLSearchParams,
+    window: { location: { search: '', hash: '' } },
+    document: { getElementById: () => app },
+  });
   const mocks = {
     '../api.js': { el, metric() {}, api: async url => { calls.push(url); return { items: [] }; } },
     '../components/modal.js': { showContentModal() {}, closeContentModal() {} },
@@ -23,6 +27,12 @@ async function setup() {
     '../services/export.js': { runExport() {} },
     '../app/capabilities.js': { actorCapabilities: () => new Set(['ops.faq.read', 'ops.sync.read']), canUseKnowledgeUi: () => true, getCapabilities: () => ({ knowledgeBridgeEnabled: true }) },
     '../app/navigation.js': { buildLocationHash: () => '#', drillLink() {}, loadNavFilters: () => ({ caseId: 'case-1' }), navigateTo() {} },
+    '../app/buShellConfig.js': { isBuShellEnabled: () => false },
+    '../app/analyticsChrome.js': {
+      presentAnalyticsPage(_active, _title, _subtitle, ...nodes) {
+        app.replaceChildren(...nodes.filter(Boolean));
+      },
+    },
     '../knowledge_portal_view.js': { renderNativeKnowledgePortal: async (_app, _caps, _nav, filters) => calls.push(filters) },
     '../app/lifecycle.js': { createPageController: x => x },
   };

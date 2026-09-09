@@ -1,5 +1,6 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge, badge } from "../components/badges.js";
 import { showContentModal, closeContentModal } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -68,7 +69,11 @@ export async function renderFlags() {
     const items = data.items || [];
     if (!items.length) {
       panel.append(el("p", "empty", "目前無 Feature Flag。"));
-      app.replaceChildren(panel);
+      presentSystemPage(
+        "功能開關",
+        "依環境查看與調整 feature flag。",
+        panel,
+      );
       return;
     }
 
@@ -140,9 +145,13 @@ export async function renderFlags() {
     const scroll = el("div", "table-responsive");
     scroll.append(table);
     panel.append(scroll);
-    app.replaceChildren(panel);
+    presentSystemPage(
+      "功能開關",
+      "依環境查看與調整 feature flag。",
+      panel,
+    );
   } catch (error) {
-    app.replaceChildren(el("div", "error", error.message));
+    presentSystemPage("功能開關", null, el("div", "error", error.message));
   }
 }
 
