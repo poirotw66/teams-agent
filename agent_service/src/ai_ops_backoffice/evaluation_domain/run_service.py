@@ -114,7 +114,7 @@ class EvaluationRunService:
             set_version_id=set_version_id,
             baseline_manifest=preflight.resolved_baseline_manifest,
             candidate_manifest=preflight.resolved_candidate_manifest,
-            mode="REAL_RAG" if mode == "REAL_RAG" else "OFFLINE_BENCHMARK",
+            mode=mode if mode in {"REAL_RAG", "AGENT_SANDBOX"} else "OFFLINE_BENCHMARK",
             status="QUEUED",
             limits=limits,
             repetitions=repetitions,
@@ -234,6 +234,22 @@ class EvaluationRunService:
         if not execution:
             raise EvaluationNotFoundError(f"Case execution {execution_id} not found")
         return {"execution": execution.model_dump(mode="json")}
+
+    def get_trajectory(
+        self,
+        run_id: str,
+        execution_id: str,
+        actor: ActorContext | None = None,
+    ) -> dict[str, Any]:
+        if actor:
+            self._authorize(actor, "ops.evals.read")
+        execution = self._repo.get_case_execution(execution_id)
+        if not execution or execution.run_id != run_id:
+            raise EvaluationNotFoundError(f"Case execution {execution_id} not found in run {run_id}")
+        trajectory = execution.trace_ref.get("trajectory")
+        if not trajectory:
+            raise EvaluationNotFoundError(f"No trajectory recorded for execution {execution_id}")
+        return {"trajectory": trajectory}
 
     def review_execution(
         self,

@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from .agent_behavior_scorer import AgentBehaviorScorer
 from .candidate_generator import CandidateGenerationManager
 from .errors import (
     EvaluationAuditWriteError,
@@ -52,8 +51,18 @@ from .runner_models import (
 )
 from .scorer import EvaluationScorer
 from .service import EvaluationService
+from .tool_fixture_models import (
+    MockResponseSpec,
+    ToolCallTrace,
+    ToolFixture,
+    ToolFixtureVersion,
+    TrajectoryTrace,
+    TurnExecutionTrace,
+)
+from .tool_fixtures import ToolFixtureRepository, ToolFixtureService
 
 __all__ = [
+    "AgentBehaviorScorer",
     "CandidateGenerationJob",
     "CandidateGenerationManager",
     "CaseExecution",
@@ -89,12 +98,20 @@ __all__ = [
     "InMemoryEvaluationRepository",
     "ManifestResolver",
     "MetricResult",
+    "MockResponseSpec",
     "ProvenanceSpec",
     "ReviewDecision",
     "RunComparisonSummary",
     "RunPreflightResult",
     "TargetManifest",
+    "ToolCallTrace",
     "ToolConstraintsSpec",
+    "ToolFixture",
+    "ToolFixtureRepository",
+    "ToolFixtureService",
+    "ToolFixtureVersion",
+    "TrajectoryTrace",
+    "TurnExecutionTrace",
     "TurnSpec",
     "calculate_manifest_hash",
     "calculate_revision_content_hash",

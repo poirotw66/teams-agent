@@ -88,6 +88,9 @@ class ToolConstraintsSpec(StrictModel):
     forbidden_tools: tuple[str, ...] = ()
     max_calls: int | None = None
     parameter_constraints: dict[str, Any] = Field(default_factory=dict)
+    tool_order: tuple[tuple[str, str], ...] = ()
+    allowed_paths: tuple[tuple[str, ...], ...] = ()
+    max_retries: int = 2
 
 
 class ProvenanceSpec(StrictModel):

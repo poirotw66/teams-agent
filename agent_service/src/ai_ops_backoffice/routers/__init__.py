@@ -7,6 +7,7 @@ from .ops_reads import register_ops_read_routes
 from .prompt_poc_routes import register_prompt_poc_routes
 from .quality_routes import register_quality_routes
 from .sync_routes import register_sync_routes
+from .tool_fixture_routes import register_tool_fixture_routes
 
 __all__ = [
     "register_budget_routes",
@@ -18,4 +19,5 @@ __all__ = [
     "register_prompt_poc_routes",
     "register_quality_routes",
     "register_sync_routes",
+    "register_tool_fixture_routes",
 ]

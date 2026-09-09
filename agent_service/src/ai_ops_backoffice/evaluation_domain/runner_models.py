@@ -119,7 +119,7 @@ class EvaluationRun(StrictModel):
     set_version_id: str
     baseline_manifest: TargetManifest
     candidate_manifest: TargetManifest
-    mode: Literal["OFFLINE_BENCHMARK", "REAL_RAG"] = "REAL_RAG"
+    mode: Literal["OFFLINE_BENCHMARK", "REAL_RAG", "AGENT_SANDBOX"] = "REAL_RAG"
     status: RunStatus = "QUEUED"
     runner_version: str = "ge2-runner-v1"
     metric_version: str = "ge2-metrics-v1"

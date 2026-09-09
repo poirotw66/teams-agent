@@ -222,7 +222,7 @@ class EvaluationScorer:
         retrieved_evidence: tuple[dict[str, Any], ...],
     ) -> MetricResult:
         """Checks whether the answer is grounded in the retrieved evidence."""
-        if case_revision.behavior in {"REFUSE", "CLARIFY"}:
+        if case_revision.behavior in {"REFUSE", "CLARIFY", "HANDOFF", "TOOL_TASK"}:
             return MetricResult(
                 metric_id="answer.groundedness",
                 version=self._version,

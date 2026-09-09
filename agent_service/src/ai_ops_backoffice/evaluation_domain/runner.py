@@ -9,17 +9,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .agent_behavior_scorer import AgentBehaviorScorer
 from .errors import EvaluationNotFoundError
-from .models import CaseRevision, EvaluationAuditEvent
+from .models import CaseRevision, EvaluationAuditEvent, EvaluationCriteria
 from .repository import EvaluationRepository
 from .runner_models import (
     CaseExecution,
     EvaluationRun,
+    MetricResult,
     RunComparisonSummary,
     TargetManifest,
     TargetSide,
 )
 from .scorer import EvaluationScorer
+from .tool_fixture_models import ToolCallTrace, TrajectoryTrace, TurnExecutionTrace
+from .tool_fixtures import ToolFixtureService
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +90,16 @@ class EvaluationRunner:
         self,
         repository: EvaluationRepository,
         scorer: EvaluationScorer | None = None,
+        agent_scorer: AgentBehaviorScorer | None = None,
+        tool_fixture_service: ToolFixtureService | None = None,
         retriever_fn: RetrieverFn | None = None,
         answering_fn: ModelAnsweringFn | None = None,
         releases_dir: Path | None = None,
     ) -> None:
         self._repo = repository
         self._scorer = scorer or EvaluationScorer()
+        self._agent_scorer = agent_scorer or AgentBehaviorScorer()
+        self._tool_fixture_service = tool_fixture_service or ToolFixtureService()
         self._retriever_fn = retriever_fn
         self._answering_fn = answering_fn
         self._releases_dir = releases_dir
@@ -238,6 +246,9 @@ class EvaluationRunner:
         execution_id = f"exec_{run_id[:8]}_{side.lower()}_{case_revision.case_id[:8]}"
         start_time = time.perf_counter()
 
+        if case_revision.turns:
+            return self._execute_multi_turn(run_id, case_revision, manifest, side, start_time)
+
         try:
             # 1. Retrieval phase
             if self._retriever_fn:
@@ -248,10 +259,16 @@ class EvaluationRunner:
                 )
 
             # 2. Answering phase
+            tool_calls: list[ToolCallTrace] = []
             if self._answering_fn:
-                answer, tokens, cost = self._answering_fn(
+                ans_res = self._answering_fn(
                     case_revision.query, manifest, case_revision, retrieved
                 )
+                if isinstance(ans_res, tuple) and len(ans_res) == 4:
+                    answer, tokens, cost, raw_tool_calls = ans_res
+                    tool_calls = list(raw_tool_calls)
+                else:
+                    answer, tokens, cost = ans_res[:3]
             else:
                 # Default mock answer fallback
                 answer = f"這是針對「{case_revision.query}」的依據回覆 [來源: {manifest.target_id}]"
@@ -267,7 +284,24 @@ class EvaluationRunner:
                 retrieved_evidence=tuple(retrieved),
             )
 
+            # Tool constraints scoring
+            tc = case_revision.tool_constraints
+            if tc and (tc.required_tools or tc.forbidden_tools or tc.allowed_tools or tc.parameter_constraints or tc.tool_order or tc.allowed_paths or tool_calls):
+                tool_metrics = self._agent_scorer.score_tool_constraints(tc, tuple(tool_calls))
+                metric_results = metric_results + tuple(tool_metrics)
+                for tm in tool_metrics:
+                    if tm.applicability and tm.pass_status == "FAIL":
+                        passed = False
+                        if tm.metric_id == "tool.forbidden_tools":
+                            failure_class = "SAFETY_VIOLATION"
+                        elif failure_class is None:
+                            failure_class = "ANSWER_INCORRECT"
+
             is_critical = (not passed) and (case_revision.criticality == "CRITICAL")
+
+            trace_ref: dict[str, Any] = {}
+            if tool_calls:
+                trace_ref["tool_calls"] = [c.model_dump(mode="json") for c in tool_calls]
 
             return CaseExecution(
                 execution_id=execution_id,
@@ -279,6 +313,7 @@ class EvaluationRunner:
                 status="COMPLETED",
                 answer=answer,
                 retrieved_evidence=tuple(retrieved),
+                trace_ref=trace_ref,
                 metric_results=metric_results,
                 failure_classification=failure_class,
                 passed=passed,
@@ -310,6 +345,183 @@ class EvaluationRunner:
                 is_critical_failure=case_revision.criticality == "CRITICAL",
                 latency_ms=duration_ms,
                 error_detail=str(e),
+            )
+
+    def _execute_multi_turn(
+        self,
+        run_id: str,
+        case_revision: CaseRevision,
+        manifest: TargetManifest,
+        side: TargetSide,
+        start_time: float,
+    ) -> CaseExecution:
+        """Executes a multi-turn scenario where agent answers form conversational history."""
+        execution_id = f"exec_{run_id[:8]}_{side.lower()}_{case_revision.case_id[:8]}"
+        conversation_history: list[dict[str, str]] = []
+        turn_traces: list[TurnExecutionTrace] = []
+        total_tokens = 0
+        total_cost = 0.0
+        all_retrieved: list[dict[str, Any]] = []
+
+        try:
+            for idx, turn in enumerate(case_revision.turns):
+                user_query = turn.user_query
+
+                if self._retriever_fn:
+                    retrieved = self._retriever_fn(user_query, manifest, case_revision)
+                else:
+                    retrieved = default_knowledge_retriever(
+                        user_query, manifest, case_revision, self._releases_dir
+                    )
+                all_retrieved.extend(retrieved)
+
+                tool_calls: list[ToolCallTrace] = []
+                if self._answering_fn:
+                    try:
+                        ans_res = self._answering_fn(
+                            user_query, manifest, case_revision, retrieved, conversation_history
+                        )
+                    except TypeError:
+                        ans_res = self._answering_fn(
+                            user_query, manifest, case_revision, retrieved
+                        )
+
+                    if isinstance(ans_res, tuple) and len(ans_res) == 4:
+                        answer, tokens, cost, raw_tool_calls = ans_res
+                        tool_calls = list(raw_tool_calls)
+                    else:
+                        answer, tokens, cost = ans_res[:3]
+                else:
+                    answer = f"Turn {idx + 1} response to '{user_query}'"
+                    tokens = 120
+                    cost = 0.00004
+
+                total_tokens += tokens
+                total_cost += cost
+
+                # Mandatory GE3 rule: Expected answer is NEVER used as assistant history.
+                # Actual model answer is used.
+                conversation_history.append({"role": "user", "content": user_query})
+                conversation_history.append({"role": "assistant", "content": answer})
+
+                turn_metrics: list[MetricResult] = []
+                turn_rev = case_revision.model_copy(
+                    update={
+                        "query": user_query,
+                        "criteria": turn.criteria or EvaluationCriteria(),
+                        "evidence": turn.evidence,
+                        "behavior": turn.expected_behavior,
+                    }
+                )
+                t_metrics, _, _ = self._scorer.evaluate_execution(
+                    case_revision=turn_rev,
+                    answer=answer,
+                    retrieved_evidence=tuple(retrieved),
+                )
+                turn_metrics.extend(t_metrics)
+
+                turn_passed = all(
+                    m.pass_status == "PASS" for m in turn_metrics if m.applicability
+                )
+                turn_traces.append(
+                    TurnExecutionTrace(
+                        turn_index=idx,
+                        turn_id=turn.turn_id,
+                        user_query=user_query,
+                        agent_response=answer,
+                        tool_calls=tuple(tool_calls),
+                        metrics=tuple(turn_metrics),
+                        passed=turn_passed,
+                    )
+                )
+
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+            trajectory_metrics, failed_idx, failed_reason, traj_passed = (
+                self._agent_scorer.score_trajectory_timeline(
+                    case_revision=case_revision,
+                    turns=tuple(turn_traces),
+                )
+            )
+
+            final_answer = turn_traces[-1].agent_response if turn_traces else ""
+            case_metrics: list[MetricResult] = []
+            failure_class = None
+            combined_answers = " \n".join(t.agent_response for t in turn_traces)
+            if case_revision.criteria.forbidden_claims:
+                fc_metric = self._scorer.score_forbidden_claims(case_revision, combined_answers)
+                case_metrics.append(fc_metric)
+                if fc_metric.pass_status == "FAIL":
+                    failure_class = "SAFETY_VIOLATION"
+            if case_revision.criteria.required_facts:
+                rf_metric = self._scorer.score_required_facts(case_revision, combined_answers)
+                case_metrics.append(rf_metric)
+                if rf_metric.pass_status == "FAIL" and failure_class is None:
+                    failure_class = "ANSWER_INCORRECT"
+
+            all_combined_metrics = list(case_metrics) + list(trajectory_metrics)
+            overall_passed = traj_passed and all(
+                m.pass_status == "PASS" for m in case_metrics if m.applicability
+            )
+            if not overall_passed and failure_class is None:
+                failure_class = "ANSWER_INCORRECT"
+
+            trajectory = TrajectoryTrace(
+                execution_id=execution_id,
+                case_id=case_revision.case_id,
+                target_side=side,
+                turns=tuple(turn_traces),
+                failed_step_index=failed_idx,
+                failed_step_reason=failed_reason,
+                overall_passed=overall_passed,
+            )
+
+            is_critical = (not overall_passed) and (case_revision.criticality == "CRITICAL")
+
+            return CaseExecution(
+                execution_id=execution_id,
+                run_id=run_id,
+                case_revision_id=case_revision.revision_id,
+                case_id=case_revision.case_id,
+                target_side=side,
+                attempt=1,
+                status="COMPLETED",
+                answer=final_answer,
+                retrieved_evidence=tuple(all_retrieved),
+                trace_ref={
+                    "trajectory": trajectory.model_dump(mode="json"),
+                    "conversation_history": conversation_history,
+                },
+                metric_results=tuple(all_combined_metrics),
+                failure_classification=failure_class,
+                passed=overall_passed,
+                is_critical_failure=is_critical,
+                used_tokens=total_tokens,
+                latency_ms=duration_ms,
+                estimated_cost_usd=round(total_cost, 6),
+            )
+
+        except Exception as e:
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            metric_results, failure_class, _ = self._scorer.evaluate_execution(
+                case_revision=case_revision,
+                answer="",
+                retrieved_evidence=(),
+                error_message=str(e),
+            )
+            return CaseExecution(
+                execution_id=execution_id,
+                run_id=run_id,
+                case_revision_id=case_revision.revision_id,
+                case_id=case_revision.case_id,
+                target_side=side,
+                attempt=1,
+                status="FAILED",
+                metric_results=metric_results,
+                failure_classification=failure_class,
+                passed=False,
+                is_critical_failure=case_revision.criticality == "CRITICAL",
+                latency_ms=duration_ms,
             )
 
     def _compute_comparison_summary(

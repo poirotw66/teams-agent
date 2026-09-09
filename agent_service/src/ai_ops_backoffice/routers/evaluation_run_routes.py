@@ -137,6 +137,15 @@ def register_evaluation_run_routes(
         require_capability(actor, "ops.evals.read")
         return run_service.get_case_execution(execution_id, actor=actor)
 
+    @router.get("/runs/{run_id}/cases/{execution_id}/trajectory")
+    async def get_case_trajectory(
+        run_id: str,
+        execution_id: str,
+        actor: ActorContext = Depends(current_actor),
+    ) -> dict[str, Any]:
+        require_capability(actor, "ops.evals.read")
+        return run_service.get_trajectory(run_id, execution_id, actor=actor)
+
     @router.post("/runs/{run_id}/reviews")
     async def review_case_execution(
         run_id: str,

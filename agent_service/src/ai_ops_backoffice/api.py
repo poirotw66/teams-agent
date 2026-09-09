@@ -21,7 +21,29 @@ from .budget_domain import (
     FileBudgetRepository,
     FirestoreBudgetRepository,
 )
-from .notification_dispatcher import NotificationDispatcher
+from .deps import build_dependencies
+from .evaluation_domain import (
+    AgentBehaviorScorer,
+    CandidateGenerationManager,
+    EvaluationAuditWriteError,
+    EvaluationAuthorizationError,
+    EvaluationDomainError,
+    EvaluationIdempotencyConflictError,
+    EvaluationImportExportManager,
+    EvaluationNotFoundError,
+    EvaluationRepository,
+    EvaluationRunner,
+    EvaluationRunService,
+    EvaluationScorer,
+    EvaluationService,
+    EvaluationTransitionError,
+    EvaluationValidationError,
+    EvaluationVersionConflictError,
+    FileEvaluationRepository,
+    InMemoryEvaluationRepository,
+    ManifestResolver,
+    ToolFixtureService,
+)
 from .example_domain import (
     ExampleService,
     FileExampleRepository,
@@ -29,7 +51,6 @@ from .example_domain import (
 )
 from .faq_domain import (
     FaqAuthorizationError,
-    FaqContent,
     FaqDomainError,
     FaqDomainService,
     FaqIdempotencyConflictError,
@@ -44,25 +65,14 @@ from .governance_domain import (
     GovernanceService,
 )
 from .governance_routes import register_governance_routes
-from .deps import build_dependencies
-from .evaluation_domain import (
-    CandidateGenerationManager,
-    EvaluationAuditWriteError,
-    EvaluationAuthorizationError,
-    EvaluationDomainError,
-    EvaluationIdempotencyConflictError,
-    EvaluationImportExportManager,
-    EvaluationNotFoundError,
-    EvaluationRunService,
-    EvaluationRunner,
-    EvaluationScorer,
-    EvaluationService,
-    EvaluationTransitionError,
-    EvaluationValidationError,
-    EvaluationVersionConflictError,
-    FileEvaluationRepository,
-    InMemoryEvaluationRepository,
-    ManifestResolver,
+from .knowledge_bridge import KnowledgePortalClient, build_knowledge_router
+from .knowledge_bridge.errors import KnowledgeBridgeError
+from .notification_dispatcher import NotificationDispatcher
+from .prompt_domain import FilePromptRepository, FirestorePromptRepository, PromptPocService
+from .quality_domain import (
+    FileQualityRepository,
+    FirestoreQualityRepository,
+    QualityService,
 )
 from .routers import (
     register_budget_routes,
@@ -71,24 +81,17 @@ from .routers import (
     register_example_routes,
     register_faq_routes,
     register_ops_read_routes,
-    register_quality_routes,
     register_prompt_poc_routes,
+    register_quality_routes,
     register_sync_routes,
-)
-from .knowledge_bridge import KnowledgePortalClient, build_knowledge_router
-from .knowledge_bridge.errors import KnowledgeBridgeError
-from .prompt_domain import FilePromptRepository, FirestorePromptRepository, PromptPocService
-from .quality_domain import (
-    FileQualityRepository,
-    FirestoreQualityRepository,
-    QualityService,
+    register_tool_fixture_routes,
 )
 from .services.periods import PeriodPolicyError
 from .services.query_service import BackofficeQueryService
 from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
 from .settings import BackofficeSettings
-from .workers import install_background_runtime
 from .sync_domain import FileSyncRepository, FirestoreSyncRepository, SyncService
+from .workers import install_background_runtime
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -126,7 +129,7 @@ class _NoStoreStaticCacheMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith("/static/") or path.startswith("/knowledge-ui"):
+        if path == "/" or path.startswith(("/static/", "/knowledge-ui")):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
         return response
 
@@ -360,9 +363,13 @@ def create_app(
     )
     manifest_resolver = ManifestResolver(eval_repository, releases_dir=releases_dir)
     eval_scorer = EvaluationScorer()
+    tool_fixture_service = ToolFixtureService()
+    agent_scorer = AgentBehaviorScorer()
     eval_runner = EvaluationRunner(
         eval_repository,
         scorer=eval_scorer,
+        agent_scorer=agent_scorer,
+        tool_fixture_service=tool_fixture_service,
         releases_dir=releases_dir,
     )
     evaluation_run_service = EvaluationRunService(
@@ -559,6 +566,13 @@ def create_app(
     register_evaluation_run_routes(
         app,
         run_service=evaluation_run_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
+    app.state.tool_fixture_service = tool_fixture_service
+    register_tool_fixture_routes(
+        app,
+        fixture_service=tool_fixture_service,
         current_actor=current_actor,
         require_capability=require_capability,
     )
