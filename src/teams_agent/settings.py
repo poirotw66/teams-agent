@@ -257,6 +257,14 @@ class AgentSettings:
         return f"{parsed_url.scheme}://{parsed_url.netloc}/feedback"
 
     @property
+    def resolved_health_telemetry_url(self) -> str | None:
+        """POST Adapter reply health samples to Agent Service (REQ-024)."""
+        if not self.api_url:
+            return None
+        parsed_url = urlparse(self.api_url)
+        return f"{parsed_url.scheme}://{parsed_url.netloc}/agent/ops/health-telemetry"
+
+    @property
     def ready(self) -> bool:
         return self.mode == "echo" or bool(self.api_url)
 

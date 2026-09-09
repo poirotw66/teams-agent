@@ -28,6 +28,10 @@ class AgentGatewayError(RuntimeError):
     """Raised when the configured Agent Gateway cannot provide an answer."""
 
 
+class AgentGatewayTimeoutError(AgentGatewayError):
+    """Raised when the Agent API call exceeds the configured timeout budget."""
+
+
 async def google_identity_token_provider(audience: str) -> str:
     return await asyncio.to_thread(
         fetch_id_token,
@@ -177,7 +181,11 @@ class AgentGateway:
             return AgentResponse.from_payload(payload, request.requestId)
         except AgentGatewayError:
             raise
-        except (TimeoutError, ClientError, TypeError, ValueError) as error:
+        except TimeoutError as error:
+            raise AgentGatewayTimeoutError(
+                "Agent API request timed out."
+            ) from error
+        except (ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Agent API request failed.") from error
 
     async def answer_stream(
@@ -226,7 +234,11 @@ class AgentGateway:
                     )
         except AgentGatewayError:
             raise
-        except (TimeoutError, ClientError, TypeError, ValueError) as error:
+        except TimeoutError as error:
+            raise AgentGatewayTimeoutError(
+                "Agent API streaming request timed out."
+            ) from error
+        except (ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Agent API streaming request failed.") from error
 
         if not seen_response:
@@ -261,3 +273,26 @@ class AgentGateway:
             raise
         except (TimeoutError, ClientError, TypeError, ValueError) as error:
             raise AgentGatewayError("Feedback submission failed.") from error
+
+    async def post_json(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> object:
+        """Authenticated JSON POST used by Adapter health telemetry."""
+        headers = await self._auth_headers()
+        deadline = (
+            self.settings.api_timeout_seconds
+            if timeout_seconds is None
+            else timeout_seconds
+        )
+        try:
+            return await self.transport(url, payload, headers, deadline)
+        except AgentGatewayError:
+            raise
+        except TimeoutError as error:
+            raise AgentGatewayTimeoutError("Agent API request timed out.") from error
+        except (ClientError, TypeError, ValueError) as error:
+            raise AgentGatewayError("Agent API request failed.") from error

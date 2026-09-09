@@ -7,6 +7,7 @@ from teams_agent import agent_gateway as agent_gateway_module
 from teams_agent.agent_gateway import (
     AgentGateway,
     AgentGatewayError,
+    AgentGatewayTimeoutError,
     parse_sse_block,
 )
 from teams_agent.contracts import (
@@ -115,7 +116,7 @@ async def test_api_timeout_is_converted_to_gateway_error() -> None:
         transport=timeout_transport,
     )
 
-    with pytest.raises(AgentGatewayError, match="request failed"):
+    with pytest.raises(AgentGatewayTimeoutError, match="timed out"):
         await gateway.answer(make_request())
 
 

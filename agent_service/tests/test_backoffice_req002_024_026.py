@@ -39,29 +39,31 @@ from ai_ops_backoffice.sync_domain.repository import InMemorySyncRepository
 from ai_ops_backoffice.sync_domain.service import SyncService
 
 
-def _make_settings(tmp_path: Path, ops_mode: str = "MEMORY") -> BackofficeSettings:
+def _make_settings(tmp_path: Path, ops_mode: str = "MEMORY", **overrides) -> BackofficeSettings:
     data_dir = Path(__file__).resolve().parents[2] / "data"
     store_path = tmp_path / "events"
-    return BackofficeSettings(
-        host="127.0.0.1",
-        port=8092,
-        service_token="",
-        auth_mode="HEADER",
-        ops_store_mode=ops_mode,
-        ops_store_path=store_path,
-        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
-        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
-        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
-        ops_audit_store_mode="FILE",
-        pricing_store_mode="MEMORY",
-        knowledge_portal_url="http://127.0.0.1:8091",
-        agent_api_url="http://127.0.0.1:8000",
-        adapter_api_url="http://127.0.0.1:3978",
-        ticket_service_url=None,
-        default_owner_unit_id="IT",
-        entra_tenant_id=None,
-        entra_client_id=None,
-    )
+    params = {
+        "host": "127.0.0.1",
+        "port": 8092,
+        "service_token": "",
+        "auth_mode": "HEADER",
+        "ops_store_mode": ops_mode,
+        "ops_store_path": store_path,
+        "ops_taxonomy_path": data_dir / "ops" / "issue_taxonomy_v1.json",
+        "ops_metrics_path": data_dir / "ops" / "metrics_definitions_v1.json",
+        "ops_classification_rules_path": data_dir / "ops" / "issue_classification_rules.json",
+        "ops_audit_store_mode": "FILE",
+        "pricing_store_mode": "MEMORY",
+        "knowledge_portal_url": "http://127.0.0.1:8091",
+        "agent_api_url": "http://127.0.0.1:8000",
+        "adapter_api_url": "http://127.0.0.1:3978",
+        "ticket_service_url": None,
+        "default_owner_unit_id": "IT",
+        "entra_tenant_id": None,
+        "entra_client_id": None,
+    }
+    params.update(overrides)
+    return BackofficeSettings(**params)
 
 
 def _client_for_test(tmp_path: Path) -> TestClient:
@@ -1063,11 +1065,13 @@ async def test_teams_and_index_emit_to_health_summary(tmp_path: Path) -> None:
         status="SUCCESS",
         elapsed_ms=42.0,
         correlation_id="teams-e2e-1",
+        payload={"attributionScope": "ADAPTER_REPLY"},
         occurred_at=now,
     )
     await query.record_component_usage(
         component="knowledge_index",
         status="SUCCESS",
+        elapsed_ms=120.0,
         correlation_id="index-e2e-1",
         payload={"documentCount": 3},
         occurred_at=now,
@@ -1076,8 +1080,125 @@ async def test_teams_and_index_emit_to_health_summary(tmp_path: Path) -> None:
     components = {item["id"]: item for item in summary["components"]}
     assert components["teams-adapter"]["telemetryStatus"] == "AVAILABLE"
     assert components["teams-adapter"]["requestCount"] >= 1
+    assert components["teams-adapter"]["latencySampleCount"] >= 1
     assert components["agent-retrieval-index"]["telemetryStatus"] == "AVAILABLE"
     assert components["agent-retrieval-index"]["requestCount"] >= 1
+    assert summary["monitoringScope"]["teamsAdapter"]["replySampleCount"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_adapter_ingress_alone_is_not_reply_health(tmp_path: Path) -> None:
+    """REQ-024: ADAPTER_INGRESS SUCCESS must not inflate teams-adapter availability."""
+    settings = _make_settings(tmp_path, ops_mode="FILE")
+    query = BackofficeQueryService(settings)
+    now = datetime.now(UTC)
+    await query.record_component_usage(
+        component="teams_adapter",
+        status="SUCCESS",
+        correlation_id="ingress-only",
+        payload={"attributionScope": "ADAPTER_INGRESS", "phase": "ingress"},
+        occurred_at=now,
+    )
+    summary = await query.health_summary()
+    components = {item["id"]: item for item in summary["components"]}
+    assert components["teams-adapter"]["telemetryStatus"] == "NO_DATA"
+    assert components["teams-adapter"]["requestCount"] == 0
+    assert summary["monitoringScope"]["teamsAdapter"]["ingressSampleCount"] == 1
+    assert "ADAPTER_INGRESS" in (components["teams-adapter"].get("note") or "")
+
+
+@pytest.mark.asyncio
+async def test_adapter_reply_fail_timeout_and_index_failure_boundaries(
+    tmp_path: Path,
+) -> None:
+    """REQ-024 producer→store→health_summary for fail/timeout/empty history."""
+    settings = _make_settings(tmp_path, ops_mode="FILE")
+    query = BackofficeQueryService(settings)
+    now = datetime.now(UTC)
+    await query.record_component_usage(
+        component="teams_adapter",
+        status="SUCCESS",
+        elapsed_ms=40.0,
+        correlation_id="reply-ok",
+        payload={"attributionScope": "ADAPTER_REPLY"},
+        occurred_at=now,
+    )
+    await query.record_component_usage(
+        component="teams_adapter",
+        status="FAILED",
+        elapsed_ms=80.0,
+        correlation_id="reply-fail",
+        payload={"attributionScope": "ADAPTER_REPLY", "errorType": "SendError"},
+        occurred_at=now,
+    )
+    await query.record_component_usage(
+        component="teams_adapter",
+        status="TIMEOUT",
+        elapsed_ms=10000.0,
+        correlation_id="reply-timeout",
+        payload={"attributionScope": "ADAPTER_REPLY", "errorType": "AgentGatewayTimeoutError"},
+        occurred_at=now,
+    )
+    await query.record_component_usage(
+        component="knowledge_index",
+        status="FAILED",
+        elapsed_ms=250.0,
+        correlation_id="index-fail",
+        payload={
+            "attributionScope": "HEALTH_TELEMETRY",
+            "errorType": "SYNC_ADAPTER_UNAVAILABLE",
+        },
+        occurred_at=now,
+    )
+
+    summary = await query.health_summary()
+    components = {item["id"]: item for item in summary["components"]}
+    adapter = components["teams-adapter"]
+    assert adapter["requestCount"] == 3
+    assert adapter["availabilityRate"] == pytest.approx(1 / 3, rel=1e-3)
+    assert adapter["errorRate"] == pytest.approx(1 / 3, rel=1e-3)
+    assert adapter["timeoutRate"] == pytest.approx(1 / 3, rel=1e-3)
+    assert adapter["p50LatencyMs"] is not None
+    assert adapter["latencySampleCount"] == 3
+
+    index = components["agent-retrieval-index"]
+    assert index["requestCount"] >= 1
+    assert index["errorRate"] == 1.0
+    assert index["latencySampleCount"] >= 1
+    assert any(
+        item["status"] == "TIMEOUT" and item["component"] == "teams_adapter"
+        for item in summary["recentAnomalies"]
+    )
+
+    empty = await query.health_summary(target_date="2020-01-01")
+    empty_components = {item["id"]: item for item in empty["components"]}
+    assert empty_components["teams-adapter"]["status"] == "NO_DATA"
+    assert empty_components["teams-adapter"]["telemetryStatus"] == "NO_DATA"
+
+
+@pytest.mark.asyncio
+async def test_sync_failure_emits_knowledge_index_failed_health(
+    tmp_path: Path,
+) -> None:
+    """REQ-024: sync failure branch records knowledge_index FAILED + elapsedMs."""
+    settings = _make_settings(tmp_path, ops_mode="FILE", sync_adapter_url="")
+    app = create_app(settings)
+    client = TestClient(app)
+    sync_resp = client.post(
+        "/api/sync-jobs",
+        json={"scope_type": "ALL", "reason": "REQ-024 sync failure health"},
+        headers=_headers("SYSTEM_ADMIN"),
+    )
+    assert sync_resp.status_code == 200
+
+    health = client.get("/api/health/summary", headers=_headers("SYSTEM_ADMIN"))
+    assert health.status_code == 200
+    components = {item["id"]: item for item in health.json()["components"]}
+    index = components["agent-retrieval-index"]
+    assert index["telemetryStatus"] == "AVAILABLE"
+    assert index["requestCount"] >= 1
+    assert index["errorRate"] == 1.0
+    assert index["latencySampleCount"] >= 1
 
 
 @pytest.mark.asyncio

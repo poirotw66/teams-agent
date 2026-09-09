@@ -179,6 +179,7 @@ class HealthQueryMixin:
                 "timeoutRate": None,
                 "p50LatencyMs": None,
                 "p95LatencyMs": None,
+                "latencySampleCount": 0,
             }
         statuses = [status.upper() for status, _ in samples]
         latencies = [latency for _, latency in samples if latency is not None]
@@ -193,13 +194,20 @@ class HealthQueryMixin:
             "timeoutRate": round(timeouts / len(samples), 4),
             "p50LatencyMs": _percentile(latencies, 0.5),
             "p95LatencyMs": _percentile(latencies, 0.95),
+            "latencySampleCount": len(latencies),
         }
 
 
     async def _health_telemetry(
         self,
         target_date: str | None = None,
-    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], datetime, datetime]:
+    ) -> tuple[
+        dict[str, dict[str, Any]],
+        list[dict[str, Any]],
+        datetime,
+        datetime,
+        dict[str, Any],
+    ]:
         if target_date:
             try:
                 window_start, window_end, _local_day = resolve_taipei_day_window(target_date)
@@ -266,7 +274,7 @@ class HealthQueryMixin:
             request_key = turn.request_id or turn.turn_id or turn.correlation_id
             agent_samples.append((status, request_latencies.get(request_key)))
 
-        usage_samples: list[tuple[str, str, float | None]] = []
+        usage_samples: list[tuple[str, str, float | None, str]] = []
         for event in events:
             if event.event_type != "usage.recorded":
                 continue
@@ -279,6 +287,7 @@ class HealthQueryMixin:
                     str(event.payload.get("component") or "unknown"),
                     str(event.payload.get("status") or "SUCCESS"),
                     float(elapsed) if elapsed is not None else None,
+                    scope,
                 )
             )
             usage_status = str(event.payload.get("status") or "SUCCESS").upper()
@@ -295,12 +304,22 @@ class HealthQueryMixin:
                     }
                 )
 
-        def usage_for(prefixes: tuple[str, ...]) -> list[tuple[str, float | None]]:
-            return [
-                (status, latency)
-                for component, status, latency in usage_samples
-                if component.startswith(prefixes)
-            ]
+        def usage_for(
+            prefixes: tuple[str, ...],
+            *,
+            exclude_scopes: frozenset[str] | None = None,
+            include_scopes: frozenset[str] | None = None,
+        ) -> list[tuple[str, float | None]]:
+            selected: list[tuple[str, float | None]] = []
+            for component, status, latency, scope in usage_samples:
+                if not component.startswith(prefixes):
+                    continue
+                if exclude_scopes and scope in exclude_scopes:
+                    continue
+                if include_scopes and scope not in include_scopes:
+                    continue
+                selected.append((status, latency))
+            return selected
 
         faq_samples = [
             ("SUCCESS", None)
@@ -317,7 +336,18 @@ class HealthQueryMixin:
             for event in events
             if event.event_type in {"ticket.created", "ticket.failed"}
         ]
-        adapter_usage = usage_for(("teams_", "adapter_", "teams-adapter", "teams_bot"))
+        # Reply-path metrics only. ADAPTER_INGRESS SUCCESS without elapsedMs is
+        # intentionally excluded so ingress ≠ full Teams Bot reply health.
+        adapter_usage = usage_for(
+            ("teams_", "adapter_", "teams-adapter", "teams_bot"),
+            exclude_scopes=frozenset({"ADAPTER_INGRESS"}),
+        )
+        ingress_count = sum(
+            1
+            for component, _status, _latency, scope in usage_samples
+            if component.startswith(("teams_", "adapter_", "teams-adapter", "teams_bot"))
+            and scope == "ADAPTER_INGRESS"
+        )
         teams_events = [
             (
                 "TIMEOUT"
@@ -353,7 +383,11 @@ class HealthQueryMixin:
         ]
         index_samples = index_samples + index_events
 
-        all_usage = [(status, latency) for _, status, latency in usage_samples]
+        all_usage = [
+            (status, latency)
+            for _component, status, latency, scope in usage_samples
+            if scope not in {"ADAPTER_INGRESS", "RETRIEVAL_INDEX", "HEALTH_TELEMETRY", "ADAPTER_REPLY"}
+        ]
         telemetry = {
             "teams-adapter": self._health_metric_summary(teams_samples),
             "agent-service": self._health_metric_summary(agent_samples),
@@ -368,8 +402,40 @@ class HealthQueryMixin:
             ),
             "ticket-service": self._health_metric_summary(ticket_samples),
         }
+        monitoring_scope = {
+            "teamsAdapter": {
+                "includes": [
+                    "ADAPTER_REPLY success/fail/timeout with elapsedMs",
+                    "legacy teams_* usage without ADAPTER_INGRESS",
+                ],
+                "excludes": [
+                    "ADAPTER_INGRESS (agent inbound SUCCESS without reply latency)",
+                ],
+                "ingressSampleCount": ingress_count,
+                "replySampleCount": telemetry["teams-adapter"]["requestCount"],
+                "latencySampleCount": telemetry["teams-adapter"]["latencySampleCount"],
+                "note": (
+                    "Ingress SUCCESS samples are not full-chain Teams Bot health. "
+                    "Availability/latency use reply-path producers only."
+                ),
+            },
+            "retrievalIndex": {
+                "includes": [
+                    "knowledge_index sync SUCCESS/FAILED/TIMEOUT with elapsedMs",
+                    "RETRIEVAL_INDEX retrieval outcomes (latency optional)",
+                ],
+                "latencySampleCount": telemetry["agent-retrieval-index"]["latencySampleCount"],
+                "note": (
+                    "Samples without elapsedMs still affect availability but leave P50/P95 empty."
+                ),
+            },
+            "retrievalSearch": {
+                "includes": ["knowledge_* and gemini_file_search CALL/usage samples"],
+                "latencySampleCount": telemetry["agent-retrieval-search"]["latencySampleCount"],
+            },
+        }
         anomalies.sort(key=lambda item: item["occurredAt"], reverse=True)
-        return telemetry, anomalies[:10], window_start, window_end
+        return telemetry, anomalies[:10], window_start, window_end, monitoring_scope
 
 
     async def health_summary(self, target_date: str | None = None) -> dict[str, Any]:
@@ -383,8 +449,8 @@ class HealthQueryMixin:
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
 
-        telemetry, recent_anomalies, window_start, window_end = await self._health_telemetry(
-            target_date=target_date
+        telemetry, recent_anomalies, window_start, window_end, monitoring_scope = (
+            await self._health_telemetry(target_date=target_date)
         )
         no_telemetry = self._health_metric_summary([])
         retrieval = dict(agent_functional)
@@ -402,21 +468,48 @@ class HealthQueryMixin:
             except Exception:
                 pass
 
+        def with_scope_note(component_id: str, base: dict[str, Any]) -> dict[str, Any]:
+            item = dict(base)
+            latency_count = int(item.get("latencySampleCount") or 0)
+            request_count = int(item.get("requestCount") or 0)
+            if request_count > 0 and latency_count == 0:
+                existing = str(item.get("note") or "").strip()
+                suffix = "有成功率樣本但無延遲樣本；P50/P95 為空不代表全鏈路延遲健康。"
+                item["note"] = f"{existing} {suffix}".strip() if existing else suffix
+            if component_id == "teams-adapter":
+                ingress = monitoring_scope["teamsAdapter"]["ingressSampleCount"]
+                if ingress and int(item.get("requestCount") or 0) == 0:
+                    item["note"] = (
+                        f"僅有入站 ADAPTER_INGRESS 樣本 ({ingress})；"
+                        "回覆路徑尚無 ADAPTER_REPLY，不計入 teams-adapter 可用性。"
+                    )
+            return item
+
         raw_components = [
             {"id": "agent-service", **agent, **telemetry["agent-service"]},
             {"id": "agent-functional", **agent_functional, **no_telemetry},
-            {"id": "teams-adapter", **adapter, **telemetry["teams-adapter"]},
-            {
-                "id": "agent-retrieval-index",
-                "status": knowledge_release.get("indexStatus") or agent_functional.get("status", "UNKNOWN"),
-                "note": knowledge_release.get("note") or agent_functional.get("note"),
-                **telemetry["agent-retrieval-index"],
-            },
-            {
-                "id": "agent-retrieval-search",
-                **retrieval,
-                **telemetry["agent-retrieval-search"],
-            },
+            with_scope_note(
+                "teams-adapter",
+                {"id": "teams-adapter", **adapter, **telemetry["teams-adapter"]},
+            ),
+            with_scope_note(
+                "agent-retrieval-index",
+                {
+                    "id": "agent-retrieval-index",
+                    "status": knowledge_release.get("indexStatus")
+                    or agent_functional.get("status", "UNKNOWN"),
+                    "note": knowledge_release.get("note") or agent_functional.get("note"),
+                    **telemetry["agent-retrieval-index"],
+                },
+            ),
+            with_scope_note(
+                "agent-retrieval-search",
+                {
+                    "id": "agent-retrieval-search",
+                    **retrieval,
+                    **telemetry["agent-retrieval-search"],
+                },
+            ),
             {
                 "id": "llm-api",
                 **agent,
@@ -495,6 +588,7 @@ class HealthQueryMixin:
                 else None
             ),
             "telemetryWindowHours": 24 if not target_date else None,
+            "monitoringScope": monitoring_scope,
             "recentAnomalies": recent_anomalies,
             "monitoringLinks": monitoring_links,
             "simulatedAnomalies": self._settings.simulate_health_anomalies,

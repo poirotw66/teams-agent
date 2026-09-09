@@ -175,6 +175,8 @@ def test_teams_channel_emits_adapter_health_usage() -> None:
     ]
     assert len(teams_usage) == 1
     assert teams_usage[0].payload["status"] == "SUCCESS"
+    assert teams_usage[0].payload["attributionScope"] == "ADAPTER_INGRESS"
+    assert "elapsedMs" not in teams_usage[0].payload
 
 
 def test_same_request_and_conversation_in_another_tenant_does_not_collide() -> None:

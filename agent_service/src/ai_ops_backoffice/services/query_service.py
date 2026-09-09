@@ -235,6 +235,8 @@ class BackofficeQueryService(
             "status": status,
             **(payload or {}),
         }
+        if "attributionScope" not in event_payload:
+            event_payload["attributionScope"] = "HEALTH_TELEMETRY"
         if elapsed_ms is not None:
             event_payload["elapsedMs"] = elapsed_ms
         event = OperationalEvent(

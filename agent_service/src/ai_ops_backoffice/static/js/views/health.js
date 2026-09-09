@@ -43,10 +43,25 @@ export async function renderHealth(targetDate = null) {
     );
     panel.append(grid);
 
-    if (data.isHistorical && data.historicalNotice) {
+    if data.isHistorical && data.historicalNotice) {
       panel.append(
         el("div", "warning", data.historicalNotice),
       );
+    }
+    if (data.monitoringScope?.teamsAdapter?.note) {
+      const scopeNote = el(
+        "div",
+        "metric-label",
+        [
+          "監控範圍：",
+          data.monitoringScope.teamsAdapter.note,
+          data.monitoringScope.retrievalIndex?.note
+            ? ` ${data.monitoringScope.retrievalIndex.note}`
+            : "",
+        ].join(""),
+      );
+      scopeNote.style.marginBottom = "0.75rem";
+      panel.append(scopeNote);
     }
     if (data.simulatedAnomalies) {
       panel.append(

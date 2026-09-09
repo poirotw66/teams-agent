@@ -391,7 +391,9 @@ class OperationalEventEmitter:
             "locale": payload.message.locale, "maskingPolicyVersion": active_masking_policy_version(),
         }, data_classification="CONFIDENTIAL")
         if _is_teams_channel(str(payload.channel or "")):
-            # Health aggregates Teams adapter telemetry from usage.recorded producers.
+            # Ingress-only fact: message reached Agent from Teams. Reply success,
+            # failure, timeout, and elapsedMs are emitted by the Teams Adapter
+            # producer (ADAPTER_REPLY) and must not be inferred from this row.
             add(
                 "usage.recorded",
                 {
@@ -399,6 +401,7 @@ class OperationalEventEmitter:
                     "status": "SUCCESS",
                     "channel": payload.channel,
                     "attributionScope": "ADAPTER_INGRESS",
+                    "phase": "ingress",
                 },
                 "teams-adapter",
             )
@@ -564,7 +567,8 @@ class OperationalEventEmitter:
                 citations.append(citation)
                 events.append(("knowledge.retrieved", {**citation, "releaseId": release_id}, rank))
             body.update(citations=citations, releaseId=release_id, sourceCount=len(citations))
-            # Index/retrieval health producer: usage.recorded with knowledge_index component.
+            # Retrieval success sample. Latency may be absent; health UI must not
+            # treat SUCCESS without elapsedMs as a full latency picture.
             events.append(
                 (
                     "usage.recorded",
@@ -574,8 +578,51 @@ class OperationalEventEmitter:
                         "releaseId": release_id,
                         "sourceCount": len(citations),
                         "attributionScope": "RETRIEVAL_INDEX",
+                        "phase": "retrieval",
                     },
                     "knowledge-index",
+                )
+            )
+        elif result.resultType == "NO_KNOWLEDGE":
+            events.append(
+                (
+                    "usage.recorded",
+                    {
+                        "component": "knowledge_index",
+                        "status": "SUCCESS",
+                        "releaseId": release_id,
+                        "attributionScope": "RETRIEVAL_INDEX",
+                        "phase": "retrieval",
+                        "resultType": "NO_KNOWLEDGE",
+                        **({"backend": result.backend} if result.backend else {}),
+                    },
+                    "knowledge-index-no-knowledge",
+                )
+            )
+        elif (
+            result.resultType == "FAILED"
+            and not result.ticketId
+            and result.backend
+            and "ticket" not in str(result.backend).lower()
+        ):
+            events.append(
+                (
+                    "usage.recorded",
+                    {
+                        "component": "knowledge_index",
+                        "status": "FAILED",
+                        "releaseId": release_id,
+                        "attributionScope": "RETRIEVAL_INDEX",
+                        "phase": "retrieval",
+                        "resultType": "FAILED",
+                        "backend": result.backend,
+                        **(
+                            {"errorType": mask_text(result.error).text}
+                            if result.error
+                            else {}
+                        ),
+                    },
+                    "knowledge-index-failed",
                 )
             )
         events.append((kind, body, None))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from typing import Any
@@ -120,6 +121,37 @@ def install_background_runtime(
     )
 
     async def run_sync_job(job_id: str) -> None:
+        started_at = time.perf_counter()
+
+        async def emit_index_health(
+            *,
+            status: str,
+            error_summary: str | None = None,
+            extra: dict[str, Any] | None = None,
+        ) -> None:
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+            payload: dict[str, Any] = {
+                "attributionScope": "HEALTH_TELEMETRY",
+                "syncJobId": job_id,
+            }
+            if extra:
+                payload.update(extra)
+            if error_summary:
+                payload["errorType"] = error_summary
+            try:
+                await query_service.record_component_usage(
+                    component="knowledge_index",
+                    status=status,
+                    elapsed_ms=elapsed_ms,
+                    correlation_id=job.get("correlation_id") or job_id,
+                    payload=payload,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to emit knowledge_index health telemetry for sync job %s",
+                    job_id,
+                )
+
         async def record_sync_failure(error_summary: str) -> None:
             failed = sync_service.set_stage(
                 job_id,
@@ -128,6 +160,19 @@ def install_background_runtime(
                 error_summary=error_summary,
             )
             failed_job = failed["job"]
+            status = (
+                "TIMEOUT"
+                if "timeout" in error_summary.lower()
+                else "FAILED"
+            )
+            await emit_index_health(
+                status=status,
+                error_summary=error_summary,
+                extra={
+                    "scopeType": failed_job.get("scope_type"),
+                    "ownerUnitId": failed_job.get("owner_unit_id"),
+                },
+            )
             try:
                 alert_result = budget_service.trigger_operational_alert(
                     alert_type="SYNC_FAILURE",
@@ -147,6 +192,7 @@ def install_background_runtime(
             except Exception:
                 logger.exception("Failed to trigger sync failure alert for %s", job_id)
 
+        job: dict[str, Any] = {"correlation_id": job_id}
         try:
             validating = sync_service.set_stage(job_id, status="VALIDATING", actor=sync_worker)
             job = validating["job"]
@@ -202,22 +248,18 @@ def install_background_runtime(
                 index_setting_version=result.get("indexSettingVersion"),
                 artifact_uri=result.get("artifactUri"),
             )
-            try:
-                await query_service.record_component_usage(
-                    component="knowledge_index",
-                    status="SUCCESS",
-                    correlation_id=job.get("correlation_id") or job_id,
-                    payload={
-                        "targetRelease": result.get("targetRelease"),
-                        "indexSettingVersion": result.get("indexSettingVersion"),
-                        "documentCount": int(result.get("documentCount") or 0),
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to emit knowledge_index health telemetry for sync job %s",
-                    job_id,
-                )
+            await emit_index_health(
+                status="SUCCESS",
+                extra={
+                    "targetRelease": result.get("targetRelease"),
+                    "indexSettingVersion": result.get("indexSettingVersion"),
+                    "documentCount": int(result.get("documentCount") or 0),
+                },
+            )
+        except httpx.TimeoutException:
+            logger.exception("Sync job %s timed out", job_id)
+            with suppress(FaqDomainError):
+                await record_sync_failure("SYNC_ADAPTER_TIMEOUT")
         except Exception as error:
             logger.exception("Sync job %s failed", job_id)
             with suppress(FaqDomainError):

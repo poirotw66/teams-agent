@@ -149,7 +149,10 @@ def test_governance_retention_purge_and_core_preservation(tmp_path: Path) -> Non
     # Run purge_expired with 365 days retention
     purge_res = gov.purge_expired(actor=admin_actor, retention_days=365, now=now)
     assert purge_res["flagVersions"] >= 1
-    assert "Core active and approved versions retained permanently" in purge_res["retentionPolicy"]
+    assert (
+        "Core active, approved, canary, and previous-healthy versions retained permanently"
+        in purge_res["retentionPolicy"]
+    )
 
     # Verify old candidate is purged while active version is retained permanently
     flags_after = gov.list_flags(actor=admin_actor)

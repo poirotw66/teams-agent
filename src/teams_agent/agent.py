@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
 from .contracts import AgentRequest, AgentResponse, FeedbackRequest, account_field
 from .directory import EntraAppTokenProvider, build_user_directory_service
+from .health_telemetry import AdapterHealthReporter, classify_gateway_status
 from .server import build_http_adapter
 from .settings import AgentSettings
 from .text import clean_message_text
@@ -21,6 +23,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 agent_settings = AgentSettings.from_env()
 agent_gateway = AgentGateway(agent_settings)
+adapter_health = AdapterHealthReporter(agent_settings, agent_gateway)
 
 
 def _service_unavailable_message(correlation_id: str) -> str:
@@ -148,19 +151,31 @@ async def on_message(ctx: ActivityContext[MessageActivity]) -> None:
     keep the adapter's contract from the Agents SDK version: the user always
     gets a reply, never a stack trace (spec §17).
     """
+    started_at = time.perf_counter()
+    correlation_id = str(uuid4())
     try:
-        await _handle_message(ctx)
-    except Exception:
-        correlation_id = str(uuid4())
+        await _handle_message(ctx, started_at=started_at)
+    except Exception as error:
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
         logger.exception(
             "Unhandled error while processing a message activity: "
             "correlation_id=%s",
             correlation_id,
         )
+        adapter_health.schedule_reply(
+            status="FAILED",
+            elapsed_ms=elapsed_ms,
+            correlation_id=correlation_id,
+            error_type=type(error).__name__,
+        )
         await ctx.send(_service_unavailable_message(correlation_id))
 
 
-async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
+async def _handle_message(
+    ctx: ActivityContext[MessageActivity],
+    *,
+    started_at: float,
+) -> None:
     value = ctx.activity.value
     if isinstance(value, dict) and value.get(FEEDBACK_ACTION_MARKER):
         await _handle_feedback(ctx, value)
@@ -223,7 +238,9 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
     )
 
     if _streaming_supported(ctx):
-        delivered = await _answer_streaming(ctx, request, correlation_id)
+        delivered = await _answer_streaming(
+            ctx, request, correlation_id, started_at=started_at
+        )
         if delivered:
             return
         # Streaming was refused by Teams before any answer reached the user.
@@ -232,13 +249,49 @@ async def _handle_message(ctx: ActivityContext[MessageActivity]) -> None:
 
     try:
         response = await agent_gateway.answer(request)
-    except AgentGatewayError:
+    except AgentGatewayError as error:
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        status, error_type = classify_gateway_status(error)
         logger.exception("Agent Gateway failed: correlation_id=%s", correlation_id)
-        await ctx.send(_service_unavailable_message(correlation_id))
+        try:
+            await ctx.send(_service_unavailable_message(correlation_id))
+        except Exception as send_error:  # noqa: BLE001 - Teams SDK send failures vary
+            status = "FAILED"
+            error_type = type(send_error).__name__
+        adapter_health.schedule_reply(
+            status=status,
+            elapsed_ms=elapsed_ms,
+            correlation_id=correlation_id,
+            channel=request.channel,
+            error_type=error_type,
+        )
         return
 
-    await ctx.send(_build_activity(response, request))
-
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+    try:
+        await ctx.send(_build_activity(response, request))
+    except Exception as send_error:  # noqa: BLE001 - Teams SDK send failures vary
+        adapter_health.schedule_reply(
+            status="FAILED",
+            elapsed_ms=elapsed_ms,
+            correlation_id=correlation_id,
+            channel=request.channel,
+            error_type=type(send_error).__name__,
+        )
+        try:
+            await ctx.send(_service_unavailable_message(correlation_id))
+        except Exception:
+            logger.exception(
+                "Failed to deliver Teams fallback reply: correlation_id=%s",
+                correlation_id,
+            )
+        return
+    adapter_health.schedule_reply(
+        status="SUCCESS",
+        elapsed_ms=elapsed_ms,
+        correlation_id=correlation_id,
+        channel=request.channel,
+    )
 
 def _build_activity(response: AgentResponse, request: AgentRequest):
     return build_agent_activity(
@@ -267,6 +320,8 @@ async def _answer_streaming(
     ctx: ActivityContext[MessageActivity],
     request: AgentRequest,
     correlation_id: str,
+    *,
+    started_at: float,
 ) -> bool:
     """Stream workflow progress, then finalize with the answer.
 
@@ -287,6 +342,12 @@ async def _answer_streaming(
                 ctx.stream.clear_text()
                 ctx.stream.emit(_build_activity(value, request))
         await ctx.stream.close()
+        adapter_health.schedule_reply(
+            status="SUCCESS",
+            elapsed_ms=round((time.perf_counter() - started_at) * 1000, 1),
+            correlation_id=correlation_id,
+            channel=request.channel,
+        )
         return True
     except StreamNotAllowedError:
         # Teams refused mid-flight despite the scope check (e.g. a policy the
@@ -298,19 +359,35 @@ async def _answer_streaming(
             correlation_id,
         )
         return False
-    except AgentGatewayError:
+    except AgentGatewayError as error:
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        status, error_type = classify_gateway_status(error)
         logger.exception(
             "Agent Gateway streaming failed: correlation_id=%s", correlation_id
         )
+        adapter_health.schedule_reply(
+            status=status,
+            elapsed_ms=elapsed_ms,
+            correlation_id=correlation_id,
+            channel=request.channel,
+            error_type=error_type,
+        )
         await _fail_stream(ctx, correlation_id)
         return True
-    except TerminalStreamError:
+    except TerminalStreamError as error:
         # Cancelled by the user or past Teams' two-minute streaming limit.
         # Partial progress is already on screen, so a plain re-answer would
         # duplicate it; report the turn as delivered.
         logger.warning(
             "Teams ended the stream before completion: correlation_id=%s",
             correlation_id,
+        )
+        adapter_health.schedule_reply(
+            status="TIMEOUT",
+            elapsed_ms=round((time.perf_counter() - started_at) * 1000, 1),
+            correlation_id=correlation_id,
+            channel=request.channel,
+            error_type=type(error).__name__,
         )
         return True
 
