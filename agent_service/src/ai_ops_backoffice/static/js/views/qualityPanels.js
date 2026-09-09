@@ -141,14 +141,28 @@ function showMergeCandidatesModal(count, onConfirm) {
 
 export async function buildQualityLoopPanel() {
   const panel = el("section", "panel");
-  panel.append(el("h2", "", "改善案件池"));
-  panel.append(
-    el(
-      "p",
-      "metric-label",
-      "閉環步驟：待辦／負評 → 合併案件 → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
-    ),
-  );
+  const buShell = isBuShellEnabled();
+  panel.append(el(buShell ? "h3" : "h2", "", buShell ? "候選與案件" : "改善案件池"));
+  if (buShell) {
+    const steps = el("details", "bu-workflow-steps");
+    steps.append(el("summary", "", "閉環步驟說明"));
+    steps.append(
+      el(
+        "p",
+        "metric-label",
+        "待辦／負評 → 合併案件 → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
+      ),
+    );
+    panel.append(steps);
+  } else {
+    panel.append(
+      el(
+        "p",
+        "metric-label",
+        "閉環步驟：待辦／負評 → 合併案件 → 修正文件／FAQ → 審核發布 → 案例與對話驗證 → 觀察成效並結案。",
+      ),
+    );
+  }
   const allowed = actorCapabilities();
 
   const caseTypeLabels = {
@@ -297,7 +311,9 @@ export async function buildQualityLoopPanel() {
       el("th", "", "摘要"),
       el("th", "", "來源追蹤"),
     );
-    table.append(el("thead", "", headerRow));
+    const thead = el("thead");
+    thead.append(headerRow);
+    table.append(thead);
     const tableBody = el("tbody");
     table.append(tableBody);
     tableBox.append(table);
@@ -406,12 +422,22 @@ export async function buildQualityLoopPanel() {
         traceBadges.append(badge(srcType, "neutral"));
 
         if (item.conversation_refs && item.conversation_refs.length) {
-          const convText = `對話: ${item.conversation_refs.slice(0, 2).join(", ")}${item.conversation_refs.length > 2 ? "…" : ""}`;
-          traceBadges.append(badge(convText, "accent"));
+          const shortRefs = item.conversation_refs
+            .slice(0, 2)
+            .map((id) => String(id).slice(0, 8));
+          const convText = `對話: ${shortRefs.join(", ")}${item.conversation_refs.length > 2 ? "…" : ""}`;
+          const convBadge = badge(convText, "accent");
+          convBadge.title = item.conversation_refs.join(", ");
+          traceBadges.append(convBadge);
         }
         if (item.source_event_ids && item.source_event_ids.length) {
-          const evtText = `事件: ${item.source_event_ids.slice(0, 2).join(", ")}${item.source_event_ids.length > 2 ? "…" : ""}`;
-          traceBadges.append(badge(evtText, "neutral"));
+          const shortEvents = item.source_event_ids
+            .slice(0, 2)
+            .map((id) => String(id).slice(0, 8));
+          const evtText = `事件: ${shortEvents.join(", ")}${item.source_event_ids.length > 2 ? "…" : ""}`;
+          const evtBadge = badge(evtText, "neutral");
+          evtBadge.title = item.source_event_ids.join(", ");
+          traceBadges.append(evtBadge);
         }
         if (item.merged_case_id) {
           traceBadges.append(badge(`已關聯: ${item.merged_case_id.slice(0, 8)}`, "success"));

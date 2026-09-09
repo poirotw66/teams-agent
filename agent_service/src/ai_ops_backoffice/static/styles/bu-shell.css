@@ -85,6 +85,12 @@ body.bu-shell-v1 .topbar {
   padding: 0 1.25rem 0 1.1rem;
   position: sticky;
   top: 0;
+  z-index: 20;
+  background: rgb(255 255 255 / 0.88);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  box-shadow: none;
 }
 
 body.bu-shell-v1 .brand-mark {
@@ -93,6 +99,15 @@ body.bu-shell-v1 .brand-mark {
   border-radius: 8px;
   background: var(--accent-gradient);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+  position: relative;
+}
+
+body.bu-shell-v1 .brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: 8px 7px 8px 11px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.95);
 }
 
 body.bu-shell-v1 .brand-mark:hover {
@@ -100,13 +115,19 @@ body.bu-shell-v1 .brand-mark:hover {
 }
 
 body.bu-shell-v1 .brand-copy .eyebrow {
-  color: var(--brand-600);
-}
-
-body.bu-shell-v1 .brand-copy h1 {
+  color: var(--text);
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+body.bu-shell-v1 .brand-copy h1 {
+  margin-top: 0.1rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
 }
 
 body.bu-shell-v1 .nav {
@@ -171,6 +192,7 @@ body.bu-shell-v1 .bu-nav-items a.active {
   border-color: var(--brand-200);
   color: var(--brand-800);
   font-weight: 650;
+  box-shadow: inset 3px 0 0 var(--brand-600);
 }
 
 body.bu-shell-v1 .bu-nav-items a:focus-visible,
@@ -212,6 +234,20 @@ body.bu-shell-v1 .bu-nav-system > summary {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #707070;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body.bu-shell-v1 .bu-nav-system > summary::after {
+  content: "▸";
+  font-size: 0.75rem;
+  color: var(--subtle);
+  transition: transform var(--duration-fast) var(--ease-spring);
+}
+
+body.bu-shell-v1 .bu-nav-system[open] > summary::after {
+  transform: rotate(90deg);
 }
 
 body.bu-shell-v1 .bu-nav-system > summary::-webkit-details-marker {
@@ -321,8 +357,8 @@ body.bu-shell-v1 .bu-quality-tabs button.active {
   box-shadow: var(--shadow-xs);
 }
 
-/* Work hub stats under BU shell */
-body.bu-shell-v1 .stats {
+/* Work hub stats under BU shell (legacy class retained for non-clickable fallbacks) */
+body.bu-shell-v1 .stats:not(.bu-work-stats) {
   display: flex;
   flex-wrap: wrap;
   gap: 0;
@@ -331,18 +367,18 @@ body.bu-shell-v1 .stats {
   border-bottom: 1px solid var(--border);
 }
 
-body.bu-shell-v1 .stat {
+body.bu-shell-v1 .stats:not(.bu-work-stats) .stat {
   min-width: 9rem;
   padding: 0 1.5rem 0 0;
 }
 
-body.bu-shell-v1 .stat span {
+body.bu-shell-v1 .stats:not(.bu-work-stats) .stat span {
   display: block;
   font-size: 0.75rem;
   color: var(--muted);
 }
 
-body.bu-shell-v1 .stat b {
+body.bu-shell-v1 .stats:not(.bu-work-stats) .stat b {
   display: inline-block;
   margin-top: 0.2rem;
   font-size: 1.75rem;
@@ -450,4 +486,281 @@ body.bu-shell-v1 .kpi-card {
 
 body.bu-shell-v1 .content-guide-more summary {
   color: var(--brand-700);
+}
+
+/* Page title rhythm */
+body.bu-shell-v1 .app > h2,
+body.bu-shell-v1 .app > div > h2:first-child,
+body.bu-shell-v1 .bu-system-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+body.bu-shell-v1 .app > .metric-label,
+body.bu-shell-v1 .app > div > .metric-label:first-of-type,
+body.bu-shell-v1 .bu-system-header .metric-label {
+  margin: 0 0 1rem;
+  max-width: 40rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Topbar: quieter meta chrome */
+body.bu-shell-v1 .meta-panel {
+  gap: 0.45rem;
+}
+
+body.bu-shell-v1 .bu-shell-toggle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  font-weight: 550;
+}
+
+body.bu-shell-v1 .bu-shell-toggle:hover {
+  background: var(--panel-muted);
+  border-color: transparent;
+}
+
+body.bu-shell-v1 .meta-chip.is-ok {
+  background: var(--success-soft);
+  border-color: var(--success-border);
+  color: var(--success);
+}
+
+body.bu-shell-v1 .topbar-action {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+}
+
+/* Work hub clickable stats */
+body.bu-shell-v1 .bu-work-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 11rem));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0 0 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .bu-work-stats .stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 4.25rem;
+  padding: 0.75rem 0.9rem;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-spring),
+    background var(--duration-fast) var(--ease-spring);
+}
+
+body.bu-shell-v1 .bu-work-stats .stat:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+}
+
+body.bu-shell-v1 .bu-work-stats .stat.is-active {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+  box-shadow: inset 0 0 0 1px var(--brand-200);
+}
+
+body.bu-shell-v1 .bu-work-stats .stat span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+body.bu-shell-v1 .bu-work-stats .stat b {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 1.65rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Panels / tables / filters */
+body.bu-shell-v1 .panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.15rem;
+  box-shadow: var(--shadow-xs);
+}
+
+body.bu-shell-v1 .panel + .panel {
+  margin-top: 0.85rem;
+}
+
+body.bu-shell-v1 table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+body.bu-shell-v1 thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.65rem 0.75rem;
+  background: var(--panel-muted);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+body.bu-shell-v1 tbody td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  color: var(--text-secondary);
+}
+
+body.bu-shell-v1 tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+body.bu-shell-v1 tbody tr:hover td {
+  background: rgb(244 244 252 / 0.55);
+}
+
+body.bu-shell-v1 .filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.85rem;
+}
+
+body.bu-shell-v1 .filter-bar input,
+body.bu-shell-v1 .filter-bar select {
+  min-height: 2.15rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  padding: 0.35rem 0.65rem;
+}
+
+body.bu-shell-v1 .filter-bar input:focus-visible,
+body.bu-shell-v1 .filter-bar select:focus-visible {
+  border-color: var(--brand-400);
+}
+
+body.bu-shell-v1 .empty {
+  margin: 0.5rem 0;
+  padding: 1.25rem 1rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+  color: var(--muted);
+  text-align: center;
+}
+
+body.bu-shell-v1 .badge {
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+body.bu-shell-v1 .drill-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--brand-800);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+body.bu-shell-v1 .drill-link:hover {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  text-decoration: none;
+}
+
+body.bu-shell-v1 .bu-workflow-steps,
+body.bu-shell-v1 .bu-ops-note {
+  margin: 0 0 0.75rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+body.bu-shell-v1 .bu-workflow-steps[open],
+body.bu-shell-v1 .bu-ops-note[open] {
+  background: var(--panel-muted);
+  padding: 0.55rem 0.75rem;
+}
+
+body.bu-shell-v1 .bu-workflow-steps summary,
+body.bu-shell-v1 .bu-ops-note summary {
+  cursor: pointer;
+  color: var(--brand-700);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+body.bu-shell-v1 .bu-quality-tabs button:hover:not(.active) {
+  color: var(--text-secondary);
+  background: rgb(255 255 255 / 0.55);
+}
+
+body.bu-shell-v1 .content-guide-compact {
+  margin: 0 0 0.65rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .content-guide-compact .content-guide-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+body.bu-shell-v1 .candidate-table tbody td {
+  font-size: 0.8125rem;
+}
+
+body.bu-shell-v1 .overview-header-bar {
+  margin-bottom: 0.75rem;
+}
+
+body.bu-shell-v1 .overview-main-heading {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  body.bu-shell-v1 .bu-work-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  body.bu-shell-v1 .bu-case-layout {
+    grid-template-columns: 1fr;
+  }
 }

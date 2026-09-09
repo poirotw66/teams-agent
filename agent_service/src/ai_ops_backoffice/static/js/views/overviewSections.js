@@ -13,6 +13,7 @@ import {
   navigateTo,
   workspaceForView,
 } from "../app/navigation.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 export const OVERVIEW_ISSUE_NAMES = {
   "vpn.connection_failed": "VPN 連線異常與斷線",
@@ -401,11 +402,13 @@ export function buildOverviewHeader({
       badgeRow.append(idleChip);
     }
   }
-  titleGroup.append(
-    badgeRow,
-    el("h2", "overview-main-heading", "平台營運總覽"),
-    el("p", "overview-sub-heading", "即時監控企業知識庫問答、對話輪次、真人轉單分流與 AI Token 預算消耗"),
-  );
+  titleGroup.append(badgeRow);
+  if (!isBuShellEnabled()) {
+    titleGroup.append(
+      el("h2", "overview-main-heading", "平台營運總覽"),
+      el("p", "overview-sub-heading", "即時監控企業知識庫問答、對話輪次、真人轉單分流與 AI Token 預算消耗"),
+    );
+  }
 
   const actionsGroup = el("div", "overview-actions-group");
   const periodControl = el("div", "overview-period-control");

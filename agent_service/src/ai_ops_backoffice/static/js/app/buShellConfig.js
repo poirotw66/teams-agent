@@ -97,4 +97,22 @@ export function setBuShellEnabled(enabled) {
 export function applyBuShellBodyClass(enabled = isBuShellEnabled()) {
   document.body.classList.toggle("bu-shell-v1", Boolean(enabled));
   document.body.classList.toggle("legacy-shell", !enabled);
+  if (typeof document.querySelector !== "function") {
+    return;
+  }
+  const eyebrow = document.querySelector(".brand-copy .eyebrow");
+  const title = document.querySelector(".brand-copy h1");
+  if (eyebrow && title) {
+    if (!eyebrow.dataset.classicLabel) {
+      eyebrow.dataset.classicLabel = eyebrow.textContent || "";
+      title.dataset.classicLabel = title.textContent || "";
+    }
+    if (enabled) {
+      eyebrow.textContent = "資訊客服";
+      title.textContent = "營運工作台";
+    } else {
+      eyebrow.textContent = eyebrow.dataset.classicLabel;
+      title.textContent = title.dataset.classicLabel;
+    }
+  }
 }

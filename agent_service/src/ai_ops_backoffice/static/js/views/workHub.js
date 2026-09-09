@@ -16,9 +16,28 @@ function currentUserId() {
 
 function statusTone(label) {
   if (!label) return "badge-neutral";
-  if (/待|退|失敗|負|NEW|TRIAGED|IN_PROGRESS|WAITING|IN_REVIEW/.test(label)) return "badge-warning";
-  if (/完成|通過|使用中|結案|RESOLVED|OBSERVING|無急迫/.test(label)) return "badge-success";
+  if (/待|退|失敗|負|新建|已分派|修正中|待審|觀察|NEW|TRIAGED|IN_PROGRESS|WAITING|IN_REVIEW/.test(label)) {
+    return "badge-warning";
+  }
+  if (/完成|通過|使用中|結案|已結案|無急迫|RESOLVED|OBSERVING/.test(label)) return "badge-success";
   return "badge-neutral";
+}
+
+const CASE_STATUS_LABELS = {
+  NEW: "新建",
+  TRIAGED: "已分派",
+  IN_PROGRESS: "修正中",
+  WAITING_REVIEW: "待審核",
+  OBSERVING: "觀察中",
+  RESOLVED: "已結案",
+  WONT_FIX: "不處理",
+  DUPLICATE: "重複",
+  IN_REVIEW: "審核中",
+};
+
+function localizeStatus(status) {
+  const raw = String(status || "").trim();
+  return CASE_STATUS_LABELS[raw] || raw || "—";
 }
 
 function taskRow({ title, type, nextStep, owner, status, action }) {
@@ -223,7 +242,7 @@ function buildTable(rows) {
         type: item.type,
         nextStep: item.nextStep,
         owner: item.owner,
-        status: item.status,
+        status: localizeStatus(item.status),
         action: button,
       }),
     );
@@ -281,10 +300,11 @@ async function renderWorkHub(state = {}) {
     );
   }
 
-  const stats = el("div", "stats");
-  for (const [label, value] of [
-    ["我的待處理", String(mineRows.length)],
+  const stats = el("div", "stats bu-work-stats");
+  for (const [key, label, value] of [
+    ["mine", "我的待處理", String(mineRows.length)],
     [
+      "review",
       "待我審核",
       reviewRows.length
         ? String(reviewRows.length)
@@ -293,6 +313,7 @@ async function renderWorkHub(state = {}) {
           : "—",
     ],
     [
+      "tracking",
       "追蹤中",
       String(
         trackingRows.length ||
@@ -302,25 +323,15 @@ async function renderWorkHub(state = {}) {
       ),
     ],
   ]) {
-    const card = el("div", "stat");
+    const card = el("button", `stat${key === tab ? " is-active" : ""}`);
+    card.type = "button";
     card.append(el("span", "", label), el("b", "", value));
-    stats.append(card);
-  }
-
-  const tabs = el("div", "bu-quality-tabs");
-  for (const [key, label] of [
-    ["mine", "待我處理"],
-    ["review", "待我審核"],
-    ["tracking", "追蹤中"],
-  ]) {
-    const button = el("button", key === tab ? "active" : "", label);
-    button.type = "button";
-    button.addEventListener("click", () => {
+    card.addEventListener("click", () => {
       saveNavFilters({ view: "workHub", tab: key });
       syncLocationHash("workHub", { tab: key });
       void renderWorkHub({ tab: key });
     });
-    tabs.append(button);
+    stats.append(card);
   }
 
   const listRows =
@@ -348,7 +359,7 @@ async function renderWorkHub(state = {}) {
     drillLink("品質驗收", "evaluations"),
   );
 
-  app.replaceChildren(header, stats, tabs, surface, shortcuts);
+  app.replaceChildren(header, stats, surface, shortcuts);
 }
 
 export const workHubPage = createPageController({

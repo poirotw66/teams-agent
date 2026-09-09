@@ -486,11 +486,24 @@ export async function renderFaqManagement(panel) {
     const heading = el("h2", "", "FAQ 管理");
     const policy = renderContentPolicyBanner();
     const decision = renderDecisionGuide();
-    const governedNote = el(
-      "p",
-      "metric-label",
-      "正式環境請將 Agent 設為 FAQ_RUNTIME_MODE=GOVERNED。啟用後會落檔至 FAQ artifact 目錄（稽核用，不進 RAG）。",
-    );
+    let governedNote = null;
+    if (isBuShellEnabled()) {
+      governedNote = el("details", "bu-ops-note");
+      governedNote.append(el("summary", "", "正式環境注意事項"));
+      governedNote.append(
+        el(
+          "p",
+          "metric-label",
+          "正式環境請將 Agent 設為 FAQ_RUNTIME_MODE=GOVERNED。啟用後會落檔至 FAQ artifact 目錄（稽核用，不進 RAG）。",
+        ),
+      );
+    } else {
+      governedNote = el(
+        "p",
+        "metric-label",
+        "正式環境請將 Agent 設為 FAQ_RUNTIME_MODE=GOVERNED。啟用後會落檔至 FAQ artifact 目錄（稽核用，不進 RAG）。",
+      );
+    }
     const actions = el("div", "filter-bar");
     const query = el("input");
     query.placeholder = "搜尋 FAQ Key 或問題";
@@ -509,12 +522,12 @@ export async function renderFaqManagement(panel) {
     status.setAttribute("aria-label", "狀態");
     status.innerHTML = `
       <option value="">全部狀態</option>
-      <option value="DRAFT">DRAFT</option>
-      <option value="IN_REVIEW">IN_REVIEW</option>
-      <option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option>
-      <option value="APPROVED">APPROVED</option>
-      <option value="ACTIVE">ACTIVE</option>
-      <option value="DISABLED">DISABLED</option>
+      <option value="DRAFT">草稿</option>
+      <option value="IN_REVIEW">審核中</option>
+      <option value="CHANGES_REQUESTED">需修改</option>
+      <option value="APPROVED">已核准</option>
+      <option value="ACTIVE">啟用中</option>
+      <option value="DISABLED">已停用</option>
     `;
     const result = el("div");
     const load = async () => {
@@ -542,15 +555,23 @@ export async function renderFaqManagement(panel) {
           el("strong", "", item.version.content.question),
           el("div", "metric-label", item.faq.faq_key),
         );
+        const faqStatusLabels = {
+          DRAFT: "草稿",
+          IN_REVIEW: "審核中",
+          CHANGES_REQUESTED: "需修改",
+          APPROVED: "已核准",
+          ACTIVE: "啟用中",
+          DISABLED: "已停用",
+        };
         const action = el("td");
-        const detail = el("button", "", "查看與處理");
+        const detail = el("button", isBuShellEnabled() ? "button-primary" : "", "查看與處理");
         detail.addEventListener("click", () => showFaqDetail(item.faq.faq_id, panel));
         action.append(detail);
         row.append(
           name,
           el("td", "", item.version.content.category || "-"),
           el("td", "", (item.version.content.keywords || []).join(", ") || "-"),
-          el("td", "", item.faq.status),
+          el("td", "", faqStatusLabels[item.faq.status] || item.faq.status),
           el("td", "", item.version.content.owner_unit_id),
           el("td", "", `v${item.version.version_number}`),
           action,
@@ -570,7 +591,7 @@ export async function renderFaqManagement(panel) {
       });
     }
     if (allowed.has("ops.faq.write")) {
-      const createButton = el("button", "", "新增 FAQ");
+      const createButton = el("button", isBuShellEnabled() ? "button-primary" : "", "新增 FAQ");
       createButton.addEventListener("click", () => showFaqCreateModal(panel));
       actions.append(createButton);
     }
