@@ -1,8 +1,47 @@
 import { api, el } from "../api.js";
 import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { exampleSelect, faqField } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
+
+function showActionReasonModal(title, promptText, onConfirm) {
+  const container = el("div", "form-grid");
+  const group = el("div", "form-group");
+  const label = el("label", "form-label", promptText);
+  const input = el("input");
+  input.placeholder = "請輸入原因…";
+  input.style.width = "100%";
+  group.append(label, input);
+
+  const actions = el("div", "filter-bar");
+  actions.style.marginTop = "1rem";
+  actions.style.justifyContent = "flex-end";
+  const cancelBtn = el("button", "", "取消");
+  cancelBtn.addEventListener("click", () => closeContentModal());
+
+  const confirmBtn = el("button", "button-primary", "確認");
+  confirmBtn.addEventListener("click", async () => {
+    const val = input.value.trim();
+    if (!val) {
+      alert("請輸入原因");
+      return;
+    }
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "處理中…";
+    try {
+      await onConfirm(val);
+      closeContentModal();
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "確認";
+      showContentModal("操作失敗", el("div", "error", err.message));
+    }
+  });
+
+  actions.append(cancelBtn, confirmBtn);
+  container.append(group, actions);
+  showContentModal(title, container);
+}
 
 export async function renderBudgets() {
   const app = document.getElementById("app");
@@ -42,15 +81,62 @@ export async function renderBudgets() {
     }
     policyPanel.append(policyHeader);
     if (allowed.has("ops.budget.write")) {
+      let availableModels = [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "claude-3-5-sonnet",
+        "claude-3-haiku",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+      ];
+      try {
+        const ratesData = await api("/api/costs/rates");
+        if (ratesData && ratesData.rates) {
+          const fetched = Object.keys(ratesData.rates);
+          if (fetched.length) availableModels = [...new Set([...fetched, ...availableModels])];
+        }
+      } catch {
+        // fallback
+      }
+
       const form = el("form", "form-grid");
       const ownerOptions = (getCapabilities().ownerUnitIds || []).map((item) => [item, item]);
       const targetOptions = (policyData.notificationTargets || []).map((item) => [item, item]);
+
+      const scopeSelectWrap = exampleSelect("Scope", "scope_type", [
+        ["PERSONAL", "Personal"], ["SERVICE", "Service"], ["TEAM", "Team"],
+        ["TENANT", "Tenant"], ["GLOBAL", "Global"], ["MODEL", "Model"],
+      ]);
+      const scopeSelect = scopeSelectWrap.querySelector("select");
+
+      const modelSelectWrap = exampleSelect("選擇模型 (Model)", "model_picker", [
+        ["", "-- 請選擇模型 --"],
+        ...availableModels.map((m) => [m, m]),
+      ]);
+      modelSelectWrap.style.display = "none";
+      const modelSelect = modelSelectWrap.querySelector("select");
+
+      const scopeIdField = faqField("Scope ID", "scope_id", "");
+      const scopeIdInput = scopeIdField.querySelector("input");
+
+      scopeSelect.addEventListener("change", () => {
+        const isModel = scopeSelect.value === "MODEL";
+        modelSelectWrap.style.display = isModel ? "" : "none";
+        if (isModel && modelSelect.value) {
+          scopeIdInput.value = modelSelect.value;
+        }
+      });
+
+      modelSelect.addEventListener("change", () => {
+        if (modelSelect.value) {
+          scopeIdInput.value = modelSelect.value;
+        }
+      });
+
       form.append(
-        exampleSelect("Scope", "scope_type", [
-          ["PERSONAL", "Personal"], ["SERVICE", "Service"], ["TEAM", "Team"],
-          ["TENANT", "Tenant"], ["GLOBAL", "Global"], ["MODEL", "Model"],
-        ]),
-        faqField("Scope ID", "scope_id", ""),
+        scopeSelectWrap,
+        modelSelectWrap,
+        scopeIdField,
         exampleSelect("Period", "period", [["DAILY", "Daily"], ["MONTHLY", "Monthly"]]),
         exampleSelect("Measure", "measure", [
           ["TWD", "TWD"], ["USD", "USD"], ["TOKEN", "Token"],
@@ -112,14 +198,18 @@ export async function renderBudgets() {
         }
         if (allowed.has("ops.budget.write")) {
           const state = el("button", "", policy.enabled ? "停用" : "啟用");
-          state.addEventListener("click", async () => {
-            const reason = window.prompt(`${policy.enabled ? "停用" : "啟用"}原因`);
-            if (!reason?.trim()) return;
-            await api(`/api/budget-policies/${policy.policy_id}/state`, {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ expected_etag: policy.etag, enabled: !policy.enabled, reason }),
-            });
-            await renderBudgets();
+          state.addEventListener("click", () => {
+            showActionReasonModal(
+              `${policy.enabled ? "停用" : "啟用"} Budget Policy`,
+              `請輸入${policy.enabled ? "停用" : "啟用"}原因：`,
+              async (reason) => {
+                await api(`/api/budget-policies/${policy.policy_id}/state`, {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ expected_etag: policy.etag, enabled: !policy.enabled, reason }),
+                });
+                await renderBudgets();
+              },
+            );
           });
           actions.append(state);
         }
@@ -156,14 +246,18 @@ export async function renderBudgets() {
             : [["resolve", "Resolve"]];
           for (const [action, label] of alertActions) {
             const button = el("button", "", label);
-            button.addEventListener("click", async () => {
-              const reason = window.prompt(`${label} 原因`);
-              if (!reason?.trim()) return;
-              await api(`/api/alerts/${alert.alert_id}/${action}`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ expected_etag: alert.etag, reason }),
-              });
-              await renderBudgets();
+            button.addEventListener("click", () => {
+              showActionReasonModal(
+                `${label} Alert`,
+                `請輸入 ${label} 原因：`,
+                async (reason) => {
+                  await api(`/api/alerts/${alert.alert_id}/${action}`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ expected_etag: alert.etag, reason }),
+                  });
+                  await renderBudgets();
+                },
+              );
             });
             actions.append(button);
           }

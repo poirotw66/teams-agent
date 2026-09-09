@@ -90,6 +90,42 @@ class NotificationDispatcher:
             actor=actor,
         )
 
+    def _get_alert_context(self, alert_id: str) -> dict[str, str]:
+        base_url = (
+            self._settings.knowledge_portal_url.rstrip("/")
+            if self._settings.knowledge_portal_url
+            else f"http://{self._settings.host}:{self._settings.port}"
+        )
+        try:
+            state = self._budget_service._repository.load()
+            alert = next((a for a in state.alerts if a.alert_id == alert_id), None)
+        except Exception:
+            alert = None
+
+        if alert is None:
+            return {
+                "reason": "System Alert Triggered",
+                "context_page": "Operations Overview",
+                "deep_link": f"{base_url}/overview",
+            }
+
+        reason = alert.message or f"{alert.alert_type} ({alert.severity}) on {alert.scope_type}:{alert.scope_id}"
+        if alert.alert_type == "SYNC_FAILURE":
+            context_page = "Knowledge Portal / 同步管理"
+            deep_link = f"{base_url}/knowledge?tab=sync&jobId={alert.scope_id}"
+        elif alert.alert_type == "API_ANOMALY":
+            context_page = "Operations Summary / 系統概況"
+            deep_link = f"{base_url}/overview"
+        else:
+            context_page = "Cost & Budget / 預算管理"
+            deep_link = f"{base_url}/budgets?alertId={alert.alert_id}"
+
+        return {
+            "reason": reason,
+            "context_page": context_page,
+            "deep_link": deep_link,
+        }
+
     async def _dispatch_teams(
         self,
         *,
@@ -111,6 +147,7 @@ class NotificationDispatcher:
                 actor=actor,
             )
 
+        alert_info = self._get_alert_context(alert_id)
         payload = {
             "type": "message",
             "attachments": [
@@ -137,15 +174,25 @@ class NotificationDispatcher:
                                 "facts": [
                                     {"title": "Alert ID", "value": alert_id},
                                     {"title": "Delivery ID", "value": delivery_id},
+                                    {"title": "Reason", "value": alert_info["reason"]},
+                                    {"title": "Context", "value": alert_info["context_page"]},
+                                    {"title": "Deep Link", "value": alert_info["deep_link"]},
                                     {"title": "Target", "value": target_id},
                                     {"title": "Timestamp", "value": utc_now().isoformat()},
                                 ],
                             },
                         ],
+                        "actions": [
+                            {
+                                "type": "Action.OpenUrl",
+                                "title": "前往處理頁面 (Open in Backoffice)",
+                                "url": alert_info["deep_link"],
+                            }
+                        ],
                     },
                 }
             ],
-            "text": summary,
+            "text": f"{summary} (Reason: {alert_info['reason']} | Link: {alert_info['deep_link']})",
         }
 
         try:
@@ -185,9 +232,16 @@ class NotificationDispatcher:
         summary: str,
         actor: ActorContext,
     ) -> dict[str, Any]:
+        alert_info = self._get_alert_context(alert_id)
         if self._email_sender is not None:
             try:
-                self._email_sender(target_id, f"[AI Operations Alert] {summary}", summary)
+                full_body = (
+                    f"{summary}\n\n"
+                    f"Reason: {alert_info['reason']}\n"
+                    f"Context: {alert_info['context_page']}\n"
+                    f"Backoffice Link: {alert_info['deep_link']}\n"
+                )
+                self._email_sender(target_id, f"[AI Operations Alert] {summary}", full_body)
                 return self._budget_service.record_delivery_attempt(
                     delivery_id,
                     success=True,
@@ -220,7 +274,10 @@ class NotificationDispatcher:
                 f"Alert ID: {alert_id}\n"
                 f"Delivery ID: {delivery_id}\n"
                 f"Target: {target_id}\n"
-                f"Time: {utc_now().isoformat()}\n\n"
+                f"Time: {utc_now().isoformat()}\n"
+                f"Reason: {alert_info['reason']}\n"
+                f"Context Page: {alert_info['context_page']}\n"
+                f"Backoffice Link: {alert_info['deep_link']}\n\n"
                 f"Summary:\n{summary}\n"
             )
 
