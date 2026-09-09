@@ -1,0 +1,148 @@
+{
+  "revision": 1,
+  "exchange_rate": 31.7,
+  "pricing_version": "2026-08-31",
+  "rates": {
+    "gemini-3.8-flash": [
+      0.75,
+      3.75
+    ],
+    "gemini-3.7-flash": [
+      0.75,
+      3.75
+    ],
+    "gemini-3.6-flash": [
+      1.5,
+      7.5
+    ],
+    "gemini-3.5-flash": [
+      1.5,
+      9.0
+    ],
+    "gemini-3.5-flash-lite": [
+      0.3,
+      2.5
+    ],
+    "gemini-3.1-flash-lite": [
+      0.25,
+      1.5
+    ],
+    "gemini-2.5-flash-lite": [
+      0.1,
+      0.4
+    ],
+    "gemini-2.5-flash": [
+      0.3,
+      2.5
+    ],
+    "gemini-2.0-flash": [
+      0.1,
+      0.4
+    ],
+    "gemini-embedding-2": [
+      0.2,
+      0.0
+    ],
+    "gemini-embedding-001": [
+      0.15,
+      0.0
+    ],
+    "text-embedding-3-small": [
+      0.02,
+      0.0
+    ],
+    "text-embedding-3-large": [
+      0.13,
+      0.0
+    ],
+    "gpt-4.1-mini": [
+      0.4,
+      1.6
+    ],
+    "gpt-4.1-nano": [
+      0.1,
+      0.4
+    ],
+    "gpt-4o-mini": [
+      0.15,
+      0.6
+    ]
+  },
+  "history": [
+    {
+      "version": "2026-08-31",
+      "effective_at": "2026-08-31T00:00:00Z",
+      "exchange_rate": 31.7,
+      "rates": {
+        "gemini-3.8-flash": [
+          0.75,
+          3.75
+        ],
+        "gemini-3.7-flash": [
+          0.75,
+          3.75
+        ],
+        "gemini-3.6-flash": [
+          1.5,
+          7.5
+        ],
+        "gemini-3.5-flash": [
+          1.5,
+          9.0
+        ],
+        "gemini-3.5-flash-lite": [
+          0.3,
+          2.5
+        ],
+        "gemini-3.1-flash-lite": [
+          0.25,
+          1.5
+        ],
+        "gemini-2.5-flash-lite": [
+          0.1,
+          0.4
+        ],
+        "gemini-2.5-flash": [
+          0.3,
+          2.5
+        ],
+        "gemini-2.0-flash": [
+          0.1,
+          0.4
+        ],
+        "gemini-embedding-2": [
+          0.2,
+          0.0
+        ],
+        "gemini-embedding-001": [
+          0.15,
+          0.0
+        ],
+        "text-embedding-3-small": [
+          0.02,
+          0.0
+        ],
+        "text-embedding-3-large": [
+          0.13,
+          0.0
+        ],
+        "gpt-4.1-mini": [
+          0.4,
+          1.6
+        ],
+        "gpt-4.1-nano": [
+          0.1,
+          0.4
+        ],
+        "gpt-4o-mini": [
+          0.15,
+          0.6
+        ]
+      },
+      "description": "Initial standard production pricing baseline.",
+      "created_by": "system",
+      "created_at": "2026-09-09T01:59:24.940861Z"
+    }
+  ],
+  "audits": []
+}

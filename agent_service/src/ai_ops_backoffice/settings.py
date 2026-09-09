@@ -84,6 +84,8 @@ class BackofficeSettings:
     deployment_tenant_id: str = "local-development"
     relaxed_workflow: bool = False
     min_test_cases_for_review: int = 3
+    pricing_store_mode: str = "FILE"
+    pricing_store_path: Path | None = None
     environment: str = "dev"
 
     def validate_for_production(self) -> list[str]:
@@ -352,6 +354,15 @@ class BackofficeSettings:
                     else "3"
                 )
             ),
+            pricing_store_mode=(
+                os.environ.get("AI_OPS_PRICING_STORE_MODE", "FILE") or "FILE"
+            ).upper(),
+            pricing_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_PRICING_STORE_PATH",
+                    ops_dir / "phase2" / "pricing_rules.json",
+                )
+            ).expanduser().resolve(),
             environment=(
                 os.environ.get("AI_OPS_DEPLOYMENT_ENV")
                 or os.environ.get("AGENT_DEPLOYMENT_ENV")

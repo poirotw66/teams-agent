@@ -27,6 +27,11 @@ from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
 
+from ..pricing_domain import (
+    FilePricingRepository,
+    InMemoryPricingRepository,
+    PricingService,
+)
 from ..settings import BackofficeSettings
 from .daily_aggregates import (
     FileDailyAggregateStore,
@@ -144,6 +149,22 @@ class BackofficeQueryService(
         self._aggregate_store = FileDailyAggregateStore(
             settings.ops_store_path.parent / "aggregates" / "daily_ops.json"
         )
+        pricing_store_path = settings.pricing_store_path or (
+            settings.ops_store_path.parent / "phase2" / "pricing_rules.json"
+        )
+        if settings.pricing_store_mode == "FILE":
+            self._pricing_repository = FilePricingRepository(pricing_store_path)
+        else:
+            self._pricing_repository = InMemoryPricingRepository()
+        self._pricing_service = PricingService(
+            self._pricing_repository,
+            audit_store=self._runtime.audit_store,
+            environment=self._environment,
+        )
+
+    @property
+    def pricing_service(self) -> PricingService:
+        return self._pricing_service
 
     @property
     def taxonomy(self) -> TaxonomyRepository:

@@ -67,10 +67,11 @@ export async function renderCosts(state = { preset: "30d" }) {
     grid.append(
       metric("預估總成本 USD", (data.totalEstimatedCostUsd ?? 0).toFixed(4)),
       metric("預估總成本 TWD", data.totalEstimatedCostTwd != null ? Number(data.totalEstimatedCostTwd).toFixed(2) : "-"),
+      metric("零成本事件", data.zeroCostEventCount ?? 0),
+      metric("未知成本事件", data.missingCostEventCount ?? 0),
       metric("Input Tokens", (data.inputTokens ?? 0).toLocaleString()),
       metric("Output Tokens", (data.outputTokens ?? 0).toLocaleString()),
       metric("總 Tokens", ((data.inputTokens ?? 0) + (data.outputTokens ?? 0)).toLocaleString()),
-      metric("未歸屬成本事件", data.missingCostEventCount ?? 0),
     );
     panel.append(grid);
 
@@ -84,12 +85,30 @@ export async function renderCosts(state = { preset: "30d" }) {
 
     const modelTable = el("table");
     modelTable.innerHTML =
-      "<thead><tr><th>Model</th><th>Input Tokens</th><th>Output Tokens</th><th>總 Tokens</th><th>Events</th><th>Estimated USD</th><th>Input $/1M</th><th>Output $/1M</th></tr></thead>";
+      "<thead><tr><th>Model</th><th>成本狀態</th><th>Input Tokens</th><th>Output Tokens</th><th>總 Tokens</th><th>Events</th><th>Estimated USD</th><th>Input $/1M</th><th>Output $/1M</th></tr></thead>";
     const modelBody = el("tbody");
     for (const item of data.byModel || []) {
       const row = el("tr");
       const totalTokens = item.totalTokens ?? ((item.inputTokens ?? 0) + (item.outputTokens ?? 0));
       row.append(el("td", "", item.model || "unknown"));
+
+      const statusCell = el("td");
+      let statusLabel = "預估成本";
+      let chipStyle = "";
+      if (item.costStatus === "ZERO_COST" || (item.estimatedCostUsd === 0 && totalTokens === 0)) {
+        statusLabel = "零成本";
+        chipStyle = "background: #e2e3e5; color: #383d41;";
+      } else if (item.costStatus === "UNKNOWN" || item.estimatedCostUsd == null) {
+        statusLabel = "未知成本";
+        chipStyle = "background: #fff3cd; color: #856404;";
+      } else {
+        chipStyle = "background: #d4edda; color: #155724;";
+      }
+      const chip = el("span", "badge", statusLabel);
+      if (chipStyle) chip.style.cssText = chipStyle;
+      statusCell.append(chip);
+      row.append(statusCell);
+
       row.append(el("td", "", Number(item.inputTokens ?? 0).toLocaleString()));
       row.append(el("td", "", Number(item.outputTokens ?? 0).toLocaleString()));
       row.append(el("td", "", Number(totalTokens).toLocaleString()));
@@ -102,7 +121,7 @@ export async function renderCosts(state = { preset: "30d" }) {
     if (!(data.byModel || []).length) {
       const emptyRow = el("tr");
       emptyRow.append(el("td", "", "期間內沒有模型用量資料"));
-      emptyRow.firstChild.colSpan = 8;
+      emptyRow.firstChild.colSpan = 9;
       modelBody.append(emptyRow);
     }
     modelTable.append(modelBody);
@@ -130,6 +149,50 @@ export async function renderCosts(state = { preset: "30d" }) {
       el("p", "metric-label", "目前系統估算成本所採用的模型單價（USD / 每百萬 tokens）"),
       ratesScroll,
     );
+
+    // Historical rates and changelog / audit log (REQ-002)
+    try {
+      const historyData = await api("/api/costs/rates/history");
+      if ((historyData.audits || []).length || (historyData.history || []).length) {
+        const auditTable = el("table");
+        auditTable.innerHTML =
+          "<thead><tr><th>異動項目</th><th>異動前</th><th>異動後</th><th>操作者</th><th>生效時間</th><th>變更原因</th><th>紀錄時間</th></tr></thead>";
+        const auditBody = el("tbody");
+        for (const record of historyData.audits || []) {
+          const row = el("tr");
+          row.append(el("td", "", record.target_id || record.change_type));
+          const fmtBefore = record.before
+            ? (record.before.exchangeRate ? `${record.before.exchangeRate} TWD/USD` : `In: $${record.before.inputUsdPer1MTokens} / Out: $${record.before.outputUsdPer1MTokens}`)
+            : "-";
+          const fmtAfter = record.after
+            ? (record.after.exchangeRate ? `${record.after.exchangeRate} TWD/USD` : `In: $${record.after.inputUsdPer1MTokens} / Out: $${record.after.outputUsdPer1MTokens}`)
+            : "-";
+          row.append(el("td", "", fmtBefore));
+          row.append(el("td", "", fmtAfter));
+          row.append(el("td", "", record.actor_id || "-"));
+          row.append(el("td", "", record.effective_at ? new Date(record.effective_at).toLocaleString() : "-"));
+          row.append(el("td", "", record.reason || "-"));
+          row.append(el("td", "", record.occurred_at ? new Date(record.occurred_at).toLocaleString() : "-"));
+          auditBody.append(row);
+        }
+        if (!(historyData.audits || []).length) {
+          const emptyRow = el("tr");
+          emptyRow.append(el("td", "", "目前尚無費率異動紀錄"));
+          emptyRow.firstChild.colSpan = 7;
+          auditBody.append(emptyRow);
+        }
+        auditTable.append(auditBody);
+        const auditScroll = el("div", "table-responsive");
+        auditScroll.append(auditTable);
+        panel.append(
+          el("h3", "", "費率與匯率異動紀錄（Audit Log）"),
+          el("p", "metric-label", "包含費率／匯率變更之前後值、操作者、生效時間與稽核軌跡"),
+          auditScroll,
+        );
+      }
+    } catch (_err) {
+      // Historical rate view is non-fatal if capability is missing
+    }
 
     const table = el("table");
     table.innerHTML = "<thead><tr><th>Date</th><th>Estimated USD</th></tr></thead>";

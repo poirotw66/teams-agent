@@ -75,16 +75,24 @@ class CostsQueryMixin:
         embedding_tokens = 0
         tool_context_tokens = 0
         missing_cost_count = 0
+        zero_cost_count = 0
+        estimated_cost_count = 0
         pricing_versions: Counter[str] = Counter()
         for event in events:
             day = event.occurred_at.date().isoformat()
             cost = event.payload.get("estimatedCostUsd")
             route, issue_type_id = usage_dimensions.resolve(event)
             if cost is None:
-                if not confirmed_zero_call(event):
+                if confirmed_zero_call(event):
+                    zero_cost_count += 1
+                else:
                     missing_cost_count += 1
             else:
                 cost_value = float(cost)
+                if cost_value == 0.0:
+                    zero_cost_count += 1
+                else:
+                    estimated_cost_count += 1
                 by_day[day] += cost_value
                 by_route_cost[route] += cost_value
                 by_issue_cost[issue_type_id] += cost_value
@@ -97,16 +105,31 @@ class CostsQueryMixin:
             pricing_version = str(event.payload.get("pricingVersion") or "unknown")
             pricing_versions[pricing_version] += 1
         known_total = known_cost_total(events)
-        exchange_rate = float(self._metrics.get("usdTwdExchangeRate", 31.70))
+        pricing_svc = getattr(self, "pricing_service", None)
+        if pricing_svc is not None:
+            exchange_rate = pricing_svc.get_exchange_rate()
+            model_rates = pricing_svc.list_rates()
+        else:
+            exchange_rate = float(self._metrics.get("usdTwdExchangeRate", 31.70))
+            model_rates = list_model_rates_usd()
         by_model: list[dict[str, Any]] = []
         for item in usage_breakdown(events, "model"):
             input_count = int(item.get("inputTokens") or 0)
             output_count = int(item.get("outputTokens") or 0)
-            rate = lookup_rate(str(item.get("model") or ""))
+            model_name = str(item.get("model") or "")
+            rate = pricing_svc.lookup_rate(model_name) if pricing_svc is not None else lookup_rate(model_name)
+            cost_val = item.get("estimatedCostUsd")
+            if cost_val is not None:
+                cost_status = "ZERO_COST" if float(cost_val) == 0.0 else "ESTIMATED"
+            elif input_count == 0 and output_count == 0:
+                cost_status = "ZERO_COST"
+            else:
+                cost_status = "UNKNOWN"
             by_model.append(
                 {
                     **item,
                     "totalTokens": input_count + output_count,
+                    "costStatus": cost_status,
                     "inputUsdPer1MTokens": rate[0] if rate else None,
                     "outputUsdPer1MTokens": rate[1] if rate else None,
                 }
@@ -120,7 +143,10 @@ class CostsQueryMixin:
                 convert_usd_to_twd(known_total, exchange_rate) if known_total is not None else None
             ),
             "usdTwdExchangeRate": exchange_rate,
+            "estimatedCostEventCount": estimated_cost_count,
+            "zeroCostEventCount": zero_cost_count,
             "missingCostEventCount": missing_cost_count,
+            "unknownCostEventCount": missing_cost_count,
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
             "embeddingTokens": embedding_tokens,
@@ -131,7 +157,7 @@ class CostsQueryMixin:
                 for day, value in sorted(by_day.items())
             ],
             "byModel": by_model,
-            "modelRates": list_model_rates_usd(),
+            "modelRates": model_rates,
             "byProvider": usage_breakdown(events, "provider"),
             "byComponent": usage_breakdown(events, "component"),
             "byBackend": [
