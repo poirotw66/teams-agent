@@ -1,0 +1,57 @@
+{
+  "faq": {
+    "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+    "faq_key": "IT_SERVICE_HOURS",
+    "status": "ACTIVE",
+    "draft_version_id": null,
+    "published_version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:41.311716Z",
+    "updated_by": "ops.admin",
+    "updated_at": "2026-09-09T03:19:41.759997Z",
+    "etag": 6
+  },
+  "version": {
+    "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+    "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+    "version_number": 1,
+    "content": {
+      "faq_key": "IT_SERVICE_HOURS",
+      "question": "IT 服務時間與服務管道為何？",
+      "answer": "IT 服務時間目前尚未於知識庫中確認，本項目暫時停用，請改由「123資訊小幫手」查詢最新服務時間。",
+      "category": "服務時間",
+      "keywords": [
+        "服務時間",
+        "營業時間",
+        "上班時間"
+      ],
+      "owner_unit_id": "IT Service Desk",
+      "business_contact": "IT Service Desk",
+      "issue_type_ids": [
+        "network.general"
+      ],
+      "audience_type": "ALL",
+      "audience_group_ids": [],
+      "related_document_ids": [],
+      "effective_at": null,
+      "review_due_at": null
+    },
+    "status": "ACTIVE",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:41.311716Z",
+    "submitted_at": "2026-09-09T03:19:41.521911Z",
+    "submitted_by": "ops.admin",
+    "reviewed_by": "ops.reviewer",
+    "reviewed_at": "2026-09-09T03:19:41.609570Z",
+    "review_reason": "種子資料內容審查通過",
+    "approved_by": "ops.reviewer",
+    "approved_at": "2026-09-09T03:19:41.609570Z",
+    "disabled_by": null,
+    "disabled_at": null,
+    "disabled_reason": null,
+    "self_approval_exception": false,
+    "self_approval_exception_reason": null
+  },
+  "artifactRole": "FAQ_FIXED_ANSWER_EXPORT",
+  "indexedForRag": false
+}

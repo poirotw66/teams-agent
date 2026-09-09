@@ -1,0 +1,58 @@
+{
+  "faq": {
+    "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+    "faq_key": "TICKET_HOWTO",
+    "status": "ACTIVE",
+    "draft_version_id": null,
+    "published_version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.927729Z",
+    "updated_by": "ops.admin",
+    "updated_at": "2026-09-09T03:19:41.235742Z",
+    "etag": 6
+  },
+  "version": {
+    "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+    "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+    "version_number": 1,
+    "content": {
+      "faq_key": "TICKET_HOWTO",
+      "question": "通報資訊問題時的格式與必填內容為何？",
+      "answer": "通報資訊問題時，信件主旨請以「[平台名稱]+功能名稱+異常說明」格式撰寫，並於內容中提供：客戶姓名、帳號/ID、問題軟體名稱、問題說明、發生時間、載具及系統版本，若有截圖請一併附上，以利加速處理。",
+      "category": "問題通報",
+      "keywords": [
+        "問題通報",
+        "通報格式",
+        "報修",
+        "系統異常"
+      ],
+      "owner_unit_id": "IT Service Desk",
+      "business_contact": "IT Service Desk",
+      "issue_type_ids": [
+        "network.general"
+      ],
+      "audience_type": "ALL",
+      "audience_group_ids": [],
+      "related_document_ids": [],
+      "effective_at": null,
+      "review_due_at": null
+    },
+    "status": "ACTIVE",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.927729Z",
+    "submitted_at": "2026-09-09T03:19:41.077909Z",
+    "submitted_by": "ops.admin",
+    "reviewed_by": "ops.reviewer",
+    "reviewed_at": "2026-09-09T03:19:41.141027Z",
+    "review_reason": "種子資料內容審查通過",
+    "approved_by": "ops.reviewer",
+    "approved_at": "2026-09-09T03:19:41.141027Z",
+    "disabled_by": null,
+    "disabled_at": null,
+    "disabled_reason": null,
+    "self_approval_exception": false,
+    "self_approval_exception_reason": null
+  },
+  "artifactRole": "FAQ_FIXED_ANSWER_EXPORT",
+  "indexedForRag": false
+}

@@ -1,0 +1,58 @@
+{
+  "faq": {
+    "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+    "faq_key": "IT_CONTACT",
+    "status": "ACTIVE",
+    "draft_version_id": null,
+    "published_version_id": "8199c181-0916-4b79-901b-290349352eab",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.649424Z",
+    "updated_by": "ops.admin",
+    "updated_at": "2026-09-09T03:19:40.892563Z",
+    "etag": 6
+  },
+  "version": {
+    "version_id": "8199c181-0916-4b79-901b-290349352eab",
+    "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+    "version_number": 1,
+    "content": {
+      "faq_key": "IT_CONTACT",
+      "question": "如何聯繫 123 資訊小幫手或 IT 人工協助？",
+      "answer": "如自助處理無法解決問題，請透過內部管道聯繫「123資訊小幫手」尋求人工協助。",
+      "category": "客服管道",
+      "keywords": [
+        "小幫手",
+        "人工客服",
+        "資訊小幫手",
+        "聯絡資訊"
+      ],
+      "owner_unit_id": "IT Service Desk",
+      "business_contact": "IT Service Desk",
+      "issue_type_ids": [
+        "network.general"
+      ],
+      "audience_type": "ALL",
+      "audience_group_ids": [],
+      "related_document_ids": [],
+      "effective_at": null,
+      "review_due_at": null
+    },
+    "status": "ACTIVE",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.649424Z",
+    "submitted_at": "2026-09-09T03:19:40.776026Z",
+    "submitted_by": "ops.admin",
+    "reviewed_by": "ops.reviewer",
+    "reviewed_at": "2026-09-09T03:19:40.821329Z",
+    "review_reason": "種子資料內容審查通過",
+    "approved_by": "ops.reviewer",
+    "approved_at": "2026-09-09T03:19:40.821329Z",
+    "disabled_by": null,
+    "disabled_at": null,
+    "disabled_reason": null,
+    "self_approval_exception": false,
+    "self_approval_exception_reason": null
+  },
+  "artifactRole": "FAQ_FIXED_ANSWER_EXPORT",
+  "indexedForRag": false
+}

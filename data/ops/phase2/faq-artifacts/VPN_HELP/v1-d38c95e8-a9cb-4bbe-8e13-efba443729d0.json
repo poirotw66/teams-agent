@@ -1,0 +1,57 @@
+{
+  "faq": {
+    "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+    "faq_key": "VPN_HELP",
+    "status": "ACTIVE",
+    "draft_version_id": null,
+    "published_version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:18:14.853808Z",
+    "updated_by": "ops.admin",
+    "updated_at": "2026-09-09T03:18:49.066697Z",
+    "etag": 6
+  },
+  "version": {
+    "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+    "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+    "version_number": 1,
+    "content": {
+      "faq_key": "VPN_HELP",
+      "question": "VPN 連線異常該如何處理？",
+      "answer": "VPN 連線異常時，請先確認網路連線狀態與帳號權限，確認無誤後重新嘗試連線。若仍無法排除，請聯繫資訊小幫手協助排查。",
+      "category": "VPN",
+      "keywords": [
+        "vpn",
+        "連線",
+        "網路"
+      ],
+      "owner_unit_id": "IT Service Desk",
+      "business_contact": "IT Service Desk",
+      "issue_type_ids": [
+        "vpn.connection_failed"
+      ],
+      "audience_type": "ALL",
+      "audience_group_ids": [],
+      "related_document_ids": [],
+      "effective_at": null,
+      "review_due_at": null
+    },
+    "status": "ACTIVE",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:18:14.853808Z",
+    "submitted_at": "2026-09-09T03:18:40.508878Z",
+    "submitted_by": "ops.admin",
+    "reviewed_by": "ops.reviewer",
+    "reviewed_at": "2026-09-09T03:18:46.550357Z",
+    "review_reason": "內容審核通過",
+    "approved_by": "ops.reviewer",
+    "approved_at": "2026-09-09T03:18:46.550357Z",
+    "disabled_by": null,
+    "disabled_at": null,
+    "disabled_reason": null,
+    "self_approval_exception": false,
+    "self_approval_exception_reason": null
+  },
+  "artifactRole": "FAQ_FIXED_ANSWER_EXPORT",
+  "indexedForRag": false
+}

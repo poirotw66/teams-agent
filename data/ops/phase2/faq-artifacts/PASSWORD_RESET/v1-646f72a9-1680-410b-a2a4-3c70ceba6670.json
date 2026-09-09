@@ -1,0 +1,58 @@
+{
+  "faq": {
+    "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+    "faq_key": "PASSWORD_RESET",
+    "status": "ACTIVE",
+    "draft_version_id": null,
+    "published_version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.440485Z",
+    "updated_by": "ops.admin",
+    "updated_at": "2026-09-09T03:19:40.607171Z",
+    "etag": 6
+  },
+  "version": {
+    "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+    "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+    "version_number": 1,
+    "content": {
+      "faq_key": "PASSWORD_RESET",
+      "question": "忘記密碼或密碼需要變更該如何處理？",
+      "answer": "請至金控入口網（國泰員工入口網）點選「忘記密碼」或「密碼變更」選項進行密碼重設。若仍無法完成，請聯繫「123資訊小幫手」協助處理。",
+      "category": "帳號密碼",
+      "keywords": [
+        "密碼",
+        "忘記密碼",
+        "重設",
+        "金控入口網"
+      ],
+      "owner_unit_id": "IT Service Desk",
+      "business_contact": "IT Service Desk",
+      "issue_type_ids": [
+        "email.password_reset"
+      ],
+      "audience_type": "ALL",
+      "audience_group_ids": [],
+      "related_document_ids": [],
+      "effective_at": null,
+      "review_due_at": null
+    },
+    "status": "ACTIVE",
+    "created_by": "ops.admin",
+    "created_at": "2026-09-09T03:19:40.440485Z",
+    "submitted_at": "2026-09-09T03:19:40.525313Z",
+    "submitted_by": "ops.admin",
+    "reviewed_by": "ops.reviewer",
+    "reviewed_at": "2026-09-09T03:19:40.556299Z",
+    "review_reason": "種子資料內容審查通過",
+    "approved_by": "ops.reviewer",
+    "approved_at": "2026-09-09T03:19:40.556299Z",
+    "disabled_by": null,
+    "disabled_at": null,
+    "disabled_reason": null,
+    "self_approval_exception": false,
+    "self_approval_exception_reason": null
+  },
+  "artifactRole": "FAQ_FIXED_ANSWER_EXPORT",
+  "indexedForRag": false
+}

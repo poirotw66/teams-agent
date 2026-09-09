@@ -1,0 +1,1283 @@
+{
+  "faqs": [
+    {
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "faq_key": "VPN_HELP",
+      "status": "ACTIVE",
+      "draft_version_id": null,
+      "published_version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:18:14.853808Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:18:49.066697Z",
+      "etag": 6
+    },
+    {
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "faq_key": "PASSWORD_RESET",
+      "status": "ACTIVE",
+      "draft_version_id": null,
+      "published_version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.440485Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:19:40.607171Z",
+      "etag": 6
+    },
+    {
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "faq_key": "IT_CONTACT",
+      "status": "ACTIVE",
+      "draft_version_id": null,
+      "published_version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.649424Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:19:40.892563Z",
+      "etag": 6
+    },
+    {
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "faq_key": "TICKET_HOWTO",
+      "status": "ACTIVE",
+      "draft_version_id": null,
+      "published_version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.927729Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:19:41.235742Z",
+      "etag": 6
+    },
+    {
+      "faq_id": "b0c9c3b1-635c-4fa9-a729-cb96fc2d5ebe",
+      "faq_key": "GITLAB_UNLOCK",
+      "status": "DRAFT",
+      "draft_version_id": "477f6abb-6edc-47d1-96b8-bd88429f6937",
+      "published_version_id": null,
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.277376Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:19:41.277376Z",
+      "etag": 1
+    },
+    {
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "faq_key": "IT_SERVICE_HOURS",
+      "status": "DISABLED",
+      "draft_version_id": null,
+      "published_version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.311716Z",
+      "updated_by": "ops.admin",
+      "updated_at": "2026-09-09T03:19:41.866344Z",
+      "etag": 7
+    }
+  ],
+  "versions": [
+    {
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_number": 1,
+      "content": {
+        "faq_key": "VPN_HELP",
+        "question": "VPN 連線異常該如何處理？",
+        "answer": "VPN 連線異常時，請先確認網路連線狀態與帳號權限，確認無誤後重新嘗試連線。若仍無法排除，請聯繫資訊小幫手協助排查。",
+        "category": "VPN",
+        "keywords": [
+          "vpn",
+          "連線",
+          "網路"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "vpn.connection_failed"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "ACTIVE",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:18:14.853808Z",
+      "submitted_at": "2026-09-09T03:18:40.508878Z",
+      "submitted_by": "ops.admin",
+      "reviewed_by": "ops.reviewer",
+      "reviewed_at": "2026-09-09T03:18:46.550357Z",
+      "review_reason": "內容審核通過",
+      "approved_by": "ops.reviewer",
+      "approved_at": "2026-09-09T03:18:46.550357Z",
+      "disabled_by": null,
+      "disabled_at": null,
+      "disabled_reason": null,
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    },
+    {
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_number": 1,
+      "content": {
+        "faq_key": "PASSWORD_RESET",
+        "question": "忘記密碼或密碼需要變更該如何處理？",
+        "answer": "請至金控入口網（國泰員工入口網）點選「忘記密碼」或「密碼變更」選項進行密碼重設。若仍無法完成，請聯繫「123資訊小幫手」協助處理。",
+        "category": "帳號密碼",
+        "keywords": [
+          "密碼",
+          "忘記密碼",
+          "重設",
+          "金控入口網"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "email.password_reset"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "ACTIVE",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.440485Z",
+      "submitted_at": "2026-09-09T03:19:40.525313Z",
+      "submitted_by": "ops.admin",
+      "reviewed_by": "ops.reviewer",
+      "reviewed_at": "2026-09-09T03:19:40.556299Z",
+      "review_reason": "種子資料內容審查通過",
+      "approved_by": "ops.reviewer",
+      "approved_at": "2026-09-09T03:19:40.556299Z",
+      "disabled_by": null,
+      "disabled_at": null,
+      "disabled_reason": null,
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    },
+    {
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_number": 1,
+      "content": {
+        "faq_key": "IT_CONTACT",
+        "question": "如何聯繫 123 資訊小幫手或 IT 人工協助？",
+        "answer": "如自助處理無法解決問題，請透過內部管道聯繫「123資訊小幫手」尋求人工協助。",
+        "category": "客服管道",
+        "keywords": [
+          "小幫手",
+          "人工客服",
+          "資訊小幫手",
+          "聯絡資訊"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "network.general"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "ACTIVE",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.649424Z",
+      "submitted_at": "2026-09-09T03:19:40.776026Z",
+      "submitted_by": "ops.admin",
+      "reviewed_by": "ops.reviewer",
+      "reviewed_at": "2026-09-09T03:19:40.821329Z",
+      "review_reason": "種子資料內容審查通過",
+      "approved_by": "ops.reviewer",
+      "approved_at": "2026-09-09T03:19:40.821329Z",
+      "disabled_by": null,
+      "disabled_at": null,
+      "disabled_reason": null,
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    },
+    {
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_number": 1,
+      "content": {
+        "faq_key": "TICKET_HOWTO",
+        "question": "通報資訊問題時的格式與必填內容為何？",
+        "answer": "通報資訊問題時，信件主旨請以「[平台名稱]+功能名稱+異常說明」格式撰寫，並於內容中提供：客戶姓名、帳號/ID、問題軟體名稱、問題說明、發生時間、載具及系統版本，若有截圖請一併附上，以利加速處理。",
+        "category": "問題通報",
+        "keywords": [
+          "問題通報",
+          "通報格式",
+          "報修",
+          "系統異常"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "network.general"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "ACTIVE",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.927729Z",
+      "submitted_at": "2026-09-09T03:19:41.077909Z",
+      "submitted_by": "ops.admin",
+      "reviewed_by": "ops.reviewer",
+      "reviewed_at": "2026-09-09T03:19:41.141027Z",
+      "review_reason": "種子資料內容審查通過",
+      "approved_by": "ops.reviewer",
+      "approved_at": "2026-09-09T03:19:41.141027Z",
+      "disabled_by": null,
+      "disabled_at": null,
+      "disabled_reason": null,
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    },
+    {
+      "version_id": "477f6abb-6edc-47d1-96b8-bd88429f6937",
+      "faq_id": "b0c9c3b1-635c-4fa9-a729-cb96fc2d5ebe",
+      "version_number": 1,
+      "content": {
+        "faq_key": "GITLAB_UNLOCK",
+        "question": "Gitlab 帳號被鎖定或需要重置該如何處理？",
+        "answer": "Gitlab 帳號解鎖或重置，請透過內部管道聯繫資訊管理處相關負責同仁協助處理。",
+        "category": "研發工具",
+        "keywords": [
+          "gitlab",
+          "帳號鎖定",
+          "解鎖",
+          "重置"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "vpn.account_locked"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "DRAFT",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.277376Z",
+      "submitted_at": null,
+      "submitted_by": null,
+      "reviewed_by": null,
+      "reviewed_at": null,
+      "review_reason": null,
+      "approved_by": null,
+      "approved_at": null,
+      "disabled_by": null,
+      "disabled_at": null,
+      "disabled_reason": null,
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    },
+    {
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_number": 1,
+      "content": {
+        "faq_key": "IT_SERVICE_HOURS",
+        "question": "IT 服務時間與服務管道為何？",
+        "answer": "IT 服務時間目前尚未於知識庫中確認，本項目暫時停用，請改由「123資訊小幫手」查詢最新服務時間。",
+        "category": "服務時間",
+        "keywords": [
+          "服務時間",
+          "營業時間",
+          "上班時間"
+        ],
+        "owner_unit_id": "IT Service Desk",
+        "business_contact": "IT Service Desk",
+        "issue_type_ids": [
+          "network.general"
+        ],
+        "audience_type": "ALL",
+        "audience_group_ids": [],
+        "related_document_ids": [],
+        "effective_at": null,
+        "review_due_at": null
+      },
+      "status": "DISABLED",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.311716Z",
+      "submitted_at": "2026-09-09T03:19:41.521911Z",
+      "submitted_by": "ops.admin",
+      "reviewed_by": "ops.reviewer",
+      "reviewed_at": "2026-09-09T03:19:41.609570Z",
+      "review_reason": "種子資料內容審查通過",
+      "approved_by": "ops.reviewer",
+      "approved_at": "2026-09-09T03:19:41.609570Z",
+      "disabled_by": "ops.admin",
+      "disabled_at": "2026-09-09T03:19:41.866344Z",
+      "disabled_reason": "資訊小幫手服務時間尚未確認，先予停用",
+      "self_approval_exception": false,
+      "self_approval_exception_reason": null
+    }
+  ],
+  "tests": [
+    {
+      "test_case_id": "dda82670-8d7d-418e-b70d-690723743b19",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "kind": "POSITIVE",
+      "utterance": "VPN 無法連線",
+      "expected_audience_group_ids": [],
+      "expected_match": true,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:18:28.096283Z"
+    },
+    {
+      "test_case_id": "8602b1b8-8dcc-491e-af7f-8913d2da2a08",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "kind": "NEGATIVE",
+      "utterance": "如何請特休",
+      "expected_audience_group_ids": [],
+      "expected_match": false,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:18:38.157473Z"
+    },
+    {
+      "test_case_id": "b5289b55-bf84-4d26-8278-1f876a30a012",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "kind": "POSITIVE",
+      "utterance": "忘記入口網密碼",
+      "expected_audience_group_ids": [],
+      "expected_match": true,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.472614Z"
+    },
+    {
+      "test_case_id": "646eb541-fa06-4f96-857e-72d926d28a31",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "kind": "NEGATIVE",
+      "utterance": "如何申請共用公槽",
+      "expected_audience_group_ids": [],
+      "expected_match": false,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.495955Z"
+    },
+    {
+      "test_case_id": "1cdbbc04-14d5-41cc-b003-88d1ec90657c",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "kind": "POSITIVE",
+      "utterance": "怎麼找資訊小幫手",
+      "expected_audience_group_ids": [],
+      "expected_match": true,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.691877Z"
+    },
+    {
+      "test_case_id": "94a07e21-9ac9-4aa3-8db2-02c77c7814cf",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "kind": "NEGATIVE",
+      "utterance": "會議室借用辦法",
+      "expected_audience_group_ids": [],
+      "expected_match": false,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.733744Z"
+    },
+    {
+      "test_case_id": "fa8d4dd7-9c85-479f-a156-caa1342152f5",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "kind": "POSITIVE",
+      "utterance": "資訊問題通報格式說明",
+      "expected_audience_group_ids": [],
+      "expected_match": true,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:40.974202Z"
+    },
+    {
+      "test_case_id": "705b853f-59e7-48d3-b8f7-1d59ebd42bc7",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "kind": "NEGATIVE",
+      "utterance": "公司外送訂餐規定",
+      "expected_audience_group_ids": [],
+      "expected_match": false,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.019742Z"
+    },
+    {
+      "test_case_id": "4f30a6fd-980e-4d92-be41-3e1c3963d2c5",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "kind": "POSITIVE",
+      "utterance": "資訊小幫手服務時間",
+      "expected_audience_group_ids": [],
+      "expected_match": true,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.374020Z"
+    },
+    {
+      "test_case_id": "1797575d-5231-4d34-ba02-400a7a508beb",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "kind": "NEGATIVE",
+      "utterance": "國泰志工服務報名",
+      "expected_audience_group_ids": [],
+      "expected_match": false,
+      "source_type": "MANUAL",
+      "source_correlation_id": null,
+      "masking_policy_version": "v2",
+      "created_by": "ops.admin",
+      "created_at": "2026-09-09T03:19:41.438196Z"
+    }
+  ],
+  "audits": [
+    {
+      "audit_id": "ce2d5c72-5809-449c-92f1-4c5f730ba2a2",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "VPN_HELP"
+      },
+      "occurred_at": "2026-09-09T03:18:14.854085Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "8ce8cb89-46b6-430c-a36a-bf1aa6baf342",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": null,
+      "before": {
+        "etag": 1
+      },
+      "after": {
+        "etag": 2,
+        "kind": "POSITIVE"
+      },
+      "occurred_at": "2026-09-09T03:18:28.098453Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "819505cd-e702-4c5a-8d4f-f321f39be89a",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": null,
+      "before": {
+        "etag": 2
+      },
+      "after": {
+        "etag": 3,
+        "kind": "NEGATIVE"
+      },
+      "occurred_at": "2026-09-09T03:18:38.157941Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "9f0c575d-b697-4303-ab3f-952feaf73cbe",
+      "action": "FAQ_SUBMITTED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": null,
+      "before": {
+        "status": "DRAFT",
+        "etag": 3,
+        "publishedVersionId": null,
+        "draftVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0"
+      },
+      "after": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+        "versionStatus": "IN_REVIEW",
+        "approvedBy": null,
+        "approvedAt": null,
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:18:40.509018Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "1fc27885-f897-48e7-aef3-719256b6afd1",
+      "action": "FAQ_APPROVED",
+      "actor_id": "ops.reviewer",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": "內容審核通過",
+      "before": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0"
+      },
+      "after": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+        "versionStatus": "APPROVED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:18:46.550357+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:18:46.550854Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "b541fb2f-7239-4b49-bf01-29b35337dc2b",
+      "action": "FAQ_ACTIVATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "f054acfb-4314-4a56-8612-7229c4455cdb",
+      "version_id": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+      "reason": "正式生效上線",
+      "before": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0"
+      },
+      "after": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+        "draftVersionId": null,
+        "versionStatus": "ACTIVE",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:18:46.550357+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:18:49.066781Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "d342e060-c675-409e-8199-95f9cb5b0908",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "PASSWORD_RESET"
+      },
+      "occurred_at": "2026-09-09T03:19:40.440597Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "ee2e7a1a-d59a-411f-b9e5-e9cff57bad6a",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": null,
+      "before": {
+        "etag": 1
+      },
+      "after": {
+        "etag": 2,
+        "kind": "POSITIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:40.473750Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "4b0fe652-18a3-4277-b2cc-0bcc6e4a405e",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": null,
+      "before": {
+        "etag": 2
+      },
+      "after": {
+        "etag": 3,
+        "kind": "NEGATIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:40.496149Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "dd614ba9-643d-466c-856e-49cda7851d31",
+      "action": "FAQ_SUBMITTED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": null,
+      "before": {
+        "status": "DRAFT",
+        "etag": 3,
+        "publishedVersionId": null,
+        "draftVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670"
+      },
+      "after": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+        "versionStatus": "IN_REVIEW",
+        "approvedBy": null,
+        "approvedAt": null,
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.525372Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "f1cb479d-e61c-4e43-a01f-e66e3e104def",
+      "action": "FAQ_APPROVED",
+      "actor_id": "ops.reviewer",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": "種子資料內容審查通過",
+      "before": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670"
+      },
+      "after": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+        "versionStatus": "APPROVED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:40.556299+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.556498Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "4fc93355-9163-4b2c-9de5-349926b2f688",
+      "action": "FAQ_ACTIVATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "e24ae641-014f-4044-9d13-d372bfc83f04",
+      "version_id": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+      "reason": "種子資料正式發布",
+      "before": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670"
+      },
+      "after": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+        "draftVersionId": null,
+        "versionStatus": "ACTIVE",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:40.556299+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.607208Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "beeafc0c-3c3a-40b1-b5ba-8700f9e6c91c",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "IT_CONTACT"
+      },
+      "occurred_at": "2026-09-09T03:19:40.649466Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "e80d8712-e5f3-41dc-84d4-275af36fbaa1",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": null,
+      "before": {
+        "etag": 1
+      },
+      "after": {
+        "etag": 2,
+        "kind": "POSITIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:40.692085Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "a07fc081-323c-46ee-a96c-d7e9139d3019",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": null,
+      "before": {
+        "etag": 2
+      },
+      "after": {
+        "etag": 3,
+        "kind": "NEGATIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:40.733921Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "e33eee71-2cb4-4f76-9ac2-cec92aa0070d",
+      "action": "FAQ_SUBMITTED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": null,
+      "before": {
+        "status": "DRAFT",
+        "etag": 3,
+        "publishedVersionId": null,
+        "draftVersionId": "8199c181-0916-4b79-901b-290349352eab"
+      },
+      "after": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "8199c181-0916-4b79-901b-290349352eab",
+        "versionStatus": "IN_REVIEW",
+        "approvedBy": null,
+        "approvedAt": null,
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.776079Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "2b94da47-6354-4185-8c35-a2242d72319b",
+      "action": "FAQ_APPROVED",
+      "actor_id": "ops.reviewer",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": "種子資料內容審查通過",
+      "before": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "8199c181-0916-4b79-901b-290349352eab"
+      },
+      "after": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "8199c181-0916-4b79-901b-290349352eab",
+        "versionStatus": "APPROVED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:40.821329+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.821533Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "d2fb7dbf-b02e-4dc8-ac78-a8b97e6faddd",
+      "action": "FAQ_ACTIVATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "2e4651cc-0c6e-44d3-8279-55b91482bba0",
+      "version_id": "8199c181-0916-4b79-901b-290349352eab",
+      "reason": "種子資料正式發布",
+      "before": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "8199c181-0916-4b79-901b-290349352eab"
+      },
+      "after": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "8199c181-0916-4b79-901b-290349352eab",
+        "draftVersionId": null,
+        "versionStatus": "ACTIVE",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:40.821329+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:40.892599Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "9ea04731-7088-48cf-ae0b-8cebbdc4c96b",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "TICKET_HOWTO"
+      },
+      "occurred_at": "2026-09-09T03:19:40.927776Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "195ea19e-e3e2-4f8d-af5c-0a6f155c5ecd",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": null,
+      "before": {
+        "etag": 1
+      },
+      "after": {
+        "etag": 2,
+        "kind": "POSITIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:40.974376Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "a900d338-3ced-43e1-b720-39a3630a21a6",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": null,
+      "before": {
+        "etag": 2
+      },
+      "after": {
+        "etag": 3,
+        "kind": "NEGATIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:41.019932Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "d5e416e6-30f9-4eb0-9e73-05d8fab1316a",
+      "action": "FAQ_SUBMITTED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": null,
+      "before": {
+        "status": "DRAFT",
+        "etag": 3,
+        "publishedVersionId": null,
+        "draftVersionId": "d62917ca-442a-4581-9d1d-82f382115421"
+      },
+      "after": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "d62917ca-442a-4581-9d1d-82f382115421",
+        "versionStatus": "IN_REVIEW",
+        "approvedBy": null,
+        "approvedAt": null,
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.077963Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "d2f04fd2-234c-4340-9065-756a2920b2ea",
+      "action": "FAQ_APPROVED",
+      "actor_id": "ops.reviewer",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": "種子資料內容審查通過",
+      "before": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "d62917ca-442a-4581-9d1d-82f382115421"
+      },
+      "after": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "d62917ca-442a-4581-9d1d-82f382115421",
+        "versionStatus": "APPROVED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:41.141027+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.141222Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "8ac855ac-3aeb-4a43-b12d-8eaf03566286",
+      "action": "FAQ_ACTIVATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "c32e8b92-fd3c-4a4f-8ef6-41553cd8f592",
+      "version_id": "d62917ca-442a-4581-9d1d-82f382115421",
+      "reason": "種子資料正式發布",
+      "before": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "d62917ca-442a-4581-9d1d-82f382115421"
+      },
+      "after": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "d62917ca-442a-4581-9d1d-82f382115421",
+        "draftVersionId": null,
+        "versionStatus": "ACTIVE",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:41.141027+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.235773Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "7e2f563a-dc03-4987-a7ee-0c79a5513d10",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "b0c9c3b1-635c-4fa9-a729-cb96fc2d5ebe",
+      "version_id": "477f6abb-6edc-47d1-96b8-bd88429f6937",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "GITLAB_UNLOCK"
+      },
+      "occurred_at": "2026-09-09T03:19:41.277417Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "700463fd-8d0b-4dea-bea1-5cc71b9fdad5",
+      "action": "FAQ_CREATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": null,
+      "before": null,
+      "after": {
+        "status": "DRAFT",
+        "faqKey": "IT_SERVICE_HOURS"
+      },
+      "occurred_at": "2026-09-09T03:19:41.311746Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "d56cec0b-f9ad-449a-800e-750fa62741ae",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": null,
+      "before": {
+        "etag": 1
+      },
+      "after": {
+        "etag": 2,
+        "kind": "POSITIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:41.374199Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "5634c992-cbb2-4a82-82cf-15c22afec176",
+      "action": "FAQ_TEST_ADDED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": null,
+      "before": {
+        "etag": 2
+      },
+      "after": {
+        "etag": 3,
+        "kind": "NEGATIVE"
+      },
+      "occurred_at": "2026-09-09T03:19:41.438389Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "98579a91-c4ce-4bd3-9904-08fdce236779",
+      "action": "FAQ_SUBMITTED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": null,
+      "before": {
+        "status": "DRAFT",
+        "etag": 3,
+        "publishedVersionId": null,
+        "draftVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4"
+      },
+      "after": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+        "versionStatus": "IN_REVIEW",
+        "approvedBy": null,
+        "approvedAt": null,
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.521974Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "adbfa79b-4ef7-4614-8282-9b734c93c813",
+      "action": "FAQ_APPROVED",
+      "actor_id": "ops.reviewer",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": "種子資料內容審查通過",
+      "before": {
+        "status": "IN_REVIEW",
+        "etag": 4,
+        "publishedVersionId": null,
+        "draftVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4"
+      },
+      "after": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+        "versionStatus": "APPROVED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:41.609570+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.609769Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "73d7aa32-62dc-433b-a51f-921026ccfd89",
+      "action": "FAQ_ACTIVATED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": "暫時生效以便示範停用",
+      "before": {
+        "status": "APPROVED",
+        "etag": 5,
+        "publishedVersionId": null,
+        "draftVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4"
+      },
+      "after": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+        "draftVersionId": null,
+        "versionStatus": "ACTIVE",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:41.609570+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.760033Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    },
+    {
+      "audit_id": "928b6cd6-b959-4b25-b500-112363cd825b",
+      "action": "FAQ_DISABLED",
+      "actor_id": "ops.admin",
+      "actor_role": "SYSTEM_ADMIN",
+      "faq_id": "26b5475e-0c45-4798-89c0-d795ecf2614c",
+      "version_id": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+      "reason": "資訊小幫手服務時間尚未確認，先予停用",
+      "before": {
+        "status": "ACTIVE",
+        "etag": 6,
+        "publishedVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+        "draftVersionId": null
+      },
+      "after": {
+        "status": "DISABLED",
+        "etag": 7,
+        "publishedVersionId": "fb8a0528-9e5a-4639-b37a-a85641373aa4",
+        "draftVersionId": null,
+        "versionStatus": "DISABLED",
+        "approvedBy": "ops.reviewer",
+        "approvedAt": "2026-09-09T03:19:41.609570+00:00",
+        "selfApprovalException": false
+      },
+      "occurred_at": "2026-09-09T03:19:41.866717Z",
+      "correlation_id": null,
+      "target_type": "FAQ",
+      "result": "SUCCESS",
+      "retention_policy": "faq-effective-plus-three-years-pending-governance"
+    }
+  ],
+  "idempotency": [],
+  "active_pointers": {
+    "VPN_HELP": "d38c95e8-a9cb-4bbe-8e13-efba443729d0",
+    "PASSWORD_RESET": "646f72a9-1680-410b-a2a4-3c70ceba6670",
+    "IT_CONTACT": "8199c181-0916-4b79-901b-290349352eab",
+    "TICKET_HOWTO": "d62917ca-442a-4581-9d1d-82f382115421"
+  }
+}
