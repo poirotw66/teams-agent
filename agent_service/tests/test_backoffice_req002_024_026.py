@@ -236,6 +236,78 @@ async def test_pricing_future_effective_date_and_auto_generated_version() -> Non
 
 
 @pytest.mark.asyncio
+async def test_pricing_interleaved_rate_and_fx_schedules_preserve_timeline() -> None:
+    """REQ-002/023: later FX snapshots must not wipe earlier scheduled model rates."""
+    repo = InMemoryPricingRepository()
+    service = PricingService(repo)
+    actor = ActorContext(
+        user_id="fin.ops",
+        display_name="Finance Ops",
+        role="AI_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    day0 = datetime(2026, 9, 1, 0, 0, tzinfo=UTC)
+    day7 = day0 + timedelta(days=7)
+    day8 = day0 + timedelta(days=8)
+    day9 = day0 + timedelta(days=9)
+
+    # Schedule model rate for day 7 while current state still holds baseline rates.
+    await service.update_model_rate(
+        model="gpt-4o-mini",
+        input_rate=9.0,
+        output_rate=10.0,
+        effective_at=day7,
+        pricing_version="day7-model",
+        actor=actor,
+        reason="Day-7 model rate schedule",
+    )
+    # Schedule FX-only change for day 8; must inherit day-7 model rates from timeline.
+    await service.update_exchange_rate(
+        exchange_rate=35.0,
+        effective_at=day8,
+        pricing_version="day8-fx",
+        actor=actor,
+        reason="Day-8 FX schedule",
+    )
+    # Second model change after FX must keep FX 35 and update only that model.
+    await service.update_model_rate(
+        model="gemini-2.0-flash",
+        input_rate=1.25,
+        output_rate=5.0,
+        effective_at=day9,
+        pricing_version="day9-gemini",
+        actor=actor,
+        reason="Day-9 second model schedule",
+    )
+
+    assert service.lookup_rate("gpt-4o-mini", at=day7 + timedelta(hours=1)) == (9.0, 10.0)
+    assert service.get_exchange_rate(at=day7 + timedelta(hours=1)) == 31.70
+
+    assert service.lookup_rate("gpt-4o-mini", at=day8 + timedelta(hours=1)) == (9.0, 10.0)
+    assert service.get_exchange_rate(at=day8 + timedelta(hours=1)) == 35.0
+    assert service.get_pricing_version(at=day8 + timedelta(hours=1)) == "day8-fx"
+
+    assert service.lookup_rate("gemini-2.0-flash", at=day9 + timedelta(hours=1)) == (1.25, 5.0)
+    assert service.lookup_rate("gpt-4o-mini", at=day9 + timedelta(hours=1)) == (9.0, 10.0)
+    assert service.get_exchange_rate(at=day9 + timedelta(hours=1)) == 35.0
+
+    # Historical immutability: day-7 view must not observe day-8 FX.
+    assert service.get_exchange_rate(at=day7 + timedelta(hours=1)) == 31.70
+    history = service.list_history()
+    # current* fields follow the effective timeline at "now" (after all schedules, still day0-ish
+    # in wall clock). Use explicit effective queries for assertions above; history payload must
+    # expose current fields from effective_rule_from_state rather than stale live state.
+    assert "currentPricingVersion" in history
+    assert "currentExchangeRate" in history
+    day8_rule = next(r for r in history["history"] if r["version"] == "day8-fx")
+    assert day8_rule["exchange_rate"] == 35.0
+    assert day8_rule["rates"]["gpt-4o-mini"] == [9.0, 10.0] or day8_rule["rates"]["gpt-4o-mini"] == (
+        9.0,
+        10.0,
+    )
+
+
+@pytest.mark.asyncio
 async def test_usage_module_integrates_with_governed_pricing_provider() -> None:
     repo = InMemoryPricingRepository()
     service = PricingService(repo)

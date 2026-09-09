@@ -13,6 +13,42 @@ from .models import HistoricalPricingRule, PricingState, RateChangeAudit
 from .repository import PricingRepository
 
 
+def _normalize_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def effective_rule_from_state(
+    state: PricingState,
+    at: datetime | None = None,
+) -> HistoricalPricingRule:
+    """Resolve the pricing snapshot that is effective at ``at`` from history.
+
+    Live ``state.rates`` / ``state.exchange_rate`` are not used as the timeline
+    source of truth; scheduled snapshots must compose from prior history rows.
+    """
+    target = _normalize_utc(at or datetime.now(UTC))
+    applicable = [rule for rule in state.history if rule.effective_at <= target]
+    if applicable:
+        applicable.sort(key=lambda rule: (rule.effective_at, rule.created_at))
+        return applicable[-1]
+    if state.history:
+        sorted_history = sorted(
+            state.history, key=lambda rule: (rule.effective_at, rule.created_at)
+        )
+        return sorted_history[0]
+    return HistoricalPricingRule(
+        version=state.pricing_version,
+        effective_at=datetime(2026, 8, 31, 0, 0, tzinfo=UTC),
+        exchange_rate=state.exchange_rate,
+        rates=dict(state.rates),
+        description="Baseline pricing rule",
+        created_by="system",
+        created_at=datetime.now(UTC),
+    )
+
+
 class PricingService:
     def __init__(
         self,
@@ -33,26 +69,7 @@ class PricingService:
             raise FaqAuthorizationError(f"Actor lacks required capability: {capability}")
 
     def get_effective_rule(self, at: datetime | None = None) -> HistoricalPricingRule:
-        state = self._repository.load()
-        target = at or datetime.now(UTC)
-        if target.tzinfo is None:
-            target = target.replace(tzinfo=UTC)
-        applicable = [rule for rule in state.history if rule.effective_at <= target]
-        if applicable:
-            applicable.sort(key=lambda r: (r.effective_at, r.created_at))
-            return applicable[-1]
-        if state.history:
-            sorted_history = sorted(state.history, key=lambda r: (r.effective_at, r.created_at))
-            return sorted_history[0]
-        return HistoricalPricingRule(
-            version=state.pricing_version,
-            effective_at=datetime(2026, 8, 31, 0, 0, tzinfo=UTC),
-            exchange_rate=state.exchange_rate,
-            rates=dict(state.rates),
-            description="Baseline pricing rule",
-            created_by="system",
-            created_at=datetime.now(UTC),
-        )
+        return effective_rule_from_state(self._repository.load(), at)
 
     def list_rates(self, at: datetime | None = None) -> list[dict[str, Any]]:
         rule = self.get_effective_rule(at)
@@ -84,12 +101,51 @@ class PricingService:
 
     def list_history(self) -> dict[str, Any]:
         state = self._repository.load()
+        current = effective_rule_from_state(state)
         return {
-            "currentPricingVersion": state.pricing_version,
-            "currentExchangeRate": state.exchange_rate,
+            "currentPricingVersion": current.version,
+            "currentExchangeRate": current.exchange_rate,
             "history": [rule.model_dump(mode="json") for rule in state.history],
             "audits": [audit.model_dump(mode="json") for audit in reversed(state.audits)],
         }
+
+    @staticmethod
+    def _next_version(state: PricingState, pricing_version: str | None) -> str:
+        if pricing_version and pricing_version.strip():
+            return pricing_version.strip()
+        return f"{state.pricing_version}.{state.revision + 1}"
+
+    @staticmethod
+    def _append_snapshot(
+        state: PricingState,
+        *,
+        next_version: str,
+        effective: datetime,
+        now: datetime,
+        actor_id: str,
+        description: str,
+        exchange_rate: float | None = None,
+        rate_update: tuple[str, tuple[float, float]] | None = None,
+    ) -> tuple[HistoricalPricingRule, dict[str, tuple[float, float]], float]:
+        """Build a full snapshot from the timeline at ``effective``, then apply the change."""
+        base = effective_rule_from_state(state, effective)
+        rates = dict(base.rates)
+        fx = base.exchange_rate
+        if rate_update is not None:
+            model_name, model_rates = rate_update
+            rates[model_name] = model_rates
+        if exchange_rate is not None:
+            fx = exchange_rate
+        rule = HistoricalPricingRule(
+            version=next_version,
+            effective_at=effective,
+            exchange_rate=fx,
+            rates=dict(rates),
+            description=description,
+            created_by=actor_id,
+            created_at=now,
+        )
+        return rule, rates, fx
 
     async def update_model_rate(
         self,
@@ -110,32 +166,26 @@ class PricingService:
             raise FaqValidationError("Token rates must be non-negative")
 
         now = datetime.now(UTC)
-        effective = effective_at or now
-        if effective.tzinfo is None:
-            effective = effective.replace(tzinfo=UTC)
+        effective = _normalize_utc(effective_at or now)
 
         def operation(state: PricingState) -> tuple[PricingState, dict[str, Any]]:
-            before_rate = state.rates.get(normalized_model)
+            base_before = effective_rule_from_state(state, effective)
+            before_rate = base_before.rates.get(normalized_model)
             before_dict = (
                 {
                     "inputUsdPer1MTokens": before_rate[0],
                     "outputUsdPer1MTokens": before_rate[1],
-                    "pricingVersion": state.pricing_version,
+                    "pricingVersion": base_before.version,
                 }
                 if before_rate is not None
                 else None
             )
-            if pricing_version and pricing_version.strip():
-                next_version = pricing_version.strip()
-            else:
-                next_version = f"{state.pricing_version}.{state.revision + 1}"
-
+            next_version = self._next_version(state, pricing_version)
             after_dict = {
                 "inputUsdPer1MTokens": input_rate,
                 "outputUsdPer1MTokens": output_rate,
                 "pricingVersion": next_version,
             }
-
             audit = RateChangeAudit(
                 audit_id=str(uuid.uuid4()),
                 change_type="MODEL_RATE",
@@ -148,31 +198,35 @@ class PricingService:
                 occurred_at=now,
                 reason=reason,
             )
-
-            updated_rates = dict(state.rates)
-            updated_rates[normalized_model] = (input_rate, output_rate)
-
-            new_rule = HistoricalPricingRule(
-                version=next_version,
-                effective_at=effective,
-                exchange_rate=state.exchange_rate,
-                rates=dict(updated_rates),
+            new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+                state,
+                next_version=next_version,
+                effective=effective,
+                now=now,
+                actor_id=actor.user_id,
                 description=reason or f"Rate updated for {normalized_model}",
-                created_by=actor.user_id,
-                created_at=now,
+                rate_update=(normalized_model, (input_rate, output_rate)),
             )
-            history_list = list(state.history)
-            history_list.append(new_rule)
-
+            history_list = [*state.history, new_rule]
             is_future = effective > now
-            next_state = PricingState(
-                revision=state.revision + 1,
-                exchange_rate=state.exchange_rate,
-                pricing_version=state.pricing_version if is_future else next_version,
-                rates=state.rates if is_future else updated_rates,
-                history=tuple(history_list),
-                audits=(*state.audits, audit),
-            )
+            if is_future:
+                next_state = PricingState(
+                    revision=state.revision + 1,
+                    exchange_rate=state.exchange_rate,
+                    pricing_version=state.pricing_version,
+                    rates=state.rates,
+                    history=tuple(history_list),
+                    audits=(*state.audits, audit),
+                )
+            else:
+                next_state = PricingState(
+                    revision=state.revision + 1,
+                    exchange_rate=snapshot_fx,
+                    pricing_version=next_version,
+                    rates=dict(snapshot_rates),
+                    history=tuple(history_list),
+                    audits=(*state.audits, audit),
+                )
             return next_state, {
                 "model": normalized_model,
                 "before": before_dict,
@@ -211,25 +265,19 @@ class PricingService:
             raise FaqValidationError("Exchange rate must be positive")
 
         now = datetime.now(UTC)
-        effective = effective_at or now
-        if effective.tzinfo is None:
-            effective = effective.replace(tzinfo=UTC)
+        effective = _normalize_utc(effective_at or now)
 
         def operation(state: PricingState) -> tuple[PricingState, dict[str, Any]]:
+            base_before = effective_rule_from_state(state, effective)
             before_dict = {
-                "exchangeRate": state.exchange_rate,
-                "pricingVersion": state.pricing_version,
+                "exchangeRate": base_before.exchange_rate,
+                "pricingVersion": base_before.version,
             }
-            if pricing_version and pricing_version.strip():
-                next_version = pricing_version.strip()
-            else:
-                next_version = f"{state.pricing_version}.{state.revision + 1}"
-
+            next_version = self._next_version(state, pricing_version)
             after_dict = {
                 "exchangeRate": exchange_rate,
                 "pricingVersion": next_version,
             }
-
             audit = RateChangeAudit(
                 audit_id=str(uuid.uuid4()),
                 change_type="EXCHANGE_RATE",
@@ -242,28 +290,35 @@ class PricingService:
                 occurred_at=now,
                 reason=reason,
             )
-
-            new_rule = HistoricalPricingRule(
-                version=next_version,
-                effective_at=effective,
-                exchange_rate=exchange_rate,
-                rates=dict(state.rates),
+            new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+                state,
+                next_version=next_version,
+                effective=effective,
+                now=now,
+                actor_id=actor.user_id,
                 description=reason or f"Exchange rate updated to {exchange_rate}",
-                created_by=actor.user_id,
-                created_at=now,
+                exchange_rate=exchange_rate,
             )
-            history_list = list(state.history)
-            history_list.append(new_rule)
-
+            history_list = [*state.history, new_rule]
             is_future = effective > now
-            next_state = PricingState(
-                revision=state.revision + 1,
-                exchange_rate=state.exchange_rate if is_future else exchange_rate,
-                pricing_version=state.pricing_version if is_future else next_version,
-                rates=state.rates,
-                history=tuple(history_list),
-                audits=(*state.audits, audit),
-            )
+            if is_future:
+                next_state = PricingState(
+                    revision=state.revision + 1,
+                    exchange_rate=state.exchange_rate,
+                    pricing_version=state.pricing_version,
+                    rates=state.rates,
+                    history=tuple(history_list),
+                    audits=(*state.audits, audit),
+                )
+            else:
+                next_state = PricingState(
+                    revision=state.revision + 1,
+                    exchange_rate=snapshot_fx,
+                    pricing_version=next_version,
+                    rates=dict(snapshot_rates),
+                    history=tuple(history_list),
+                    audits=(*state.audits, audit),
+                )
             return next_state, {
                 "targetId": "USD_TWD",
                 "before": before_dict,
