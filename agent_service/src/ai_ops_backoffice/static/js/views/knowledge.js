@@ -1,5 +1,5 @@
 import { api, el, metric } from "../api.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
 import {
@@ -219,7 +219,13 @@ async function renderKnowledge() {
     exportButton.disabled = true;
     exportButton.textContent = "匯出中…";
     try {
-      await runExport("csv", "knowledge_performance", 30);
+      const activeFilters = {};
+      if (query.value.trim()) activeFilters.query = query.value.trim();
+      if (owner.value.trim()) activeFilters.owner_unit_id = owner.value.trim();
+      if (status.value) activeFilters.status = status.value;
+      if (formatType.value) activeFilters.format_type = formatType.value;
+      const selectedDays = parseInt(period.value, 10) || 30;
+      await runExport("csv", "knowledge_performance", selectedDays, activeFilters);
     } catch (error) {
       result.prepend(el("div", "error", error.message));
     } finally {
@@ -290,20 +296,11 @@ async function renderSyncManagement(panel) {
     const data = await api("/api/sync-jobs");
     const actions = el("div", "filter-bar");
     if (allowed.has("ops.sync.write")) {
-      const create = el("button", "", "建立全量 Sync");
-      create.addEventListener("click", async () => {
-        const reason = window.prompt("Sync 原因");
-        if (!reason?.trim()) return;
-        try {
-          await api("/api/sync-jobs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-            body: JSON.stringify({ scope_type: "ALL", scope_ids: [], reason: reason.trim() }),
-          });
+      const create = el("button", "", "建立同步工作");
+      create.addEventListener("click", () => {
+        showCreateSyncModal(async () => {
           await renderSyncManagement(panel);
-        } catch (error) {
-          showContentModal("建立 Sync 失敗", el("div", "error", error.message));
-        }
+        });
       });
       actions.append(create);
     }
@@ -340,6 +337,122 @@ async function renderSyncManagement(panel) {
   } catch (error) {
     panel.replaceChildren(el("h2", "", "同步工作"), el("div", "error", error.message));
   }
+}
+
+function showCreateSyncModal(onCreated) {
+  const form = el("form", "panel");
+  form.style.marginTop = "0";
+
+  const scopeField = el("div", "field");
+  scopeField.append(el("label", "", "同步範圍"));
+  const scopeSelect = el("select");
+  for (const [val, label] of [
+    ["ALL", "全部知識庫 (ALL)"],
+    ["FAQ", "指定 FAQ (FAQ)"],
+    ["DOCUMENT", "指定文件 (DOCUMENT)"],
+  ]) {
+    const opt = el("option", "", label);
+    opt.value = val;
+    scopeSelect.append(opt);
+  }
+  scopeField.append(scopeSelect);
+
+  const idField = el("div", "field");
+  idField.style.display = "none";
+  idField.style.marginTop = "0.75rem";
+  const idLabel = el("label", "", "範圍識別碼（多筆以逗號分隔）");
+  const idInput = el("input");
+  idInput.placeholder = "例如：faq-001, faq-002";
+  idField.append(idLabel, idInput);
+
+  scopeSelect.addEventListener("change", () => {
+    if (scopeSelect.value === "ALL") {
+      idField.style.display = "none";
+    } else {
+      idField.style.display = "block";
+      idLabel.textContent = scopeSelect.value === "FAQ"
+        ? "FAQ ID 清單（多筆以逗號分隔）"
+        : "文件 ID 清單（多筆以逗號分隔）";
+      idInput.placeholder = scopeSelect.value === "FAQ"
+        ? "例如：faq-001, faq-002"
+        : "例如：doc-101, doc-102";
+    }
+  });
+
+  const reasonField = el("div", "field");
+  reasonField.style.marginTop = "0.75rem";
+  reasonField.append(el("label", "", "同步原因（至少 3 字元）"));
+  const reasonInput = el("input");
+  reasonInput.placeholder = "請輸入同步原因，將記錄於 Audit Log";
+  reasonInput.required = true;
+  reasonField.append(reasonInput);
+
+  const errorBox = el("div", "error");
+  errorBox.style.display = "none";
+  errorBox.style.marginTop = "0.75rem";
+
+  const actions = el("div", "filter-bar");
+  actions.style.marginTop = "1.25rem";
+  const submitBtn = el("button", "", "開始同步");
+  submitBtn.type = "submit";
+  const cancelBtn = el("button", "", "取消");
+  cancelBtn.type = "button";
+  cancelBtn.addEventListener("click", () => closeContentModal());
+  actions.append(submitBtn, cancelBtn);
+
+  form.append(scopeField, idField, reasonField, errorBox, actions);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorBox.style.display = "none";
+
+    const reason = reasonInput.value.trim();
+    if (reason.length < 3) {
+      errorBox.textContent = "同步原因至少需 3 個字元。";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    const scopeType = scopeSelect.value;
+    let scopeIds = [];
+    if (scopeType !== "ALL") {
+      scopeIds = idInput.value
+        .split(/[,，\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!scopeIds.length) {
+        errorBox.textContent = `請填寫欲同步的 ${scopeType === "FAQ" ? "FAQ" : "文件"} ID。`;
+        errorBox.style.display = "block";
+        return;
+      }
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "送出中…";
+    try {
+      await api("/api/sync-jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          scope_type: scopeType,
+          scope_ids: scopeIds,
+          reason,
+        }),
+      });
+      closeContentModal();
+      if (onCreated) await onCreated();
+    } catch (err) {
+      errorBox.textContent = err.message || "建立同步工作失敗";
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "開始同步";
+    }
+  });
+
+  showContentModal("建立知識同步工作", form);
 }
 
 async function renderFaqManagement(panel) {
@@ -601,70 +714,8 @@ async function showFaqDetail(faqId, panel) {
       actions.append(disable);
     }
     const performance = el("button", "", "查看命中成效");
-    performance.addEventListener("click", async () => {
-      try {
-        const data = await api(`/api/faqs/${faqId}/performance`);
-        const result = el("div");
-        const metrics = el("div", "metrics");
-        metrics.append(
-          metric("總命中", data.totalHitCount ?? 0),
-          metric("當日", data.todayHitCount ?? 0),
-          metric("當週", data.thisWeekHitCount ?? 0),
-          metric("當月", data.thisMonthHitCount ?? 0),
-        );
-        result.append(metrics);
-
-        const appendPeriodTable = (title, rows, periodLabel = "期間") => {
-          result.append(el("h3", "", title));
-          if (!(rows || []).length) {
-            result.append(el("p", "empty", "此區間尚無命中。"));
-            return;
-          }
-          const table = el("table");
-          table.innerHTML = `<thead><tr><th>${periodLabel}</th><th>Hits</th></tr></thead>`;
-          const body = el("tbody");
-          for (const item of rows) {
-            const row = el("tr");
-            row.append(
-              el("td", "", item.period || item.versionId || "-"),
-              el("td", "", String(item.hitCount ?? 0)),
-            );
-            body.append(row);
-          }
-          table.append(body);
-          const wrap = el("div", "table-responsive");
-          wrap.append(table);
-          result.append(wrap);
-        };
-
-        appendPeriodTable("版本歸因", data.byVersion || [], "Version");
-        appendPeriodTable("按日彙總", data.byDay || []);
-        appendPeriodTable("按週彙總", data.byWeek || []);
-        appendPeriodTable("按月彙總", data.byMonth || []);
-
-        result.append(el("h3", "", "最近命中"));
-        const recent = el("table");
-        recent.innerHTML =
-          "<thead><tr><th>時間</th><th>Conversation</th><th>Turn</th><th>Version</th></tr></thead>";
-        const recentRows = el("tbody");
-        for (const item of data.recentHits || []) {
-          const row = el("tr");
-          row.append(
-            el("td", "", item.occurredAt),
-            el("td", "", item.conversationId || "-"),
-            el("td", "", item.turnId || "-"),
-            el("td", "", item.versionId || "legacy-unattributed"),
-          );
-          recentRows.append(row);
-        }
-        recent.append(recentRows);
-        const recentWrap = el("div", "table-responsive");
-        recentWrap.append(recent);
-        result.append(recentWrap);
-        showContentModal("FAQ 命中成效", result);
-      } catch (error) {
-        showContentModal("FAQ 命中成效", el("div", "error", error.message));
-      }
+    performance.addEventListener("click", () => {
+      showFaqPerformanceModal(faqId, detail.faq?.question || detail.faq?.title || "");
     });
     actions.append(performance);
     content.append(actions, el("h3", "", `測試案例（${detail.tests.length}）`));
@@ -712,7 +763,148 @@ async function showFaqDetail(faqId, panel) {
   }
 }
 
+async function showFaqPerformanceModal(faqId, faqTitle = "") {
+  const modalBody = el("div");
+  const titleText = faqTitle ? `FAQ 命中成效：${faqTitle}` : "FAQ 命中成效";
 
+  const filterBar = el("div", "filter-bar");
+  filterBar.style.marginBottom = "1rem";
+  filterBar.style.display = "flex";
+  filterBar.style.gap = "0.5rem";
+  filterBar.style.flexWrap = "wrap";
+  filterBar.style.alignItems = "center";
+
+  const periodSelect = el("select");
+  periodSelect.setAttribute("aria-label", "查詢區間");
+  for (const [val, label] of [
+    ["30", "最近 30 天"],
+    ["7", "最近 7 天"],
+    ["90", "最近 90 天"],
+    ["186", "最近 6 個月"],
+    ["365", "最近 1 年"],
+    ["custom", "自訂區間"],
+  ]) {
+    const opt = el("option", "", label);
+    opt.value = val;
+    periodSelect.append(opt);
+  }
+
+  const startDateInput = el("input");
+  startDateInput.type = "date";
+  startDateInput.setAttribute("aria-label", "開始日期");
+  startDateInput.style.display = "none";
+
+  const endDateInput = el("input");
+  endDateInput.type = "date";
+  endDateInput.setAttribute("aria-label", "結束日期");
+  endDateInput.style.display = "none";
+
+  periodSelect.addEventListener("change", () => {
+    const isCustom = periodSelect.value === "custom";
+    startDateInput.style.display = isCustom ? "inline-block" : "none";
+    endDateInput.style.display = isCustom ? "inline-block" : "none";
+  });
+
+  const queryBtn = el("button", "", "查詢");
+  filterBar.append(periodSelect, startDateInput, endDateInput, queryBtn);
+
+  const contentContainer = el("div");
+  modalBody.append(filterBar, contentContainer);
+  showContentModal(titleText, modalBody);
+
+  async function loadData() {
+    contentContainer.replaceChildren(el("p", "empty", "載入成效資料中…"));
+    try {
+      const params = new URLSearchParams();
+      if (periodSelect.value === "custom") {
+        if (startDateInput.value) params.set("start_date", startDateInput.value);
+        if (endDateInput.value) params.set("end_date", endDateInput.value);
+      } else {
+        params.set("days", periodSelect.value || "30");
+      }
+
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const data = await api(`/api/faqs/${encodeURIComponent(faqId)}/performance${queryString}`);
+
+      const result = el("div");
+      const metrics = el("div", "metrics");
+      metrics.append(
+        metric("總命中", data.totalHitCount ?? 0),
+        metric("當日", data.todayHitCount ?? 0),
+        metric("當週", data.thisWeekHitCount ?? 0),
+        metric("當月", data.thisMonthHitCount ?? 0),
+        metric("查詢區間命中", data.rangeHitCount ?? data.totalHitCount ?? 0),
+      );
+      result.append(metrics);
+
+      const appendPeriodTable = (title, rows, periodLabel = "期間") => {
+        result.append(el("h3", "", title));
+        if (!(rows || []).length) {
+          result.append(el("p", "empty", "此區間尚無命中。"));
+          return;
+        }
+        const table = el("table");
+        table.innerHTML = `<thead><tr><th>${periodLabel}</th><th>Hits</th></tr></thead>`;
+        const body = el("tbody");
+        for (const item of rows) {
+          const row = el("tr");
+          row.append(
+            el("td", "", item.period || item.versionId || "-"),
+            el("td", "", String(item.hitCount ?? 0)),
+          );
+          body.append(row);
+        }
+        table.append(body);
+        const wrap = el("div", "table-responsive");
+        wrap.append(table);
+        result.append(wrap);
+      };
+
+      appendPeriodTable("版本歸因", data.byVersion || [], "Version");
+      appendPeriodTable("按日彙總", data.byDay || []);
+      appendPeriodTable("按週彙總", data.byWeek || []);
+      appendPeriodTable("按月彙總", data.byMonth || []);
+
+      result.append(el("h3", "", "最近命中"));
+      const recentHits = data.recentHits || [];
+      if (!recentHits.length) {
+        result.append(el("p", "empty", "此區間尚無最近命中紀錄。"));
+      } else {
+        const recent = el("table");
+        recent.innerHTML =
+          "<thead><tr><th>時間</th><th>Conversation</th><th>Turn</th><th>Version</th></tr></thead>";
+        const recentRows = el("tbody");
+        for (const item of recentHits) {
+          const row = el("tr");
+          row.append(
+            el("td", "", item.occurredAt),
+            el("td", "", item.conversationId || "-"),
+            el("td", "", item.turnId || "-"),
+            el("td", "", item.versionId || "legacy-unattributed"),
+          );
+          recentRows.append(row);
+        }
+        recent.append(recentRows);
+        const recentWrap = el("div", "table-responsive");
+        recentWrap.append(recent);
+        result.append(recentWrap);
+      }
+
+      contentContainer.replaceChildren(result);
+    } catch (error) {
+      contentContainer.replaceChildren(el("div", "error", error.message));
+    }
+  }
+
+  queryBtn.addEventListener("click", () => loadData());
+  periodSelect.addEventListener("change", () => {
+    if (periodSelect.value !== "custom") {
+      loadData();
+    }
+  });
+
+  await loadData();
+}
 
 function renderKnowledgeInventory(data, loadDocuments, options = {}) {
   const days = options.days || String(data.periodDays || 30);

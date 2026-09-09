@@ -16,9 +16,10 @@ async function setup() {
   const context = vm.createContext({ URLSearchParams, document: { getElementById: () => app } });
   const mocks = {
     '../api.js': { el, metric() {}, api: async url => { calls.push(url); return { items: [] }; } },
-    '../components/modal.js': { showContentModal() {} },
+    '../components/modal.js': { showContentModal() {}, closeContentModal() {} },
     '../components/conversationModal.js': { showConversationModal() {} },
     '../components/faqForms.js': { buildFaqForm() {}, faqPayload() {} },
+    '../components/contentGuide.js': { renderContentPolicyBanner() {}, renderDecisionGuide() {} },
     '../services/export.js': { runExport() {} },
     '../app/capabilities.js': { actorCapabilities: () => new Set(['ops.faq.read', 'ops.sync.read']), canUseKnowledgeUi: () => true, getCapabilities: () => ({ knowledgeBridgeEnabled: true }) },
     '../app/navigation.js': { buildLocationHash: () => '#', drillLink() {}, loadNavFilters: () => ({ caseId: 'case-1' }), navigateTo() {} },
@@ -28,7 +29,9 @@ async function setup() {
   const source = await readFile(new URL('../../src/ai_ops_backoffice/static/js/views/knowledge.js', import.meta.url), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
   await module.link(specifier => {
-    const mock = mocks[specifier];
+    const cleanSpecifier = specifier.split('?')[0];
+    const mock = mocks[cleanSpecifier];
+    if (!mock) throw new Error(`Missing mock for ${cleanSpecifier}`);
     return new vm.SyntheticModule(Object.keys(mock), function () {
       for (const [key, value] of Object.entries(mock)) this.setExport(key, value);
     }, { context });

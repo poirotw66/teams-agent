@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from agent_service.operations.access import ActorContext
+
 from .export_format import wrap_export_payload
+
 
 class ExportsQueryMixin:
     async def create_export_job(
@@ -33,6 +35,9 @@ class ExportsQueryMixin:
         channel_scope: str | None = None,
         query: str | None = None,
         source: str | None = None,
+        status: str | None = None,
+        owner_unit_id: str | None = None,
+        format_type: str | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
             "preset": preset,
@@ -57,6 +62,9 @@ class ExportsQueryMixin:
                 "channelScope": channel_scope,
                 "query": query,
                 "source": source,
+                "status": status,
+                "ownerUnitId": owner_unit_id,
+                "formatType": format_type,
             }.items()
             if value is not None
         }
@@ -76,6 +84,9 @@ class ExportsQueryMixin:
                 "channel_scope": channel_scope,
                 "query": query,
                 "source": source,
+                "status": status,
+                "owner_unit_id": owner_unit_id,
+                "format_type": format_type,
             },
             "reason": reason,
         }
@@ -149,6 +160,10 @@ class ExportsQueryMixin:
         elif export_type == "knowledge_performance":
             data = await self.list_documents(
                 actor,
+                status=filters.get("status"),
+                owner_unit_id=filters.get("owner_unit_id"),
+                query=filters.get("query"),
+                format_type=filters.get("format_type"),
                 preset=period_kwargs.get("preset"),
                 days=period_kwargs.get("days") or job.days,
                 limit=self._settings.export_max_records + 1,
@@ -189,6 +204,9 @@ class ExportsQueryMixin:
                 "channelScope": filters.get("channel_scope"),
                 "query": filters.get("query"),
                 "source": filters.get("source"),
+                "status": filters.get("status"),
+                "ownerUnitId": filters.get("owner_unit_id"),
+                "formatType": filters.get("format_type"),
             }.items()
             if value is not None
         }

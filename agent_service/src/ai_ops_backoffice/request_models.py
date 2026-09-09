@@ -30,6 +30,9 @@ class ExportRequest(BaseModel):
     channel_scope: str | None = None
     query: str | None = None
     source: str | None = None
+    status: str | None = None
+    owner_unit_id: str | None = None
+    format_type: str | None = None
 
 
 class FaqCreateRequest(BaseModel):

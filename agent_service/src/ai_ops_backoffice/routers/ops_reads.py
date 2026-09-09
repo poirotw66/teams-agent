@@ -837,6 +837,9 @@ def register_ops_read_routes(
                 channel_scope=payload.channel_scope,
                 query=payload.query,
                 source=payload.source,
+                status=payload.status,
+                owner_unit_id=payload.owner_unit_id,
+                format_type=payload.format_type,
             )
         except Exception as exc:
             from ai_ops_backoffice.services.export_authorization import (
