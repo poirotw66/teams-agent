@@ -202,6 +202,15 @@ def register_gate_routes(
         )
         return {"decision": decision.model_dump(mode="json")}
 
+    @router.get("/gate-decisions")
+    async def list_decisions(
+        target_manifest_hash: str | None = Query(default=None),
+        actor: ActorContext = Depends(current_actor),
+    ) -> list[dict[str, Any]]:
+        require_capability(actor, "ops.evals.read")
+        decisions = gate_service.repository.list_decisions(target_manifest_hash=target_manifest_hash)
+        return [d.model_dump(mode="json") for d in decisions]
+
     @router.get("/gate-decisions/{decision_id}")
     async def get_decision(
         decision_id: str,

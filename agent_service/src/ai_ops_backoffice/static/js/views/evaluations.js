@@ -20,8 +20,9 @@ export async function renderEvaluations() {
   const tabCasesBtn = el("button", `tab-btn ${currentActiveTab === "cases" ? "active" : ""}`, "驗收題庫");
   const tabRunsBtn = el("button", `tab-btn ${currentActiveTab === "runs" ? "active" : ""}`, "執行驗收");
   const tabResultsBtn = el("button", `tab-btn ${currentActiveTab === "results" ? "active" : ""}`, "驗收結果");
+  const tabGatesBtn = el("button", `tab-btn ${currentActiveTab === "gates" ? "active" : ""}`, "發布門檻");
 
-  tabsNav.append(tabCasesBtn, tabRunsBtn, tabResultsBtn);
+  tabsNav.append(tabCasesBtn, tabRunsBtn, tabResultsBtn, tabGatesBtn);
 
   const tabContent = el("div", "tab-content");
 
@@ -30,6 +31,7 @@ export async function renderEvaluations() {
     tabCasesBtn.classList.add("active");
     tabRunsBtn.classList.remove("active");
     tabResultsBtn.classList.remove("active");
+    tabGatesBtn.classList.remove("active");
     renderCasesTab(tabContent, allowed);
   });
 
@@ -38,6 +40,7 @@ export async function renderEvaluations() {
     tabRunsBtn.classList.add("active");
     tabCasesBtn.classList.remove("active");
     tabResultsBtn.classList.remove("active");
+    tabGatesBtn.classList.remove("active");
     renderRunsTab(tabContent, allowed);
   });
 
@@ -46,7 +49,17 @@ export async function renderEvaluations() {
     tabResultsBtn.classList.add("active");
     tabCasesBtn.classList.remove("active");
     tabRunsBtn.classList.remove("active");
+    tabGatesBtn.classList.remove("active");
     renderResultsTab(tabContent, allowed);
+  });
+
+  tabGatesBtn.addEventListener("click", () => {
+    currentActiveTab = "gates";
+    tabGatesBtn.classList.add("active");
+    tabCasesBtn.classList.remove("active");
+    tabRunsBtn.classList.remove("active");
+    tabResultsBtn.classList.remove("active");
+    renderGatesTab(tabContent, allowed);
   });
 
   container.append(header, tabsNav, tabContent);
@@ -56,8 +69,10 @@ export async function renderEvaluations() {
     await renderCasesTab(tabContent, allowed);
   } else if (currentActiveTab === "runs") {
     await renderRunsTab(tabContent, allowed);
-  } else {
+  } else if (currentActiveTab === "results") {
     await renderResultsTab(tabContent, allowed);
+  } else {
+    await renderGatesTab(tabContent, allowed);
   }
 }
 
@@ -504,6 +519,32 @@ async function showCaseDetailModal(caseId, onUpdate) {
         showReviewDialog(caseId, r, onUpdate);
       });
       actionsBar.append(reviewBtn);
+    }
+
+    if (r.status === "APPROVED") {
+      const newRevBtn = el("button", "btn-secondary", "建立新修訂 (New Revision)");
+      newRevBtn.addEventListener("click", async () => {
+        const newQuery = prompt("請輸入修訂後的使用者問題 (Query)：", r.query);
+        if (!newQuery) return;
+        try {
+          await api(`/api/evaluations/cases/${caseId}/revisions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: newQuery.trim(),
+              base_revision_id: r.revision_id,
+              behavior: r.behavior,
+              criticality: r.criticality,
+            }),
+          });
+          alert("新草稿修訂版本已建立！");
+          showCaseDetailModal(caseId, onUpdate);
+          if (onUpdate) onUpdate();
+        } catch (err) {
+          alert(`建立新修訂失敗: ${err.message || err}`);
+        }
+      });
+      actionsBar.append(newRevBtn);
     }
 
     if (r.status !== "RETIRED") {
@@ -1168,12 +1209,17 @@ async function renderResultsTab(container, allowed) {
         <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}">${r.status}</span></td>
         <td>
           <button class="btn-secondary btn-sm view-cases-btn">查看比對</button>
+          <button class="btn-primary btn-sm eval-gate-btn" style="margin-left: 4px;">門檻判定</button>
         </td>
       `;
 
       tr.querySelector(".view-cases-btn").addEventListener("click", () => {
         renderRunSummaryCards(summaryContainer, r.summary);
         loadCaseComparison(caseCompContainer, r.run_id, allowed);
+      });
+
+      tr.querySelector(".eval-gate-btn").addEventListener("click", () => {
+        showGateDecisionModal(r.run_id, r.candidate_manifest_hash, allowed);
       });
 
       tbody.append(tr);
@@ -1358,7 +1404,31 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
         <button id="submit-review-btn" class="btn-primary">送出覆核決策</button>
       </div>
     </div>
+    ${!candidateExec.passed && allowed.has("ops.evals.write") ? `
+    <div class="qc-section" style="margin-top: 16px; padding: 12px; border: 1px dashed #ced4da; border-radius: 4px; background: #fff;">
+      <strong>營運閉環 (GE-4 Quality Case Loop)</strong>
+      <p class="text-muted" style="margin-top: 4px;">本案例判定未通過，可直接轉為品質改善案件進行後續追蹤與複測。</p>
+      <button id="promote-qc-btn" class="btn-secondary">轉為品質改善案件 (Create Quality Case)</button>
+    </div>` : ""}
   `;
+
+  const qcBtn = modalContent.querySelector("#promote-qc-btn");
+  if (qcBtn) {
+    qcBtn.addEventListener("click", async () => {
+      const rootCause = prompt("請輸入問題根本原因 (Root Cause)：", candidateExec.failure_classification || "評測判定未達標");
+      if (!rootCause) return;
+      try {
+        const qcRes = await api(`/api/evaluations/runs/${runId}/cases/${candidateExec.execution_id}/quality-case`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ root_cause: rootCause.trim() }),
+        });
+        alert(`已成功建立品質改善案件：${qcRes.quality_case.quality_case_id}`);
+      } catch (err) {
+        alert(`建立案件失敗: ${err.message || err}`);
+      }
+    });
+  }
 
   const submitBtn = modalContent.querySelector("#submit-review-btn");
   submitBtn.addEventListener("click", async () => {
@@ -1367,7 +1437,11 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
       alert("請填寫覆核理由");
       return;
     }
-    const metricId = modalContent.querySelector("#review-metric-select").value;
+    const metricId = modalContent.querySelector("#review-metric-select")?.value;
+    if (!metricId) {
+      alert("請選擇要覆核的指標");
+      return;
+    }
     const decision = modalContent.querySelector("#review-decision-select").value;
 
     try {
@@ -1389,6 +1463,282 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
   });
 
   showContentModal(modalContent);
+}
+
+async function showGateDecisionModal(runId, targetManifestHash, allowed) {
+  const content = el("div", "modal-body");
+  content.innerHTML = "<p>正在執行門檻判定 (Evaluating Quality Gate)...</p>";
+  showContentModal(content);
+
+  try {
+    const res = await api("/api/evaluations/gate-decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        policy_id: "default-gate-policy",
+        run_id: runId,
+        target_manifest_hash: targetManifestHash,
+      }),
+    });
+
+    const dec = res.decision;
+    const statusBadge = dec.status === "PASS"
+      ? '<span class="badge badge-success">✅ 通過 (PASS)</span>'
+      : dec.status === "BLOCK"
+      ? '<span class="badge badge-danger">❌ 阻擋 (BLOCK)</span>'
+      : '<span class="badge badge-warning">⚠️ 需審核 (REVIEW_REQUIRED)</span>';
+
+    content.innerHTML = `
+      <h3>發布門檻判定結果 (Quality Gate Decision)</h3>
+      <div class="meta-grid" style="margin-bottom: 16px;">
+        <div><strong>判定 ID:</strong> <code>${dec.decision_id}</code></div>
+        <div><strong>政策:</strong> ${dec.policy_id} (v${dec.policy_version})</div>
+        <div><strong>判定狀態:</strong> ${statusBadge}</div>
+        <div><strong>運作模式:</strong> ${dec.mode}</div>
+        <div><strong>候選 Hash:</strong> <code>${dec.target_manifest_hash ? dec.target_manifest_hash.slice(0, 16) : ""}...</code></div>
+        <div><strong>判定時間:</strong> ${dec.decided_at}</div>
+      </div>
+      <div class="section-block">
+        <h4>判定理由與分析</h4>
+        <div class="content-box">${dec.reason}</div>
+      </div>
+      <div class="section-block">
+        <h4>指標門檻檢核細項</h4>
+        <ul>
+          ${(dec.rule_results || []).map(r => `
+            <li>
+              <strong>${r.rule_name}:</strong>
+              ${r.passed ? "✅ 符合" : "❌ 不符"}
+              <span class="text-muted">(${r.details || ""})</span>
+            </li>
+          `).join("") || "<li>無細部規則紀錄</li>"}
+        </ul>
+      </div>
+      ${(dec.blocking_reasons && dec.blocking_reasons.length) ? `
+      <div class="alert alert-danger" style="margin-top: 12px;">
+        <strong>阻擋原因：</strong><br>
+        ${dec.blocking_reasons.join("<br>")}
+      </div>` : ""}
+      <div id="waiver-section" style="margin-top: 16px;"></div>
+    `;
+
+    const waiverSection = content.querySelector("#waiver-section");
+    if (dec.status !== "PASS" && allowed.has("ops.evals.write")) {
+      const waiverBtn = el("button", "btn-secondary", "申請例外放行 (Request Waiver)");
+      waiverBtn.addEventListener("click", async () => {
+        const waiverReason = prompt("請輸入申請例外放行原因 (須經雙人審核)：");
+        if (!waiverReason) return;
+        try {
+          const excRes = await api(`/api/evaluations/gate-decisions/${dec.decision_id}/exceptions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reason: waiverReason.trim(),
+              validity_hours: 24,
+            }),
+          });
+          alert(`例外申請已送出 (ID: ${excRes.exception.exception_id})，狀態: ${excRes.exception.status}`);
+          closeContentModal();
+        } catch (err) {
+          alert(`申請例外放行失敗: ${err.message || err}`);
+        }
+      });
+      waiverSection.append(waiverBtn);
+    }
+  } catch (err) {
+    content.innerHTML = `<div class="error">門檻判定失敗: ${err.message || err}</div>`;
+  }
+}
+
+async function renderGatesTab(container, allowed) {
+  container.replaceChildren();
+  const box = el("div", "content-box");
+  box.innerHTML = `
+    <h3>發布門檻與治理 (Quality Gates & Impact)</h3>
+    <p class="text-muted">管理品質發布門檻政策、執行知識變更影響分析與定期回歸排程。</p>
+
+    <div class="section-block" style="margin-top: 20px;">
+      <h4>1. 預設發布門檻政策 (Gate Policy)</h4>
+      <div id="gate-policy-container" style="background: #fdfdfd; padding: 16px; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <p>載入政策資訊中...</p>
+      </div>
+    </div>
+
+    <div class="section-block" style="margin-top: 24px;">
+      <h4>2. 知識變更影響分析 (Knowledge Impact Analysis)</h4>
+      <p class="text-muted">當知識文件或 FAQ 異動時，分析受影響的驗收題庫案例與版本。</p>
+      <form id="impact-form" class="form-grid">
+        <div class="form-group">
+          <label>來源類型</label>
+          <select id="impact-source-type" class="form-select">
+            <option value="DOCUMENT">知識文件 (DOCUMENT)</option>
+            <option value="FAQ">常見問答 (FAQ)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>來源 ID *</label>
+          <input type="text" id="impact-source-id" class="form-input" required placeholder="例：doc_pwd_policy 或 faq_001" value="doc_pwd_policy">
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn-primary">分析變更影響</button>
+        </div>
+      </form>
+      <div id="impact-result" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="section-block" style="margin-top: 24px;">
+      <h4>3. 定期回歸排程 (Evaluation Schedules)</h4>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>排程 ID</th>
+              <th>名稱</th>
+              <th>題庫版本 ID</th>
+              <th>執行頻率</th>
+              <th>預算上限 (USD)</th>
+              <th>狀態</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="schedules-tbody">
+            <tr><td colspan="7">載入排程中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  container.append(box);
+
+  // 1. Load Policy
+  const policyContainer = box.querySelector("#gate-policy-container");
+  const loadPolicy = async () => {
+    try {
+      const res = await api("/api/evaluations/gate-policies/default-gate-policy");
+      if (res.error) {
+        policyContainer.innerHTML = `<div class="text-muted">${res.error}</div>`;
+        return;
+      }
+      const p = res.policy;
+      const v = (res.versions || [])[0] || {};
+      const isEnforce = v.mode === "ENFORCE";
+
+      policyContainer.innerHTML = `
+        <div class="meta-grid">
+          <div><strong>政策 ID:</strong> <code>${p.policy_id}</code></div>
+          <div><strong>政策名稱:</strong> ${p.name}</div>
+          <div><strong>目前版本:</strong> v${p.current_version} (生效版本: v${p.active_version})</div>
+          <div><strong>運作模式:</strong> <span class="badge ${isEnforce ? "badge-danger" : "badge-warning"}">${v.mode || "REPORT_ONLY"}</span></div>
+          <div><strong>最低覆蓋率要求:</strong> ${(v.minimum_coverage ?? 1.0) * 100}%</div>
+          <div><strong>最低通過率要求:</strong> ${(v.minimum_pass_rate ?? 0.95) * 100}%</div>
+          <div><strong>重大失敗容忍度:</strong> ${v.critical_rule || "ZERO_TOLERANCE"} (零容忍)</div>
+          <div><strong>最大退步案例數:</strong> ${v.max_regression_count ?? 0} 題</div>
+        </div>
+        ${allowed.has("ops.evals.gates.manage") ? `
+        <div style="margin-top: 12px;">
+          <button id="toggle-mode-btn" class="btn-secondary">
+            ${isEnforce ? "切換為僅產報告 (REPORT_ONLY)" : "切換為強制阻擋 (ENFORCE)"}
+          </button>
+        </div>` : ""}
+      `;
+
+      const toggleBtn = policyContainer.querySelector("#toggle-mode-btn");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", async () => {
+          const newMode = isEnforce ? "REPORT_ONLY" : "ENFORCE";
+          try {
+            await api(`/api/evaluations/gate-policies/${p.policy_id}/versions/${v.version}/activate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ mode: newMode }),
+            });
+            alert(`門檻政策已切換為 ${newMode} 模式！`);
+            loadPolicy();
+          } catch (err) {
+            alert(`模式切換失敗: ${err.message || err}`);
+          }
+        });
+      }
+    } catch (err) {
+      policyContainer.innerHTML = `<div class="error">載入門檻政策失敗: ${err.message || err}</div>`;
+    }
+  };
+  await loadPolicy();
+
+  // 2. Impact Form
+  const impactForm = box.querySelector("#impact-form");
+  const impactResult = box.querySelector("#impact-result");
+  impactForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const sType = box.querySelector("#impact-source-type").value;
+    const sId = box.querySelector("#impact-source-id").value.trim();
+    impactResult.innerHTML = "<p>分析中...</p>";
+    try {
+      const res = await api(`/api/evaluations/source-impacts?source_type=${encodeURIComponent(sType)}&source_id=${encodeURIComponent(sId)}`);
+      const imp = res.impact;
+      impactResult.innerHTML = `
+        <div class="alert ${imp.affected_case_ids.length > 0 ? "alert-warning" : "alert-success"}">
+          <strong>分析完成：</strong><br>
+          • 受影響驗收案例數: ${imp.affected_case_ids.length} 題 ${imp.affected_case_ids.length ? `(ID: <code>${imp.affected_case_ids.join(", ")}</code>)` : ""}<br>
+          • 需複核案例數 (Requires Review): ${imp.requires_review_count} 題<br>
+          • 受影響已發布題庫版本: ${imp.affected_set_version_ids.length ? imp.affected_set_version_ids.map(id => `<code>${id}</code>`).join(", ") : "無"}<br>
+          • 是否直接衝擊線上 Active Manifest: <strong>${imp.has_active_manifest_impact ? "⚠️ 是 (需優先重測)" : "否"}</strong>
+        </div>
+      `;
+    } catch (err) {
+      impactResult.innerHTML = `<div class="error">分析失敗: ${err.message || err}</div>`;
+    }
+  });
+
+  // 3. Schedules
+  const schedTbody = box.querySelector("#schedules-tbody");
+  const loadSchedules = async () => {
+    try {
+      const schedules = await api("/api/evaluations/schedules");
+      if (!schedules || !schedules.length) {
+        schedTbody.innerHTML = '<tr><td colspan="7" class="text-muted">目前尚無排程任務。</td></tr>';
+        return;
+      }
+      schedTbody.replaceChildren();
+      for (const s of schedules) {
+        const tr = el("tr");
+        tr.innerHTML = `
+          <td><code>${s.schedule_id}</code></td>
+          <td>${s.name}</td>
+          <td><code>${(s.set_version_id || "").slice(0, 14)}...</code></td>
+          <td>${s.frequency}</td>
+          <td>$${s.budget_limit_usd}</td>
+          <td><span class="badge ${s.is_enabled ? "badge-success" : "badge-secondary"}">${s.is_enabled ? "啟用中" : "已停用"}</span></td>
+          <td>
+            ${allowed.has("ops.evals.write") ? `
+              <button class="btn-sm btn-link toggle-sched-btn">${s.is_enabled ? "停用" : "啟用"}</button>
+            ` : "-"}
+          </td>
+        `;
+
+        const toggleBtn = tr.querySelector(".toggle-sched-btn");
+        if (toggleBtn) {
+          toggleBtn.addEventListener("click", async () => {
+            try {
+              await api(`/api/evaluations/schedules/${s.schedule_id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_enabled: !s.is_enabled }),
+              });
+              loadSchedules();
+            } catch (err) {
+              alert(`更新排程失敗: ${err.message || err}`);
+            }
+          });
+        }
+
+        schedTbody.append(tr);
+      }
+    } catch (err) {
+      schedTbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入排程失敗: ${err.message || err}</td></tr>`;
+    }
+  };
+  await loadSchedules();
 }
 
 export const evaluationsPage = createPageController({
