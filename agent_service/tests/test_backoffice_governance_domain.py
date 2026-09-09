@@ -485,3 +485,87 @@ def test_search_covers_retention_and_export_audit(tmp_path: Path) -> None:
         item.get("action") == "GOVERNANCE_AUDIT_EXPORTED"
         for item in svc.list_audit(actor=SYSTEM_A)
     )
+
+
+def test_purge_preserves_previous_healthy_and_canary_for_rollback(tmp_path: Path) -> None:
+    """REQ-016/026: retired previous-healthy and CANARY versions survive TTL purge."""
+    svc = service(tmp_path)
+    baseline_id = svc.list_prompts(actor=AI)[0]["active"]["version_id"]
+    activated = _promote_prompt(svc)
+    previous_id = activated["prompt"]["previous_healthy_version_id"]
+    assert previous_id == baseline_id
+    active_id = activated["prompt"]["active_version_id"]
+
+    # Age the retired previous-healthy version past retention while keeping pointers.
+    now = datetime.now(UTC)
+    aged_created_at = now - timedelta(days=400)
+
+    def age_previous(state):
+        versions = []
+        for version in state.prompt_versions:
+            if version.version_id == previous_id:
+                versions.append(
+                    version.model_copy(
+                        update={"created_at": aged_created_at, "status": "RETIRED"}
+                    )
+                )
+            else:
+                versions.append(version)
+        return state.model_copy(
+            update={"revision": state.revision + 1, "prompt_versions": tuple(versions)}
+        ), {"aged": previous_id}
+
+    svc._repository.mutate(age_previous)
+
+    # Start a new canary on another candidate and age nothing else.
+    created = svc.create_prompt_candidate(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        dataset_version="dataset-v1",
+        taxonomy_version="taxonomy-v1",
+        knowledge_release_id="release-test",
+        verified_examples=verified_examples(now),
+        actor=AI,
+    )
+    canary_id = created["version"]["version_id"]
+    asyncio.run(
+        svc.run_prompt_eval(
+            prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+            version_id=canary_id,
+            verified_examples=verified_examples(now),
+            actor=AI,
+        )
+    )
+    svc.approve_prompt(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        version_id=canary_id,
+        reason="approve next canary",
+        actor=APPROVER,
+    )
+    svc.start_prompt_canary(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        version_id=canary_id,
+        percent=10,
+        environment="prod",
+        reason="keep canary live during purge",
+        actor=APPROVER,
+    )
+
+    purge = svc.purge_expired(
+        actor=SYSTEM_A,
+        retention_days=30,
+        audit_retention_days=1095,
+        now=now,
+    )
+    remaining = {v.version_id: v.status for v in svc._repository.load().prompt_versions}
+    assert previous_id in remaining
+    assert active_id in remaining
+    assert canary_id in remaining
+    assert remaining[canary_id] == "CANARY"
+    assert purge["promptVersions"] >= 0
+
+    rolled = svc.rollback_prompt(
+        prompt_id=ISSUE_EXTRACTOR_PROMPT_ID,
+        reason="rollback after retention sweep",
+        actor=APPROVER,
+    )
+    assert rolled["prompt"]["active_version_id"] == previous_id

@@ -390,6 +390,15 @@ class GovernancePoliciesMixin:
 
         def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
             active_prompt_ids = {p.active_version_id for p in state.prompts if p.active_version_id}
+            healthy_prompt_ids = {
+                p.previous_healthy_version_id
+                for p in state.prompts
+                if p.previous_healthy_version_id
+            }
+            canary_prompt_ids = {
+                p.canary_version_id for p in state.prompts if p.canary_version_id
+            }
+            protected_prompt_ids = active_prompt_ids | healthy_prompt_ids | canary_prompt_ids
             active_flag_ids = {f.active_version_id for f in state.flags if f.active_version_id}
             active_model_ids = {m.active_version_id for m in state.model_configs if m.active_version_id}
             healthy_model_ids = {
@@ -409,8 +418,8 @@ class GovernancePoliciesMixin:
             new_prompt_versions = tuple(
                 v
                 for v in state.prompt_versions
-                if v.version_id in active_prompt_ids
-                or v.status in ("ACTIVE", "APPROVED")
+                if v.version_id in protected_prompt_ids
+                or v.status in ("ACTIVE", "APPROVED", "CANARY")
                 or v.created_at >= cutoff
             )
             pruned_prompts = len(state.prompt_versions) - len(new_prompt_versions)
@@ -473,7 +482,8 @@ class GovernancePoliciesMixin:
                 "retentionDays": retention_days,
                 "auditRetentionDays": effective_audit_days,
                 "retentionPolicy": (
-                    "Core active and approved versions retained permanently for rollback capability; "
+                    "Core active, approved, canary, and previous-healthy versions retained "
+                    "permanently for rollback capability; "
                     f"expired candidate and retired versions older than {retention_days} days purged; "
                     f"audits retained for {effective_audit_days} days."
                 ),
