@@ -234,6 +234,37 @@ class QualityService:
                 return state.model_copy(update={"revision": state.revision + 1}), {
                     "candidate": existing.model_dump(mode="json")
                 }
+
+            # Check if an in-progress case already covers these conversation refs or source events
+            active_cases = [
+                c
+                for c in state.cases
+                if c.status in ("NEW", "TRIAGED", "IN_PROGRESS", "WAITING_REVIEW", "OBSERVING")
+            ]
+            associated_case = next(
+                (
+                    c
+                    for c in active_cases
+                    if (
+                        any(ref in c.conversation_refs for ref in conversation_refs)
+                        if conversation_refs
+                        else False
+                    )
+                    or (
+                        any(eid in c.source_event_ids for eid in source_event_ids)
+                        if source_event_ids
+                        else False
+                    )
+                ),
+                None,
+            )
+
+            resolved_candidate = candidate
+            if associated_case is not None:
+                resolved_candidate = candidate.model_copy(
+                    update={"status": "MERGED", "merged_case_id": associated_case.case_id}
+                )
+
             audit = self._audit(
                 target_type="QUALITY_CANDIDATE",
                 target_id=candidate_id,
@@ -241,16 +272,21 @@ class QualityService:
                 actor=actor,
                 owner_unit_id=owner_unit_id,
                 before=None,
-                after=candidate,
+                after=resolved_candidate,
+                reason=(
+                    f"auto_linked_to_in_progress_case:{associated_case.case_id}"
+                    if associated_case
+                    else None
+                ),
             )
             next_state = QualityState(
                 revision=state.revision + 1,
-                candidates=(*state.candidates, candidate),
+                candidates=(*state.candidates, resolved_candidate),
                 cases=state.cases,
                 clusters=state.clusters,
                 audits=(*state.audits, audit),
             )
-            return next_state, {"candidate": candidate.model_dump(mode="json")}
+            return next_state, {"candidate": resolved_candidate.model_dump(mode="json")}
 
         return self._repository.mutate(operation)
 

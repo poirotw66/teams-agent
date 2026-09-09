@@ -5,20 +5,113 @@ import { actorCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
 
 
-function buildExampleForm(record = null) {
+async function fetchExampleOptions() {
+  const [taxRes, faqRes, docRes] = await Promise.allSettled([
+    api("/api/taxonomy"),
+    api("/api/faqs"),
+    api("/api/knowledge"),
+  ]);
+  const issueTypes = taxRes.status === "fulfilled" ? (taxRes.value?.items || []) : [];
+  const faqs = faqRes.status === "fulfilled" ? (faqRes.value?.items || []) : [];
+  const docs = docRes.status === "fulfilled" ? (docRes.value?.items || []) : [];
+  return { issueTypes, faqs, docs };
+}
+
+function buildExampleForm(record = null, options = {}) {
   const form = el("form", "form-grid");
   if (!record) {
+    const sourceSelectWrap = exampleSelect("來源", "source_type", [
+      ["MANUAL", "手動建立"], ["FAQ", "FAQ 版本"], ["DOCUMENT", "文件版本"],
+    ]);
+    const sourceSelect = sourceSelectWrap.querySelector("select");
+
+    const faqOptions = [["", "-- 請選擇來源 FAQ --"]];
+    for (const item of (options.faqs || [])) {
+      const fObj = item.faq || item;
+      const vObj = item.version || {};
+      const fid = fObj.faq_id;
+      const vid = vObj.version_id || fObj.current_version_id || "v1";
+      const title = vObj.content?.question || fObj.title || fid;
+      faqOptions.push([`${fid}::${vid}`, `${title} (${fid})`]);
+    }
+    const faqSelectWrap = exampleSelect("引用既有 FAQ", "faq_picker", faqOptions);
+    faqSelectWrap.style.display = "none";
+
+    const docOptions = [["", "-- 請選擇來源文件 --"]];
+    for (const item of (options.docs || [])) {
+      const did = item.document_id || item.documentId;
+      const vid = item.current_version_id || item.version_id || "v1";
+      const title = item.title || did;
+      docOptions.push([`${did}::${vid}`, `${title} (${did})`]);
+    }
+    const docSelectWrap = exampleSelect("引用既有文件", "doc_picker", docOptions);
+    docSelectWrap.style.display = "none";
+
+    const sourceIdField = faqField("Source ID", "source_id", "", false, false);
+    const sourceVersionField = faqField("Source Version ID", "source_version_id", "", false, false);
+    const sourceIdInput = sourceIdField.querySelector("input");
+    const sourceVersionInput = sourceVersionField.querySelector("input");
+
+    sourceSelect.addEventListener("change", () => {
+      const val = sourceSelect.value;
+      faqSelectWrap.style.display = val === "FAQ" ? "" : "none";
+      docSelectWrap.style.display = val === "DOCUMENT" ? "" : "none";
+      if (val === "MANUAL") {
+        sourceIdInput.value = "";
+        sourceVersionInput.value = "";
+      }
+    });
+
+    faqSelectWrap.querySelector("select").addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (val) {
+        const [fid, vid] = val.split("::");
+        sourceIdInput.value = fid;
+        sourceVersionInput.value = vid || "";
+      }
+    });
+
+    docSelectWrap.querySelector("select").addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (val) {
+        const [did, vid] = val.split("::");
+        sourceIdInput.value = did;
+        sourceVersionInput.value = vid || "";
+      }
+    });
+
     form.append(
-      exampleSelect("來源", "source_type", [
-        ["MANUAL", "手動建立"], ["FAQ", "FAQ 版本"], ["DOCUMENT", "文件版本"],
-      ]),
-      faqField("Source ID", "source_id", "", false, false),
-      faqField("Source Version ID", "source_version_id", "", false, false),
+      sourceSelectWrap,
+      faqSelectWrap,
+      docSelectWrap,
+      sourceIdField,
+      sourceVersionField,
     );
   }
+
+  const issueOptions = [["", "-- 未指定 / 請選擇問題類型 --"]];
+  let matchedIssue = false;
+  for (const it of (options.issueTypes || [])) {
+    const itId = it.issue_type_id || it.id;
+    const name = it.display_name || itId;
+    issueOptions.push([itId, `${name} (${itId})`]);
+    if (record?.expected_issue_type_id === itId) {
+      matchedIssue = true;
+    }
+  }
+  if (record?.expected_issue_type_id && !matchedIssue) {
+    issueOptions.push([record.expected_issue_type_id, `${record.expected_issue_type_id} (自訂)`]);
+  }
+  const issueSelectWrap = exampleSelect(
+    "Expected Issue Type",
+    "expected_issue_type_id",
+    issueOptions,
+    record?.expected_issue_type_id || "",
+  );
+
   form.append(
     faqField("案例文字", "text", record?.text || "", true),
-    faqField("Expected Issue Type ID", "expected_issue_type_id", record?.expected_issue_type_id || ""),
+    issueSelectWrap,
     exampleSelect("Expected Route", "expected_route", [
       ["FAQ", "FAQ"], ["KNOWLEDGE", "KNOWLEDGE"],
       ["TICKET", "TICKET"], ["HANDOFF", "HANDOFF"],
@@ -35,15 +128,16 @@ function examplePayload(form) {
   const values = new FormData(form);
   return {
     text: values.get("text"),
-    expected_issue_type_id: values.get("expected_issue_type_id"),
+    expected_issue_type_id: values.get("expected_issue_type_id") || null,
     expected_route: values.get("expected_route"),
     label: values.get("label"),
     reason: values.get("reason") || null,
   };
 }
 
-function showExampleCreateModal() {
-  const form = buildExampleForm();
+async function showExampleCreateModal() {
+  const options = await fetchExampleOptions();
+  const form = buildExampleForm(null, options);
   const message = el("div");
   const submit = el("button", "", "建立草稿");
   submit.type = "submit";
@@ -88,8 +182,9 @@ function showExampleCreateModal() {
   showContentModal("新增品質案例", form);
 }
 
-function showExampleEditModal(record) {
-  const form = buildExampleForm(record);
+async function showExampleEditModal(record) {
+  const options = await fetchExampleOptions();
+  const form = buildExampleForm(record, options);
   const message = el("div");
   const submit = el("button", "", "儲存為草稿");
   submit.type = "submit";

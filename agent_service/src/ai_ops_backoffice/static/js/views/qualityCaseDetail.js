@@ -148,13 +148,74 @@ export async function showQualityCaseDetail(caseId) {
     if (allowed.has("ops.quality.write")) {
       const linkFaq = el("button", "", "連結既有 FAQ");
       linkFaq.addEventListener("click", async () => {
-        const faqId = window.prompt("請輸入 FAQ ID");
-        if (!faqId?.trim()) return;
-        await api(`/api/quality-cases/${caseId}/content`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expected_etag: qualityCase.etag, faq_id: faqId.trim() }),
+        let faqs = [];
+        try {
+          const listRes = await api("/api/faqs");
+          faqs = listRes.items || [];
+        } catch {
+          faqs = [];
+        }
+        const modalBody = el("div");
+        const faqSelect = document.createElement("select");
+        faqSelect.className = "input";
+        faqSelect.style.width = "100%";
+        faqSelect.style.marginBottom = "0.75rem";
+
+        const defaultOpt = document.createElement("option");
+        defaultOpt.value = "";
+        defaultOpt.textContent = "-- 請選擇既有 FAQ（或於下方手動輸入 ID）--";
+        faqSelect.append(defaultOpt);
+
+        for (const item of faqs) {
+          const opt = document.createElement("option");
+          const f = item.faq || item;
+          const v = item.version || {};
+          const fId = f.faq_id;
+          const qText = v.content?.question || f.title || fId;
+          opt.value = fId;
+          opt.textContent = `${qText} (${fId}｜${f.status || "草稿"})`;
+          faqSelect.append(opt);
+        }
+        const idInput = el("input", "input");
+        idInput.type = "text";
+        idInput.placeholder = "輸入 FAQ ID (例如 faq-xxx)";
+        idInput.style.width = "100%";
+        idInput.style.marginBottom = "1rem";
+
+        faqSelect.addEventListener("change", () => {
+          if (faqSelect.value) idInput.value = faqSelect.value;
         });
-        await showQualityCaseDetail(caseId);
+
+        const confirmBtn = el("button", "btn primary", "確認關聯 FAQ");
+        confirmBtn.addEventListener("click", async () => {
+          const fId = idInput.value.trim();
+          if (!fId) {
+            alert("請選擇或輸入 FAQ ID");
+            return;
+          }
+          try {
+            confirmBtn.disabled = true;
+            await api(`/api/quality-cases/${caseId}/content`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ expected_etag: qualityCase.etag, faq_id: fId }),
+            });
+            const root = document.getElementById("modal-root");
+            if (root) { root.hidden = true; root.replaceChildren(); }
+            await showQualityCaseDetail(caseId);
+          } catch (err) {
+            confirmBtn.disabled = false;
+            alert(`關聯失敗：${err.message || err}`);
+          }
+        });
+
+        modalBody.append(
+          el("p", "", "選擇或輸入要關聯至此品質案件的 FAQ："),
+          faqSelect,
+          idInput,
+          confirmBtn,
+        );
+        showContentModal("關聯既有 FAQ", modalBody);
       });
       actions.append(linkFaq);
 
@@ -336,25 +397,40 @@ export async function showQualityCaseDetail(caseId) {
           const form = buildFaqForm({
             owner_unit_id: qualityCase.owner_unit_id,
             issue_type_ids: [qualityCase.issue_type_id],
+            question: qualityCase.description || qualityCase.title || "",
           });
-          const submit = el("button", "", "建立並連結草稿");
+          const submit = el("button", "btn primary", "建立並連結草稿");
           submit.type = "submit";
           form.append(submit);
           form.addEventListener("submit", async (event) => {
             event.preventDefault();
-            const payload = faqPayload(form);
-            await api(`/api/quality-cases/${caseId}/faq-draft`, {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                expected_case_etag: qualityCase.etag,
-                faq_key: payload.faq_key, question: payload.question, answer: payload.answer,
-                category: payload.category, keywords: payload.keywords,
-                business_contact: payload.business_contact,
-                audience_type: payload.audience_type,
-                audience_group_ids: payload.audience_group_ids,
-              }),
-            });
-            await refreshQuality();
+            submit.disabled = true;
+            submit.textContent = "建立中…";
+            try {
+              const payload = faqPayload(form);
+              await api(`/api/quality-cases/${caseId}/faq-draft`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  expected_case_etag: qualityCase.etag,
+                  faq_key: payload.faq_key,
+                  question: payload.question,
+                  answer: payload.answer,
+                  category: payload.category,
+                  keywords: payload.keywords,
+                  business_contact: payload.business_contact,
+                  audience_type: payload.audience_type,
+                  audience_group_ids: payload.audience_group_ids,
+                }),
+              });
+              const root = document.getElementById("modal-root");
+              if (root) { root.hidden = true; root.replaceChildren(); }
+              await showQualityCaseDetail(caseId);
+            } catch (err) {
+              submit.disabled = false;
+              submit.textContent = "建立並連結草稿";
+              alert(`建立草稿失敗：${err.message || err}`);
+            }
           });
           showContentModal("由品質案件建立 FAQ 草稿", form);
         });

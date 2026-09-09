@@ -1,9 +1,62 @@
 import { api, el } from "../api.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { actorCapabilities } from "../app/capabilities.js";
 
 async function refreshQuality() {
   const { renderQuality } = await import("./quality.js");
   return renderQuality();
+}
+
+function showRenameClusterModal(cluster, onConfirm) {
+  const container = el("div", "form-grid");
+  const callout = el(
+    "div",
+    "callout callout-info",
+    "手動重新命名後，該聚類將轉為手動標註狀態。後續重新產生聚類時，已標註之聚類將完整保留版本與狀態，不會被覆蓋。",
+  );
+  callout.style.padding = "0.75rem";
+  callout.style.marginBottom = "0.75rem";
+  callout.style.backgroundColor = "var(--panel-muted)";
+  callout.style.borderRadius = "var(--radius-sm)";
+  callout.style.fontSize = "0.85rem";
+  callout.style.lineHeight = "1.4";
+
+  const group = el("div", "form-group");
+  const label = el("label", "form-label", "聚類名稱（Cluster Name）：");
+  const input = el("input");
+  input.value = cluster.name || "";
+  input.placeholder = "輸入新聚類名稱…";
+  input.style.width = "100%";
+  group.append(label, input);
+
+  const actions = el("div", "filter-bar");
+  actions.style.marginTop = "1rem";
+  actions.style.justifyContent = "flex-end";
+  const cancelBtn = el("button", "", "取消");
+  cancelBtn.addEventListener("click", () => closeContentModal());
+
+  const confirmBtn = el("button", "button-primary", "確認更名");
+  confirmBtn.addEventListener("click", async () => {
+    const val = input.value.trim();
+    if (!val) {
+      alert("請輸入聚類名稱");
+      return;
+    }
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "更名中…";
+    try {
+      await onConfirm(val);
+      closeContentModal();
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "確認更名";
+      showContentModal("更名失敗", el("div", "error", err.message));
+    }
+  });
+
+  actions.append(cancelBtn, confirmBtn);
+  container.append(callout, group, actions);
+  showContentModal("重新命名問題聚類", container);
 }
 
 export async function buildGapPanel() {
@@ -142,7 +195,7 @@ export async function buildGapPanel() {
       el(
         "p",
         "metric-label",
-        "依 owner unit + issue type 分組，不是語意聚類。確認需求後再導入 embedding／人工審核。",
+        "聚類維度與演算法說明：目前採「業務負責單位（owner_unit）＋ 問題分類（issue_type）＋ CJK 雙字元 (Bigram) Jaccard 詞彙相似度」分組，非純向量 Embedding 語意聚類。重新產生分組時，已手動審核（已接受／已拒絕／已更名）之聚類將完整保留版本與狀態，不會被覆蓋；未審核之候選項目將重新彙總。",
       ),
       clusterActions,
     );
@@ -160,12 +213,21 @@ export async function buildGapPanel() {
         for (const [action, label] of [["ACCEPT", "接受"], ["REJECT", "拒絕"], ["RENAME", "重新命名"]]) {
           const button = el("button", "", label);
           button.addEventListener("click", async () => {
-            const name = action === "RENAME" ? window.prompt("Cluster 名稱", cluster.name) : null;
-            if (action === "RENAME" && !name?.trim()) return;
+            if (action === "RENAME") {
+              showRenameClusterModal(cluster, async (newName) => {
+                await api("/api/question-clusters/correct", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ cluster_ids: [cluster.cluster_id], action, name: newName }),
+                });
+                await refreshQuality();
+              });
+              return;
+            }
             await api("/api/question-clusters/correct", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ cluster_ids: [cluster.cluster_id], action, name }),
+              body: JSON.stringify({ cluster_ids: [cluster.cluster_id], action, name: null }),
             });
             await refreshQuality();
           });

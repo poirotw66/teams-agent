@@ -1,11 +1,139 @@
 import { api, el } from "../api.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
+import { badge, statusBadge } from "../components/badges.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 
 async function refreshQuality(state) {
   const { renderQuality } = await import("./quality.js");
   return renderQuality(state);
+}
+
+function showQualityScanModal(onConfirm) {
+  const container = el("div", "form-grid");
+  const callout = el(
+    "div",
+    "callout callout-info",
+    "重新掃描會保留進行中的案例（NEW、TRIAGED、IN_PROGRESS、WAITING_REVIEW、OBSERVING），並自動將重疊之候選關聯至既有案件，避免覆蓋已指派負責人或排定維護的案例。",
+  );
+  callout.style.padding = "0.75rem";
+  callout.style.marginBottom = "0.75rem";
+  callout.style.backgroundColor = "var(--panel-muted)";
+  callout.style.borderRadius = "var(--radius-sm)";
+  callout.style.fontSize = "0.85rem";
+  callout.style.lineHeight = "1.4";
+
+  const periodGroup = el("div", "form-group");
+  const label = el("label", "form-label", "掃描資料天數：");
+  const select = el("select");
+  for (const [days, text] of [
+    [7, "最近 7 天"],
+    [14, "最近 14 天"],
+    [30, "最近 30 天（預設）"],
+    [90, "最近 90 天"],
+    [180, "最近 180 天"],
+    [365, "最近 365 天"],
+  ]) {
+    const opt = el("option", "", text);
+    opt.value = String(days);
+    if (days === 30) opt.selected = true;
+    select.append(opt);
+  }
+  periodGroup.append(label, select);
+
+  const actions = el("div", "filter-bar");
+  actions.style.marginTop = "1rem";
+  actions.style.justifyContent = "flex-end";
+  const cancelBtn = el("button", "", "取消");
+  cancelBtn.addEventListener("click", () => closeContentModal());
+
+  const confirmBtn = el("button", "button-primary", "開始掃描");
+  confirmBtn.addEventListener("click", async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "掃描中…";
+    try {
+      await onConfirm(parseInt(select.value, 10));
+      closeContentModal();
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "開始掃描";
+      showContentModal("候選掃描失敗", el("div", "error", err.message));
+    }
+  });
+
+  actions.append(cancelBtn, confirmBtn);
+  container.append(callout, periodGroup, actions);
+  showContentModal("掃描新品質候選", container);
+}
+
+function showMergeCandidatesModal(count, onConfirm) {
+  const container = el("div", "form-grid");
+  const desc = el("p", "metric-label", `即將合併已選取的 ${count} 筆品質候選為新的改善案件。`);
+  desc.style.marginBottom = "0.75rem";
+
+  const titleGroup = el("div", "form-group");
+  const titleLabel = el("label", "form-label", "改善案件標題（必填）：");
+  const titleInput = el("input");
+  titleInput.placeholder = "例如：修正特定情境下的無答案問題";
+  titleInput.style.width = "100%";
+  titleGroup.append(titleLabel, titleInput);
+
+  const descGroup = el("div", "form-group");
+  const descLabel = el("label", "form-label", "案件說明：");
+  const descInput = el("textarea");
+  descInput.value = "由營運事件候選合併";
+  descInput.rows = 3;
+  descInput.style.width = "100%";
+  descGroup.append(descLabel, descInput);
+
+  const prioGroup = el("div", "form-group");
+  const prioLabel = el("label", "form-label", "優先級：");
+  const prioSelect = el("select");
+  for (const [val, lab] of [
+    ["LOW", "低 (LOW)"],
+    ["MEDIUM", "中 (MEDIUM)"],
+    ["HIGH", "高 (HIGH)"],
+    ["CRITICAL", "緊急 (CRITICAL)"],
+  ]) {
+    const opt = el("option", "", lab);
+    opt.value = val;
+    if (val === "MEDIUM") opt.selected = true;
+    prioSelect.append(opt);
+  }
+  prioGroup.append(prioLabel, prioSelect);
+
+  const actions = el("div", "filter-bar");
+  actions.style.marginTop = "1rem";
+  actions.style.justifyContent = "flex-end";
+  const cancelBtn = el("button", "", "取消");
+  cancelBtn.addEventListener("click", () => closeContentModal());
+
+  const submitBtn = el("button", "button-primary", "確認合併");
+  submitBtn.addEventListener("click", async () => {
+    const titleVal = titleInput.value.trim();
+    if (!titleVal) {
+      alert("請輸入改善案件標題");
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = "合併中…";
+    try {
+      await onConfirm({
+        title: titleVal,
+        description: descInput.value.trim() || "由營運事件候選合併",
+        priority: prioSelect.value,
+      });
+      closeContentModal();
+    } catch (err) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "確認合併";
+      showContentModal("合併失敗", el("div", "error", err.message));
+    }
+  });
+
+  actions.append(cancelBtn, submitBtn);
+  container.append(desc, titleGroup, descGroup, prioGroup, actions);
+  showContentModal("合併品質候選為改善案件", container);
 }
 
 
@@ -53,48 +181,33 @@ export async function buildQualityLoopPanel() {
 
   if (allowed.has("ops.quality.write")) {
     const refresh = el("button", "", "掃描新候選");
-    refresh.addEventListener("click", async () => {
-      refresh.disabled = true;
-      try {
+    refresh.addEventListener("click", () => {
+      showQualityScanModal(async (days) => {
         await api("/api/quality-candidates/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ days: 30 }),
+          body: JSON.stringify({ days }),
         });
         await refreshQuality();
-      } catch (error) {
-        showContentModal("候選掃描失敗", el("div", "error", error.message));
-      } finally {
-        refresh.disabled = false;
-      }
+      });
     });
     controls.append(refresh);
 
     mergeBtn = el("button", "button-primary", "合併為改善案件 (已選 0 筆)");
     mergeBtn.disabled = true;
-    mergeBtn.addEventListener("click", async () => {
+    mergeBtn.addEventListener("click", () => {
       if (!selected.size) return;
-      const title = window.prompt(`請輸入改善案件標題（將合併 ${selected.size} 筆候選）：`);
-      if (!title?.trim()) return;
-      try {
-        mergeBtn.disabled = true;
-        mergeBtn.textContent = "合併中…";
+      showMergeCandidatesModal(selected.size, async (formValues) => {
         await api("/api/quality-candidates/merge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             candidate_ids: [...selected],
-            title: title.trim(),
-            description: "由營運事件候選合併",
-            priority: "MEDIUM",
+            ...formValues,
           }),
         });
         await refreshQuality();
-      } catch (error) {
-        showContentModal("合併失敗", el("div", "error", error.message));
-      } finally {
-        updateSelectionState();
-      }
+      });
     });
     controls.append(mergeBtn);
   }
@@ -180,6 +293,7 @@ export async function buildQualityLoopPanel() {
       el("th", "", "案件類型"),
       el("th", "", "問題類型"),
       el("th", "", "摘要"),
+      el("th", "", "來源追蹤"),
     );
     table.append(el("thead", "", headerRow));
     const tableBody = el("tbody");
@@ -279,7 +393,30 @@ export async function buildQualityLoopPanel() {
         const descCell = el("td", "", item.description || "-");
         descCell.style.overflowWrap = "break-word";
 
-        row.append(selectCell, typeCell, issueCell, descCell);
+        const traceCell = el("td");
+        traceCell.style.fontSize = "0.825rem";
+        const traceBadges = el("div");
+        traceBadges.style.display = "flex";
+        traceBadges.style.flexWrap = "wrap";
+        traceBadges.style.gap = "0.25rem";
+
+        const srcType = item.source_type || "系統";
+        traceBadges.append(badge(srcType, "neutral"));
+
+        if (item.conversation_refs && item.conversation_refs.length) {
+          const convText = `對話: ${item.conversation_refs.slice(0, 2).join(", ")}${item.conversation_refs.length > 2 ? "…" : ""}`;
+          traceBadges.append(badge(convText, "accent"));
+        }
+        if (item.source_event_ids && item.source_event_ids.length) {
+          const evtText = `事件: ${item.source_event_ids.slice(0, 2).join(", ")}${item.source_event_ids.length > 2 ? "…" : ""}`;
+          traceBadges.append(badge(evtText, "neutral"));
+        }
+        if (item.merged_case_id) {
+          traceBadges.append(badge(`已關聯: ${item.merged_case_id.slice(0, 8)}`, "success"));
+        }
+        traceCell.append(traceBadges);
+
+        row.append(selectCell, typeCell, issueCell, descCell, traceCell);
         tableBody.append(row);
       }
 
