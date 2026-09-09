@@ -1006,3 +1006,89 @@ async def test_teams_and_index_emit_to_health_summary(tmp_path: Path) -> None:
     assert components["teams-adapter"]["requestCount"] >= 1
     assert components["agent-retrieval-index"]["telemetryStatus"] == "AVAILABLE"
     assert components["agent-retrieval-index"]["requestCount"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_retention_sweep_worker_e2e_active_ttl_and_governance_purge(
+    tmp_path: Path,
+) -> None:
+    """E2E: scheduled sweep function applies ACTIVE TTL and purges governance."""
+    from ai_ops_backoffice.governance_domain.models import FlagVersion
+    from ai_ops_backoffice.workers import run_scheduled_retention_sweep
+
+    client = _client_for_test(tmp_path)
+    app = client.app
+    governance = app.state.governance_service
+    admin = ActorContext(
+        user_id="admin.a",
+        display_name="Admin A",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    other = ActorContext(
+        user_id="admin.b",
+        display_name="Admin B",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    candidate = governance.create_retention_candidate(
+        policy_id="operational-events",
+        ttl_days=30,
+        migration_plan="Activate 30-day TTL for scheduled sweep E2E.",
+        reason="scheduled sweep e2e",
+        actor=admin,
+    )
+    version_id = candidate["policy"]["version_id"]
+    governance.approve_retention(version_id=version_id, reason="peer approve", actor=other)
+    governance.activate_retention(version_id=version_id, reason="activate", actor=admin)
+
+    now = datetime.now(UTC)
+    expired_flag = FlagVersion(
+        version_id="flag-expired-candidate",
+        flag_id="ticket_mode",
+        status="CANDIDATE",
+        value="off",
+        environment="lab",
+        effective_at=now - timedelta(days=60),
+        created_by="admin.a",
+        created_at=now - timedelta(days=60),
+        change_reason="old unused candidate",
+    )
+
+    def inject_expired(state):
+        return state.model_copy(
+            update={
+                "revision": state.revision + 1,
+                "flag_versions": (*state.flag_versions, expired_flag),
+            }
+        ), {"injected": True}
+
+    governance._repository.mutate(inject_expired)
+    assert any(
+        v.version_id == "flag-expired-candidate"
+        for v in governance._repository.load().flag_versions
+    )
+
+    sync_worker = ActorContext(
+        user_id="ai-ops-sync-worker",
+        display_name="AI Ops Sync Worker",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=(),
+    )
+    result = await run_scheduled_retention_sweep(
+        actor=sync_worker,
+        query_service=app.state.query_service,
+        sync_service=app.state.sync_service,
+        budget_service=app.state.budget_service,
+        example_service=app.state.example_service,
+        quality_service=app.state.quality_service,
+        governance_service=governance,
+    )
+
+    assert result["retentionDays"] == 30
+    assert result["auditRetentionDays"] == 1095
+    assert result["governance"]["retentionDays"] == 30
+    assert result["governance"]["auditRetentionDays"] == 1095
+    assert result["governance"]["flagVersions"] >= 1
+    remaining = {v.version_id for v in governance._repository.load().flag_versions}
+    assert "flag-expired-candidate" not in remaining
