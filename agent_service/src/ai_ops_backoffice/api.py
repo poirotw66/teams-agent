@@ -464,6 +464,13 @@ def create_app(
     )
 
     app.state.eval_harness_status = eval_harness_status
+    app.state.governance_service = governance_service
+    app.state.query_service = query_service
+    app.state.faq_service = faq_service
+    app.state.example_service = example_service
+    app.state.quality_service = quality_service
+    app.state.sync_service = sync_service
+    app.state.budget_service = budget_service
     register_governance_routes(
         app,
         governance=governance_service,

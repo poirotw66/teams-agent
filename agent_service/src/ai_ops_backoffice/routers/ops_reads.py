@@ -774,6 +774,13 @@ def register_ops_read_routes(
         budget_res = budget_service.purge_expired(actor=actor) if budget_service else {"total": 0}
         budget_removed = budget_res.get("total", 0)
 
+        gov_res = (
+            governance_service.purge_expired(actor=actor)
+            if governance_service and hasattr(governance_service, "purge_expired")
+            else {"totalRemoved": 0}
+        )
+        gov_removed = gov_res.get("totalRemoved", 0)
+
         total_removed = (
             events_removed
             + export_removed
@@ -781,6 +788,7 @@ def register_ops_read_routes(
             + quality_removed
             + sync_removed
             + budget_removed
+            + gov_removed
         )
 
         result = {
@@ -791,6 +799,7 @@ def register_ops_read_routes(
             "quality": quality_removed,
             "sync": sync_removed,
             "budget": budget_removed,
+            "governance": gov_res,
             "totalRemoved": total_removed,
         }
         await audit_read(actor, "retention.purge", "all_domains", after=result)

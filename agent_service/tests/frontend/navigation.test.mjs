@@ -85,7 +85,7 @@ test('knowledge entries respect separate FAQ, sync and review permissions', asyn
   assert.ok(!entries.includes('knowledgeReviews'));
   s.capabilities.setCapabilities({ capabilities: ['ops.faq.read'], knowledgeBridgeEnabled: false });
   entries = s.shell.visibleWorkspaces()[0].items.map(x => x[0]);
-  assert.deepEqual(Array.from(entries), ['faq']);
+  assert.deepEqual(Array.from(entries), ['contentHub', 'faq']);
 });
 
 test('cancelled dirty-document navigation does not change workspace', async () => {
@@ -95,4 +95,32 @@ test('cancelled dirty-document navigation does not change workspace', async () =
   s.context.window.__confirmKnowledgeDirty = async () => false;
   await s.navigation.navigateTo('examples', {}, { workspace: 'ai_ops' });
   assert.equal(s.navigation.activeWorkspaceId(), 'knowledge_ops');
+});
+
+test('minimum permission role paths: conversations, summary overview, and governance search', async () => {
+  const s = await setup();
+
+  // 1. Conversations minimum capability: only ops.conversations.read
+  s.capabilities.setCapabilities({ capabilities: ['ops.conversations.read'], knowledgeBridgeEnabled: false });
+  let ws = s.shell.visibleWorkspaces();
+  let kItems = ws.find(w => w.id === 'knowledge_ops')?.items.map(x => x[0]) || [];
+  assert.deepEqual(Array.from(kItems), ['conversations']);
+  await s.navigation.navigateTo('conversations');
+  assert.equal(s.context.location.hash, '#/knowledge_ops/conversations');
+
+  // 2. Summary overview minimum capability: only ops.summary.read
+  s.capabilities.setCapabilities({ capabilities: ['ops.summary.read'], knowledgeBridgeEnabled: false });
+  ws = s.shell.visibleWorkspaces();
+  let pItems = ws.find(w => w.id === 'platform')?.items.map(x => x[0]) || [];
+  assert.deepEqual(Array.from(pItems), ['overview']);
+  await s.navigation.navigateTo('overview');
+  assert.equal(s.context.location.hash, '#/platform/overview');
+
+  // 3. Search minimum capability: only ops.search.read
+  s.capabilities.setCapabilities({ capabilities: ['ops.search.read'], knowledgeBridgeEnabled: false });
+  ws = s.shell.visibleWorkspaces();
+  pItems = ws.find(w => w.id === 'platform')?.items.map(x => x[0]) || [];
+  assert.deepEqual(Array.from(pItems), ['search']);
+  await s.navigation.navigateTo('search');
+  assert.equal(s.context.location.hash, '#/platform/search');
 });

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from agent_service.extractor import SYSTEM_PROMPT
@@ -362,5 +362,108 @@ class GovernancePoliciesMixin:
                 retention_policies=_upsert(tuple(retired), updated, "version_id"),
                 audits=(*state.audits, audit),
             ), {"policy": updated.model_dump(mode="json")}
+
+        return self._mutate(operation)
+
+    def purge_expired(
+        self,
+        *,
+        actor: ActorContext | None = None,
+        retention_days: int = 365,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Purge expired non-core versions and audits with permanent retention exception for active/approved versions."""
+        if actor is not None:
+            self._require(actor, WRITE["retention_write"])
+
+        target_now = now or self._clock()
+        cutoff = target_now - timedelta(days=retention_days)
+
+        def operation(state: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
+            active_prompt_ids = {p.active_version_id for p in state.prompts if p.active_version_id}
+            active_flag_ids = {f.active_version_id for f in state.flags if f.active_version_id}
+            active_model_ids = {m.active_version_id for m in state.model_configs if m.active_version_id}
+            healthy_model_ids = {
+                m.previous_healthy_version_id for m in state.model_configs if m.previous_healthy_version_id
+            }
+            protected_model_ids = active_model_ids | healthy_model_ids
+
+            new_flag_versions = tuple(
+                v
+                for v in state.flag_versions
+                if v.version_id in active_flag_ids
+                or v.status in ("ACTIVE", "APPROVED")
+                or v.created_at >= cutoff
+            )
+            pruned_flags = len(state.flag_versions) - len(new_flag_versions)
+
+            new_prompt_versions = tuple(
+                v
+                for v in state.prompt_versions
+                if v.version_id in active_prompt_ids
+                or v.status in ("ACTIVE", "APPROVED")
+                or v.created_at >= cutoff
+            )
+            pruned_prompts = len(state.prompt_versions) - len(new_prompt_versions)
+
+            new_model_versions = tuple(
+                v
+                for v in state.model_versions
+                if v.version_id in protected_model_ids
+                or v.status in ("ACTIVE", "APPROVED")
+                or v.created_at >= cutoff
+            )
+            pruned_models = len(state.model_versions) - len(new_model_versions)
+
+            new_audits = tuple(a for a in state.audits if a.occurred_at >= cutoff)
+            pruned_audits = len(state.audits) - len(new_audits)
+
+            new_idempotency = tuple(i for i in state.idempotency if i.created_at >= cutoff)
+            pruned_idempotency = len(state.idempotency) - len(new_idempotency)
+
+            total_removed = (
+                pruned_flags + pruned_prompts + pruned_models + pruned_audits + pruned_idempotency
+            )
+
+            audit_events = list(new_audits)
+            if actor is not None and total_removed > 0:
+                audit_record = self._audit(
+                    action="GOVERNANCE_RETENTION_PURGE",
+                    actor=actor,
+                    target_type="RETENTION",
+                    target_id="GOVERNANCE_RETENTION",
+                    after={
+                        "prunedFlags": pruned_flags,
+                        "prunedPrompts": pruned_prompts,
+                        "prunedModels": pruned_models,
+                        "prunedAudits": pruned_audits,
+                        "prunedIdempotency": pruned_idempotency,
+                        "totalRemoved": total_removed,
+                    },
+                )
+                audit_events.append(audit_record)
+
+            new_state = replace_model(
+                state,
+                flag_versions=new_flag_versions,
+                prompt_versions=new_prompt_versions,
+                model_versions=new_model_versions,
+                audits=tuple(audit_events),
+                idempotency=new_idempotency,
+            )
+
+            result = {
+                "flagVersions": pruned_flags,
+                "promptVersions": pruned_prompts,
+                "modelVersions": pruned_models,
+                "audits": pruned_audits,
+                "idempotency": pruned_idempotency,
+                "totalRemoved": total_removed,
+                "retentionPolicy": (
+                    "Core active and approved versions retained permanently for rollback capability; "
+                    "expired candidate and retired versions older than 365 days purged."
+                ),
+            }
+            return new_state, result
 
         return self._mutate(operation)

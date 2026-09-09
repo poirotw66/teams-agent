@@ -512,54 +512,70 @@ def register_governance_routes(
         q: str = Query(default=""),
         doc_type: str | None = Query(default=None),
         owner_unit_id: str | None = Query(default=None),
+        status: str | None = Query(default=None),
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.search.read")
         extras: list[dict[str, object]] = []
+        warnings: list[str] = []
         if faq_service is not None and actor.has_capability("ops.faq.read"):
-            for item in faq_service.list_faqs(actor=actor):
-                faq = item.get("faq") or {}
-                version = item.get("version") or {}
-                content = version.get("content") or {}
-                extras.append(
-                    {
-                        "type": "FAQ",
-                        "id": str(faq.get("faq_id") or ""),
-                        "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
-                        "snippet": str(content.get("question") or version.get("status") or "")[:160],
-                        "owner_unit_id": str(faq.get("owner_unit_id") or ""),
-                        "requiredCapability": "ops.faq.read",
-                    }
-                )
-        if example_service is not None and actor.has_capability("ops.examples.read"):
-            for item in example_service.list_examples(actor=actor)[:200]:
-                extras.append(
-                    {
-                        "type": "EXAMPLE",
-                        "id": str(item.get("example_id") or ""),
-                        "title": str(item.get("expected_issue_type_id") or item.get("label") or ""),
-                        "snippet": str(item.get("text") or "")[:160],
-                        "owner_unit_id": str(item.get("owner_unit_id") or ""),
-                        "requiredCapability": "ops.examples.read",
-                    }
-                )
-        if query_service is not None and actor.has_capability("ops.issues.read"):
-            taxonomy = getattr(query_service, "taxonomy", None)
-            if taxonomy is not None:
-                for issue in taxonomy.list_active():
-                    issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
-                    display = getattr(issue, "display_name", None) or getattr(issue, "name", issue_id)
-                    desc = getattr(issue, "description", "") or getattr(issue, "category", "") or ""
+            try:
+                for item in faq_service.list_faqs(actor=actor):
+                    faq = item.get("faq") or {}
+                    version = item.get("version") or {}
+                    content = version.get("content") or {}
+                    faq_status = str(version.get("status") or faq.get("status") or "PUBLISHED")
                     extras.append(
                         {
-                            "type": "ISSUE_TYPE",
-                            "id": str(issue_id),
-                            "title": str(display),
-                            "snippet": f"{issue_id} {desc}"[:160],
-                            "owner_unit_id": str(getattr(issue, "owner_unit_id", "") or ""),
-                            "requiredCapability": "ops.issues.read",
+                            "type": "FAQ",
+                            "id": str(faq.get("faq_id") or ""),
+                            "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
+                            "snippet": str(content.get("question") or version.get("status") or "")[:160],
+                            "owner_unit_id": str(faq.get("owner_unit_id") or ""),
+                            "status": faq_status,
+                            "requiredCapability": "ops.faq.read",
                         }
                     )
+            except Exception as exc:
+                warnings.append(f"FAQ 資料來源讀取失敗：{exc}")
+        if example_service is not None and actor.has_capability("ops.examples.read"):
+            try:
+                for item in example_service.list_examples(actor=actor)[:200]:
+                    example_status = str(item.get("status") or "VERIFIED")
+                    extras.append(
+                        {
+                            "type": "EXAMPLE",
+                            "id": str(item.get("example_id") or ""),
+                            "title": str(item.get("expected_issue_type_id") or item.get("label") or ""),
+                            "snippet": str(item.get("text") or "")[:160],
+                            "owner_unit_id": str(item.get("owner_unit_id") or ""),
+                            "status": example_status,
+                            "requiredCapability": "ops.examples.read",
+                        }
+                    )
+            except Exception as exc:
+                warnings.append(f"Few-Shot 範例資料來源讀取失敗：{exc}")
+        if query_service is not None and actor.has_capability("ops.issues.read"):
+            try:
+                taxonomy = getattr(query_service, "taxonomy", None)
+                if taxonomy is not None:
+                    for issue in taxonomy.list_active():
+                        issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
+                        display = getattr(issue, "display_name", None) or getattr(issue, "name", issue_id)
+                        desc = getattr(issue, "description", "") or getattr(issue, "category", "") or ""
+                        extras.append(
+                            {
+                                "type": "ISSUE_TYPE",
+                                "id": str(issue_id),
+                                "title": str(display),
+                                "snippet": f"{issue_id} {desc}"[:160],
+                                "owner_unit_id": str(getattr(issue, "owner_unit_id", "") or ""),
+                                "status": "ACTIVE",
+                                "requiredCapability": "ops.issues.read",
+                            }
+                        )
+            except Exception as exc:
+                warnings.append(f"問題分類資料來源讀取失敗：{exc}")
         if query_service is not None and actor.has_capability("ops.knowledge.read"):
             try:
                 doc_inv = await query_service._fetch_document_inventory()
@@ -567,6 +583,7 @@ def register_governance_routes(
                     doc_id = str(doc.get("document_id") or "")
                     title = str(doc.get("title") or doc.get("filename") or doc_id)
                     desc = str(doc.get("description") or doc.get("category") or doc.get("owner_unit_id") or "")
+                    doc_status = str(doc.get("status") or "PUBLISHED")
                     extras.append(
                         {
                             "type": "KNOWLEDGE",
@@ -574,11 +591,12 @@ def register_governance_routes(
                             "title": title,
                             "snippet": f"{doc_id} {desc}"[:160],
                             "owner_unit_id": str(doc.get("owner_unit_id") or ""),
+                            "status": doc_status,
                             "requiredCapability": "ops.knowledge.read",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                warnings.append(f"知識文件資料來源讀取失敗：{exc}")
         if query_service is not None and actor.has_capability("ops.conversations.read") and q:
             try:
                 conv_result = await query_service.list_conversations(
@@ -592,6 +610,7 @@ def register_governance_routes(
                         if t.get("aiReply"):
                             turn_texts.append(str(t["aiReply"]))
                     matched_snippet = " ".join(turn_texts) if turn_texts else f"{item.get('actorRef') or ''} {q}"
+                    conv_status = str(item.get("status") or "CLOSED")
                     extras.append(
                         {
                             "type": "CONVERSATION",
@@ -599,28 +618,41 @@ def register_governance_routes(
                             "title": f"對話 {item['conversationId']}",
                             "snippet": matched_snippet[:160],
                             "owner_unit_id": str(item.get("ownerUnitId") or ""),
+                            "status": conv_status,
                             "requiredCapability": "ops.conversations.read",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                warnings.append(f"對話歷史資料來源讀取失敗：{exc}")
         if quality_service is not None and actor.has_capability("ops.quality.read"):
-            for case in quality_service.list_cases(actor=actor)[:200]:
-                extras.append(
-                    {
-                        "type": "QUALITY_CASE",
-                        "id": str(case.get("case_id") or ""),
-                        "title": str(case.get("title") or case.get("status") or ""),
-                        "snippet": str(case.get("description") or case.get("issue_type_id") or "")[
-                            :160
-                        ],
-                        "owner_unit_id": str(case.get("owner_unit_id") or ""),
-                        "requiredCapability": "ops.quality.read",
-                    }
-                )
-        return governance.search(
-            query=q, actor=actor, doc_type=doc_type, owner_unit_id=owner_unit_id, extra_documents=extras
+            try:
+                for case in quality_service.list_cases(actor=actor)[:200]:
+                    case_status = str(case.get("status") or "OPEN")
+                    extras.append(
+                        {
+                            "type": "QUALITY_CASE",
+                            "id": str(case.get("case_id") or ""),
+                            "title": str(case.get("title") or case.get("status") or ""),
+                            "snippet": str(case.get("description") or case.get("issue_type_id") or "")[
+                                :160
+                            ],
+                            "owner_unit_id": str(case.get("owner_unit_id") or ""),
+                            "status": case_status,
+                            "requiredCapability": "ops.quality.read",
+                        }
+                    )
+            except Exception as exc:
+                warnings.append(f"品質案件資料來源讀取失敗：{exc}")
+        res = governance.search(
+            query=q,
+            actor=actor,
+            doc_type=doc_type,
+            owner_unit_id=owner_unit_id,
+            status=status,
+            extra_documents=extras,
         )
+        res["warnings"] = warnings
+        return res
 
     @app.get("/api/governance/audit")
     async def governance_audit(

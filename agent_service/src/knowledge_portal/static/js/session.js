@@ -7,15 +7,16 @@ const DEMO_IDENTITY = {
 const ALL_NAV = ["work", "knowledge", "reviews", "audit", "releases"];
 
 function embedMode() {
+  if (typeof window === "undefined") return false;
   return Boolean(
     window.__AI_OPS_KNOWLEDGE_EMBED__ ||
-    sessionStorage.getItem("ai_ops_backoffice_auth") ||
-    document.querySelector(".topbar")
+    (typeof sessionStorage !== "undefined" && sessionStorage.getItem("ai_ops_backoffice_auth")) ||
+    (typeof document !== "undefined" && document.querySelector(".topbar"))
   );
 }
 
 function initialState() {
-  if (embedMode() && window.__AI_OPS_EMBED_SESSION__) {
+  if (typeof window !== "undefined" && embedMode() && window.__AI_OPS_EMBED_SESSION__) {
     return {
       ...window.__AI_OPS_EMBED_SESSION__,
       capabilities: {

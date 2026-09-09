@@ -47,6 +47,24 @@ export async function renderFlags() {
     headerRow.append(titleH2, envControls);
     panel.append(headerRow);
 
+    const retentionNote = el("div", "filter-bar");
+    retentionNote.style.background = "var(--bg-card, #f8fafc)";
+    retentionNote.style.border = "1px solid var(--border-subtle, #e2e8f0)";
+    retentionNote.style.borderRadius = "6px";
+    retentionNote.style.padding = "0.75rem 1rem";
+    retentionNote.style.marginBottom = "1rem";
+    retentionNote.style.fontSize = "0.85rem";
+    retentionNote.style.color = "var(--text-secondary, #475569)";
+    retentionNote.append(
+      el("strong", "", "版本保存與回滾政策說明："),
+      el(
+        "span",
+        "",
+        " 核心生效中 (ACTIVE) 及核准 (APPROVED) 版本永久保留以支援隨時一鍵回滾；已過期或已淘汰 (RETIRED/REJECTED) 之候選版本保存 1 年 (365 天)，期滿後由系統保留清理機制自動清除。"
+      )
+    );
+    panel.append(retentionNote);
+
     const items = data.items || [];
     if (!items.length) {
       panel.append(el("p", "empty", "目前無 Feature Flag。"));
@@ -174,6 +192,10 @@ function showFlagCandidateModal(flag, onRefresh) {
   reasonGroup.append(reasonInput);
   form.append(reasonGroup);
 
+  const errorBox = el("div", "error");
+  errorBox.style.display = "none";
+  form.append(errorBox);
+
   const submitBtn = el("button", "", "建立候選版本 (Submit Candidate)");
   submitBtn.type = "submit";
   form.append(submitBtn);
@@ -182,7 +204,8 @@ function showFlagCandidateModal(flag, onRefresh) {
     e.preventDefault();
     const reason = reasonInput.value.trim();
     if (reason.length < 3) {
-      alert("變更原因至少需 3 個字元");
+      errorBox.textContent = "變更原因至少需 3 個字元";
+      errorBox.style.display = "block";
       return;
     }
     const env = envSelect.value;
@@ -190,7 +213,8 @@ function showFlagCandidateModal(flag, onRefresh) {
     if (expiryInput.value) {
       expiresAt = new Date(expiryInput.value).toISOString();
     } else if (env === "prod") {
-      alert("正式環境 (prod) 開關必須設定過期時間！");
+      errorBox.textContent = "正式環境 (prod) 開關必須設定過期時間！";
+      errorBox.style.display = "block";
       return;
     }
     try {
@@ -208,11 +232,156 @@ function showFlagCandidateModal(flag, onRefresh) {
       closeContentModal();
       await onRefresh();
     } catch (err) {
-      alert(`建立失敗：${err.message || err}`);
+      errorBox.textContent = `建立失敗：${err.message || err}`;
+      errorBox.style.display = "block";
     }
   });
 
   showContentModal(`變更開關：${flag.flag_id}`, form);
+}
+
+function showApproveFlagModal(flag, version, versions, allowed, onRefresh) {
+  const form = el("form", "form-grid");
+  form.style.display = "flex";
+  form.style.flexDirection = "column";
+  form.style.gap = "0.75rem";
+
+  const errorBox = el("div", "error");
+  errorBox.style.display = "none";
+
+  const infoBox = el("div");
+  infoBox.style.background = "var(--bg-card, #f8fafc)";
+  infoBox.style.padding = "0.75rem";
+  infoBox.style.borderRadius = "4px";
+  infoBox.style.border = "1px solid var(--border-subtle, #e2e8f0)";
+  infoBox.append(
+    el("div", "", `開關名稱：${flag.flag_id}`),
+    el("div", "", `版本代碼：${version.version_id}`),
+    el("div", "", `套用環境：${version.environment}`),
+    el("div", "", `設定目標值：${version.value}`),
+    el("div", "", `提案建立者：${version.created_by || "-"}`),
+  );
+  form.append(infoBox);
+
+  const reasonGroup = el("div");
+  reasonGroup.append(el("label", "metric-label", "核准審查原因 (Reason，至少 3 字)："));
+  const reasonInput = el("input");
+  reasonInput.required = true;
+  reasonInput.value = "符合變更審查規範";
+  reasonGroup.append(reasonInput);
+  form.append(reasonGroup, errorBox);
+
+  const btnRow = el("div");
+  btnRow.style.display = "flex";
+  btnRow.style.gap = "0.5rem";
+  btnRow.style.justifyContent = "flex-end";
+
+  const cancelBtn = el("button", "secondary", "取消返回");
+  cancelBtn.type = "button";
+  cancelBtn.addEventListener("click", () => {
+    showFlagVersionsModal(flag, versions, allowed, onRefresh);
+  });
+
+  const submitBtn = el("button", "", "確認核准");
+  submitBtn.type = "submit";
+  btnRow.append(cancelBtn, submitBtn);
+  form.append(btnRow);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const reason = reasonInput.value.trim();
+    if (reason.length < 3) {
+      errorBox.textContent = "核准原因至少需 3 個字元";
+      errorBox.style.display = "block";
+      return;
+    }
+    try {
+      await api(`/api/governance/flags/${flag.flag_id}/versions/${version.version_id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      closeContentModal();
+      await onRefresh();
+    } catch (err) {
+      errorBox.textContent = `核准失敗：${err.message || err}`;
+      errorBox.style.display = "block";
+    }
+  });
+
+  showContentModal(`核准開關變更：${flag.flag_id}`, form);
+}
+
+function showActivateFlagModal(flag, version, versions, allowed, onRefresh) {
+  const form = el("form", "form-grid");
+  form.style.display = "flex";
+  form.style.flexDirection = "column";
+  form.style.gap = "0.75rem";
+
+  const errorBox = el("div", "error");
+  errorBox.style.display = "none";
+
+  const infoBox = el("div");
+  infoBox.style.background = "var(--bg-card, #f8fafc)";
+  infoBox.style.padding = "0.75rem";
+  infoBox.style.borderRadius = "4px";
+  infoBox.style.border = "1px solid var(--border-subtle, #e2e8f0)";
+  infoBox.append(
+    el("div", "", `開關名稱：${flag.flag_id}`),
+    el("div", "", `版本代碼：${version.version_id}`),
+    el("div", "", `套用環境：${version.environment}`),
+    el("div", "", `生效設定值：${version.value}`),
+    el("div", "", `核准人員：${version.approved_by || "-"}`),
+  );
+  form.append(infoBox);
+
+  const reasonGroup = el("div");
+  reasonGroup.append(el("label", "metric-label", "啟用生效原因 (Reason，至少 3 字)："));
+  const reasonInput = el("input");
+  reasonInput.required = true;
+  reasonInput.value = "核准後正式生效";
+  reasonGroup.append(reasonInput);
+  form.append(reasonGroup, errorBox);
+
+  const btnRow = el("div");
+  btnRow.style.display = "flex";
+  btnRow.style.gap = "0.5rem";
+  btnRow.style.justifyContent = "flex-end";
+
+  const cancelBtn = el("button", "secondary", "取消返回");
+  cancelBtn.type = "button";
+  cancelBtn.addEventListener("click", () => {
+    showFlagVersionsModal(flag, versions, allowed, onRefresh);
+  });
+
+  const submitBtn = el("button", "", "確認啟用");
+  submitBtn.type = "submit";
+  btnRow.append(cancelBtn, submitBtn);
+  form.append(btnRow);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const reason = reasonInput.value.trim();
+    if (reason.length < 3) {
+      errorBox.textContent = "啟用原因至少需 3 個字元";
+      errorBox.style.display = "block";
+      return;
+    }
+    try {
+      await api(`/api/governance/flags/${flag.flag_id}/versions/${version.version_id}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      closeContentModal();
+      await onRefresh();
+    } catch (err) {
+      errorBox.textContent = `啟用失敗：${err.message || err}`;
+      errorBox.style.display = "block";
+    }
+  });
+
+  showContentModal(`啟用開關版本：${flag.flag_id}`, form);
 }
 
 function showFlagVersionsModal(flag, versions, allowed, onRefresh) {
@@ -233,40 +402,16 @@ function showFlagVersionsModal(flag, versions, allowed, onRefresh) {
 
     if (v.status === "CANDIDATE" && allowed.has("ops.flags.approve")) {
       const appBtn = el("button", "", "核准 (Approve)");
-      appBtn.addEventListener("click", async () => {
-        const reason = window.prompt("請輸入核准原因：", "符合變更審查規範");
-        if (!reason || reason.trim().length < 3) return;
-        try {
-          await api(`/api/governance/flags/${flag.flag_id}/versions/${v.version_id}/approve`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
-          });
-          closeContentModal();
-          await onRefresh();
-        } catch (err) {
-          alert(`核准失敗：${err.message || err}`);
-        }
+      appBtn.addEventListener("click", () => {
+        showApproveFlagModal(flag, v, versions, allowed, onRefresh);
       });
       actions.append(appBtn);
     }
 
     if (v.status === "APPROVED" && allowed.has("ops.flags.activate")) {
       const actBtn = el("button", "", "啟用 (Activate)");
-      actBtn.addEventListener("click", async () => {
-        const reason = window.prompt("請輸入啟用原因：", "核准後正式生效");
-        if (!reason || reason.trim().length < 3) return;
-        try {
-          await api(`/api/governance/flags/${flag.flag_id}/versions/${v.version_id}/activate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reason: reason.trim() }),
-          });
-          closeContentModal();
-          await onRefresh();
-        } catch (err) {
-          alert(`啟用失敗：${err.message || err}`);
-        }
+      actBtn.addEventListener("click", () => {
+        showActivateFlagModal(flag, v, versions, allowed, onRefresh);
       });
       actions.append(actBtn);
     }
