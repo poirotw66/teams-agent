@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from agent_service.extractor import SYSTEM_PROMPT
@@ -234,14 +234,77 @@ class GovernanceSearchAuditMixin:
 
         return self._mutate(operation)
 
+    def query_audit(
+        self,
+        *,
+        actor: ActorContext,
+        target_type: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        self._require(actor, READ["audit"])
+        events = list(self._ensured().audits)
+        if target_type:
+            needle_target = target_type.strip().casefold()
+            events = [item for item in events if needle_target in item.target_type.casefold()]
+        if actor_id:
+            needle_actor = actor_id.strip().casefold()
+            events = [item for item in events if needle_actor in item.actor_id.casefold()]
+        if action:
+            needle_action = action.strip().casefold()
+            events = [item for item in events if needle_action in item.action.casefold()]
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=UTC)
+                events = [item for item in events if item.occurred_at >= start_dt]
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=UTC)
+                events = [item for item in events if item.occurred_at <= end_dt]
+            except Exception:
+                pass
+
+        sorted_events = sorted(events, key=lambda e: e.occurred_at, reverse=True)
+        start = int(cursor or "0")
+        page = sorted_events[start : start + limit]
+        next_index = start + len(page)
+        next_cursor = str(next_index) if next_index < len(sorted_events) else None
+        return {
+            "items": [item.model_dump(mode="json") for item in page],
+            "nextCursor": next_cursor,
+            "hasMore": next_cursor is not None,
+            "total": len(sorted_events),
+        }
+
     def export_audit(
         self,
         *,
         actor: ActorContext,
         target_type: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         self._require(actor, READ["audit"])
-        items = self.list_audit(actor=actor, target_type=target_type)
+        items = self.list_audit(
+            actor=actor,
+            target_type=target_type,
+            actor_id=actor_id,
+            action=action,
+            start_date=start_date,
+            end_date=end_date,
+        )
         package = {
             "exportedAt": self._clock().isoformat(),
             "count": len(items),
@@ -262,11 +325,27 @@ class GovernanceSearchAuditMixin:
 
         return self._mutate(operation)
 
-    def list_audit(self, *, actor: ActorContext, target_type: str | None = None) -> list[dict[str, Any]]:
+    def list_audit(
+        self,
+        *,
+        actor: ActorContext,
+        target_type: str | None = None,
+        actor_id: str | None = None,
+        action: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> list[dict[str, Any]]:
         self._require(actor, READ["audit"])
-        events = self._ensured().audits
-        return [
-            item.model_dump(mode="json")
-            for item in events
-            if target_type is None or item.target_type == target_type
-        ]
+        res = self.query_audit(
+            actor=actor,
+            target_type=target_type,
+            actor_id=actor_id,
+            action=action,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit or 10000,
+            cursor=cursor,
+        )
+        return res["items"]
