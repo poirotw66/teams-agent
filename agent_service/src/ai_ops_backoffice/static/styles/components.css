@@ -521,6 +521,25 @@ pre {
   margin: 0.2rem 0;
 }
 
+.content-guide-compact {
+  padding: 0.65rem 0.85rem;
+}
+
+.content-guide-more {
+  margin-top: 0.45rem;
+}
+
+.content-guide-more summary {
+  cursor: pointer;
+  color: var(--accent, #2563eb);
+  font-size: 0.85rem;
+  font-weight: 550;
+}
+
+.content-guide-more[open] summary {
+  margin-bottom: 0.35rem;
+}
+
 .issue-tree {
   list-style: none;
   padding-left: 0;

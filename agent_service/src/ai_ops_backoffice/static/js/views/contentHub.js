@@ -8,8 +8,17 @@ import {
 import { actorCapabilities, canUseKnowledgeUi } from "../app/capabilities.js";
 import { drillLink, navigateTo } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 async function renderContentHub(panel, state = {}) {
+  // BU shell: skip hub card hop — go straight to knowledge lists.
+  if (isBuShellEnabled()) {
+    const tab =
+      state.type === "FAQ" ? "faq" : state.type === "DOCUMENT" ? "documents" : "documents";
+    void navigateTo("contentLists", { tab });
+    return;
+  }
+
   const allowed = actorCapabilities();
   const type = state.type || "ALL";
 
@@ -90,6 +99,9 @@ async function renderContentHub(panel, state = {}) {
 }
 
 function showContentHub() {
+  if (isBuShellEnabled()) {
+    return navigateTo("contentLists", { tab: "documents" });
+  }
   const panel = el("section", "panel");
   document.getElementById("app").replaceChildren(panel);
   return renderContentHub(panel);

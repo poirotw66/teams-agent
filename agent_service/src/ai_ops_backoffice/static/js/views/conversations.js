@@ -2,11 +2,12 @@ import { api, el } from "../api.js";
 import { periodParams, createPeriodControls } from "../components/period.js";
 import { badge } from "../components/badges.js";
 import { showContentModal } from "../components/modal.js";
-import { showConversationModal } from "../components/conversationModal.js";
+import { showConversationModal, showConversationPage } from "../components/conversationModal.js";
 import { runExport } from "../services/export.js";
 import { getCurrentActiveView } from "../app/activeView.js";
-import { loadNavFilters } from "../app/navigation.js";
+import { loadNavFilters, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 let conversationPollTimer = null;
 let conversationAutoRefresh = false;
@@ -116,6 +117,23 @@ export async function renderConversations(state = {}) {
 
     const data = await api(`/api/conversations?${filters.toString()}`);
 
+    if (
+      isBuShellEnabled() &&
+      conversationId &&
+      !state.isPolling &&
+      !state.skipDetail
+    ) {
+      try {
+        const detail = await api(
+          `/api/conversations/${encodeURIComponent(conversationId)}?refresh=true`,
+        );
+        showConversationPage(detail, conversationId);
+        return;
+      } catch (error) {
+        /* Fall through to list with error banner below. */
+      }
+    }
+
     if (state.isPolling) {
       const activeId = document.activeElement?.id;
       if (activeId && activeId.startsWith("conversation-")) {
@@ -139,7 +157,7 @@ export async function renderConversations(state = {}) {
     headerRow.style.flexWrap = "wrap";
     headerRow.style.gap = "0.75rem";
 
-    const heading = el("h2", "", "對話紀錄（遮罩摘要）");
+    const heading = el("h2", "", "對話紀錄");
     heading.style.margin = "0";
 
     const liveControls = el("div", "meta-group");
@@ -201,6 +219,11 @@ export async function renderConversations(state = {}) {
     liveControls.append(freshnessBadge, autoRefreshLabel, refreshButton);
     headerRow.append(heading, liveControls);
     panel.append(headerRow);
+    if (isBuShellEnabled()) {
+      panel.append(
+        el("p", "metric-label", "從使用者的提問，追到實際回答與引用依據。"),
+      );
+    }
 
     const filterBar = el("div", "filter-bar");
     const convIdInput = el("input");
@@ -332,7 +355,7 @@ export async function renderConversations(state = {}) {
     }
     const table = el("table");
     table.innerHTML =
-      "<thead><tr><th>Conversation</th><th>Turns</th><th>Actor</th><th>Channel</th><th>Routes</th><th>派工／工單</th><th>Last Seen</th></tr></thead>";
+      "<thead><tr><th>時間／對話</th><th>回合</th><th>使用者</th><th>頻道</th><th>處理方式</th><th>派工／工單</th><th>最近更新</th></tr></thead>";
     const body = el("tbody");
     for (const item of data.items) {
       const row = el("tr");
@@ -341,6 +364,16 @@ export async function renderConversations(state = {}) {
       link.addEventListener("click", async (event) => {
         event.preventDefault();
         const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}?refresh=true`);
+        if (isBuShellEnabled()) {
+          saveNavFilters({
+            view: "conversations",
+            conversationId: item.conversationId,
+            ...currentConversationState.filters,
+          });
+          syncLocationHash("conversations", {
+            conversationId: item.conversationId,
+          });
+        }
         showConversationModal(detail, item.conversationId);
       });
       const conversationCell = el("td");

@@ -1,6 +1,7 @@
 /** Shared FAQ vs Knowledge document guidance for Knowledge Ops. */
 
 import { el } from "../api.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 export const CONTENT_POLICY = {
   title: "固定答案與知識文件是兩種內容，不會自動互抄",
@@ -57,17 +58,14 @@ export function recommendContentType(qualityCase = {}) {
   };
 }
 
-export function renderContentPolicyBanner() {
-  const box = el("div", "content-guide");
-  box.append(
-    el("strong", "content-guide-title", CONTENT_POLICY.title),
-    el("p", "content-guide-body", CONTENT_POLICY.body),
-  );
-  return box;
+function shouldCompact(explicit) {
+  if (explicit === true || explicit === false) {
+    return explicit;
+  }
+  return isBuShellEnabled();
 }
 
-export function renderDecisionGuide({ recommended } = {}) {
-  const box = el("div", "content-guide content-guide-decision");
+function renderFullDecisionBody(box, recommended) {
   box.append(el("strong", "content-guide-title", "什麼時候用哪一種？"));
 
   const grid = el("div", "content-guide-grid");
@@ -104,5 +102,62 @@ export function renderDecisionGuide({ recommended } = {}) {
       "若兩邊都要：先完成主路徑，再用「手動關聯」互指；系統不會自動同步內文。",
     ),
   );
+}
+
+export function renderContentPolicyBanner({ compact } = {}) {
+  if (shouldCompact(compact)) {
+    const box = el("div", "content-guide content-guide-compact");
+    box.append(
+      el(
+        "p",
+        "content-guide-body",
+        "FAQ 是固定答案；知識文件供檢索引用。兩邊不會自動互抄。",
+      ),
+    );
+    const more = el("details", "content-guide-more");
+    more.append(el("summary", "", "完整說明"));
+    more.append(el("p", "content-guide-body", CONTENT_POLICY.body));
+    box.append(more);
+    return box;
+  }
+  const box = el("div", "content-guide");
+  box.append(
+    el("strong", "content-guide-title", CONTENT_POLICY.title),
+    el("p", "content-guide-body", CONTENT_POLICY.body),
+  );
+  return box;
+}
+
+export function renderDecisionGuide({ recommended, compact } = {}) {
+  if (shouldCompact(compact)) {
+    const box = el("div", "content-guide content-guide-decision content-guide-compact");
+    if (recommended) {
+      const label = recommended.type === "FAQ" ? "固定答案 FAQ" : "知識文件";
+      box.append(
+        el(
+          "p",
+          "content-guide-recommend",
+          `建議先做：${label}。${recommended.reason}`,
+        ),
+      );
+    } else {
+      box.append(
+        el(
+          "p",
+          "content-guide-body",
+          "短標準答法用 FAQ；長文或多變說法用知識文件。",
+        ),
+      );
+    }
+    const more = el("details", "content-guide-more");
+    more.append(el("summary", "", "選擇說明"));
+    const nested = el("div");
+    renderFullDecisionBody(nested, null);
+    more.append(nested);
+    box.append(more);
+    return box;
+  }
+  const box = el("div", "content-guide content-guide-decision");
+  renderFullDecisionBody(box, recommended);
   return box;
 }
