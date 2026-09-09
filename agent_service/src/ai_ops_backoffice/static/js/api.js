@@ -34,9 +34,33 @@ export function authHeaders() {
 }
 
 export async function api(path, options = {}) {
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
+  let body = options.body;
+
+  if (
+    body !== undefined &&
+    body !== null &&
+    typeof body === "object" &&
+    !(body instanceof FormData) &&
+    !(body instanceof Blob) &&
+    !(body instanceof URLSearchParams)
+  ) {
+    body = JSON.stringify(body);
+    if (!headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+  } else if (
+    typeof body === "string" &&
+    !headers["Content-Type"] &&
+    (body.startsWith("{") || body.startsWith("["))
+  ) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(path, {
     ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) },
+    headers,
+    body,
   });
   if (response.status === 401) {
     if (typeof window !== "undefined") {
@@ -51,8 +75,15 @@ export async function api(path, options = {}) {
   if (!response.ok) {
     if (contentType.includes("application/json")) {
       const payload = await response.json().catch(() => ({}));
-      const message = payload.error?.message || payload.detail || `HTTP ${response.status}`;
-      throw new Error(typeof message === "string" ? message : `HTTP ${response.status}`);
+      let message = payload.error?.message || payload.detail;
+      if (Array.isArray(message)) {
+        message = message.map((item) => item.msg || JSON.stringify(item)).join("; ");
+      } else if (typeof message === "object" && message !== null) {
+        message = JSON.stringify(message);
+      } else if (typeof message !== "string" || !message.trim()) {
+        message = `HTTP ${response.status}`;
+      }
+      throw new Error(message);
     }
     throw new Error(`HTTP ${response.status}`);
   }

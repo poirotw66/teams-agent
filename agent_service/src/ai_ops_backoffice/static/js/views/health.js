@@ -43,7 +43,7 @@ export async function renderHealth(targetDate = null) {
     );
     panel.append(grid);
 
-    if data.isHistorical && data.historicalNotice) {
+    if (data.isHistorical && data.historicalNotice) {
       panel.append(
         el("div", "warning", data.historicalNotice),
       );

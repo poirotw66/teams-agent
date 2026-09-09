@@ -1010,25 +1010,29 @@ async function renderRunsTab(container, allowed) {
       alert("請先選擇評測題庫版本");
       return;
     }
-    const maxCasesVal = box.querySelector("#run-max-cases").value;
+    const maxCasesVal = box.querySelector("#run-max-cases")?.value;
     const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
+    const baselinePrompt = (box.querySelector("#baseline-prompt")?.value || "").trim() || "default";
+    const candidatePrompt = (box.querySelector("#candidate-prompt")?.value || "").trim() || "candidate-v1.1";
+    const targetModel = (box.querySelector("#target-model")?.value || "").trim() || "gemini-2.5-flash";
 
     resultsDiv.innerHTML = '<div class="alert alert-info">正在執行預檢中...</div>';
     try {
       const res = await api("/api/evaluations/runs/preflight", {
         method: "POST",
-        body: {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           set_version_id: setVersionId,
           baseline_target: {
-            prompt_version: box.querySelector("#baseline-prompt").value,
-            model_id: box.querySelector("#target-model").value,
+            prompt_version: baselinePrompt,
+            model_id: targetModel,
           },
           candidate_target: {
-            prompt_version: box.querySelector("#candidate-prompt").value,
-            model_id: box.querySelector("#target-model").value,
+            prompt_version: candidatePrompt,
+            model_id: targetModel,
           },
           limits: limits,
-        },
+        }),
       });
       resolvedPreflight = res;
       if (res.is_valid) {
@@ -1063,24 +1067,29 @@ async function renderRunsTab(container, allowed) {
     startRunBtn.textContent = "執行評測中...";
 
     try {
-      const maxCasesVal = box.querySelector("#run-max-cases").value;
+      const maxCasesVal = box.querySelector("#run-max-cases")?.value;
       const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
+      const baselinePrompt = (box.querySelector("#baseline-prompt")?.value || "").trim() || "default";
+      const candidatePrompt = (box.querySelector("#candidate-prompt")?.value || "").trim() || "candidate-v1.1";
+      const targetModel = (box.querySelector("#target-model")?.value || "").trim() || "gemini-2.5-flash";
+      const runMode = box.querySelector("#run-mode")?.value || "REAL_RAG";
 
       const res = await api("/api/evaluations/runs", {
         method: "POST",
-        body: {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           set_version_id: select.value,
           baseline_target: {
-            prompt_version: box.querySelector("#baseline-prompt").value,
-            model_id: box.querySelector("#target-model").value,
+            prompt_version: baselinePrompt,
+            model_id: targetModel,
           },
           candidate_target: {
-            prompt_version: box.querySelector("#candidate-prompt").value,
-            model_id: box.querySelector("#target-model").value,
+            prompt_version: candidatePrompt,
+            model_id: targetModel,
           },
-          mode: box.querySelector("#run-mode").value,
+          mode: runMode,
           limits: limits,
-        },
+        }),
       });
 
       resultsDiv.innerHTML = `
@@ -1364,12 +1373,13 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
     try {
       await api(`/api/evaluations/runs/${runId}/reviews`, {
         method: "POST",
-        body: {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           execution_id: candidateExec.execution_id,
           metric_id: metricId,
           decision: decision,
           reason: reason,
-        },
+        }),
       });
       alert("覆核決策已儲存！");
       closeContentModal();

@@ -209,3 +209,41 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
     )
     assert rescore_res.status_code == 200
     assert rescore_res.json()["run"]["judge_version"] == "ge2-judge-v2"
+
+
+def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
+    settings = _test_settings(tmp_path)
+    app = create_app(settings)
+    client = TestClient(app)
+
+    # Verify index.html contains updated asset version
+    index_res = client.get("/")
+    assert index_res.status_code == 200
+    assert "ops-ui-20260909a" in index_res.text
+
+    aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
+    # Verify preflight with non-existent set version returns 200 with is_valid=False and blocking_errors
+    preflight_res = client.post(
+        "/api/evaluations/runs/preflight",
+        headers=aiadmin_headers,
+        json={
+            "set_version_id": "nonexistent_ver",
+            "baseline_target": {"prompt_version": "v1", "model_id": "m1"},
+            "candidate_target": {"prompt_version": "v2", "model_id": "m1"},
+            "limits": {"max_cases": 10},
+        },
+    )
+    assert preflight_res.status_code == 200
+    assert preflight_res.json()["is_valid"] is False
+    assert any("not found" in err for err in preflight_res.json()["blocking_errors"])
+
+    # Verify preflight rejects invalid payload schema with 422
+    schema_err_res = client.post(
+        "/api/evaluations/runs/preflight",
+        headers=aiadmin_headers,
+        json={
+            # Missing set_version_id and targets
+            "limits": {"max_cases": 10},
+        },
+    )
+    assert schema_err_res.status_code == 422
