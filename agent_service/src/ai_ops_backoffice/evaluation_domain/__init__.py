@@ -10,6 +10,18 @@ from .errors import (
     EvaluationValidationError,
     EvaluationVersionConflictError,
 )
+from .gate_evaluator import GateEvaluator
+from .gate_models import (
+    EvalSchedule,
+    GateDecision,
+    GateException,
+    GatePolicy,
+    GatePolicyVersion,
+    QualityCaseLink,
+    SourceImpactResult,
+)
+from .gate_repository import QualityGateRepository
+from .gate_service import GateBlockedError, QualityGateService
 from .import_export import EvaluationImportExportManager
 from .manifest import ManifestResolver, calculate_target_manifest_hash
 from .models import (
@@ -70,6 +82,7 @@ __all__ = [
     "CriterionItem",
     "EvalBehaviorType",
     "EvalCase",
+    "EvalSchedule",
     "EvalSet",
     "EvalSetVersion",
     "EvaluationAuditEvent",
@@ -94,15 +107,25 @@ __all__ = [
     "EvidenceItem",
     "EvidenceRequirement",
     "FileEvaluationRepository",
+    "GateBlockedError",
+    "GateDecision",
+    "GateEvaluator",
+    "GateException",
+    "GatePolicy",
+    "GatePolicyVersion",
     "ImportValidationResult",
     "InMemoryEvaluationRepository",
     "ManifestResolver",
     "MetricResult",
     "MockResponseSpec",
     "ProvenanceSpec",
+    "QualityCaseLink",
+    "QualityGateRepository",
+    "QualityGateService",
     "ReviewDecision",
     "RunComparisonSummary",
     "RunPreflightResult",
+    "SourceImpactResult",
     "TargetManifest",
     "ToolCallTrace",
     "ToolConstraintsSpec",

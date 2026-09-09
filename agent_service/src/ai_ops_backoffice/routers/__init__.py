@@ -3,6 +3,7 @@ from .evaluation_routes import register_evaluation_routes
 from .evaluation_run_routes import register_evaluation_run_routes
 from .example_routes import register_example_routes
 from .faq_routes import register_faq_routes
+from .gate_routes import register_gate_routes
 from .ops_reads import register_ops_read_routes
 from .prompt_poc_routes import register_prompt_poc_routes
 from .quality_routes import register_quality_routes
@@ -15,6 +16,7 @@ __all__ = [
     "register_evaluation_run_routes",
     "register_example_routes",
     "register_faq_routes",
+    "register_gate_routes",
     "register_ops_read_routes",
     "register_prompt_poc_routes",
     "register_quality_routes",

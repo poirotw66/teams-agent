@@ -40,8 +40,10 @@ from .evaluation_domain import (
     EvaluationValidationError,
     EvaluationVersionConflictError,
     FileEvaluationRepository,
+    GateBlockedError,
     InMemoryEvaluationRepository,
     ManifestResolver,
+    QualityGateService,
     ToolFixtureService,
 )
 from .example_domain import (
@@ -80,6 +82,7 @@ from .routers import (
     register_evaluation_run_routes,
     register_example_routes,
     register_faq_routes,
+    register_gate_routes,
     register_ops_read_routes,
     register_prompt_poc_routes,
     register_quality_routes,
@@ -378,6 +381,7 @@ def create_app(
         runner=eval_runner,
         scorer=eval_scorer,
     )
+    quality_gate_service = QualityGateService(eval_repository=eval_repository)
     (
         sync_worker,
         run_sync_job,
@@ -464,6 +468,10 @@ def create_app(
     @app.exception_handler(EvaluationAuditWriteError)
     async def evaluation_audit_write_handler(_request, exc: EvaluationAuditWriteError) -> JSONResponse:
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(GateBlockedError)
+    async def gate_blocked_handler(_request, exc: GateBlockedError) -> JSONResponse:
+        return JSONResponse(status_code=412, content={"detail": str(exc)})
 
     register_ops_read_routes(
         app,
@@ -573,6 +581,13 @@ def create_app(
     register_tool_fixture_routes(
         app,
         fixture_service=tool_fixture_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
+    app.state.quality_gate_service = quality_gate_service
+    register_gate_routes(
+        app,
+        gate_service=quality_gate_service,
         current_actor=current_actor,
         require_capability=require_capability,
     )
