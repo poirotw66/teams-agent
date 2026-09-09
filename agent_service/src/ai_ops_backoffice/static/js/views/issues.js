@@ -23,6 +23,22 @@ import {
 import { createPageController } from "../app/lifecycle.js";
 import { showIssueDetailModal } from "../components/issueModal.js";
 import { showConversationModal } from "../components/conversationModal.js";
+import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { withReturnTo } from "../app/returnTo.js";
+
+function finishIssuesPage(panel) {
+  if (isBuShellEnabled()) {
+    presentAnalyticsPage(
+      "issues",
+      "問題分析",
+      "以排名找出需改善的問題，並追到處理方式、依據與案件。",
+      panel,
+    );
+    return;
+  }
+  document.getElementById("app").replaceChildren(panel);
+}
 
 function periodToNavFilters(period) {
   if (period?.preset === "custom") {
@@ -467,10 +483,17 @@ function renderIssueRouteDrill(data, period, query) {
     drillLink(
       `💬 查看相關對話 (${formatCount(totalCount)} 筆)`,
       "conversations",
-      {
-        issueTypeId: data.issueTypeId,
-        ...periodToNavFilters(period),
-      },
+      withReturnTo(
+        {
+          issueTypeId: data.issueTypeId,
+          ...periodToNavFilters(period),
+        },
+        "issues",
+        {
+          issueTypeId: data.issueTypeId,
+          ...periodToNavFilters(period),
+        },
+      ),
     ),
   );
 
@@ -479,11 +502,18 @@ function renderIssueRouteDrill(data, period, query) {
       drillLink(
         `⚠️ 前往品質案件處理 (${formatCount(negCount)} 筆負評)`,
         "quality",
-        {
-          rating: "DOWN",
-          issueTypeId: data.issueTypeId,
-          ...periodToNavFilters(period),
-        },
+        withReturnTo(
+          {
+            rating: "DOWN",
+            issueTypeId: data.issueTypeId,
+            ...periodToNavFilters(period),
+          },
+          "issues",
+          {
+            issueTypeId: data.issueTypeId,
+            ...periodToNavFilters(period),
+          },
+        ),
       ),
     );
   }
@@ -513,10 +543,10 @@ export async function renderIssues(state = { preset: "30d" }) {
       const data = await api(
         `/api/issues/${encodeURIComponent(navFilters.issueTypeId)}/routes?${periodParams(period).toString()}`,
       );
-      app.replaceChildren(renderIssueRouteDrill(data, period, query));
+      finishIssuesPage(renderIssueRouteDrill(data, period, query));
       return;
     } catch (error) {
-      app.replaceChildren(
+      finishIssuesPage(
         el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),
       );
       return;
@@ -714,7 +744,7 @@ export async function renderIssues(state = { preset: "30d" }) {
             : "確認 Agent 已寫入 issue.extracted 事件，或拉長查詢期間。",
         ),
       );
-      app.replaceChildren(panel);
+      finishIssuesPage(panel);
       return;
     }
 
@@ -894,11 +924,18 @@ export async function renderIssues(state = { preset: "30d" }) {
           negDrillNode = drillLink(
             `查看負評 (${item.negativeFeedbackCount} 筆)`,
             "quality",
-            {
-              rating: "DOWN",
-              issueTypeId: item.issueTypeId,
-              ...periodToNavFilters(period),
-            },
+            withReturnTo(
+              {
+                rating: "DOWN",
+                issueTypeId: item.issueTypeId,
+                ...periodToNavFilters(period),
+              },
+              "issues",
+              {
+                issueTypeId: item.issueTypeId,
+                ...periodToNavFilters(period),
+              },
+            ),
           );
         } else {
           negDrillNode = el("span", "metric-label", "尚無負評");
@@ -967,7 +1004,7 @@ export async function renderIssues(state = { preset: "30d" }) {
       panel.append(details);
     }
 
-    app.replaceChildren(panel);
+    finishIssuesPage(panel);
   } catch (error) {
     app.replaceChildren(
       el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),

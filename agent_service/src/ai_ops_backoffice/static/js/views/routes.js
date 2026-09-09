@@ -14,6 +14,8 @@ import { createPeriodControls, periodParams } from "../components/period.js";
 import { createExportButton } from "../services/export.js";
 import { clearNavFilters, drillLink, loadNavFilters, saveNavFilters } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
+import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 const ROUTE_OPTIONS = [
   "",
@@ -241,7 +243,16 @@ export async function renderRoutes(state = { preset: "30d" }) {
       panel.append(byIssueScroll);
     }
 
-    app.replaceChildren(panel);
+    if (isBuShellEnabled()) {
+      presentAnalyticsPage(
+        "routes",
+        "處理方式與回答依據",
+        "查看全體分布、原查詢條件與匯出能力。",
+        panel,
+      );
+    } else {
+      app.replaceChildren(panel);
+    }
   } catch (error) {
     app.replaceChildren(
       el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message),

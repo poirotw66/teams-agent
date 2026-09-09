@@ -13,6 +13,8 @@ import {
   deriveOverviewMetrics,
   exportOverviewCsv,
 } from "./overviewSections.js";
+import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 let currentOverviewPreset = "7d";
 let currentOverviewTrendTab = "conv";
@@ -124,7 +126,16 @@ export async function renderOverview(forceRefresh = false) {
     const glossary = buildMetricsGlossary(data.metricDefinitions || {});
     if (glossary) dashboard.append(glossary);
 
-    app.replaceChildren(dashboard);
+    if (isBuShellEnabled()) {
+      presentAnalyticsPage(
+        "overview",
+        "營運分析",
+        "回答哪裡需要改善：核心指標、趨勢與需關注問題。",
+        dashboard,
+      );
+    } else {
+      app.replaceChildren(dashboard);
+    }
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }

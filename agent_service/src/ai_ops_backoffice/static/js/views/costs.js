@@ -2,6 +2,8 @@ import { api, el, metric } from "../api.js";
 import { createPeriodControls, periodParams } from "../components/period.js";
 import { createExportButton } from "../services/export.js";
 import { createPageController } from "../app/lifecycle.js";
+import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 export async function renderCosts(state = { preset: "30d" }) {
   const app = document.getElementById("app");
@@ -258,7 +260,16 @@ export async function renderCosts(state = { preset: "30d" }) {
       dimScroll.append(dimensionTable);
       panel.append(el("h3", "", heading), dimScroll);
     }
-    app.replaceChildren(panel);
+    if (isBuShellEnabled()) {
+      presentAnalyticsPage(
+        "costs",
+        "成本與用量",
+        "用量與趨勢獨立檢視，不與品質指標混算。",
+        panel,
+      );
+    } else {
+      app.replaceChildren(panel);
+    }
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
   }

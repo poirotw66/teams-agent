@@ -16,6 +16,8 @@ import {
 } from "../app/navigation.js";
 import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js?v=pdf-img-20260908d";
 import { createPageController } from "../app/lifecycle.js";
+import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 
 export async function renderKnowledgePortalEntry(sub) {
@@ -97,24 +99,29 @@ export async function renderKnowledgeDocument() {
 async function renderKnowledge() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
-  panel.append(el("h2", "", "內容成效"));
+  if (!isBuShellEnabled()) {
+    panel.append(el("h2", "", "內容成效"));
+  }
   panel.append(renderContentPolicyBanner());
   if (getCapabilities()?.knowledgeBridgeEnabled) {
     panel.append(
       el(
         "p",
         "",
-        "查看文件使用情況與回答成效；編輯內容請前往知識文件庫。",
+        "查看文件使用情況與回答成效；編輯內容請前往知識內容。",
       ),
     );
-    const openPortal = el("a", "button-link", "開啟知識文件庫");
-    openPortal.href = buildLocationHash("knowledge_ops", "knowledgePortal");
+    const openPortal = el("a", "button-link", isBuShellEnabled() ? "開啟知識內容" : "開啟知識文件庫");
+    openPortal.href = buildLocationHash(
+      "knowledge_ops",
+      isBuShellEnabled() ? "contentLists" : "knowledgePortal",
+    );
     openPortal.addEventListener("click", (event) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
         return;
       }
       event.preventDefault();
-      navigateTo("knowledgePortal");
+      navigateTo(isBuShellEnabled() ? "contentLists" : "knowledgePortal");
     });
     openPortal.style.marginRight = "0.5rem";
     panel.append(openPortal);
@@ -186,7 +193,16 @@ async function renderKnowledge() {
   filters.append(query, owner, status, formatType, period, submit);
   const result = el("div", "");
   panel.append(filters, result);
-  app.replaceChildren(panel);
+  if (isBuShellEnabled()) {
+    presentAnalyticsPage(
+      "knowledge",
+      "內容成效",
+      "看哪些文件與 FAQ 真的被用到，再回頭修正內容。",
+      panel,
+    );
+  } else {
+    app.replaceChildren(panel);
+  }
 
   async function loadDocuments(cursor = "") {
     result.replaceChildren(el("p", "empty", "載入中…"));
@@ -455,7 +471,7 @@ function showCreateSyncModal(onCreated) {
   showContentModal("建立知識同步工作", form);
 }
 
-async function renderFaqManagement(panel) {
+export async function renderFaqManagement(panel) {
   panel.replaceChildren(el("h2", "", "FAQ 管理"), el("p", "empty", "載入中…"));
   const allowed = actorCapabilities();
   if (!allowed.has("ops.faq.read")) {

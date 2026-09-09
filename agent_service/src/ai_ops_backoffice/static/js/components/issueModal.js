@@ -4,6 +4,8 @@ import { attributionCell } from "./badges.js";
 import { showConversationModal } from "./conversationModal.js";
 import { navigateTo } from "../app/navigation.js";
 import { periodParams } from "./period.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { withReturnTo } from "../app/returnTo.js";
 
 function periodToNavFilters(period) {
   if (period?.preset === "custom") {
@@ -26,15 +28,28 @@ function periodLabel(period) {
   return period?.preset || "30d";
 }
 
+function closeIssueModalRoot() {
+  const root = document.getElementById("modal-root");
+  if (!root) return;
+  root.hidden = true;
+  root.replaceChildren();
+}
+
 export async function showIssueDetailModal(issueTypeId, period = { preset: "30d" }) {
+  const periodFilters = periodToNavFilters(period);
+  // BU shell: reuse the full-page issueType drill (renderIssueRouteDrill), not a second modal UI.
+  if (isBuShellEnabled()) {
+    await navigateTo("issues", { issueTypeId, ...periodFilters });
+    return;
+  }
+
   const root = document.getElementById("modal-root");
   root.hidden = false;
   root.replaceChildren();
 
   root.onclick = (e) => {
     if (e.target === root) {
-      root.hidden = true;
-      root.replaceChildren();
+      closeIssueModalRoot();
     }
   };
 
@@ -44,7 +59,6 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
   modal.style.maxHeight = "90vh";
   modal.style.overflowY = "auto";
 
-  // Loading header
   const header = el("div", "modal-header");
   header.style.display = "flex";
   header.style.justifyContent = "space-between";
@@ -59,10 +73,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
   titleWrap.append(heading);
 
   const close = el("button", "btn-modal-close", "✕ 關閉");
-  close.addEventListener("click", () => {
-    root.hidden = true;
-    root.replaceChildren();
-  });
+  close.addEventListener("click", () => closeIssueModalRoot());
   header.append(titleWrap, close);
 
   const body = el("div", "modal-body");
@@ -74,7 +85,6 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
     const params = periodParams(period);
     const data = await api(`/api/issues/${encodeURIComponent(issueTypeId)}/routes?${params.toString()}`);
 
-    // Update Header
     heading.textContent = `🏷️ ${data.displayName || issueTypeId}`;
     titleWrap.replaceChildren(heading);
 
@@ -397,14 +407,24 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
     leftActions.style.display = "flex";
     leftActions.style.gap = "0.75rem";
 
+    const returnCtx = {
+      issueTypeId: data.issueTypeId,
+      ...periodFilters,
+    };
     const convBtn = el("button", "btn-primary", `💬 查看相關對話 (${formatCount(totalCount)} 筆)`);
     convBtn.addEventListener("click", () => {
-      root.hidden = true;
-      root.replaceChildren();
-      navigateTo("conversations", {
-        issueTypeId: data.issueTypeId,
-        ...periodToNavFilters(period),
-      });
+      closeIssueModalRoot();
+      navigateTo(
+        "conversations",
+        withReturnTo(
+          {
+            issueTypeId: data.issueTypeId,
+            ...periodFilters,
+          },
+          "issues",
+          returnCtx,
+        ),
+      );
     });
     leftActions.append(convBtn);
 
@@ -413,23 +433,25 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
       qualBtn.style.background = "var(--bg-warning, #f59e0b)";
       qualBtn.style.color = "#ffffff";
       qualBtn.addEventListener("click", () => {
-        root.hidden = true;
-        root.replaceChildren();
-        navigateTo("quality", {
-          rating: "DOWN",
-          issueTypeId: data.issueTypeId,
-          ...periodToNavFilters(period),
-        });
+        closeIssueModalRoot();
+        navigateTo(
+          "quality",
+          withReturnTo(
+            {
+              rating: "DOWN",
+              issueTypeId: data.issueTypeId,
+              ...periodFilters,
+            },
+            "issues",
+            returnCtx,
+          ),
+        );
       });
       leftActions.append(qualBtn);
     }
 
     const closeBtn = el("button", "btn-secondary", "✕ 關閉");
-    closeBtn.addEventListener("click", () => {
-      root.hidden = true;
-      root.replaceChildren();
-    });
-
+    closeBtn.addEventListener("click", () => closeIssueModalRoot());
     footer.append(leftActions, closeBtn);
     body.append(footer);
   } catch (err) {
