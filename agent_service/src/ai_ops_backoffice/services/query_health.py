@@ -292,14 +292,27 @@ class HealthQueryMixin:
             for event in events
             if event.event_type in {"ticket.created", "ticket.failed"}
         ]
+        adapter_usage = usage_for(("teams_", "adapter_", "teams-adapter", "teams_bot"))
+        teams_events = [
+            ("SUCCESS", request_latencies.get(event.request_id or event.turn_id or event.correlation_id))
+            for event in events
+            if event.event_type in {"adapter.turn_received", "teams.message_received", "teams.inbound"}
+        ]
+        teams_samples = adapter_usage + teams_events
+        index_samples = usage_for(
+            ("knowledge_index", "indexer", "index", "retrieval_index", "embedding")
+        )
+
         all_usage = [(status, latency) for _, status, latency in usage_samples]
         telemetry = {
+            "teams-adapter": self._health_metric_summary(teams_samples),
             "agent-service": self._health_metric_summary(agent_samples),
             "llm-api": self._health_metric_summary(all_usage),
             "issue-extractor": self._health_metric_summary(
                 usage_for(("issue_extractor",))
             ),
             "faq-service": self._health_metric_summary(faq_samples),
+            "agent-retrieval-index": self._health_metric_summary(index_samples),
             "agent-retrieval-search": self._health_metric_summary(
                 usage_for(("knowledge_", "gemini_file_search"))
             ),
@@ -319,6 +332,7 @@ class HealthQueryMixin:
         knowledge_release = await self._probe_knowledge_release(internal_portal)
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
+
         telemetry, recent_anomalies = await self._health_telemetry(target_date=target_date)
         no_telemetry = self._health_metric_summary([])
         retrieval = dict(agent_functional)
@@ -326,6 +340,86 @@ class HealthQueryMixin:
             agent = {"status": "DEGRADED", "note": "Simulated LLM API latency spike."}
             retrieval = {"status": "DOWN", "note": "Simulated RAG index unreachable."}
             ticket = {"status": "DOWN", "note": "Simulated Ticket API timeout."}
+
+        is_historical = False
+        if target_date:
+            try:
+                parsed_target = datetime.strptime(target_date, "%Y-%m-%d").date()
+                is_historical = parsed_target < utc_now().date()
+            except ValueError:
+                pass
+
+        raw_components = [
+            {"id": "agent-service", **agent, **telemetry["agent-service"]},
+            {"id": "agent-functional", **agent_functional, **no_telemetry},
+            {"id": "teams-adapter", **adapter, **telemetry["teams-adapter"]},
+            {
+                "id": "agent-retrieval-index",
+                "status": knowledge_release.get("indexStatus") or agent_functional.get("status", "UNKNOWN"),
+                "note": knowledge_release.get("note") or agent_functional.get("note"),
+                **telemetry["agent-retrieval-index"],
+            },
+            {
+                "id": "agent-retrieval-search",
+                **retrieval,
+                **telemetry["agent-retrieval-search"],
+            },
+            {
+                "id": "llm-api",
+                **agent,
+                **telemetry["llm-api"],
+            },
+            {
+                "id": "issue-extractor",
+                **agent,
+                **telemetry["issue-extractor"],
+            },
+            {"id": "faq-service", **agent, **telemetry["faq-service"]},
+            {
+                "id": "analytics-store",
+                "status": "READY",
+                "note": f"mode={self._settings.ops_store_mode}",
+                **no_telemetry,
+            },
+            {"id": "knowledge-portal", **portal, **no_telemetry},
+            {"id": "knowledge-release", **knowledge_release, **no_telemetry},
+            {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
+        ]
+
+        components: list[dict[str, Any]] = []
+        for comp in raw_components:
+            live_status = str(comp.get("status") or "UNKNOWN")
+            live_note = comp.get("note")
+            if is_historical:
+                telem_status = comp.get("telemetryStatus")
+                avail_rate = comp.get("availabilityRate")
+                err_rate = comp.get("errorRate") or 0.0
+                timeout_rate = comp.get("timeoutRate") or 0.0
+                req_count = comp.get("requestCount") or 0
+
+                if telem_status == "AVAILABLE" and req_count > 0:
+                    if err_rate == 0.0 and timeout_rate == 0.0:
+                        hist_status = "READY"
+                    elif avail_rate == 0.0:
+                        hist_status = "DOWN"
+                    else:
+                        hist_status = "DEGRADED"
+                    hist_note = f"依歷史遙測判定 ({target_date})"
+                else:
+                    hist_status = "NO_DATA"
+                    hist_note = f"歷史日期無遙測紀錄；即時探測為 {live_status}"
+
+                components.append({
+                    **comp,
+                    "status": hist_status,
+                    "liveProbeStatus": live_status,
+                    "liveProbeNote": live_note,
+                    "isHistorical": True,
+                    "note": hist_note,
+                })
+            else:
+                components.append(comp)
+
         monitoring_links: dict[str, str] = {}
         project_id = self._settings.gcp_project_id
         if project_id:
@@ -339,33 +433,14 @@ class HealthQueryMixin:
                 f"?project={project_id}"
             )
         return {
-            "components": [
-                {"id": "teams-adapter", **adapter, **no_telemetry},
-                {"id": "agent-service", **agent, **telemetry["agent-service"]},
-                {"id": "llm-api", **agent, **telemetry["llm-api"]},
-                {
-                    "id": "issue-extractor",
-                    **agent,
-                    **telemetry["issue-extractor"],
-                },
-                {"id": "faq-service", **agent, **telemetry["faq-service"]},
-                {"id": "agent-retrieval-index", **agent_functional, **no_telemetry},
-                {
-                    "id": "agent-retrieval-search",
-                    **retrieval,
-                    **telemetry["agent-retrieval-search"],
-                },
-                {
-                    "id": "analytics-store",
-                    "status": "READY",
-                    "note": f"mode={self._settings.ops_store_mode}",
-                    **no_telemetry,
-                },
-                {"id": "knowledge-portal", **portal, **no_telemetry},
-                {"id": "knowledge-release", **knowledge_release, **no_telemetry},
-                {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
-            ],
+            "components": components,
             "targetDate": target_date,
+            "isHistorical": is_historical,
+            "historicalNotice": (
+                f"您正在檢視歷史日期（{target_date}）之遙測資料。狀態欄依當日遙測判定，即時探測狀態僅代表當前連線狀態。"
+                if is_historical
+                else None
+            ),
             "telemetryWindowHours": 24 if not target_date else None,
             "recentAnomalies": recent_anomalies,
             "monitoringLinks": monitoring_links,

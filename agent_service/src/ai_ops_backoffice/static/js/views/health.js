@@ -43,6 +43,11 @@ export async function renderHealth(targetDate = null) {
     );
     panel.append(grid);
 
+    if (data.isHistorical && data.historicalNotice) {
+      panel.append(
+        el("div", "warning", data.historicalNotice),
+      );
+    }
     if (data.simulatedAnomalies) {
       panel.append(
         el("div", "warning", "目前為模擬異常模式，部分元件狀態為測試用途。"),
@@ -60,9 +65,12 @@ export async function renderHealth(targetDate = null) {
       panel.append(links);
     }
     const table = el("table");
-    const windowCol = targetDate ? "Requests" : "24h Requests";
+    const windowCol = data.isHistorical ? "當日請求數" : (targetDate ? "Requests" : "24h Requests");
+    const statusHeaders = data.isHistorical
+      ? "<th>歷史狀態</th><th>即時探測</th>"
+      : "<th>Status</th>";
     table.innerHTML = [
-      `<thead><tr><th>Component</th><th>Status</th><th>${windowCol}</th>`,
+      `<thead><tr><th>Component</th>${statusHeaders}<th>${windowCol}</th>`,
       "<th>Availability</th><th>Error</th><th>Timeout</th>",
       "<th>P50 ms</th><th>P95 ms</th><th>Note</th></tr></thead>",
     ].join("");
@@ -70,16 +78,30 @@ export async function renderHealth(targetDate = null) {
     for (const item of components) {
       const row = el("tr");
       row.append(el("td", "", item.id));
+
       const statusCell = el("td");
       const isOk = ["READY", "AVAILABLE", "OK"].includes(item.status?.toUpperCase());
-      const statusChip = el("span", "badge", item.status);
+      const statusChip = el("span", "badge", item.status || "UNKNOWN");
       if (!isOk) {
-        statusChip.style.background = "var(--danger-soft)";
-        statusChip.style.borderColor = "var(--danger-border)";
-        statusChip.style.color = "var(--danger)";
+        statusChip.style.background = item.status === "NO_DATA" ? "var(--warning-soft, #fff3cd)" : "var(--danger-soft)";
+        statusChip.style.borderColor = item.status === "NO_DATA" ? "var(--warning-border, #ffeeba)" : "var(--danger-border)";
+        statusChip.style.color = item.status === "NO_DATA" ? "var(--warning, #856404)" : "var(--danger)";
       }
       statusCell.append(statusChip);
       row.append(statusCell);
+
+      if (data.isHistorical) {
+        const liveCell = el("td");
+        const liveOk = ["READY", "AVAILABLE", "OK"].includes(item.liveProbeStatus?.toUpperCase());
+        const liveChip = el("span", "badge", `${item.liveProbeStatus || "UNKNOWN"} (即時)`);
+        if (!liveOk) {
+          liveChip.style.background = "var(--danger-soft)";
+          liveChip.style.color = "var(--danger)";
+        }
+        liveCell.append(liveChip);
+        row.append(liveCell);
+      }
+
       row.append(
         el(
           "td",
