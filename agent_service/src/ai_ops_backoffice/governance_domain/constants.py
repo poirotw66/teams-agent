@@ -94,6 +94,13 @@ FLAG_CATALOG: dict[str, dict[str, Any]] = {
         "default": "true",
         "safety_locked": True,
     },
+    "bu_ui_shell_v1": {
+        "description": "BU task-oriented backoffice shell (U1 IA + Teams tokens)",
+        "owner": "AI_ADMIN",
+        "flag_type": "boolean",
+        "default": "false",
+        "safety_locked": False,
+    },
 }
 
 READ = {

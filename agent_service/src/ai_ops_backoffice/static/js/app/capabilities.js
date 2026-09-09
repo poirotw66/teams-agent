@@ -37,5 +37,19 @@ export function actorHasCapability(capability) {
       (capabilities?.capabilities || []).includes("ops.faq.read")
     );
   }
+  if (capability === "bu.work.ui") {
+    const caps = capabilities?.capabilities || [];
+    return (
+      canUseKnowledgeUi() ||
+      caps.includes("ops.quality.read") ||
+      caps.includes("ops.feedback.read") ||
+      caps.includes("ops.evals.read") ||
+      caps.includes("ops.faq.read")
+    );
+  }
+  if (capability === "bu.quality.nav") {
+    const caps = capabilities?.capabilities || [];
+    return caps.includes("ops.quality.read") || caps.includes("ops.feedback.read");
+  }
   return (capabilities?.capabilities || []).includes(capability);
 }

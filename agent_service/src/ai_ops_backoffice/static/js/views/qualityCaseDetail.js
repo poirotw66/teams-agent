@@ -9,13 +9,16 @@ import {
 } from "../components/contentGuide.js";
 import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
 import { drillLink, navigateTo } from "../app/navigation.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { navigateReturnTo, withReturnTo } from "../app/returnTo.js";
 async function refreshQuality(state) {
   const { renderQuality } = await import("./quality.js");
   return renderQuality(state);
 }
 
 
-export async function showQualityCaseDetail(caseId) {
+export async function showQualityCaseDetail(caseId, options = {}) {
+  const pageMode = Boolean(options.pageMode) || isBuShellEnabled();
   try {
     const detail = await api(`/api/quality-cases/${encodeURIComponent(caseId)}`);
     const qualityCase = detail.case;
@@ -105,26 +108,60 @@ export async function showQualityCaseDetail(caseId) {
     }
     infoPanel.append(relBox);
 
+    const returnCtx = { caseId, tab: "cases" };
     const loopHints = el("div", "filter-bar");
     loopHints.style.marginBottom = "1rem";
     loopHints.append(
       el("span", "metric-label", "閉環捷徑："),
-      drillLink("修正文件", "knowledgePortal"),
-      drillLink("修正 FAQ", "faq"),
-      drillLink("案例驗證", "examples"),
-      drillLink("對話驗證", "conversations", {
-        issueTypeId: qualityCase.issue_type_id || "",
-      }),
+      drillLink(
+        "修正文件",
+        "contentLists",
+        withReturnTo({ tab: "documents" }, "quality", returnCtx),
+      ),
+      drillLink(
+        "修正 FAQ",
+        "contentLists",
+        withReturnTo({ tab: "faq" }, "quality", returnCtx),
+      ),
+      drillLink("案例驗證", "examples", withReturnTo({}, "quality", returnCtx)),
+      drillLink(
+        "對話驗證",
+        "conversations",
+        withReturnTo(
+          { issueTypeId: qualityCase.issue_type_id || "" },
+          "quality",
+          returnCtx,
+        ),
+      ),
+      drillLink(
+        "Golden 驗收",
+        "evaluations",
+        withReturnTo({}, "quality", returnCtx),
+      ),
     );
     if (getCapabilities()?.knowledgeBridgeEnabled) {
       for (const documentId of qualityCase.document_ids || []) {
         loopHints.append(
-          drillLink("開啟關聯文件", "knowledgePortal", {
-            k: `/knowledge/${documentId}?caseId=${encodeURIComponent(caseId)}`,
-          }),
+          drillLink(
+            "開啟關聯文件",
+            "knowledgePortal",
+            withReturnTo(
+              {
+                k: `/knowledge/${documentId}?caseId=${encodeURIComponent(caseId)}`,
+              },
+              "quality",
+              returnCtx,
+            ),
+          ),
         );
       }
-      loopHints.append(drillLink("知識文件庫", "knowledgePortal"));
+      loopHints.append(
+        drillLink(
+          "知識文件庫",
+          "contentLists",
+          withReturnTo({ tab: "documents" }, "quality", returnCtx),
+        ),
+      );
     } else if (getCapabilities()?.knowledgePortalUrl) {
       const portal = el("a", "drill-link", "開啟知識入口");
       portal.href = getCapabilities().knowledgePortalUrl;
@@ -372,9 +409,16 @@ export async function showQualityCaseDetail(caseId) {
                 const goEdit = el("button", "btn primary", "前往編輯草稿");
                 goEdit.addEventListener("click", () => {
                   if (root) { root.hidden = true; root.replaceChildren(); }
-                  navigateTo("knowledgePortal", {
-                    k: `/knowledge/${createdDocId}?caseId=${encodeURIComponent(caseId)}`,
-                  });
+                  navigateTo(
+                    "knowledgePortal",
+                    withReturnTo(
+                      {
+                        k: `/knowledge/${createdDocId}?caseId=${encodeURIComponent(caseId)}`,
+                      },
+                      "quality",
+                      { caseId, tab: "cases" },
+                    ),
+                  );
                 });
                 promptBox.append(goEdit);
                 showContentModal("草稿建立成功", promptBox);
@@ -510,8 +554,40 @@ export async function showQualityCaseDetail(caseId) {
     } else {
       content.append(el("p", "empty", "尚無操作紀錄"));
     }
+    if (pageMode) {
+      const app = document.getElementById("app");
+      const page = el("div", "bu-case-page");
+      const crumb = el("div", "bu-case-crumb");
+      const back = el("a", "", "← 返回");
+      back.href = "#";
+      back.addEventListener("click", (event) => {
+        event.preventDefault();
+        navigateReturnTo("quality", {});
+      });
+      crumb.append(back, document.createTextNode(" / "), document.createTextNode(qualityCase.title || caseId));
+      const layout = el("div", "bu-case-layout");
+      const main = el("section", "bu-case-main");
+      while (content.firstChild) {
+        main.append(content.firstChild);
+      }
+      const side = el("aside", "bu-case-side");
+      side.append(
+        el("h3", "", "處理進度"),
+        el("p", "metric-label", `狀態：${statusLabels[qualityCase.status] || qualityCase.status}`),
+        el("p", "metric-label", `負責人：${qualityCase.owner_unit_id || "未指派"}`),
+        el("p", "metric-label", `承辦：${qualityCase.assignee_id || "未指派"}`),
+      );
+      layout.append(main, side);
+      page.append(crumb, el("h2", "", qualityCase.title || "改善案件"), layout);
+      app.replaceChildren(page);
+      return;
+    }
     showContentModal(qualityCase.title, content);
   } catch (error) {
+    if (pageMode) {
+      document.getElementById("app")?.replaceChildren(el("div", "error", error.message));
+      return;
+    }
     showContentModal("品質案件", el("div", "error", error.message));
   }
 }

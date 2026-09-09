@@ -2,6 +2,8 @@ import { api, el } from "../api.js";
 import { showContentModal, closeContentModal } from "../components/modal.js";
 import { badge, statusBadge } from "../components/badges.js";
 import { actorCapabilities } from "../app/capabilities.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 
 async function refreshQuality(state) {
@@ -517,7 +519,13 @@ export async function buildQualityLoopPanel() {
     for (const item of items) {
       const action = el("td");
       const detail = el("button", "", "查看與處理");
-      detail.addEventListener("click", () => showQualityCaseDetail(item.case_id));
+      detail.addEventListener("click", () => {
+        if (isBuShellEnabled()) {
+          saveNavFilters({ view: "quality", caseId: item.case_id, tab: "cases" });
+          syncLocationHash("quality", { caseId: item.case_id, tab: "cases" });
+        }
+        void showQualityCaseDetail(item.case_id);
+      });
       action.append(detail);
       const row = el("tr");
       row.append(

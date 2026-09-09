@@ -2,8 +2,10 @@ import { api, el } from "../api.js";
 import { periodParams, createPeriodControls } from "../components/period.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { createExportButton, runExport } from "../services/export.js";
-import { drillLink, loadNavFilters } from "../app/navigation.js";
+import { drillLink, loadNavFilters, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
+import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { withReturnTo } from "../app/returnTo.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 import { buildGapPanel, buildQualityLoopPanel } from "./qualityPanels.js";
 
@@ -15,6 +17,14 @@ export async function renderQuality(state = {}) {
   app.replaceChildren(el("div", "empty", "載入中…"));
   try {
     const navFilters = loadNavFilters();
+    const buShell = isBuShellEnabled();
+    const activeTab = state.tab || navFilters.tab || "cases";
+    if (navFilters.view === "quality" && navFilters.caseId) {
+      await showQualityCaseDetail(navFilters.caseId, { pageMode: buShell });
+      if (buShell) {
+        return;
+      }
+    }
     const period =
       state.period ||
       (navFilters.view === "quality" && (navFilters.preset || navFilters.start)
@@ -47,17 +57,18 @@ export async function renderQuality(state = {}) {
     if (model) filters.set("model", model);
     if (route) filters.set("route", route);
 
+    const loadCases = !buShell || activeTab === "cases";
+    const loadFeedback = !buShell || activeTab === "feedback";
+    const loadGaps = !buShell || activeTab === "gaps";
+
     const [qualityLoopPanel, gapPanel, feedback] = await Promise.all([
-      buildQualityLoopPanel(),
-      buildGapPanel(),
-      api(`/api/feedback?${filters.toString()}`),
+      loadCases ? buildQualityLoopPanel() : Promise.resolve(null),
+      loadGaps ? buildGapPanel() : Promise.resolve(null),
+      loadFeedback ? api(`/api/feedback?${filters.toString()}`) : Promise.resolve(null),
     ]);
 
-    if (navFilters.view === "quality" && navFilters.caseId) {
-      await showQualityCaseDetail(navFilters.caseId);
-    }
-
     const panel = el("section", "panel");
+    if (feedback) {
     panel.append(el("h2", "", "回饋與待觀察事件"));
     panel.append(
       el(
@@ -118,7 +129,7 @@ export async function renderQuality(state = {}) {
     });
     const applyFilters = el("button", "", "套用篩選");
     applyFilters.addEventListener("click", () =>
-      renderQuality({ period, filters: currentFilters(), cursor: "", history: [] }),
+      renderQuality({ period, filters: currentFilters(), cursor: "", history: [], tab: "feedback" }),
     );
     const exportButton = createExportButton("feedback", 30, () => ({
       issue_type_id: issueInput.value || undefined,
@@ -149,6 +160,7 @@ export async function renderQuality(state = {}) {
           filters: currentFilters(),
           cursor: "",
           history: [],
+          tab: "feedback",
         }),
       ),
     );
@@ -192,10 +204,18 @@ export async function renderQuality(state = {}) {
         row.append(el("td", "", item.reason ?? "-"));
         const actionCell = el("td");
         actionCell.append(
-          drillLink("驗證回答", "conversations", {
-            conversationId: item.conversationId || "",
-            issueTypeId: trace.issueTypeId || "",
-          }),
+          drillLink(
+            "驗證回答",
+            "conversations",
+            withReturnTo(
+              {
+                conversationId: item.conversationId || "",
+                issueTypeId: trace.issueTypeId || "",
+              },
+              "quality",
+              { tab: "feedback" },
+            ),
+          ),
         );
         row.append(actionCell);
         body.append(row);
@@ -215,6 +235,7 @@ export async function renderQuality(state = {}) {
           filters: currentFilters(),
           cursor: history.at(-1),
           history: history.slice(0, -1),
+          tab: "feedback",
         }),
       );
       pager.append(previous);
@@ -227,11 +248,13 @@ export async function renderQuality(state = {}) {
           filters: currentFilters(),
           cursor: feedback.nextCursor,
           history: [...history, state.cursor || ""],
+          tab: "feedback",
         }),
       );
       pager.append(next);
     }
     if (pager.childElementCount) panel.append(pager);
+    }
     const exportPanel = el("section", "panel");
     exportPanel.append(el("h3", "", "非同步匯出"));
     const csvButton = el("button", "", "建立 CSV 營運摘要匯出");
@@ -244,6 +267,37 @@ export async function renderQuality(state = {}) {
       await runExport("xlsx");
     });
     exportPanel.append(csvButton, xlsxButton);
+
+    if (buShell) {
+      const header = el("div");
+      header.append(el("h2", "", "改善案件"));
+      header.append(
+        el("p", "metric-label", "將回饋轉成可追蹤的改善，直到驗證結果。"),
+      );
+      const tabs = el("div", "bu-quality-tabs");
+      for (const [key, label] of [
+        ["cases", "案件"],
+        ["feedback", "回饋事件"],
+        ["gaps", "知識缺口"],
+      ]) {
+        const button = el("button", key === activeTab ? "active" : "", label);
+        button.type = "button";
+        button.addEventListener("click", () => {
+          saveNavFilters({ view: "quality", tab: key });
+          syncLocationHash("quality", { tab: key });
+          void renderQuality({ ...state, tab: key, cursor: "", history: [] });
+        });
+        tabs.append(button);
+      }
+      const bodyNodes = [];
+      if (activeTab === "cases" && qualityLoopPanel) bodyNodes.push(qualityLoopPanel);
+      if (activeTab === "feedback" && feedback) bodyNodes.push(panel);
+      if (activeTab === "gaps" && gapPanel) bodyNodes.push(gapPanel);
+      if (activeTab === "cases") bodyNodes.push(exportPanel);
+      app.replaceChildren(header, tabs, ...bodyNodes);
+      return;
+    }
+
     app.replaceChildren(qualityLoopPanel, panel, gapPanel, exportPanel);
   } catch (error) {
     app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));

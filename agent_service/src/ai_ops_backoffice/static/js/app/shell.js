@@ -19,13 +19,24 @@ import {
 import { setCurrentActiveView } from "./activeView.js";
 import { leaveActivePage } from "./lifecycle.js";
 import { stopConversationPolling } from "../views/conversations.js";
+import { applyBuShellBodyClass, isBuShellEnabled } from "./buShellConfig.js";
 
 let routesRef = null;
 let lifecycleViewsRef = null;
+let buNavRenderer = null;
 
 export function bindShellRoutes({ routes, lifecycleViews }) {
   routesRef = routes;
   lifecycleViewsRef = lifecycleViews;
+}
+
+/** Register BU shell renderer from main.js (avoids shell↔buShell static cycle). */
+export function registerBuNavRenderer(renderer) {
+  buNavRenderer = renderer;
+}
+
+export function getShellRouteRefs() {
+  return { routes: routesRef, lifecycleViews: lifecycleViewsRef };
 }
 
 export function visibleWorkspaces() {
@@ -43,6 +54,11 @@ export function firstVisibleView(workspaceId) {
 }
 
 export function renderNav(active, options = {}) {
+  if (isBuShellEnabled() && typeof buNavRenderer === "function") {
+    buNavRenderer(active, options, getShellRouteRefs());
+    return;
+  }
+  applyBuShellBodyClass(false);
   setCurrentActiveView(active);
   const nav = document.getElementById("nav");
   nav.replaceChildren();

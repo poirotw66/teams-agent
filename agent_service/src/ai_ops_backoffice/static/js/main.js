@@ -14,6 +14,7 @@ import { enterPage } from "./app/lifecycle.js";
 import {
   canUseKnowledgeUi,
   setCapabilities,
+  actorHasCapability,
 } from "./app/capabilities.js";
 import {
   ROLE_DEFAULT_WORKSPACE,
@@ -31,7 +32,9 @@ import {
   syncLocationHash,
   workspaceForView,
 } from "./app/navigation.js";
-import { bindShellRoutes, firstVisibleView, renderNav, visibleWorkspaces } from "./app/shell.js";
+import { bindShellRoutes, firstVisibleView, registerBuNavRenderer, renderNav, visibleWorkspaces } from "./app/shell.js";
+import { applyBuShellBodyClass, isBuShellEnabled } from "./app/buShellConfig.js";
+import { mountBuShellToggle, renderBuNav } from "./app/buShell.js";
 import { auditPage } from "./views/audit.js";
 import { budgetsPage } from "./views/budgets.js";
 import { conversationsPage } from "./views/conversations.js";
@@ -51,6 +54,8 @@ import {
   knowledgePortalPage,
 } from "./views/knowledge.js";
 import { contentHubPage } from "./views/contentHub.js";
+import { contentListsPage } from "./views/contentLists.js";
+import { workHubPage } from "./views/workHub.js";
 import { overviewPage } from "./views/overview.js";
 import { promptsPage } from "./views/prompts.js";
 import { qualityPage, showQualityCaseDetail } from "./views/quality.js";
@@ -80,6 +85,8 @@ const LIFECYCLE_VIEWS = new Set([
   "knowledge",
   "faq",
   "contentHub",
+  "contentLists",
+  "workHub",
   "sync",
   "knowledgeWork",
   "knowledgeReviews",
@@ -102,6 +109,8 @@ const routes = {
   ...Object.fromEntries(Object.entries(knowledgeSections).map(([view, page]) => [view, () => enterPage(page)])),
   faq: () => enterPage(faqPage),
   contentHub: () => enterPage(contentHubPage),
+  contentLists: () => enterPage(contentListsPage),
+  workHub: (state) => enterPage(workHubPage, { state: state || {} }),
   sync: () => enterPage(syncPage),
   overview: () => enterPage(overviewPage),
   conversations: (state) => enterPage(conversationsPage, { state: state || {} }),
@@ -127,6 +136,7 @@ const routes = {
 };
 
 setKnownViews(Object.keys(routes));
+registerBuNavRenderer(renderBuNav);
 
 
 
@@ -137,6 +147,22 @@ async function boot() {
   await ensureAuth(authConfig);
   capabilities = await api("/api/capabilities");
   setCapabilities(capabilities);
+  try {
+    const flagPayload = await api("/api/feature-flags");
+    const flags = {};
+    for (const item of flagPayload?.items || []) {
+      const id = item?.flag?.flag_id || item?.flag?.flagId || item?.flag_id || item?.id;
+      if (id) {
+        flags[id] = item.effective ?? item.value ?? item.enabled;
+      }
+    }
+    if (Object.keys(flags).length) {
+      window.__AI_OPS_FLAGS__ = { ...(window.__AI_OPS_FLAGS__ || {}), ...flags };
+    }
+  } catch {
+    /* Feature flags are optional for shell bootstrap. */
+  }
+  applyBuShellBodyClass(isBuShellEnabled());
   const defaultWorkspace =
     ROLE_DEFAULT_WORKSPACE[capabilities.role] || visibleWorkspaces()[0]?.id || "platform";
   if (!sessionStorage.getItem(WORKSPACE_KEY)) {
@@ -163,8 +189,16 @@ async function boot() {
     applyLocationRoute();
   });
   if (!applyLocationRoute()) {
-    const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
-    renderNav(firstView);
+    if (isBuShellEnabled()) {
+      const home =
+        (actorHasCapability("bu.work.ui") && "workHub") ||
+        firstVisibleView(activeWorkspaceId()) ||
+        "overview";
+      renderNav(home);
+    } else {
+      const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
+      renderNav(firstView);
+    }
   }
 }
 
@@ -192,6 +226,7 @@ function renderTopbarActions() {
     return;
   }
   meta.replaceChildren();
+  mountBuShellToggle(meta);
   if (canUseKnowledgeUi()) {
     const knowledgeLink = el("a", "topbar-action", "知識文件庫");
     knowledgeLink.href = buildLocationHash("knowledge_ops", "knowledgePortal");

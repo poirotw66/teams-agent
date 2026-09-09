@@ -5,14 +5,17 @@ import {
   VIEW_TITLES,
   workspaces,
 } from "./workspaces.js";
+import { resolveViewAlias, workspaceForBuView } from "./routeRegistry.js";
 
 // Preserve old portal sub-route links while selecting their new shell entry.
+// Also resolve BU IA aliases (cases → quality, work → knowledgeWork, …).
 export function canonicalRoute(view, filters = {}) {
-  if (view !== "knowledgePortal") return { view, filters };
+  const aliased = resolveViewAlias(view);
+  if (aliased !== "knowledgePortal") return { view: aliased, filters };
   const sub = String(filters.sub || filters.k || "").replace(/^#?\/?/, "");
   const section = sub.split(/[/?]/)[0];
   const target = { work: "knowledgeWork", reviews: "knowledgeReviews", releases: "knowledgeReleases", audit: "knowledgeAudit" }[section];
-  return { view: target || view, filters };
+  return { view: target || aliased, filters };
 }
 
 /** Avoid re-entrancy when we write location.hash from renderNav. */
@@ -53,6 +56,8 @@ export function clearNavFilters() {
 }
 
 export function workspaceForView(view, preferred = activeWorkspaceId()) {
+  const buWorkspace = workspaceForBuView(view);
+  if (buWorkspace) return buWorkspace;
   const current = workspaces.find((workspace) => workspace.id === preferred);
   if (current?.items.some(([id]) => id === view)) return current.id;
   for (const workspace of workspaces) {

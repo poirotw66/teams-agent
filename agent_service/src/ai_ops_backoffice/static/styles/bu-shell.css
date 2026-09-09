@@ -1,0 +1,439 @@
+/**
+ * BU shell v1 — Teams brand tokens + left-rail layout.
+ * Active only when body.bu-shell-v1 is set (flag / local preference).
+ * Baseline: outputs/bu-ux-prototype-v1
+ */
+
+body.bu-shell-v1 {
+  /* Teams / Fluent Northstar brand ramp */
+  --brand-50: #f4f4fc;
+  --brand-100: #e5e5f1;
+  --brand-200: #e2e2f6;
+  --brand-300: #bdbde6;
+  --brand-400: #a6a7dc;
+  --brand-500: #8b8cc7;
+  --brand-600: #6264a7;
+  --brand-700: #585a96;
+  --brand-800: #464775;
+  --brand-900: #33344a;
+
+  --font: "IBM Plex Sans", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
+  --bg: #f5f5f5;
+  --bg-gradient:
+    radial-gradient(880px 400px at 8% -10%, rgb(98 100 167 / 0.08), transparent 58%),
+    radial-gradient(640px 360px at 96% 4%, rgb(70 71 117 / 0.05), transparent 52%),
+    linear-gradient(180deg, #f7f7fb 0%, #f5f5f5 42%, #ededf2 100%);
+  --panel: #ffffff;
+  --panel-muted: #f5f5f5;
+  --panel-glass: rgb(255 255 255 / 0.88);
+  --text: #242424;
+  --text-secondary: #424242;
+  --muted: #616161;
+  --subtle: #8a8a8a;
+  --accent: var(--brand-600);
+  --accent-hover: var(--brand-700);
+  --accent-pressed: var(--brand-800);
+  --accent-gradient: linear-gradient(145deg, var(--brand-500) 0%, var(--brand-600) 48%, var(--brand-800) 100%);
+  --accent-soft: var(--brand-50);
+  --accent-border: var(--brand-200);
+  --accent-glow: none;
+  --border: #e0e0e0;
+  --border-subtle: rgb(224 224 224 / 0.95);
+  --border-strong: #d1d1d1;
+  --success: #237b4b;
+  --success-soft: #e7f5e8;
+  --success-border: #9fd4ae;
+  --warning: #8a6116;
+  --warning-soft: #fff4ce;
+  --warning-border: #efd29a;
+  --danger: #c4314b;
+  --danger-soft: #fde7e9;
+  --danger-border: #f1b6bf;
+  --shadow-xs: 0 1px 2px rgb(51 52 74 / 0.04);
+  --shadow-sm: 0 1px 3px rgb(51 52 74 / 0.06);
+  --shadow-md: 0 4px 14px rgb(51 52 74 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(51 52 74 / 0.12);
+  --shadow-modal: 0 14px 40px rgb(51 52 74 / 0.18);
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --focus: var(--brand-400);
+  --duration-fast: 140ms;
+  --duration-normal: 180ms;
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --bu-rail: 232px;
+  --bu-top: 64px;
+}
+
+body.bu-shell-v1 {
+  display: grid;
+  grid-template-columns: var(--bu-rail) minmax(0, 1fr);
+  grid-template-rows: var(--bu-top) minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "nav app";
+  min-height: 100dvh;
+  height: auto;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+}
+
+body.bu-shell-v1 .topbar {
+  grid-area: top;
+  height: var(--bu-top);
+  padding: 0 1.25rem 0 1.1rem;
+  position: sticky;
+  top: 0;
+}
+
+body.bu-shell-v1 .brand-mark {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 8px;
+  background: var(--accent-gradient);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+}
+
+body.bu-shell-v1 .brand-mark:hover {
+  transform: none;
+}
+
+body.bu-shell-v1 .brand-copy .eyebrow {
+  color: var(--brand-600);
+}
+
+body.bu-shell-v1 .brand-copy h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+body.bu-shell-v1 .nav {
+  grid-area: nav;
+  position: sticky;
+  top: var(--bu-top);
+  align-self: start;
+  height: calc(100dvh - var(--bu-top));
+  width: var(--bu-rail);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem 0.85rem 1rem;
+  margin: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  background: rgb(255 255 255 / 0.94);
+  overflow: auto;
+  box-shadow: none;
+}
+
+body.bu-shell-v1 .nav .workspace-switcher,
+body.bu-shell-v1 .nav .workspace-hint,
+body.bu-shell-v1 .nav .nav-items {
+  display: none !important;
+}
+
+body.bu-shell-v1 .bu-nav-caption {
+  margin: 0 0.65rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #707070;
+}
+
+body.bu-shell-v1 .bu-nav-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+body.bu-shell-v1 .bu-nav-items a {
+  display: flex;
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-weight: 550;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background var(--duration-fast) var(--ease-spring), color var(--duration-fast) var(--ease-spring);
+}
+
+body.bu-shell-v1 .bu-nav-items a:hover {
+  background: var(--panel-muted);
+  text-decoration: none;
+}
+
+body.bu-shell-v1 .bu-nav-items a.active {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  color: var(--brand-800);
+  font-weight: 650;
+}
+
+body.bu-shell-v1 .bu-nav-items a:focus-visible,
+body.bu-shell-v1 .bu-quality-tabs button:focus-visible,
+body.bu-shell-v1 .bu-case-crumb a:focus-visible,
+body.bu-shell-v1 .drill-link:focus-visible,
+body.bu-shell-v1 button:focus-visible,
+body.bu-shell-v1 .button-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+body.bu-shell-v1 .bu-nav-system summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.bu-shell-v1,
+  body.bu-shell-v1 * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+body.bu-shell-v1 .bu-nav-system {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .bu-nav-system > summary {
+  cursor: pointer;
+  list-style: none;
+  margin: 0 0.65rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #707070;
+}
+
+body.bu-shell-v1 .bu-nav-system > summary::-webkit-details-marker {
+  display: none;
+}
+
+body.bu-shell-v1 .bu-nav-foot {
+  margin-top: auto;
+  padding: 1rem 0.65rem 0;
+  border-top: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .bu-nav-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+body.bu-shell-v1 .app {
+  grid-area: app;
+  margin: 0;
+  padding: 1.5rem 1.75rem 3.5rem;
+  max-width: 1480px;
+  width: 100%;
+}
+
+body.bu-shell-v1 .button-primary,
+body.bu-shell-v1 button.primary {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+}
+
+body.bu-shell-v1 .button-primary:hover,
+body.bu-shell-v1 button.primary:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+}
+
+/* Quality detail as full page under BU shell */
+body.bu-shell-v1 .bu-case-page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+body.bu-shell-v1 .bu-case-page .bu-case-crumb {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+body.bu-shell-v1 .bu-case-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1.1rem;
+  align-items: start;
+}
+
+body.bu-shell-v1 .bu-case-main,
+body.bu-shell-v1 .bu-case-side {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.35rem;
+}
+
+body.bu-shell-v1 .bu-quality-tabs {
+  display: flex;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-muted);
+  overflow: auto;
+}
+
+body.bu-shell-v1 .bu-quality-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 0.5rem 0.9rem;
+  border-radius: 7px;
+  color: var(--muted);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+body.bu-shell-v1 .bu-quality-tabs button.active {
+  background: var(--panel);
+  color: var(--brand-800);
+  font-weight: 650;
+  box-shadow: var(--shadow-xs);
+}
+
+/* Work hub stats under BU shell */
+body.bu-shell-v1 .stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 1rem;
+  padding: 0.25rem 0 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .stat {
+  min-width: 9rem;
+  padding: 0 1.5rem 0 0;
+}
+
+body.bu-shell-v1 .stat span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+body.bu-shell-v1 .stat b {
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+body.bu-shell-v1 .bu-content-docs,
+body.bu-shell-v1 .bu-content-docs-mount {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  body.bu-shell-v1 {
+    display: flex;
+    flex-direction: column;
+    --bu-top: auto;
+  }
+
+  body.bu-shell-v1 .nav {
+    position: static;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 0.5rem 0.65rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body.bu-shell-v1 .bu-nav-caption,
+  body.bu-shell-v1 .bu-nav-foot,
+  body.bu-shell-v1 .bu-nav-system {
+    display: none;
+  }
+
+  body.bu-shell-v1 .bu-nav-primary {
+    width: 100%;
+  }
+
+  body.bu-shell-v1 .bu-nav-items {
+    flex-direction: row;
+    overflow: auto;
+  }
+
+  body.bu-shell-v1 .bu-nav-items a {
+    white-space: nowrap;
+  }
+
+  body.bu-shell-v1 .app {
+    padding: 1rem 0.9rem 2.5rem;
+  }
+}
+
+/* System admin chrome + content secondary links */
+body.bu-shell-v1 .bu-system-header {
+  margin: 0 0 1rem;
+}
+
+body.bu-shell-v1 .bu-system-header h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+body.bu-shell-v1 .bu-system-header .metric-label {
+  margin: 0;
+  max-width: 42rem;
+}
+
+body.bu-shell-v1 .bu-system-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+body.bu-shell-v1 .bu-content-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.55rem;
+}
+
+body.bu-shell-v1 .bu-content-secondary .drill-link {
+  font-size: 0.85rem;
+}
+
+/* Tone down decorative motion/shadows inherited from classic analytics chrome */
+body.bu-shell-v1 .analytics-card:hover,
+body.bu-shell-v1 .kpi-card:hover,
+body.bu-shell-v1 .brand-mark:hover,
+body.bu-shell-v1 button:hover,
+body.bu-shell-v1 .button-link:hover {
+  transform: none;
+}
+
+body.bu-shell-v1 .analytics-card,
+body.bu-shell-v1 .kpi-card {
+  box-shadow: var(--shadow-xs);
+}
+
+body.bu-shell-v1 .content-guide-more summary {
+  color: var(--brand-700);
+}
