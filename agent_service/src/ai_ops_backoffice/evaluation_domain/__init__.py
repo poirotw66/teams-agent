@@ -12,6 +12,7 @@ from .errors import (
     EvaluationVersionConflictError,
 )
 from .import_export import EvaluationImportExportManager
+from .manifest import ManifestResolver, calculate_target_manifest_hash
 from .models import (
     CandidateGenerationJob,
     CaseRevision,
@@ -38,11 +39,24 @@ from .repository import (
     FileEvaluationRepository,
     InMemoryEvaluationRepository,
 )
+from .run_service import EvaluationRunService
+from .runner import EvaluationRunner
+from .runner_models import (
+    CaseExecution,
+    EvaluationRun,
+    MetricResult,
+    ReviewDecision,
+    RunComparisonSummary,
+    RunPreflightResult,
+    TargetManifest,
+)
+from .scorer import EvaluationScorer
 from .service import EvaluationService
 
 __all__ = [
     "CandidateGenerationJob",
     "CandidateGenerationManager",
+    "CaseExecution",
     "CaseRevision",
     "CriterionItem",
     "EvalBehaviorType",
@@ -59,6 +73,10 @@ __all__ = [
     "EvaluationImportExportManager",
     "EvaluationNotFoundError",
     "EvaluationRepository",
+    "EvaluationRun",
+    "EvaluationRunService",
+    "EvaluationRunner",
+    "EvaluationScorer",
     "EvaluationService",
     "EvaluationState",
     "EvaluationTransitionError",
@@ -69,9 +87,16 @@ __all__ = [
     "FileEvaluationRepository",
     "ImportValidationResult",
     "InMemoryEvaluationRepository",
+    "ManifestResolver",
+    "MetricResult",
     "ProvenanceSpec",
+    "ReviewDecision",
+    "RunComparisonSummary",
+    "RunPreflightResult",
+    "TargetManifest",
     "ToolConstraintsSpec",
     "TurnSpec",
     "calculate_manifest_hash",
     "calculate_revision_content_hash",
+    "calculate_target_manifest_hash",
 ]

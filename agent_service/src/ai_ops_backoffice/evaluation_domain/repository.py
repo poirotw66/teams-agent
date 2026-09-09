@@ -19,6 +19,7 @@ from .models import (
     EvaluationIdempotencyRecord,
     EvaluationState,
 )
+from .runner_models import CaseExecution, EvaluationRun, ReviewDecision
 
 
 class EvaluationRepository(Protocol):
@@ -43,6 +44,20 @@ class EvaluationRepository(Protocol):
     def get_candidate_job(self, job_id: str) -> CandidateGenerationJob | None: ...
 
     def list_candidate_jobs(self) -> list[CandidateGenerationJob]: ...
+
+    def get_run(self, run_id: str) -> EvaluationRun | None: ...
+
+    def list_runs(self, set_version_id: str | None = None) -> list[EvaluationRun]: ...
+
+    def get_case_execution(self, execution_id: str) -> CaseExecution | None: ...
+
+    def list_case_executions(
+        self, run_id: str, target_side: str | None = None
+    ) -> list[CaseExecution]: ...
+
+    def list_review_decisions(
+        self, run_id: str | None = None
+    ) -> list[ReviewDecision]: ...
 
     def list_audit(self, entity_id: str | None = None) -> list[EvaluationAuditEvent]: ...
 
@@ -117,6 +132,40 @@ class InMemoryEvaluationRepository:
     def list_candidate_jobs(self) -> list[CandidateGenerationJob]:
         with self._lock:
             return sorted(self._state.candidate_jobs, key=lambda j: j.created_at, reverse=True)
+
+    def get_run(self, run_id: str) -> EvaluationRun | None:
+        with self._lock:
+            return next((r for r in self._state.runs if r.run_id == run_id), None)
+
+    def list_runs(self, set_version_id: str | None = None) -> list[EvaluationRun]:
+        with self._lock:
+            runs = self._state.runs
+            if set_version_id:
+                runs = tuple(r for r in runs if r.set_version_id == set_version_id)
+            return sorted(runs, key=lambda r: r.created_at, reverse=True)
+
+    def get_case_execution(self, execution_id: str) -> CaseExecution | None:
+        with self._lock:
+            return next(
+                (e for e in self._state.case_executions if e.execution_id == execution_id), None
+            )
+
+    def list_case_executions(
+        self, run_id: str, target_side: str | None = None
+    ) -> list[CaseExecution]:
+        with self._lock:
+            executions = [e for e in self._state.case_executions if e.run_id == run_id]
+            if target_side:
+                executions = [e for e in executions if e.target_side == target_side]
+            return executions
+
+    def list_review_decisions(
+        self, run_id: str | None = None
+    ) -> list[ReviewDecision]:
+        with self._lock:
+            if run_id:
+                return [d for d in self._state.review_decisions if d.run_id == run_id]
+            return list(self._state.review_decisions)
 
     def list_audit(self, entity_id: str | None = None) -> list[EvaluationAuditEvent]:
         with self._lock:

@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_service.operations.masking import MASKING_POLICY_VERSION
 
+from .runner_models import CaseExecution, EvaluationRun, ReviewDecision
+
 EvalBehaviorType = Literal[
     "ANSWER_WITH_CITATION",
     "CLARIFY",
@@ -265,5 +267,8 @@ class EvaluationState(StrictModel):
     sets: tuple[EvalSet, ...] = ()
     set_versions: tuple[EvalSetVersion, ...] = ()
     candidate_jobs: tuple[CandidateGenerationJob, ...] = ()
+    runs: tuple[EvaluationRun, ...] = ()
+    case_executions: tuple[CaseExecution, ...] = ()
+    review_decisions: tuple[ReviewDecision, ...] = ()
     audits: tuple[EvaluationAuditEvent, ...] = ()
     idempotency: tuple[EvaluationIdempotencyRecord, ...] = ()

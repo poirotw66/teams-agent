@@ -53,16 +53,21 @@ from .evaluation_domain import (
     EvaluationIdempotencyConflictError,
     EvaluationImportExportManager,
     EvaluationNotFoundError,
+    EvaluationRunService,
+    EvaluationRunner,
+    EvaluationScorer,
     EvaluationService,
     EvaluationTransitionError,
     EvaluationValidationError,
     EvaluationVersionConflictError,
     FileEvaluationRepository,
     InMemoryEvaluationRepository,
+    ManifestResolver,
 )
 from .routers import (
     register_budget_routes,
     register_evaluation_routes,
+    register_evaluation_run_routes,
     register_example_routes,
     register_faq_routes,
     register_ops_read_routes,
@@ -350,6 +355,22 @@ def create_app(
     )
     import_export_manager = EvaluationImportExportManager(evaluation_service)
     candidate_manager = CandidateGenerationManager(evaluation_service)
+    releases_dir = getattr(resolved_settings, "knowledge_release_dir", None) or (
+        resolved_settings.ops_store_path.parent / "releases"
+    )
+    manifest_resolver = ManifestResolver(eval_repository, releases_dir=releases_dir)
+    eval_scorer = EvaluationScorer()
+    eval_runner = EvaluationRunner(
+        eval_repository,
+        scorer=eval_scorer,
+        releases_dir=releases_dir,
+    )
+    evaluation_run_service = EvaluationRunService(
+        eval_repository,
+        manifest_resolver=manifest_resolver,
+        runner=eval_runner,
+        scorer=eval_scorer,
+    )
     (
         sync_worker,
         run_sync_job,
@@ -531,6 +552,13 @@ def create_app(
         evaluation_service=evaluation_service,
         import_export_manager=import_export_manager,
         candidate_manager=candidate_manager,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
+    app.state.evaluation_run_service = evaluation_run_service
+    register_evaluation_run_routes(
+        app,
+        run_service=evaluation_run_service,
         current_actor=current_actor,
         require_capability=require_capability,
     )

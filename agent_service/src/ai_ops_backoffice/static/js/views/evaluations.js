@@ -952,22 +952,31 @@ async function renderRunsTab(container, allowed) {
         </select>
       </div>
       <div class="form-group">
-        <label>基準版本 (Baseline)</label>
-        <input type="text" class="form-input" value="baseline-v1.0.0 (當前正式版本)" readonly>
+        <label>基準目標 Prompt 版本 (Baseline)</label>
+        <input type="text" id="baseline-prompt" class="form-input" value="default">
       </div>
       <div class="form-group">
-        <label>候選版本 (Candidate)</label>
-        <input type="text" class="form-input" value="candidate-v1.1.0-alpha (待驗收版本)">
+        <label>候選目標 Prompt 版本 (Candidate)</label>
+        <input type="text" id="candidate-prompt" class="form-input" value="candidate-v1.1">
+      </div>
+      <div class="form-group">
+        <label>模型名稱</label>
+        <input type="text" id="target-model" class="form-input" value="gemini-2.5-flash">
       </div>
       <div class="form-group">
         <label>評測模式</label>
-        <select class="form-select">
-          <option value="STANDARD">標準模式 (STANDARD) - 完整檢索與判定</option>
-          <option value="FAST">快速模式 (FAST) - 抽樣驗證</option>
+        <select id="run-mode" class="form-select">
+          <option value="REAL_RAG">真實檢索評測 (REAL_RAG) - 固定知識版本</option>
+          <option value="OFFLINE_BENCHMARK">基準離線評測 (OFFLINE_BENCHMARK)</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>最大案例上限 (選填)</label>
+        <input type="number" id="run-max-cases" class="form-input" placeholder="不限制或輸入數字">
+      </div>
       <div class="btn-row">
-        <button id="preflight-btn" class="btn-primary">執行預檢 (Preflight Check)</button>
+        <button id="preflight-btn" class="btn-secondary">執行預檢 (Preflight Check)</button>
+        <button id="start-run-btn" class="btn-primary" style="display: none;">啟動驗收執行 (Start Run)</button>
       </div>
     </div>
     <div id="preflight-results" style="margin-top: 16px;"></div>
@@ -977,28 +986,117 @@ async function renderRunsTab(container, allowed) {
 
   const select = box.querySelector("#run-set-version");
   const preflightBtn = box.querySelector("#preflight-btn");
+  const startRunBtn = box.querySelector("#start-run-btn");
   const resultsDiv = box.querySelector("#preflight-results");
+
+  let resolvedPreflight = null;
 
   try {
     const setsRes = await api("/api/evaluations/sets");
-    select.innerHTML = '<option value="">-- 請選擇題庫 --</option>';
+    select.innerHTML = '<option value="">-- 請選擇題庫版本 --</option>';
     for (const s of (setsRes.items || [])) {
-      select.innerHTML += `<option value="${s.set_id}">${s.name} (${s.purpose})</option>`;
+      const detail = await api(`/api/evaluations/sets/${s.set_id}`);
+      for (const v of (detail.versions || [])) {
+        select.innerHTML += `<option value="${v.set_version_id}">${s.name} - ${v.version} (${v.status}, ${v.case_revision_ids.length} 題)</option>`;
+      }
     }
   } catch (err) {
-    select.innerHTML = '<option value="">無法載入題庫</option>';
+    select.innerHTML = '<option value="">無法載入題庫版本</option>';
   }
 
-  preflightBtn.addEventListener("click", () => {
-    resultsDiv.innerHTML = `
-      <div class="alert alert-info">
-        <strong>預檢結果 (Preflight Check)</strong><br>
-        ✅ 題庫版本固定<br>
-        ✅ 模型與檢索器參數有效<br>
-        ✅ 預估上限: 60 Cases | 25,000 Tokens | 成本約 $0.12 USD<br>
-        <em>提示: 完整 GE-2 執行器已排入第二階段流程。</em>
-      </div>
-    `;
+  preflightBtn.addEventListener("click", async () => {
+    const setVersionId = select.value;
+    if (!setVersionId) {
+      alert("請先選擇評測題庫版本");
+      return;
+    }
+    const maxCasesVal = box.querySelector("#run-max-cases").value;
+    const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
+
+    resultsDiv.innerHTML = '<div class="alert alert-info">正在執行預檢中...</div>';
+    try {
+      const res = await api("/api/evaluations/runs/preflight", {
+        method: "POST",
+        body: {
+          set_version_id: setVersionId,
+          baseline_target: {
+            prompt_version: box.querySelector("#baseline-prompt").value,
+            model_id: box.querySelector("#target-model").value,
+          },
+          candidate_target: {
+            prompt_version: box.querySelector("#candidate-prompt").value,
+            model_id: box.querySelector("#target-model").value,
+          },
+          limits: limits,
+        },
+      });
+      resolvedPreflight = res;
+      if (res.is_valid) {
+        resultsDiv.innerHTML = `
+          <div class="alert alert-success">
+            <strong>✅ 預檢通過 (Preflight Passed)</strong><br>
+            • 案例題數: ${res.case_count} 題<br>
+            • 預估耗費: $${res.estimated_cost_usd} USD (預估約 ${res.estimated_duration_seconds} 秒)<br>
+            • 基準 Manifest Hash: <code>${res.resolved_baseline_manifest ? res.resolved_baseline_manifest.manifest_hash.slice(0, 16) : ""}...</code><br>
+            • 候選 Manifest Hash: <code>${res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : ""}...</code>
+            ${res.warnings && res.warnings.length ? `<br>⚠️ 提醒: ${res.warnings.join("; ")}` : ""}
+          </div>
+        `;
+        startRunBtn.style.display = "inline-block";
+      } else {
+        resultsDiv.innerHTML = `
+          <div class="alert alert-danger">
+            <strong>❌ 預檢阻擋 (Blocking Errors)</strong><br>
+            ${res.blocking_errors.join("<br>")}
+          </div>
+        `;
+        startRunBtn.style.display = "none";
+      }
+    } catch (err) {
+      resultsDiv.innerHTML = `<div class="alert alert-danger">預檢失敗: ${err.message || err}</div>`;
+    }
+  });
+
+  startRunBtn.addEventListener("click", async () => {
+    if (!resolvedPreflight) return;
+    startRunBtn.disabled = true;
+    startRunBtn.textContent = "執行評測中...";
+
+    try {
+      const maxCasesVal = box.querySelector("#run-max-cases").value;
+      const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
+
+      const res = await api("/api/evaluations/runs", {
+        method: "POST",
+        body: {
+          set_version_id: select.value,
+          baseline_target: {
+            prompt_version: box.querySelector("#baseline-prompt").value,
+            model_id: box.querySelector("#target-model").value,
+          },
+          candidate_target: {
+            prompt_version: box.querySelector("#candidate-prompt").value,
+            model_id: box.querySelector("#target-model").value,
+          },
+          mode: box.querySelector("#run-mode").value,
+          limits: limits,
+        },
+      });
+
+      resultsDiv.innerHTML = `
+        <div class="alert alert-success">
+          <strong>評測執行完成！</strong><br>
+          Run ID: <code>${res.run.run_id}</code> | 狀態: ${res.run.status}<br>
+          已導向「驗收結果」頁籤查看對比分析。
+        </div>
+      `;
+      startRunBtn.disabled = false;
+      startRunBtn.textContent = "啟動驗收執行 (Start Run)";
+    } catch (err) {
+      alert(`啟動評測失敗: ${err.message || err}`);
+      startRunBtn.disabled = false;
+      startRunBtn.textContent = "啟動驗收執行 (Start Run)";
+    }
   });
 }
 
@@ -1007,54 +1105,280 @@ async function renderResultsTab(container, allowed) {
   const box = el("div", "content-box");
   box.innerHTML = `
     <h3>驗收結果與版本比較 (Evaluation Results)</h3>
-    <div class="summary-cards-grid" style="display: flex; gap: 16px; margin-bottom: 20px;">
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
-        <div class="text-muted">新增失敗 (Regressions)</div>
-        <h2 style="margin: 4px 0; color: #dc3545;">0</h2>
-        <small>候選版不如基準版之案例</small>
-      </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #28a745; background: #fff;">
-        <div class="text-muted">已修復 (Fixed)</div>
-        <h2 style="margin: 4px 0; color: #28a745;">0</h2>
-        <small>候選版成功改善之案例</small>
-      </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #ffc107; background: #fff;">
-        <div class="text-muted">重大失敗 (Critical)</div>
-        <h2 style="margin: 4px 0; color: #856404;">0</h2>
-        <small>標記重大之失敗題數</small>
-      </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #17a2b8; background: #fff;">
-        <div class="text-muted">完成比例</div>
-        <h2 style="margin: 4px 0; color: #17a2b8;">100%</h2>
-        <small>所有測試案例皆完成判定</small>
-      </div>
-    </div>
-    <div class="table-responsive">
+    <div id="results-summary-container"></div>
+    <div class="table-responsive" style="margin-top: 20px;">
       <table class="data-table">
         <thead>
           <tr>
             <th>驗收執行 ID</th>
-            <th>題庫版本</th>
+            <th>題庫版本 ID</th>
             <th>測試模式</th>
-            <th>通過率</th>
-            <th>執行時間</th>
+            <th>候選通過率</th>
+            <th>覆蓋率</th>
+            <th>實際成本 (USD)</th>
             <th>狀態</th>
+            <th>操作</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="runs-table-body">
+          <tr><td colspan="8">載入中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="case-comparison-container" style="margin-top: 24px;"></div>
+  `;
+  container.append(box);
+
+  const tbody = box.querySelector("#runs-table-body");
+  const summaryContainer = box.querySelector("#results-summary-container");
+  const caseCompContainer = box.querySelector("#case-comparison-container");
+
+  try {
+    const runs = await api("/api/evaluations/runs");
+    if (!runs || !runs.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted">目前尚無驗收執行紀錄。請至「執行驗收」頁籤發起新評測。</td></tr>';
+      return;
+    }
+
+    const latestRun = runs[0];
+    renderRunSummaryCards(summaryContainer, latestRun.summary);
+
+    tbody.replaceChildren();
+    for (const r of runs) {
+      const tr = el("tr");
+      const passRateStr = r.summary && r.summary.pass_rate !== null ? `${Math.round(r.summary.pass_rate * 100)}%` : "-";
+      const coverageStr = r.summary ? `${Math.round(r.summary.coverage * 100)}%` : "-";
+
+      tr.innerHTML = `
+        <td><code>${r.run_id}</code></td>
+        <td><code>${r.set_version_id.slice(0, 14)}...</code></td>
+        <td>${r.mode}</td>
+        <td><span class="badge ${r.summary && r.summary.pass_rate >= 0.9 ? "badge-success" : "badge-warning"}">${passRateStr}</span></td>
+        <td>${coverageStr}</td>
+        <td>$${r.actual_cost_usd}</td>
+        <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}">${r.status}</span></td>
+        <td>
+          <button class="btn-secondary btn-sm view-cases-btn">查看比對</button>
+        </td>
+      `;
+
+      tr.querySelector(".view-cases-btn").addEventListener("click", () => {
+        renderRunSummaryCards(summaryContainer, r.summary);
+        loadCaseComparison(caseCompContainer, r.run_id, allowed);
+      });
+
+      tbody.append(tr);
+    }
+
+    // Default load latest run comparison
+    await loadCaseComparison(caseCompContainer, latestRun.run_id, allowed);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger">載入執行清單失敗: ${err.message || err}</td></tr>`;
+  }
+}
+
+function renderRunSummaryCards(container, summary) {
+  if (!summary) {
+    container.replaceChildren();
+    return;
+  }
+  container.innerHTML = `
+    <div class="summary-cards-grid" style="display: flex; gap: 16px; margin-bottom: 20px;">
+      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
+        <div class="text-muted">新增失敗 (Regressions)</div>
+        <h2 style="margin: 4px 0; color: #dc3545;">${summary.regressions ? summary.regressions.length : 0}</h2>
+        <small>候選版不如基準版之案例</small>
+      </div>
+      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #28a745; background: #fff;">
+        <div class="text-muted">已修復 (Fixed)</div>
+        <h2 style="margin: 4px 0; color: #28a745;">${summary.fixes ? summary.fixes.length : 0}</h2>
+        <small>候選版成功改善之案例</small>
+      </div>
+      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #ffc107; background: #fff;">
+        <div class="text-muted">重大失敗 (Critical)</div>
+        <h2 style="margin: 4px 0; color: #856404;">${summary.critical_failures ? summary.critical_failures.length : 0}</h2>
+        <small>標記重大之失敗題數</small>
+      </div>
+      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #17a2b8; background: #fff;">
+        <div class="text-muted">完成比例</div>
+        <h2 style="margin: 4px 0; color: #17a2b8;">${Math.round(summary.coverage * 100)}%</h2>
+        <small>${summary.judged_cases} / ${summary.total_cases} 題已完成判定</small>
+      </div>
+    </div>
+  `;
+}
+
+async function loadCaseComparison(container, runId, allowed) {
+  container.replaceChildren();
+  const box = el("div", "sub-content-box");
+  box.innerHTML = `
+    <h4>案例比對清單 (Run: <code>${runId}</code>)</h4>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
           <tr>
-            <td><code>run_init_baseline</code></td>
-            <td>標準驗收題庫 v1</td>
-            <td>STANDARD</td>
-            <td><span class="badge badge-success">100% (60/60)</span></td>
-            <td>2026-09-09 15:00</td>
-            <td><span class="badge badge-success">COMPLETED</span></td>
+            <th>案例 ID</th>
+            <th>基準版判定</th>
+            <th>候選版判定</th>
+            <th>比對差異</th>
+            <th>失敗分類</th>
+            <th>耗時 (ms)</th>
+            <th>操作</th>
           </tr>
+        </thead>
+        <tbody id="case-comp-body">
+          <tr><td colspan="7">載入案例中...</td></tr>
         </tbody>
       </table>
     </div>
   `;
   container.append(box);
+
+  const tbody = box.querySelector("#case-comp-body");
+  try {
+    const cases = await api(`/api/evaluations/runs/${runId}/cases`);
+    const baselineCases = {};
+    const candidateCases = {};
+
+    for (const c of cases) {
+      if (c.target_side === "BASELINE") {
+        baselineCases[c.case_revision_id] = c;
+      } else {
+        candidateCases[c.case_revision_id] = c;
+      }
+    }
+
+    tbody.replaceChildren();
+    const allRevs = Object.keys(candidateCases);
+    if (!allRevs.length) {
+      tbody.innerHTML = '<tr><td colspan="7">無案例紀錄</td></tr>';
+      return;
+    }
+
+    for (const revId of allRevs) {
+      const c = candidateCases[revId];
+      const b = baselineCases[revId] || {};
+
+      let diffTag = '<span class="badge badge-secondary">相同</span>';
+      if (b.passed && !c.passed) {
+        diffTag = '<span class="badge badge-danger">新增失敗 (Regression)</span>';
+      } else if (!b.passed && c.passed) {
+        diffTag = '<span class="badge badge-success">已修復 (Fixed)</span>';
+      }
+
+      const tr = el("tr");
+      tr.innerHTML = `
+        <td><code>${c.case_id}</code></td>
+        <td><span class="badge ${b.passed ? "badge-success" : "badge-danger"}">${b.passed ? "PASS" : "FAIL"}</span></td>
+        <td><span class="badge ${c.passed ? "badge-success" : "badge-danger"}">${c.passed ? "PASS" : "FAIL"}</span></td>
+        <td>${diffTag}</td>
+        <td>${c.failure_classification || "-"}</td>
+        <td>${c.latency_ms}</td>
+        <td>
+          <button class="btn-secondary btn-sm inspect-btn">檢視細節與覆核</button>
+        </td>
+      `;
+
+      tr.querySelector(".inspect-btn").addEventListener("click", () => {
+        showExecutionDetailModal(runId, c, b, allowed);
+      });
+
+      tbody.append(tr);
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入比對案例失敗: ${err.message || err}</td></tr>`;
+  }
+}
+
+function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
+  const modalContent = el("div", "execution-modal-content");
+  modalContent.innerHTML = `
+    <h3>案例執行細節與人工覆核</h3>
+    <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+      <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;">
+        <strong>【基準版回答】</strong>
+        <p style="white-space: pre-wrap; margin-top: 8px;">${baselineExec.answer || "(無回答)"}</p>
+      </div>
+      <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;">
+        <strong>【候選版回答】</strong>
+        <p style="white-space: pre-wrap; margin-top: 8px;">${candidateExec.answer || "(無回答)"}</p>
+      </div>
+    </div>
+    <h4>指標判定結果 (Candidate Metrics)</h4>
+    <table class="data-table" style="margin-bottom: 16px;">
+      <thead>
+        <tr>
+          <th>指標</th>
+          <th>判定</th>
+          <th>分數</th>
+          <th>理由與依據</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(candidateExec.metric_results || []).map(m => `
+          <tr>
+            <td><code>${m.metric_id}</code></td>
+            <td><span class="badge ${m.pass_status === "PASS" ? "badge-success" : "badge-danger"}">${m.pass_status}</span></td>
+            <td>${m.score !== null ? m.score : "-"}</td>
+            <td>${m.reason || "-"}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+    <div class="review-section" style="background: #eef2f7; padding: 12px; border-radius: 4px;">
+      <strong>人工覆核決策 (Human Review)</strong>
+      <p class="text-muted" style="margin-top: 4px;">覆核將以 Append-only 方式記錄決策歷史，不竄改原始觀測數據。</p>
+      <div class="form-group" style="margin-top: 8px;">
+        <label>選擇指標</label>
+        <select id="review-metric-select" class="form-select">
+          ${(candidateExec.metric_results || []).map(m => `<option value="${m.metric_id}">${m.metric_id}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>覆核決策</label>
+        <select id="review-decision-select" class="form-select">
+          <option value="PASS">覆核為通過 (PASS)</option>
+          <option value="FAIL">覆核為失敗 (FAIL)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>覆核理由</label>
+        <input type="text" id="review-reason-input" class="form-input" placeholder="請填寫覆核理由...">
+      </div>
+      <div class="btn-row">
+        <button id="submit-review-btn" class="btn-primary">送出覆核決策</button>
+      </div>
+    </div>
+  `;
+
+  const submitBtn = modalContent.querySelector("#submit-review-btn");
+  submitBtn.addEventListener("click", async () => {
+    const reason = modalContent.querySelector("#review-reason-input").value.trim();
+    if (!reason) {
+      alert("請填寫覆核理由");
+      return;
+    }
+    const metricId = modalContent.querySelector("#review-metric-select").value;
+    const decision = modalContent.querySelector("#review-decision-select").value;
+
+    try {
+      await api(`/api/evaluations/runs/${runId}/reviews`, {
+        method: "POST",
+        body: {
+          execution_id: candidateExec.execution_id,
+          metric_id: metricId,
+          decision: decision,
+          reason: reason,
+        },
+      });
+      alert("覆核決策已儲存！");
+      closeContentModal();
+    } catch (err) {
+      alert(`覆核失敗: ${err.message || err}`);
+    }
+  });
+
+  showContentModal(modalContent);
 }
 
 export const evaluationsPage = createPageController({
