@@ -259,12 +259,15 @@ def project_usage(events: list[OperationalEvent]) -> UsageProjection:
     detail: list[OperationalEvent] = []
     requests: list[OperationalEvent] = []
     latencies: list[OperationalEvent] = []
+    health_scopes = {"ADAPTER_INGRESS", "RETRIEVAL_INDEX", "HEALTH_TELEMETRY"}
     for group in groups.values():
         calls = [event for event in group if usage_scope(event) == "CALL"]
         summaries = [event for event in group if usage_scope(event) == "REQUEST_SUMMARY"]
         legacy = [event for event in group if usage_scope(event) == "LEGACY"]
         unknown = [
-            event for event in group if usage_scope(event) not in {"CALL", "REQUEST_SUMMARY", "LEGACY"}
+            event
+            for event in group
+            if usage_scope(event) not in {"CALL", "REQUEST_SUMMARY", "LEGACY", *health_scopes}
         ]
         if unknown:
             raise ValueError("unknown usage attributionScope")

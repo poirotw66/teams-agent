@@ -2,16 +2,42 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import DEFAULT_TIMEZONE, METRICS_DEFINITION_VERSION
+from agent_service.operations.contracts import DEFAULT_TIMEZONE
 from agent_service.usage import convert_usd_to_twd
-from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 from .periods import ResolvedPeriod
 from .usage_projection import confirmed_zero_call, known_cost_total, project_usage
+
+
+def _governed_known_cost_usd(
+    usage_events: list[Any],
+    pricing_svc: Any | None,
+    *,
+    at: Any | None,
+) -> float:
+    """Prefer PricingService rates when available; otherwise use event estimates."""
+    total = 0.0
+    for event in usage_events:
+        model = str(event.payload.get("model") or "")
+        input_tokens = int(event.payload.get("inputTokens") or 0)
+        output_tokens = int(event.payload.get("outputTokens") or 0)
+        if pricing_svc is not None and model:
+            rate = pricing_svc.lookup_rate(model, at=at)
+            if rate is not None:
+                total += (input_tokens * rate[0] + output_tokens * rate[1]) / 1_000_000
+                continue
+        estimated = event.payload.get("estimatedCostUsd")
+        if estimated is not None:
+            total += float(estimated)
+        elif confirmed_zero_call(event):
+            continue
+    return total
+
 
 class BudgetQueryMixin:
     async def budget_usage(
@@ -75,17 +101,24 @@ class BudgetQueryMixin:
         coverage = (
             round(complete_cost_events / len(usage_events), 4) if usage_events else 1.0
         )
-        known_total = known_cost_total(usage_events) or 0.0
         pricing_svc = getattr(self, "_pricing_service", None)
+        pricing_at = period.end_at
         exchange_rate = (
-            pricing_svc.get_exchange_rate(at=period.end_at)
+            pricing_svc.get_exchange_rate(at=pricing_at)
             if pricing_svc is not None
             else float(self._metrics.get("usdTwdExchangeRate", 31.70))
         )
         pricing_version = (
-            pricing_svc.get_pricing_version(at=period.end_at)
+            pricing_svc.get_pricing_version(at=pricing_at)
             if pricing_svc is not None
             else str(self._metrics.get("pricingVersion", "v1"))
+        )
+        # FX is versioned with the same HistoricalPricingRule stamp.
+        exchange_rate_version = pricing_version
+        known_total = (
+            _governed_known_cost_usd(usage_events, pricing_svc, at=pricing_at)
+            if measure in {"USD", "TWD"}
+            else (known_cost_total(usage_events) or 0.0)
         )
         if measure == "USD":
             actual_value = known_total
@@ -127,9 +160,8 @@ class BudgetQueryMixin:
                 "%Y-%m-%d" if period_type == "DAILY" else "%Y-%m"
             ),
             "pricingVersion": pricing_version,
-            "exchangeRateVersion": pricing_version,
+            "exchangeRateVersion": exchange_rate_version,
         }
-
 
     async def list_active_actors_for_budget(
         self,
@@ -142,4 +174,3 @@ class BudgetQueryMixin:
             if event.actor_ref:
                 actors.add(event.actor_ref)
         return sorted(actors)
-

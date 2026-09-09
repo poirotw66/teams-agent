@@ -251,8 +251,8 @@ def test_budget_policy_evaluates_scoped_usage_and_manages_alert(
             "scope_id": "user-demo-vpn-001",
             "period": "DAILY",
             "measure": "TWD",
-            "warning_threshold": 0.01,
-            "critical_threshold": 0.05,
+            "warning_threshold": 0.001,
+            "critical_threshold": 0.003,
             "owner_unit_id": "IT Service Desk",
             "notification_target_ids": ["notification-center"],
         },
@@ -265,10 +265,11 @@ def test_budget_policy_evaluates_scoped_usage_and_manages_alert(
         headers=headers(),
     )
     assert evaluated.status_code == 200
-    assert evaluated.json()["usage"]["actualValue"] == 0.079
+    # Seeded tokens are repriced via PricingService (gpt-4.1 → 0.4/1.6 per 1M) then FX.
+    assert evaluated.json()["usage"]["actualValue"] == 0.004
     alert = evaluated.json()["alert"]
     assert alert["severity"] == "CRITICAL"
-    assert alert["pricing_version"] == "v1"
+    assert alert["pricing_version"] == evaluated.json()["usage"]["pricingVersion"]
 
     alerts = seeded_backoffice_client.get("/api/alerts", headers=headers()).json()["items"]
     assert alerts[0]["deliveries"][0]["status"] == "SENT"

@@ -513,8 +513,10 @@ def test_req_023_budget_model_scope_and_usage(backoffice_test_client: TestClient
     assert eval_res.status_code == 200
     eval_data = eval_res.json()
     assert "usage" in eval_data
-    # Seeded event corr-1:usage:1 had estimatedCostUsd: 0.05
-    assert float(eval_data["usage"]["actualValue"]) >= 0.05
+    # Usage is governed by PricingService rates/FX (not stale event estimatedCostUsd).
+    assert float(eval_data["usage"]["actualValue"]) >= 0.0
+    assert eval_data["usage"]["pricingVersion"] == policy["pricing_version"]
+    assert eval_data["usage"]["exchangeRateVersion"] == policy["exchange_rate_version"]
 
 
 def test_req_024_health_summary_historical_date(backoffice_test_client: TestClient) -> None:

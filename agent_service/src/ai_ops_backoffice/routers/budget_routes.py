@@ -51,7 +51,9 @@ def register_budget_routes(
         return budget_service.create_policy(
             **payload.model_dump(),
             pricing_version=str(definitions["pricingVersion"]),
-            exchange_rate_version=str(definitions["metricsDefinitionVersion"]),
+            exchange_rate_version=str(
+                definitions.get("exchangeRateVersion") or definitions["pricingVersion"]
+            ),
             actor=actor,
         )
 
