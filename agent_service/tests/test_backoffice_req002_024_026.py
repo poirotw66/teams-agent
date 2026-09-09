@@ -272,8 +272,6 @@ async def test_usage_module_integrates_with_governed_pricing_provider() -> None:
 
 @pytest.mark.asyncio
 async def test_budget_usage_dynamic_exchange_rate_synchronization(tmp_path: Path) -> None:
-    from agent_service.operations.taxonomy import TaxonomyRepository
-
     settings = _make_settings(tmp_path, ops_mode="FILE")
     ingestion = EventIngestionService(FileOperationalStore(settings.ops_store_path), settings)
     now = datetime.now(UTC)
@@ -287,9 +285,10 @@ async def test_budget_usage_dynamic_exchange_rate_synchronization(tmp_path: Path
         actor_ref="user-123",
         issue_type_id="vpn.connection_failed",
         payload={
-            "model": "gpt-4.1",
-            "inputTokens": 1000,
-            "outputTokens": 500,
+            "model": "gpt-4.1-mini",
+            "inputTokens": 1_000_000,
+            "outputTokens": 500_000,
+            # Stale agent-side estimate must not override PricingService rates.
             "estimatedCostUsd": 1.0,
         },
     )
@@ -302,7 +301,6 @@ async def test_budget_usage_dynamic_exchange_rate_synchronization(tmp_path: Path
         role="SYSTEM_ADMIN",
         owner_unit_ids=("ALL",),
     )
-    # Update exchange rate to 35.00
     await query_svc.pricing_service.update_exchange_rate(
         exchange_rate=35.00,
         actor=actor,
@@ -316,8 +314,10 @@ async def test_budget_usage_dynamic_exchange_rate_synchronization(tmp_path: Path
         period_type="DAILY",
         measure="TWD",
     )
-    # 1.0 USD * 35.00 = 35.0 TWD
-    assert res["actualValue"] == 35.0
+    # Governed: (1M * 0.40 + 0.5M * 1.60) / 1M = 1.2 USD; * 35 FX = 42.0 TWD
+    assert res["actualValue"] == 42.0
+    assert res["pricingVersion"] == query_svc.pricing_service.get_pricing_version()
+    assert res["exchangeRateVersion"] == res["pricingVersion"]
 
 
 def test_firestore_pricing_repository_mock_transactions() -> None:
@@ -809,3 +809,200 @@ def test_conversation_data_state_masked_and_unmasked_with_reason(tmp_path: Path)
     assert unmasked_data["unmaskAuthorized"] is True
     assert unmasked_data["turns"][0]["masked"] is False
     assert "INQ-9988" in unmasked_data["turns"][0]["userMessage"]
+
+
+def test_retention_status_uses_active_ttl_and_audit_exception(tmp_path: Path) -> None:
+    from ai_ops_backoffice.retention_runtime import resolve_active_retention_ttls
+
+    client = _client_for_test(tmp_path)
+    app = client.app
+    governance = app.state.governance_service
+    admin = ActorContext(
+        user_id="admin.a",
+        display_name="Admin A",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    other = ActorContext(
+        user_id="admin.b",
+        display_name="Admin B",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    candidate = governance.create_retention_candidate(
+        policy_id="operational-events",
+        ttl_days=90,
+        migration_plan="Shorten operational TTL to 90 days for lab verification.",
+        reason="lab retention alignment",
+        actor=admin,
+    )
+    version_id = candidate["policy"]["version_id"]
+    governance.approve_retention(version_id=version_id, reason="peer approve", actor=other)
+    governance.activate_retention(version_id=version_id, reason="activate short ttl", actor=admin)
+
+    ttls = resolve_active_retention_ttls(governance)
+    assert ttls["retention_days"] == 90
+    assert ttls["audit_retention_days"] == 1095
+
+    status = client.get("/api/admin/retention/status", headers=_headers("SYSTEM_ADMIN"))
+    assert status.status_code == 200
+    body = status.json()
+    assert body["policy"]["ttlDays"] == 90
+    assert body["auditRetentionDays"] == 1095
+    assert body["domains"]["governance"]["retentionDays"] == 90
+    assert body["domains"]["governance"]["auditRetentionDays"] == 1095
+    assert body["domains"]["examples"]["retentionDays"] == 90
+
+    purge = client.post("/api/admin/retention/purge", headers=_headers("SYSTEM_ADMIN"))
+    assert purge.status_code == 200
+    purge_body = purge.json()
+    assert purge_body["retentionDays"] == 90
+    assert purge_body["auditRetentionDays"] == 1095
+    assert "governance" in purge_body
+    assert purge_body["governance"].get("auditRetentionDays") == 1095
+
+
+def test_governance_purge_keeps_audits_longer_than_versions() -> None:
+    from ai_ops_backoffice.governance_domain.models import GovernanceAuditEvent
+    from ai_ops_backoffice.governance_domain.repository import InMemoryGovernanceRepository
+    from ai_ops_backoffice.governance_domain.service import GovernanceService
+
+    repo = InMemoryGovernanceRepository()
+    service = GovernanceService(repo)
+    actor = ActorContext(
+        user_id="gov.admin",
+        display_name="Gov Admin",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    service.list_retention_policies(actor=actor)
+    now = datetime.now(UTC)
+    state = repo.load()
+    aged_within_audit = GovernanceAuditEvent(
+        audit_id="audit-within-audit-ttl",
+        action="RETENTION_CANDIDATE_CREATED",
+        actor_id=actor.user_id,
+        actor_role=actor.role,
+        target_type="RETENTION",
+        target_id="operational-events",
+        occurred_at=now - timedelta(days=400),
+    )
+    aged_beyond_audit = GovernanceAuditEvent(
+        audit_id="audit-beyond-audit-ttl",
+        action="RETENTION_CANDIDATE_CREATED",
+        actor_id=actor.user_id,
+        actor_role=actor.role,
+        target_type="RETENTION",
+        target_id="operational-events",
+        occurred_at=now - timedelta(days=1200),
+    )
+    with repo._lock:
+        repo._state = state.model_copy(
+            update={
+                "audits": (*state.audits, aged_within_audit, aged_beyond_audit),
+            }
+        )
+
+    result = service.purge_expired(
+        actor=actor,
+        retention_days=90,
+        audit_retention_days=1095,
+        now=now,
+    )
+    assert result["auditRetentionDays"] == 1095
+    remaining_ids = {a.audit_id for a in repo.load().audits}
+    assert "audit-beyond-audit-ttl" not in remaining_ids
+    assert "audit-within-audit-ttl" in remaining_ids
+
+
+@pytest.mark.asyncio
+async def test_budget_create_stamps_pricing_service_versions(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path, ops_mode="FILE")
+    app = create_app(settings)
+    client = TestClient(app)
+    actor = ActorContext(
+        user_id="fin.ops",
+        display_name="Finance",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("ALL",),
+    )
+    pricing = app.state.query_service.pricing_service
+    await pricing.update_exchange_rate(
+        exchange_rate=36.25,
+        actor=actor,
+        reason="Stamp budget policies with governed FX",
+    )
+    pricing_version = pricing.get_pricing_version()
+
+    create = client.post(
+        "/api/budget-policies",
+        headers=_headers("SYSTEM_ADMIN"),
+        json={
+            "scope_type": "MODEL",
+            "scope_id": "gpt-4.1",
+            "period": "DAILY",
+            "measure": "USD",
+            "warning_threshold": 5.0,
+            "critical_threshold": 10.0,
+            "owner_unit_id": "IT",
+            "notification_target_ids": ["notification-center"],
+        },
+    )
+    assert create.status_code == 200
+    policy = create.json()["policy"] if "policy" in create.json() else create.json()
+    assert policy["pricing_version"] == pricing_version
+    assert policy["exchange_rate_version"] == pricing_version
+
+    usage = await app.state.query_service.budget_usage(
+        actor,
+        scope_type="MODEL",
+        scope_id="gpt-4.1",
+        period_type="DAILY",
+        measure="TWD",
+    )
+    assert usage["pricingVersion"] == pricing_version
+    assert usage["exchangeRateVersion"] == pricing_version
+
+
+def test_health_taipei_day_boundary_for_utc_midnight_input(tmp_path: Path) -> None:
+    from ai_ops_backoffice.services.query_health import resolve_taipei_day_window
+    from zoneinfo import ZoneInfo
+
+    # 2024-01-01T00:00:00Z is still 2024-01-01 morning in Taipei (+08)
+    start, end, local_day = resolve_taipei_day_window("2024-01-01T00:00:00Z")
+    assert str(local_day) == "2024-01-01"
+    tz = ZoneInfo("Asia/Taipei")
+    assert start.astimezone(tz).hour == 0
+    assert (end - start) == timedelta(days=1)
+
+    # Late UTC evening on Jan 1 maps to Taipei Jan 2
+    start2, _end2, local_day2 = resolve_taipei_day_window("2024-01-01T20:00:00Z")
+    assert str(local_day2) == "2024-01-02"
+    assert start2.astimezone(tz).day == 2
+
+
+@pytest.mark.asyncio
+async def test_teams_and_index_emit_to_health_summary(tmp_path: Path) -> None:
+    settings = _make_settings(tmp_path, ops_mode="FILE")
+    query = BackofficeQueryService(settings)
+    now = datetime.now(UTC)
+    await query.record_component_usage(
+        component="teams_adapter",
+        status="SUCCESS",
+        elapsed_ms=42.0,
+        correlation_id="teams-e2e-1",
+        occurred_at=now,
+    )
+    await query.record_component_usage(
+        component="knowledge_index",
+        status="SUCCESS",
+        correlation_id="index-e2e-1",
+        payload={"documentCount": 3},
+        occurred_at=now,
+    )
+    summary = await query.health_summary()
+    components = {item["id"]: item for item in summary["components"]}
+    assert components["teams-adapter"]["telemetryStatus"] == "AVAILABLE"
+    assert components["teams-adapter"]["requestCount"] >= 1
+    assert components["agent-retrieval-index"]["telemetryStatus"] == "AVAILABLE"
+    assert components["agent-retrieval-index"]["requestCount"] >= 1

@@ -153,6 +153,28 @@ def test_turn_replay_has_stable_ids_timestamps_and_payloads_without_secret_leaks
 
     issue_events = [event for event in first if event.issue_occurrence_id]
     assert len({event.issue_occurrence_id for event in issue_events}) == 2
+    index_usage = [
+        event
+        for event in first
+        if event.event_type == "usage.recorded"
+        and event.payload.get("component") == "knowledge_index"
+    ]
+    assert len(index_usage) == 1
+
+
+def test_teams_channel_emits_adapter_health_usage() -> None:
+    emitter, _ = _emitter()
+    request = _request()
+    request = request.model_copy(update={"channel": "msteams"})
+    events = emitter.build_turn_events(request, _state(), cost_summary=None)
+    teams_usage = [
+        event
+        for event in events
+        if event.event_type == "usage.recorded"
+        and event.payload.get("component") == "teams_adapter"
+    ]
+    assert len(teams_usage) == 1
+    assert teams_usage[0].payload["status"] == "SUCCESS"
 
 
 def test_same_request_and_conversation_in_another_tenant_does_not_collide() -> None:
@@ -216,7 +238,12 @@ def test_replay_rejects_changed_request_facts_but_allows_late_usage_phase() -> N
         pricing_version=collector.pricing_version,
     )
     late_events = emitter.build_turn_events(_request(), late_state, cost_summary=summary)
-    usage_events = [event for event in late_events if event.event_type == "usage.recorded"]
+    usage_events = [
+        event
+        for event in late_events
+        if event.event_type == "usage.recorded"
+        and event.payload.get("attributionScope") in {"CALL", "REQUEST_SUMMARY"}
+    ]
     assert [event.payload["attributionScope"] for event in usage_events] == [
         "CALL",
         "REQUEST_SUMMARY",

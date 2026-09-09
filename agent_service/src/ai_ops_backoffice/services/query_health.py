@@ -3,15 +3,40 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
-from agent_service.operations.contracts import utc_now
-
+from agent_service.operations.contracts import DEFAULT_TIMEZONE, utc_now
 from .query_math import percentile as _percentile
 from .usage_projection import project_usage
+
+
+def resolve_taipei_day_window(target_date: str) -> tuple[datetime, datetime, date]:
+    """Resolve a calendar day in Asia/Taipei regardless of input timezone offsets.
+
+    Health historical queries must match other ops day boundaries (Taipei), so a
+    UTC midnight ISO string still maps to the Taipei calendar date it represents.
+    """
+    raw = target_date.strip()
+    tz = ZoneInfo(DEFAULT_TIMEZONE)
+    if "T" in raw:
+        normalized = raw.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            local_day = parsed.date()
+        else:
+            local_day = parsed.astimezone(tz).date()
+    else:
+        local_day = date.fromisoformat(raw[:10])
+    local_start = datetime(
+        local_day.year, local_day.month, local_day.day, 0, 0, 0, 0, tzinfo=tz
+    )
+    window_start = local_start.astimezone(UTC)
+    window_end = (local_start + timedelta(days=1)).astimezone(UTC)
+    return window_start, window_end, local_day
 
 
 class HealthQueryMixin:
@@ -174,32 +199,32 @@ class HealthQueryMixin:
     async def _health_telemetry(
         self,
         target_date: str | None = None,
-    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], datetime, datetime]:
         if target_date:
             try:
-                dt = datetime.fromisoformat(target_date)
-                window_start = dt.replace(
-                    hour=0, minute=0, second=0, microsecond=0,
-                    tzinfo=UTC if dt.tzinfo is None else dt.tzinfo,
-                )
-                window_end = window_start + timedelta(days=1)
+                window_start, window_end, _local_day = resolve_taipei_day_window(target_date)
                 events = [
                     event for event in await self._events()
                     if window_start <= event.occurred_at < window_end
                 ]
             except Exception:
-                window_start = utc_now() - timedelta(hours=24)
+                window_end = utc_now()
+                window_start = window_end - timedelta(hours=24)
                 events = [
                     event for event in await self._events()
                     if event.occurred_at >= window_start
                 ]
         else:
-            window_start = utc_now() - timedelta(hours=24)
+            window_end = utc_now()
+            window_start = window_end - timedelta(hours=24)
             events = [
                 event for event in await self._events()
                 if event.occurred_at >= window_start
             ]
-        failures = [event for event in events if event.event_type == "request.failed"]
+        failures = [
+            event for event in events
+            if event.event_type.endswith(".failed") or event.event_type == "request.failed"
+        ]
         anomalies = [
             {
                 "occurredAt": event.occurred_at.isoformat(),
@@ -294,7 +319,16 @@ class HealthQueryMixin:
         ]
         adapter_usage = usage_for(("teams_", "adapter_", "teams-adapter", "teams_bot"))
         teams_events = [
-            ("SUCCESS", request_latencies.get(event.request_id or event.turn_id or event.correlation_id))
+            (
+                "TIMEOUT"
+                if "timeout" in json.dumps(event.payload).lower()
+                else "FAILED"
+                if str(event.payload.get("status") or "").upper() in {"FAILED", "ERROR"}
+                else "SUCCESS",
+                float(event.payload.get("elapsedMs"))
+                if event.payload.get("elapsedMs") is not None
+                else request_latencies.get(event.request_id or event.turn_id or event.correlation_id),
+            )
             for event in events
             if event.event_type in {"adapter.turn_received", "teams.message_received", "teams.inbound"}
         ]
@@ -302,6 +336,22 @@ class HealthQueryMixin:
         index_samples = usage_for(
             ("knowledge_index", "indexer", "index", "retrieval_index", "embedding")
         )
+        index_events = [
+            (
+                "TIMEOUT"
+                if "timeout" in json.dumps(event.payload).lower()
+                else "FAILED"
+                if event.event_type.endswith(".failed")
+                or str(event.payload.get("status") or "").upper() in {"FAILED", "ERROR"}
+                else "SUCCESS",
+                float(event.payload.get("elapsedMs"))
+                if event.payload.get("elapsedMs") is not None
+                else None,
+            )
+            for event in events
+            if event.event_type in {"knowledge.indexed", "index.built", "sync.completed", "sync.failed"}
+        ]
+        index_samples = index_samples + index_events
 
         all_usage = [(status, latency) for _, status, latency in usage_samples]
         telemetry = {
@@ -319,7 +369,7 @@ class HealthQueryMixin:
             "ticket-service": self._health_metric_summary(ticket_samples),
         }
         anomalies.sort(key=lambda item: item["occurredAt"], reverse=True)
-        return telemetry, anomalies[:10]
+        return telemetry, anomalies[:10], window_start, window_end
 
 
     async def health_summary(self, target_date: str | None = None) -> dict[str, Any]:
@@ -333,7 +383,9 @@ class HealthQueryMixin:
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
 
-        telemetry, recent_anomalies = await self._health_telemetry(target_date=target_date)
+        telemetry, recent_anomalies, window_start, window_end = await self._health_telemetry(
+            target_date=target_date
+        )
         no_telemetry = self._health_metric_summary([])
         retrieval = dict(agent_functional)
         if self._settings.simulate_health_anomalies:
@@ -344,9 +396,10 @@ class HealthQueryMixin:
         is_historical = False
         if target_date:
             try:
-                parsed_target = datetime.strptime(target_date, "%Y-%m-%d").date()
-                is_historical = parsed_target < utc_now().date()
-            except ValueError:
+                _start, _end, local_target = resolve_taipei_day_window(target_date)
+                local_now_date = utc_now().astimezone(ZoneInfo(DEFAULT_TIMEZONE)).date()
+                is_historical = local_target < local_now_date
+            except Exception:
                 pass
 
         raw_components = [

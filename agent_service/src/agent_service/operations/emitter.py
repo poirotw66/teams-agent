@@ -44,6 +44,11 @@ def _channel_scope(channel: str) -> str:
     return "personal"
 
 
+def _is_teams_channel(channel: str) -> bool:
+    normalized = channel.strip().lower()
+    return normalized.startswith("msteams") or normalized in {"teams", "teams-bot"}
+
+
 def _safe_source(source_path: str | None) -> tuple[str | None, str | None]:
     """Sanitize before deriving identifiers: slugification erases secret markers."""
     if not source_path:
@@ -385,6 +390,18 @@ class OperationalEventEmitter:
             "messageMasked": masked.text, "messageWasMasked": masked.was_masked,
             "locale": payload.message.locale, "maskingPolicyVersion": active_masking_policy_version(),
         }, data_classification="CONFIDENTIAL")
+        if _is_teams_channel(str(payload.channel or "")):
+            # Health aggregates Teams adapter telemetry from usage.recorded producers.
+            add(
+                "usage.recorded",
+                {
+                    "component": "teams_adapter",
+                    "status": "SUCCESS",
+                    "channel": payload.channel,
+                    "attributionScope": "ADAPTER_INGRESS",
+                },
+                "teams-adapter",
+            )
         if conversation_id and state.get("conversation_started") is True:
             started_at_value = getattr(conversation, "startedAt", None)
             if started_at_value is None:
@@ -547,5 +564,19 @@ class OperationalEventEmitter:
                 citations.append(citation)
                 events.append(("knowledge.retrieved", {**citation, "releaseId": release_id}, rank))
             body.update(citations=citations, releaseId=release_id, sourceCount=len(citations))
+            # Index/retrieval health producer: usage.recorded with knowledge_index component.
+            events.append(
+                (
+                    "usage.recorded",
+                    {
+                        "component": "knowledge_index",
+                        "status": "SUCCESS",
+                        "releaseId": release_id,
+                        "sourceCount": len(citations),
+                        "attributionScope": "RETRIEVAL_INDEX",
+                    },
+                    "knowledge-index",
+                )
+            )
         events.append((kind, body, None))
         return events
