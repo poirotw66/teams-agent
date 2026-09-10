@@ -1,4 +1,4 @@
-import { nextActionLabel } from "../../../labels.js";
+import { nextActionLabel, renderLifecycleStrip } from "../../../labels.js";
 import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831e";
 import { renderDocumentViewer } from "../../../markdown.js?v=pdf-img-20260908c";
 
@@ -37,6 +37,8 @@ export function renderOverviewTab(detail) {
     <div class="detail-grid">
       <div class="panel">
         <h3>文件摘要</h3>
+        ${renderLifecycleStrip(detail)}
+        <p class="muted" style="margin-top:0.5rem">儲存草稿不會自動變成已發布；Agent 只會使用「已發布」正式版。</p>
         <dl class="meta-list">
           <div><dt>狀態</dt><dd>${renderStatusBadge(doc.status, detail.status_label)}</dd></div>
           <div><dt>擁有單位</dt><dd>${escapeHtml(doc.owner_unit_id)}</dd></div>

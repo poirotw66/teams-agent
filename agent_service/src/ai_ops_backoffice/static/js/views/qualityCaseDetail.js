@@ -169,7 +169,17 @@ export async function showQualityCaseDetail(caseId, options = {}) {
       portal.rel = "noopener noreferrer";
       loopHints.append(portal);
     }
-    content.append(headerRow, metricsGrid, infoPanel, loopHints);
+    content.append(headerRow, metricsGrid, infoPanel);
+    if (pageMode) {
+      const saveNote = el(
+        "div",
+        "callout bu-case-save-note",
+        "提醒：在文件／FAQ 儲存草稿或發布，不會自動把本案件標成「已結案」。改善完成需在本頁把狀態轉為「已結案」（或「不修復／重複」），並完成必要驗證。",
+      );
+      saveNote.style.marginBottom = "0.85rem";
+      content.append(saveNote);
+    }
+    content.append(loopHints);
     content.append(
       renderContentPolicyBanner(),
       renderDecisionGuide({ recommended: recommendContentType(qualityCase) }),

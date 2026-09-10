@@ -65,9 +65,21 @@ async function loadDocumentQueues() {
     let itemCount = 0;
     for (const queue of queues) {
       const name = queue.label || queue.name || queue.queue || "文件工作";
-      const items = queue.items || queue.documents || [];
-      const queueCount = Number(queue.count || queue.total || items.length || 0);
-      for (const item of items.slice(0, 8)) {
+      const queueCount = Number(queue.count || queue.total || 0);
+      const filterStatus = queue.filter_status || queue.filterStatus || "";
+      const route = String(queue.route || "#/knowledge");
+      let previewItems = queue.items || queue.documents || [];
+      if (queueCount > 0 && filterStatus && !previewItems.length) {
+        try {
+          const list = await api(
+            `/api/knowledge/documents?status=${encodeURIComponent(filterStatus)}`,
+          );
+          previewItems = list.items || list.documents || [];
+        } catch {
+          previewItems = [];
+        }
+      }
+      for (const item of previewItems.slice(0, 5)) {
         const docId = item.document_id || item.documentId || item.id;
         const title = item.title || docId || name;
         itemCount += 1;
@@ -75,27 +87,47 @@ async function loadDocumentQueues() {
           title,
           type: "文件待辦",
           nextStep: name,
-          owner: (item.owner_unit_ids || item.ownerUnitIds || []).join(", ") || item.assignee || "—",
-          status: item.lifecycle_status || item.status || name,
+          owner:
+            (item.owner_unit_ids || item.ownerUnitIds || []).join(", ")
+            || item.owner_unit_id
+            || item.assignee
+            || "—",
+          status: item.lifecycle_status || item.status || filterStatus || name,
           kind: "item",
           actionLabel: "開啟文件",
           open: () =>
             navigateTo("knowledgePortal", {
-              k: docId ? `/knowledge/${docId}` : "#/work",
+              k: docId ? `/knowledge/${docId}` : route,
             }),
         });
       }
-      if (!items.length && queueCount > 0) {
-        itemCount += queueCount;
+      const shown = Math.min(5, previewItems.length);
+      const remaining = Math.max(0, queueCount - shown);
+      if (remaining > 0 || (queueCount > 0 && !previewItems.length)) {
+        if (!previewItems.length) itemCount += queueCount;
+        const listTarget = route.includes("review")
+          ? "knowledgeReviews"
+          : "knowledgePortal";
+        const listPath = filterStatus
+          ? `/knowledge?status=${encodeURIComponent(filterStatus)}`
+          : route.replace(/^#/, "") || "/knowledge";
         rows.push({
           title: name,
           type: "文件待辦（彙總）",
-          nextStep: "開啟完整清單",
+          nextStep: previewItems.length
+            ? `其餘 ${remaining} 件請開啟清單`
+            : "先開啟清單，再選一件處理",
           owner: "—",
-          status: `${queueCount} 件`,
+          status: previewItems.length ? `${remaining} 件其餘` : `${queueCount} 件`,
           kind: "aggregate",
-          actionLabel: `查看 ${queueCount} 件待辦文件`,
-          open: () => navigateTo("knowledgeWork"),
+          actionLabel: previewItems.length
+            ? `查看其餘待辦（共 ${queueCount} 件）`
+            : `查看 ${queueCount} 件待辦文件`,
+          open: () =>
+            navigateTo(
+              listTarget,
+              listTarget === "knowledgePortal" ? { k: listPath } : {},
+            ),
         });
       }
     }
@@ -129,43 +161,45 @@ async function loadPendingReviews() {
     const data = await api("/api/knowledge/reviews/pending");
     const items = data.items || data.reviews || [];
     const total = Number(data.total || data.count || items.length || 0);
-    if (total > 1 && items.length <= 1) {
+    const rows = items.slice(0, 5).map((item) => {
+      const docId = item.document_id || item.documentId;
+      const title = item.title || item.document_title || docId || "待審文件";
       return {
-        ok: true,
-        itemCount: total,
-        rows: [
-          {
-            title: "待審文件",
-            type: "文件審核（彙總）",
-            nextStep: "開啟待審清單",
-            owner: "—",
-            status: `${total} 件`,
-            kind: "aggregate",
-            actionLabel: `查看 ${total} 件待審文件`,
-            open: () => navigateTo("knowledgeReviews"),
-          },
-        ],
+        title,
+        type: "文件審核",
+        nextStep: "審核修訂",
+        owner: item.submitted_by || item.author || "—",
+        status: "待審核",
+        kind: "item",
+        actionLabel: "審核",
+        open: () =>
+          navigateTo("knowledgeReviews", docId ? { k: `/knowledge/${docId}` } : {}),
       };
+    });
+    if (total > rows.length) {
+      rows.push({
+        title: "待審文件",
+        type: "文件審核（彙總）",
+        nextStep: `其餘 ${total - rows.length} 件請開啟清單`,
+        owner: "—",
+        status: `${total - rows.length} 件其餘`,
+        kind: "aggregate",
+        actionLabel: `查看全部 ${total} 件待審`,
+        open: () => navigateTo("knowledgeReviews"),
+      });
+    } else if (!rows.length && total > 0) {
+      rows.push({
+        title: "待審文件",
+        type: "文件審核（彙總）",
+        nextStep: "先開啟清單，再選一件審核",
+        owner: "—",
+        status: `${total} 件`,
+        kind: "aggregate",
+        actionLabel: `查看 ${total} 件待審文件`,
+        open: () => navigateTo("knowledgeReviews"),
+      });
     }
-    return {
-      ok: true,
-      itemCount: items.length,
-      rows: items.slice(0, 12).map((item) => {
-        const docId = item.document_id || item.documentId;
-        const title = item.title || docId || "待審文件";
-        return {
-          title,
-          type: "文件審核",
-          nextStep: "審核修訂",
-          owner: item.submitted_by || item.author || "—",
-          status: "待審核",
-          kind: "item",
-          actionLabel: "審核",
-          open: () =>
-            navigateTo("knowledgeReviews", docId ? { k: `/knowledge/${docId}` } : {}),
-        };
-      }),
-    };
+    return { ok: true, itemCount: total || rows.length, rows };
   } catch (error) {
     return { ok: false, error, rows: [], itemCount: 0 };
   }
@@ -316,7 +350,11 @@ async function renderWorkHub(state = {}) {
   const header = el("div");
   header.append(el("h2", "", `早安，${displayName}`));
   header.append(
-    el("p", "metric-label", "先處理影響回答品質的工作，從這裡繼續。"),
+    el(
+      "p",
+      "metric-label",
+      "先處理影響回答品質的工作。標示「彙總」的項目會先進入清單，再選一筆才到處理畫面；其餘可直接處理。",
+    ),
   );
 
   const [docs, reviews, cases, evals] = await Promise.all([
@@ -364,8 +402,8 @@ async function renderWorkHub(state = {}) {
       "我的待處理",
       String(mineCount.display),
       cases.scopeNote
-        ? `${cases.scopeNote}；數字為任務件數（彙總入口以背後件數計）`
-        : "數字為任務件數（彙總入口以背後件數計）",
+        ? `${cases.scopeNote}；數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。`
+        : "數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。",
     ],
     [
       "review",
@@ -401,6 +439,17 @@ async function renderWorkHub(state = {}) {
     tab === "review" ? reviewRows : tab === "tracking" ? trackingRows : mineRows;
 
   const surface = el("section", "panel");
+  surface.append(
+    el(
+      "p",
+      "metric-label",
+      tab === "mine"
+        ? "我的待處理：指派給我的任務優先；若沒有指派，會改顯示單位內可見待辦。"
+        : tab === "review"
+          ? "待我審核：文件審核與驗收題目。彙總列會先開清單。"
+          : "追蹤中：觀察中的改善案件與相關文件動態。",
+    ),
+  );
   if (cases.ok && tab === "mine" && cases.scopeNote) {
     surface.append(el("p", "metric-label", cases.scopeNote));
   }

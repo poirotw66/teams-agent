@@ -8,7 +8,7 @@ import { getCurrentActiveView } from "../app/activeView.js";
 import { loadNavFilters, saveNavFilters, syncLocationHash, buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
-import { formatTaipeiDateTime, labelRoute } from "../app/labels.js";
+import { formatTaipeiDateTime, formatUserFacingError, labelRoute } from "../app/labels.js";
 
 let conversationPollTimer = null;
 let conversationAutoRefresh = false;
@@ -93,7 +93,9 @@ export async function renderConversations(state = {}) {
     const conversationId =
       savedFilters.conversationId ||
       (navFilters.view === "conversations" ? navFilters.conversationId : "");
-    const query = savedFilters.query || "";
+    const query =
+      savedFilters.query ||
+      (navFilters.view === "conversations" ? navFilters.query || "" : "");
     const source = savedFilters.source || "";
     const issueTypeId =
       savedFilters.issueTypeId ||
@@ -101,9 +103,13 @@ export async function renderConversations(state = {}) {
     const route = savedFilters.route || "";
     const model = savedFilters.model || "";
     const actorRef = savedFilters.actorRef || "";
-    const hasFeedback = savedFilters.hasFeedback || "";
+    const hasFeedback =
+      savedFilters.hasFeedback ||
+      (navFilters.view === "conversations" ? navFilters.hasFeedback || "" : "");
     const handoff = savedFilters.handoff || "";
-    const channelScope = savedFilters.channelScope || "";
+    const channelScope =
+      savedFilters.channelScope ||
+      (navFilters.view === "conversations" ? navFilters.channelScope || "" : "");
     if (conversationId) filters.set("conversation_id", conversationId);
     if (query) filters.set("query", query);
     if (source) filters.set("source", source);
@@ -136,15 +142,26 @@ export async function renderConversations(state = {}) {
     }
 
     if (state.isPolling) {
-      const activeId = document.activeElement?.id;
-      if (activeId && activeId.startsWith("conversation-")) {
+      const active = document.activeElement;
+      const activeId = active?.id || "";
+      const tag = (active?.tagName || "").toLowerCase();
+      const editing =
+        (activeId && activeId.startsWith("conversation-"))
+        || (activeId && activeId.startsWith("custom-"))
+        || tag === "input"
+        || tag === "textarea"
+        || tag === "select"
+        || Boolean(active?.closest?.(".filter-bar, .bu-ops-note, .conversation-detail, #app input, #app textarea, #app select"));
+      if (editing) {
         const badge = document.getElementById("conversations-freshness");
         if (badge) {
           const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-          badge.textContent = `最後更新：${nowTime}`;
+          badge.textContent = `最後更新：${nowTime}（編輯中，暫不重整）`;
         }
         return;
       }
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      state._preserveScrollY = scrollY;
     }
 
     const panel = el("section", "panel");
@@ -286,15 +303,45 @@ export async function renderConversations(state = {}) {
       hasFeedback: feedbackSelect.value,
       handoff: handoffSelect.value,
     });
-    const applyAll = (nextPeriod = period) =>
-      renderConversations({
+    const applyAll = (nextPeriod = period) => {
+      const nextFilters = currentFilters();
+      const periodFields = {
+        preset: nextPeriod.preset || "",
+        start: nextPeriod.start || "",
+        end: nextPeriod.end || "",
+      };
+      saveNavFilters({
+        view: "conversations",
+        ...nextFilters,
+        ...periodFields,
+      });
+      syncLocationHash("conversations", {
+        ...nextFilters,
+        ...periodFields,
+      });
+      return renderConversations({
         period: nextPeriod,
-        filters: currentFilters(),
+        filters: nextFilters,
         cursor: "",
         history: [],
       });
-    const applyFilters = el("button", isBuShellEnabled() ? "button-primary" : "", "套用篩選");
-    applyFilters.addEventListener("click", () => applyAll());
+    };
+    const periodControls = createPeriodControls(
+      period,
+      (nextPeriod) => applyAll(nextPeriod),
+      { hideApplyButton: isBuShellEnabled() },
+    );
+    const applyFilters = el(
+      "button",
+      isBuShellEnabled() ? "button-primary" : "",
+      isBuShellEnabled() ? "套用篩選與期間" : "套用篩選",
+    );
+    applyFilters.addEventListener("click", () => {
+      const nextPeriod = typeof periodControls.readPeriod === "function"
+        ? periodControls.readPeriod()
+        : period;
+      return applyAll(nextPeriod);
+    });
     const exportButton = el("button", "", "匯出 CSV");
     exportButton.addEventListener("click", async () => {
       const reasonPrompt = window.prompt("請輸入匯出原因（至少 3 個字元，將寫入資安稽核紀錄）：", "對話紀錄分析與稽核");
@@ -329,7 +376,6 @@ export async function renderConversations(state = {}) {
       }
     });
 
-    const periodControls = createPeriodControls(period, (nextPeriod) => applyAll(nextPeriod));
     if (isBuShellEnabled()) {
       filterBar.append(queryInput, channelSelect, feedbackSelect, applyFilters, exportButton);
       panel.append(filterBar);
@@ -559,8 +605,46 @@ export async function renderConversations(state = {}) {
     }
     if (pager.childElementCount) panel.append(pager);
     app.replaceChildren(panel);
+    if (state.isPolling && Number.isFinite(state._preserveScrollY)) {
+      const y = state._preserveScrollY;
+      requestAnimationFrame(() => window.scrollTo(0, y));
+    }
   } catch (error) {
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+    const wrap = el("div");
+    if (isBuShellEnabled()) {
+      wrap.append(el("h2", "", "對話紀錄"));
+    }
+    const keptFilters = currentConversationState.filters || {};
+    const keptPeriod = currentConversationState.period || {};
+    const kept = [];
+    if (keptFilters.query) kept.push(`關鍵字：${keptFilters.query}`);
+    if (keptPeriod.preset) kept.push(`期間：${keptPeriod.preset}`);
+    if (keptPeriod.start || keptPeriod.end) {
+      kept.push(`自訂：${keptPeriod.start || "—"} ~ ${keptPeriod.end || "—"}`);
+    }
+    if (keptFilters.channelScope) kept.push(`通道：${keptFilters.channelScope}`);
+    if (keptFilters.hasFeedback) kept.push(`回饋：${keptFilters.hasFeedback}`);
+    if (kept.length) {
+      wrap.append(el("p", "metric-label", `目前查詢條件仍保留：${kept.join(" · ")}`));
+    }
+    const isForbidden = error.message === "FORBIDDEN";
+    const box = el("div", isForbidden ? "forbidden" : "error");
+    box.append(el("p", "", formatUserFacingError(error)));
+    if (!isForbidden) {
+      const retry = el("button", "button-primary", "重試載入");
+      retry.type = "button";
+      retry.style.marginTop = "0.65rem";
+      retry.addEventListener("click", () => {
+        void renderConversations({
+          ...currentConversationState,
+          forceRefresh: true,
+          isPolling: false,
+        });
+      });
+      box.append(retry);
+    }
+    wrap.append(box);
+    app.replaceChildren(wrap);
   }
 }
 

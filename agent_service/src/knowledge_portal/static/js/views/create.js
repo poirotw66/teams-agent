@@ -41,7 +41,12 @@ function renderStepHeader(currentStep) {
         <li class="create-step ${step.id === currentStep ? "active" : ""}"${step.id === currentStep ? ' aria-current="step"' : ""}>
           步驟 ${step.id} · ${step.label}
         </li>`).join("")}
-    </ol>`;
+    </ol>
+    <p class="create-step-hint muted" role="status">
+      ${currentStep < TOTAL_STEPS
+    ? `步驟 ${currentStep}/${TOTAL_STEPS}：草稿尚未建立。請按「下一步」繼續；最後一步才會儲存。`
+    : `步驟 ${currentStep}/${TOTAL_STEPS}：請確認摘要無誤後按「建立草稿」。建立後才可送審與發布。`}
+    </p>`;
 }
 
 function renderConfirmPanel(formValues) {
@@ -270,8 +275,9 @@ function renderStepPanel(step, formValues) {
     return `
       <div class="panel form-grid">
         ${renderImportBanner(formValues)}
-        <label>生效日<input name="effective_at" type="date" required></label>
-        <label>下次檢視日<input name="review_due_at" type="date" required></label>
+        <p class="muted full">請填妥日期與變更原因；缺欄時會提示具體欄位名稱。</p>
+        <label>生效日<input name="effective_at" type="date" required value="${escapeHtml(formValues.effective_at || "")}"></label>
+        <label>下次檢視日<input name="review_due_at" type="date" required value="${escapeHtml(formValues.review_due_at || "")}"></label>
         <label class="full">變更原因<textarea name="change_reason" rows="2" required>${escapeHtml(formValues.change_reason || "新增知識文件")}</textarea></label>
         <label>適用對象
           <select name="audience_type" id="createAudienceType">
@@ -302,23 +308,33 @@ function renderStepPanel(step, formValues) {
 }
 
 function validateStepTwo(formValues) {
-  if (!formValues.effective_at || !formValues.review_due_at || !formValues.change_reason?.trim()) {
-    showToast("請完成治理與適用欄位", true);
+  const missing = [];
+  if (!formValues.effective_at) missing.push("生效日");
+  if (!formValues.review_due_at) missing.push("下次檢視日");
+  if (!formValues.change_reason?.trim()) missing.push("變更原因");
+  if (missing.length) {
+    showToast(`請先填寫：${missing.join("、")}`, true);
     return false;
   }
   if (
     formValues.audience_type === "RESTRICTED_GROUPS"
     && !parseAudienceGroupIds(formValues.audience_group_ids).length
   ) {
-    showToast("選擇特定群組時，請至少輸入一個群組", true);
+    showToast("適用對象為特定群組時，請至少輸入一個群組 ID", true);
     return false;
   }
   return true;
 }
 
 function validateStepThree(formValues) {
-  if (!formValues.markdown_content?.trim()) {
-    showToast("請填寫正文內容", true);
+  const body = (formValues.markdown_content || "").trim();
+  if (!body) {
+    showToast("請先填寫「正文內容」後再按下一步", true);
+    return false;
+  }
+  const defaultTemplate = "# 範例標題\n\n## 正文\n\n請在此撰寫知識內容。";
+  if (body === defaultTemplate) {
+    showToast("請將範例正文改成實際內容後再繼續", true);
     return false;
   }
   return true;
@@ -404,17 +420,17 @@ export async function renderCreateView(app) {
         <header class="page-header">
           <div>
             <h2>新增知識文件</h2>
-            <p class="muted">建議：內部 SOP／手冊用「從 PDF 匯入」；短文可用手動撰寫。</p>
+            <p class="muted">建議：內部 SOP／手冊用「從 PDF 匯入」；短文可用手動撰寫。此流程完成前不會儲存草稿。</p>
           </div>
           ${fluentButton("返回列表", { appearance: "outline", dataset: { back: "true" } })}
         </header>
         ${renderStepHeader(currentStep)}
         <form id="createForm">
           ${renderStepPanel(currentStep, formValues)}
-          <div class="form-actions">
+          <div class="form-actions create-form-actions">
             ${currentStep > 1 ? fluentButton("上一步", { appearance: "outline", dataset: { prev: "true" } }) : ""}
             ${!isConfirmStep
-    ? fluentButton("下一步", { appearance: "accent", dataset: { next: "true" } })
+    ? fluentButton("下一步（尚未儲存）", { appearance: "accent", dataset: { next: "true" } })
     : fluentButton("建立草稿", { appearance: "accent", type: "submit" })}
           </div>
         </form>
@@ -468,6 +484,16 @@ export async function renderCreateView(app) {
       }
       if (currentStep === 3 && !validateStepThree(formValues)) {
         return;
+      }
+      if (currentStep === 1) {
+        const today = new Date();
+        const iso = (d) => d.toISOString().slice(0, 10);
+        if (!formValues.effective_at) formValues.effective_at = iso(today);
+        if (!formValues.review_due_at) {
+          const review = new Date(today);
+          review.setDate(review.getDate() + 180);
+          formValues.review_due_at = iso(review);
+        }
       }
       currentStep += 1;
       render();

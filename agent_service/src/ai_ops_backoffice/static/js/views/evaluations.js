@@ -1332,9 +1332,10 @@ async function renderRunsTab(container, allowed) {
 
       resultsDiv.innerHTML = `
         <div class="alert alert-success">
-          <strong>評測執行完成</strong><br>
+          <strong>評測執行已啟動／完成排程</strong><br>
           Run ID: <code>${res.run?.run_id || res.run_id || "—"}</code>｜狀態: ${res.run?.status || "—"}<br>
-          可至「驗收結果」頁籤查看對比分析。
+          可至「驗收結果」頁籤查看對比分析。<br>
+          <span class="text-muted">注意：執行完成只代表評測跑完，不代表品質通過或發布閘道通過；請對照通過率、退步案例與門檻政策。</span>
         </div>
       `;
       startRunBtn.disabled = false;
@@ -1352,6 +1353,7 @@ async function renderResultsTab(container, allowed) {
   const box = el("div", "content-box");
   box.innerHTML = `
     <h3>驗收結果與版本比較 (Evaluation Results)</h3>
+    <p class="metric-label">執行完成 ≠ 品質通過／閘道通過。請用下方通過率、退步案例與門檻政策判斷是否可發布。</p>
     <div id="results-summary-container"></div>
     <div class="table-responsive" style="margin-top: 20px;">
       <table class="data-table">
@@ -1435,6 +1437,7 @@ function renderRunSummaryCards(container, summary) {
     return;
   }
   container.innerHTML = `
+    <p class="metric-label" style="margin-bottom: 0.75rem;">下列摘要用來判斷「品質是否過關」；僅有執行紀錄不足以視為通過。</p>
     <div class="summary-cards-grid" style="display: flex; gap: 16px; margin-bottom: 20px;">
       <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
         <div class="text-muted">新增失敗 (Regressions)</div>
@@ -1465,6 +1468,7 @@ async function loadCaseComparison(container, runId, allowed) {
   const box = el("div", "sub-content-box");
   box.innerHTML = `
     <h4>案例比對清單 (Run: <code>${runId}</code>)</h4>
+    <p class="metric-label">「新增失敗」= 基準通過但候選失敗（退步）；若候選答案為空而基準有答，屬漏答退步，請開細節並排比對。</p>
     <div class="table-responsive">
       <table class="data-table">
         <thead>
@@ -1513,7 +1517,10 @@ async function loadCaseComparison(container, runId, allowed) {
 
       let diffTag = '<span class="badge badge-secondary">相同</span>';
       if (b.passed && !c.passed) {
-        diffTag = '<span class="badge badge-danger">新增失敗 (Regression)</span>';
+        const missedAnswer = Boolean((b.answer || "").trim()) && !(c.answer || "").trim();
+        diffTag = missedAnswer
+          ? '<span class="badge badge-danger">退步：候選漏答</span>'
+          : '<span class="badge badge-danger">新增失敗 (Regression)</span>';
       } else if (!b.passed && c.passed) {
         diffTag = '<span class="badge badge-success">已修復 (Fixed)</span>';
       }
@@ -1551,8 +1558,8 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
         <strong>【基準版回答】</strong>
         <p style="white-space: pre-wrap; margin-top: 8px;">${baselineExec.answer || "(無回答)"}</p>
       </div>
-      <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;">
-        <strong>【候選版回答】</strong>
+      <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;${!((candidateExec.answer || "").trim()) && (baselineExec.answer || "").trim() ? "border:2px solid #dc3545;" : ""}">
+        <strong>【候選版回答】${!((candidateExec.answer || "").trim()) && (baselineExec.answer || "").trim() ? " <span class=\"badge badge-danger\">漏答</span>" : ""}</strong>
         <p style="white-space: pre-wrap; margin-top: 8px;">${candidateExec.answer || "(無回答)"}</p>
       </div>
     </div>

@@ -80,7 +80,7 @@ export function buildPeriodQuery(prefix = "", period = null, fallbackPreset = "7
   return periodParams({ preset }).toString();
 }
 
-export function createPeriodControls(state, onApply) {
+export function createPeriodControls(state, onApply, options = {}) {
   const controls = el("div", "filter-bar");
   const select = periodSelect(state.preset || "30d");
   select.setAttribute("aria-label", "分析期間");
@@ -89,7 +89,9 @@ export function createPeriodControls(state, onApply) {
   select.addEventListener("change", () => {
     custom.hidden = select.value !== "custom";
   });
-  const apply = el("button", "", "套用期間");
+  const hideApply = Boolean(options.hideApplyButton);
+  const apply = el("button", "", options.applyLabel || "套用期間");
+  apply.hidden = hideApply;
   apply.addEventListener("click", () => {
     const inputs = custom.querySelectorAll("input");
     onApply({
@@ -99,5 +101,13 @@ export function createPeriodControls(state, onApply) {
     });
   });
   controls.append(select, custom, apply);
+  controls.readPeriod = () => {
+    const inputs = custom.querySelectorAll("input");
+    return {
+      preset: select.value,
+      start: inputs[0]?.value || "",
+      end: inputs[1]?.value || "",
+    };
+  };
   return controls;
 }

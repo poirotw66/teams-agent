@@ -14,13 +14,14 @@ import { hydrateAssetPreviews, loadTestData } from "./data.js";
 import { captureDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";
 import { renderContentTab } from "./tabs/content.js";
-import { renderOverviewTab } from "./tabs/overview.js?v=collapse-20260908a";
+import { renderOverviewTab } from "./tabs/overview.js?v=lifecycle-20260910a";
 import { renderReviewTab } from "./tabs/review.js?v=collapse-20260908a";
 import { renderTestsTab } from "./tabs/tests.js";
 import { renderVersionsTab } from "./tabs/versions.js";
 import { wireActions } from "./wiring.js";
 import { focusPendingTab, wireTabList } from "./tabs.js";
 import { wireDocumentViewer } from "../../markdown.js?v=pdf-img-20260908c";
+import { renderLifecycleStrip } from "../../labels.js";
 
 function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   if (tab === "overview") return renderOverviewTab(detail);
@@ -99,7 +100,8 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
 
     app.querySelector("#detailHeader").innerHTML = `
       <h2>${escapeHtml(detail.document.title)}</h2>
-      <p>${renderStatusBadge(detail.document.status, detail.status_label)}</p>`;
+      <p>${renderStatusBadge(detail.document.status, detail.status_label)}</p>
+      ${renderLifecycleStrip(detail)}`;
     app.querySelector("#detailActionPanel").innerHTML = renderActionPanel(detail);
 
     let cases = [];

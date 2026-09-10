@@ -3,6 +3,7 @@ import { can } from "../capabilities.js";
 import { fluentButton } from "../fluent.js";
 import { statusLabel } from "../labels.js";
 import { navigate } from "../router.js";
+import { getSession } from "../session.js";
 import {
   escapeHtml,
   handleViewError,
@@ -106,12 +107,17 @@ export async function renderKnowledgeListView(app, query) {
     owner_unit_id: query.get("owner_unit_id") || "",
   };
   const hasFilters = Boolean(filters.status || filters.format || filters.query || filters.owner_unit_id);
+  const session = getSession();
+  const isReadonly =
+    session.role === "AUDITOR"
+    || (!can("create_document") && !can("publish") && !can("decide_review"));
 
   app.innerHTML = `
     <section class="page">
       <header class="page-header">
         <div>
-          <h2>知識文件</h2>
+          <h2>知識文件${isReadonly ? '<span class="readonly-badge" title="目前身分僅能檢視，無法建立或修改">唯讀</span>' : ""}</h2>
+          ${isReadonly ? '<p class="muted">目前身分僅能檢視文件；若看不到項目，可能是權限或篩選結果，而非系統錯誤。</p>' : ""}
         </div>
       </header>
       ${renderFilters(filters)}
@@ -130,6 +136,14 @@ export async function renderKnowledgeListView(app, query) {
       const payload = await api(`/api/documents${buildQuery(filters)}`);
       const items = payload.items || [];
       if (!items.length) {
+        if (isReadonly && !hasFilters) {
+          container.innerHTML = `
+            <div class="empty-state" role="status">
+              <h3>目前沒有可檢視的知識文件</h3>
+              <p class="muted">這是資料結果為空，不是權限拒絕。若懷疑權限問題，請改由具備知識讀取權限的角色協助確認。</p>
+            </div>`;
+          return;
+        }
         const emptyKey = hasFilters ? "knowledge-no-results" : "knowledge-empty";
         const action = hasFilters
           ? fluentButton("清除篩選", { appearance: "outline", dataset: { route: "#/knowledge" } })

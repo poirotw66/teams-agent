@@ -886,13 +886,15 @@ body.bu-shell-v1 table.bu-eval-cases .status-tag {
   white-space: nowrap;
 }
 
-body.bu-shell-v1 .bu-conv-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+body.bu-shell-v1 .bu-feedback-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+body.bu-shell-v1 .bu-feedback-empty .button-primary {
   margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--muted);
 }
 
 @media (max-width: 960px) {

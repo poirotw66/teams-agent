@@ -151,3 +151,24 @@ export function formatAssistantHtml(text) {
     .replace(/\[S(\d+)\]/g, '<span class="bu-cite">來源 $1</span>')
     .replace(/\n/g, "<br>");
 }
+
+/** Map transport/auth errors to Traditional Chinese copy for BU operators. */
+export function formatUserFacingError(error) {
+  const raw = String(error?.message || error || "").trim();
+  if (!raw) {
+    return "資料讀取失敗。這不是「查無資料」。";
+  }
+  if (raw === "FORBIDDEN") {
+    return "目前身分沒有權限查看此內容。若需要存取，請改用有權限的角色或向管理員申請。";
+  }
+  if (raw === "UNAUTHORIZED") {
+    return "登入已失效，請重新設定身分後再試。";
+  }
+  if (/Failed to fetch|NetworkError|Load failed|network/i.test(raw)) {
+    return "無法連線到資料服務。請確認網路或後端是否可用，然後按「重試」。這不是「查無資料」。";
+  }
+  if (/^HTTP \d+/.test(raw)) {
+    return `資料讀取失敗（${raw}）。這不是「查無資料」。`;
+  }
+  return `資料讀取失敗：${raw}。這不是「查無資料」。`;
+}

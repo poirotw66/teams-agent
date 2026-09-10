@@ -2,9 +2,10 @@ import { api, el } from "../api.js";
 import { periodParams, createPeriodControls } from "../components/period.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { createExportButton, runExport } from "../services/export.js";
-import { drillLink, loadNavFilters, saveNavFilters, syncLocationHash } from "../app/navigation.js";
+import { drillLink, loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { formatUserFacingError } from "../app/labels.js";
 import { withReturnTo } from "../app/returnTo.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 import { buildGapPanel, buildQualityLoopPanel } from "./qualityPanels.js";
@@ -167,7 +168,44 @@ export async function renderQuality(state = {}) {
 
     const ratingLabels = { UP: "好評", DOWN: "負評" };
     if (!feedback.items.length) {
-      panel.append(el("p", "empty", "目前沒有符合條件的回饋事件。"));
+      const empty = el("div", "empty bu-feedback-empty");
+      empty.append(el("p", "", "目前沒有符合條件的回饋事件。"));
+      empty.append(
+        el(
+          "p",
+          "metric-label",
+          "這表示篩選結果為空，不是讀取失敗。可放寬條件，或改用相同關鍵字／期間到對話紀錄查證。",
+        ),
+      );
+      const jump = el("button", "button-primary", "改查對話紀錄（帶入關鍵字）");
+      jump.type = "button";
+      jump.addEventListener("click", () => {
+        const keyword = issueInput.value.trim() || reasonInput.value.trim() || "";
+        // Do not force hasFeedback=true: feedback empty often means no DOWN events yet;
+        // forcing it empties conversation search (e.g. VPN) and blocks the fallback path.
+        void navigateTo("conversations", {
+          query: keyword,
+          hasFeedback: "",
+          preset: period.preset || "",
+          start: period.start || "",
+          end: period.end || "",
+        });
+      });
+      const jumpFeedback = el("button", "", "僅查有回饋的對話");
+      jumpFeedback.type = "button";
+      jumpFeedback.title = "會加上 hasFeedback=true；若結果為空可改用上方按鈕";
+      jumpFeedback.addEventListener("click", () => {
+        const keyword = issueInput.value.trim() || reasonInput.value.trim() || "";
+        void navigateTo("conversations", {
+          query: keyword,
+          hasFeedback: "true",
+          preset: period.preset || "",
+          start: period.start || "",
+          end: period.end || "",
+        });
+      });
+      empty.append(jump, jumpFeedback);
+      panel.append(empty);
     } else {
       const table = el("table");
       table.innerHTML =
@@ -300,7 +338,27 @@ export async function renderQuality(state = {}) {
 
     app.replaceChildren(qualityLoopPanel, panel, gapPanel, exportPanel);
   } catch (error) {
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+    const isForbidden = error.message === "FORBIDDEN";
+    const box = el("div", isForbidden ? "forbidden" : "error");
+    box.append(el("p", "", formatUserFacingError(error)));
+    if (isForbidden) {
+      box.append(
+        el(
+          "p",
+          "metric-label",
+          "這是權限限制，不是「目前沒有案件」。若需要處理改善案件，請改用具備品質權限的角色。",
+        ),
+      );
+    } else {
+      const retry = el("button", "button-primary", "重試載入");
+      retry.type = "button";
+      retry.style.marginTop = "0.65rem";
+      retry.addEventListener("click", () => {
+        void renderQuality(state);
+      });
+      box.append(retry);
+    }
+    app.replaceChildren(box);
   }
 }
 
