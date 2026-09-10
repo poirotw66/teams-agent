@@ -16,6 +16,11 @@
     <script>
       window.__AI_OPS_KNOWLEDGE_EMBED__ = true;
       window.__AI_OPS_STATIC_PREFIX__ = "/static/kp";
+      document.addEventListener("DOMContentLoaded", () => {
+        document.querySelector("a.skip-link")?.addEventListener("click", () => {
+          requestAnimationFrame(() => document.getElementById("app")?.focus({ preventScroll: false }));
+        });
+      });
     </script>
   </head>
   <body>

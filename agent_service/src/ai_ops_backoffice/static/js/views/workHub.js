@@ -69,43 +69,72 @@ async function loadDocumentQueues() {
       const filterStatus = queue.filter_status || queue.filterStatus || "";
       const route = String(queue.route || "#/knowledge");
       let previewItems = queue.items || queue.documents || [];
-      if (queueCount > 0 && filterStatus && !previewItems.length) {
+      const isReviewQueue = /review/i.test(route);
+      if (queueCount > 0 && !previewItems.length) {
         try {
-          const list = await api(
-            `/api/knowledge/documents?status=${encodeURIComponent(filterStatus)}`,
-          );
-          previewItems = list.items || list.documents || [];
+          if (filterStatus) {
+            const list = await api(
+              `/api/knowledge/documents?status=${encodeURIComponent(filterStatus)}`,
+            );
+            previewItems = list.items || list.documents || [];
+          } else if (isReviewQueue) {
+            try {
+              const list = await api("/api/knowledge/reviews/pending");
+              previewItems = (list.items || list.reviews || []).map((item) => ({
+                ...item,
+                document_id: item.document_id || item.documentId,
+                title: item.title || item.document_title || item.document_id,
+                status: "待審核",
+                _reviewPreview: true,
+              }));
+            } catch {
+              previewItems = [];
+            }
+            if (!previewItems.length) {
+              const list = await api("/api/knowledge/documents?status=IN_REVIEW");
+              previewItems = (list.items || list.documents || []).map((item) => ({
+                ...item,
+                _reviewPreview: true,
+                status: item.status || "IN_REVIEW",
+              }));
+            }
+          }
         } catch {
           previewItems = [];
         }
       }
       for (const item of previewItems.slice(0, 5)) {
         const docId = item.document_id || item.documentId || item.id;
-        const title = item.title || docId || name;
+        const title = item.title || item.document_title || docId || name;
+        const isReviewItem = Boolean(item._reviewPreview) || isReviewQueue;
         itemCount += 1;
         rows.push({
           title,
-          type: "文件待辦",
-          nextStep: name,
+          type: isReviewItem ? "文件審核" : "文件待辦",
+          nextStep: isReviewItem ? "審核修訂" : name,
           owner:
             (item.owner_unit_ids || item.ownerUnitIds || []).join(", ")
             || item.owner_unit_id
+            || item.submitted_by
             || item.assignee
             || "—",
           status: item.lifecycle_status || item.status || filterStatus || name,
           kind: "item",
-          actionLabel: "開啟文件",
+          actionLabel: isReviewItem ? "審核" : "開啟文件",
           open: () =>
-            navigateTo("knowledgePortal", {
-              k: docId ? `/knowledge/${docId}` : route,
-            }),
+            navigateTo(
+              isReviewItem ? "knowledgeReviews" : "knowledgePortal",
+              isReviewItem
+                ? (docId ? { k: `/knowledge/${docId}` } : {})
+                : { k: docId ? `/knowledge/${docId}` : route },
+            ),
         });
       }
       const shown = Math.min(5, previewItems.length);
       const remaining = Math.max(0, queueCount - shown);
       if (remaining > 0 || (queueCount > 0 && !previewItems.length)) {
         if (!previewItems.length) itemCount += queueCount;
-        const listTarget = route.includes("review")
+        const listTarget = isReviewQueue
           ? "knowledgeReviews"
           : "knowledgePortal";
         const listPath = filterStatus
@@ -113,16 +142,18 @@ async function loadDocumentQueues() {
           : route.replace(/^#/, "") || "/knowledge";
         rows.push({
           title: name,
-          type: "文件待辦（彙總）",
+          type: isReviewQueue ? "文件審核（彙總）" : "文件待辦（彙總）",
           nextStep: previewItems.length
             ? `其餘 ${remaining} 件請開啟清單`
-            : "先開啟清單，再選一件處理",
+            : (isReviewQueue
+              ? "明細可能受單位範圍限制；請開啟待審清單確認"
+              : "先開啟清單，再選一件處理"),
           owner: "—",
           status: previewItems.length ? `${remaining} 件其餘` : `${queueCount} 件`,
           kind: "aggregate",
           actionLabel: previewItems.length
             ? `查看其餘待辦（共 ${queueCount} 件）`
-            : `查看 ${queueCount} 件待辦文件`,
+            : (isReviewQueue ? `查看 ${queueCount} 件待審` : `查看 ${queueCount} 件待辦文件`),
           open: () =>
             navigateTo(
               listTarget,

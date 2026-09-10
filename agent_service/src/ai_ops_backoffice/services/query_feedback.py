@@ -155,10 +155,11 @@ class FeedbackQueryMixin:
                 event for event in feedback_events if event.payload.get("rating") == rating
             ]
         if reason:
+            needle = reason.lower()
             feedback_events = [
                 event
                 for event in feedback_events
-                if str(event.payload.get("reason") or "").lower() == reason.lower()
+                if needle in str(event.payload.get("reason") or "").lower()
             ]
         if resolved_status:
             feedback_events = [

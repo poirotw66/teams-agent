@@ -18,6 +18,16 @@
   text-decoration: none;
   font-weight: 600;
 }
-.skip-link:focus {
+.skip-link:focus,
+.skip-link:focus-visible {
   top: 0.75rem;
+  outline: 2px solid #6264a7;
+  outline-offset: 2px;
+}
+#app:focus {
+  outline: none;
+}
+#app:focus-visible {
+  outline: 2px solid #6264a7;
+  outline-offset: 2px;
 }

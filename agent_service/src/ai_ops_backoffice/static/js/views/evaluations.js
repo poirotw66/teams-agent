@@ -1386,6 +1386,11 @@ async function renderResultsTab(container, allowed) {
     const runs = await api("/api/evaluations/runs");
     if (!runs || !runs.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="text-muted">目前尚無驗收執行紀錄。請至「執行驗收」頁籤發起新評測。</td></tr>';
+      caseCompContainer.innerHTML = `
+        <div class="callout">
+          <strong>如何閱讀退步</strong>
+          <p class="metric-label" style="margin:0.35rem 0 0">有 run 後，案例比對會標示「新增失敗 (Regression)」；若基準有答、候選空白，會顯示「退步：候選漏答」並在細節並排標紅。執行完成仍不代表品質／閘道通過。</p>
+        </div>`;
       return;
     }
 

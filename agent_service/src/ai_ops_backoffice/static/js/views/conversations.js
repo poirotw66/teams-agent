@@ -27,11 +27,41 @@ export function stopConversationPolling() {
   }
 }
 
+function isConversationFilterEditing(active = document.activeElement) {
+  if (!active || active === document.body || active === document.documentElement) {
+    return false;
+  }
+  const activeId = active.id || "";
+  const tag = (active.tagName || "").toLowerCase();
+  if (activeId.startsWith("conversation-") || activeId.startsWith("custom-")) {
+    return true;
+  }
+  if (tag === "input" || tag === "textarea" || tag === "select") {
+    return Boolean(active.closest?.("#app"));
+  }
+  return Boolean(active.closest?.(".filter-bar, .bu-ops-note, .conversation-detail"));
+}
+
+function touchConversationsFreshness(suffix = "") {
+  const badge = document.getElementById("conversations-freshness");
+  if (!badge) return;
+  const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  badge.textContent = suffix
+    ? `最後更新：${nowTime}${suffix}`
+    : `最後更新：${nowTime}`;
+}
+
 function startConversationPolling() {
   stopConversationPolling();
   if (!conversationAutoRefresh) return;
   conversationPollTimer = setInterval(async () => {
-    if (document.hidden || conversationPollInFlight || getCurrentActiveView() !== "conversations") return;
+    if (document.hidden || conversationPollInFlight || getCurrentActiveView() !== "conversations") {
+      return;
+    }
+    if (isConversationFilterEditing()) {
+      touchConversationsFreshness("（編輯中，暫不重整）");
+      return;
+    }
     try {
       conversationPollInFlight = true;
       await renderConversations({
@@ -142,26 +172,12 @@ export async function renderConversations(state = {}) {
     }
 
     if (state.isPolling) {
-      const active = document.activeElement;
-      const activeId = active?.id || "";
-      const tag = (active?.tagName || "").toLowerCase();
-      const editing =
-        (activeId && activeId.startsWith("conversation-"))
-        || (activeId && activeId.startsWith("custom-"))
-        || tag === "input"
-        || tag === "textarea"
-        || tag === "select"
-        || Boolean(active?.closest?.(".filter-bar, .bu-ops-note, .conversation-detail, #app input, #app textarea, #app select"));
-      if (editing) {
-        const badge = document.getElementById("conversations-freshness");
-        if (badge) {
-          const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-          badge.textContent = `最後更新：${nowTime}（編輯中，暫不重整）`;
-        }
+      if (isConversationFilterEditing()) {
+        touchConversationsFreshness("（編輯中，暫不重整）");
         return;
       }
-      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
-      state._preserveScrollY = scrollY;
+      state._preserveScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      state._preserveFocusId = document.activeElement?.id || "";
     }
 
     const panel = el("section", "panel");
@@ -213,15 +229,18 @@ export async function renderConversations(state = {}) {
 
     autoRefreshCheckbox.addEventListener("change", () => {
       conversationAutoRefresh = autoRefreshCheckbox.checked;
+      autoRefreshLabel.classList.toggle("is-ok", conversationAutoRefresh);
+      autoRefreshText.textContent = conversationAutoRefresh
+        ? "🟢 即時自動更新（5s）"
+        : "⚡ 即時自動更新";
       if (conversationAutoRefresh) {
         startConversationPolling();
+        touchConversationsFreshness("（已開啟自動更新）");
       } else {
         stopConversationPolling();
+        touchConversationsFreshness("");
       }
-      renderConversations({
-        ...currentConversationState,
-        forceRefresh: true,
-      });
+      // Avoid full remount so the user does not lose filter focus when toggling.
     });
 
     const refreshButton = el("button", "button-primary", "🔄 立即重新整理");
@@ -605,9 +624,17 @@ export async function renderConversations(state = {}) {
     }
     if (pager.childElementCount) panel.append(pager);
     app.replaceChildren(panel);
-    if (state.isPolling && Number.isFinite(state._preserveScrollY)) {
-      const y = state._preserveScrollY;
-      requestAnimationFrame(() => window.scrollTo(0, y));
+    if (state.isPolling) {
+      if (Number.isFinite(state._preserveScrollY)) {
+        const y = state._preserveScrollY;
+        requestAnimationFrame(() => window.scrollTo(0, y));
+      }
+      if (state._preserveFocusId) {
+        const focusEl = document.getElementById(state._preserveFocusId);
+        if (focusEl && typeof focusEl.focus === "function") {
+          focusEl.focus({ preventScroll: true });
+        }
+      }
     }
   } catch (error) {
     const wrap = el("div");

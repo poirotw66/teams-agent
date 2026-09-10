@@ -90,17 +90,19 @@ export function createPeriodControls(state, onApply, options = {}) {
     custom.hidden = select.value !== "custom";
   });
   const hideApply = Boolean(options.hideApplyButton);
-  const apply = el("button", "", options.applyLabel || "套用期間");
-  apply.hidden = hideApply;
-  apply.addEventListener("click", () => {
-    const inputs = custom.querySelectorAll("input");
-    onApply({
-      preset: select.value,
-      start: inputs[0]?.value || "",
-      end: inputs[1]?.value || "",
+  controls.append(select, custom);
+  if (!hideApply) {
+    const apply = el("button", "", options.applyLabel || "套用期間");
+    apply.addEventListener("click", () => {
+      const inputs = custom.querySelectorAll("input");
+      onApply({
+        preset: select.value,
+        start: inputs[0]?.value || "",
+        end: inputs[1]?.value || "",
+      });
     });
-  });
-  controls.append(select, custom, apply);
+    controls.append(apply);
+  }
   controls.readPeriod = () => {
     const inputs = custom.querySelectorAll("input");
     return {
