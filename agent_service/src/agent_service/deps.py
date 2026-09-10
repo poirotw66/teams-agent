@@ -13,6 +13,7 @@ from .knowledge_backends import KnowledgeBackendRouter
 from .knowledge_release import read_active_release_id, release_index_path
 from .retrieval import HybridIndex
 from .settings import RagSettings
+from .source_refs import hydrate_index_sources
 from .workflow import build_knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -61,11 +62,17 @@ def sync_knowledge_to_active_pointer(
             target_index_path,
             resolved_settings.embedding_model,
         )
+        hydrate_index_sources(
+            new_index.chunks,
+            release_dir=release_dir,
+            release_id=active_release_id,
+        )
         new_agent = RagAgent(resolved_settings, new_index)
         new_hybrid_service = build_knowledge_service(
             target_app.state.hybrid_settings,
             new_index,
             target_app.state.rag_model,
+            release_id=active_release_id,
         )
         router: KnowledgeBackendRouter = target_app.state.knowledge_router
         router.update_service("HYBRID", new_hybrid_service)

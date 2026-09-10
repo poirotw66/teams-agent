@@ -169,6 +169,33 @@ class ConversationsQueryMixin:
             turn_records = []
             for t_event in sorted(turns, key=lambda x: x.occurred_at):
                 t_summary = _summarize_turn_events(t_event, conv_events)
+                source_events = [
+                    item
+                    for item in conv_events
+                    if item.event_type in {"knowledge.retrieved", "knowledge.answered"}
+                    and (
+                        item.turn_id == t_event.turn_id
+                        or (
+                            not item.turn_id
+                            and item.correlation_id == t_event.correlation_id
+                        )
+                    )
+                ]
+                source_trace = getattr(self, "_source_trace", None)
+                t_source_refs = (
+                    source_trace.references_for_events(source_events)
+                    if source_trace is not None
+                    else []
+                )
+                for source_ref in t_source_refs:
+                    for summary_key, ref_key in (
+                        ("documentIds", "documentId"),
+                        ("sourcePaths", "sourcePath"),
+                        ("releaseIds", "releaseId"),
+                    ):
+                        value = source_ref.get(ref_key)
+                        if value and value not in (t_summary.get(summary_key) or []):
+                            t_summary.setdefault(summary_key, []).append(value)
                 fb_reason = next(
                     (
                         item.payload.get("reason")
@@ -196,6 +223,7 @@ class ConversationsQueryMixin:
                         "faqKey": t_summary.get("faqKey"),
                         "documentIds": t_summary.get("documentIds") or [],
                         "sourcePaths": t_summary.get("sourcePaths") or [],
+                        "sourceRefs": t_source_refs,
                         "feedbackRating": t_summary.get("feedbackRating"),
                         "feedbackReason": fb_reason,
                         "resolvedStatus": t_summary.get("resolvedStatus"),
@@ -297,6 +325,21 @@ class ConversationsQueryMixin:
                 if item.turn_id == event.turn_id and item.event_type != "turn.received"
             ]
             summary = _summarize_turn_events(event, events)
+            source_trace = getattr(self, "_source_trace", None)
+            summary["sourceRefs"] = (
+                source_trace.references_for_events(related)
+                if source_trace is not None
+                else []
+            )
+            for source_ref in summary["sourceRefs"]:
+                for summary_key, ref_key in (
+                    ("documentIds", "documentId"),
+                    ("sourcePaths", "sourcePath"),
+                    ("releaseIds", "releaseId"),
+                ):
+                    value = source_ref.get(ref_key)
+                    if value and value not in (summary.get(summary_key) or []):
+                        summary.setdefault(summary_key, []).append(value)
             message_hidden = bool(event.payload.get("messageHidden"))
             authorized_fragments = [
                 {
@@ -348,4 +391,3 @@ class ConversationsQueryMixin:
             "dataState": "UNMASKED_WITH_REASON" if allow_unmasked else "MASKED",
             "turns": turns,
         }
-

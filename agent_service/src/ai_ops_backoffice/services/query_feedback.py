@@ -169,10 +169,23 @@ class FeedbackQueryMixin:
                 == resolved_status.lower()
             ]
         feedback_events.sort(key=lambda item: item.occurred_at, reverse=True)
+        requested_issue = str(issue_type_id or "").strip()
+        matching_issue_ids: set[str] | None = None
+        if requested_issue:
+            needle = requested_issue.casefold()
+            matching_issue_ids = {
+                record.issue_type_id
+                for record in self.taxonomy.list_active()
+                if needle in record.issue_type_id.casefold()
+                or needle in record.display_name.casefold()
+            }
+            # Preserve exact IDs even when a fixture contains a type that is
+            # not currently present in the active taxonomy snapshot.
+            matching_issue_ids.add(requested_issue)
         filtered_items = []
         for event in feedback_events:
             trace = self._build_feedback_trace(event, conversation_cache=conversation_cache)
-            if issue_type_id and trace.get("issueTypeId") != issue_type_id:
+            if matching_issue_ids is not None and trace.get("issueTypeId") not in matching_issue_ids:
                 continue
             if route and trace.get("route") != route:
                 continue
@@ -186,6 +199,7 @@ class FeedbackQueryMixin:
                 {
                     "occurredAt": event.occurred_at.isoformat(),
                     "conversationId": event.conversation_id,
+                    "turnId": trace.get("turnId") or event.turn_id,
                     "correlationId": event.correlation_id,
                     "rating": event.payload.get("rating"),
                     "reason": event.payload.get("reason"),
@@ -219,12 +233,14 @@ class FeedbackQueryMixin:
         issue_id = feedback_event.payload.get("issueId")
         if not conversation_id:
             return {
+                "turnId": feedback_event.turn_id,
                 "issueTypeId": None,
                 "issueDescriptionMasked": None,
                 "classificationSource": None,
                 "faqKey": None,
                 "documentIds": [],
                 "releaseIds": [],
+                "sourceRefs": [],
                 "handoffOccurred": False,
                 "handoffStatus": None,
                 "route": None,
@@ -305,7 +321,9 @@ class FeedbackQueryMixin:
             issue_type_id = issue_extracted.issue_type_id
 
         record = self.taxonomy.get(issue_type_id) if issue_type_id else None
+        source_trace = getattr(self, "_source_trace", None)
         return {
+            "turnId": feedback_event.turn_id,
             "issueTypeId": issue_type_id,
             "issueTypeDisplayName": record.display_name if record else issue_type_id,
             "issueDescriptionMasked": (
@@ -315,9 +333,13 @@ class FeedbackQueryMixin:
             "faqKey": faq_key,
             "documentIds": document_ids,
             "releaseIds": release_ids,
+            "sourceRefs": (
+                source_trace.references_for_events(scoped)
+                if source_trace is not None
+                else []
+            ),
             "handoffOccurred": handoff_occurred,
             "handoffStatus": handoff_status,
             "route": detected_route,
             "model": detected_model,
         }
-

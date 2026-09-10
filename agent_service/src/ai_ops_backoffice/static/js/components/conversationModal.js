@@ -1,14 +1,97 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
-import { saveNavFilters, syncLocationHash } from "../app/navigation.js";
+import { loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { navigateReturnTo } from "../app/returnTo.js";
 import { badge } from "./badges.js";
+import { showContentModal } from "./modal.js";
 import { formatAssistantHtml, formatTaipeiDateTime, labelRoute } from "../app/labels.js";
 
 function routeLabel(route) {
   return labelRoute(route);
+}
+
+function sourceTraceStatusLabel(status) {
+  if (status === "LEGACY_BACKFILLED") return "歷史事件已由發布版本回填";
+  if (status === "UNRESOLVED") return "尚未能定位發布版本";
+  return "已鎖定發布版本";
+}
+
+function sourcePreviewContent(source) {
+  const content = el("div", "source-preview");
+  const identity = el("div", "metric-label");
+  identity.textContent = [
+    source.documentId ? `文件：${source.documentId}` : "文件：—",
+    source.versionId ? `版本：${source.versionId}` : "版本：—",
+    source.releaseId ? `發布：${source.releaseId}` : "發布：—",
+  ].join("｜");
+  content.append(identity);
+  content.append(
+    el(
+      "p",
+      "metric-label",
+      `chunk：${source.chunkId || "—"}｜追溯狀態：${sourceTraceStatusLabel(source.traceStatus)}`,
+    ),
+  );
+  if (source.sourcePath) {
+    content.append(el("p", "metric-label", `轉換來源：${source.sourcePath}`));
+  }
+  const notice = el("div", source.originalAssetAvailable ? "callout success" : "callout warning");
+  notice.append(
+    el(
+      "strong",
+      "",
+      source.originalAssetAvailable ? "原始檔可受控下載" : "原始檔尚未保存",
+    ),
+  );
+  notice.append(
+    el(
+      "p",
+      "",
+      source.message || "目前顯示發布時使用的轉換內容。",
+    ),
+  );
+  content.append(notice);
+  const evidence = source.evidence?.excerpt || "目前沒有可顯示的段落內容。";
+  content.append(el("h3", "", "回答引用的段落"));
+  content.append(el("pre", "json-block source-evidence", evidence));
+  if (source.evidence?.truncated) {
+    content.append(el("p", "metric-label", "段落過長，以上為受控預覽。"));
+  }
+  if (source.downloadUrl) {
+    const download = el("a", "drill-link", `開啟原始檔${source.originalAssetName ? `：${source.originalAssetName}` : ""}`);
+    download.href = source.downloadUrl;
+    download.target = "_blank";
+    download.rel = "noopener";
+    content.append(download);
+  }
+  if (source.documentId) {
+    const documentLink = el("a", "drill-link", "開啟知識文件");
+    documentLink.href = buildLocationHash(
+      workspaceForView("knowledgeDocument") || "knowledge_ops",
+      "knowledgeDocument",
+      { documentId: source.documentId },
+    );
+    content.append(documentLink);
+  }
+  return content;
+}
+
+async function openSourcePreview(source, button) {
+  if (!source?.sourceRefId) return;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "載入來源…";
+  try {
+    const detail = await api(`/api/sources/${encodeURIComponent(source.sourceRefId)}`);
+    showContentModal(`回答來源：${detail.title || source.title || "未命名文件"}`, sourcePreviewContent(detail));
+  } catch (error) {
+    showContentModal("來源預覽失敗", el("div", "error", error.message));
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
 }
 
 function closeModalRoot() {
@@ -18,7 +101,7 @@ function closeModalRoot() {
   root.replaceChildren();
 }
 
-function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } = {}) {
+function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, selectedTurnId } = {}) {
   const content = el("div", "bu-conversation-detail");
   const allowed = actorCapabilities();
   const stateBadge = el(
@@ -47,7 +130,25 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
       refreshBtn.textContent = "重新整理";
     }
   });
-  actions.append(refreshBtn);
+  const copyUrlBtn = el("button", "button-secondary", "複製安全網址");
+  copyUrlBtn.type = "button";
+  copyUrlBtn.title = "只包含對話／回合識別碼，不包含提問原文或敏感查詢條件";
+  copyUrlBtn.addEventListener("click", async () => {
+    const safeHash = buildLocationHash(
+      workspaceForView("conversations") || "knowledge_ops",
+      "conversations",
+      { conversationId, turnId: selectedTurnId || "" },
+    );
+    const safeUrl = `${window.location.origin}${window.location.pathname}${safeHash}`;
+    try {
+      await navigator.clipboard.writeText(safeUrl);
+      copyUrlBtn.textContent = "已複製安全網址";
+      setTimeout(() => { copyUrlBtn.textContent = "複製安全網址"; }, 1400);
+    } catch {
+      window.prompt("安全網址", safeUrl);
+    }
+  });
+  actions.append(refreshBtn, copyUrlBtn);
   if (allowed.has("ops.conversations.unmasked") && !detail.unmaskAuthorized) {
     const unmaskButton = el("button", "", "申請查看未遮罩內容");
     unmaskButton.addEventListener("click", async () => {
@@ -69,8 +170,9 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
   const layout = el("div", "bu-case-layout");
   const main = el("section", "bu-case-main");
   const side = el("aside", "bu-case-side");
-  side.append(el("h3", "", "本回合回答依據"));
-  let selectedTurn = (detail.turns || [])[0] || null;
+  let selectedTurn = (detail.turns || []).find((turn) =>
+    selectedTurnId && String(turn.turnId || "") === String(selectedTurnId),
+  ) || (detail.turns || [])[0] || null;
 
   function renderSide(turn) {
     side.replaceChildren(el("h3", "", "本回合回答依據"));
@@ -78,6 +180,7 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
       side.append(el("p", "muted", "尚無回合資料。"));
       return;
     }
+    side.append(el("p", "metric-label", `已選取回合：${turn.turnId || turn.occurredAt || "—"}`));
     side.append(el("p", "", "處理方式 "));
     side.append(badge(routeLabel(turn.route), "accent"));
     if (turn.faqKey) {
@@ -86,7 +189,33 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
     const docs = turn.documentIds || [];
     const paths = turn.sourcePaths || [];
     const releases = turn.releaseIds || [];
-    if (docs.length || paths.length || releases.length) {
+    const sourceRefs = turn.sourceRefs || [];
+    if (sourceRefs.length) {
+      const sourceHeading = el("p", "metric-label", `已追溯 ${sourceRefs.length} 個回答來源`);
+      side.append(sourceHeading);
+      for (const source of sourceRefs) {
+        const item = el("div", "source-ref-item");
+        item.append(
+          el(
+            "div",
+            "source-ref-title",
+            `${source.title || "未命名文件"}${source.traceStatus === "LEGACY_BACKFILLED" ? "（歷史回填）" : ""}`,
+          ),
+        );
+        item.append(
+          el(
+            "div",
+            "metric-label",
+            [source.documentId, source.versionId, source.releaseId].filter(Boolean).join("｜") || "版本資訊不足",
+          ),
+        );
+        const button = el("button", "drill-link", "查看來源段落");
+        button.type = "button";
+        button.addEventListener("click", () => void openSourcePreview(source, button));
+        item.append(button);
+        side.append(item);
+      }
+    } else if (docs.length || paths.length || releases.length) {
       if (docs.length) {
         for (const docId of docs) {
           const link = el("a", "drill-link", `文件 ${String(docId).slice(0, 12)}`);
@@ -106,7 +235,10 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
         side.append(el("p", "metric-label", `版本／發布：${releases.join("、")}`));
       }
     } else {
-      side.append(el("p", "metric-label", "尚無可見的文件／段落來源連結。"));
+      const noSourceMessage = turn.resultType === "NEED_MORE_INFO"
+        ? "此回合是補充資訊流程，尚未產生知識庫回答，因此沒有引用來源。"
+        : "此回合沒有保存可追溯的文件／段落來源。";
+      side.append(el("p", "metric-label", noSourceMessage));
     }
     side.append(
       el(
@@ -151,6 +283,9 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
   for (const turn of detail.turns || []) {
     const block = el("div", "message bu-turn");
     block.style.cursor = "pointer";
+    block.dataset.turnId = turn.turnId || "";
+    block.setAttribute("aria-pressed", selectedTurn === turn ? "true" : "false");
+    if (selectedTurn === turn) block.classList.add("is-selected");
     block.append(el("div", "meta", formatTaipeiDateTime(turn.occurredAt || "")));
 
     const userText = turn.messageMasked || turn.userMessage || turn.message || "";
@@ -183,6 +318,10 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
     }
     block.addEventListener("click", () => {
       selectedTurn = turn;
+      for (const other of main.querySelectorAll("[data-turn-id]")) {
+        other.classList.toggle("is-selected", other === block);
+        other.setAttribute("aria-pressed", other === block ? "true" : "false");
+      }
       renderSide(turn);
     });
     main.append(block);
@@ -196,7 +335,9 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
   return content;
 }
 
-export function showConversationPage(detail, conversationId = detail.conversationId) {
+export function showConversationPage(detail, conversationId = detail.conversationId, options = {}) {
+  const navFilters = loadNavFilters();
+  const selectedTurnId = options.selectedTurnId || navFilters.turnId || "";
   const app = document.getElementById("app");
   const page = el("div", "bu-case-page");
   const crumb = el("div", "bu-case-crumb");
@@ -204,7 +345,16 @@ export function showConversationPage(detail, conversationId = detail.conversatio
   back.href = "#";
   back.addEventListener("click", (event) => {
     event.preventDefault();
-    navigateReturnTo("conversations", {});
+    if (navFilters.returnTo) {
+      navigateReturnTo("conversations", {});
+      return;
+    }
+    const listFilters = { ...navFilters };
+    delete listFilters.view;
+    delete listFilters.conversationId;
+    delete listFilters.turnId;
+    delete listFilters.returnTo;
+    void navigateTo("conversations", listFilters);
   });
   crumb.append(back, document.createTextNode(` / ${conversationId}`));
   page.append(crumb);
@@ -213,12 +363,13 @@ export function showConversationPage(detail, conversationId = detail.conversatio
     el("p", "metric-label", "從使用者的提問，追到實際回答與引用依據。"),
   );
   const rerender = (nextDetail, nextId) => {
-    showConversationPage(nextDetail, nextId);
+    showConversationPage(nextDetail, nextId, { selectedTurnId });
   };
   page.append(
     buildConversationBody(detail, conversationId, {
       onRefresh: rerender,
       onUnmask: rerender,
+      selectedTurnId,
     }),
   );
   app.replaceChildren(page);
@@ -226,9 +377,11 @@ export function showConversationPage(detail, conversationId = detail.conversatio
 
 export function showConversationModal(detail, conversationId = detail.conversationId) {
   if (isBuShellEnabled()) {
-    saveNavFilters({ view: "conversations", conversationId });
-    syncLocationHash("conversations", { conversationId });
-    showConversationPage(detail, conversationId);
+    const nav = loadNavFilters();
+    const selectedTurnId = detail.selectedTurnId || nav.turnId || "";
+    saveNavFilters({ ...nav, view: "conversations", conversationId, turnId: selectedTurnId });
+    syncLocationHash("conversations", { ...nav, conversationId, turnId: selectedTurnId });
+    showConversationPage(detail, conversationId, { selectedTurnId });
     return;
   }
   const root = document.getElementById("modal-root");

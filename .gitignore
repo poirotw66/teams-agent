@@ -23,6 +23,7 @@ outputs/
 #   data/portal_drafts/  draft image bundles uploaded via Knowledge Portal
 #   data/portal_state/   Portal FILE-mode repository state
 #   data/releases/       published release artifacts built by the Portal
+#   data/portal_originals/ private original-asset store (local/GCS boundary)
 #   data/ops/events/     operational event FILE-mode store
 #   data/ops/exports/    async export job artifacts
 #
@@ -36,6 +37,7 @@ data/conversations/
 data/portal_drafts/
 data/portal_state/
 data/releases/
+data/portal_originals/
 data/ops/events/
 data/ops/exports/
 

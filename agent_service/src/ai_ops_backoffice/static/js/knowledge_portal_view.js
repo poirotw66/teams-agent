@@ -32,6 +32,7 @@ function portalCapabilities(knowledgeCaps) {
 
 function portalRole(knowledgeCaps, backofficeRole) {
   if (backofficeRole === "SYSTEM_ADMIN") return "PLATFORM";
+  if (backofficeRole === "VIEWER") return "AUDITOR";
   const set = new Set(knowledgeCaps || []);
   if (set.has("knowledge.publish") || set.has("knowledge.review")) return "MANAGER";
   if (set.has("knowledge.review")) return "REVIEWER";

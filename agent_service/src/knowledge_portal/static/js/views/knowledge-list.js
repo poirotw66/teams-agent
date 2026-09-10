@@ -71,8 +71,10 @@ function renderTable(items) {
         <thead>
           <tr>
             <th>標題</th>
+            <th>文件 ID</th>
             <th>狀態</th>
             <th>格式</th>
+            <th>正式版本</th>
             <th>擁有單位</th>
             <th>最後更新</th>
             <th></th>
@@ -86,8 +88,10 @@ function renderTable(items) {
                   ${escapeHtml(doc.title)}
                 </fluent-button>
               </td>
+              <td><code>${escapeHtml(doc.document_id)}</code></td>
               <td>${renderStatusBadge(doc.status, statusLabel(doc.status))}</td>
               <td><span class="badge ${doc.format === "PDF" ? "badge-neutral" : "badge-outline"}">${escapeHtml(doc.format || "MARKDOWN")}</span></td>
+              <td><code>${escapeHtml(doc.current_published_version_id || "尚未發布")}</code></td>
               <td>${escapeHtml(doc.owner_unit_id)}</td>
               <td>${new Date(doc.updated_at).toLocaleString("zh-TW")}</td>
               <td class="table-actions">

@@ -20,6 +20,7 @@ from .knowledge_release import resolve_knowledge_index
 from .operations.runtime import build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
+from .source_refs import hydrate_index_sources
 from .ticket import build_ticket_service
 from .ticket_dedupe import build_ticket_request_dedupe
 from .workflow import AgentWorkflow, build_knowledge_service
@@ -45,6 +46,16 @@ def build_lifespan(resolved_settings: RagSettings):
                 resolved_settings.embedding_model,
             )
 
+        release_dir = (
+            resolved_settings.knowledge_release_dir
+            or (resolved_settings.data_dir / "releases")
+        )
+        hydrate_index_sources(
+            index.chunks,
+            release_dir=release_dir,
+            release_id=resolved_index.release_id,
+        )
+
         # Legacy single-query agent (spec §8.2 delegate). Kept for the
         # standalone /retrieval-adjacent use case and its own tests; the
         # LangGraph workflow below (spec §5) is what /agent/chat runs.
@@ -66,7 +77,12 @@ def build_lifespan(resolved_settings: RagSettings):
         ticket_service = build_ticket_service(resolved_settings)
         hybrid_settings = replace(resolved_settings, knowledge_service_mode="HYBRID")
         knowledge_services = {
-            "HYBRID": build_knowledge_service(hybrid_settings, index, rag_model)
+            "HYBRID": build_knowledge_service(
+                hybrid_settings,
+                index,
+                rag_model,
+                release_id=resolved_index.release_id,
+            )
         }
         unavailable_backends: dict[str, str] = {}
         if resolved_settings.gemini_file_search_store:
@@ -74,7 +90,10 @@ def build_lifespan(resolved_settings: RagSettings):
                 resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
             )
             knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
-                gemini_settings, index, rag_model
+                gemini_settings,
+                index,
+                rag_model,
+                release_id=resolved_index.release_id,
             )
         else:
             unavailable_backends["GEMINI_FILE_SEARCH"] = (

@@ -1,6 +1,5 @@
 import { api, el } from "../api.js";
 import { periodParams, createPeriodControls } from "../components/period.js";
-import { showConversationModal } from "../components/conversationModal.js";
 import { createExportButton, runExport } from "../services/export.js";
 import { drillLink, loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -62,10 +61,11 @@ export async function renderQuality(state = {}) {
     const loadFeedback = !buShell || activeTab === "feedback";
     const loadGaps = !buShell || activeTab === "gaps";
 
-    const [qualityLoopPanel, gapPanel, feedback] = await Promise.all([
+    const [qualityLoopPanel, gapPanel, feedback, taxonomy] = await Promise.all([
       loadCases ? buildQualityLoopPanel() : Promise.resolve(null),
       loadGaps ? buildGapPanel() : Promise.resolve(null),
       loadFeedback ? api(`/api/feedback?${filters.toString()}`) : Promise.resolve(null),
+      loadFeedback ? api("/api/taxonomy") : Promise.resolve(null),
     ]);
 
     const panel = el("section", "panel");
@@ -91,6 +91,19 @@ export async function renderQuality(state = {}) {
     issueInput.id = "feedback-issue-type";
     issueInput.placeholder = "問題類型（顯示名稱或 ID）";
     issueInput.value = issueTypeId || "";
+    const issueList = el("datalist");
+    issueList.id = "feedback-issue-type-options";
+    for (const item of taxonomy?.items || []) {
+      const option = el("option");
+      option.value = item.display_name || item.displayName || item.issue_type_id || item.issueTypeId || "";
+      option.label = item.issue_type_id || item.issueTypeId || "";
+      issueList.append(option);
+      const idOption = el("option");
+      idOption.value = item.issue_type_id || item.issueTypeId || "";
+      idOption.label = item.display_name || item.displayName || "";
+      issueList.append(idOption);
+    }
+    issueInput.setAttribute("list", issueList.id);
     const ratingSelect = el("select", "");
     ratingSelect.id = "feedback-rating";
     ratingSelect.innerHTML =
@@ -127,6 +140,7 @@ export async function renderQuality(state = {}) {
       handoff: handoffSelect.value,
       model: modelInput.value.trim(),
       route: routeSelect.value,
+      ...(navFilters.returnTo ? { returnTo: navFilters.returnTo } : {}),
     });
     const applyFilters = el("button", buShell ? "button-secondary" : "", "套用篩選");
     applyFilters.addEventListener("click", () =>
@@ -153,6 +167,7 @@ export async function renderQuality(state = {}) {
       applyFilters,
       exportButton,
     );
+    filterBar.append(issueList);
     panel.append(filterBar);
     panel.append(
       createPeriodControls(period, (nextPeriod) =>
@@ -215,7 +230,9 @@ export async function renderQuality(state = {}) {
         const trace = item.trace || {};
         const source = trace.faqKey
           ? `FAQ：${trace.faqKey}`
-          : (trace.documentIds || []).join(", ") || "-";
+          : (trace.sourceRefs || []).map((item) => item.title || item.documentId).join(", ")
+            || (trace.documentIds || []).join(", ")
+            || "-";
         const row = el("tr");
         row.append(el("td", "", item.occurredAt));
         row.append(el("td", "", ratingLabels[item.rating] || item.rating));
@@ -231,10 +248,30 @@ export async function renderQuality(state = {}) {
         convLink.href = "#";
         convLink.addEventListener("click", async (event) => {
           event.preventDefault();
-          const detail = await api(
-            `/api/conversations/${encodeURIComponent(item.conversationId)}`,
+          const returnFilters = {
+            tab: "feedback",
+            rating,
+            issueTypeId: issueInput.value.trim(),
+            reason: reasonInput.value.trim(),
+            resolved: resolvedSelect.value,
+            handoff: handoffSelect.value,
+            model: modelInput.value.trim(),
+            route: routeSelect.value,
+            preset: period.preset || "",
+            start: period.start || "",
+            end: period.end || "",
+          };
+          void navigateTo(
+            "conversations",
+            withReturnTo(
+              {
+                conversationId: item.conversationId || "",
+                turnId: item.turnId || trace.turnId || "",
+              },
+              "quality",
+              returnFilters,
+            ),
           );
-          showConversationModal({ ...detail, conversationId: item.conversationId });
         });
         const convCell = el("td");
         convCell.append(convLink);
@@ -248,10 +285,23 @@ export async function renderQuality(state = {}) {
             withReturnTo(
               {
                 conversationId: item.conversationId || "",
+                turnId: item.turnId || trace.turnId || "",
                 issueTypeId: trace.issueTypeId || "",
               },
               "quality",
-              { tab: "feedback" },
+              {
+                tab: "feedback",
+                rating,
+                issueTypeId: issueInput.value.trim(),
+                reason: reasonInput.value.trim(),
+                resolved: resolvedSelect.value,
+                handoff: handoffSelect.value,
+                model: modelInput.value.trim(),
+                route: routeSelect.value,
+                preset: period.preset || "",
+                start: period.start || "",
+                end: period.end || "",
+              },
             ),
           ),
         );
@@ -321,8 +371,9 @@ export async function renderQuality(state = {}) {
         const button = el("button", key === activeTab ? "active" : "", label);
         button.type = "button";
         button.addEventListener("click", () => {
-          saveNavFilters({ view: "quality", tab: key });
-          syncLocationHash("quality", { tab: key });
+          const preserved = { ...loadNavFilters(), view: "quality", tab: key };
+          saveNavFilters(preserved);
+          syncLocationHash("quality", preserved);
           void renderQuality({ ...state, tab: key, cursor: "", history: [] });
         });
         tabs.append(button);

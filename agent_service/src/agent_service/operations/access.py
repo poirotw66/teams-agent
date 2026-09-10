@@ -9,6 +9,7 @@ BackofficeRole = Literal[
     "KNOWLEDGE_ADMIN",
     "SERVICE_OWNER",
     "ANALYST",
+    "VIEWER",
     "AUDITOR",
 ]
 
@@ -188,10 +189,23 @@ CAPABILITIES: dict[str, frozenset[str]] = {
             "ops.evals.read",
         }
     ),
+    "VIEWER": frozenset(
+        {
+            "ops.conversations.read",
+            "ops.feedback.read",
+            "ops.knowledge.read",
+            "ops.quality.read",
+            "ops.evals.read",
+            "ops.examples.read",
+            "ops.exports.read",
+        }
+    ),
     "AUDITOR": frozenset(
         {
             "ops.audit.read",
             "ops.exports.read",
+            "ops.knowledge.read",
+            "ops.quality.read",
             "ops.faq.read",
             "ops.examples.read",
             "ops.budget.read",

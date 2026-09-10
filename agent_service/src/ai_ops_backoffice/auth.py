@@ -85,6 +85,7 @@ def resolve_actor(
         "KNOWLEDGE_ADMIN",
         "SERVICE_OWNER",
         "ANALYST",
+        "VIEWER",
         "AUDITOR",
     }
     if role not in allowed:

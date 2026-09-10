@@ -362,7 +362,7 @@ def create_app(
     import_export_manager = EvaluationImportExportManager(evaluation_service)
     candidate_manager = CandidateGenerationManager(evaluation_service)
     releases_dir = getattr(resolved_settings, "knowledge_release_dir", None) or (
-        resolved_settings.ops_store_path.parent / "releases"
+        resolved_settings.ops_store_path.parent.parent / "releases"
     )
     manifest_resolver = ManifestResolver(eval_repository, releases_dir=releases_dir)
     eval_scorer = EvaluationScorer()

@@ -4,6 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from knowledge_portal.api import create_app
+from knowledge_portal.models import KnowledgeVersionRecord
+from knowledge_portal.publisher import ReleasePublisher
 from knowledge_portal.settings import PortalSettings
 
 
@@ -140,6 +142,72 @@ def test_import_text_pdf(portal_client: TestClient) -> None:
     assert body["source_type"] == "PDF"
     assert body["page_count"] == 1
     assert "VPN" in body["markdown_content"]
+
+
+def test_imported_pdf_original_is_bound_to_version_and_release(tmp_path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "data_dir", tmp_path)
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "embedding_model", None)
+    client = TestClient(create_app(settings))
+    headers = portal_headers(role="MANAGER", user_id="manager.pdf", name="PDF Manager")
+
+    imported = client.post(
+        "/api/documents/import-pdf",
+        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN original source"), "application/pdf")},
+        headers=headers,
+    )
+    assert imported.status_code == 200
+    import_body = imported.json()
+    assert import_body["original_asset_token"].startswith("orig-")
+    assert import_body["original_asset_name"] == "vpn-guide.pdf"
+
+    payload = sample_document_payload()
+    payload.update(
+        {
+            "title": import_body["title"],
+            "owner_unit_id": import_body["owner_unit_id"],
+            "effective_at": import_body["effective_at"],
+            "review_due_at": import_body["review_due_at"],
+            "markdown_content": import_body["markdown_content"],
+            "source_type": "PDF",
+            "original_asset_token": import_body["original_asset_token"],
+        }
+    )
+    created = client.post("/api/documents", json=payload, headers=headers)
+    assert created.status_code == 200
+    version = created.json()["draft_version"]
+    assert version["original_asset_name"] == "vpn-guide.pdf"
+    original_path = (
+        tmp_path
+        / "portal_originals"
+        / "versions"
+        / created.json()["document"]["document_id"]
+        / version["version_id"]
+        / "vpn-guide.pdf"
+    )
+    assert original_path.read_bytes() == _text_pdf_bytes("VPN original source")
+
+    release = ReleasePublisher(settings).build_release(
+        release_id="release-pdf-original",
+        published_versions=[KnowledgeVersionRecord.model_validate(version)],
+        created_by="manager.pdf",
+        previous_release_id=None,
+    )
+    entry = release.manifest[0]
+    assert entry.original_asset_available is True
+    assert entry.original_asset_name == "vpn-guide.pdf"
+    assert (
+        tmp_path
+        / "releases"
+        / "release-pdf-original"
+        / "original"
+        / version["document_id"]
+        / version["version_id"]
+        / "vpn-guide.pdf"
+    ).is_file()
 
 
 def test_import_scanned_pdf_is_rejected(portal_client: TestClient) -> None:

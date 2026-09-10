@@ -81,6 +81,24 @@ td .metric-label {
   margin-top: 0;
 }
 
+/* Keep the primary action reachable when a dense table is viewed at high
+   zoom or in a narrow window. The rest of the row remains horizontally
+   scrollable so text is never clipped. */
+@media (max-width: 760px) {
+  .table-responsive td:last-child,
+  .table-responsive th:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--panel, #ffffff);
+    box-shadow: -4px 0 8px rgba(15, 23, 42, 0.06);
+  }
+
+  .table-responsive th:last-child {
+    background: var(--panel-muted, #f8fafc);
+  }
+}
+
 .table-scroll-box {
   width: 100%;
   max-height: 480px;
@@ -445,6 +463,27 @@ pre {
   transform: scale(0.98);
 }
 
+.source-ref-item {
+  margin: 0.55rem 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--panel-muted);
+}
+
+.source-ref-title {
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.source-evidence {
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .button-primary,
 .btn.primary {
   border: 1px solid transparent;
@@ -753,4 +792,3 @@ pre {
     gap: 0.65rem;
   }
 }
-

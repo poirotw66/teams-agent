@@ -91,6 +91,8 @@ function applyImportedPdf(formValues, imported) {
     source_type: "PDF",
     conversion_mode: result.conversion_mode || "converter",
     conversion_engine: result.conversion_engine || "unknown",
+    original_asset_token: result.original_asset_token || "",
+    original_asset_name: result.original_asset_name || "",
     import_entry: "pdf",
   });
   formValues._pdfAssets = result.assets || [];
@@ -363,6 +365,7 @@ function buildCreatePayload(formValues) {
     markdown_content: formValues.markdown_content,
     source_type: formValues.source_type || (formValues.import_entry === "markdown" ? "MARKDOWN_UPLOAD" : "MARKDOWN_PASTE"),
     assets,
+    original_asset_token: formValues.original_asset_token || null,
   };
 }
 

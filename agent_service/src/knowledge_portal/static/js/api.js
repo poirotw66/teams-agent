@@ -53,10 +53,29 @@ function buildApiError(response, payload) {
 }
 
 export async function api(path, options = {}) {
-  const response = await fetch(resolveApiUrl(path), {
-    ...options,
-    headers: { ...identityHeaders(true), ...(options.headers || {}) },
-  });
+  const timeoutMs = Number(options.timeoutMs || 10000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const { timeoutMs: _ignoredTimeoutMs, signal: callerSignal, ...fetchOptions } = options;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let response;
+  try {
+    response = await fetch(resolveApiUrl(path), {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers: { ...identityHeaders(true), ...(options.headers || {}) },
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw Object.assign(new Error("資料服務連線逾時，請稍後重試。"), { status: 504, code: "TIMEOUT" });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   const payload = await response.json().catch(() => ({}));
   if (response.status === 403) {
     const raw =
@@ -76,11 +95,24 @@ export async function api(path, options = {}) {
 }
 
 export async function apiForm(path, formData, method = "POST") {
-  const response = await fetch(resolveApiUrl(path), {
-    method,
-    headers: identityHeaders(false),
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let response;
+  try {
+    response = await fetch(resolveApiUrl(path), {
+      method,
+      headers: identityHeaders(false),
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw Object.assign(new Error("資料服務連線逾時，請稍後重試。"), { status: 504, code: "TIMEOUT" });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw buildApiError(response, payload);

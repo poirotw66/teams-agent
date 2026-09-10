@@ -9,7 +9,7 @@ import {
   labelStatus,
 } from "../app/labels.js";
 import { loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
-import { withReturnTo } from "../app/returnTo.js";
+import { navigateReturnTo, parseReturnTo, withReturnTo } from "../app/returnTo.js";
 
 let currentActiveTab = "cases";
 
@@ -22,6 +22,13 @@ export async function renderEvaluations() {
   }
 
   const container = el("div", "evaluations-container");
+
+  if (parseReturnTo(nav.returnTo)) {
+    const back = el("button", "button-link", "← 返回改善案件");
+    back.type = "button";
+    back.addEventListener("click", () => navigateReturnTo("workHub", {}));
+    container.append(back);
+  }
 
   const header = el("div", "page-header");
   const title = el(
@@ -57,8 +64,10 @@ export async function renderEvaluations() {
     if (tab === "runs") tabRunsBtn.classList.add("active");
     if (tab === "results") tabResultsBtn.classList.add("active");
     if (tab === "gates") tabGatesBtn.classList.add("active");
-    saveNavFilters({ view: "evaluations", tab });
-    syncLocationHash("evaluations", { tab });
+    const existing = loadNavFilters();
+    const preserved = { ...existing, view: "evaluations", tab };
+    saveNavFilters(preserved);
+    syncLocationHash("evaluations", preserved);
     renderFn(tabContent, allowed);
   }
 
@@ -1480,6 +1489,19 @@ function renderRunSummaryCards(container, summary) {
   `;
 }
 
+function executionOutcome(execution = {}) {
+  const status = String(execution.status || "").toUpperCase();
+  const hasInconclusiveMetric = (execution.metric_results || []).some(
+    (metric) => String(metric.pass_status || "").toUpperCase() === "INCONCLUSIVE",
+  );
+  if (status === "FAILED" || status === "CANCELLED" || execution.passed == null || hasInconclusiveMetric) {
+    return { label: "未判定", className: "badge-warning", pass: false, inconclusive: true };
+  }
+  return execution.passed
+    ? { label: "PASS", className: "badge-success", pass: true, inconclusive: false }
+    : { label: "FAIL", className: "badge-danger", pass: false, inconclusive: false };
+}
+
 async function loadCaseComparison(container, runId, allowed) {
   container.replaceChildren();
   const box = el("div", "sub-content-box");
@@ -1532,21 +1554,27 @@ async function loadCaseComparison(container, runId, allowed) {
       const c = candidateCases[revId];
       const b = baselineCases[revId] || {};
 
+      const baselineOutcome = executionOutcome(b);
+      const candidateOutcome = executionOutcome(c);
       let diffTag = '<span class="badge badge-secondary">相同</span>';
-      if (b.passed && !c.passed) {
+      if (baselineOutcome.pass && candidateOutcome.inconclusive) {
+        diffTag = '<span class="badge badge-warning">退步：候選未判定（不計入通過）</span>';
+      } else if (baselineOutcome.pass && !candidateOutcome.pass) {
         const missedAnswer = Boolean((b.answer || "").trim()) && !(c.answer || "").trim();
         diffTag = missedAnswer
           ? '<span class="badge badge-danger">退步：候選漏答</span>'
           : '<span class="badge badge-danger">新增失敗 (Regression)</span>';
-      } else if (!b.passed && c.passed) {
+      } else if (!baselineOutcome.pass && !baselineOutcome.inconclusive && candidateOutcome.pass) {
         diffTag = '<span class="badge badge-success">已修復 (Fixed)</span>';
+      } else if (baselineOutcome.inconclusive || candidateOutcome.inconclusive) {
+        diffTag = '<span class="badge badge-warning">未判定：不計入通過</span>';
       }
 
       const tr = el("tr");
       tr.innerHTML = `
         <td><code>${c.case_id}</code></td>
-        <td><span class="badge ${b.passed ? "badge-success" : "badge-danger"}">${b.passed ? "PASS" : "FAIL"}</span></td>
-        <td><span class="badge ${c.passed ? "badge-success" : "badge-danger"}">${c.passed ? "PASS" : "FAIL"}</span></td>
+        <td><span class="badge ${baselineOutcome.className}">${baselineOutcome.label}</span></td>
+        <td><span class="badge ${candidateOutcome.className}">${candidateOutcome.label}</span></td>
         <td>${diffTag}</td>
         <td>${c.failure_classification || "-"}</td>
         <td>${c.latency_ms}</td>
@@ -1567,6 +1595,8 @@ async function loadCaseComparison(container, runId, allowed) {
 }
 
 function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
+  const baselineOutcome = executionOutcome(baselineExec);
+  const candidateOutcome = executionOutcome(candidateExec);
   const modalContent = el("div", "execution-modal-content");
   modalContent.innerHTML = `
     <h3>案例執行細節與人工覆核</h3>
@@ -1580,6 +1610,7 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
         <p style="white-space: pre-wrap; margin-top: 8px;">${candidateExec.answer || "(無回答)"}</p>
       </div>
     </div>
+    <p class="callout ${candidateOutcome.inconclusive ? "warning" : ""}"><strong>候選判定：${candidateOutcome.label}</strong>。執行完成不等於品質通過；ERROR／未判定一律不計入通過。${candidateExec.error_detail ? `原因：${candidateExec.error_detail}` : ""}</p>
     <h4>指標判定結果 (Candidate Metrics)</h4>
     <table class="data-table" style="margin-bottom: 16px;">
       <thead>
@@ -1594,7 +1625,7 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
         ${(candidateExec.metric_results || []).map(m => `
           <tr>
             <td><code>${m.metric_id}</code></td>
-            <td><span class="badge ${m.pass_status === "PASS" ? "badge-success" : "badge-danger"}">${m.pass_status}</span></td>
+            <td><span class="badge ${m.pass_status === "PASS" ? "badge-success" : m.pass_status === "FAIL" ? "badge-danger" : m.pass_status === "INCONCLUSIVE" ? "badge-warning" : "badge-secondary"}">${m.pass_status}</span></td>
             <td>${m.score !== null ? m.score : "-"}</td>
             <td>${m.reason || "-"}</td>
           </tr>

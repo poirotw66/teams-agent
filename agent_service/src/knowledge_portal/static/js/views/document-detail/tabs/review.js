@@ -1,10 +1,14 @@
 import { audienceLabel, testResultLabel } from "../../../labels.js";
+import { getSession } from "../../../session.js";
 import { renderLineDiffHtml } from "../../../diff.js";
 import { escapeHtml, stripFrontMatter } from "../../../ui.js?v=20260831e";
 import { can, renderIssues } from "../shared.js";
 import { renderDocumentViewer } from "../../../markdown.js?v=pdf-img-20260908c";
 
 export function renderReviewTab(detail, cases, runsByCase) {
+  const session = getSession();
+  const minimumCases = Number(session.minTestCasesForReview ?? 3);
+  const belowMinimum = cases.length < minimumCases;
   const draft = detail.draft_version;
   const published = detail.published_version;
   const draftBody = stripFrontMatter(draft?.canonical_content || "");
@@ -45,6 +49,7 @@ export function renderReviewTab(detail, cases, runsByCase) {
       </div>
       <div class="panel">
         <h3>問答測試結果</h3>
+        ${belowMinimum ? `<div class="review-alert"><strong>尚不能完成審核</strong><p>正式流程要求至少 ${minimumCases} 題測試問題，目前只有 ${cases.length} 題；請先建立測試問題。</p></div>` : (cases.length === 0 ? '<p class="muted">目前為放寬工作流程（允許 0 題）；正式環境仍應確認審核政策。</p>' : '')}
         <ul class="issue-list">${testRows}</ul>
       </div>
       ${publishedBody ? `
@@ -74,9 +79,9 @@ export function renderReviewTab(detail, cases, runsByCase) {
       ${can("APPROVE", detail.allowed_actions) || can("REJECT", detail.allowed_actions) ? `
         <div class="panel review-actions">
           <h3>審核決策</h3>
-          <p class="muted">核准或退回前，請確認內容、適用範圍與測試結果。</p>
+          <p class="muted">核准或退回前，請確認內容、適用範圍與測試結果。${belowMinimum ? "目前尚未達到最低測試題數，核准按鈕已停用。" : ""}</p>
           <div class="action-row">
-            ${can("APPROVE", detail.allowed_actions) ? `<button type="button" class="btn primary" data-action="approve">核准</button>` : ""}
+            ${can("APPROVE", detail.allowed_actions) ? `<button type="button" class="btn primary" data-action="approve" ${belowMinimum ? "disabled title=\"尚未達到最低測試題數\"" : ""}>核准</button>` : ""}
             ${can("REJECT", detail.allowed_actions) ? `<button type="button" class="btn secondary" data-action="reject">退回修改</button>` : ""}
           </div>
         </div>` : ""}

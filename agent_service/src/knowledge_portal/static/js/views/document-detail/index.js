@@ -15,7 +15,7 @@ import { captureDraftBaseline, isDraftEditorDirty } from "./editor-state.js";
 import { getVisibleTabs, renderActionPanel } from "./shared.js";
 import { renderContentTab } from "./tabs/content.js";
 import { renderOverviewTab } from "./tabs/overview.js?v=lifecycle-20260910b";
-import { renderReviewTab } from "./tabs/review.js?v=collapse-20260908a";
+import { renderReviewTab } from "./tabs/review.js?v=review-gate-20260910a";
 import { renderTestsTab } from "./tabs/tests.js";
 import { renderVersionsTab } from "./tabs/versions.js";
 import { wireActions } from "./wiring.js";

@@ -36,6 +36,7 @@ from ..models import (
     utc_now,
 )
 from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
+from ..original_assets import OriginalAssetStore
 from ..rbac import (
     PortalPermissionError,
     ensure_can_edit,
@@ -184,6 +185,8 @@ class DocumentService:
                 return cached
 
         assets_written = False
+        original_asset_committed = False
+        original_store = OriginalAssetStore(self._settings)
         try:
             document_id = new_id("doc")
             version_id = new_id("ver")
@@ -231,6 +234,18 @@ class DocumentService:
             if validation.has_blocking:
                 raise ValueError(validation)
 
+            original_metadata: dict[str, Any] = {}
+            if request.original_asset_token:
+                if request.source_type != "PDF":
+                    raise ValueError("Original asset token is only valid for PDF documents.")
+                original_metadata = original_store.commit_pending(
+                    request.original_asset_token,
+                    document_id=document_id,
+                    version_id=version_id,
+                    actor_id=actor.user_id,
+                )
+                original_asset_committed = True
+
             now = utc_now()
             canonical = build_front_matter_markdown(
                 title=request.title,
@@ -264,6 +279,7 @@ class DocumentService:
                 asset_slug=asset_slug,
                 validation_summary=validation,
                 parse_preview=build_parse_preview(canonical, request.title),
+                **original_metadata,
                 etag=new_etag(digest),
                 created_at=now,
                 created_by=actor.user_id,
@@ -306,6 +322,11 @@ class DocumentService:
                 shutil.rmtree(
                     DraftAssetStore(self._settings).bundle_dir(document_id, version_id),
                     ignore_errors=True,
+                )
+            if original_asset_committed:
+                original_store.remove_version(
+                    document_id=document_id,
+                    version_id=version_id,
                 )
             if idempotency_key:
                 await self._ctx.fail_idempotency(scope_key)
@@ -563,7 +584,17 @@ class DocumentService:
         filename: str | None = None,
     ) -> ImportPdfResponse:
         ensure_can_import_markdown(actor)
-        text, page_count = extract_text_pdf(payload)
+        original_metadata = OriginalAssetStore(self._settings).store_pending(
+            payload,
+            filename=filename,
+            actor_id=actor.user_id,
+        )
+        original_store = OriginalAssetStore(self._settings)
+        try:
+            text, page_count = extract_text_pdf(payload)
+        except Exception:
+            original_store.discard_pending(original_metadata.get("original_asset_token"))
+            raise
         stem = Path(filename or "document.pdf").stem.strip() or "PDF Document"
         markdown_content = pdf_text_to_markdown(text, stem)
         today = utc_now().date().isoformat()
@@ -581,6 +612,7 @@ class DocumentService:
             conversion_mode="legacy",
             conversion_engine="legacy_text",
             assets=[],
+            **original_metadata,
             mode="sync",
         )
 
@@ -604,6 +636,11 @@ class DocumentService:
 
         ensure_can_import_markdown(actor)
         safe_name = filename or "document.pdf"
+        original_metadata = OriginalAssetStore(self._settings).store_pending(
+            payload,
+            filename=safe_name,
+            actor_id=actor.user_id,
+        )
         try:
             page_count = count_pdf_pages(payload)
         except Exception:
@@ -621,6 +658,7 @@ class DocumentService:
                 filename=safe_name,
                 actor_id=actor.user_id,
                 page_count=page_count,
+                original_asset=original_metadata,
             )
             job_store.schedule(job.job_id, background_tasks)
             return {
@@ -632,12 +670,19 @@ class DocumentService:
                 "byteSize": job.byte_size,
                 "message": "PDF conversion queued. Poll /api/documents/pdf-jobs/{jobId}.",
             }
-        result = await convert_pdf_bytes(self._settings, payload, filename=safe_name)
-        data = conversion_to_import_dict(
-            result,
-            filename=safe_name,
-            owner_unit_id=self._settings.default_owner_unit_id,
-        )
+        try:
+            result = await convert_pdf_bytes(self._settings, payload, filename=safe_name)
+            data = conversion_to_import_dict(
+                result,
+                filename=safe_name,
+                owner_unit_id=self._settings.default_owner_unit_id,
+                original_asset=original_metadata,
+            )
+        except Exception:
+            OriginalAssetStore(self._settings).discard_pending(
+                original_metadata.get("original_asset_token")
+            )
+            raise
         return ImportPdfResponse(**data)
 
     async def _require_editable_draft(
@@ -816,9 +861,19 @@ class DocumentService:
             status="DRAFT",
             validation_summary=ValidationSummary(issues=[]),
             parse_preview=published.parse_preview,
+            original_asset_name=published.original_asset_name,
+            original_asset_sha256=published.original_asset_sha256,
+            original_asset_content_type=published.original_asset_content_type,
+            original_asset_size=published.original_asset_size,
             etag=new_etag(published.content_hash, published.version_number + 1),
             created_at=now,
             created_by=actor.user_id,
+        )
+        OriginalAssetStore(self._settings).copy_version(
+            document_id=document_id,
+            source_version_id=published.version_id,
+            target_version_id=version_id,
+            filename=published.original_asset_name,
         )
         updated_document = document.model_copy(
             update={
@@ -918,4 +973,3 @@ class DocumentService:
         if detail.draft_version is None:
             return []
         return await self._repository.list_test_runs(detail.draft_version.version_id)
-

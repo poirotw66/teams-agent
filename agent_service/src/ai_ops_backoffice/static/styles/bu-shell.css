@@ -1057,3 +1057,17 @@ body.bu-shell-v1 .bu-feedback-empty .button-primary {
     grid-template-columns: 1fr;
   }
 }
+
+body.bu-shell-v1 .case-assignment-panel {
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+body.bu-shell-v1 .bu-turn.is-selected {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+  background: rgba(239, 246, 255, 0.8);
+}

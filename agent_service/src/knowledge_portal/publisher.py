@@ -12,6 +12,7 @@ from agent_service.retrieval import HybridIndex
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now
+from .original_assets import OriginalAssetStore
 from .settings import PortalSettings
 from .validation import build_front_matter_markdown
 
@@ -46,6 +47,7 @@ class ReleasePublisher:
 
         manifest: list[ReleaseManifestEntry] = []
         asset_store = DraftAssetStore(self._settings)
+        original_store = OriginalAssetStore(self._settings)
         if published_versions:
             for version in published_versions:
                 filename = f"{version.document_id}.md"
@@ -64,12 +66,22 @@ class ReleasePublisher:
                 target = sources_dir / filename
                 target.write_text(body, encoding="utf-8")
                 asset_store.copy_assets_to_release(release_dir, version=version)
+                original_available = original_store.copy_to_release(
+                    release_dir,
+                    version=version,
+                )
                 manifest.append(
                     ReleaseManifestEntry(
                         document_id=version.document_id,
                         version_id=version.version_id,
                         title=version.title,
                         content_hash=version.content_hash,
+                        source_path=f"sources/{filename}",
+                        source_type=version.source_type,
+                        original_asset_available=original_available,
+                        original_asset_name=(
+                            version.original_asset_name if original_available else None
+                        ),
                     )
                 )
 
@@ -123,6 +135,7 @@ class ReleasePublisher:
                     "releaseId": release_id,
                     "corpusHash": corpus_hash,
                     "documents": [entry.model_dump(mode="json") for entry in manifest],
+                    "sourceMap": [entry.model_dump(mode="json") for entry in manifest],
                     "indexArtifact": str(index_path),
                 },
                 ensure_ascii=False,

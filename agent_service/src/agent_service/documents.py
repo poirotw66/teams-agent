@@ -74,6 +74,16 @@ class DocumentChunk:
     images: list[DocumentImage] | None = None
     vector: list[float] | None = None
     metadata: DocumentMetadata | None = None
+    # Release/source identity is hydrated from the portal manifest when an
+    # index is loaded.  They stay optional for bundled and legacy indexes.
+    document_id: str | None = None
+    version_id: str | None = None
+    release_id: str | None = None
+    section: str | None = None
+    page: int | None = None
+    source_type: str | None = None
+    original_asset_available: bool = False
+    original_asset_name: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

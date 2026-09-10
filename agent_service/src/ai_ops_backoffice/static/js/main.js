@@ -417,6 +417,14 @@ function showRoleSwitcherModal() {
       ownerUnits: "IT Service Desk",
       desc: "檢視對話紀錄、議題與營運指標",
     },
+    {
+      role: "VIEWER",
+      title: "檢視者",
+      userId: "ops.viewer",
+      userName: "Viewer",
+      ownerUnits: "IT Service Desk",
+      desc: "可檢視案件、文件與驗收結果，不可編輯、指派或發布",
+    },
   ];
 
   const presetList = el("div");
@@ -517,6 +525,7 @@ function showRoleSwitcherModal() {
     "AI_ADMIN",
     "AUDITOR",
     "ANALYST",
+    "VIEWER",
   ]) {
     const opt = document.createElement("option");
     opt.value = r;

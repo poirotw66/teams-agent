@@ -14,7 +14,7 @@ import {
   loadNavFilters,
   navigateTo,
 } from "../app/navigation.js";
-import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js?v=pdf-img-20260908d";
+import { renderNativeKnowledgePortal } from "../knowledge_portal_view.js?v=least-priv-20260910a";
 import { createPageController } from "../app/lifecycle.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";

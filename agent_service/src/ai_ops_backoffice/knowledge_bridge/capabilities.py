@@ -54,6 +54,7 @@ ROLE_KNOWLEDGE_CAPABILITIES: dict[str, frozenset[str]] = {
     "AUDITOR": frozenset({"knowledge.read", "knowledge.audit.read"}),
     "AI_ADMIN": frozenset(),
     "ANALYST": frozenset(),
+    "VIEWER": frozenset({"knowledge.read"}),
 }
 
 # Map granted knowledge capabilities to an existing Portal RBAC role.
@@ -77,6 +78,8 @@ def has_knowledge_capability(actor: ActorContext, capability: str) -> bool:
 def portal_role_for(actor: ActorContext) -> str:
     if actor.role == "SYSTEM_ADMIN":
         return "PLATFORM"
+    if actor.role == "VIEWER":
+        return "AUDITOR"
     caps = knowledge_capabilities_for(actor)
     if not caps:
         raise PermissionError("no knowledge capabilities for actor")

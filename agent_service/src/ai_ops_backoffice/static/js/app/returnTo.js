@@ -41,6 +41,17 @@ const ALLOWED_FILTER_KEYS = new Set([
   "owner",
   "status",
   "runId",
+  "turnId",
+  "reason",
+  "resolved",
+  "handoff",
+  "model",
+  "route",
+  "channelScope",
+  "query",
+  "source",
+  "actorRef",
+  "hasFeedback",
 ]);
 
 function sanitizeFilters(filters = {}) {

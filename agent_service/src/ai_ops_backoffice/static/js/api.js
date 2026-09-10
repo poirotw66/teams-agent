@@ -57,11 +57,30 @@ export async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(path, {
-    ...options,
-    headers,
-    body,
-  });
+  const timeoutMs = Number(options.timeoutMs || 10000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const { timeoutMs: _ignoredTimeoutMs, signal: callerSignal, ...fetchOptions } = options;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let response;
+  try {
+    response = await fetch(path, {
+      ...fetchOptions,
+      signal: controller.signal,
+      headers,
+      body,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("資料服務連線逾時，請確認服務狀態後重試。條件與輸入已保留。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (response.status === 401) {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("backoffice:unauthorized", { detail: { path } }));

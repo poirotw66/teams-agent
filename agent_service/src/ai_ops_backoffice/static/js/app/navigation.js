@@ -112,7 +112,10 @@ export function parseLocationHash() {
 }
 
 export function syncLocationHash(view, filters = {}) {
-  const workspace = activeWorkspaceId();
+  // Always emit the canonical workspace for the target view.  Using the
+  // previously active workspace can produce links such as platform/conversations
+  // even though conversations belongs to the BU knowledge workspace.
+  const workspace = workspaceForView(view) || activeWorkspaceId();
   const next = buildLocationHash(workspace, view, filters);
   if (location.hash === next) {
     return;
@@ -143,6 +146,13 @@ export async function navigateTo(view, filters = {}, options = {}) {
     }
   }
   const workspace = workspaceForView(view, options.workspace || activeWorkspaceId());
+  // Route changes replace the main app, so a modal from the previous view
+  // must not remain visually over the new page.
+  const modalRoot = document.getElementById("modal-root");
+  if (modalRoot) {
+    modalRoot.hidden = true;
+    modalRoot.replaceChildren();
+  }
   if (workspace) {
     sessionStorage.setItem(WORKSPACE_KEY, workspace);
   }

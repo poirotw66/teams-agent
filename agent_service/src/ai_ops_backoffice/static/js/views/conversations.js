@@ -130,6 +130,9 @@ export async function renderConversations(state = {}) {
     const issueTypeId =
       savedFilters.issueTypeId ||
       (navFilters.view === "conversations" ? navFilters.issueTypeId : "");
+    const turnId =
+      savedFilters.turnId ||
+      (navFilters.view === "conversations" ? navFilters.turnId : "");
     const route = savedFilters.route || "";
     const model = savedFilters.model || "";
     const actorRef = savedFilters.actorRef || "";
@@ -164,7 +167,7 @@ export async function renderConversations(state = {}) {
         const detail = await api(
           `/api/conversations/${encodeURIComponent(conversationId)}?refresh=true`,
         );
-        showConversationPage(detail, conversationId);
+        showConversationPage(detail, conversationId, { selectedTurnId: turnId });
         return;
       } catch (error) {
         /* Fall through to list with error banner below. */
@@ -321,6 +324,7 @@ export async function renderConversations(state = {}) {
       actorRef: actorRefInput.value.trim(),
       hasFeedback: feedbackSelect.value,
       handoff: handoffSelect.value,
+      ...(navFilters.returnTo ? { returnTo: navFilters.returnTo } : {}),
     });
     const applyAll = (nextPeriod = period) => {
       const nextFilters = currentFilters();
@@ -482,7 +486,7 @@ export async function renderConversations(state = {}) {
       const detailHash = buildLocationHash(
         workspaceForView("conversations") || "knowledge_ops",
         "conversations",
-        { conversationId: item.conversationId },
+        { conversationId: item.conversationId, turnId: item.turns?.[0]?.turnId || "" },
       );
       const link = el("a", "", isBuShellEnabled() ? preview || `對話 ${shortId}` : item.conversationId);
       link.href = detailHash;
@@ -497,12 +501,19 @@ export async function renderConversations(state = {}) {
           saveNavFilters({
             view: "conversations",
             conversationId: item.conversationId,
+            turnId: item.turns?.[0]?.turnId || "",
             ...currentConversationState.filters,
+            preset: currentConversationState.period.preset || "",
+            start: currentConversationState.period.start || "",
+            end: currentConversationState.period.end || "",
           });
           syncLocationHash("conversations", {
             conversationId: item.conversationId,
+            turnId: item.turns?.[0]?.turnId || "",
           });
-          showConversationPage(detail, item.conversationId);
+          showConversationPage(detail, item.conversationId, {
+            selectedTurnId: item.turns?.[0]?.turnId || "",
+          });
           return;
         }
         showConversationModal(detail, item.conversationId);

@@ -53,6 +53,7 @@ class PortalSettings:
     pdf_sync_max_pages: int = 20
     pdf_jobs_dir: Path | None = None
     pdf_prompt_template: str = "slide"
+    original_assets_dir: Path | None = None
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -223,6 +224,13 @@ class PortalSettings:
             pdf_jobs_dir=pdf_jobs_dir,
             pdf_prompt_template=os.environ.get(
                 "KNOWLEDGE_PORTAL_PDF_PROMPT_TEMPLATE", "slide"
+            ),
+            original_assets_dir=(
+                Path(os.environ["KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR"])
+                .expanduser()
+                .resolve()
+                if os.environ.get("KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR")
+                else None
             ),
         )
 

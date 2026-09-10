@@ -133,6 +133,10 @@ class KnowledgeVersionRecord(StrictModel):
     asset_slug: str = ""
     validation_summary: ValidationSummary = Field(default_factory=ValidationSummary)
     parse_preview: ParsePreview | None = None
+    original_asset_name: str | None = None
+    original_asset_sha256: str | None = None
+    original_asset_content_type: str | None = None
+    original_asset_size: int | None = None
     etag: str
     created_at: datetime
     created_by: str
@@ -178,6 +182,12 @@ class ReleaseManifestEntry(StrictModel):
     version_id: str
     title: str
     content_hash: str
+    # The release manifest is also the source map consumed by citation
+    # previews.  Defaults keep older release manifests readable.
+    source_path: str | None = None
+    source_type: str = "DERIVED_MARKDOWN"
+    original_asset_available: bool = False
+    original_asset_name: str | None = None
 
 
 class ReleaseRecord(StrictModel):
@@ -241,6 +251,7 @@ class CreateDocumentRequest(StrictModel):
     markdown_content: str = Field(min_length=1)
     source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
     assets: list[CreateDocumentAsset] = Field(default_factory=list)
+    original_asset_token: str | None = None
 
     @field_validator("audience_group_ids")
     @classmethod
@@ -339,6 +350,11 @@ class ImportPdfResponse(StrictModel):
     conversion_mode: Literal["legacy", "converter"] = "legacy"
     conversion_engine: Literal["legacy_text", "gemini_vision", "unknown"] = "legacy_text"
     assets: list[dict[str, str]] = Field(default_factory=list)
+    original_asset_token: str | None = None
+    original_asset_name: str | None = None
+    original_asset_sha256: str | None = None
+    original_asset_content_type: str | None = None
+    original_asset_size: int | None = None
     mode: Literal["sync"] = "sync"
 
 

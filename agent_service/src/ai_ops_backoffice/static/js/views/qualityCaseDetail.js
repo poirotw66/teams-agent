@@ -86,6 +86,61 @@ export async function showQualityCaseDetail(caseId, options = {}) {
     );
     infoPanel.append(metaGrid);
 
+    if (allowed.has("ops.quality.write")) {
+      const assignment = el("div", "case-assignment-panel");
+      assignment.append(
+        el("strong", "", "指派承辦人"),
+        el("p", "metric-label", "輸入使用者 ID 後儲存；未指派可清空。這只會變更承辦人，不會自動改變案件狀態。"),
+      );
+      const assignmentRow = el("div", "filter-bar");
+      const assigneeInput = el("input", "input");
+      assigneeInput.type = "text";
+      assigneeInput.placeholder = "例如 ops.knowledge";
+      assigneeInput.value = qualityCase.assignee_id || "";
+      assigneeInput.setAttribute("aria-label", "案件承辦人使用者 ID");
+      const assigneeOptions = el("datalist");
+      assigneeOptions.id = `quality-assignee-options-${String(caseId).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+      const actorIds = new Set([
+        qualityCase.assignee_id,
+        getCapabilities()?.userId,
+        ...(detail.audit || []).map((event) => event.actor_id),
+      ].filter(Boolean));
+      for (const actorId of actorIds) {
+        const option = el("option");
+        option.value = actorId;
+        assigneeOptions.append(option);
+      }
+      assigneeInput.setAttribute("list", assigneeOptions.id);
+      const assignButton = el("button", "button-secondary", "儲存指派");
+      assignButton.type = "button";
+      const assignmentStatus = el("span", "metric-label", "");
+      assignButton.addEventListener("click", async () => {
+        assignButton.disabled = true;
+        assignmentStatus.textContent = "儲存中…";
+        try {
+          await api(`/api/quality-cases/${encodeURIComponent(caseId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expected_etag: qualityCase.etag,
+              title: qualityCase.title,
+              description: qualityCase.description,
+              priority: qualityCase.priority,
+              assignee_id: assigneeInput.value.trim() || null,
+              target_due_at: qualityCase.target_due_at || null,
+            }),
+          });
+          await showQualityCaseDetail(caseId, options);
+        } catch (error) {
+          assignmentStatus.textContent = `指派失敗：${error.message || error}`;
+          assignButton.disabled = false;
+        }
+      });
+      assignmentRow.append(assigneeInput, assigneeOptions, assignButton, assignmentStatus);
+      assignment.append(assignmentRow);
+      infoPanel.append(assignment);
+    }
+
     const relBox = el("div", "filter-bar");
     relBox.style.marginTop = "0.5rem";
     relBox.style.gap = "0.5rem";

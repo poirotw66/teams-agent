@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from agent_service.operations.access import CAPABILITIES
 from agent_service.usage import list_model_rates_usd
@@ -292,6 +292,58 @@ def register_ops_read_routes(
             after={"unmaskReason": unmask_reason} if unmask_reason else None,
         )
         return detail
+
+    @app.get("/api/sources/{source_ref_id}")
+    async def source_preview(
+        source_ref_id: str,
+        actor=Depends(current_actor),
+    ) -> dict[str, object]:
+        """Return an authorized, release-pinned citation preview.
+
+        The source reference is opaque.  Raw object-store paths and signed
+        URLs never cross this endpoint; an original file, when available, is
+        exposed only through the sibling authenticated download route.
+        """
+
+        require_capability(actor, "ops.conversations.read")
+        source = query_service._source_trace.resolve_source_ref(source_ref_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Source reference not found.")
+        payload = query_service._source_trace.preview_payload(source)
+        payload["previewUrl"] = f"/api/sources/{source.source_ref_id}"
+        if source.original_asset_available:
+            payload["downloadUrl"] = f"/api/sources/{source.source_ref_id}/file"
+        await audit_read(
+            actor,
+            "query.source_preview",
+            source.source_ref_id,
+            after={
+                "documentId": source.document_id,
+                "versionId": source.version_id,
+                "releaseId": source.release_id,
+            },
+        )
+        return payload
+
+    @app.get("/api/sources/{source_ref_id}/file")
+    async def source_file(
+        source_ref_id: str,
+        actor=Depends(current_actor),
+    ) -> FileResponse:
+        require_capability(actor, "ops.conversations.read")
+        source = query_service._source_trace.resolve_source_ref(source_ref_id)
+        if source is None or source.original_asset_path is None:
+            raise HTTPException(status_code=404, detail="Original source file is not available.")
+        await audit_read(
+            actor,
+            "query.source_file",
+            source.source_ref_id,
+            after={"documentId": source.document_id, "versionId": source.version_id},
+        )
+        return FileResponse(
+            source.original_asset_path,
+            filename=source.original_asset_name or "source-file",
+        )
 
     @app.get("/api/issues/summary")
     async def issues_summary(
@@ -939,4 +991,3 @@ def register_ops_read_routes(
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-

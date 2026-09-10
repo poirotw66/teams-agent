@@ -42,6 +42,19 @@ class Citation(StrictModel):
     title: str
     url: str | None = None
     chunkId: str | None = None
+    # Stable source identity.  These fields are optional so FAQ/ticket
+    # citations and older adapters remain backward compatible.
+    sourceRefId: str | None = None
+    documentId: str | None = None
+    versionId: str | None = None
+    releaseId: str | None = None
+    sourcePath: str | None = None
+    section: str | None = None
+    page: int | None = Field(default=None, ge=1)
+    evidence: str | None = None
+    sourceType: str | None = None
+    originalAssetAvailable: bool = False
+    originalAssetName: str | None = None
 
 
 class AgentImage(StrictModel):

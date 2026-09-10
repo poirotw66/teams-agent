@@ -42,6 +42,7 @@ from .execution_context import (
 from .llm_call_counter import LlmCallCounter
 from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
+from .source_refs import make_source_ref_id
 
 KnowledgeLLM = TypeVar("KnowledgeLLM")
 
@@ -321,10 +322,12 @@ class HybridKnowledgeService:
         settings: RagSettings,
         index: HybridIndex,
         model: BaseChatModel | None = None,
+        release_id: str | None = None,
     ) -> None:
         self.settings = settings
         self.index = index
         self.model = model
+        self.release_id = release_id
         self.last_llm_call_count = 0
 
     async def search(
@@ -480,10 +483,32 @@ class HybridKnowledgeService:
                 + "/"
                 + quote(result.chunk.source_path)
             )
+        release_id = result.chunk.release_id or self.release_id
+        source_ref_id = make_source_ref_id(
+            release_id=release_id,
+            document_id=result.chunk.document_id,
+            version_id=result.chunk.version_id,
+            chunk_id=result.chunk.chunk_id,
+            source_path=result.chunk.source_path,
+        )
         return Citation(
             title=result.chunk.title,
             url=url,
             chunkId=result.chunk.chunk_id,
+            sourceRefId=source_ref_id,
+            documentId=result.chunk.document_id,
+            versionId=result.chunk.version_id,
+            releaseId=release_id,
+            sourcePath=result.chunk.source_path,
+            section=result.chunk.section,
+            page=result.chunk.page,
+            evidence=result.chunk.content[:2400] if result.chunk.content else None,
+            sourceType=(
+                result.chunk.source_type
+                or ("PDF" if result.chunk.original_asset_available else "DERIVED_MARKDOWN")
+            ),
+            originalAssetAvailable=result.chunk.original_asset_available,
+            originalAssetName=result.chunk.original_asset_name,
         )
 
     def _unique_citations(self, results: list[SearchResult]) -> list[Citation]:

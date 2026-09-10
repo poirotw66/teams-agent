@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .draft_assets import rewrite_local_image_refs, slug_from_title
+from .original_assets import OriginalAssetStore
 from .pdf_converter_client import PdfConversionResult, PdfConverterClient
 from .pdf_text import count_pdf_pages, extract_text_pdf, pdf_text_to_markdown
 from .settings import PortalSettings
@@ -33,6 +34,7 @@ class PdfConvertJob:
     error: str | None = None
     result: dict[str, Any] | None = None
     actor_id: str | None = None
+    original_asset: dict[str, Any] | None = None
 
 
 @dataclass
@@ -53,6 +55,7 @@ class PdfConvertJobStore:
         filename: str,
         actor_id: str | None,
         page_count: int | None,
+        original_asset: dict[str, Any] | None = None,
     ) -> PdfConvertJob:
         now = datetime.now(UTC).isoformat()
         job = PdfConvertJob(
@@ -64,6 +67,7 @@ class PdfConvertJobStore:
             page_count=page_count,
             byte_size=len(payload),
             actor_id=actor_id,
+            original_asset=original_asset,
         )
         with self._lock:
             self._jobs[job.job_id] = job
@@ -121,6 +125,7 @@ class PdfConvertJobStore:
                 result,
                 filename=filename,
                 owner_unit_id=self.settings.default_owner_unit_id,
+                original_asset=job.original_asset,
             )
             with self._lock:
                 job = self._jobs[job_id]
@@ -132,6 +137,9 @@ class PdfConvertJobStore:
                 self._payloads.pop(job_id, None)
                 self._persist(job)
         except Exception as exc:  # noqa: BLE001 - surface to job status
+            OriginalAssetStore(self.settings).discard_pending(
+                (job.original_asset or {}).get("original_asset_token")
+            )
             with self._lock:
                 job = self._jobs[job_id]
                 job.status = "FAILED"
@@ -232,6 +240,7 @@ def conversion_to_import_dict(
     *,
     filename: str,
     owner_unit_id: str,
+    original_asset: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     stem = Path(filename).stem.strip() or "PDF Document"
     today = date.today().isoformat()
@@ -261,4 +270,5 @@ def conversion_to_import_dict(
         "conversion_mode": mode,
         "conversion_engine": engine,
         "assets": assets,
+        **(original_asset or {}),
     }

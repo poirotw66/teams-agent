@@ -262,8 +262,8 @@ async function loadQualityTasks(tab) {
         filtered = mine;
         scopeNote = "指派給我的進行中案件";
       } else {
-        filtered = filtered.slice(0, 12);
-        scopeNote = "目前沒有指派給我的案件，改顯示單位內待處理";
+        filtered = [];
+        scopeNote = "目前沒有指派給我的案件；單位可見待辦請到改善案件查看";
       }
     }
     if (tab === "tracking") {
@@ -477,7 +477,7 @@ async function renderWorkHub(state = {}) {
       "p",
       "metric-label",
       tab === "mine"
-        ? "我的待處理：指派給我的任務優先；若沒有指派，會改顯示單位內可見待辦。"
+        ? "我的待處理：只顯示指派給我的改善案件；未指派或他人案件不會混入此區。文件待辦另依你的文件權限列出。"
         : tab === "review"
           ? "待我審核：文件審核與驗收題目。彙總列會先開清單。"
           : "追蹤中：觀察中的改善案件與相關文件動態。",

@@ -76,6 +76,7 @@ from .query_helpers import (
     _is_published_knowledge_hit,
     _summarize_turn_events,
 )
+from .source_trace import SourceTraceResolver
 
 
 class BackofficeQueryService(
@@ -106,6 +107,10 @@ class BackofficeQueryService(
             raise RuntimeError("Operational events are disabled.")
         self._runtime = runtime
         self._environment = ops_settings.environment
+        releases_dir = getattr(settings, "knowledge_release_dir", None) or (
+            settings.ops_store_path.parent.parent / "releases"
+        )
+        self._source_trace = SourceTraceResolver(releases_dir)
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}
         export_store_path = settings.ops_store_path.parent / "exports"
@@ -354,4 +359,3 @@ class BackofficeQueryService(
         removed = await purge()
         self._invalidate_cache()
         return {"removed": removed}
-

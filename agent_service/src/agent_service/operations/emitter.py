@@ -558,14 +558,33 @@ class OperationalEventEmitter:
             kind = "knowledge.answered"
             citations = []
             for rank, source in enumerate(result.sources, 1):
-                source_path, document_id = _safe_source(source.url)
+                # New citations carry the release-manifest identity directly.
+                # Keep the URL fallback for FAQ/legacy adapters, but never make
+                # a null URL erase an otherwise valid document/chunk identity.
+                source_path, derived_document_id = _safe_source(
+                    source.sourcePath or source.url
+                )
+                document_id = source.documentId or derived_document_id
+                source_release_id = source.releaseId or release_id
                 citation = {
                     "rank": rank, "title": mask_text(source.title).text,
                     "chunkId": mask_text(source.chunkId).text if source.chunkId else None,
                     "documentId": document_id, "sourcePath": source_path,
+                    "sourceRefId": source.sourceRefId,
+                    "versionId": source.versionId,
+                    "releaseId": source_release_id,
+                    "section": mask_text(source.section).text if source.section else None,
+                    "page": source.page,
+                    "sourceType": source.sourceType,
+                    "originalAssetAvailable": source.originalAssetAvailable,
+                    "originalAssetName": (
+                        mask_text(source.originalAssetName).text
+                        if source.originalAssetName
+                        else None
+                    ),
                 }
                 citations.append(citation)
-                events.append(("knowledge.retrieved", {**citation, "releaseId": release_id}, rank))
+                events.append(("knowledge.retrieved", citation, rank))
             body.update(citations=citations, releaseId=release_id, sourceCount=len(citations))
             # Retrieval success sample. Latency may be absent; health UI must not
             # treat SUCCESS without elapsedMs as a full latency picture.
