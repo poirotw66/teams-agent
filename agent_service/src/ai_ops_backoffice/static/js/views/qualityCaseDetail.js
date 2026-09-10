@@ -233,7 +233,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
           if (faqSelect.value) idInput.value = faqSelect.value;
         });
 
-        const confirmBtn = el("button", "btn primary", "確認關聯 FAQ");
+        const confirmBtn = el("button", "button-primary", "確認關聯 FAQ");
         confirmBtn.addEventListener("click", async () => {
           const fId = idInput.value.trim();
           if (!fId) {
@@ -305,7 +305,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
           if (docSelect.value) idInput.value = docSelect.value;
         });
 
-        const confirmBtn = el("button", "btn primary", "確認關聯文件");
+        const confirmBtn = el("button", "button-primary", "確認關聯文件");
         confirmBtn.addEventListener("click", async () => {
           const docId = idInput.value.trim();
           if (!docId) {
@@ -382,7 +382,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             contentArea,
           );
 
-          const submitBtn = el("button", "btn primary", "建立並連結草稿");
+          const submitBtn = el("button", "button-primary", "建立並連結草稿");
           submitBtn.type = "submit";
           submitBtn.style.marginTop = "0.75rem";
           form.append(submitBtn);
@@ -416,7 +416,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
                 promptBox.append(
                   el("p", "", `已成功建立文件草稿並關聯至案件（文件 ID：${createdDocId}）！`),
                 );
-                const goEdit = el("button", "btn primary", "前往編輯草稿");
+                const goEdit = el("button", "button-primary", "前往編輯草稿");
                 goEdit.addEventListener("click", () => {
                   if (root) { root.hidden = true; root.replaceChildren(); }
                   navigateTo(
@@ -453,7 +453,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             issue_type_ids: [qualityCase.issue_type_id],
             question: qualityCase.description || qualityCase.title || "",
           });
-          const submit = el("button", "btn primary", "建立並連結草稿");
+          const submit = el("button", "button-primary", "建立並連結草稿");
           submit.type = "submit";
           form.append(submit);
           form.addEventListener("submit", async (event) => {

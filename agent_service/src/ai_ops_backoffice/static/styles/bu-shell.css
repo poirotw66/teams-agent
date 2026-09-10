@@ -275,16 +275,137 @@ body.bu-shell-v1 .app {
   width: 100%;
 }
 
-body.bu-shell-v1 .button-primary,
-body.bu-shell-v1 button.primary {
-  background: var(--brand-600);
-  border-color: var(--brand-600);
+/*
+ * BU button system — one radius, Teams brand, no classic blue glow.
+ * Primary = brand fill; secondary/default = quiet bordered; row actions stay compact.
+ */
+body.bu-shell-v1 button:not(.stat):not(.meta-chip):not(.topbar-action):not(.bu-shell-toggle):not(.workspace):not(.analytics-chip-clear):not(.trend-tab-btn):not(.button-primary):not(.button-secondary):not(.btn-primary):not(.btn-secondary):not(.primary):not(.secondary):not(.primary-btn):not(.btn),
+body.bu-shell-v1 .button-secondary,
+body.bu-shell-v1 .btn,
+body.bu-shell-v1 .btn-secondary,
+body.bu-shell-v1 .btn-sm,
+body.bu-shell-v1 .btn-link,
+body.bu-shell-v1 button.secondary {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  box-shadow: none;
+  cursor: pointer;
 }
 
+body.bu-shell-v1 button:not(.stat):not(.meta-chip):not(.topbar-action):not(.bu-shell-toggle):not(.workspace):not(.analytics-chip-clear):not(.trend-tab-btn):not(.button-primary):not(.button-secondary):not(.btn-primary):not(.btn-secondary):not(.primary):not(.secondary):not(.primary-btn):not(.btn):hover,
+body.bu-shell-v1 .button-secondary:hover,
+body.bu-shell-v1 .btn:hover,
+body.bu-shell-v1 .btn-secondary:hover,
+body.bu-shell-v1 button.secondary:hover {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  color: var(--brand-800);
+}
+
+body.bu-shell-v1 button.button-primary,
+body.bu-shell-v1 button.btn-primary,
+body.bu-shell-v1 button.primary,
+body.bu-shell-v1 button.primary-btn,
+body.bu-shell-v1 .button-primary,
+body.bu-shell-v1 .btn-primary,
+body.bu-shell-v1 .btn.primary,
+body.bu-shell-v1 .primary-btn {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+body.bu-shell-v1 button.button-primary:hover,
+body.bu-shell-v1 button.btn-primary:hover,
+body.bu-shell-v1 button.primary:hover,
+body.bu-shell-v1 button.primary-btn:hover,
 body.bu-shell-v1 .button-primary:hover,
-body.bu-shell-v1 button.primary:hover {
+body.bu-shell-v1 .btn-primary:hover,
+body.bu-shell-v1 .btn.primary:hover,
+body.bu-shell-v1 .primary-btn:hover {
   background: var(--brand-700);
   border-color: var(--brand-700);
+  color: #ffffff;
+}
+
+body.bu-shell-v1 .button-primary:disabled,
+body.bu-shell-v1 .btn-primary:disabled,
+body.bu-shell-v1 button.primary:disabled,
+body.bu-shell-v1 .primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+body.bu-shell-v1 .button-secondary,
+body.bu-shell-v1 .btn-secondary,
+body.bu-shell-v1 button.secondary {
+  background: var(--panel);
+  border-color: var(--border-strong);
+  color: var(--brand-800);
+}
+
+body.bu-shell-v1 td > button,
+body.bu-shell-v1 td > .button-primary,
+body.bu-shell-v1 td > .button-secondary {
+  min-height: 1.85rem;
+  padding: 0.28rem 0.65rem;
+  white-space: nowrap;
+}
+
+/* Tab strips stay borderless; beat the long :not() default-button chain */
+body.bu-shell-v1 .bu-quality-tabs button,
+body.bu-shell-v1 .bu-sub-tabs button {
+  min-height: auto !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  box-shadow: none !important;
+  padding: 0.5rem 0.9rem !important;
+  border-radius: 7px !important;
+  font-weight: 550;
+}
+
+body.bu-shell-v1 .bu-quality-tabs button:hover:not(.active),
+body.bu-shell-v1 .bu-sub-tabs button:hover:not(.active) {
+  color: var(--text-secondary) !important;
+  background: rgb(255 255 255 / 0.55) !important;
+}
+
+body.bu-shell-v1 .bu-quality-tabs button.active,
+body.bu-shell-v1 .bu-sub-tabs button.active {
+  background: var(--panel) !important;
+  color: var(--brand-800) !important;
+  font-weight: 650 !important;
+  box-shadow: var(--shadow-xs) !important;
+}
+
+body.bu-shell-v1 .bu-sub-tabs {
+  display: flex;
+  gap: 0.25rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 0.85rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-muted);
+  overflow: auto;
 }
 
 /* Quality detail as full page under BU shell */
@@ -701,23 +822,47 @@ body.bu-shell-v1 .badge {
   letter-spacing: 0.01em;
 }
 
-body.bu-shell-v1 .drill-link {
+/* Map classic “info” badges onto Teams brand instead of electric blue */
+body.bu-shell-v1 .badge-info,
+body.bu-shell-v1 .badge-accent {
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  color: var(--brand-800);
+}
+
+body.bu-shell-v1 .form-field input:focus,
+body.bu-shell-v1 .form-field textarea:focus,
+body.bu-shell-v1 .form-field select:focus,
+body.bu-shell-v1 .filter-bar input:focus,
+body.bu-shell-v1 .filter-bar select:focus {
+  border-color: var(--brand-400);
+  box-shadow: 0 0 0 3px rgb(98 100 167 / 0.18);
+}
+
+body.bu-shell-v1 .drill-link,
+body.bu-shell-v1 .button-link {
   display: inline-flex;
   align-items: center;
   min-height: 2rem;
-  padding: 0.25rem 0.75rem;
+  padding: 0.35rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
   color: var(--brand-800);
   font-size: 0.8125rem;
+  font-weight: 600;
   text-decoration: none;
+  box-shadow: none;
 }
 
-body.bu-shell-v1 .drill-link:hover {
+body.bu-shell-v1 .drill-link:hover,
+body.bu-shell-v1 .button-link:hover {
   background: var(--brand-50);
   border-color: var(--brand-200);
+  color: var(--brand-800);
   text-decoration: none;
+  transform: none;
+  box-shadow: none;
 }
 
 body.bu-shell-v1 .bu-workflow-steps,
@@ -741,11 +886,6 @@ body.bu-shell-v1 .bu-ops-note summary {
   color: var(--brand-700);
   font-size: 0.8125rem;
   font-weight: 600;
-}
-
-body.bu-shell-v1 .bu-quality-tabs button:hover:not(.active) {
-  color: var(--text-secondary);
-  background: rgb(255 255 255 / 0.55);
 }
 
 body.bu-shell-v1 .content-guide-compact {
@@ -891,6 +1031,17 @@ body.bu-shell-v1 .bu-feedback-empty {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.65rem;
+}
+
+body.bu-shell-v1 .bu-work-shortcuts {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .bu-work-shortcuts .metric-label {
+  margin: 0 0.35rem 0 0;
+  font-size: 0.75rem;
 }
 
 body.bu-shell-v1 .bu-feedback-empty .button-primary {

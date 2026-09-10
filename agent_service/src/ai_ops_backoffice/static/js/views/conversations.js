@@ -243,7 +243,7 @@ export async function renderConversations(state = {}) {
       // Avoid full remount so the user does not lose filter focus when toggling.
     });
 
-    const refreshButton = el("button", "button-primary", "🔄 立即重新整理");
+    const refreshButton = el("button", "button-secondary", "立即重新整理");
     refreshButton.type = "button";
     refreshButton.title = "即刻向後端取得最新對話記錄（繞過暫存）";
     refreshButton.addEventListener("click", () => {

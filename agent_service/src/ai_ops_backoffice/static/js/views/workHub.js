@@ -49,7 +49,7 @@ function taskRow({ title, type, nextStep, owner, status, action }) {
 function sectionError(label, error) {
   return el(
     "div",
-    "callout",
+    "warning",
     `暫無法取得${label}：${error?.message || error || "未知錯誤"}。不代表目前沒有待辦。`,
   );
 }
@@ -335,7 +335,9 @@ function buildTable(rows) {
   for (const item of rows) {
     const button = el(
       "button",
-      item.kind === "aggregate" ? "" : "button-primary",
+      item.kind === "aggregate" || item.kind === "empty"
+        ? "button-secondary"
+        : "button-primary",
       item.actionLabel || "處理",
     );
     button.type = "button";
@@ -497,8 +499,9 @@ async function renderWorkHub(state = {}) {
     surface.append(buildTable(listRows));
   }
 
-  const shortcuts = el("div", "filter-bar");
+  const shortcuts = el("div", "filter-bar bu-work-shortcuts");
   shortcuts.append(
+    el("span", "metric-label", "快捷入口"),
     drillLink("完整文件待辦", "knowledgeWork"),
     drillLink("待審清單", "knowledgeReviews"),
     drillLink("改善案件", "quality"),

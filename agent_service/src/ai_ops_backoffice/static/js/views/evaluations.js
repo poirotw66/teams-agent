@@ -84,10 +84,18 @@ export async function renderEvaluations() {
 async function renderCasesTab(container, allowed) {
   container.replaceChildren();
 
-  const subNav = el("div", "sub-nav-bar");
+  const subNav = el("div", isBuShellEnabled() ? "bu-sub-tabs" : "sub-nav-bar");
   let subView = "cases";
-  const viewCasesBtn = el("button", "btn-secondary active", "驗收題目清單");
-  const viewSetsBtn = el("button", "btn-secondary", "題庫與版本 (Eval Sets)");
+  const viewCasesBtn = el(
+    "button",
+    isBuShellEnabled() ? "active" : "btn-secondary active",
+    "驗收題目清單",
+  );
+  const viewSetsBtn = el(
+    "button",
+    isBuShellEnabled() ? "" : "btn-secondary",
+    isBuShellEnabled() ? "題庫與版本" : "題庫與版本 (Eval Sets)",
+  );
   subNav.append(viewCasesBtn, viewSetsBtn);
 
   const viewContainer = el("div", "eval-view-content");
@@ -194,17 +202,17 @@ async function loadCasesList(container, allowed) {
     const createBtn = el("button", bu ? "button-primary" : "btn-primary", "＋ 新增驗收題");
     createBtn.addEventListener("click", () => showCaseCreateModal(() => loadCasesList(container, allowed)));
 
-    const genBtn = el("button", bu ? "" : "btn-secondary", "自動生成候選");
+    const genBtn = el("button", bu ? "button-secondary" : "btn-secondary", "自動生成候選");
     genBtn.addEventListener("click", () => showCandidateJobModal(() => loadCasesList(container, allowed)));
 
-    const importBtn = el("button", bu ? "" : "btn-secondary", "匯入題庫");
+    const importBtn = el("button", bu ? "button-secondary" : "btn-secondary", "匯入題庫");
     importBtn.addEventListener("click", () => showImportModal(() => loadCasesList(container, allowed)));
 
     actionButtons.append(createBtn, genBtn, importBtn);
   }
 
   if (allowed.has("ops.evals.export")) {
-    const exportBtn = el("button", bu ? "" : "btn-secondary", "匯出");
+    const exportBtn = el("button", bu ? "button-secondary" : "btn-secondary", "匯出");
     exportBtn.addEventListener("click", showExportModal);
     actionButtons.append(exportBtn);
   }
@@ -282,7 +290,11 @@ async function loadCasesList(container, allowed) {
         behaviorCell.innerHTML = `<span class="badge badge-info" title="${r.behavior}">${behaviorLabel}</span>`;
 
         const actionsCell = el("td");
-        const viewBtn = el("button", bu ? "button-primary" : "btn-sm btn-link", bu ? "查看" : "查看與處理");
+        const viewBtn = el(
+          "button",
+          bu ? "button-secondary" : "btn-sm btn-link",
+          bu ? "查看" : "查看與處理",
+        );
         viewBtn.addEventListener("click", () => showCaseDetailModal(c.case_id, () => fetchCases()));
         actionsCell.append(viewBtn);
 

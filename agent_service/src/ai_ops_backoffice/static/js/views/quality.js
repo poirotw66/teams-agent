@@ -128,7 +128,7 @@ export async function renderQuality(state = {}) {
       model: modelInput.value.trim(),
       route: routeSelect.value,
     });
-    const applyFilters = el("button", "", "套用篩選");
+    const applyFilters = el("button", buShell ? "button-secondary" : "", "套用篩選");
     applyFilters.addEventListener("click", () =>
       renderQuality({ period, filters: currentFilters(), cursor: "", history: [], tab: "feedback" }),
     );
@@ -191,7 +191,7 @@ export async function renderQuality(state = {}) {
           end: period.end || "",
         });
       });
-      const jumpFeedback = el("button", "", "僅查有回饋的對話");
+      const jumpFeedback = el("button", buShell ? "button-secondary" : "", "僅查有回饋的對話");
       jumpFeedback.type = "button";
       jumpFeedback.title = "會加上 hasFeedback=true；若結果為空可改用上方按鈕";
       jumpFeedback.addEventListener("click", () => {
@@ -295,11 +295,11 @@ export async function renderQuality(state = {}) {
     }
     const exportPanel = el("section", "panel");
     exportPanel.append(el("h3", "", "非同步匯出"));
-    const csvButton = el("button", "", "建立 CSV 營運摘要匯出");
+    const csvButton = el("button", buShell ? "button-secondary" : "", "建立 CSV 營運摘要匯出");
     csvButton.addEventListener("click", async () => {
       await runExport("csv");
     });
-    const xlsxButton = el("button", "", "建立 XLSX 營運摘要匯出");
+    const xlsxButton = el("button", buShell ? "button-secondary" : "", "建立 XLSX 營運摘要匯出");
     xlsxButton.style.marginLeft = "0.5rem";
     xlsxButton.addEventListener("click", async () => {
       await runExport("xlsx");

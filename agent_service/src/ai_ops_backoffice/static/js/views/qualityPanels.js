@@ -534,7 +534,11 @@ export async function buildQualityLoopPanel() {
   caseOwnerInput.style.minWidth = "160px";
   caseOwnerInput.setAttribute("aria-label", "負責單位篩選");
 
-  const caseFilterBtn = el("button", "", "篩選案件");
+  const caseFilterBtn = el(
+    "button",
+    isBuShellEnabled() ? "button-secondary" : "",
+    "篩選案件",
+  );
   caseFilterBar.append(caseStatusSelect, caseTypeSelect, caseOwnerInput, caseFilterBtn);
   casesSection.append(caseFilterBar);
 
@@ -573,7 +577,11 @@ export async function buildQualityLoopPanel() {
     const body = el("tbody");
     for (const item of items) {
       const action = el("td");
-      const detail = el("button", "", "查看與處理");
+      const detail = el(
+        "button",
+        isBuShellEnabled() ? "button-primary" : "",
+        "查看與處理",
+      );
       detail.addEventListener("click", () => {
         if (isBuShellEnabled()) {
           saveNavFilters({ view: "quality", caseId: item.case_id, tab: "cases" });
