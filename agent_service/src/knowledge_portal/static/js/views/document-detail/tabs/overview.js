@@ -1,6 +1,44 @@
-import { nextActionLabel } from "../../../labels.js";
+import {
+  agentStatusLabel,
+  indexStatusLabel,
+  nextActionLabel,
+  releaseStatusLabel,
+} from "../../../labels.js";
 import { escapeHtml, renderStatusBadge } from "../../../ui.js?v=20260831e";
 import { renderDocumentViewer } from "../../../markdown.js?v=pdf-img-20260908c";
+
+function formatWhen(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("zh-TW");
+}
+
+function renderDeploymentEvidence(detail) {
+  const deployment = detail.deployment;
+  if (!deployment) return "";
+  if (deployment.status !== "available") {
+    return `
+      <div class="panel warning">
+        <h3>發布與 Agent 使用狀態</h3>
+        <p>目前無法確認索引與 Agent 使用版本；這不代表 0 件或已完成。請重新整理後再判定是否生效。</p>
+      </div>`;
+  }
+  const published = detail.published_version;
+  const release = deployment.activeRelease;
+  const failure = release?.failure_summary;
+  return `
+    <div class="panel">
+      <h3>發布與 Agent 使用狀態</h3>
+      <p class="muted" style="margin-top:0.25rem">核准、發布、索引與 Agent 使用是四個不同階段；以下以目前 active release 證據判定。</p>
+      <dl class="meta-list">
+        <div><dt>已發布版本</dt><dd>${published ? `v${published.version_number} · ${escapeHtml(published.version_id)}` : "尚無"}</dd></div>
+        <div><dt>目前 active release</dt><dd>${escapeHtml(deployment.activeReleaseId || "—")} · ${escapeHtml(releaseStatusLabel(deployment.activeReleaseStatus))}</dd></div>
+        <div><dt>索引狀態</dt><dd>${escapeHtml(indexStatusLabel(deployment.indexStatus))}</dd></div>
+        <div><dt>Agent 使用版本</dt><dd>${escapeHtml(agentStatusLabel(deployment.agentStatus))}${deployment.manifestVersionId ? ` · ${escapeHtml(deployment.manifestVersionId)}` : ""}</dd></div>
+        <div><dt>最後生效確認</dt><dd>${formatWhen(release?.verified_at || release?.activated_at)}</dd></div>
+      </dl>
+      ${failure ? `<p class="warning">同步錯誤：${escapeHtml(failure)}</p>` : ""}
+    </div>`;
+}
 
 function renderPublishedPreview(document, published) {
   if (!published) return "";
@@ -45,6 +83,7 @@ export function renderOverviewTab(detail) {
         </dl>
         ${doc.summary ? `<p>${escapeHtml(doc.summary)}</p>` : ""}
       </div>
+      ${renderDeploymentEvidence(detail)}
       ${detail.published_version ? renderPublishedPreview(doc, detail.published_version) : ""}
       ${detail.open_review ? `
         <div class="panel review-panel">

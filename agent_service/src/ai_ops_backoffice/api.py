@@ -98,7 +98,7 @@ from .workers import install_background_runtime
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_ASSET_VERSION = "ops-ui-20260910j"
+UI_ASSET_VERSION = "ops-ui-20260911t4e"
 
 
 def _js_import_map_script(version: str) -> str:
@@ -518,6 +518,9 @@ def create_app(
         knowledge_client=knowledge_client,
         quality_metrics_by_issue=quality_metrics_by_issue,
         enrich_quality_issue_display=enrich_quality_issue_display,
+        evaluation_service=evaluation_service,
+        evaluation_run_service=evaluation_run_service,
+        quality_gate_service=quality_gate_service,
         current_actor=current_actor,
         require_capability=require_capability,
     )

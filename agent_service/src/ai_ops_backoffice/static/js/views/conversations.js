@@ -157,6 +157,7 @@ export async function renderConversations(state = {}) {
 
     const data = await api(`/api/conversations?${filters.toString()}`);
 
+    let detailError = null;
     if (
       isBuShellEnabled() &&
       conversationId &&
@@ -170,7 +171,10 @@ export async function renderConversations(state = {}) {
         showConversationPage(detail, conversationId, { selectedTurnId: turnId });
         return;
       } catch (error) {
-        /* Fall through to list with error banner below. */
+        // The list request may still be healthy, but a deep-linked detail
+        // failure must remain visible instead of becoming a misleading empty
+        // result. Keep the list as recovery context and offer a safe retry.
+        detailError = error;
       }
     }
 
@@ -263,6 +267,35 @@ export async function renderConversations(state = {}) {
       panel.append(
         el("p", "metric-label", "從使用者的提問，追到實際回答與引用依據。"),
       );
+    }
+
+    if (detailError) {
+      const detailErrorBox = el(
+        "div",
+        detailError.message === "FORBIDDEN" ? "forbidden" : "error",
+      );
+      detailErrorBox.append(
+        el(
+          "p",
+          "",
+          detailError.message === "FORBIDDEN"
+            ? "目前角色無法查看這則對話詳情。列表範圍仍保留，未將此狀態當成沒有資料。"
+            : `這則對話詳情暫時無法讀取：${formatUserFacingError(detailError)}`,
+        ),
+      );
+      if (detailError.message !== "FORBIDDEN") {
+        const retryDetail = el("button", "button-primary", "重試這則對話");
+        retryDetail.type = "button";
+        retryDetail.addEventListener("click", () => {
+          void renderConversations({
+            ...currentConversationState,
+            forceRefresh: true,
+            isPolling: false,
+          });
+        });
+        detailErrorBox.append(retryDetail);
+      }
+      panel.append(detailErrorBox);
     }
 
     const filterBar = el("div", "filter-bar");
@@ -461,7 +494,17 @@ export async function renderConversations(state = {}) {
     }
 
     if (!data.items.length) {
-      panel.append(el("p", "empty", "目前沒有符合條件的對話事件。"));
+      if (detailError) {
+        panel.append(
+          el(
+            "p",
+            "metric-label",
+            "目前無法判定這則對話是否存在；請先重試，不會把錯誤計為 0 件。",
+          ),
+        );
+      } else {
+        panel.append(el("p", "empty", "目前沒有符合條件的對話事件。"));
+      }
       app.replaceChildren(panel);
       return;
     }
@@ -655,13 +698,25 @@ export async function renderConversations(state = {}) {
     const keptFilters = currentConversationState.filters || {};
     const keptPeriod = currentConversationState.period || {};
     const kept = [];
-    if (keptFilters.query) kept.push(`關鍵字：${keptFilters.query}`);
+    const keptFilterLabels = [
+      ["query", "關鍵字"],
+      ["conversationId", "對話 ID"],
+      ["source", "來源"],
+      ["issueTypeId", "問題類型"],
+      ["route", "處理方式"],
+      ["model", "模型"],
+      ["actorRef", "使用者"],
+      ["hasFeedback", "回饋"],
+      ["handoff", "轉人工"],
+      ["channelScope", "通道"],
+    ];
+    for (const [key, label] of keptFilterLabels) {
+      if (keptFilters[key]) kept.push(`${label}：${keptFilters[key]}`);
+    }
     if (keptPeriod.preset) kept.push(`期間：${keptPeriod.preset}`);
     if (keptPeriod.start || keptPeriod.end) {
       kept.push(`自訂：${keptPeriod.start || "—"} ~ ${keptPeriod.end || "—"}`);
     }
-    if (keptFilters.channelScope) kept.push(`通道：${keptFilters.channelScope}`);
-    if (keptFilters.hasFeedback) kept.push(`回饋：${keptFilters.hasFeedback}`);
     if (kept.length) {
       wrap.append(el("p", "metric-label", `目前查詢條件仍保留：${kept.join(" · ")}`));
     }

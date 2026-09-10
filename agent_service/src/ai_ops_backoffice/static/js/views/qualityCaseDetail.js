@@ -1,6 +1,6 @@
 import { api, el, metric } from "../api.js";
 import { badge, statusBadge } from "../components/badges.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
 import {
   recommendContentType,
@@ -11,6 +11,180 @@ import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
 import { drillLink, navigateTo } from "../app/navigation.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { navigateReturnTo, withReturnTo } from "../app/returnTo.js";
+import { formatTaipeiDateTime, labelBehavior, labelStatus } from "../app/labels.js";
+
+function priorityPresentation(priority) {
+  const raw = String(priority ?? "").trim();
+  const key = raw.toUpperCase();
+  const labels = {
+    CRITICAL: "緊急",
+    HIGH: "高",
+    MEDIUM: "中",
+    LOW: "低",
+  };
+  const label = labels[key] || (raw ? `P${raw}` : "未指定");
+  const numericHigh = Number.isFinite(Number(raw)) && Number(raw) <= 2;
+  return {
+    label,
+    variant: ["CRITICAL", "HIGH"].includes(key) || numericHigh ? "danger" : "neutral",
+    title: raw ? `優先級：${label} (${raw})` : "優先級：未指定",
+  };
+}
+
+function evaluationBehaviorForCase(caseType) {
+  return {
+    HANDOFF: "HANDOFF",
+    NO_ANSWER: "CLARIFY",
+    LOW_CONFIDENCE: "ANSWER_WITH_CITATION",
+    NEGATIVE_FEEDBACK: "ANSWER_WITH_CITATION",
+    KNOWLEDGE_GAP: "ANSWER_WITH_CITATION",
+  }[String(caseType || "").toUpperCase()] || "ANSWER_WITH_CITATION";
+}
+
+function renderEvaluationTracking(detail, caseId, qualityCase, allowed, options) {
+  const panel = el("section", "case-evaluation-tracking");
+  panel.style.padding = "1rem";
+  panel.style.marginBottom = "1rem";
+  panel.style.border = "1px solid var(--border-subtle)";
+  panel.style.borderRadius = "var(--radius-sm)";
+  panel.style.background = "var(--panel-muted)";
+
+  const heading = el("h3", "", "驗收追蹤");
+  heading.style.marginTop = "0";
+  panel.append(heading);
+
+  if (!allowed.has("ops.evals.read")) {
+    panel.append(el("p", "metric-label", "目前身分可處理案件，但沒有查看驗收題庫與執行結果的權限。"));
+    return panel;
+  }
+
+  const candidates = detail.evaluation_candidates || [];
+  const runs = detail.evaluation_runs || [];
+  const candidateIntro = el(
+    "p",
+    "metric-label",
+    "驗收候選保留本案件來源；只有送審、核准並加入已發布題庫後，執行結果才可用來判斷改善成效。",
+  );
+  candidateIntro.style.marginTop = "0";
+  panel.append(candidateIntro);
+
+  if (candidates.length) {
+    const candidateList = el("div", "case-evaluation-list");
+    for (const item of candidates) {
+      const candidate = item.case || {};
+      const revision = item.current_revision || {};
+      const card = el("div", "card-item");
+      card.style.marginBottom = "0.55rem";
+      card.append(
+        el("strong", "", candidate.title || candidate.case_id || "未命名驗收候選"),
+        el(
+          "p",
+          "metric-label",
+          `${labelStatus(revision.status)} · v${revision.revision_number || "—"} · ${labelBehavior(revision.behavior)} · ${candidate.case_id || "—"}`,
+        ),
+        el(
+          "p",
+          "metric-label",
+          `來源：品質案件 ${caseId} · 來源版本：${revision.provenance?.source_version_id || "尚未指定"}`,
+        ),
+      );
+      card.append(
+        drillLink(
+          "查看／送審候選",
+          "evaluations",
+          withReturnTo(
+            { tab: "cases", q: candidate.title || candidate.case_id || "" },
+            "quality",
+            { caseId, tab: "cases" },
+          ),
+        ),
+      );
+      candidateList.append(card);
+    }
+    panel.append(candidateList);
+  } else {
+    panel.append(el("p", "empty", "尚未加入驗收候選。"));
+  }
+
+  if (runs.length) {
+    panel.append(el("h4", "", "最近驗收執行"));
+    const runList = el("div", "case-evaluation-list");
+    for (const run of runs.slice(0, 5)) {
+      const summary = run.summary || {};
+      const gate = run.gate_decision;
+      const manifestHash = run.candidate_manifest?.manifest_hash || "";
+      const passRate = summary.pass_rate == null ? "—" : `${Math.round(summary.pass_rate * 100)}%`;
+      const coverage = summary.coverage == null ? "—" : `${Math.round(summary.coverage * 100)}%`;
+      const card = el("div", "card-item");
+      card.style.marginBottom = "0.55rem";
+      const manifestLine = el(
+        "p",
+        "metric-label",
+        `候選版本 ${manifestHash ? `${manifestHash.slice(0, 16)}…` : "—"} · 建立於 ${formatTaipeiDateTime(run.created_at)}`,
+      );
+      if (manifestHash) {
+        manifestLine.title = `完整候選版本雜湊：${manifestHash}`;
+        manifestLine.style.overflowWrap = "anywhere";
+      }
+      card.append(
+        el("strong", "", `${labelStatus(run.status)} · ${run.run_id}`),
+        el(
+          "p",
+          "metric-label",
+          `品質通過率 ${passRate} · 判定覆蓋率 ${coverage} · 題庫版本 ${run.set_version_id || "—"}`,
+        ),
+        manifestLine,
+        el(
+          "p",
+          "metric-label",
+          gate ? `門檻判定：${gate.decision || "—"}` : "門檻判定：尚未建立（執行完成不等於品質通過）",
+        ),
+      );
+      card.append(
+        drillLink(
+          "查看驗收結果",
+          "evaluations",
+          withReturnTo(
+            { tab: "results", runId: run.run_id },
+            "quality",
+            { caseId, tab: "cases" },
+          ),
+        ),
+      );
+      runList.append(card);
+    }
+    panel.append(runList);
+  }
+
+  if (allowed.has("ops.evals.write")) {
+    const addCandidate = el("button", "button-primary", candidates.length ? "再建立驗收修訂" : "加入驗收候選");
+    addCandidate.type = "button";
+    addCandidate.addEventListener("click", async () => {
+      const { showCaseCreateModal } = await import("./evaluations.js");
+      showCaseCreateModal(
+        async () => showQualityCaseDetail(caseId, options),
+        {
+          title: `改善驗收：${qualityCase.title || caseId}`,
+          owner_unit_id: qualityCase.owner_unit_id,
+          query: qualityCase.description || qualityCase.title || "",
+          behavior: evaluationBehaviorForCase(qualityCase.case_type),
+          criticality: qualityCase.priority === "CRITICAL" ? "CRITICAL" : "NORMAL",
+          source_type: "QUALITY_CASE",
+          source_id: caseId,
+          metadata: {
+            quality_case_id: caseId,
+            quality_case_type: qualityCase.case_type,
+          },
+          tags: ["quality-case", qualityCase.case_type].filter(Boolean),
+        },
+      );
+    });
+    panel.append(addCandidate);
+  }
+
+  return panel;
+}
+
 async function refreshQuality(state) {
   const { renderQuality } = await import("./quality.js");
   return renderQuality(state);
@@ -49,7 +223,9 @@ export async function showQualityCaseDetail(caseId, options = {}) {
     headerRow.style.marginBottom = "1rem";
     headerRow.style.gap = "0.6rem";
     const statusPill = statusBadge(statusLabels[qualityCase.status] || qualityCase.status);
-    const prioPill = badge(`優先級 P${qualityCase.priority}`, qualityCase.priority <= 2 ? "danger" : "neutral");
+    const priority = priorityPresentation(qualityCase.priority);
+    const prioPill = badge(`優先級 ${priority.label}`, priority.variant);
+    prioPill.title = priority.title;
     const caseIdPill = badge(`ID: ${caseId.slice(0, 8)}`, "neutral");
     headerRow.append(statusPill, prioPill, caseIdPill);
 
@@ -59,7 +235,14 @@ export async function showQualityCaseDetail(caseId, options = {}) {
       metric("發生頻率", (qualityCase.frequency || 0).toLocaleString()),
       metric("負評率", `${((qualityCase.negative_rate || 0) * 100).toFixed(1)}%`),
       metric("轉人工率", `${((qualityCase.handoff_rate || 0) * 100).toFixed(1)}%`),
-      metric("預估成本影響", qualityCase.cost_impact_usd != null ? `$${Number(qualityCase.cost_impact_usd).toFixed(3)}` : "USD 0.00"),
+      metric(
+        "預估成本影響",
+        qualityCase.estimated_cost_impact != null
+          ? `$${Number(qualityCase.estimated_cost_impact).toFixed(3)}`
+          : qualityCase.cost_impact_usd != null
+            ? `$${Number(qualityCase.cost_impact_usd).toFixed(3)}`
+            : "USD 0.00",
+      ),
     );
 
     const infoPanel = el("div");
@@ -191,7 +374,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
       drillLink(
         "Golden 驗收",
         "evaluations",
-        withReturnTo({}, "quality", returnCtx),
+        withReturnTo({ tab: "runs" }, "quality", returnCtx),
       ),
     );
     if (getCapabilities()?.knowledgeBridgeEnabled) {
@@ -234,7 +417,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
       saveNote.style.marginBottom = "0.85rem";
       content.append(saveNote);
     }
-    content.append(loopHints);
+    content.append(loopHints, renderEvaluationTracking(detail, caseId, qualityCase, allowed, options));
     content.append(
       renderContentPolicyBanner(),
       renderDecisionGuide({ recommended: recommendContentType(qualityCase) }),
@@ -302,8 +485,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ expected_etag: qualityCase.etag, faq_id: fId }),
             });
-            const root = document.getElementById("modal-root");
-            if (root) { root.hidden = true; root.replaceChildren(); }
+            closeContentModal();
             await showQualityCaseDetail(caseId);
           } catch (err) {
             confirmBtn.disabled = false;
@@ -373,8 +555,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ expected_etag: qualityCase.etag, document_id: docId }),
             });
-            const root = document.getElementById("modal-root");
-            if (root) { root.hidden = true; root.replaceChildren(); }
+            closeContentModal();
             await showQualityCaseDetail(caseId);
           } catch (err) {
             alert(`關聯失敗：${err.message || err}`);
@@ -458,8 +639,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
                   markdown_content: contentArea.value,
                 }),
               });
-              const root = document.getElementById("modal-root");
-              if (root) { root.hidden = true; root.replaceChildren(); }
+              closeContentModal();
               const createdDocId = res.document?.document_id || "";
               if (res.partialSuccess) {
                 showContentModal(
@@ -473,7 +653,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
                 );
                 const goEdit = el("button", "button-primary", "前往編輯草稿");
                 goEdit.addEventListener("click", () => {
-                  if (root) { root.hidden = true; root.replaceChildren(); }
+                  closeContentModal();
                   navigateTo(
                     "knowledgePortal",
                     withReturnTo(
@@ -532,8 +712,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
                   audience_group_ids: payload.audience_group_ids,
                 }),
               });
-              const root = document.getElementById("modal-root");
-              if (root) { root.hidden = true; root.replaceChildren(); }
+              closeContentModal();
               await showQualityCaseDetail(caseId);
             } catch (err) {
               submit.disabled = false;

@@ -116,6 +116,7 @@ class EvaluationRun(StrictModel):
     run_id: str
     tenant_id: str
     owner_unit_id: str
+    quality_case_id: str | None = None
     set_version_id: str
     baseline_manifest: TargetManifest
     candidate_manifest: TargetManifest

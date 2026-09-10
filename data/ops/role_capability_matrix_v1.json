@@ -215,8 +215,10 @@
         "ops.exports.read",
         "ops.faq.read",
         "ops.flags.read",
+        "ops.knowledge.read",
         "ops.models.read",
         "ops.prompts.read",
+        "ops.quality.read",
         "ops.retention.read",
         "ops.roles.read",
         "ops.search.read"

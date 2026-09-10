@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
 from ..faq_domain import FaqContent, FaqNotFoundError, FaqValidationError
+from ..evaluation_domain.errors import EvaluationDomainError
 from ..knowledge_bridge.capabilities import has_knowledge_capability
 from ..request_models import (
     FaqTransitionRequest,
@@ -30,10 +31,63 @@ def register_quality_routes(
     knowledge_client,
     quality_metrics_by_issue,
     enrich_quality_issue_display,
+    evaluation_service=None,
+    evaluation_run_service=None,
+    quality_gate_service=None,
     current_actor,
     require_capability,
 ) -> None:
     _enrich_quality_issue_display = enrich_quality_issue_display
+
+    def _evaluation_context(case_id: str, actor) -> dict[str, object]:
+        """Return cross-domain evidence for a quality case without widening its ACL."""
+        result: dict[str, object] = {
+            "evaluation_access": actor.has_capability("ops.evals.read"),
+            "evaluation_candidates": [],
+            "evaluation_runs": [],
+        }
+        if not result["evaluation_access"]:
+            return result
+
+        if evaluation_service is not None:
+            try:
+                result["evaluation_candidates"] = evaluation_service.list_cases(
+                    actor=actor,
+                    source_type="QUALITY_CASE",
+                    source_id=case_id,
+                    limit=100,
+                )
+            except EvaluationDomainError:
+                # Quality case access must remain usable when the actor can read
+                # quality data but the separate evaluation store is unavailable.
+                result["evaluation_candidates"] = []
+
+        if evaluation_run_service is not None:
+            try:
+                linked_runs = []
+                for item in evaluation_run_service.list_runs(actor=actor):
+                    run = item.get("run", item)
+                    linked_case_id = run.get("quality_case_id") or run.get("limits", {}).get("quality_case_id")
+                    if linked_case_id != case_id:
+                        continue
+                    run_copy = dict(run)
+                    manifest_hash = (run.get("candidate_manifest") or {}).get("manifest_hash")
+                    if quality_gate_service is not None and manifest_hash:
+                        decisions = quality_gate_service.repository.list_decisions(
+                            target_manifest_hash=manifest_hash,
+                        )
+                        if decisions:
+                            latest = max(
+                                decisions,
+                                key=lambda decision: decision.created_at,
+                            )
+                            run_copy["gate_decision"] = latest.model_dump(mode="json")
+                    linked_runs.append(run_copy)
+                result["evaluation_runs"] = linked_runs
+            except EvaluationDomainError:
+                result["evaluation_runs"] = []
+
+        return result
 
     @app.get("/api/quality-cases")
     async def list_quality_cases(
@@ -63,6 +117,7 @@ def register_quality_routes(
         return {
             **detail,
             "case": _enrich_quality_issue_display(detail["case"]),
+            **_evaluation_context(case_id, actor),
         }
 
     @app.put("/api/quality-cases/{case_id}")
@@ -454,4 +509,3 @@ def register_quality_routes(
             candidate_groups=payload.candidate_groups,
             actor=actor,
         )
-

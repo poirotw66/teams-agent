@@ -1,3 +1,5 @@
+import { closeModalDialog, openModalDialog } from "./components/modalA11y.js";
+
 const AUTH_STORAGE_KEY = "ai_ops_backoffice_auth";
 
 export function loadAuthHeaders() {
@@ -344,8 +346,7 @@ export function showEntraLoginModal({ message, reauth = false } = {}) {
       const cancelBtn = el("button", "btn-secondary", "取消");
       cancelBtn.type = "button";
       cancelBtn.addEventListener("click", () => {
-        root.hidden = true;
-        root.replaceChildren();
+        closeModalDialog(root);
         reject(new Error("UNAUTHORIZED"));
       });
       actions.append(cancelBtn);
@@ -382,8 +383,7 @@ export function showEntraLoginModal({ message, reauth = false } = {}) {
           throw new Error("身分驗證失敗：伺服器驗簽未通過 (401 Unauthorized)。請確認權杖是否有效。");
         }
         saveAuthHeaders({ bearerToken: token });
-        root.hidden = true;
-        root.replaceChildren();
+        closeModalDialog(root);
         resolve(token);
       } catch (err) {
         errorBox.textContent = err.message || "驗證失敗，請檢查權杖。";
@@ -395,8 +395,7 @@ export function showEntraLoginModal({ message, reauth = false } = {}) {
 
     box.append(header, notice, form);
     root.append(box);
-
-    setTimeout(() => textarea.focus(), 50);
+    openModalDialog(root, box, { titleElement: h2, initialFocus: textarea });
   });
 }
 

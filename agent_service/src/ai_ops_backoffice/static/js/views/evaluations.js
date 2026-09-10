@@ -1,6 +1,6 @@
 import { api, el } from "../api.js";
 import { showContentModal, closeContentModal } from "../components/modal.js";
-import { actorCapabilities } from "../app/capabilities.js";
+import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import {
@@ -12,6 +12,15 @@ import { loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "..
 import { navigateReturnTo, parseReturnTo, withReturnTo } from "../app/returnTo.js";
 
 let currentActiveTab = "cases";
+
+function actorCanManageOwnerUnits(ownerUnitIds = []) {
+  const current = getCapabilities() || {};
+  if (["SYSTEM_ADMIN", "AI_ADMIN", "AUDITOR"].includes(current.role)) {
+    return true;
+  }
+  const ownedUnits = new Set(current.ownerUnitIds || []);
+  return ownerUnitIds.every((unit) => ownedUnits.has(unit));
+}
 
 export async function renderEvaluations() {
   const app = document.getElementById("app");
@@ -134,6 +143,10 @@ async function loadCasesList(container, allowed) {
 
   const searchInput = el("input", "search-input");
   searchInput.placeholder = "搜尋問題關鍵字或標題...";
+  const navFilters = loadNavFilters();
+  if (navFilters.view === "evaluations" && navFilters.q) {
+    searchInput.value = navFilters.q;
+  }
 
   const bu = isBuShellEnabled();
   const statusSelect = el("select", "form-select");
@@ -402,7 +415,7 @@ async function loadSetsList(container, allowed) {
 
         const actionsCell = el("td");
         const detailBtn = el("button", "btn-sm btn-link", "版本與成員");
-        detailBtn.addEventListener("click", () => showSetDetailModal(s.set_id));
+        detailBtn.addEventListener("click", () => showSetDetailModal(s.set_id, allowed));
         actionsCell.append(detailBtn);
 
         row.append(nameCell, purposeCell, ownerCell, leadCell, actionsCell);
@@ -419,7 +432,7 @@ async function loadSetsList(container, allowed) {
   await fetchSets();
 }
 
-function showCaseCreateModal(onSuccess) {
+export function showCaseCreateModal(onSuccess, prefill = {}) {
   const content = el("div", "modal-body");
   content.innerHTML = `
     <h3>新增驗收案例</h3>
@@ -480,6 +493,43 @@ function showCaseCreateModal(onSuccess) {
   const refAnswerGroup = content.querySelector("#ref-answer-group");
   const factsGroup = content.querySelector("#required-facts-group");
   const hint = content.querySelector("#behavior-hint");
+  const ownerInput = content.querySelector("#case-owner");
+  const criticalitySelect = content.querySelector("#case-criticality");
+
+  content.querySelector("#case-title").value = prefill.title || "";
+  ownerInput.value = prefill.owner_unit_id || "IT Service Desk";
+  if (prefill.owner_unit_id) {
+    ownerInput.readOnly = true;
+    ownerInput.title = "沿用改善案件負責單位，避免驗收候選跨單位。";
+  }
+  content.querySelector("#case-query").value = prefill.query || "";
+  content.querySelector("#case-ref-answer").value = prefill.reference_answer || "";
+  content.querySelector("#case-facts").value = Array.isArray(prefill.required_facts)
+    ? prefill.required_facts.map((item) => item.description || item).join("\n")
+    : prefill.required_facts || "";
+  content.querySelector("#case-forbidden").value = Array.isArray(prefill.forbidden_claims)
+    ? prefill.forbidden_claims.join("\n")
+    : prefill.forbidden_claims || "";
+  content.querySelector("#case-tags").value = Array.isArray(prefill.tags)
+    ? prefill.tags.join(", ")
+    : prefill.tags || "";
+  if (prefill.behavior && behaviorSelect.querySelector(`option[value="${prefill.behavior}"]`)) {
+    behaviorSelect.value = prefill.behavior;
+  }
+  if (prefill.criticality && criticalitySelect.querySelector(`option[value="${prefill.criticality}"]`)) {
+    criticalitySelect.value = prefill.criticality;
+  }
+
+  const form = content.querySelector("#new-case-form");
+  if (prefill.source_type === "QUALITY_CASE") {
+    const provenanceNote = el(
+      "div",
+      "callout",
+      "這筆驗收候選會保留改善案件來源；送審、核准並加入已發布題庫後，驗收執行結果才能回到案件追蹤。",
+    );
+    provenanceNote.style.marginBottom = "0.75rem";
+    form.prepend(provenanceNote);
+  }
 
   behaviorSelect.addEventListener("change", () => {
     if (behaviorSelect.value === "REFUSE") {
@@ -493,7 +543,7 @@ function showCaseCreateModal(onSuccess) {
     }
   });
 
-  const form = content.querySelector("#new-case-form");
+  behaviorSelect.dispatchEvent(new Event("change"));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = content.querySelector("#case-title").value.trim();
@@ -513,8 +563,9 @@ function showCaseCreateModal(onSuccess) {
     }));
 
     try {
-      await api("/api/evaluations/cases", {
+      const created = await api("/api/evaluations/cases", {
         method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           title,
           owner_unit_id: owner,
@@ -525,11 +576,14 @@ function showCaseCreateModal(onSuccess) {
           required_facts: requiredFacts,
           forbidden_claims: forbiddenRaw,
           tags: tagsRaw,
-          source_type: "MANUAL",
+          source_type: prefill.source_type || "MANUAL",
+          source_id: prefill.source_id || null,
+          source_version_id: prefill.source_version_id || null,
+          metadata: prefill.metadata || {},
         }),
       });
       closeContentModal();
-      if (onSuccess) onSuccess();
+      if (onSuccess) await onSuccess(created);
     } catch (err) {
       alert(`建立失敗: ${err.message}`);
     }
@@ -761,7 +815,7 @@ function showCreateSetModal(onSuccess) {
   showContentModal(content);
 }
 
-async function showSetDetailModal(setId) {
+async function showSetDetailModal(setId, allowed = actorCapabilities()) {
   const content = el("div", "modal-body");
   content.innerHTML = "<p>載入題庫詳情中...</p>";
   showContentModal(content);
@@ -770,6 +824,8 @@ async function showSetDetailModal(setId) {
     const res = await api(`/api/evaluations/sets/${setId}`);
     const s = res.eval_set;
     const versions = res.versions || [];
+    const canWriteSet = allowed.has("ops.evals.write") && actorCanManageOwnerUnits(s.owner_unit_ids);
+    const canPublishSet = allowed.has("ops.evals.sets.publish") && actorCanManageOwnerUnits(s.owner_unit_ids);
 
     content.innerHTML = `
       <h3>${s.name}</h3>
@@ -779,13 +835,11 @@ async function showSetDetailModal(setId) {
         <div><strong>負責單位:</strong> ${s.owner_unit_ids.join(", ")}</div>
         <div><strong>負責人:</strong> ${s.lead_owner}</div>
       </div>
-      <h4>已發布版本清單</h4>
+      <h4>題庫版本</h4>
       <div id="versions-list">
         ${versions.length === 0 ? "<p class='empty'>目前無任何版本。</p>" : ""}
       </div>
-      <div class="btn-row">
-        <button id="create-ver-btn" class="btn-primary">＋ 建立並發布新版本</button>
-      </div>
+      <div id="set-version-actions" class="btn-row"></div>
     `;
 
     const verList = content.querySelector("#versions-list");
@@ -795,17 +849,58 @@ async function showSetDetailModal(setId) {
         <strong>v${v.version}</strong> (${v.status}) - ${v.case_revision_ids.length} 題
         <br><small class="text-muted">Manifest Hash: <code>${v.manifest_hash ? v.manifest_hash.slice(0, 12) : "尚未發布"}</code> | 發布時間: ${v.published_at || "-"}</small>
       `;
+      if (v.status === "DRAFT") {
+        if (canPublishSet) {
+          const publishBtn = el("button", "btn-sm btn-primary", "發布此版本");
+          publishBtn.type = "button";
+          publishBtn.addEventListener("click", async () => {
+            publishBtn.disabled = true;
+            try {
+              await api(`/api/evaluations/sets/${setId}/versions/${v.set_version_id}/publish`, {
+                method: "POST",
+                body: JSON.stringify({ expected_etag: v.etag }),
+              });
+              await showSetDetailModal(setId, allowed);
+            } catch (err) {
+              publishBtn.disabled = false;
+              alert(`發布失敗: ${err.message}`);
+            }
+          });
+          vCard.append(publishBtn);
+        } else {
+          vCard.append(el("p", "text-muted", "此版本已建立，需由具備題庫發布權限的角色完成發布。"));
+        }
+      }
       verList.append(vCard);
     }
 
-    const createVerBtn = content.querySelector("#create-ver-btn");
-    createVerBtn.addEventListener("click", () => showPublishVersionModal(setId, () => showSetDetailModal(setId)));
+    const actions = content.querySelector("#set-version-actions");
+    if (canWriteSet) {
+      const createVerBtn = el(
+        "button",
+        "btn-primary",
+        canPublishSet ? "＋ 建立並發布新版本" : "＋ 建立題庫版本草稿",
+      );
+      createVerBtn.type = "button";
+      createVerBtn.addEventListener("click", () => showPublishVersionModal(
+        setId,
+        () => showSetDetailModal(setId, allowed),
+        canPublishSet,
+      ));
+      actions.append(createVerBtn);
+    } else if (!allowed.has("ops.evals.write")) {
+      actions.append(el("p", "text-muted", "目前角色僅可查看題庫版本；建立與發布需要對應的驗收權限。"));
+    } else if (!actorCanManageOwnerUnits(s.owner_unit_ids)) {
+      actions.append(el("p", "text-muted", "目前角色的單位範圍不足以管理此題庫；請切換具備所有負責單位範圍的角色。"));
+    } else {
+      actions.append(el("p", "text-muted", "目前角色可發布既有草稿，但沒有建立新版本的權限。"));
+    }
   } catch (err) {
     content.innerHTML = `<div class="error">讀取失敗: ${err.message}</div>`;
   }
 }
 
-async function showPublishVersionModal(setId, onSuccess) {
+async function showPublishVersionModal(setId, onSuccess, canPublish = false) {
   const content = el("div", "modal-body");
   content.innerHTML = "<p>載入可納入題庫的案例清單...</p>";
   showContentModal(content);
@@ -823,8 +918,8 @@ async function showPublishVersionModal(setId, onSuccess) {
     }
 
     content.innerHTML = `
-      <h3>發布新題庫版本 (不可變快照)</h3>
-      <p class="text-muted">請勾選要包含在本次發布版本中的核准案例：</p>
+      <h3>${canPublish ? "發布新題庫版本" : "建立題庫版本草稿"} (不可變快照)</h3>
+      <p class="text-muted">請勾選要包含在本次版本中的核准案例${canPublish ? "，建立後會立即發布" : "；建立草稿後請由具備發布權限的角色完成發布"}：</p>
       <form id="publish-ver-form">
         <div class="cases-selector" style="max-height: 250px; overflow-y: auto; border: 1px solid #ccc; padding: 8px;">
           ${approvedCases.map(item => `
@@ -835,7 +930,7 @@ async function showPublishVersionModal(setId, onSuccess) {
           `).join("")}
         </div>
         <div class="btn-row" style="margin-top: 12px;">
-          <button type="submit" class="btn-primary">建立並發布版本</button>
+          <button type="submit" class="btn-primary">${canPublish ? "建立並發布版本" : "建立版本草稿"}</button>
         </div>
       </form>
     `;
@@ -857,12 +952,15 @@ async function showPublishVersionModal(setId, onSuccess) {
         });
         const draft = draftRes.version;
 
-        await api(`/api/evaluations/sets/${setId}/versions/${draft.set_version_id}/publish`, {
-          method: "POST",
-          body: JSON.stringify({ expected_etag: draft.etag }),
-        });
-
-        alert("題庫版本發布成功！此版本成員與 Manifest Hash 已永久鎖定。");
+        if (canPublish) {
+          await api(`/api/evaluations/sets/${setId}/versions/${draft.set_version_id}/publish`, {
+            method: "POST",
+            body: JSON.stringify({ expected_etag: draft.etag }),
+          });
+          alert("題庫版本發布成功！此版本成員與 Manifest Hash 已永久鎖定。");
+        } else {
+          alert("題庫版本草稿已建立，請交由具備發布權限的角色完成發布。");
+        }
         closeContentModal();
         if (onSuccess) onSuccess();
       } catch (err) {
@@ -1071,6 +1169,10 @@ function showCandidateJobModal(onSuccess) {
 
 async function renderRunsTab(container, allowed) {
   container.replaceChildren();
+  const returnContext = parseReturnTo(loadNavFilters().returnTo);
+  const qualityCaseId = returnContext?.view === "quality"
+    ? returnContext.filters.caseId || ""
+    : "";
   const box = el("div", "content-box");
   box.innerHTML = `
     <h3>執行驗收</h3>
@@ -1125,6 +1227,16 @@ async function renderRunsTab(container, allowed) {
     </div>
     <div id="preflight-results" style="margin-top: 16px;"></div>
   `;
+
+  if (qualityCaseId) {
+    const contextNote = el(
+      "div",
+      "callout",
+      `本次驗收執行會記錄到改善案件 ${qualityCaseId.slice(0, 8)}…；執行完成不會自動將案件標為已結案。`,
+    );
+    contextNote.style.marginBottom = "1rem";
+    box.querySelector("h3")?.after(contextNote);
+  }
 
   container.append(box);
 
@@ -1348,6 +1460,7 @@ async function renderRunsTab(container, allowed) {
           },
           mode: runMode,
           limits: limits,
+          quality_case_id: qualityCaseId || null,
         }),
       });
 
@@ -1355,7 +1468,7 @@ async function renderRunsTab(container, allowed) {
         <div class="alert alert-success">
           <strong>評測執行已啟動／完成排程</strong><br>
           Run ID: <code>${res.run?.run_id || res.run_id || "—"}</code>｜狀態: ${res.run?.status || "—"}<br>
-          可至「驗收結果」頁籤查看對比分析。<br>
+          可至「驗收結果」頁籤查看對比分析${qualityCaseId ? "；返回案件後會顯示本次結果" : ""}。<br>
           <span class="text-muted">注意：執行完成只代表評測跑完，不代表品質通過或發布閘道通過；請對照通過率、退步案例與門檻政策。</span>
         </div>
       `;
@@ -1421,17 +1534,25 @@ async function renderResultsTab(container, allowed) {
     tbody.replaceChildren();
     for (const r of runs) {
       const tr = el("tr");
+      const candidateManifestHash =
+        r.candidate_manifest?.manifest_hash || r.candidate_manifest_hash || "";
       const passRateStr = r.summary && r.summary.pass_rate !== null ? `${Math.round(r.summary.pass_rate * 100)}%` : "-";
       const coverageStr = r.summary ? `${Math.round(r.summary.coverage * 100)}%` : "-";
+      const modeLabel = r.mode === "REAL_RAG"
+        ? "真實檢索"
+        : r.mode === "OFFLINE_BENCHMARK"
+          ? "離線基準"
+          : r.mode || "—";
+      const statusLabel = labelStatus(r.status);
 
       tr.innerHTML = `
         <td><code>${r.run_id}</code></td>
         <td><code>${r.set_version_id.slice(0, 14)}...</code></td>
-        <td>${r.mode}</td>
+        <td title="${r.mode || ""}">${modeLabel}</td>
         <td><span class="badge ${r.summary && r.summary.pass_rate >= 0.9 ? "badge-success" : "badge-warning"}">${passRateStr}</span></td>
         <td>${coverageStr}</td>
         <td>$${r.actual_cost_usd}</td>
-        <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}">${r.status}</span></td>
+        <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}" title="${r.status || ""}">${statusLabel}</span></td>
         <td>
           <button class="btn-secondary btn-sm view-cases-btn">查看比對</button>
           <button class="btn-primary btn-sm eval-gate-btn" style="margin-left: 4px;">門檻判定</button>
@@ -1444,7 +1565,14 @@ async function renderResultsTab(container, allowed) {
       });
 
       tr.querySelector(".eval-gate-btn").addEventListener("click", () => {
-        showGateDecisionModal(r.run_id, r.candidate_manifest_hash, allowed);
+        if (!candidateManifestHash) {
+          showContentModal(
+            "無法執行門檻判定",
+            el("div", "error", "這筆驗收執行缺少候選版本 manifest hash，無法建立可追溯的門檻判定。請重新執行驗收。"),
+          );
+          return;
+        }
+        showGateDecisionModal(r.run_id, candidateManifestHash, allowed);
       });
 
       tbody.append(tr);
@@ -1462,27 +1590,39 @@ function renderRunSummaryCards(container, summary) {
     container.replaceChildren();
     return;
   }
+  const passRate = summary.pass_rate == null ? "—" : `${Math.round(summary.pass_rate * 100)}%`;
+  const passRateColor = summary.pass_rate == null
+    ? "#6c757d"
+    : summary.pass_rate >= 0.95
+      ? "#28a745"
+      : "#dc3545";
+  const coverage = summary.coverage == null ? "—" : `${Math.round(summary.coverage * 100)}%`;
   container.innerHTML = `
     <p class="metric-label" style="margin-bottom: 0.75rem;">下列摘要用來判斷「品質是否過關」；僅有執行紀錄不足以視為通過。</p>
-    <div class="summary-cards-grid" style="display: flex; gap: 16px; margin-bottom: 20px;">
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
+    <div class="summary-cards-grid" style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+      <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid ${passRateColor}; background: #fff;">
+        <div class="text-muted">品質通過率</div>
+        <h2 style="margin: 4px 0; color: ${passRateColor};">${passRate}</h2>
+        <small>候選版通過的可判定案例比例</small>
+      </div>
+      <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
         <div class="text-muted">新增失敗 (Regressions)</div>
         <h2 style="margin: 4px 0; color: #dc3545;">${summary.regressions ? summary.regressions.length : 0}</h2>
         <small>候選版不如基準版之案例</small>
       </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #28a745; background: #fff;">
+      <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #28a745; background: #fff;">
         <div class="text-muted">已修復 (Fixed)</div>
         <h2 style="margin: 4px 0; color: #28a745;">${summary.fixes ? summary.fixes.length : 0}</h2>
         <small>候選版成功改善之案例</small>
       </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #ffc107; background: #fff;">
+      <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #ffc107; background: #fff;">
         <div class="text-muted">重大失敗 (Critical)</div>
         <h2 style="margin: 4px 0; color: #856404;">${summary.critical_failures ? summary.critical_failures.length : 0}</h2>
         <small>標記重大之失敗題數</small>
       </div>
-      <div class="card" style="flex: 1; padding: 12px; border-left: 4px solid #17a2b8; background: #fff;">
+      <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #17a2b8; background: #fff;">
         <div class="text-muted">完成比例</div>
-        <h2 style="margin: 4px 0; color: #17a2b8;">${Math.round(summary.coverage * 100)}%</h2>
+        <h2 style="margin: 4px 0; color: #17a2b8;">${coverage}</h2>
         <small>${summary.judged_cases} / ${summary.total_cases} 題已完成判定</small>
       </div>
     </div>
@@ -1747,11 +1887,14 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
     });
 
     const dec = res.decision;
-    const statusBadge = dec.status === "PASS"
+    const decisionStatus = dec.decision || dec.status || "UNKNOWN";
+    const statusBadge = decisionStatus === "PASS"
       ? '<span class="badge badge-success">✅ 通過 (PASS)</span>'
-      : dec.status === "BLOCK"
-      ? '<span class="badge badge-danger">❌ 阻擋 (BLOCK)</span>'
-      : '<span class="badge badge-warning">⚠️ 需審核 (REVIEW_REQUIRED)</span>';
+      : decisionStatus === "FAIL" || decisionStatus === "BLOCK"
+      ? '<span class="badge badge-danger">❌ 未通過 (FAIL)</span>'
+      : '<span class="badge badge-warning">⚠️ 狀態待確認</span>';
+    const blockingReasons = dec.blocking_reasons || [];
+    const metrics = dec.metrics_snapshot || {};
 
     content.innerHTML = `
       <h3>發布門檻判定結果 (Quality Gate Decision)</h3>
@@ -1759,13 +1902,13 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
         <div><strong>判定 ID:</strong> <code>${dec.decision_id}</code></div>
         <div><strong>政策:</strong> ${dec.policy_id} (v${dec.policy_version})</div>
         <div><strong>判定狀態:</strong> ${statusBadge}</div>
-        <div><strong>運作模式:</strong> ${dec.mode}</div>
+        <div><strong>運作模式:</strong> ${dec.mode_at_evaluation || "—"}</div>
         <div><strong>候選 Hash:</strong> <code>${dec.target_manifest_hash ? dec.target_manifest_hash.slice(0, 16) : ""}...</code></div>
-        <div><strong>判定時間:</strong> ${dec.decided_at}</div>
+        <div><strong>判定時間:</strong> ${dec.created_at || "—"}</div>
       </div>
       <div class="section-block">
         <h4>判定理由與分析</h4>
-        <div class="content-box">${dec.reason}</div>
+        <div class="content-box">${blockingReasons.length ? blockingReasons.join("<br>") : "未記錄阻擋原因。"}</div>
       </div>
       <div class="section-block">
         <h4>指標門檻檢核細項</h4>
@@ -1776,19 +1919,23 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
               ${r.passed ? "✅ 符合" : "❌ 不符"}
               <span class="text-muted">(${r.details || ""})</span>
             </li>
-          `).join("") || "<li>無細部規則紀錄</li>"}
+          `).join("") || `
+            <li>候選通過率：${metrics.pass_rate == null ? "—" : `${Math.round(metrics.pass_rate * 100)}%`}</li>
+            <li>判定覆蓋率：${metrics.coverage == null ? "—" : `${Math.round(metrics.coverage * 100)}%`}</li>
+            <li>退步案例：${Array.isArray(metrics.regressions) ? metrics.regressions.length : "—"}</li>
+          `}
         </ul>
       </div>
-      ${(dec.blocking_reasons && dec.blocking_reasons.length) ? `
+      ${blockingReasons.length ? `
       <div class="alert alert-danger" style="margin-top: 12px;">
         <strong>阻擋原因：</strong><br>
-        ${dec.blocking_reasons.join("<br>")}
+        ${blockingReasons.join("<br>")}
       </div>` : ""}
       <div id="waiver-section" style="margin-top: 16px;"></div>
     `;
 
     const waiverSection = content.querySelector("#waiver-section");
-    if (dec.status !== "PASS" && allowed.has("ops.evals.write")) {
+    if (decisionStatus !== "PASS" && allowed.has("ops.evals.write")) {
       const waiverBtn = el("button", "btn-secondary", "申請例外放行 (Request Waiver)");
       waiverBtn.addEventListener("click", async () => {
         const waiverReason = prompt("請輸入申請例外放行原因 (須經雙人審核)：");

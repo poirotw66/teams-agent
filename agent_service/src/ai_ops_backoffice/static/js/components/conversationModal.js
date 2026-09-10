@@ -6,6 +6,7 @@ import { buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { navigateReturnTo } from "../app/returnTo.js";
 import { badge } from "./badges.js";
 import { showContentModal } from "./modal.js";
+import { closeModalDialog, openModalDialog } from "./modalA11y.js";
 import { formatAssistantHtml, formatTaipeiDateTime, labelRoute } from "../app/labels.js";
 
 function routeLabel(route) {
@@ -95,10 +96,7 @@ async function openSourcePreview(source, button) {
 }
 
 function closeModalRoot() {
-  const root = document.getElementById("modal-root");
-  if (!root) return;
-  root.hidden = true;
-  root.replaceChildren();
+  closeModalDialog();
 }
 
 function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, selectedTurnId } = {}) {
@@ -410,6 +408,7 @@ export function showConversationModal(detail, conversationId = detail.conversati
   headerActions.style.alignItems = "center";
 
   const close = el("button", "btn-modal-close", "關閉");
+  close.type = "button";
   close.addEventListener("click", () => closeModalRoot());
   headerActions.append(close);
   header.append(heading, headerActions);
@@ -421,4 +420,5 @@ export function showConversationModal(detail, conversationId = detail.conversati
     }),
   );
   root.append(modal);
+  openModalDialog(root, modal, { titleElement: heading, initialFocus: close });
 }

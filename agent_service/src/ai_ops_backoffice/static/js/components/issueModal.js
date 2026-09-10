@@ -6,6 +6,7 @@ import { navigateTo } from "../app/navigation.js";
 import { periodParams } from "./period.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { withReturnTo } from "../app/returnTo.js";
+import { closeModalDialog, openModalDialog } from "./modalA11y.js";
 
 function periodToNavFilters(period) {
   if (period?.preset === "custom") {
@@ -29,10 +30,7 @@ function periodLabel(period) {
 }
 
 function closeIssueModalRoot() {
-  const root = document.getElementById("modal-root");
-  if (!root) return;
-  root.hidden = true;
-  root.replaceChildren();
+  closeModalDialog();
 }
 
 export async function showIssueDetailModal(issueTypeId, period = { preset: "30d" }) {
@@ -73,6 +71,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
   titleWrap.append(heading);
 
   const close = el("button", "btn-modal-close", "✕ 關閉");
+  close.type = "button";
   close.addEventListener("click", () => closeIssueModalRoot());
   header.append(titleWrap, close);
 
@@ -80,6 +79,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
   body.append(el("p", "empty", "正在分析此問題之處理分流、回答依據與負評反饋…"));
   modal.append(header, body);
   root.append(modal);
+  openModalDialog(root, modal, { titleElement: heading, initialFocus: close });
 
   try {
     const params = periodParams(period);
@@ -265,8 +265,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
           actionBtn.style.padding = "0.15rem 0.5rem";
           actionBtn.style.marginLeft = "0.5rem";
           actionBtn.addEventListener("click", () => {
-            root.hidden = true;
-            root.replaceChildren();
+            closeIssueModalRoot();
             navigateTo("knowledge", { query: doc });
           });
           li.append(actionBtn);
@@ -297,8 +296,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
           actionBtn.style.padding = "0.15rem 0.5rem";
           actionBtn.style.marginLeft = "0.5rem";
           actionBtn.addEventListener("click", () => {
-            root.hidden = true;
-            root.replaceChildren();
+            closeIssueModalRoot();
             navigateTo("faq", { query: key });
           });
           li.append(actionBtn);

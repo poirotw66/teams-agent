@@ -54,8 +54,11 @@ export function nextActionLabel(action) {
 export function lifecycleStages(detail = {}) {
   const status = String(detail.document?.status || detail.status || "").toUpperCase();
   const hasPublished = Boolean(detail.published_version);
-  const publishFailed = status === "PUBLISH_FAILED";
-  const indexing = status === "PUBLISHING";
+  const deployment = detail.deployment || {};
+  const indexStatus = String(deployment.indexStatus || "UNKNOWN").toUpperCase();
+  const agentStatus = String(deployment.agentStatus || "UNKNOWN").toUpperCase();
+  const publishFailed = status === "PUBLISH_FAILED" || agentStatus === "SYNC_FAILED";
+  const indexing = status === "PUBLISHING" || indexStatus === "PENDING_INDEX" || agentStatus === "SYNCING";
   const stages = [
     {
       id: "draft",
@@ -71,16 +74,24 @@ export function lifecycleStages(detail = {}) {
     },
     {
       id: "published",
-      label: publishFailed ? "發布失敗" : indexing ? "發布／索引中" : "已發布",
+      label: publishFailed ? "發布／同步失敗" : status === "PUBLISHING" ? "發布中" : "已發布",
       done: status === "PUBLISHED" || (hasPublished && !publishFailed && !indexing),
-      current: indexing || publishFailed || (status === "PUBLISHED" && !hasPublished),
+      current: status === "PUBLISHING" || publishFailed || (status === "PUBLISHED" && !hasPublished),
       warn: publishFailed,
     },
     {
+      id: "index",
+      label: indexStatusLabel(indexStatus),
+      done: indexStatus === "INDEXED",
+      current: indexStatus === "PENDING_INDEX" || indexStatus === "NOT_PARSED",
+      warn: indexStatus === "NOT_INDEXED" || indexStatus === "NOT_PARSED",
+    },
+    {
       id: "agent",
-      label: hasPublished ? "Agent 可使用正式版" : "Agent 尚未使用新版",
-      done: hasPublished && status === "PUBLISHED",
-      current: hasPublished && status === "PUBLISHED",
+      label: agentStatusLabel(agentStatus),
+      done: agentStatus === "USING_VERSION",
+      current: agentStatus === "SYNCING",
+      warn: agentStatus === "SYNC_FAILED" || agentStatus === "STALE" || agentStatus === "UNKNOWN",
     },
   ];
   return stages;
@@ -106,4 +117,37 @@ export function audienceLabel(audienceType, groupIds = []) {
 export function releaseLabel(releaseId) {
   if (!releaseId) return "尚未發布";
   return "已發布至 Teams 知識庫";
+}
+
+export function indexStatusLabel(status) {
+  return {
+    INDEXED: "已完成索引",
+    PENDING_INDEX: "索引更新中",
+    NOT_INDEXED: "尚未建立索引",
+    NOT_PARSED: "尚未完成解析",
+    UNKNOWN: "索引狀態未知",
+  }[String(status || "UNKNOWN").toUpperCase()] || String(status || "索引狀態未知");
+}
+
+export function agentStatusLabel(status) {
+  return {
+    USING_VERSION: "Agent 已使用新版",
+    SYNCING: "Agent 同步中",
+    SYNC_FAILED: "Agent 同步失敗",
+    STALE: "Agent 尚未使用新版",
+    NOT_APPLICABLE: "Agent 尚未使用版本",
+    UNKNOWN: "Agent 使用版本未知",
+  }[String(status || "UNKNOWN").toUpperCase()] || String(status || "Agent 使用版本未知");
+}
+
+export function releaseStatusLabel(status) {
+  return {
+    ACTIVE: "已生效（Agent 已回報）",
+    DEPLOYING: "發布完成，等待生效",
+    BUILDING: "建立中",
+    READY: "待啟用",
+    RELOAD_FAILED: "Agent 生效失敗",
+    ROLLED_BACK: "已取代",
+    FAILED: "建立失敗",
+  }[String(status || "").toUpperCase()] || String(status || "尚無 release");
 }

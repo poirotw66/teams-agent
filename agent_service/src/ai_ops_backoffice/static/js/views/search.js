@@ -3,7 +3,7 @@ import { actorCapabilities } from "../app/capabilities.js";
 import { presentSystemPage } from "../app/adminChrome.js";
 import { createPageController } from "../app/lifecycle.js";
 import { badge } from "../components/badges.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { showQualityCaseDetail } from "./quality.js";
 
@@ -66,11 +66,7 @@ function openSearchItemDetail(item) {
 
     const navBtn = el("button", "", "前往此資源頁面");
     navBtn.addEventListener("click", () => {
-      const root = document.getElementById("modal-root");
-      if (root) {
-        root.hidden = true;
-        root.replaceChildren();
-      }
+      closeContentModal();
       window.location.hash = targetHash;
     });
     actions.append(navBtn);

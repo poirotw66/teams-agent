@@ -23,6 +23,64 @@ import { focusPendingTab, wireTabList } from "./tabs.js";
 import { wireDocumentViewer } from "../../markdown.js?v=pdf-img-20260908c";
 import { renderLifecycleStrip } from "../../labels.js";
 
+async function loadDeploymentState(documentId, detail) {
+  const publishedVersionId =
+    detail.document?.current_published_version_id || detail.published_version?.version_id || "";
+  try {
+    const [dashboard, releasesPayload] = await Promise.all([
+      api("/api/dashboard"),
+      api("/api/releases"),
+    ]);
+    const releases = Array.isArray(releasesPayload)
+      ? releasesPayload
+      : (releasesPayload?.items || []);
+    const activeReleaseId = dashboard?.active_release_id || "";
+    const activeRelease = releases.find((item) => item.release_id === activeReleaseId) || null;
+    const manifestEntry = activeRelease?.manifest?.find(
+      (item) => item.document_id === documentId,
+    ) || null;
+    const versionInActiveRelease = Boolean(
+      publishedVersionId && manifestEntry?.version_id === publishedVersionId,
+    );
+    const releaseStatus = String(activeRelease?.status || "").toUpperCase();
+    let indexStatus = "UNKNOWN";
+    let agentStatus = "UNKNOWN";
+    if (!publishedVersionId) {
+      indexStatus = "NOT_INDEXED";
+      agentStatus = "NOT_APPLICABLE";
+    } else if (releaseStatus === "ACTIVE") {
+      indexStatus = versionInActiveRelease ? "INDEXED" : "PENDING_INDEX";
+      agentStatus = versionInActiveRelease ? "USING_VERSION" : "STALE";
+    } else if (["BUILDING", "READY", "DEPLOYING"].includes(releaseStatus)) {
+      indexStatus = "PENDING_INDEX";
+      agentStatus = "SYNCING";
+    } else if (releaseStatus === "RELOAD_FAILED") {
+      indexStatus = versionInActiveRelease ? "INDEXED" : "PENDING_INDEX";
+      agentStatus = "SYNC_FAILED";
+    } else {
+      indexStatus = "NOT_INDEXED";
+      agentStatus = "STALE";
+    }
+    return {
+      status: "available",
+      activeReleaseId,
+      activeReleaseStatus: releaseStatus,
+      activeRelease,
+      manifestVersionId: manifestEntry?.version_id || "",
+      publishedVersionId,
+      indexStatus,
+      agentStatus,
+    };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      indexStatus: "UNKNOWN",
+      agentStatus: "UNKNOWN",
+      errorMessage: error?.message || "無法取得發布與 Agent 狀態",
+    };
+  }
+}
+
 function renderTabContent(tab, documentId, detail, cases, runsByCase) {
   if (tab === "overview") return renderOverviewTab(detail);
   if (tab === "review") return renderReviewTab(detail, cases, runsByCase);
@@ -72,6 +130,7 @@ export async function renderDocumentDetailView(app, documentId, tab = "overview"
 
   try {
     const detail = await api(`/api/documents/${documentId}`);
+    detail.deployment = await loadDeploymentState(documentId, detail);
     const visibleTabs = getVisibleTabs(detail);
     if (!visibleTabs.some((item) => item.id === tab)) {
       tab = "overview";

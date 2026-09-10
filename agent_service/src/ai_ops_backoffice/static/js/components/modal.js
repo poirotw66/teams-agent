@@ -1,4 +1,5 @@
 import { el } from "../api.js";
+import { closeModalDialog, openModalDialog } from "./modalA11y.js";
 
 export function showContentModal(title, content) {
   // A few detail views naturally have a DOM node but no separate heading.
@@ -14,12 +15,12 @@ export function showContentModal(title, content) {
   }
   title = title == null || title === "" ? "詳細內容" : String(title);
   const root = document.getElementById("modal-root");
+  if (!root) return;
   root.hidden = false;
   root.replaceChildren();
   root.onclick = (e) => {
     if (e.target === root) {
-      root.hidden = true;
-      root.replaceChildren();
+      closeContentModal();
     }
   };
   const modal = el("section", "modal");
@@ -35,18 +36,20 @@ export function showContentModal(title, content) {
   heading.style.margin = "0";
 
   const close = el("button", "btn-modal-close", "✕ 關閉");
+  close.type = "button";
   close.addEventListener("click", () => {
-    root.hidden = true;
-    root.replaceChildren();
+    closeContentModal();
   });
   header.append(heading, close);
   modal.append(header, content);
   root.append(modal);
+  openModalDialog(root, modal, {
+    titleElement: heading,
+    initialFocus: () =>
+      content.querySelector("input, select, textarea, button, a[href]") || close,
+  });
 }
 
 export function closeContentModal() {
-  const root = document.getElementById("modal-root");
-  if (!root) return;
-  root.hidden = true;
-  root.replaceChildren();
+  closeModalDialog();
 }

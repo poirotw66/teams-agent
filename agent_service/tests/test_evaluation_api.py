@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.settings import BackofficeSettings
 
@@ -31,6 +32,8 @@ def _test_settings(tmp_path: Path) -> BackofficeSettings:
         governance_store_path=tmp_path / "governance.json",
         eval_store_mode="FILE",
         eval_store_path=tmp_path / "golden_evals.json",
+        quality_store_mode="FILE",
+        quality_store_path=tmp_path / "quality.json",
     )
 
 
@@ -191,3 +194,62 @@ def test_evaluations_api_full_flow(tmp_path: Path):
     )
     assert export_res.status_code == 200
     assert "VPN 設定指引" in export_res.json()["content"]
+
+
+def test_quality_case_exposes_quality_case_sourced_evaluation_candidate(tmp_path: Path):
+    app = create_app(_test_settings(tmp_path))
+    client = TestClient(app)
+    kadmin = auth_headers("KNOWLEDGE_ADMIN", "quality_author")
+    actor = ActorContext(
+        "quality_author",
+        "Knowledge Admin",
+        "KNOWLEDGE_ADMIN",
+        ("IT Service Desk",),
+        "local-development",
+    )
+
+    candidate = app.state.quality_service.add_candidate(
+        source_type="MANUAL",
+        case_type="KNOWLEDGE_GAP",
+        title="VPN 驗收閉環測試",
+        description="VPN 無法連線時的處理指引",
+        issue_type_id="vpn.connection_failed",
+        question_cluster_id=None,
+        owner_unit_id="IT Service Desk",
+        actor=actor,
+    )["candidate"]
+    merge_res = client.post(
+        "/api/quality-candidates/merge",
+        headers=kadmin,
+        json={
+            "candidate_ids": [candidate["candidate_id"]],
+            "title": "VPN 驗收閉環測試",
+            "description": "VPN 無法連線時的處理指引",
+            "priority": "MEDIUM",
+            "assignee_id": "quality_author",
+            "target_due_at": None,
+        },
+    )
+    assert merge_res.status_code == 200, merge_res.text
+    quality_case_id = merge_res.json()["case"]["case_id"]
+
+    eval_res = client.post(
+        "/api/evaluations/cases",
+        headers=kadmin,
+        json={
+            "title": "VPN 改善驗收候選",
+            "query": "VPN 無法連線時要如何處理？",
+            "owner_unit_id": "IT Service Desk",
+            "source_type": "QUALITY_CASE",
+            "source_id": quality_case_id,
+            "metadata": {"quality_case_id": quality_case_id},
+        },
+    )
+    assert eval_res.status_code == 201, eval_res.text
+
+    detail_res = client.get(f"/api/quality-cases/{quality_case_id}", headers=kadmin)
+    assert detail_res.status_code == 200, detail_res.text
+    linked = detail_res.json()["evaluation_candidates"]
+    assert len(linked) == 1
+    assert linked[0]["case"]["case_id"] == eval_res.json()["case"]["case_id"]
+    assert linked[0]["current_revision"]["provenance"]["source_id"] == quality_case_id

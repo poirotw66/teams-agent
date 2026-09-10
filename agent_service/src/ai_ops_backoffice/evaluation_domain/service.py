@@ -215,6 +215,8 @@ class EvaluationService:
         tags: tuple[str, ...] | None = None,
         criticality: str | None = None,
         source_health: str | None = None,
+        source_type: ProvenanceSourceType | None = None,
+        source_id: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         self._authorize(actor, "ops.evals.read")
@@ -230,6 +232,11 @@ class EvaluationService:
 
             current_rev = self._repo.get_revision(case.current_revision_id)
             if not current_rev:
+                continue
+
+            if source_type and current_rev.provenance.source_type != source_type:
+                continue
+            if source_id and current_rev.provenance.source_id != source_id:
                 continue
 
             if status and current_rev.status != status:

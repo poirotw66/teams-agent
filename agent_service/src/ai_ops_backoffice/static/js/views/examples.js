@@ -1,8 +1,10 @@
 import { api, el } from "../api.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal } from "../components/modal.js";
 import { faqField, exampleSelect } from "../components/forms.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
+import { loadNavFilters } from "../app/navigation.js";
+import { navigateReturnTo, parseReturnTo } from "../app/returnTo.js";
 
 
 async function fetchExampleOptions() {
@@ -170,7 +172,7 @@ async function showExampleCreateModal() {
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(examplePayload(form)),
       });
-      document.getElementById("modal-root").hidden = true;
+      closeContentModal();
       await renderExamples();
       await showExampleDetail(created.example.example_id);
     } catch (error) {
@@ -280,6 +282,13 @@ export async function renderExamples() {
   const app = document.getElementById("app");
   const panel = el("section", "panel");
   const allowed = actorCapabilities();
+  const nav = loadNavFilters();
+  if (parseReturnTo(nav.returnTo)) {
+    const back = el("button", "button-link", "← 返回改善案件");
+    back.type = "button";
+    back.addEventListener("click", () => navigateReturnTo("workHub", {}));
+    panel.append(back);
+  }
   const actions = el("div", "filter-bar");
   const sourceType = el("select");
   sourceType.innerHTML = `

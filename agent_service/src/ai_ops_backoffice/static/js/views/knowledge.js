@@ -41,7 +41,6 @@ export async function renderKnowledgeDocument() {
   const app = document.getElementById("app");
   const filters = loadNavFilters();
   const documentId = filters.documentId;
-  const caseId = filters.caseId;
   if (!documentId) {
     app.replaceChildren(el("div", "error", "缺少文件 ID。請從品質案件或文件清單進入。"));
     return;
@@ -52,48 +51,18 @@ export async function renderKnowledgeDocument() {
     );
     return;
   }
-  try {
-    const payload = await api(`/api/knowledge/documents/${encodeURIComponent(documentId)}`);
-    const document = payload.document || payload;
-    const panel = el("section", "panel");
-    panel.append(el("h2", "", document.title || documentId));
-    panel.append(
-      el("p", "metric-label", `知識營運／文件／${document.title || documentId}`),
-    );
-    if (caseId) {
-      const back = el("button", "", "返回品質案件");
-      back.addEventListener("click", () => navigateTo("quality", { caseId }));
-      panel.append(back);
-    }
-    panel.append(
-      el("p", "", `狀態：${document.lifecycle_status || document.status || "-"}`),
-      el("p", "", `負責單位：${(document.owner_unit_ids || []).join(", ") || "-"}`),
-      el(
-        "p",
-        "metric-label",
-        `文件 ID（進階）：${document.document_id || documentId}`,
-      ),
-    );
-    const draft = document.draft || document.current_draft;
-    if (draft?.markdown || draft?.content) {
-      const pre = el("pre");
-      pre.textContent = String(draft.markdown || draft.content).slice(0, 8000);
-      panel.append(el("h3", "", "草稿內容預覽"), pre);
-    } else if (payload.draft_markdown) {
-      const pre = el("pre");
-      pre.textContent = String(payload.draft_markdown).slice(0, 8000);
-      panel.append(el("h3", "", "草稿內容預覽"), pre);
-    } else {
-      panel.append(el("p", "", "目前沒有可預覽的草稿正文（可能尚未建立修訂）。"));
-    }
-    app.replaceChildren(panel);
-  } catch (error) {
-    const message =
-      error.message === "FORBIDDEN"
-        ? "沒有知識讀取權限（knowledge.read）。"
-        : error.message;
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", message));
-  }
+
+  // Source references used to land on a minimal summary page. That page only
+  // exposed the lifecycle value and could not answer T3's key question:
+  // whether approval, publication, indexing, and Agent consumption had each
+  // completed. Reuse the canonical portal detail view so every entry point
+  // shows the same lifecycle strip, version evidence, content, and allowed
+  // actions. Preserve caseId so a document opened from a quality case can
+  // still return directly to that case.
+  await renderNativeKnowledgePortal(app, getCapabilities(), navigateTo, {
+    ...filters,
+    sub: `knowledge/${documentId}`,
+  });
 }
 
 async function renderKnowledge() {
@@ -625,7 +594,7 @@ function showFaqCreateModal(panel) {
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(faqPayload(form)),
       });
-      document.getElementById("modal-root").hidden = true;
+      closeContentModal();
       await renderFaqManagement(panel);
       showFaqDetail(created.faq.faq_id, panel);
     } catch (error) {

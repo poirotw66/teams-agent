@@ -93,6 +93,46 @@ test("BU shell live E2E: primary nav, five task pages, no classic switcher", asy
     assert.equal(await page.$(".workspace-switcher"), null, "classic workspace switcher must be hidden");
     assert.ok(await page.$("body.bu-shell-v1"), "bu-shell-v1 body class missing");
 
+    // Shared modal contract: keyboard users enter the dialog, get a semantic
+    // dialog boundary, and return to the trigger when it closes.
+    const roleButton = await page.$("#meta-panel button[title*='切換開發測試身分']");
+    assert.ok(roleButton, "role switcher trigger missing");
+    await roleButton.click();
+    await page.waitForSelector("#modal-root:not([hidden]) [role=dialog]", { timeout: 5000 });
+    const modalState = await page.$eval("#modal-root [role=dialog]", (modal) => ({
+      modal: modal.getAttribute("aria-modal"),
+      labelledBy: modal.getAttribute("aria-labelledby"),
+      focusInside: modal.contains(document.activeElement),
+    }));
+    assert.equal(modalState.modal, "true", "modal must expose aria-modal");
+    assert.ok(modalState.labelledBy, "modal must reference its heading");
+    assert.equal(modalState.focusInside, true, "focus must enter the modal");
+    await page.keyboard.down("Shift");
+    await page.keyboard.press("Tab");
+    await page.keyboard.up("Shift");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.textContent?.trim().startsWith("✕ 關閉")),
+      true,
+      "reverse Tab from the first control must wrap to the close control",
+    );
+    await page.keyboard.press("Tab");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.closest("#modal-root [role=dialog]") !== null),
+      true,
+      "forward Tab must remain inside the dialog",
+    );
+    await page.keyboard.press("Escape");
+    assert.equal(
+      await page.$eval("#modal-root", (root) => root.hidden),
+      true,
+      "Escape must close the modal",
+    );
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.matches("#meta-panel button.meta-chip")),
+      true,
+      "closing the modal must restore focus to its trigger",
+    );
+
     // Task 1: 我的工作
     await page.waitForFunction(
       () =>
@@ -316,22 +356,212 @@ test("BU shell live E2E: case → 修正 FAQ returnTo hop", async (t) => {
     );
 
     await page.click(".bu-return-bar a");
+    await page.waitForSelector(".bu-case-page", { timeout: 25000 });
+    assert.ok(
+      await page.evaluate((id) => location.hash.includes("quality") && location.hash.includes(id), caseId),
+      "returning from content must restore the same quality case",
+    );
+
+    const examplesHref = await page.evaluate(() => {
+      const link = [...document.querySelectorAll("a")].find((a) =>
+        (a.textContent || "").includes("案例驗證"),
+      );
+      return link?.getAttribute("href") || null;
+    });
+    assert.ok(examplesHref, "案例驗證 action missing on case detail");
+    assert.ok(/returnTo=/.test(examplesHref), `expected returnTo on examples hop, got ${examplesHref}`);
+
+    await page.goto(`${BASE}/?buShell=1${examplesHref.startsWith("#") ? examplesHref : `#${examplesHref}`}`, {
+      waitUntil: "networkidle0",
+      timeout: 45000,
+    });
     await page.waitForFunction(
-      (id) => {
-        const hash = location.hash || "";
-        const text = document.getElementById("app")?.innerText || "";
-        return (
-          hash.includes("quality") &&
-          (hash.includes("caseId=") ||
-            Boolean(document.querySelector(".bu-case-page")) ||
-            /改善案件/.test(text))
-        ) && (!id || hash.includes(id) || text.includes(id) || Boolean(document.querySelector(".bu-case-page")));
-      },
+      () => /品質案例集/.test(document.querySelector("#app")?.innerText || "") &&
+        Boolean([...document.querySelectorAll("button")].find((button) =>
+          (button.textContent || "").includes("返回改善案件"),
+        )),
+      { timeout: 20000 },
+    );
+    await page.evaluate(() => {
+      const back = [...document.querySelectorAll("button")].find((button) =>
+        (button.textContent || "").includes("返回改善案件"),
+      );
+      back?.click();
+    });
+    await page.waitForFunction(
+      (id) => location.hash.includes("quality") &&
+        (location.hash.includes(id) || Boolean(document.querySelector(".bu-case-page"))),
+      { timeout: 25000 },
+      caseId,
+    );
+    await page.waitForFunction(
+      () => /驗收追蹤/.test(document.getElementById("app")?.innerText || ""),
+      { timeout: 20000 },
+    );
+
+    const evaluationTracking = await page.$eval("#app", (root) => ({
+      body: root.innerText,
+      goldenHref: [...root.querySelectorAll("a")].find((link) =>
+        (link.textContent || "").includes("Golden 驗收"),
+      )?.getAttribute("href") || null,
+    }));
+    assert.match(evaluationTracking.body, /驗收追蹤/);
+    assert.ok(evaluationTracking.goldenHref, "Golden 驗收 action missing on case detail");
+    assert.match(evaluationTracking.goldenHref, /evaluations/);
+    assert.match(evaluationTracking.goldenHref, /tab=runs/);
+
+    await page.goto(
+      `${BASE}/?buShell=1${evaluationTracking.goldenHref.startsWith("#") ? evaluationTracking.goldenHref : `#${evaluationTracking.goldenHref}`}`,
+      { waitUntil: "networkidle0", timeout: 45000 },
+    );
+    await page.waitForFunction(
+      () => /執行驗收/.test(document.getElementById("app")?.innerText || "") &&
+        /記錄到改善案件/.test(document.getElementById("app")?.innerText || ""),
+      { timeout: 20000 },
+    );
+    const runBackClicked = await page.evaluate(() => {
+      const back = [...document.querySelectorAll("button")].find((button) =>
+        (button.textContent || "").includes("返回改善案件"),
+      );
+      back?.click();
+      return Boolean(back);
+    });
+    assert.equal(runBackClicked, true, "run page must expose a return-to-case action");
+    await page.waitForFunction(
+      (id) => location.hash.includes("quality") && location.hash.includes(id),
       { timeout: 25000 },
       caseId,
     );
 
     const fatal = errors.filter((msg) => !/ResizeObserver|favicon/i.test(msg));
+    assert.equal(fatal.length, 0, `page errors: ${fatal.join(" | ")}`);
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+test("BU shell live E2E: document detail separates publish, index, and Agent use", async (t) => {
+  let healthy = false;
+  try {
+    const res = await fetch(`${BASE}/healthz`);
+    healthy = res.ok;
+  } catch {
+    healthy = false;
+  }
+  if (!healthy) {
+    t.skip(`backoffice not reachable at ${BASE}`);
+    return;
+  }
+
+  let browser;
+  try {
+    const puppeteer = await loadPuppeteer();
+    browser = await puppeteer.launch({
+      executablePath: CHROME,
+      headless: "new",
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+  } catch (error) {
+    t.skip(`Chrome/puppeteer unavailable: ${error.message}`);
+    return;
+  }
+
+  try {
+    const { page, errors } = await openBuPage(
+      browser,
+      "#/knowledge_ops/knowledgeDocument?documentId=doc-vpn-jumpbox-connection-e-adc7a424ee",
+    );
+    await page.waitForSelector(".lifecycle-strip", { timeout: 20000 });
+    const state = await page.$eval("#app", (root) => ({
+      stages: [...root.querySelectorAll(".lifecycle-strip__item")].map((node) => node.textContent.trim()),
+      evidence: root.querySelector("h3")?.textContent || "",
+      body: root.innerText,
+    }));
+    assert.equal(state.stages.length, 5, "document lifecycle must expose index as its own stage");
+    assert.ok(state.stages.includes("已完成索引"), `index evidence missing: ${state.stages.join(" / ")}`);
+    assert.ok(state.stages.includes("Agent 已使用新版"), `Agent evidence missing: ${state.stages.join(" / ")}`);
+    assert.match(state.body, /目前 active release/);
+    assert.match(state.body, /ver-doc-vpn-jumpbox-connection-e-adc7a424ee-1/);
+    const fatal = errors.filter((msg) => !/ResizeObserver|favicon/i.test(msg));
+    assert.equal(fatal.length, 0, `page errors: ${fatal.join(" | ")}`);
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+test("BU shell live E2E: conversation detail failure preserves filters", async (t) => {
+  let healthy = false;
+  try {
+    const res = await fetch(`${BASE}/healthz`);
+    healthy = res.ok;
+  } catch {
+    healthy = false;
+  }
+  if (!healthy) {
+    t.skip(`backoffice not reachable at ${BASE}`);
+    return;
+  }
+
+  let browser;
+  try {
+    const puppeteer = await loadPuppeteer();
+    browser = await puppeteer.launch({
+      executablePath: CHROME,
+      headless: "new",
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+  } catch (error) {
+    t.skip(`Chrome/puppeteer unavailable: ${error.message}`);
+    return;
+  }
+
+  try {
+    const { page, errors } = await openBuPage(browser, "#/knowledge_ops/conversations");
+    const conversationId = await page.evaluate(async () => {
+      const res = await fetch("/api/conversations?limit=1", {
+        headers: {
+          "X-Backoffice-User-Id": "e2e.admin",
+          "X-Backoffice-Role": "SYSTEM_ADMIN",
+          "X-Backoffice-Owner-Units": "IT",
+        },
+      });
+      const data = await res.json();
+      return data.items?.[0]?.conversationId || null;
+    });
+    if (!conversationId) {
+      t.skip("no conversation available for detail failure injection");
+      return;
+    }
+
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === `/api/conversations/${conversationId}`) {
+        void request.abort();
+      } else {
+        void request.continue();
+      }
+    });
+    await page.goto(
+      `${BASE}/?buShell=1#/knowledge_ops/conversations?conversationId=${encodeURIComponent(conversationId)}&query=VPN&preset=7d`,
+      { waitUntil: "networkidle0", timeout: 45000 },
+    ).catch(() => {});
+    await page.waitForFunction(
+      () => /不是「查無資料」/.test(document.getElementById("app")?.innerText || ""),
+      { timeout: 20000 },
+    );
+    assert.equal(
+      await page.$eval("#conversation-query-filter", (input) => input.value),
+      "VPN",
+      "detail failure must keep the keyword filter",
+    );
+    assert.ok(
+      await page.$$eval("button", (nodes) =>
+        nodes.some((node) => (node.textContent || "").includes("重試這則對話")),
+      ),
+      "detail failure must offer a scoped retry",
+    );
+    const fatal = errors.filter((msg) => !/ResizeObserver|favicon|ERR_FAILED/i.test(msg));
     assert.equal(fatal.length, 0, `page errors: ${fatal.join(" | ")}`);
   } finally {
     if (browser) await browser.close();

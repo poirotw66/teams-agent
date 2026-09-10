@@ -1,4 +1,5 @@
 import { el } from "../api.js";
+import { closeModalDialog } from "../components/modalA11y.js";
 import {
   NAV_FILTERS_KEY,
   WORKSPACE_KEY,
@@ -150,8 +151,7 @@ export async function navigateTo(view, filters = {}, options = {}) {
   // must not remain visually over the new page.
   const modalRoot = document.getElementById("modal-root");
   if (modalRoot) {
-    modalRoot.hidden = true;
-    modalRoot.replaceChildren();
+    closeModalDialog(modalRoot);
   }
   if (workspace) {
     sessionStorage.setItem(WORKSPACE_KEY, workspace);

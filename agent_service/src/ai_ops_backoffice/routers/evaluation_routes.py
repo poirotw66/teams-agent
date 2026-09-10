@@ -143,6 +143,8 @@ def register_evaluation_routes(
         behavior: str | None = None,
         criticality: str | None = None,
         source_health: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
         limit: int = Query(default=50, ge=1, le=100),
         actor: ActorContext = Depends(current_actor),
     ) -> dict[str, Any]:
@@ -155,6 +157,8 @@ def register_evaluation_routes(
             behavior=behavior,
             criticality=criticality,
             source_health=source_health,
+            source_type=source_type,
+            source_id=source_id,
             limit=limit,
         )
         return {"items": items, "total": len(items)}

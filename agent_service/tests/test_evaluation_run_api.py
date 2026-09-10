@@ -157,11 +157,13 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
             "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
             "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
             "mode": "REAL_RAG",
+            "quality_case_id": "quality-case-trace-1",
         },
     )
     assert run_res.status_code == 202
     run_id = run_res.json()["run"]["run_id"]
     assert run_res.json()["run"]["status"] in {"RUNNING", "COMPLETED"}
+    assert run_res.json()["run"]["quality_case_id"] == "quality-case-trace-1"
 
     # 5. List Runs
     list_runs_res = client.get("/api/evaluations/runs", headers=aiadmin_headers)
@@ -219,7 +221,7 @@ def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
     # Verify index.html contains updated asset version
     index_res = client.get("/")
     assert index_res.status_code == 200
-    assert "ops-ui-20260910f" in index_res.text
+    assert "ops-ui-20260911t4e" in index_res.text
 
     aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
     # Verify preflight with non-existent set version returns 200 with is_valid=False and blocking_errors

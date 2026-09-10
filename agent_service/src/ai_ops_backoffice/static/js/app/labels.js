@@ -43,6 +43,10 @@ const STATUS_LABELS = {
   NORMAL: "一般",
   OPEN: "待處理",
   CLOSED: "已關閉",
+  COMPLETED: "已完成",
+  RUNNING: "執行中",
+  PENDING: "待執行",
+  CANCELLED: "已取消",
 };
 
 const BEHAVIOR_LABELS = {

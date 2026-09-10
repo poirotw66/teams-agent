@@ -27,6 +27,7 @@ class CreateRunPayload(BaseModel):
     mode: Literal["OFFLINE_BENCHMARK", "REAL_RAG"] = "REAL_RAG"
     limits: dict[str, Any] = Field(default_factory=dict)
     repetitions: int = Field(default=1, ge=1, le=5)
+    quality_case_id: str | None = None
     idempotency_key: str | None = None
 
 
@@ -88,6 +89,7 @@ def register_evaluation_run_routes(
             mode=payload.mode,
             limits=payload.limits,
             repetitions=payload.repetitions,
+            quality_case_id=payload.quality_case_id,
             idempotency_key=key,
             correlation_id=correlation_id,
             actor=actor,
