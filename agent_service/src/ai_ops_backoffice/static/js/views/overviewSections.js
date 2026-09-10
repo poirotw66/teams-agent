@@ -808,36 +808,45 @@ export function buildSplitAnalyticsGrid(data, metrics) {
   const funnelCard = el("div", "analytics-card");
   const funnelHeader = el("div", "analytics-card-header");
   const funnelTitleGroup = el("div");
+  const stageSum = kAns + fAns + hCount + noAnsCount + clarCount;
+  const pctBase = stageSum > 0 ? stageSum : 1;
   funnelTitleGroup.append(
-    el("h3", "analytics-card-title", "服務處置分流 (Resolution Breakdown)"),
-    el("p", "analytics-card-subtitle", "依各類回覆處置結果評估 AI 解答成效與轉單比例"),
+    el("h3", "analytics-card-title", isBuShellEnabled() ? "服務處置分布" : "服務處置分流 (Resolution Breakdown)"),
+    el(
+      "p",
+      "analytics-card-subtitle",
+      "各處置依事件獨立累計，同一問題可能出現多種處置；百分比分母為處置事件加總，非問題提取總數。",
+    ),
   );
-  funnelHeader.append(funnelTitleGroup, badge(`共 ${(data.issueOccurrenceCount || convCount).toLocaleString()} 次處理`, "neutral"));
+  funnelHeader.append(
+    funnelTitleGroup,
+    badge(`處置事件合計 ${stageSum.toLocaleString()}（可重複計數）`, "neutral"),
+  );
 
   const funnelBars = el("div", "funnel-bars-container");
   const funnelStages = [
     {
-      title: "企業知識庫直答 (Knowledge)",
+      title: "企業知識庫直答",
       count: kAns,
       color: "emerald",
     },
     {
-      title: "真人客服轉接 (Live Agent)",
+      title: "真人客服轉接",
       count: hCount,
       color: "sapphire",
     },
     {
-      title: "無確認答案 (No Knowledge)",
+      title: "無確認答案",
       count: noAnsCount,
       color: "rose",
     },
     {
-      title: "需反問澄清 (Clarification)",
+      title: "需反問澄清",
       count: clarCount,
       color: "amber",
     },
     {
-      title: "FAQ 命中直答 (FAQ Hit)",
+      title: "FAQ 命中直答",
       count: fAns,
       color: "purple",
     },
@@ -845,7 +854,7 @@ export function buildSplitAnalyticsGrid(data, metrics) {
 
   for (const stage of funnelStages) {
     const stageRow = el("div", "funnel-stage-row");
-    const pct = ((stage.count / totalIssues) * 100).toFixed(1);
+    const pct = ((stage.count / pctBase) * 100).toFixed(1);
     stageRow.innerHTML = `
         <div class="funnel-stage-meta">
           <span class="funnel-stage-title">${stage.title}</span>
@@ -857,16 +866,25 @@ export function buildSplitAnalyticsGrid(data, metrics) {
       `;
     funnelBars.append(stageRow);
   }
+  if (data.issueOccurrenceCount != null) {
+    funnelBars.append(
+      el(
+        "p",
+        "metric-label",
+        `問題提取總數 ${Number(data.issueOccurrenceCount).toLocaleString()}（另一口徑，不可與上方百分比直接對照）。`,
+      ),
+    );
+  }
   funnelCard.append(funnelHeader, funnelBars);
 
   const issuesCard = el("div", "analytics-card");
   const issuesHeader = el("div", "analytics-card-header");
   const issuesTitleGroup = el("div");
   issuesTitleGroup.append(
-    el("h3", "analytics-card-title", "Top 問題類型排行 (Top Issues)"),
+    el("h3", "analytics-card-title", isBuShellEnabled() ? "高頻問題排行" : "Top 問題類型排行 (Top Issues)"),
     el("p", "analytics-card-subtitle", "進線高頻問題統計，點選可直接進入鑽取診斷"),
   );
-  const issuesAllLink = drillLink("查看全部 Issue →", "issues");
+  const issuesAllLink = drillLink("查看全部問題 →", "issues");
   issuesHeader.append(issuesTitleGroup, issuesAllLink);
 
   const issuesList = el("div", "issues-list-container");
@@ -895,8 +913,8 @@ export function buildSplitAnalyticsGrid(data, metrics) {
 
       const actions = el("div", "issue-rank-actions");
       actions.append(
-        drillLink("🔍 查看 Issue 分析", "issues", { issueTypeId: item.issueTypeId }),
-        drillLink("🔀 路由規則", "routes", { issueTypeId: item.issueTypeId }),
+        drillLink("查看問題分析", "issues", { issueTypeId: item.issueTypeId }),
+        drillLink("處理方式與回答依據", "routes", { issueTypeId: item.issueTypeId }),
       );
 
       itemRow.append(head, barWrap, actions);

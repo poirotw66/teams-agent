@@ -484,8 +484,27 @@ body.bu-shell-v1 .kpi-card {
   box-shadow: var(--shadow-xs);
 }
 
-body.bu-shell-v1 .content-guide-more summary {
-  color: var(--brand-700);
+body.bu-shell-v1 .bu-candidates-panel {
+  margin-top: 1rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .bu-candidates-panel > summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--brand-800);
+  font-size: 0.9rem;
+}
+
+body.bu-shell-v1 .bu-candidates-panel[open] {
+  background: var(--panel);
+}
+
+body.bu-shell-v1 .bu-candidates-block {
+  margin-top: 0.75rem;
 }
 
 /* Page title rhythm */

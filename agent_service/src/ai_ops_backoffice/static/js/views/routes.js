@@ -155,14 +155,17 @@ export async function renderRoutes(state = { preset: "30d" }) {
     const issueCount = (data.byIssueType || []).length;
     panel.append(
       kpiStrip([
-        { label: "路由總次數", value: formatCount(routeTotal) },
-        { label: "Route 類型數", value: formatCount((data.routeDistribution || []).length) },
-        { label: "涉及 Issue 數", value: formatCount(issueCount) },
+        { label: isBuShellEnabled() ? "處理總次數" : "路由總次數", value: formatCount(routeTotal) },
+        { label: isBuShellEnabled() ? "處理方式數" : "Route 類型數", value: formatCount((data.routeDistribution || []).length) },
+        { label: isBuShellEnabled() ? "涉及問題數" : "涉及 Issue 數", value: formatCount(issueCount) },
       ]),
     );
 
     const distTitle = el("div", "analytics-section-title");
-    distTitle.append(el("h3", "", "Route 分布"), el("span", "metric-label", "FAQ vs RAG 等處理比例一目了然"));
+    distTitle.append(
+      el("h3", "", isBuShellEnabled() ? "處理方式分布" : "Route 分布"),
+      el("span", "metric-label", isBuShellEnabled() ? "FAQ、知識檢索、轉人工等處置比例" : "FAQ vs RAG 等處理比例一目了然"),
+    );
     panel.append(distTitle);
     panel.append(
       distributionBars(

@@ -12,6 +12,8 @@ import {
   renderKnowledgePortalEntry,
 } from "./knowledge.js";
 
+let contentListsGeneration = 0;
+
 function returnLabel(view) {
   if (view === "quality") return "← 返回改善案件";
   if (view === "conversations") return "← 返回對話紀錄";
@@ -46,6 +48,7 @@ function filtersWithReturn(tab) {
 }
 
 async function renderContentLists(state = {}) {
+  const generation = ++contentListsGeneration;
   const app = document.getElementById("app");
   const navFilters = loadNavFilters();
   const tab = state.tab || navFilters.tab || "documents";
@@ -108,6 +111,9 @@ async function renderContentLists(state = {}) {
     const panel = el("section", "panel");
     app.replaceChildren(header, tabs, panel);
     await renderFaqManagement(panel);
+    if (generation !== contentListsGeneration) {
+      return;
+    }
     // Avoid duplicate page title from FAQ renderer when nested.
     const faqHeading = panel.querySelector("h2");
     if (faqHeading) {
@@ -116,22 +122,24 @@ async function renderContentLists(state = {}) {
     return;
   }
 
-  // Documents: reuse native knowledge portal list (same data path as knowledgePortal).
-  app.replaceChildren(header, tabs, el("div", "empty", "載入文件清單…"));
+  // Documents: mount portal into a dedicated container so chrome is never scooped.
   const mount = el("div", "bu-content-docs");
+  mount.append(el("div", "empty", "載入文件清單…"));
   app.replaceChildren(header, tabs, mount);
-  await renderKnowledgePortalEntry();
-  // renderKnowledgePortalEntry replaces #app — re-apply chrome after portal mount.
-  const portalRoot = document.getElementById("app");
-  const portalContent = el("div");
-  while (portalRoot.firstChild) {
-    portalContent.append(portalRoot.firstChild);
+  await renderKnowledgePortalEntry(undefined, mount);
+  if (generation !== contentListsGeneration) {
+    return;
   }
-  portalRoot.replaceChildren(header, tabs, portalContent);
+  // Ensure chrome stays singular even if portal temporarily touched ancestors.
+  if (!app.contains(header) || !app.contains(tabs) || !app.contains(mount)) {
+    app.replaceChildren(header, tabs, mount);
+  }
 }
 
 export const contentListsPage = createPageController({
   enter: async (context = {}) => renderContentLists({ tab: context.state?.tab }),
   update: async (context = {}) => renderContentLists({ tab: context.state?.tab }),
-  leave: async () => {},
+  leave: async () => {
+    contentListsGeneration += 1;
+  },
 });

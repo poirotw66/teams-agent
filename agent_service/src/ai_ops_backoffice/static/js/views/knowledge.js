@@ -20,10 +20,10 @@ import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 
-export async function renderKnowledgePortalEntry(sub) {
-  const app = document.getElementById("app");
+export async function renderKnowledgePortalEntry(sub, mountEl = null) {
+  const root = mountEl || document.getElementById("app");
   if (!canUseKnowledgeUi()) {
-    app.replaceChildren(
+    root.replaceChildren(
       el(
         "div",
         "error",
@@ -34,7 +34,7 @@ export async function renderKnowledgePortalEntry(sub) {
   }
 
   const filters = { ...loadNavFilters(), ...(sub ? { sub } : {}) };
-  await renderNativeKnowledgePortal(app, getCapabilities(), navigateTo, filters);
+  await renderNativeKnowledgePortal(root, getCapabilities(), navigateTo, filters);
 }
 
 export async function renderKnowledgeDocument() {

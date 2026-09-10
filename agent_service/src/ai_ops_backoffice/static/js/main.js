@@ -24,6 +24,7 @@ import {
   activeWorkspaceId,
   buildLocationHash,
   isSyncingLocationHash,
+  clearSyncingLocationHash,
   loadNavFilters,
   navigateTo,
   parseLocationHash,
@@ -171,6 +172,7 @@ async function boot() {
   renderTopbarActions();
   window.addEventListener("hashchange", async () => {
     if (isSyncingLocationHash()) {
+      clearSyncingLocationHash();
       return;
     }
     if (typeof window.__isKnowledgeDirty === "function" && window.__isKnowledgeDirty()) {

@@ -27,6 +27,11 @@ export function isSyncingLocationHash() {
   return syncingLocationHash;
 }
 
+/** Clear the hash-sync guard after the suppressed hashchange has run. */
+export function clearSyncingLocationHash() {
+  syncingLocationHash = false;
+}
+
 export function setKnownViews(views) {
   knownViews = new Set(views);
 }
@@ -114,9 +119,7 @@ export function syncLocationHash(view, filters = {}) {
   }
   syncingLocationHash = true;
   location.hash = next;
-  queueMicrotask(() => {
-    syncingLocationHash = false;
-  });
+  // Do not clear in a microtask: hashchange is a macrotask and must still see the guard.
 }
 
 export function routeFiltersForHash(filters = {}) {

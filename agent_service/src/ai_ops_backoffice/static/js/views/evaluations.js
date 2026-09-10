@@ -983,41 +983,54 @@ async function renderRunsTab(container, allowed) {
   container.replaceChildren();
   const box = el("div", "content-box");
   box.innerHTML = `
-    <h3>執行真實評測 (GE-2 預檢與執行)</h3>
-    <p class="text-muted">選擇固定題庫版本與受測目標 Manifest，執行左右版本比較。</p>
+    <h3>執行驗收</h3>
+    <p class="text-muted">選擇題庫版本、正式版／候選版 Prompt 與模型，先預檢再啟動比較。</p>
     <div class="form-grid">
       <div class="form-group">
-        <label>評測題庫版本</label>
+        <label for="run-set-version">評測題庫版本</label>
         <select id="run-set-version" class="form-select">
           <option value="">載入中...</option>
         </select>
       </div>
       <div class="form-group">
-        <label>基準目標 Prompt 版本 (Baseline)</label>
-        <input type="text" id="baseline-prompt" class="form-input" value="default">
+        <label for="baseline-prompt">基準（正式版）</label>
+        <select id="baseline-prompt" class="form-select">
+          <option value="">載入中...</option>
+        </select>
+        <p id="baseline-prompt-meta" class="metric-label"></p>
       </div>
       <div class="form-group">
-        <label>候選目標 Prompt 版本 (Candidate)</label>
-        <input type="text" id="candidate-prompt" class="form-input" value="candidate-v1.1">
+        <label for="candidate-prompt">候選版</label>
+        <select id="candidate-prompt" class="form-select">
+          <option value="">載入中...</option>
+        </select>
+        <p id="candidate-prompt-meta" class="metric-label"></p>
       </div>
       <div class="form-group">
-        <label>模型名稱</label>
-        <input type="text" id="target-model" class="form-input" value="gemini-2.5-flash">
-      </div>
-      <div class="form-group">
-        <label>評測模式</label>
-        <select id="run-mode" class="form-select">
-          <option value="REAL_RAG">真實檢索評測 (REAL_RAG) - 固定知識版本</option>
-          <option value="OFFLINE_BENCHMARK">基準離線評測 (OFFLINE_BENCHMARK)</option>
+        <label for="target-model">模型</label>
+        <select id="target-model" class="form-select">
+          <option value="">載入中...</option>
         </select>
       </div>
       <div class="form-group">
-        <label>最大案例上限 (選填)</label>
+        <label for="run-mode">評測模式</label>
+        <select id="run-mode" class="form-select">
+          <option value="REAL_RAG">真實檢索評測 — 固定知識版本</option>
+          <option value="OFFLINE_BENCHMARK">離線基準評測</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="run-max-cases">最大題數（選填）</label>
         <input type="number" id="run-max-cases" class="form-input" placeholder="不限制或輸入數字">
       </div>
+      <details class="bu-ops-note" id="run-advanced">
+        <summary>進階資訊（技術識別）</summary>
+        <p class="metric-label">預檢通過後會顯示 Manifest Hash 等技術欄位；日常操作不需手填版本代碼。</p>
+        <div id="run-advanced-ids" class="metric-label"></div>
+      </details>
       <div class="btn-row">
-        <button id="preflight-btn" class="btn-secondary">執行預檢 (Preflight Check)</button>
-        <button id="start-run-btn" class="btn-primary" style="display: none;">啟動驗收執行 (Start Run)</button>
+        <button id="preflight-btn" class="button-primary" type="button">執行預檢</button>
+        <button id="start-run-btn" class="button-primary" type="button" style="display: none;">啟動驗收執行</button>
       </div>
     </div>
     <div id="preflight-results" style="margin-top: 16px;"></div>
@@ -1026,23 +1039,136 @@ async function renderRunsTab(container, allowed) {
   container.append(box);
 
   const select = box.querySelector("#run-set-version");
+  const baselineSelect = box.querySelector("#baseline-prompt");
+  const candidateSelect = box.querySelector("#candidate-prompt");
+  const modelSelect = box.querySelector("#target-model");
+  const baselineMeta = box.querySelector("#baseline-prompt-meta");
+  const candidateMeta = box.querySelector("#candidate-prompt-meta");
+  const advancedIds = box.querySelector("#run-advanced-ids");
   const preflightBtn = box.querySelector("#preflight-btn");
   const startRunBtn = box.querySelector("#start-run-btn");
   const resultsDiv = box.querySelector("#preflight-results");
 
   let resolvedPreflight = null;
+  const promptOptionsByValue = new Map();
+
+  function formatTaipei(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("zh-TW", {
+        timeZone: "Asia/Taipei",
+        hour12: false,
+      });
+    } catch {
+      return String(iso);
+    }
+  }
+
+  function promptOptionLabel(version) {
+    const status = String(version.status || "").toUpperCase();
+    const isOfficial = status === "ACTIVE";
+    const kind = isOfficial ? "正式版" : "候選版";
+    const name = version.display_name || version.version || version.version_id || "未命名";
+    const updated = formatTaipei(version.activated_at || version.approved_at || version.created_at);
+    return `${kind} · ${name} · ${status || "—"} · ${updated}`;
+  }
+
+  function syncPromptMeta(selectEl, metaEl) {
+    const opt = promptOptionsByValue.get(selectEl.value);
+    if (!opt) {
+      metaEl.textContent = "";
+      return;
+    }
+    metaEl.textContent = `版本代碼 ${opt.version || opt.version_id || "—"}｜更新 ${formatTaipei(opt.activated_at || opt.approved_at || opt.created_at)}`;
+  }
 
   try {
     const setsRes = await api("/api/evaluations/sets");
     select.innerHTML = '<option value="">-- 請選擇題庫版本 --</option>';
-    for (const s of (setsRes.items || [])) {
+    for (const s of setsRes.items || []) {
       const detail = await api(`/api/evaluations/sets/${s.set_id}`);
-      for (const v of (detail.versions || [])) {
-        select.innerHTML += `<option value="${v.set_version_id}">${s.name} - ${v.version} (${v.status}, ${v.case_revision_ids.length} 題)</option>`;
+      for (const v of detail.versions || []) {
+        select.innerHTML += `<option value="${v.set_version_id}">${s.name} - ${v.version}（${v.status}，${v.case_revision_ids.length} 題）</option>`;
       }
     }
   } catch (err) {
     select.innerHTML = '<option value="">無法載入題庫版本</option>';
+  }
+
+  try {
+    const govData = await api("/api/governance/prompts");
+    const item = (govData.items || [])[0];
+    const promptId = item?.prompt?.prompt_id;
+    const activeId = item?.active?.version_id;
+    const versions = [];
+    if (promptId) {
+      const detail = await api(`/api/governance/prompts/${promptId}`);
+      versions.push(...(detail.versions || []));
+    } else if (item?.active) {
+      versions.push(item.active);
+    }
+    baselineSelect.innerHTML = "";
+    candidateSelect.innerHTML = "";
+    promptOptionsByValue.clear();
+    if (!versions.length) {
+      baselineSelect.innerHTML = '<option value="default">default（無治理版本資料）</option>';
+      candidateSelect.innerHTML = '<option value="default">default（無治理版本資料）</option>';
+    } else {
+      const sorted = [...versions].sort((a, b) => {
+        const aActive = a.version_id === activeId || a.status === "ACTIVE" ? 0 : 1;
+        const bActive = b.version_id === activeId || b.status === "ACTIVE" ? 0 : 1;
+        if (aActive !== bActive) return aActive - bActive;
+        return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+      });
+      for (const version of sorted) {
+        const value = version.version || version.version_id;
+        promptOptionsByValue.set(value, version);
+        const baselineOpt = document.createElement("option");
+        baselineOpt.value = value;
+        baselineOpt.textContent = promptOptionLabel(version);
+        baselineSelect.append(baselineOpt);
+        const candidateOpt = document.createElement("option");
+        candidateOpt.value = value;
+        candidateOpt.textContent = promptOptionLabel(version);
+        candidateSelect.append(candidateOpt);
+      }
+      const official = sorted.find((v) => v.version_id === activeId || v.status === "ACTIVE") || sorted[0];
+      const candidate =
+        sorted.find((v) => v !== official && String(v.status || "").toUpperCase() !== "ACTIVE") ||
+        sorted.find((v) => v !== official) ||
+        official;
+      baselineSelect.value = official.version || official.version_id;
+      candidateSelect.value = candidate.version || candidate.version_id;
+    }
+    syncPromptMeta(baselineSelect, baselineMeta);
+    syncPromptMeta(candidateSelect, candidateMeta);
+    baselineSelect.addEventListener("change", () => syncPromptMeta(baselineSelect, baselineMeta));
+    candidateSelect.addEventListener("change", () => syncPromptMeta(candidateSelect, candidateMeta));
+  } catch (err) {
+    baselineSelect.innerHTML = '<option value="default">default</option>';
+    candidateSelect.innerHTML = '<option value="candidate-v1.1">candidate-v1.1</option>';
+  }
+
+  try {
+    const modelsRes = await api("/api/governance/models");
+    const modelItems = modelsRes.items || [];
+    modelSelect.innerHTML = "";
+    const seen = new Set();
+    for (const entry of modelItems) {
+      const active = entry.active || {};
+      const modelId = active.model_id;
+      if (!modelId || seen.has(modelId)) continue;
+      seen.add(modelId);
+      const opt = document.createElement("option");
+      opt.value = modelId;
+      opt.textContent = `${modelId}（${active.status || "ACTIVE"} · ${active.provider || "model"}）`;
+      modelSelect.append(opt);
+    }
+    if (!modelSelect.options.length) {
+      modelSelect.innerHTML = '<option value="gemini-2.5-flash">gemini-2.5-flash</option>';
+    }
+  } catch (err) {
+    modelSelect.innerHTML = '<option value="gemini-2.5-flash">gemini-2.5-flash</option>';
   }
 
   preflightBtn.addEventListener("click", async () => {
@@ -1053,9 +1179,9 @@ async function renderRunsTab(container, allowed) {
     }
     const maxCasesVal = box.querySelector("#run-max-cases")?.value;
     const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
-    const baselinePrompt = (box.querySelector("#baseline-prompt")?.value || "").trim() || "default";
-    const candidatePrompt = (box.querySelector("#candidate-prompt")?.value || "").trim() || "candidate-v1.1";
-    const targetModel = (box.querySelector("#target-model")?.value || "").trim() || "gemini-2.5-flash";
+    const baselinePrompt = (baselineSelect.value || "").trim() || "default";
+    const candidatePrompt = (candidateSelect.value || "").trim() || baselinePrompt;
+    const targetModel = (modelSelect.value || "").trim() || "gemini-2.5-flash";
 
     resultsDiv.innerHTML = '<div class="alert alert-info">正在執行預檢中...</div>';
     try {
@@ -1079,19 +1205,21 @@ async function renderRunsTab(container, allowed) {
       if (res.is_valid) {
         resultsDiv.innerHTML = `
           <div class="alert alert-success">
-            <strong>✅ 預檢通過 (Preflight Passed)</strong><br>
+            <strong>預檢通過</strong><br>
             • 案例題數: ${res.case_count} 題<br>
-            • 預估耗費: $${res.estimated_cost_usd} USD (預估約 ${res.estimated_duration_seconds} 秒)<br>
-            • 基準 Manifest Hash: <code>${res.resolved_baseline_manifest ? res.resolved_baseline_manifest.manifest_hash.slice(0, 16) : ""}...</code><br>
-            • 候選 Manifest Hash: <code>${res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : ""}...</code>
-            ${res.warnings && res.warnings.length ? `<br>⚠️ 提醒: ${res.warnings.join("; ")}` : ""}
+            • 預估耗費: $${res.estimated_cost_usd} USD（約 ${res.estimated_duration_seconds} 秒）
+            ${res.warnings && res.warnings.length ? `<br>提醒: ${res.warnings.join("; ")}` : ""}
           </div>
+        `;
+        advancedIds.innerHTML = `
+          基準 Manifest: <code>${res.resolved_baseline_manifest ? res.resolved_baseline_manifest.manifest_hash.slice(0, 16) : ""}…</code><br>
+          候選 Manifest: <code>${res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : ""}…</code>
         `;
         startRunBtn.style.display = "inline-block";
       } else {
         resultsDiv.innerHTML = `
           <div class="alert alert-danger">
-            <strong>❌ 預檢阻擋 (Blocking Errors)</strong><br>
+            <strong>預檢阻擋</strong><br>
             ${res.blocking_errors.join("<br>")}
           </div>
         `;
@@ -1110,9 +1238,9 @@ async function renderRunsTab(container, allowed) {
     try {
       const maxCasesVal = box.querySelector("#run-max-cases")?.value;
       const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
-      const baselinePrompt = (box.querySelector("#baseline-prompt")?.value || "").trim() || "default";
-      const candidatePrompt = (box.querySelector("#candidate-prompt")?.value || "").trim() || "candidate-v1.1";
-      const targetModel = (box.querySelector("#target-model")?.value || "").trim() || "gemini-2.5-flash";
+      const baselinePrompt = (baselineSelect.value || "").trim() || "default";
+      const candidatePrompt = (candidateSelect.value || "").trim() || baselinePrompt;
+      const targetModel = (modelSelect.value || "").trim() || "gemini-2.5-flash";
       const runMode = box.querySelector("#run-mode")?.value || "REAL_RAG";
 
       const res = await api("/api/evaluations/runs", {
@@ -1135,17 +1263,17 @@ async function renderRunsTab(container, allowed) {
 
       resultsDiv.innerHTML = `
         <div class="alert alert-success">
-          <strong>評測執行完成！</strong><br>
-          Run ID: <code>${res.run.run_id}</code> | 狀態: ${res.run.status}<br>
-          已導向「驗收結果」頁籤查看對比分析。
+          <strong>評測執行完成</strong><br>
+          Run ID: <code>${res.run?.run_id || res.run_id || "—"}</code>｜狀態: ${res.run?.status || "—"}<br>
+          可至「驗收結果」頁籤查看對比分析。
         </div>
       `;
       startRunBtn.disabled = false;
-      startRunBtn.textContent = "啟動驗收執行 (Start Run)";
+      startRunBtn.textContent = "啟動驗收執行";
     } catch (err) {
       alert(`啟動評測失敗: ${err.message || err}`);
       startRunBtn.disabled = false;
-      startRunBtn.textContent = "啟動驗收執行 (Start Run)";
+      startRunBtn.textContent = "啟動驗收執行";
     }
   });
 }

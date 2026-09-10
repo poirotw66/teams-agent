@@ -142,7 +142,9 @@ function showMergeCandidatesModal(count, onConfirm) {
 export async function buildQualityLoopPanel() {
   const panel = el("section", "panel");
   const buShell = isBuShellEnabled();
-  panel.append(el(buShell ? "h3" : "h2", "", buShell ? "候選與案件" : "改善案件池"));
+  if (!buShell) {
+    panel.append(el("h2", "", "改善案件池"));
+  }
   if (buShell) {
     const steps = el("details", "bu-workflow-steps");
     steps.append(el("summary", "", "閉環步驟說明"));
@@ -190,6 +192,11 @@ export async function buildQualityLoopPanel() {
 
   const selected = new Set();
   const allCandidates = candidateData.items || [];
+  const candidateCount = candidateData.total || allCandidates.length;
+  const openCaseCount = caseData.total || (caseData.items || []).length;
+
+  // Candidate tooling mounts into this block (shown after cases under BU shell).
+  const candidatesBlock = el("div", "bu-candidates-block");
 
   // Top action bar
   const controls = el("div", "filter-bar");
@@ -227,10 +234,12 @@ export async function buildQualityLoopPanel() {
     });
     controls.append(mergeBtn);
   }
-  panel.append(controls);
+  candidatesBlock.append(controls);
 
-  const candidateSectionHeading = el("h3", "", `待合併候選（${candidateData.total || 0}）`);
-  panel.append(candidateSectionHeading);
+  const candidateSectionHeading = el("h3", "", `待整理候選（${candidateCount}）`);
+  if (!buShell) {
+    candidatesBlock.append(candidateSectionHeading);
+  }
 
   if (allCandidates.length) {
     let searchQuery = "";
@@ -293,7 +302,7 @@ export async function buildQualityLoopPanel() {
     const selectionCounter = el("span", "metric-label", `已選取 0 筆`);
 
     toolbar.append(searchInput, typeSelect, selectFilteredBtn, clearSelectionBtn, pageSizeSelect, selectionCounter);
-    panel.append(toolbar);
+    candidatesBlock.append(toolbar);
 
     const tableBox = el("div", "table-scroll-box candidate-scroll-box");
     const table = el("table", "candidate-table");
@@ -317,7 +326,7 @@ export async function buildQualityLoopPanel() {
     const tableBody = el("tbody");
     table.append(tableBody);
     tableBox.append(table);
-    panel.append(tableBox);
+    candidatesBlock.append(tableBox);
 
     const paginationBar = el("div", "candidate-pagination");
     const paginationSummary = el("span", "metric-label", "");
@@ -327,7 +336,7 @@ export async function buildQualityLoopPanel() {
     const nextBtn = el("button", "", "下一頁");
     pagerButtons.append(prevBtn, nextBtn);
     paginationBar.append(paginationSummary, pagerButtons);
-    panel.append(paginationBar);
+    candidatesBlock.append(paginationBar);
 
     function getFiltered() {
       return allCandidates.filter((item) => {
@@ -486,12 +495,12 @@ export async function buildQualityLoopPanel() {
 
     renderCandidatesTable();
   } else {
-    panel.append(el("p", "empty", "目前沒有待處理候選。"));
+    candidatesBlock.append(el("p", "empty", "目前沒有待處理候選。"));
   }
 
   // Ongoing cases section (REQ-018)
   const casesSection = el("div", "quality-cases-section");
-  const casesHeading = el("h3", "", `進行中案件（${caseData.total || 0}）`);
+  const casesHeading = el("h3", "", `進行中案件（${openCaseCount}）`);
   casesSection.append(casesHeading);
 
   const caseFilterBar = el("div", "filter-bar");
@@ -530,7 +539,26 @@ export async function buildQualityLoopPanel() {
 
   const caseScroll = el("div", "table-responsive");
   casesSection.append(caseScroll);
-  panel.append(casesSection);
+
+  if (buShell) {
+    // Daily path: established cases first; candidate triage stays collapsed.
+    panel.append(casesSection);
+    const candidatesPanel = el("details", "bu-candidates-panel");
+    candidatesPanel.open = openCaseCount === 0 && candidateCount > 0;
+    candidatesPanel.append(el("summary", "", `待整理候選（${candidateCount}）`));
+    candidatesPanel.append(
+      el(
+        "p",
+        "metric-label",
+        "從回饋／無答案事件整理出的候選；合併後才進入上方進行中案件。",
+      ),
+      candidatesBlock,
+    );
+    panel.append(candidatesPanel);
+  } else {
+    panel.append(candidatesBlock);
+    panel.append(casesSection);
+  }
 
   function renderCasesTable(items, total) {
     casesHeading.textContent = `進行中案件（${total}）`;
