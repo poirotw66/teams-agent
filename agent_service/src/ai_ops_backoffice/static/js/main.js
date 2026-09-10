@@ -228,8 +228,19 @@ function renderTopbarActions() {
     return;
   }
   meta.replaceChildren();
-  mountBuShellToggle(meta);
-  if (canUseKnowledgeUi()) {
+  const bu = isBuShellEnabled();
+  const envHost = bu ? el("details", "bu-env-menu") : meta;
+  if (bu) {
+    const summary = document.createElement("summary");
+    summary.textContent = "環境";
+    summary.title = "開發與介面切換";
+    envHost.append(summary);
+    meta.append(envHost);
+  } else {
+    mountBuShellToggle(meta);
+  }
+
+  if (canUseKnowledgeUi() && !bu) {
     const knowledgeLink = el("a", "topbar-action", "知識文件庫");
     knowledgeLink.href = buildLocationHash("knowledge_ops", "knowledgePortal");
     knowledgeLink.title = "在營運後台內開啟知識編輯／審核／發布";
@@ -242,11 +253,12 @@ function renderTopbarActions() {
     });
     meta.append(knowledgeLink);
   }
+
   if (capabilities.authMode === "ENTRA") {
     const userChip = el(
       "span",
       "meta-chip",
-      `👤 ${capabilities.displayName || capabilities.userName || capabilities.userId || "使用者"}`
+      `${capabilities.displayName || capabilities.userName || capabilities.userId || "使用者"}`
     );
     const roleBadge = el("span", "meta-chip");
     const roleStrong = document.createElement("strong");
@@ -262,15 +274,15 @@ function renderTopbarActions() {
           "span",
           `meta-chip ${details.isExpired ? "is-warning" : "is-ok"}`,
           details.isExpired
-            ? `⚠️ 憑證已於 ${details.formatted} 過期`
-            : `⏰ 憑證至 ${details.formatted}`
+            ? `憑證已於 ${details.formatted} 過期`
+            : `憑證至 ${details.formatted}`
         );
         expiryBadge.title = `憑證到期時間：${details.expiryDate.toLocaleString("zh-TW")}`;
         meta.append(expiryBadge);
       }
     }
 
-    const logoutBtn = el("button", "meta-chip is-button", "登出 ⎋");
+    const logoutBtn = el("button", "meta-chip is-button", "登出");
     logoutBtn.type = "button";
     logoutBtn.title = "登出 Entra 身分並清除憑證";
     logoutBtn.addEventListener("click", () => {
@@ -287,18 +299,52 @@ function renderTopbarActions() {
     roleChip.addEventListener("click", showRoleSwitcherModal);
     meta.append(roleChip);
 
-    const logoutBtn = el("button", "meta-chip is-button", "重設身分");
-    logoutBtn.type = "button";
-    logoutBtn.title = "清除目前暫存身分";
-    logoutBtn.addEventListener("click", () => {
-      clearAuthHeaders();
-      window.location.reload();
-    });
-    meta.append(logoutBtn);
+    if (!bu) {
+      const logoutBtn = el("button", "meta-chip is-button", "重設身分");
+      logoutBtn.type = "button";
+      logoutBtn.title = "清除目前暫存身分";
+      logoutBtn.addEventListener("click", () => {
+        clearAuthHeaders();
+        window.location.reload();
+      });
+      meta.append(logoutBtn);
+    }
   }
-  meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
-  if (capabilities.knowledgeBridgeEnabled) {
-    meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
+
+  if (bu) {
+    mountBuShellToggle(envHost, { prepend: false });
+    if (canUseKnowledgeUi()) {
+      const knowledgeLink = el("a", "topbar-action", "知識文件庫（進階）");
+      knowledgeLink.href = buildLocationHash("knowledge_ops", "knowledgePortal");
+      knowledgeLink.title = "開啟知識編輯／審核／發布";
+      knowledgeLink.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        navigateTo("knowledgePortal");
+      });
+      envHost.append(knowledgeLink);
+    }
+    if (capabilities.authMode !== "ENTRA") {
+      const logoutBtn = el("button", "meta-chip is-button", "重設身分");
+      logoutBtn.type = "button";
+      logoutBtn.title = "清除目前暫存身分";
+      logoutBtn.addEventListener("click", () => {
+        clearAuthHeaders();
+        window.location.reload();
+      });
+      envHost.append(logoutBtn);
+    }
+    envHost.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
+    if (capabilities.knowledgeBridgeEnabled) {
+      envHost.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
+    }
+  } else {
+    meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
+    if (capabilities.knowledgeBridgeEnabled) {
+      meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
+    }
   }
 }
 

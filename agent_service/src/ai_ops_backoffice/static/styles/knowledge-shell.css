@@ -6,12 +6,24 @@ body.view-knowledge-portal {
   overflow: hidden;
 }
 
+body.bu-shell-v1.view-knowledge-portal {
+  height: 100dvh;
+}
+
 body.view-knowledge-portal .app {
   padding: 0;
-  display: block;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
   flex: 1 1 auto;
   min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.bu-shell-v1.view-knowledge-portal .app {
+  height: 100%;
+  max-height: 100%;
 }
 
 body.view-knowledge-portal .workspace-hint {
@@ -23,10 +35,11 @@ body.view-knowledge-portal .workspace-hint {
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
-  height: 100%;
-  min-height: 550px;
-  padding: 1rem 1.75rem 2rem;
-  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 1rem 1.75rem 2.5rem;
+  /* Let .app own the scrollbar so tall create/import forms stay reachable. */
+  overflow: visible;
 }
 
 /* Floating Glass Subnav Island */
@@ -118,7 +131,7 @@ body.view-knowledge-portal .workspace-hint {
   display: flex;
   flex-direction: column;
   width: 100%;
-  min-height: 400px;
+  min-height: 0;
 }
 
 .knowledge-embed-shell {
@@ -128,3 +141,21 @@ body.view-knowledge-portal .workspace-hint {
   min-height: 12rem;
 }
 
+/* Ops global `pre` is dark-theme; PDF import preview must stay light and readable. */
+body.view-knowledge-portal pre.create-import-preview,
+.kp-native-shell pre.create-import-preview {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 0.85rem;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f8fafc;
+  color: #0f172a;
+  box-shadow: none;
+}

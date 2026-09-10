@@ -5,9 +5,10 @@ import { showContentModal } from "../components/modal.js";
 import { showConversationModal, showConversationPage } from "../components/conversationModal.js";
 import { runExport } from "../services/export.js";
 import { getCurrentActiveView } from "../app/activeView.js";
-import { loadNavFilters, saveNavFilters, syncLocationHash } from "../app/navigation.js";
+import { loadNavFilters, saveNavFilters, syncLocationHash, buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { formatTaipeiDateTime, labelRoute } from "../app/labels.js";
 
 let conversationPollTimer = null;
 let conversationAutoRefresh = false;
@@ -233,7 +234,7 @@ export async function renderConversations(state = {}) {
 
     const queryInput = el("input");
     queryInput.id = "conversation-query-filter";
-    queryInput.placeholder = "訊息關鍵字 (Query)";
+    queryInput.placeholder = isBuShellEnabled() ? "關鍵字（提問／回答）" : "訊息關鍵字 (Query)";
     queryInput.value = query || "";
 
     const sourceInput = el("input");
@@ -271,7 +272,7 @@ export async function renderConversations(state = {}) {
     const handoffSelect = el("select", "");
     handoffSelect.id = "conversation-handoff";
     handoffSelect.innerHTML =
-      '<option value="">全部 Handoff</option><option value="true">有 Handoff</option><option value="false">無 Handoff</option>';
+      '<option value="">全部轉人工</option><option value="true">有轉人工</option><option value="false">無轉人工</option>';
     if (handoff) handoffSelect.value = handoff;
     const currentFilters = () => ({
       conversationId: convIdInput.value.trim(),
@@ -285,10 +286,15 @@ export async function renderConversations(state = {}) {
       hasFeedback: feedbackSelect.value,
       handoff: handoffSelect.value,
     });
-    const applyFilters = el("button", "", "套用篩選");
-    applyFilters.addEventListener("click", () =>
-      renderConversations({ period, filters: currentFilters(), cursor: "", history: [] }),
-    );
+    const applyAll = (nextPeriod = period) =>
+      renderConversations({
+        period: nextPeriod,
+        filters: currentFilters(),
+        cursor: "",
+        history: [],
+      });
+    const applyFilters = el("button", isBuShellEnabled() ? "button-primary" : "", "套用篩選");
+    applyFilters.addEventListener("click", () => applyAll());
     const exportButton = el("button", "", "匯出 CSV");
     exportButton.addEventListener("click", async () => {
       const reasonPrompt = window.prompt("請輸入匯出原因（至少 3 個字元，將寫入資安稽核紀錄）：", "對話紀錄分析與稽核");
@@ -322,31 +328,68 @@ export async function renderConversations(state = {}) {
         exportButton.textContent = "匯出 CSV";
       }
     });
-    filterBar.append(
-      convIdInput,
-      queryInput,
-      sourceInput,
-      channelSelect,
-      issueInput,
-      routeInput,
-      modelInput,
-      actorRefInput,
-      feedbackSelect,
-      handoffSelect,
-      applyFilters,
-      exportButton,
-    );
-    panel.append(filterBar);
-    panel.append(
-      createPeriodControls(period, (nextPeriod) =>
-        renderConversations({
-          period: nextPeriod,
-          filters: currentFilters(),
-          cursor: "",
-          history: [],
-        }),
-      ),
-    );
+
+    const periodControls = createPeriodControls(period, (nextPeriod) => applyAll(nextPeriod));
+    if (isBuShellEnabled()) {
+      filterBar.append(queryInput, channelSelect, feedbackSelect, applyFilters, exportButton);
+      panel.append(filterBar);
+      panel.append(periodControls);
+      const advanced = el("details", "bu-ops-note");
+      const activeExtras = [
+        conversationId && `對話 ID`,
+        source && `來源`,
+        issueTypeId && `問題類型`,
+        route && `處理方式`,
+        model && `模型`,
+        actorRef && `使用者`,
+        handoff && `轉人工`,
+      ].filter(Boolean);
+      advanced.append(
+        el(
+          "summary",
+          "",
+          activeExtras.length ? `進階篩選（已套用 ${activeExtras.length} 項）` : "進階篩選",
+        ),
+      );
+      const advancedBar = el("div", "filter-bar");
+      advancedBar.append(
+        convIdInput,
+        sourceInput,
+        issueInput,
+        routeInput,
+        modelInput,
+        actorRefInput,
+        handoffSelect,
+      );
+      advanced.append(advancedBar);
+      panel.append(advanced);
+      const chips = [];
+      if (period.preset) chips.push(`期間：${period.preset}`);
+      if (query) chips.push(`關鍵字：${query}`);
+      if (channelScope) chips.push(`通道：${channelSelect.options[channelSelect.selectedIndex]?.text || channelScope}`);
+      if (hasFeedback) chips.push(`回饋：${hasFeedback === "true" ? "有" : "無"}`);
+      for (const extra of activeExtras) chips.push(extra);
+      if (chips.length) {
+        panel.append(el("p", "metric-label", `目前查詢：${chips.join(" · ")}`));
+      }
+    } else {
+      filterBar.append(
+        convIdInput,
+        queryInput,
+        sourceInput,
+        channelSelect,
+        issueInput,
+        routeInput,
+        modelInput,
+        actorRefInput,
+        feedbackSelect,
+        handoffSelect,
+        applyFilters,
+        exportButton,
+      );
+      panel.append(filterBar);
+      panel.append(periodControls);
+    }
 
     if (!data.items.length) {
       panel.append(el("p", "empty", "目前沒有符合條件的對話事件。"));
@@ -354,14 +397,35 @@ export async function renderConversations(state = {}) {
       return;
     }
     const table = el("table");
-    table.innerHTML =
-      "<thead><tr><th>時間／對話</th><th>回合</th><th>使用者</th><th>頻道</th><th>處理方式</th><th>派工／工單</th><th>最近更新</th></tr></thead>";
+    if (isBuShellEnabled()) {
+      table.innerHTML =
+        "<thead><tr><th>提問摘要</th><th>時間</th><th>回合</th><th>使用者</th><th>通道</th><th>處理方式</th><th>派工／工單</th></tr></thead>";
+    } else {
+      table.innerHTML =
+        "<thead><tr><th>時間／對話</th><th>回合</th><th>使用者</th><th>頻道</th><th>處理方式</th><th>派工／工單</th><th>最近更新</th></tr></thead>";
+    }
     const body = el("tbody");
     for (const item of data.items) {
       const row = el("tr");
-      const link = el("a", "", item.conversationId);
-      link.href = "#";
+      const preview =
+        item.turns?.[0]?.userMessage ||
+        item.turns?.[0]?.messageMasked ||
+        item.preview ||
+        item.summary ||
+        "";
+      const shortId = String(item.conversationId || "").slice(0, 8);
+      const detailHash = buildLocationHash(
+        workspaceForView("conversations") || "knowledge_ops",
+        "conversations",
+        { conversationId: item.conversationId },
+      );
+      const link = el("a", "", isBuShellEnabled() ? preview || `對話 ${shortId}` : item.conversationId);
+      link.href = detailHash;
+      link.title = item.conversationId;
       link.addEventListener("click", async (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+          return;
+        }
         event.preventDefault();
         const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}?refresh=true`);
         if (isBuShellEnabled()) {
@@ -373,14 +437,48 @@ export async function renderConversations(state = {}) {
           syncLocationHash("conversations", {
             conversationId: item.conversationId,
           });
+          showConversationPage(detail, item.conversationId);
+          return;
         }
         showConversationModal(detail, item.conversationId);
       });
-      const conversationCell = el("td");
-      conversationCell.append(link);
-      row.append(conversationCell);
-      row.append(el("td", "", String(item.turnCount)));
-      row.append(el("td", "", item.actorRef || "-"));
+
+      if (isBuShellEnabled()) {
+        const summaryCell = el("td");
+        summaryCell.append(link);
+        const idRow = el("div", "metric-label");
+        const idText = el("span", "", shortId);
+        idText.title = item.conversationId;
+        const copyBtn = el("button", "button-link", "複製 ID");
+        copyBtn.type = "button";
+        copyBtn.style.marginLeft = "0.4rem";
+        copyBtn.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(item.conversationId);
+            copyBtn.textContent = "已複製";
+            setTimeout(() => {
+              copyBtn.textContent = "複製 ID";
+            }, 1200);
+          } catch {
+            window.prompt("複製對話 ID", item.conversationId);
+          }
+        });
+        idRow.append(idText, copyBtn);
+        summaryCell.append(idRow);
+        row.append(summaryCell);
+        row.append(el("td", "", formatTaipeiDateTime(item.lastOccurredAt)));
+        row.append(el("td", "", String(item.turnCount)));
+        const actorShort = String(item.actorRef || "-");
+        row.append(el("td", "", actorShort.length > 18 ? `${actorShort.slice(0, 14)}…` : actorShort));
+      } else {
+        const conversationCell = el("td");
+        conversationCell.append(link);
+        row.append(conversationCell);
+        row.append(el("td", "", String(item.turnCount)));
+        row.append(el("td", "", item.actorRef || "-"));
+      }
 
       const channelCell = el("td");
       const channelTag = el("span", "meta-chip");
@@ -399,17 +497,23 @@ export async function renderConversations(state = {}) {
       channelCell.append(channelTag);
       row.append(channelCell);
 
-      row.append(el("td", "", (item.routes || []).join(", ") || "-"));
+      row.append(
+        el(
+          "td",
+          "",
+          (item.routes || []).map((code) => labelRoute(code)).join("、") || "-",
+        ),
+      );
 
       const dispatchCell = el("td");
       const badges = [];
       if (item.ticketIds && item.ticketIds.length > 0) {
-        const tBadge = el("span", "meta-chip is-ok", `🎫 ${item.ticketIds.join(", ")}`);
+        const tBadge = el("span", "meta-chip is-ok", `工單 ${item.ticketIds.join(", ")}`);
         tBadge.title = `Ticket: ${item.ticketIds.join(", ")} (狀態: ${item.ticketStatus || "CREATED"})`;
         badges.push(tBadge);
       }
       if (item.handoffStatus) {
-        const hBadge = el("span", "meta-chip", `🤝 ${item.handoffStatus}`);
+        const hBadge = el("span", "meta-chip", `轉人工 ${item.handoffStatus}`);
         badges.push(hBadge);
       }
       if (badges.length > 0) {
@@ -419,7 +523,9 @@ export async function renderConversations(state = {}) {
       }
       row.append(dispatchCell);
 
-      row.append(el("td", "", item.lastOccurredAt));
+      if (!isBuShellEnabled()) {
+        row.append(el("td", "", item.lastOccurredAt));
+      }
       body.append(row);
     }
     table.append(body);

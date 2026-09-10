@@ -3,6 +3,11 @@ import { showContentModal, closeContentModal } from "../components/modal.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import {
+  labelBehavior,
+  labelSourceHealth,
+  labelStatus,
+} from "../app/labels.js";
 import { loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { withReturnTo } from "../app/returnTo.js";
 
@@ -113,8 +118,18 @@ async function loadCasesList(container, allowed) {
   const searchInput = el("input", "search-input");
   searchInput.placeholder = "搜尋問題關鍵字或標題...";
 
+  const bu = isBuShellEnabled();
   const statusSelect = el("select", "form-select");
-  statusSelect.innerHTML = `
+  statusSelect.innerHTML = bu
+    ? `
+    <option value="">全部狀態</option>
+    <option value="DRAFT">草稿</option>
+    <option value="IN_REVIEW">審核中</option>
+    <option value="APPROVED">已核准</option>
+    <option value="REJECTED">已退回</option>
+    <option value="RETIRED">已退役</option>
+  `
+    : `
     <option value="">-- 全部狀態 --</option>
     <option value="DRAFT">草稿 (DRAFT)</option>
     <option value="IN_REVIEW">審核中 (IN_REVIEW)</option>
@@ -124,7 +139,16 @@ async function loadCasesList(container, allowed) {
   `;
 
   const behaviorSelect = el("select", "form-select");
-  behaviorSelect.innerHTML = `
+  behaviorSelect.innerHTML = bu
+    ? `
+    <option value="">全部行為類型</option>
+    <option value="ANSWER_WITH_CITATION">引用回答</option>
+    <option value="CLARIFY">需求澄清</option>
+    <option value="REFUSE">安全拒答</option>
+    <option value="HANDOFF">轉真人</option>
+    <option value="TOOL_TASK">工具任務</option>
+  `
+    : `
     <option value="">-- 全部行為類型 --</option>
     <option value="ANSWER_WITH_CITATION">引用回答 (ANSWER_WITH_CITATION)</option>
     <option value="CLARIFY">需求澄清 (CLARIFY)</option>
@@ -134,45 +158,59 @@ async function loadCasesList(container, allowed) {
   `;
 
   const criticalitySelect = el("select", "form-select");
-  criticalitySelect.innerHTML = `
+  criticalitySelect.innerHTML = bu
+    ? `
+    <option value="">重要性</option>
+    <option value="CRITICAL">重大</option>
+    <option value="NORMAL">一般</option>
+  `
+    : `
     <option value="">-- 重要性 --</option>
     <option value="CRITICAL">重大 (CRITICAL)</option>
     <option value="NORMAL">一般 (NORMAL)</option>
   `;
 
   const healthSelect = el("select", "form-select");
-  healthSelect.innerHTML = `
+  healthSelect.innerHTML = bu
+    ? `
+    <option value="">來源健康度</option>
+    <option value="VALID">正常</option>
+    <option value="NEEDS_REVIEW">來源更新待複核</option>
+    <option value="SOURCE_UNAVAILABLE">來源已失效</option>
+  `
+    : `
     <option value="">-- 來源健康度 --</option>
     <option value="VALID">正常 (VALID)</option>
     <option value="NEEDS_REVIEW">來源變更待複核 (NEEDS_REVIEW)</option>
     <option value="SOURCE_UNAVAILABLE">來源失效 (SOURCE_UNAVAILABLE)</option>
   `;
 
-  const searchBtn = el("button", "btn-primary", "篩選");
+  const searchBtn = el("button", bu ? "button-primary" : "btn-primary", "篩選");
   const summarySpan = el("span", "text-muted", "載入中...");
 
-  const actionButtons = el("div", "btn-group");
+  const actionButtons = el("div", bu ? "filter-bar" : "btn-group");
 
   if (allowed.has("ops.evals.write")) {
-    const createBtn = el("button", "btn-primary", "＋ 新增驗收題");
+    const createBtn = el("button", bu ? "button-primary" : "btn-primary", "＋ 新增驗收題");
     createBtn.addEventListener("click", () => showCaseCreateModal(() => loadCasesList(container, allowed)));
 
-    const genBtn = el("button", "btn-secondary", "⚡ 自動生成候選");
+    const genBtn = el("button", bu ? "" : "btn-secondary", "自動生成候選");
     genBtn.addEventListener("click", () => showCandidateJobModal(() => loadCasesList(container, allowed)));
 
-    const importBtn = el("button", "btn-secondary", "📥 匯入題庫");
+    const importBtn = el("button", bu ? "" : "btn-secondary", "匯入題庫");
     importBtn.addEventListener("click", () => showImportModal(() => loadCasesList(container, allowed)));
 
     actionButtons.append(createBtn, genBtn, importBtn);
   }
 
   if (allowed.has("ops.evals.export")) {
-    const exportBtn = el("button", "btn-secondary", "📤 匯出");
+    const exportBtn = el("button", bu ? "" : "btn-secondary", "匯出");
     exportBtn.addEventListener("click", showExportModal);
     actionButtons.append(exportBtn);
   }
 
   toolbar.append(searchInput, statusSelect, behaviorSelect, criticalitySelect, healthSelect, searchBtn, actionButtons, summarySpan);
+  if (bu) toolbar.classList.add("bu-eval-toolbar");
 
   const tableContainer = el("div", "table-responsive");
   container.append(toolbar, tableContainer);
@@ -195,8 +233,20 @@ async function loadCasesList(container, allowed) {
         return;
       }
 
-      const table = el("table", "data-table");
-      table.innerHTML = `
+      const table = el("table", bu ? "data-table bu-eval-cases" : "data-table");
+      table.innerHTML = bu
+        ? `
+        <thead>
+          <tr>
+            <th class="bu-eval-col-query">題目</th>
+            <th>行為</th>
+            <th>狀態</th>
+            <th>健康度</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+      `
+        : `
         <thead>
           <tr>
             <th>標題 / 問題</th>
@@ -217,37 +267,56 @@ async function loadCasesList(container, allowed) {
 
         const row = el("tr");
 
-        const titleCell = el("td");
-        titleCell.innerHTML = `<strong>${c.title}</strong><br><span class="text-muted">${r.query}</span>`;
-
-        const behaviorCell = el("td");
-        behaviorCell.innerHTML = `<span class="badge badge-info">${r.behavior}</span>`;
-
-        const critCell = el("td");
-        critCell.innerHTML = r.criticality === "CRITICAL"
-          ? `<span class="badge badge-danger">★ 重大</span>`
-          : `<span class="badge badge-secondary">一般</span>`;
-
-        const ownerCell = el("td", "", c.owner_unit_id);
-
-        const healthCell = el("td");
-        if (r.source_health === "NEEDS_REVIEW") {
-          healthCell.innerHTML = `<span class="badge badge-warning">⚠️ 來源更新待複核</span>`;
-        } else if (r.source_health === "SOURCE_UNAVAILABLE") {
-          healthCell.innerHTML = `<span class="badge badge-danger">❌ 來源已失效</span>`;
+        const titleCell = el("td", bu ? "bu-eval-col-query" : "");
+        const queryPreview = String(r.query || "").replace(/\s+/g, " ").trim();
+        const critMark = r.criticality === "CRITICAL" ? "重大 · " : "";
+        if (bu) {
+          titleCell.innerHTML = `<strong>${c.title || "（無標題）"}</strong><span class="bu-eval-query-preview text-muted">${queryPreview}</span>`;
+          titleCell.title = `${critMark}${c.owner_unit_id || ""}｜rev ${r.revision_number}\n${r.query || ""}`;
         } else {
-          healthCell.innerHTML = `<span class="badge badge-success">正常</span>`;
+          titleCell.innerHTML = `<strong>${c.title}</strong><br><span class="text-muted">${r.query}</span>`;
         }
 
-        const statusCell = el("td");
-        statusCell.innerHTML = `<span class="status-tag status-${r.status.toLowerCase()}">${r.status} (rev ${r.revision_number})</span>`;
+        const behaviorCell = el("td");
+        const behaviorLabel = labelBehavior(r.behavior);
+        behaviorCell.innerHTML = `<span class="badge badge-info" title="${r.behavior}">${behaviorLabel}</span>`;
 
         const actionsCell = el("td");
-        const viewBtn = el("button", "btn-sm btn-link", "查看與處理");
+        const viewBtn = el("button", bu ? "button-primary" : "btn-sm btn-link", bu ? "查看" : "查看與處理");
         viewBtn.addEventListener("click", () => showCaseDetailModal(c.case_id, () => fetchCases()));
         actionsCell.append(viewBtn);
 
-        row.append(titleCell, behaviorCell, critCell, ownerCell, healthCell, statusCell, actionsCell);
+        if (bu) {
+          const statusCell = el("td");
+          statusCell.innerHTML = `<span class="status-tag status-${String(r.status || "").toLowerCase()}" title="${r.status}">${labelStatus(r.status)} · v${r.revision_number}</span>`;
+          const healthCell = el("td");
+          const healthLabel = labelSourceHealth(r.source_health);
+          if (r.source_health === "NEEDS_REVIEW") {
+            healthCell.innerHTML = `<span class="badge badge-warning" title="${r.source_health}">${healthLabel}</span>`;
+          } else if (r.source_health === "SOURCE_UNAVAILABLE") {
+            healthCell.innerHTML = `<span class="badge badge-danger" title="${r.source_health}">${healthLabel}</span>`;
+          } else {
+            healthCell.innerHTML = `<span class="badge badge-success" title="${r.source_health || "VALID"}">${healthLabel}</span>`;
+          }
+          row.append(titleCell, behaviorCell, statusCell, healthCell, actionsCell);
+        } else {
+          const critCell = el("td");
+          critCell.innerHTML = r.criticality === "CRITICAL"
+            ? `<span class="badge badge-danger">★ 重大</span>`
+            : `<span class="badge badge-secondary">一般</span>`;
+          const ownerCell = el("td", "", c.owner_unit_id);
+          const healthCell = el("td");
+          if (r.source_health === "NEEDS_REVIEW") {
+            healthCell.innerHTML = `<span class="badge badge-warning">⚠️ 來源更新待複核</span>`;
+          } else if (r.source_health === "SOURCE_UNAVAILABLE") {
+            healthCell.innerHTML = `<span class="badge badge-danger">❌ 來源已失效</span>`;
+          } else {
+            healthCell.innerHTML = `<span class="badge badge-success">正常</span>`;
+          }
+          const statusCell = el("td");
+          statusCell.innerHTML = `<span class="status-tag status-${r.status.toLowerCase()}">${r.status} (rev ${r.revision_number})</span>`;
+          row.append(titleCell, behaviorCell, critCell, ownerCell, healthCell, statusCell, actionsCell);
+        }
         tbody.append(row);
       }
 

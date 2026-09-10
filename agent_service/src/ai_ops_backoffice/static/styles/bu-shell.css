@@ -774,6 +774,127 @@ body.bu-shell-v1 .overview-main-heading {
   display: none;
 }
 
+body.bu-shell-v1 .bu-env-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+body.bu-shell-v1 .bu-env-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+
+body.bu-shell-v1 .bu-env-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+body.bu-shell-v1 .bu-env-menu[open] > summary,
+body.bu-shell-v1 .bu-env-menu > summary:hover {
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .bu-env-menu[open] {
+  z-index: 40;
+}
+
+body.bu-shell-v1 .bu-env-menu[open] > :not(summary) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  min-width: 12rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+body.bu-shell-v1 .bu-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+body.bu-shell-v1 .bu-turn-user,
+body.bu-shell-v1 .bu-turn-assistant {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .bu-turn-assistant {
+  background: color-mix(in srgb, var(--brand-50, #eef5ff) 80%, var(--panel));
+}
+
+body.bu-shell-v1 .bu-answer-body {
+  line-height: 1.55;
+  white-space: normal;
+}
+
+body.bu-shell-v1 .bu-cite {
+  display: inline-block;
+  margin: 0 0.15rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--brand-800, #1e3a5f);
+}
+
+body.bu-shell-v1 .bu-eval-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+body.bu-shell-v1 table.bu-eval-cases {
+  table-layout: fixed;
+  width: 100%;
+}
+
+body.bu-shell-v1 table.bu-eval-cases .bu-eval-col-query {
+  width: 46%;
+}
+
+body.bu-shell-v1 .bu-eval-query-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+body.bu-shell-v1 table.bu-eval-cases .badge,
+body.bu-shell-v1 table.bu-eval-cases .status-tag {
+  white-space: nowrap;
+}
+
+body.bu-shell-v1 .bu-conv-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 @media (max-width: 960px) {
   body.bu-shell-v1 .bu-work-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));

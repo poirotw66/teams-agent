@@ -3,6 +3,7 @@ import { showContentModal, closeContentModal } from "../components/modal.js";
 import { badge, statusBadge } from "../components/badges.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { labelStatus } from "../app/labels.js";
 import { saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 
@@ -585,8 +586,8 @@ export async function buildQualityLoopPanel() {
       row.append(
         el("td", "", item.title),
         el("td", "", caseTypeLabels[item.case_type] || item.case_type || "-"),
-        el("td", "", statusLabels[item.status] || item.status),
-        el("td", "", item.priority),
+        el("td", "", statusLabels[item.status] || labelStatus(item.status) || item.status),
+        el("td", "", labelStatus(item.priority) || item.priority),
         el("td", "", `${item.owner_unit_id} / ${item.assignee_id || "未指派"}`),
         action,
       );

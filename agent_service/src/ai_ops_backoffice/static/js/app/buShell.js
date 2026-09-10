@@ -136,7 +136,7 @@ export function renderBuNav(active, options = {}, routeRefs = {}) {
 }
 
 /** Topbar control to toggle shell for local U1 validation. */
-export function mountBuShellToggle(metaPanel) {
+export function mountBuShellToggle(metaPanel, options = {}) {
   if (!metaPanel) {
     return;
   }
@@ -150,5 +150,9 @@ export function mountBuShellToggle(metaPanel) {
     setBuShellEnabled(!isBuShellEnabled());
     location.reload();
   });
-  metaPanel.prepend(button);
+  if (options.prepend === false) {
+    metaPanel.append(button);
+  } else {
+    metaPanel.prepend(button);
+  }
 }

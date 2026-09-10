@@ -2,21 +2,13 @@ import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { saveNavFilters, syncLocationHash } from "../app/navigation.js";
+import { buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { navigateReturnTo } from "../app/returnTo.js";
 import { badge } from "./badges.js";
+import { formatAssistantHtml, formatTaipeiDateTime, labelRoute } from "../app/labels.js";
 
 function routeLabel(route) {
-  const map = {
-    FAQ: "固定答案 FAQ",
-    KNOWLEDGE: "知識檢索",
-    TICKET: "開立工單",
-    HANDOFF: "轉人工",
-    CLARIFICATION: "澄清追問",
-    DIRECT: "直接回覆",
-    ESCALATE: "升級處理",
-    FAILED: "失敗",
-  };
-  return map[route] || route || "—";
+  return labelRoute(route);
 }
 
 function closeModalRoot() {
@@ -86,18 +78,35 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
       side.append(el("p", "muted", "尚無回合資料。"));
       return;
     }
-    side.append(
-      el("p", "", `處理方式 `),
-    );
+    side.append(el("p", "", "處理方式 "));
     side.append(badge(routeLabel(turn.route), "accent"));
     if (turn.faqKey) {
       side.append(el("p", "metric-label", `FAQ：${turn.faqKey}`));
     }
-    if ((turn.documentIds || []).length) {
-      side.append(el("p", "metric-label", `文件：${turn.documentIds.join(", ")}`));
-    }
-    if ((turn.sourcePaths || []).length) {
-      side.append(el("p", "metric-label", `來源路徑：${turn.sourcePaths.join(", ")}`));
+    const docs = turn.documentIds || [];
+    const paths = turn.sourcePaths || [];
+    const releases = turn.releaseIds || [];
+    if (docs.length || paths.length || releases.length) {
+      if (docs.length) {
+        for (const docId of docs) {
+          const link = el("a", "drill-link", `文件 ${String(docId).slice(0, 12)}`);
+          link.href = buildLocationHash(
+            workspaceForView("knowledgeDocument") || "knowledge_ops",
+            "knowledgeDocument",
+            { documentId: docId },
+          );
+          link.title = docId;
+          side.append(link);
+        }
+      }
+      if (paths.length) {
+        side.append(el("p", "metric-label", `來源路徑：${paths.join("、")}`));
+      }
+      if (releases.length) {
+        side.append(el("p", "metric-label", `版本／發布：${releases.join("、")}`));
+      }
+    } else {
+      side.append(el("p", "metric-label", "尚無可見的文件／段落來源連結。"));
     }
     side.append(
       el(
@@ -140,25 +149,35 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask } =
   }
 
   for (const turn of detail.turns || []) {
-    const block = el("div", "message");
+    const block = el("div", "message bu-turn");
     block.style.cursor = "pointer";
-    block.append(el("div", "meta", turn.occurredAt || ""));
-    if (turn.messageMasked) {
-      const user = el("div", "message user");
-      user.append(el("div", "meta", "使用者"));
-      user.append(el("p", "", turn.messageMasked));
+    block.append(el("div", "meta", formatTaipeiDateTime(turn.occurredAt || "")));
+
+    const userText = turn.messageMasked || turn.userMessage || turn.message || "";
+    if (userText) {
+      const user = el("div", "bu-turn-user");
+      user.append(el("div", "meta", "使用者提問"));
+      user.append(el("p", "", userText));
       block.append(user);
     }
-    if (turn.answerMasked) {
-      block.append(el("p", "", turn.answerMasked));
-      block.append(
+
+    const answerText = turn.answerMasked || turn.aiReply || "";
+    if (answerText) {
+      const assistant = el("div", "bu-turn-assistant");
+      assistant.append(el("div", "meta", "AI 回答"));
+      const answer = el("div", "bu-answer-body");
+      answer.innerHTML = formatAssistantHtml(answerText);
+      assistant.append(answer);
+      assistant.append(
         el(
           "small",
           "muted",
-          `引用／處理：${turn.faqKey || (turn.documentIds || []).join(", ") || routeLabel(turn.route)}`,
+          `處理方式：${routeLabel(turn.route)}${turn.faqKey ? `｜FAQ ${turn.faqKey}` : ""}`,
         ),
       );
+      block.append(assistant);
     }
+
     if (turn.feedbackRating === "DOWN") {
       block.append(badge("負評", "danger"));
     }

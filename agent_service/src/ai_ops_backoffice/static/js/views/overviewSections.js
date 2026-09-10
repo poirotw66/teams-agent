@@ -14,6 +14,7 @@ import {
   workspaceForView,
 } from "../app/navigation.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
+import { formatTaipeiEventStamp } from "../app/labels.js";
 
 export const OVERVIEW_ISSUE_NAMES = {
   "vpn.connection_failed": "VPN 連線異常與斷線",
@@ -381,26 +382,19 @@ export function buildOverviewHeader({
 
   if (data.dataFreshnessMinutes != null) {
     const idleMinutes = data.dataFreshnessMinutes;
+    const stamp = data.latestEventAt
+      ? formatTaipeiEventStamp(data.latestEventAt)
+      : `${idleMinutes} 分鐘前`;
     const latestEventHint = data.latestEventAt
-      ? `期間內最近一筆營運事件時間：${formatLocalClock(data.latestEventAt, tz)}（${tz}）。此指標反映「多久沒有新事件」，不代表批次管線故障。`
-      : "此指標反映期間內多久沒有新營運事件，不代表批次管線故障。";
-    if (idleMinutes > 15) {
-      const idleChip = el(
-        "span",
-        "overview-warning-chip",
-        `⚠️ 最近事件：${idleMinutes} 分鐘前`,
-      );
-      idleChip.title = latestEventHint;
-      badgeRow.append(idleChip);
-    } else {
-      const idleChip = el(
-        "span",
-        "overview-freshness-chip",
-        `🟢 最近事件：${idleMinutes} 分鐘前`,
-      );
-      idleChip.title = latestEventHint;
-      badgeRow.append(idleChip);
-    }
+      ? `期間內最近一筆營運事件：${formatLocalClock(data.latestEventAt, tz)}（${tz}）。閒置不代表同步或批次管線故障。`
+      : "此指標反映期間內多久沒有新營運事件；閒置與同步異常請分開判斷。";
+    const idleChip = el(
+      "span",
+      idleMinutes > 24 * 60 ? "overview-warning-chip" : "overview-freshness-chip",
+      `最近事件：${stamp}`,
+    );
+    idleChip.title = latestEventHint;
+    badgeRow.append(idleChip);
   }
   titleGroup.append(badgeRow);
   if (!isBuShellEnabled()) {
@@ -487,13 +481,16 @@ export function buildFreshnessWarning(data) {
   if (data.dataFreshnessMinutes == null || data.dataFreshnessMinutes <= 15) {
     return null;
   }
-  const warnBox = el(
+  const stamp = data.latestEventAt
+    ? formatTaipeiEventStamp(data.latestEventAt)
+    : `${data.dataFreshnessMinutes} 分鐘前`;
+  const note = el(
     "div",
-    "warning",
-    `期間內最近一筆營運事件已是 ${data.dataFreshnessMinutes} 分鐘前；若這段時間本來就沒有新對話，屬正常閒置，不代表查詢管線故障。`,
+    "callout",
+    `最近事件：${stamp}。若這段時間本來就沒有新對話，屬正常閒置；同步或批次異常請另看系統健康指標，不要只依閒置時間判斷。`,
   );
-  warnBox.style.margin = "0";
-  return warnBox;
+  note.style.margin = "0";
+  return note;
 }
 
 export function buildSlaHealthStrip(data, metrics) {
