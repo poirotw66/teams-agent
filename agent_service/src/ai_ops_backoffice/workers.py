@@ -537,6 +537,10 @@ def install_background_runtime(
         async def freshness_worker() -> None:
             first_delay_seconds = 10
             interval_seconds = getattr(resolved_settings, "freshness_eval_interval_seconds", 300)
+            # Keep tracker stale threshold aligned with the heartbeat cadence.
+            if freshness_tracker is not None:
+                freshness_tracker._heartbeat_interval = float(interval_seconds)
+                freshness_tracker._worker_stale_threshold = float(interval_seconds) * 2
             try:
                 await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
                 return
@@ -545,6 +549,7 @@ def install_background_runtime(
             while not stop_sweeper.is_set():
                 try:
                     freshness_tracker.record_worker_heartbeat()
+                    freshness_tracker.record_sync_success("conversations")
                 except Exception:
                     logger.exception("Failed to record worker heartbeat for freshness.")
                 try:

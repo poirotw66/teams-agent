@@ -109,6 +109,7 @@ class EvaluationRunner:
         prompt_resolver: Any | None = None,
         lease_guard: Callable[[], None] | None = None,
         sandbox_adapter: Any | None = None,
+        checkpoint_saver: Callable[[str], None] | None = None,
     ) -> None:
         self._repo = repository
         self._scorer = scorer or EvaluationScorer()
@@ -117,6 +118,7 @@ class EvaluationRunner:
         self._releases_dir = releases_dir
         self._strict_real_rag = strict_real_rag
         self._lease_guard = lease_guard
+        self._checkpoint_saver = checkpoint_saver
         self._sandbox_adapter = sandbox_adapter
 
         self._retriever_fn = retriever_fn
@@ -206,6 +208,14 @@ class EvaluationRunner:
         total_cost = 0.0
         cancel_reason = None
 
+        # Resume from per-case/side checkpoints when present.
+        prior_state = self._repo.load()
+        completed_sides = {
+            (e.case_id, e.target_side): e
+            for e in prior_state.case_executions
+            if e.run_id == run_id and e.status in {"COMPLETED", "FAILED"}
+        }
+
         # Execute both sides for each case
         for revision in case_revisions:
             # Check for cancellation between cases
@@ -220,25 +230,41 @@ class EvaluationRunner:
                 break
 
             # 1. BASELINE SIDE
-            b_exec = self._execute_side(
-                run_id=run.run_id,
-                case_revision=revision,
-                manifest=run.baseline_manifest,
-                side="BASELINE",
-                mode=run.mode,
-            )
+            baseline_key = (revision.case_id, "BASELINE")
+            if baseline_key in completed_sides:
+                b_exec = completed_sides[baseline_key]
+            else:
+                b_exec = self._execute_side(
+                    run_id=run.run_id,
+                    case_revision=revision,
+                    manifest=run.baseline_manifest,
+                    side="BASELINE",
+                    mode=run.mode,
+                )
+                self._persist_case_execution(b_exec)
+                self._save_progress_checkpoint(
+                    f"{run.run_id}:{revision.case_id}:BASELINE:{b_exec.status}"
+                )
             executed_cases.append(b_exec)
             total_tokens += b_exec.used_tokens
             total_cost += b_exec.estimated_cost_usd
 
             # 2. CANDIDATE SIDE
-            c_exec = self._execute_side(
-                run_id=run.run_id,
-                case_revision=revision,
-                manifest=run.candidate_manifest,
-                side="CANDIDATE",
-                mode=run.mode,
-            )
+            candidate_key = (revision.case_id, "CANDIDATE")
+            if candidate_key in completed_sides:
+                c_exec = completed_sides[candidate_key]
+            else:
+                c_exec = self._execute_side(
+                    run_id=run.run_id,
+                    case_revision=revision,
+                    manifest=run.candidate_manifest,
+                    side="CANDIDATE",
+                    mode=run.mode,
+                )
+                self._persist_case_execution(c_exec)
+                self._save_progress_checkpoint(
+                    f"{run.run_id}:{revision.case_id}:CANDIDATE:{c_exec.status}"
+                )
             executed_cases.append(c_exec)
             total_tokens += c_exec.used_tokens
             total_cost += c_exec.estimated_cost_usd
@@ -809,6 +835,49 @@ class EvaluationRunner:
     def bind_lease_guard(self, lease_guard: Callable[[], None] | None) -> None:
         """Attach or clear a lease guard for the current job execution."""
         self._lease_guard = lease_guard
+
+    def bind_checkpoint_saver(self, checkpoint_saver: Callable[[str], None] | None) -> None:
+        """Attach or clear a per-progress checkpoint saver for resume."""
+        self._checkpoint_saver = checkpoint_saver
+
+    def _save_progress_checkpoint(self, checkpoint_ref: str) -> None:
+        self._check_lease()
+        if self._checkpoint_saver is not None:
+            self._checkpoint_saver(checkpoint_ref)
+
+    def _persist_case_execution(self, execution: CaseExecution) -> None:
+        """Persist one case/side result immediately so resume can skip completed work."""
+        last_conflict: EvaluationVersionConflictError | None = None
+        for attempt in range(_CAS_MAX_ATTEMPTS):
+            self._check_lease()
+            state = self._repo.load()
+            retained = [
+                item
+                for item in state.case_executions
+                if not (
+                    item.run_id == execution.run_id
+                    and item.case_id == execution.case_id
+                    and item.target_side == execution.target_side
+                )
+            ]
+            try:
+                self._repo.commit_mutation(
+                    state.model_copy(
+                        update={"case_executions": tuple(retained + [execution])}
+                    ),
+                    expected_revision=state.revision,
+                )
+                return
+            except EvaluationVersionConflictError as exc:
+                last_conflict = exc
+                logger.warning(
+                    "CAS conflict persisting execution %s (attempt %s/%s)",
+                    execution.execution_id,
+                    attempt + 1,
+                    _CAS_MAX_ATTEMPTS,
+                )
+        assert last_conflict is not None
+        raise last_conflict
 
     def _save_run_state(self, run: EvaluationRun) -> None:
         """Update run state with CAS retries to avoid lost concurrent updates."""

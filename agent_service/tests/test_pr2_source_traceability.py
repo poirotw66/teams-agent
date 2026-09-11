@@ -271,7 +271,9 @@ async def test_f07_t1_multi_instance_shared_storage() -> None:
     expected_sha256 = hashlib.sha256(data).hexdigest()
 
     # Instance 1: uploads artifact to shared GCS storage
-    instance1_store = GcsArtifactStorage(bucket_name=bucket_name)
+    instance1_store = GcsArtifactStorage(
+        bucket_name=bucket_name, allow_memory_fallback=True
+    )
     record1 = await instance1_store.store_artifact(
         tenant_id="tenant-alpha",
         artifact_id="art-doc-contract-v1",
@@ -284,7 +286,9 @@ async def test_f07_t1_multi_instance_shared_storage() -> None:
     assert record1.size == len(data)
 
     # Instance 2: completely separate store instance without shared local disk
-    instance2_store = GcsArtifactStorage(bucket_name=bucket_name)
+    instance2_store = GcsArtifactStorage(
+        bucket_name=bucket_name, allow_memory_fallback=True
+    )
     exists = await instance2_store.artifact_exists("tenant-alpha", "art-doc-contract-v1")
     assert exists
 
@@ -500,7 +504,9 @@ async def test_gcs_storage_chunked_streaming_and_sha256():
         def list_blobs(self, bucket_name, prefix=None, max_results=None):
             return [mock_blob]
 
-    storage = GcsArtifactStorage("my-bucket", client=MockClient())
+    storage = GcsArtifactStorage(
+        "my-bucket", client=MockClient(), allow_memory_fallback=True
+    )
     record = await storage.store_artifact(
         tenant_id="t1",
         artifact_id="art-1",

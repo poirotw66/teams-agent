@@ -10,6 +10,7 @@ import httpx
 
 from agent_service.knowledge_release import write_active_release_pointer
 from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
+from agent_service.target_manifest import knowledge_release_target_manifest_hash
 
 logger = logging.getLogger(__name__)
 
@@ -266,8 +267,14 @@ class ReleaseService:
                 try:
                     require_release_gate(
                         getattr(self._ctx, "release_gate_checker", None),
-                        target_manifest_hash=target.corpus_hash,
+                        target_manifest_hash=(
+                            target.target_manifest_hash
+                            or knowledge_release_target_manifest_hash(
+                                release_id=target.release_id
+                            )
+                        ),
                         target_type="KNOWLEDGE",
+                        tenant_id=getattr(actor, "tenant_id", None),
                     )
                 except ReleaseGateBlockedError as exc:
                     raise PortalPermissionError(str(exc)) from exc
@@ -678,17 +685,31 @@ class ReleaseService:
                 "status": "DEPLOYING",
                 "activated_at": utc_now(),
                 "approved_by": actor.user_id,
+                "target_manifest_hash": release.target_manifest_hash
+                or knowledge_release_target_manifest_hash(release_id=release.release_id),
             }
         )
-        await self._deactivate_other_releases(release.release_id)
-        await self._ctx.repository.save_release(release)
+        gate_hash = (
+            release.target_manifest_hash
+            or knowledge_release_target_manifest_hash(release_id=release.release_id)
+        )
+        # Gate must run before mutating other release statuses or the active pointer.
         try:
             require_release_gate(
                 getattr(self._ctx, "release_gate_checker", None),
-                target_manifest_hash=release.corpus_hash,
+                target_manifest_hash=gate_hash,
                 target_type="KNOWLEDGE",
+                tenant_id=getattr(actor, "tenant_id", None),
             )
         except ReleaseGateBlockedError as exc:
+            blocked = release.model_copy(
+                update={
+                    "status": "GATE_BLOCKED",
+                    "failure_summary": str(exc),
+                    "activated_at": None,
+                }
+            )
+            await self._ctx.repository.save_release(blocked)
             await self._ctx.audit(
                 actor=actor,
                 action="release.gate_blocked",
@@ -699,6 +720,9 @@ class ReleaseService:
                 result="FAILURE",
             )
             raise PermissionError(str(exc)) from exc
+
+        await self._deactivate_other_releases(release.release_id)
+        await self._ctx.repository.save_release(release)
         await self._ctx.repository.set_active_release_id(release.release_id)
         write_active_release_pointer(
             self._ctx.settings.release_artifact_dir,

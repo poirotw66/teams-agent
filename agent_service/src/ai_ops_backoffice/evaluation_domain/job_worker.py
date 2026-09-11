@@ -112,6 +112,17 @@ class ExecutionJobWorker:
 
             if hasattr(self._runner, "bind_lease_guard"):
                 self._runner.bind_lease_guard(_lease_guard)
+
+            def _checkpoint_saver(checkpoint_ref: str) -> None:
+                self._repo.save_checkpoint(
+                    job.job_id,
+                    self._worker_id,
+                    fencing_token,
+                    checkpoint_ref=checkpoint_ref,
+                )
+
+            if hasattr(self._runner, "bind_checkpoint_saver"):
+                self._runner.bind_checkpoint_saver(_checkpoint_saver)
             try:
                 self._repo.save_checkpoint(
                     job.job_id,
@@ -123,6 +134,8 @@ class ExecutionJobWorker:
             finally:
                 if hasattr(self._runner, "bind_lease_guard"):
                     self._runner.bind_lease_guard(None)
+                if hasattr(self._runner, "bind_checkpoint_saver"):
+                    self._runner.bind_checkpoint_saver(None)
 
             # Determine final state based on run status
             final_state = "COMPLETED"

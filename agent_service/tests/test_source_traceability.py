@@ -81,7 +81,7 @@ def test_backoffice_resolves_legacy_chunk_to_versioned_source(tmp_path: Path) ->
     )
 
     refs = resolver.references_for_events([event])
-    assert refs[0]["traceStatus"] == "LEGACY_BACKFILLED"
+    assert refs[0]["traceStatus"] == "LEGACY_UNVERIFIED"
     assert refs[0]["documentId"] == "doc-vpn"
     assert refs[0]["versionId"] == "ver-doc-vpn-2"
     assert refs[0]["sourceType"] == "PDF"

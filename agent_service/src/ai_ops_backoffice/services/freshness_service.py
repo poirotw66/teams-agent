@@ -27,11 +27,16 @@ class FreshnessTracker:
 
     def __init__(
         self,
-        worker_stale_threshold_seconds: float = 60.0,
+        worker_stale_threshold_seconds: float = 600.0,
         realtime_lag_threshold_seconds: float = 60.0,
+        heartbeat_interval_seconds: float = 300.0,
     ) -> None:
         self._lock = threading.RLock()
-        self._worker_stale_threshold = worker_stale_threshold_seconds
+        # Stale threshold must exceed the heartbeat interval or healthy workers look dead.
+        self._heartbeat_interval = heartbeat_interval_seconds
+        self._worker_stale_threshold = max(
+            worker_stale_threshold_seconds, heartbeat_interval_seconds * 2
+        )
         self._realtime_lag_threshold = realtime_lag_threshold_seconds
         self._last_worker_heartbeat: datetime | None = None
         self._is_worker_connected: bool = True
@@ -79,13 +84,24 @@ class FreshnessTracker:
         is_syncing: bool = False,
         now: datetime | None = None,
     ) -> FreshnessMetadata:
-        """Calculates FreshnessMetadata. Guarantees that disconnected/stopped workers or lag cannot report REALTIME."""
+        """Calculates FreshnessMetadata from ingest/aggregation completion, not raw event time.
+
+        An empty event stream does not imply pipeline lag. Prefer the latest
+        EVENT_INGESTED / AGGREGATION_COMPLETED stage or last successful sync.
+        """
         now_dt = now or utc_now()
         with self._lock:
             worker_alive = self.is_worker_active(now_dt)
             last_sync = self._last_successful_sync.get(resource_type)
+            pipeline_watermark = self._latest_pipeline_watermark(resource_type)
+            # Explicit watermark wins for callers that already resolved pipeline time.
+            # Otherwise prefer ingest/aggregation completion over raw event time.
+            if watermark is not None:
+                effective_watermark = watermark
+            else:
+                effective_watermark = pipeline_watermark or last_sync
 
-            if not watermark:
+            if not effective_watermark:
                 return FreshnessMetadata(
                     event_watermark=None,
                     materialized_at=None,
@@ -95,7 +111,7 @@ class FreshnessTracker:
                     last_successful_sync_at=last_sync,
                 )
 
-            lag_seconds = max(0.0, (now_dt - watermark).total_seconds())
+            lag_seconds = max(0.0, (now_dt - effective_watermark).total_seconds())
 
             if not worker_alive:
                 status: Literal["REALTIME", "SYNCING", "DELAYED", "FAILED", "UNKNOWN"] = (
@@ -109,13 +125,35 @@ class FreshnessTracker:
                 status = "REALTIME"
 
             return FreshnessMetadata(
-                event_watermark=watermark,
-                materialized_at=watermark,
+                event_watermark=effective_watermark,
+                materialized_at=(
+                    effective_watermark
+                    if watermark is not None
+                    else (pipeline_watermark or last_sync or effective_watermark)
+                ),
                 served_at=now_dt,
                 lag_seconds=round(lag_seconds, 2),
                 status=status,
                 last_successful_sync_at=last_sync,
             )
+
+    def _latest_pipeline_watermark(self, resource_type: str) -> datetime | None:
+        preferred_stages = (
+            "AGGREGATION_COMPLETED",
+            "EVENT_INGESTED",
+            "SOURCE_SYNC_COMPLETED",
+            "CONVERSATION_LIST_RENDERED",
+        )
+        latest: datetime | None = None
+        for stages in self._stage_events.values():
+            for stage in preferred_stages:
+                stamp = stages.get(stage)
+                if stamp is None:
+                    continue
+                if latest is None or stamp > latest:
+                    latest = stamp
+        _ = resource_type
+        return latest
 
     def calculate_p95_latency(
         self,

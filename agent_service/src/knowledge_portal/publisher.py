@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agent_service.documents import load_source_chunks
 from agent_service.retrieval import HybridIndex
+from agent_service.target_manifest import knowledge_release_target_manifest_hash
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now
@@ -150,6 +151,9 @@ class ReleasePublisher:
             status="READY",
             manifest=manifest,
             corpus_hash=corpus_hash,
+            target_manifest_hash=knowledge_release_target_manifest_hash(
+                release_id=release_id
+            ),
             index_artifact_uri=str(index_path),
             index_setting_version=(
                 f"chunk={self._settings.chunk_size};overlap={self._settings.chunk_overlap};"

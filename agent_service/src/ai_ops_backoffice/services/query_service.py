@@ -134,14 +134,21 @@ class BackofficeQueryService(
         ).upper()
         artifact_storage = None
         if artifact_backend == "GCS":
-            from agent_service.artifact_storage import GcsArtifactStorage
+            from agent_service.artifact_storage import (
+                GcsArtifactStorage,
+                build_gcs_storage_client,
+            )
 
             bucket = getattr(settings, "artifact_gcs_bucket", None)
             if not bucket:
                 raise ValueError(
                     "AI_OPS_ARTIFACT_GCS_BUCKET (or AI_OPS_EXPORT_GCS_BUCKET) is required for GCS artifact storage."
                 )
-            artifact_storage = GcsArtifactStorage(bucket_name=bucket)
+            artifact_storage = GcsArtifactStorage(
+                bucket_name=bucket,
+                client=build_gcs_storage_client(),
+                allow_memory_fallback=False,
+            )
         else:
             from agent_service.artifact_storage import LocalFileArtifactStorage
 

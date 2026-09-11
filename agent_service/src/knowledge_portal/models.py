@@ -42,6 +42,7 @@ ReleaseStatus = Literal[
     "DEPLOYING",
     "ACTIVE",
     "FAILED",
+    "GATE_BLOCKED",
     "ROLLED_BACK",
     "RELOAD_FAILED",
 ]
@@ -197,6 +198,7 @@ class ReleaseRecord(StrictModel):
     status: ReleaseStatus
     manifest: list[ReleaseManifestEntry] = Field(default_factory=list)
     corpus_hash: str
+    target_manifest_hash: str | None = None
     index_artifact_uri: str
     index_setting_version: str
     created_at: datetime

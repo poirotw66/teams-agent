@@ -330,6 +330,7 @@ def register_gate_routes(
         res = gate_service.verify_release_gate(
             target_manifest_hash=payload.target_manifest_hash,
             policy_id=payload.policy_id,
+            tenant_id=actor.tenant_id,
         )
         return res
 

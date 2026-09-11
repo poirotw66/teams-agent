@@ -332,20 +332,47 @@ class QualityGateService:
         *,
         target_manifest_hash: str,
         policy_id: str = "default-gate-policy",
+        tenant_id: str | None = None,
+        environment: str = "prod",
+        policy_version: int | None = None,
+        target_type: str | None = None,
     ) -> dict[str, Any]:
-        """Validates that release target manifest satisfies active quality gate policy."""
+        """Validates release target manifest against active policy, tenant, and version.
+
+        Matching ``activate_target`` rules: hash alone is insufficient; decisions must
+        bind the active policy version and tenant (Spec 7.1).
+        """
+        _ = environment, target_type
         policy = self._gate_repo.get_policy(policy_id)
-        active_ver_num = policy.active_version if policy else None
+        active_ver_num = policy_version or (policy.active_version if policy else None)
         active_version = (
             self._gate_repo.get_version(policy_id, active_ver_num)
             if (policy and active_ver_num)
             else None
         )
 
-        decisions = self._gate_repo.list_decisions(target_manifest_hash)
+        decisions = self._gate_repo.list_decisions(
+            target_manifest_hash,
+            tenant_id=tenant_id,
+        )
         now = datetime.now(timezone.utc)
         valid_decisions = [
-            d for d in decisions if d.is_valid and d.valid_until > now and d.target_manifest_hash == target_manifest_hash
+            d
+            for d in decisions
+            if d.is_valid
+            and d.valid_until > now
+            and d.target_manifest_hash == target_manifest_hash
+            and (tenant_id is None or d.tenant_id == tenant_id)
+        ]
+        if active_version is not None:
+            valid_decisions = [
+                d
+                for d in valid_decisions
+                if d.policy_id == active_version.policy_id
+                and d.policy_version == active_version.version
+            ]
+        valid_decisions = [
+            d for d in valid_decisions if getattr(d, "is_eval_eligible", True) is True
         ]
 
         mode = active_version.mode if active_version else "REPORT_ONLY"
@@ -353,13 +380,38 @@ class QualityGateService:
         if not valid_decisions:
             if mode == "ENFORCE":
                 raise GateBlockedError(
-                    f"Release blocked: No valid quality gate decision exists for manifest '{target_manifest_hash}'"
+                    "Release blocked: No valid quality gate decision exists for manifest "
+                    f"'{target_manifest_hash}' under policy '{policy_id}'"
+                    + (f" v{active_ver_num}" if active_ver_num else "")
+                    + (f" tenant '{tenant_id}'" if tenant_id else "")
                 )
-            return {"status": "ALLOWED_WITH_WARNING", "warning": "No quality gate decision found for manifest"}
+            return {
+                "status": "ALLOWED_WITH_WARNING",
+                "warning": "No quality gate decision found for manifest",
+                "policy_id": policy_id,
+                "policy_version": active_ver_num,
+                "tenant_id": tenant_id,
+            }
 
         latest_dec = max(valid_decisions, key=lambda d: d.created_at)
         if latest_dec.decision in {"PASS", "EXCEPTION_APPROVED"}:
-            return {"status": "PASSED", "decision_id": latest_dec.decision_id}
+            if latest_dec.decision == "EXCEPTION_APPROVED":
+                unexpired = [
+                    e
+                    for e in latest_dec.exceptions
+                    if e.is_active and e.expires_at > now
+                ]
+                if not unexpired and mode == "ENFORCE":
+                    raise GateBlockedError(
+                        f"Release blocked: Gate exception for decision '{latest_dec.decision_id}' has expired"
+                    )
+            return {
+                "status": "PASSED",
+                "decision_id": latest_dec.decision_id,
+                "policy_id": policy_id,
+                "policy_version": latest_dec.policy_version,
+                "tenant_id": latest_dec.tenant_id,
+            }
 
         # Decision is FAIL
         if mode == "ENFORCE":
@@ -370,6 +422,9 @@ class QualityGateService:
             "status": "ALLOWED_WITH_WARNING",
             "warning": f"Quality gate reported failures: {'; '.join(latest_dec.blocking_reasons)}",
             "decision_id": latest_dec.decision_id,
+            "policy_id": policy_id,
+            "policy_version": latest_dec.policy_version,
+            "tenant_id": latest_dec.tenant_id,
         }
 
     def get_active_pointer(

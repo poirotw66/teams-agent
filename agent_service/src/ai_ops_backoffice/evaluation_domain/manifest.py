@@ -1,32 +1,17 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 from typing import Any
+
+from agent_service.target_manifest import calculate_target_manifest_hash
 
 from .repository import EvaluationRepository
 from .runner_models import RunPreflightResult, TargetManifest, TargetSide
 
-
-def calculate_target_manifest_hash(payload: dict[str, Any]) -> str:
-    """Computes an immutable SHA-256 hash from canonical manifest fields."""
-    canonical = {
-        "target_id": payload.get("target_id", ""),
-        "target_side": payload.get("target_side", ""),
-        "app_revision": payload.get("app_revision", "v1"),
-        "prompt_version": payload.get("prompt_version", "default"),
-        "model_id": payload.get("model_id", "gemini-2.5-flash"),
-        "temperature": payload.get("temperature", 0.0),
-        "knowledge_release_id": payload.get("knowledge_release_id"),
-        "faq_version_id": payload.get("faq_version_id"),
-        "retriever_config": payload.get("retriever_config", {}),
-        "persona_fixture_id": payload.get("persona_fixture_id"),
-        "acl_policy": payload.get("acl_policy", "STRICT"),
-        "environment": payload.get("environment", "test"),
-    }
-    dumped = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(dumped.encode("utf-8")).hexdigest()
+__all__ = [
+    "ManifestResolver",
+    "calculate_target_manifest_hash",
+]
 
 
 class ManifestResolver:

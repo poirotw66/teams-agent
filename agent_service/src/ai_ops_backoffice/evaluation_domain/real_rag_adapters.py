@@ -188,11 +188,20 @@ class RealRagAnswerAdapter:
         return probed is not None
 
     def _resolve_prompt_template(self, manifest: TargetManifest) -> str:
-        version = (manifest.prompt_version or "").strip()
-        if version and self._prompt_resolver is not None:
+        version = (manifest.prompt_version or "").strip() or "default"
+        if self._prompt_resolver is not None:
             resolved = self._prompt_resolver(version)
             if resolved:
                 return resolved
+            if version != "default":
+                raise EvaluationValidationError(
+                    f"REAL_RAG rejected: prompt_version '{version}' could not be resolved. "
+                    "Silent fallback to another prompt is prohibited."
+                )
+        if version != "default":
+            raise EvaluationValidationError(
+                f"REAL_RAG rejected: prompt_version '{version}' requires a registered prompt resolver."
+            )
         from agent_service.knowledge import ANSWER_PROMPT
 
         return ANSWER_PROMPT
@@ -203,6 +212,18 @@ class RealRagAnswerAdapter:
             built = self._model_factory(model_id)
             if built is not None:
                 return built
+            raise EvaluationValidationError(
+                f"REAL_RAG rejected: model_id '{model_id}' could not be constructed. "
+                "Silent fallback to another model is prohibited."
+            )
+        if model_id and self._chat_model is not None:
+            # Shared chat model is only allowed when it matches the requested id.
+            default_name = str(getattr(self._chat_model, "model_name", "") or "")
+            if default_name and default_name != model_id:
+                raise EvaluationValidationError(
+                    f"REAL_RAG rejected: requested model '{model_id}' does not match "
+                    f"bound chat model '{default_name}'."
+                )
         return self._chat_model
 
     def _priced_cost(

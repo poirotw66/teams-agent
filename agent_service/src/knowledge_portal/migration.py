@@ -7,6 +7,7 @@ from typing import Any
 
 from agent_service.documents import parse_front_matter
 from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
+from agent_service.target_manifest import knowledge_release_target_manifest_hash
 
 from .draft_assets import slug_from_title
 from .models import (
@@ -196,23 +197,37 @@ class KnowledgeMigrationService:
 
         from agent_service.knowledge_release import write_active_release_pointer
 
+        gate_hash = release.target_manifest_hash or knowledge_release_target_manifest_hash(
+            release_id=release.release_id
+        )
+        try:
+            require_release_gate(
+                self.release_gate_checker,
+                target_manifest_hash=gate_hash,
+                target_type="KNOWLEDGE",
+                tenant_id=getattr(actor, "tenant_id", None),
+            )
+        except ReleaseGateBlockedError as exc:
+            blocked = release.model_copy(
+                update={
+                    "status": "GATE_BLOCKED",
+                    "failure_summary": str(exc),
+                    "target_manifest_hash": gate_hash,
+                }
+            )
+            await self._repository.save_release(blocked)
+            raise PermissionError(str(exc)) from exc
+
         release = release.model_copy(
             update={
                 "status": "ACTIVE",
                 "activated_at": now,
                 "verified_at": now,
                 "approved_by": actor.user_id,
+                "target_manifest_hash": gate_hash,
             }
         )
         await self._repository.save_release(release)
-        try:
-            require_release_gate(
-                self.release_gate_checker,
-                target_manifest_hash=release.corpus_hash,
-                target_type="KNOWLEDGE",
-            )
-        except ReleaseGateBlockedError as exc:
-            raise PermissionError(str(exc)) from exc
         await self._repository.set_active_release_id(release.release_id)
         write_active_release_pointer(
             self._settings.release_artifact_dir,

@@ -406,9 +406,16 @@ class ConversationsQueryMixin:
         freshness_meta = None
         tracker = getattr(self, "_freshness_tracker", None)
         if tracker is not None:
+            # Prefer ingest/aggregation completion; raw occurred_at alone is not lag.
+            if latest_event_at is not None:
+                tracker.record_stage_event(
+                    "conversations-list",
+                    "EVENT_INGESTED",
+                    at=latest_event_at,
+                )
             freshness_meta = tracker.compute_freshness(
                 resource_type="conversations",
-                watermark=latest_event_at,
+                watermark=None,
             ).model_dump(mode="json")
         return {
             "items": items,

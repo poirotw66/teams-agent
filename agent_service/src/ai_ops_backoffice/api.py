@@ -453,7 +453,20 @@ def create_app(
     from agent_service.settings import RagSettings
 
     def _eval_model_factory(model_id: str) -> object | None:
-        return build_chat_model(model_id) or build_chat_model(RagSettings.from_env().model)
+        requested = str(model_id or "").strip()
+        if not requested:
+            return None
+        # Fail closed: never silently substitute the environment default model.
+        return build_chat_model(requested)
+
+    def _eval_prompt_resolver(prompt_version: str) -> str | None:
+        version = str(prompt_version or "").strip()
+        if not version or version == "default":
+            from agent_service.knowledge import ANSWER_PROMPT
+
+            return ANSWER_PROMPT
+        # Formal apps must resolve named prompt versions explicitly; missing = fail.
+        return None
 
     resolved_eval_chat_model = eval_chat_model
     if (
@@ -472,6 +485,7 @@ def create_app(
             tool_fixture_service,
             workflow_executor=build_agent_sandbox_workflow_executor(
                 model_factory=_eval_model_factory,
+                prompt_resolver=_eval_prompt_resolver,
             ),
         )
     except Exception as sandbox_err:  # pragma: no cover - optional live model deps
@@ -491,6 +505,7 @@ def create_app(
         chat_model=resolved_eval_chat_model,
         model_invoker=eval_model_invoker,
         model_factory=_eval_model_factory if eval_answering_fn is None else None,
+        prompt_resolver=_eval_prompt_resolver if eval_answering_fn is None else None,
         sandbox_adapter=sandbox_adapter,
     )
     job_worker = ExecutionJobWorker(

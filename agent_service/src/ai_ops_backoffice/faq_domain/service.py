@@ -7,6 +7,7 @@ from typing import Any
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import MASKING_POLICY_VERSION, mask_text
 from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
+from agent_service.target_manifest import faq_version_target_manifest_hash
 
 from .artifacts import write_faq_activation_artifact
 from .authorization import (
@@ -613,9 +614,11 @@ class FaqDomainService:
         try:
             require_release_gate(
                 self._release_gate_checker,
-                target_manifest_hash=getattr(version, "content_hash", None)
-                or version.version_id,
+                target_manifest_hash=faq_version_target_manifest_hash(
+                    faq_version_id=version.version_id
+                ),
                 target_type="FAQ",
+                tenant_id=getattr(actor, "tenant_id", None) or getattr(faq, "tenant_id", None),
             )
         except ReleaseGateBlockedError as exc:
             raise FaqValidationError(str(exc)) from exc

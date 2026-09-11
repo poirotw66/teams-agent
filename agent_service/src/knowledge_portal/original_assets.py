@@ -27,7 +27,7 @@ def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
     """Build optional artifact storage for original-asset dual-write."""
     backend = (settings.artifact_storage_backend or "FILE").upper()
     if backend == "GCS":
-        from agent_service.artifact_storage import GcsArtifactStorage
+        from agent_service.artifact_storage import GcsArtifactStorage, build_gcs_storage_client
 
         bucket = settings.artifact_gcs_bucket
         if not bucket:
@@ -35,7 +35,11 @@ def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
                 "KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET (or AI_OPS_ARTIFACT_GCS_BUCKET) "
                 "is required when artifact storage backend is GCS."
             )
-        return GcsArtifactStorage(bucket_name=bucket)
+        return GcsArtifactStorage(
+            bucket_name=bucket,
+            client=build_gcs_storage_client(),
+            allow_memory_fallback=False,
+        )
     if backend in {"FILE", "LOCAL"}:
         from agent_service.artifact_storage import LocalFileArtifactStorage
 

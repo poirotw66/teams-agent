@@ -219,9 +219,15 @@ class OperationsQueryMixin:
         freshness_meta = None
         tracker = getattr(self, "_freshness_tracker", None)
         if tracker is not None:
+            if latest_event_at is not None:
+                tracker.record_stage_event(
+                    "operations-overview",
+                    "AGGREGATION_COMPLETED",
+                    at=latest_event_at,
+                )
             freshness_meta = tracker.compute_freshness(
                 resource_type="operations_overview",
-                watermark=latest_event_at,
+                watermark=None,
             ).model_dump(mode="json")
 
         metrics_source = "event_scan"

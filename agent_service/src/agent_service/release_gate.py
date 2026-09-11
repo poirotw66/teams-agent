@@ -20,6 +20,9 @@ class ReleaseGateChecker(Protocol):
         target_manifest_hash: str,
         target_type: str,
         policy_id: str = "default-gate-policy",
+        tenant_id: str | None = None,
+        environment: str = "prod",
+        policy_version: int | None = None,
     ) -> dict[str, Any]:
         """Return gate status dict, or raise ReleaseGateBlockedError when blocked."""
         ...
@@ -37,6 +40,9 @@ class QualityGateReleaseChecker:
         target_manifest_hash: str,
         target_type: str,
         policy_id: str = "default-gate-policy",
+        tenant_id: str | None = None,
+        environment: str = "prod",
+        policy_version: int | None = None,
     ) -> dict[str, Any]:
         from ai_ops_backoffice.evaluation_domain.gate_service import GateBlockedError
 
@@ -44,6 +50,10 @@ class QualityGateReleaseChecker:
             result = self._gate_service.verify_release_gate(
                 target_manifest_hash=target_manifest_hash,
                 policy_id=policy_id,
+                tenant_id=tenant_id,
+                environment=environment,
+                policy_version=policy_version,
+                target_type=target_type,
             )
         except GateBlockedError as exc:
             raise ReleaseGateBlockedError(str(exc)) from exc
@@ -56,6 +66,9 @@ def require_release_gate(
     target_manifest_hash: str,
     target_type: str,
     policy_id: str = "default-gate-policy",
+    tenant_id: str | None = None,
+    environment: str = "prod",
+    policy_version: int | None = None,
 ) -> dict[str, Any] | None:
     """Invoke checker when present.
 
@@ -69,4 +82,7 @@ def require_release_gate(
         target_manifest_hash=target_manifest_hash,
         target_type=target_type,
         policy_id=policy_id,
+        tenant_id=tenant_id,
+        environment=environment,
+        policy_version=policy_version,
     )
