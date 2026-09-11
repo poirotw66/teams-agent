@@ -14,14 +14,20 @@ from .errors import (
 )
 from .gate_evaluator import GateEvaluator
 from .gate_models import (
+    ActivationAuditRecord,
+    ActiveReleasePointer,
+    BreakGlassRequest,
     EvalSchedule,
     GateDecision,
     GateException,
     GatePolicy,
     GatePolicyVersion,
     QualityCaseLink,
+    ScheduleDispatchResult,
     SourceImpactResult,
+    TargetType,
 )
+from .scheduler import EvalScheduler, compute_next_due_time
 from .gate_repository import (
     FileQualityGateRepository,
     FirestoreQualityGateRepository,
@@ -103,7 +109,10 @@ from .tool_fixtures import (
 )
 
 __all__ = [
+    "ActivationAuditRecord",
+    "ActiveReleasePointer",
     "AgentBehaviorScorer",
+    "BreakGlassRequest",
     "CandidateGenerationJob",
     "CandidateGenerationManager",
     "CaseExecution",
@@ -112,6 +121,7 @@ __all__ = [
     "EvalBehaviorType",
     "EvalCase",
     "EvalSchedule",
+    "EvalScheduler",
     "EvalSet",
     "EvalSetVersion",
     "EvaluationAuditEvent",
@@ -158,9 +168,11 @@ __all__ = [
     "RunComparisonSummary",
     "RunPreflightResult",
     "SIDE_EFFECT_TOOLS",
+    "ScheduleDispatchResult",
     "SourceImpactResult",
     "TargetExecutionInput",
     "TargetManifest",
+    "TargetType",
     "ToolCallTrace",
     "ToolConstraintsSpec",
     "ToolFixture",
@@ -173,4 +185,5 @@ __all__ = [
     "calculate_manifest_hash",
     "calculate_revision_content_hash",
     "calculate_target_manifest_hash",
+    "compute_next_due_time",
 ]

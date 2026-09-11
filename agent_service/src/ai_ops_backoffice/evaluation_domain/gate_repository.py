@@ -10,12 +10,16 @@ from typing import Any, Protocol
 
 from .errors import EvaluationNotFoundError, EvaluationVersionConflictError
 from .gate_models import (
+    ActivationAuditRecord,
+    ActiveReleasePointer,
+    BreakGlassRequest,
     EvalSchedule,
     GateDecision,
     GateException,
     GatePolicy,
     GatePolicyVersion,
     QualityCaseLink,
+    ScheduleDispatchResult,
 )
 
 
@@ -64,6 +68,36 @@ class QualityGateRepositoryProtocol(Protocol):
         self, execution_id: str
     ) -> QualityCaseLink | None: ...
 
+    def save_active_pointer(
+        self, pointer: ActiveReleasePointer, expected_etag: int | None = None
+    ) -> None: ...
+
+    def get_active_pointer(
+        self, tenant_id: str, environment: str, target_type: str
+    ) -> ActiveReleasePointer | None: ...
+
+    def list_active_pointers(
+        self, tenant_id: str | None = None
+    ) -> list[ActiveReleasePointer]: ...
+
+    def save_break_glass(self, bg: BreakGlassRequest) -> None: ...
+
+    def get_break_glass(self, break_glass_id: str) -> BreakGlassRequest | None: ...
+
+    def save_activation_audit(self, audit: ActivationAuditRecord) -> None: ...
+
+    def list_activation_audits(
+        self, tenant_id: str | None = None
+    ) -> list[ActivationAuditRecord]: ...
+
+    def save_schedule_dispatch(
+        self, dispatch: ScheduleDispatchResult
+    ) -> bool: ...
+
+    def get_schedule_dispatch(
+        self, logical_key: str
+    ) -> ScheduleDispatchResult | None: ...
+
 
 class InMemoryQualityGateRepository:
     """Thread-safe in-memory store for gate policies, versions, decisions, exceptions, and schedules."""
@@ -76,6 +110,10 @@ class InMemoryQualityGateRepository:
         self._exceptions: dict[str, GateException] = {}
         self._schedules: dict[str, EvalSchedule] = {}
         self._quality_cases: dict[str, QualityCaseLink] = {}
+        self._pointers: dict[tuple[str, str, str], ActiveReleasePointer] = {}
+        self._break_glasses: dict[str, BreakGlassRequest] = {}
+        self._activation_audits: list[ActivationAuditRecord] = []
+        self._dispatches: dict[str, ScheduleDispatchResult] = {}
 
     def save_policy(
         self, policy: GatePolicy, expected_version: int | None = None
@@ -192,6 +230,73 @@ class InMemoryQualityGateRepository:
                 None,
             )
 
+    def save_active_pointer(
+        self, pointer: ActiveReleasePointer, expected_etag: int | None = None
+    ) -> None:
+        with self._lock:
+            key = (pointer.tenant_id, pointer.environment, pointer.target_type)
+            existing = self._pointers.get(key)
+            if expected_etag is not None and existing:
+                if existing.etag != expected_etag:
+                    raise EvaluationVersionConflictError(
+                        f"Active pointer {key} etag mismatch: expected {expected_etag}, got {existing.etag}"
+                    )
+            elif expected_etag is not None and not existing and expected_etag != 0:
+                raise EvaluationVersionConflictError(
+                    f"Active pointer {key} does not exist for expected etag {expected_etag}"
+                )
+            self._pointers[key] = pointer
+
+    def get_active_pointer(
+        self, tenant_id: str, environment: str, target_type: str
+    ) -> ActiveReleasePointer | None:
+        with self._lock:
+            return self._pointers.get((tenant_id, environment, target_type))
+
+    def list_active_pointers(
+        self, tenant_id: str | None = None
+    ) -> list[ActiveReleasePointer]:
+        with self._lock:
+            if tenant_id:
+                return [p for p in self._pointers.values() if p.tenant_id == tenant_id]
+            return list(self._pointers.values())
+
+    def save_break_glass(self, bg: BreakGlassRequest) -> None:
+        with self._lock:
+            self._break_glasses[bg.break_glass_id] = bg
+
+    def get_break_glass(self, break_glass_id: str) -> BreakGlassRequest | None:
+        with self._lock:
+            return self._break_glasses.get(break_glass_id)
+
+    def save_activation_audit(self, audit: ActivationAuditRecord) -> None:
+        with self._lock:
+            self._activation_audits.append(audit)
+
+    def list_activation_audits(
+        self, tenant_id: str | None = None
+    ) -> list[ActivationAuditRecord]:
+        with self._lock:
+            if tenant_id:
+                return [a for a in self._activation_audits if a.tenant_id == tenant_id]
+            return list(self._activation_audits)
+
+    def save_schedule_dispatch(
+        self, dispatch: ScheduleDispatchResult
+    ) -> bool:
+        """Atomically saves dispatch if logical_key does not exist. Returns True if created, False if duplicate."""
+        with self._lock:
+            if dispatch.logical_key in self._dispatches:
+                return False
+            self._dispatches[dispatch.logical_key] = dispatch
+            return True
+
+    def get_schedule_dispatch(
+        self, logical_key: str
+    ) -> ScheduleDispatchResult | None:
+        with self._lock:
+            return self._dispatches.get(logical_key)
+
 
 QualityGateRepository = InMemoryQualityGateRepository
 
@@ -208,6 +313,10 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
         self._exceptions_dir = self._dir / "exceptions"
         self._schedules_dir = self._dir / "schedules"
         self._links_dir = self._dir / "links"
+        self._pointers_dir = self._dir / "pointers"
+        self._break_glasses_dir = self._dir / "break_glasses"
+        self._dispatches_dir = self._dir / "dispatches"
+        self._audits_file = self._dir / "activation_audits.jsonl"
         self._lock_file = self._dir / ".gate.lock"
 
         for d in (
@@ -217,6 +326,9 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
             self._exceptions_dir,
             self._schedules_dir,
             self._links_dir,
+            self._pointers_dir,
+            self._break_glasses_dir,
+            self._dispatches_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
         self._sync_from_disk()
@@ -275,6 +387,44 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
                 except Exception:
                     continue
             self._quality_cases = links
+
+            pointers: dict[tuple[str, str, str], ActiveReleasePointer] = {}
+            for p in self._pointers_dir.glob("*.json"):
+                try:
+                    ptr = ActiveReleasePointer.model_validate_json(p.read_text(encoding="utf-8"))
+                    pointers[(ptr.tenant_id, ptr.environment, ptr.target_type)] = ptr
+                except Exception:
+                    continue
+            self._pointers = pointers
+
+            break_glasses: dict[str, BreakGlassRequest] = {}
+            for p in self._break_glasses_dir.glob("*.json"):
+                try:
+                    bg = BreakGlassRequest.model_validate_json(p.read_text(encoding="utf-8"))
+                    break_glasses[bg.break_glass_id] = bg
+                except Exception:
+                    continue
+            self._break_glasses = break_glasses
+
+            dispatches: dict[str, ScheduleDispatchResult] = {}
+            for p in self._dispatches_dir.glob("*.json"):
+                try:
+                    dsp = ScheduleDispatchResult.model_validate_json(p.read_text(encoding="utf-8"))
+                    dispatches[dsp.logical_key] = dsp
+                except Exception:
+                    continue
+            self._dispatches = dispatches
+
+            audits: list[ActivationAuditRecord] = []
+            if self._audits_file.is_file():
+                for line in self._audits_file.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        audits.append(ActivationAuditRecord.model_validate_json(line))
+                    except Exception:
+                        continue
+            self._activation_audits = audits
 
     def _write_record_atomic(self, target: Path, content: str) -> None:
         temp = target.with_suffix(f".{uuid.uuid4().hex}.tmp")
@@ -406,6 +556,75 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
     ) -> QualityCaseLink | None:
         self._sync_from_disk()
         return super().get_quality_case_by_execution(execution_id)
+
+    def save_active_pointer(
+        self, pointer: ActiveReleasePointer, expected_etag: int | None = None
+    ) -> None:
+        def _op() -> None:
+            super(FileQualityGateRepository, self).save_active_pointer(pointer, expected_etag)
+            target = self._pointers_dir / f"{pointer.tenant_id}_{pointer.environment}_{pointer.target_type}.json"
+            self._write_record_atomic(target, pointer.model_dump_json(indent=2))
+
+        self._with_lock(_op)
+
+    def get_active_pointer(
+        self, tenant_id: str, environment: str, target_type: str
+    ) -> ActiveReleasePointer | None:
+        self._sync_from_disk()
+        return super().get_active_pointer(tenant_id, environment, target_type)
+
+    def list_active_pointers(
+        self, tenant_id: str | None = None
+    ) -> list[ActiveReleasePointer]:
+        self._sync_from_disk()
+        return super().list_active_pointers(tenant_id=tenant_id)
+
+    def save_break_glass(self, bg: BreakGlassRequest) -> None:
+        def _op() -> None:
+            super(FileQualityGateRepository, self).save_break_glass(bg)
+            target = self._break_glasses_dir / f"{bg.break_glass_id}.json"
+            self._write_record_atomic(target, bg.model_dump_json(indent=2))
+
+        self._with_lock(_op)
+
+    def get_break_glass(self, break_glass_id: str) -> BreakGlassRequest | None:
+        self._sync_from_disk()
+        return super().get_break_glass(break_glass_id)
+
+    def save_activation_audit(self, audit: ActivationAuditRecord) -> None:
+        def _op() -> None:
+            super(FileQualityGateRepository, self).save_activation_audit(audit)
+            with self._audits_file.open("a", encoding="utf-8") as f:
+                f.write(audit.model_dump_json() + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+
+        self._with_lock(_op)
+
+    def list_activation_audits(
+        self, tenant_id: str | None = None
+    ) -> list[ActivationAuditRecord]:
+        self._sync_from_disk()
+        return super().list_activation_audits(tenant_id=tenant_id)
+
+    def save_schedule_dispatch(
+        self, dispatch: ScheduleDispatchResult
+    ) -> bool:
+        def _op() -> bool:
+            created = super(FileQualityGateRepository, self).save_schedule_dispatch(dispatch)
+            if created:
+                safe_key = "".join(c if c.isalnum() or c in "-_" else "_" for c in dispatch.logical_key)
+                target = self._dispatches_dir / f"{safe_key}.json"
+                self._write_record_atomic(target, dispatch.model_dump_json(indent=2))
+            return created
+
+        return self._with_lock(_op)
+
+    def get_schedule_dispatch(
+        self, logical_key: str
+    ) -> ScheduleDispatchResult | None:
+        self._sync_from_disk()
+        return super().get_schedule_dispatch(logical_key)
 
 
 class FirestoreQualityGateRepository:

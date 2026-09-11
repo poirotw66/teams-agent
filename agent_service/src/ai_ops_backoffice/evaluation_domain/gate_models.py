@@ -85,6 +85,7 @@ class GateDecision(StrictModel):
     metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
     valid_until: datetime
     is_valid: bool = True
+    is_eval_eligible: bool = True
     exceptions: tuple[GateException, ...] = ()
     created_at: datetime
 
@@ -135,3 +136,72 @@ class QualityCaseLink(StrictModel):
     resolution_run_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+TargetType = Literal[
+    "KNOWLEDGE",
+    "FAQ",
+    "PROMPT",
+    "MODEL",
+    "RETRIEVER",
+    "AGENT_CONFIG",
+]
+
+
+class ActiveReleasePointer(StrictModel):
+    pointer_id: str
+    tenant_id: str = "default"
+    environment: str = "prod"
+    target_type: TargetType
+    active_manifest_hash: str
+    active_version_ref: str
+    active_target_manifest: dict[str, Any] = Field(default_factory=dict)
+    decision_id: str
+    etag: int = Field(default=1, ge=1)
+    updated_at: datetime
+    updated_by: str
+    previous_manifest_hash: str | None = None
+    is_break_glass: bool = False
+    break_glass_id: str | None = None
+
+
+class BreakGlassRequest(StrictModel):
+    break_glass_id: str
+    tenant_id: str
+    environment: str = "prod"
+    target_type: TargetType
+    candidate_manifest_hash: str
+    reason: str
+    authorized_by: str
+    requested_by: str
+    expires_at: datetime
+    created_at: datetime
+    is_used: bool = False
+
+
+class ActivationAuditRecord(StrictModel):
+    activation_id: str
+    pointer_id: str
+    tenant_id: str
+    environment: str
+    target_type: TargetType
+    from_manifest_hash: str | None
+    to_manifest_hash: str
+    decision_id: str | None
+    is_break_glass: bool = False
+    break_glass_id: str | None = None
+    activated_by: str
+    activated_at: datetime
+
+
+class ScheduleDispatchResult(StrictModel):
+    dispatch_id: str
+    schedule_id: str
+    logical_key: str
+    scheduled_at: datetime
+    dispatched_at: datetime
+    status: Literal["DISPATCHED", "SKIPPED_BUDGET", "SKIPPED_OVERLAP", "SKIPPED_MISFIRE", "DUPLICATE_IGNORED"]
+    run_id: str | None = None
+    estimated_cost_usd: float | None = None
+    reason: str | None = None
+

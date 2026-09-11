@@ -90,8 +90,28 @@ class GateEvaluator:
                     f"P95 latency {summary.latency_p95_ms:.1f}ms exceeds limit {policy_version.max_latency_p95_ms:.1f}ms"
                 )
 
+        # 9. Ineligible evaluation run check (Spec 6.1, F01-T1, F05-T2)
+        is_eligible = getattr(run, "is_eval_eligible", True)
+        if not is_eligible:
+            blocking_reasons.append(
+                "Evaluation run is marked ineligible for quality gate release "
+                "(e.g. OFFLINE_BENCHMARK or missing formal adapters)"
+            )
+
         decision_status = "PASS" if not blocking_reasons else "FAIL"
         valid_until = now + timedelta(hours=policy_version.validity_hours)
+
+        import hashlib
+        import json
+        digest_data = {
+            "run_id": run.run_id,
+            "manifest_hash": target_manifest_hash,
+            "metrics": metrics_snapshot,
+            "blocking_reasons": sorted(blocking_reasons),
+        }
+        result_digest = hashlib.sha256(
+            json.dumps(digest_data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
         return GateDecision(
             decision_id=f"gdec_{uuid.uuid4().hex[:12]}",
@@ -101,9 +121,14 @@ class GateEvaluator:
             target_manifest_hash=target_manifest_hash,
             decision=decision_status,
             mode_at_evaluation=policy_version.mode,
+            tenant_id=getattr(run, "tenant_id", "default") or "default",
+            suite_versions=(run.set_version_id,),
+            run_ids=(run.run_id,),
+            result_digest=result_digest,
             blocking_reasons=tuple(blocking_reasons),
             metrics_snapshot=metrics_snapshot,
             valid_until=valid_until,
             is_valid=True,
+            is_eval_eligible=is_eligible,
             created_at=now,
         )

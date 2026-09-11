@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import uuid
 from typing import Any
 
 from agent_service.operations.access import ActorContext
@@ -12,6 +13,9 @@ from .errors import (
 )
 from .gate_evaluator import GateEvaluator
 from .gate_models import (
+    ActivationAuditRecord,
+    ActiveReleasePointer,
+    BreakGlassRequest,
     EvalSchedule,
     GateDecision,
     GateException,
@@ -20,9 +24,11 @@ from .gate_models import (
     GatePolicyVersion,
     QualityCaseLink,
     SourceImpactResult,
+    TargetType,
 )
 from .gate_repository import QualityGateRepository
 from .repository import EvaluationRepository
+from .runner_models import TargetManifest
 
 
 class GateBlockedError(EvaluationDomainError):
@@ -365,6 +371,217 @@ class QualityGateService:
             "warning": f"Quality gate reported failures: {'; '.join(latest_dec.blocking_reasons)}",
             "decision_id": latest_dec.decision_id,
         }
+
+    def get_active_pointer(
+        self, tenant_id: str, environment: str, target_type: TargetType
+    ) -> ActiveReleasePointer | None:
+        return self._gate_repo.get_active_pointer(tenant_id, environment, target_type)
+
+    def list_active_pointers(
+        self, tenant_id: str | None = None
+    ) -> list[ActiveReleasePointer]:
+        return self._gate_repo.list_active_pointers(tenant_id)
+
+    def create_break_glass(
+        self,
+        *,
+        tenant_id: str,
+        environment: str = "prod",
+        target_type: TargetType,
+        candidate_manifest_hash: str,
+        reason: str,
+        authorized_by: str,
+        requested_by: str,
+        validity_hours: int = 12,
+    ) -> BreakGlassRequest:
+        """Creates an emergency break-glass authorization with strict expiration and scope (Spec 7.1)."""
+        now = datetime.now(timezone.utc)
+        bg_id = f"bg_{uuid.uuid4().hex[:12]}"
+        bg = BreakGlassRequest(
+            break_glass_id=bg_id,
+            tenant_id=tenant_id,
+            environment=environment,
+            target_type=target_type,
+            candidate_manifest_hash=candidate_manifest_hash,
+            reason=reason.strip(),
+            authorized_by=authorized_by.strip(),
+            requested_by=requested_by.strip(),
+            expires_at=now + timedelta(hours=validity_hours),
+            created_at=now,
+            is_used=False,
+        )
+        self._gate_repo.save_break_glass(bg)
+        return bg
+
+    def activate_target(
+        self,
+        *,
+        tenant_id: str,
+        environment: str = "prod",
+        target_type: TargetType,
+        candidate_manifest: TargetManifest,
+        active_version_ref: str,
+        actor: ActorContext,
+        policy_id: str = "default-gate-policy",
+        expected_pointer_etag: int | None = None,
+        break_glass_id: str | None = None,
+    ) -> ActiveReleasePointer:
+        """Enforces quality gate rules before updating active pointer in atomic CAS (Spec 7.1, F05)."""
+        now = datetime.now(timezone.utc)
+        pointer_id = f"{tenant_id}:{environment}:{target_type}"
+        current_pointer = self._gate_repo.get_active_pointer(tenant_id, environment, target_type)
+
+        is_break_glass = False
+        resolved_break_glass_id = None
+        decision_id: str = "break_glass"
+
+        if break_glass_id:
+            bg = self._gate_repo.get_break_glass(break_glass_id)
+            if not bg:
+                raise EvaluationValidationError(f"Break-glass request '{break_glass_id}' not found")
+            if bg.is_used:
+                raise EvaluationValidationError(f"Break-glass request '{break_glass_id}' has already been used")
+            if bg.expires_at < now:
+                raise EvaluationValidationError(f"Break-glass request '{break_glass_id}' has expired")
+            if bg.tenant_id != tenant_id or bg.environment != environment or bg.target_type != target_type:
+                raise EvaluationValidationError("Break-glass scope mismatch (tenant, environment, or target_type)")
+            if bg.candidate_manifest_hash != candidate_manifest.manifest_hash:
+                raise EvaluationValidationError(
+                    f"Break-glass manifest hash mismatch: authorized for '{bg.candidate_manifest_hash}', "
+                    f"attempted '{candidate_manifest.manifest_hash}'"
+                )
+            # Mark break-glass as used
+            bg_used = bg.model_copy(update={"is_used": True})
+            self._gate_repo.save_break_glass(bg_used)
+            is_break_glass = True
+            resolved_break_glass_id = break_glass_id
+        else:
+            policy = self._gate_repo.get_policy(policy_id)
+            active_ver_num = policy.active_version if policy else None
+            active_policy_ver = (
+                self._gate_repo.get_version(policy_id, active_ver_num)
+                if (policy and active_ver_num)
+                else None
+            )
+            mode: GateMode = active_policy_ver.mode if active_policy_ver else "REPORT_ONLY"
+
+            # Query decisions matching candidate manifest
+            decisions = self._gate_repo.list_decisions(
+                target_manifest_hash=candidate_manifest.manifest_hash,
+                tenant_id=tenant_id,
+            )
+            # Must be valid, unexpired, and match candidate manifest hash
+            valid_decisions = [
+                d for d in decisions
+                if d.is_valid and d.valid_until > now and d.target_manifest_hash == candidate_manifest.manifest_hash
+            ]
+            # Policy version change check (Spec 7.1): "政策版本變更須重新決策"
+            if active_policy_ver:
+                valid_decisions = [
+                    d for d in valid_decisions
+                    if d.policy_id == active_policy_ver.policy_id and d.policy_version == active_policy_ver.version
+                ]
+            # Eval eligibility check (Spec 6.1, 7.1, F05-T2): OFFLINE_BENCHMARK or mock run cannot pass gate
+            valid_decisions = [
+                d for d in valid_decisions
+                if getattr(d, "is_eval_eligible", True) is True
+            ]
+
+            if not valid_decisions:
+                if mode == "ENFORCE":
+                    raise GateBlockedError(
+                        f"Activation blocked by gate: No valid eligible decision exists for manifest "
+                        f"'{candidate_manifest.manifest_hash}' under policy '{policy_id}'"
+                        + (f" v{active_ver_num}" if active_ver_num else "")
+                    )
+                decision_id = "unverified_report_only"
+            else:
+                latest_dec = max(valid_decisions, key=lambda d: d.created_at)
+                decision_id = latest_dec.decision_id
+
+                if latest_dec.decision == "EXCEPTION_APPROVED":
+                    # Check that active exception is NOT expired (Spec 7.1, F05-T2)
+                    unexpired_exceptions = [
+                        e for e in latest_dec.exceptions
+                        if e.is_active and e.expires_at > now
+                    ]
+                    if not unexpired_exceptions:
+                        if mode == "ENFORCE":
+                            raise GateBlockedError(
+                                f"Activation blocked: Gate exception for decision '{latest_dec.decision_id}' has expired"
+                            )
+                elif latest_dec.decision != "PASS":
+                    if mode == "ENFORCE":
+                        raise GateBlockedError(
+                            f"Activation blocked by gate policy '{policy_id}': "
+                            f"{'; '.join(latest_dec.blocking_reasons)}"
+                        )
+
+        # Atomic CAS update of ActiveReleasePointer
+        new_etag = (current_pointer.etag + 1) if current_pointer else 1
+        new_pointer = ActiveReleasePointer(
+            pointer_id=pointer_id,
+            tenant_id=tenant_id,
+            environment=environment,
+            target_type=target_type,
+            active_manifest_hash=candidate_manifest.manifest_hash,
+            active_version_ref=active_version_ref,
+            active_target_manifest=candidate_manifest.model_dump(mode="json")
+            if hasattr(candidate_manifest, "model_dump")
+            else dict(candidate_manifest),
+            decision_id=decision_id,
+            etag=new_etag,
+            updated_at=now,
+            updated_by=actor.user_id,
+            previous_manifest_hash=current_pointer.active_manifest_hash if current_pointer else None,
+            is_break_glass=is_break_glass,
+            break_glass_id=resolved_break_glass_id,
+        )
+        self._gate_repo.save_active_pointer(new_pointer, expected_etag=expected_pointer_etag)
+
+        audit = ActivationAuditRecord(
+            activation_id=f"act_{uuid.uuid4().hex[:12]}",
+            pointer_id=pointer_id,
+            tenant_id=tenant_id,
+            environment=environment,
+            target_type=target_type,
+            from_manifest_hash=current_pointer.active_manifest_hash if current_pointer else None,
+            to_manifest_hash=candidate_manifest.manifest_hash,
+            decision_id=decision_id if not is_break_glass else None,
+            is_break_glass=is_break_glass,
+            break_glass_id=resolved_break_glass_id,
+            activated_by=actor.user_id,
+            activated_at=now,
+        )
+        self._gate_repo.save_activation_audit(audit)
+        return new_pointer
+
+    def rollback_target(
+        self,
+        *,
+        tenant_id: str,
+        environment: str = "prod",
+        target_type: TargetType,
+        target_manifest: TargetManifest,
+        active_version_ref: str,
+        reason: str,
+        actor: ActorContext,
+        policy_id: str = "default-gate-policy",
+        expected_pointer_etag: int | None = None,
+        break_glass_id: str | None = None,
+    ) -> ActiveReleasePointer:
+        """Rolls back an active target to a previous version, requiring a valid decision or break-glass (Spec 7.1)."""
+        return self.activate_target(
+            tenant_id=tenant_id,
+            environment=environment,
+            target_type=target_type,
+            candidate_manifest=target_manifest,
+            active_version_ref=active_version_ref,
+            actor=actor,
+            policy_id=policy_id,
+            expected_pointer_etag=expected_pointer_etag,
+            break_glass_id=break_glass_id,
+        )
 
     def analyze_source_impact(
         self,
