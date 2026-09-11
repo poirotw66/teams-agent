@@ -197,6 +197,14 @@ class ResolvedSource:
     original_asset_name: str | None
     original_asset_path: Path | None
     trace_status: str
+    tenant_id: str | None = None
+    artifact_ref: str | None = None
+    mapping_status: str = "AVAILABLE"
+    locator: Any = None
+    owner_unit_id: str | None = None
+    acl_groups: tuple[str, ...] = ()
+    is_archived: bool = False
+    is_deleted: bool = False
 
 
 __all__ = [

@@ -119,5 +119,15 @@ class CursorPage(StrictModel):
     has_more: bool = False
 
 
+class FreshnessMetadata(StrictModel):
+    event_watermark: datetime | None = None
+    materialized_at: datetime | None = None
+    served_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    lag_seconds: float | None = None
+    status: Literal["REALTIME", "SYNCING", "DELAYED", "FAILED", "UNKNOWN"] = "REALTIME"
+    last_successful_sync_at: datetime | None = None
+    job_id: str | None = None
+
+
 def utc_now() -> datetime:
     return datetime.now(UTC)

@@ -1,20 +1,14 @@
+"""Document service facade coordinating document queries, upload, and version services.
+
+Refactored according to A08 to decouple upload/artifact, version, and review responsibilities.
+"""
+
 from __future__ import annotations
 
-import base64
-import hashlib
-import shutil
 from pathlib import Path
 from typing import Any
 
-from ..draft_assets import (
-    DraftAssetStore,
-    asset_content_type,
-    markdown_asset_ref,
-    parse_markdown_import,
-    rewrite_local_image_refs,
-    slug_from_title,
-)
-from ..draft_retrieval import evaluate_test_case, search_draft_version
+from ..draft_assets import DraftAssetStore, slug_from_title
 from ..models import (
     AssetRefSuggestion,
     CreateDocumentRequest,
@@ -27,37 +21,28 @@ from ..models import (
     KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
-    RemoveDocumentRequest,
     TestCaseRecord,
     TestRunRecord,
     UpdateDraftRequest,
     ValidationSummary,
-    new_etag,
-    utc_now,
 )
-from ..original_assets import OriginalAssetStore
-from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..rbac import (
-    PortalPermissionError,
-    ensure_can_edit,
-    ensure_can_remove_document,
     ensure_document_visible,
     ensure_not_found,
 )
-from ..repository import PortalNotFoundError, VersionConflictError, new_id
-from ..role_capabilities import ensure_can_create_document, ensure_can_import_markdown
-from ..validation import (
-    build_front_matter_markdown,
-    build_parse_preview,
-    content_hash,
-    validate_draft,
-)
+from ..validation import validate_draft
 from .context import PortalServiceContext
+from .upload_service import UploadService
+from .version_service import VersionService
 
 
 class DocumentService:
+    """Facade coordinating document reads, uploads, and versioning services."""
+
     def __init__(self, ctx: PortalServiceContext) -> None:
         self._ctx = ctx
+        self._upload_service = UploadService(ctx, self)
+        self._version_service = VersionService(ctx, self)
 
     @property
     def _repository(self):
@@ -66,7 +51,6 @@ class DocumentService:
     @property
     def _settings(self):
         return self._ctx.settings
-
 
     async def list_documents(
         self,
@@ -86,7 +70,9 @@ class DocumentService:
         )
         return DocumentListResponse(items=items, total=len(items))
 
-    async def get_document(self, actor: PortalActor, document_id: str) -> DocumentDetailResponse:
+    async def get_document(
+        self, actor: PortalActor, document_id: str
+    ) -> DocumentDetailResponse:
         document = await self._repository.get_document(document_id)
         ensure_not_found("document", document_id, document)
         ensure_document_visible(
@@ -121,7 +107,6 @@ class DocumentService:
                     slug,
                 ),
             )
-            # Rebuild stale asset-path warnings saved before the path-check fix.
             if any(
                 issue.code == "ASSET_PATH_UNEXPECTED"
                 for issue in draft_version.validation_summary.issues
@@ -148,6 +133,7 @@ class DocumentService:
                     update={"validation_summary": refreshed}
                 )
                 await self._repository.save_version(draft_version)
+
         return self._ctx.document_detail_response(
             document=document,
             draft_version=draft_version,
@@ -157,7 +143,7 @@ class DocumentService:
             actor=actor,
         )
 
-
+    # Delegation to VersionService
     async def create_document(
         self,
         actor: PortalActor,
@@ -165,172 +151,9 @@ class DocumentService:
         correlation_id: str,
         idempotency_key: str | None = None,
     ) -> DocumentDetailResponse:
-        ensure_can_create_document(actor)
-        if (
-            actor.role != "PLATFORM"
-            and actor.owner_unit_ids
-            and request.owner_unit_id not in actor.owner_unit_ids
-        ):
-            raise PortalPermissionError(
-                "You do not have permission to create documents for this owner unit."
-            )
-
-        if idempotency_key:
-            scope_key = f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            payload_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
-            status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
-            if status == "CACHED" and cached is not None:
-                if isinstance(cached, dict):
-                    return DocumentDetailResponse.model_validate(cached)
-                return cached
-
-        assets_written = False
-        original_asset_committed = False
-        original_store = OriginalAssetStore(self._settings)
-        try:
-            document_id = new_id("doc")
-            version_id = new_id("ver")
-            asset_slug = slug_from_title(request.title)
-            _, assets_root = self._ctx.validation_context(
-                document_id=document_id,
-                version_id=version_id,
-                title=request.title,
-                asset_slug=asset_slug,
-            )
-            markdown_content = request.markdown_content
-            if request.assets:
-                store = DraftAssetStore(self._settings)
-                for asset in request.assets:
-                    try:
-                        payload = base64.b64decode(asset.content_base64, validate=False)
-                    except Exception as exc:
-                        raise ValueError(
-                            f"Invalid base64 for asset {asset.filename}."
-                        ) from exc
-                    store.save_asset(
-                        document_id=document_id,
-                        version_id=version_id,
-                        asset_slug=asset_slug,
-                        filename=asset.filename,
-                        payload=payload,
-                    )
-                assets_written = True
-                markdown_content = rewrite_local_image_refs(
-                    markdown_content,
-                    asset_slug=asset_slug,
-                )
-            validation = validate_draft(
-                title=request.title,
-                owner_unit_id=request.owner_unit_id,
-                change_reason=request.change_reason,
-                effective_at=request.effective_at,
-                review_due_at=request.review_due_at,
-                audience_type=request.audience_type,
-                audience_group_ids=request.audience_group_ids,
-                markdown_content=markdown_content,
-                asset_slug=asset_slug,
-                draft_assets_root=assets_root,
-            )
-            if validation.has_blocking:
-                raise ValueError(validation)
-
-            original_metadata: dict[str, Any] = {}
-            if request.original_asset_token:
-                if request.source_type != "PDF":
-                    raise ValueError("Original asset token is only valid for PDF documents.")
-                original_metadata = original_store.commit_pending(
-                    request.original_asset_token,
-                    document_id=document_id,
-                    version_id=version_id,
-                    actor_id=actor.user_id,
-                )
-                original_asset_committed = True
-
-            now = utc_now()
-            canonical = build_front_matter_markdown(
-                title=request.title,
-                owner_unit_id=request.owner_unit_id,
-                effective_at=request.effective_at,
-                review_due_at=request.review_due_at,
-                audience_type=request.audience_type,
-                audience_group_ids=request.audience_group_ids,
-                version_number=1,
-                body=markdown_content,
-            )
-            digest = content_hash(canonical)
-            version = KnowledgeVersionRecord(
-                version_id=version_id,
-                document_id=document_id,
-                version_number=1,
-                source_type=request.source_type,
-                content_hash=digest,
-                canonical_content=canonical,
-                change_summary=request.change_summary,
-                change_reason=request.change_reason,
-                effective_at=request.effective_at,
-                review_due_at=request.review_due_at,
-                audience_type=request.audience_type,
-                audience_group_ids=request.audience_group_ids,
-                owner_unit_id=request.owner_unit_id,
-                business_contact=request.business_contact,
-                category=request.category,
-                summary=request.summary,
-                title=request.title,
-                asset_slug=asset_slug,
-                validation_summary=validation,
-                parse_preview=build_parse_preview(canonical, request.title),
-                **original_metadata,
-                etag=new_etag(digest),
-                created_at=now,
-                created_by=actor.user_id,
-            )
-            document = KnowledgeDocumentRecord(
-                document_id=document_id,
-                title=request.title,
-                summary=request.summary,
-                category=request.category,
-                owner_unit_id=request.owner_unit_id,
-                business_contact=request.business_contact,
-                audience_type=request.audience_type,
-                audience_group_ids=request.audience_group_ids,
-                draft_version_id=version_id,
-                status="DRAFT",
-                etag=new_etag(document_id, 1),
-                created_at=now,
-                created_by=actor.user_id,
-                updated_at=now,
-                updated_by=actor.user_id,
-                tenant_id=actor.tenant_id,
-            )
-            await self._repository.save_version(version)
-            await self._repository.save_document(document)
-            await self._ctx.audit(
-                actor=actor,
-                action="document.create",
-                target_type="document",
-                target_id=document_id,
-                correlation_id=correlation_id,
-                before=None,
-                after={"status": document.status, "title": document.title},
-            )
-            response = await self.get_document(actor, document_id)
-            if idempotency_key:
-                await self._ctx.complete_idempotency(scope_key, payload_hash, response)
-            return response
-        except Exception:
-            if assets_written:
-                shutil.rmtree(
-                    DraftAssetStore(self._settings).bundle_dir(document_id, version_id),
-                    ignore_errors=True,
-                )
-            if original_asset_committed:
-                original_store.remove_version(
-                    document_id=document_id,
-                    version_id=version_id,
-                )
-            if idempotency_key:
-                await self._ctx.fail_idempotency(scope_key)
-            raise
+        return await self._version_service.create_document(
+            actor, request, correlation_id, idempotency_key=idempotency_key
+        )
 
     async def update_draft(
         self,
@@ -339,141 +162,14 @@ class DocumentService:
         request: UpdateDraftRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        detail = await self.get_document(actor, document_id)
-        document = detail.document
-        ensure_can_edit(
-            actor,
-            document.owner_unit_id,
-            document.created_by,
-            tenant_id=document.tenant_id,
+        return await self._version_service.update_draft(
+            actor, document_id, request, correlation_id
         )
-        if (
-            actor.role != "PLATFORM"
-            and actor.owner_unit_ids
-            and request.owner_unit_id not in actor.owner_unit_ids
-        ):
-            raise PortalPermissionError(
-                "You do not have permission to assign this document to that owner unit."
-            )
-        if document.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
-            raise ValueError("Only draft documents can be edited.")
-        if document.etag != request.etag:
-            raise VersionConflictError(document_id)
-        if not document.draft_version_id:
-            raise ValueError("Document has no editable draft version.")
-
-        version = await self._repository.get_version(document.draft_version_id)
-        ensure_not_found("version", document.draft_version_id, version)
-        if version.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
-            raise ValueError("Draft version is locked for editing.")
-
-        asset_slug, assets_root = self._ctx.validation_context(
-            document_id=document_id,
-            version_id=version.version_id,
-            title=request.title,
-            asset_slug=version.asset_slug,
-        )
-        validation = validate_draft(
-            title=request.title,
-            owner_unit_id=request.owner_unit_id,
-            change_reason=request.change_reason,
-            effective_at=request.effective_at,
-            review_due_at=request.review_due_at,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            markdown_content=request.markdown_content,
-            asset_slug=asset_slug,
-            draft_assets_root=assets_root,
-        )
-        canonical = build_front_matter_markdown(
-            title=request.title,
-            owner_unit_id=request.owner_unit_id,
-            effective_at=request.effective_at,
-            review_due_at=request.review_due_at,
-            audience_type=request.audience_type,
-            audience_group_ids=request.audience_group_ids,
-            version_number=version.version_number,
-            body=request.markdown_content,
-        )
-        digest = content_hash(canonical)
-        updated_version = version.model_copy(
-            update={
-                "title": request.title,
-                "summary": request.summary,
-                "category": request.category,
-                "owner_unit_id": request.owner_unit_id,
-                "business_contact": request.business_contact,
-                "audience_type": request.audience_type,
-                "audience_group_ids": request.audience_group_ids,
-                "change_summary": request.change_summary,
-                "change_reason": request.change_reason,
-                "effective_at": request.effective_at,
-                "review_due_at": request.review_due_at,
-                "canonical_content": canonical,
-                "content_hash": digest,
-                "validation_summary": validation,
-                "parse_preview": build_parse_preview(canonical, request.title),
-                "etag": new_etag(digest, version.version_number + 1),
-                "status": "DRAFT",
-            }
-        )
-        updated_document = document.model_copy(
-            update={
-                "title": request.title,
-                "summary": request.summary,
-                "category": request.category,
-                "owner_unit_id": request.owner_unit_id,
-                "business_contact": request.business_contact,
-                "audience_type": request.audience_type,
-                "audience_group_ids": request.audience_group_ids,
-                "status": "DRAFT",
-                "updated_at": utc_now(),
-                "updated_by": actor.user_id,
-                "etag": new_etag(document.document_id, version.version_number + 1),
-            }
-        )
-        await self._repository.save_version(updated_version)
-        await self._repository.save_document(updated_document)
-        await self._ctx.audit(
-            actor=actor,
-            action="document.update_draft",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            before={"status": document.status, "title": document.title, "category": document.category},
-            after={"status": updated_document.status, "title": updated_document.title, "category": updated_document.category},
-        )
-        return await self.get_document(actor, document_id)
 
     async def validate_document(
         self, actor: PortalActor, document_id: str
     ) -> ValidationSummary:
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            raise ValueError("Document has no draft version to validate.")
-        version = detail.draft_version
-        asset_slug, assets_root = self._ctx.validation_context(
-            document_id=document_id,
-            version_id=version.version_id,
-            title=version.title,
-            asset_slug=version.asset_slug,
-        )
-        validation = validate_draft(
-            title=version.title,
-            owner_unit_id=version.owner_unit_id,
-            change_reason=version.change_reason,
-            effective_at=version.effective_at,
-            review_due_at=version.review_due_at,
-            audience_type=version.audience_type,
-            audience_group_ids=version.audience_group_ids,
-            markdown_content=version.canonical_content,
-            asset_slug=asset_slug,
-            draft_assets_root=assets_root,
-        )
-        await self._repository.save_version(
-            version.model_copy(update={"validation_summary": validation})
-        )
-        return validation
+        return await self._version_service.validate_document(actor, document_id)
 
     async def discard_draft(
         self,
@@ -482,47 +178,20 @@ class DocumentService:
         request: RemoveDocumentRequest,
         correlation_id: str,
     ) -> dict[str, str]:
-        detail = await self.get_document(actor, document_id)
-        document = detail.document
-        if document.status == "IN_REVIEW":
-            raise ValueError(
-                "Documents in review cannot be removed. Approve or reject first."
-            )
-        ensure_can_remove_document(
-            actor,
-            document,
-            relaxed_workflow=self._settings.effective_relaxed_workflow(),
+        return await self._version_service.discard_draft(
+            actor, document_id, request, correlation_id
         )
-        if document.current_published_version_id and document.status == "PUBLISHED":
-            raise ValueError(
-                "Published documents must be unpublished instead of discarded."
-            )
 
-        now = utc_now()
-        if detail.draft_version is not None:
-            await self._repository.save_version(
-                detail.draft_version.model_copy(update={"status": "DISCARDED"})
-            )
-        updated_document = document.model_copy(
-            update={
-                "status": "DISCARDED",
-                "draft_version_id": None,
-                "updated_at": now,
-                "updated_by": actor.user_id,
-            }
+    async def start_revision(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        correlation_id: str,
+        change_reason: str = "Start a new revision from the published version.",
+    ) -> DocumentDetailResponse:
+        return await self._version_service.start_revision(
+            actor, document_id, correlation_id, change_reason=change_reason
         )
-        await self._repository.save_document(updated_document)
-        await self._ctx.audit(
-            actor=actor,
-            action="document.discard",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            reason=request.reason,
-            before={"status": document.status},
-            after={"status": "DISCARDED"},
-        )
-        return {"document_id": document_id, "status": "DISCARDED"}
 
     async def add_test_case(
         self,
@@ -531,50 +200,50 @@ class DocumentService:
         request: CreateTestCaseRequest,
         correlation_id: str,
     ) -> TestCaseRecord:
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            raise ValueError("Draft version is required.")
-        test_case = TestCaseRecord(
-            test_case_id=new_id("test"),
-            version_id=detail.draft_version.version_id,
-            question=request.question,
-            expected_document_id=document_id,
-            simulated_audience=request.simulated_audience,
-            notes=request.notes,
+        return await self._version_service.add_test_case(
+            actor, document_id, request, correlation_id
         )
-        await self._repository.save_test_case(test_case)
-        await self._ctx.audit(
-            actor=actor,
-            action="test_case.create",
-            target_type="test_case",
-            target_id=test_case.test_case_id,
-            correlation_id=correlation_id,
-        )
-        return test_case
 
+    async def search_draft(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        query: str,
+        groups: list[str] | None = None,
+        limit: int = 4,
+    ):
+        return await self._version_service.search_draft(
+            actor, document_id, query, groups=groups, limit=limit
+        )
+
+    async def run_test_case(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        test_case_id: str,
+        correlation_id: str,
+    ) -> TestRunRecord:
+        return await self._version_service.run_test_case(
+            actor, document_id, test_case_id, correlation_id
+        )
+
+    async def list_test_cases(
+        self, actor: PortalActor, document_id: str
+    ) -> list[TestCaseRecord]:
+        return await self._version_service.list_test_cases(actor, document_id)
+
+    async def list_test_runs(
+        self, actor: PortalActor, document_id: str, test_case_id: str
+    ) -> list[TestRunRecord]:
+        return await self._version_service.list_test_runs(
+            actor, document_id, test_case_id
+        )
+
+    # Delegation to UploadService
     def import_markdown(
         self, actor: PortalActor, raw: str, *, filename: str | None = None
     ) -> ImportMarkdownResponse:
-        ensure_can_import_markdown(actor)
-        parsed = parse_markdown_import(
-            raw,
-            default_owner_unit_id=self._settings.default_owner_unit_id,
-            filename=filename,
-        )
-        warnings: list[str] = []
-        if raw.lstrip().startswith("---"):
-            warnings.append("已解析文件開頭的 metadata 欄位。")
-        return ImportMarkdownResponse(
-            title=str(parsed["title"]),
-            owner_unit_id=str(parsed["owner_unit_id"]),
-            effective_at=str(parsed["effective_at"]),
-            review_due_at=str(parsed["review_due_at"]),
-            audience_type=parsed["audience_type"],  # type: ignore[arg-type]
-            audience_group_ids=list(parsed["audience_group_ids"]),  # type: ignore[arg-type]
-            markdown_content=str(parsed["markdown_content"]),
-            asset_slug=str(parsed["asset_slug"]),
-            warnings=warnings,
-        )
+        return self._upload_service.import_markdown(actor, raw, filename=filename)
 
     def import_pdf(
         self,
@@ -583,38 +252,7 @@ class DocumentService:
         *,
         filename: str | None = None,
     ) -> ImportPdfResponse:
-        ensure_can_import_markdown(actor)
-        original_metadata = OriginalAssetStore(self._settings).store_pending(
-            payload,
-            filename=filename,
-            actor_id=actor.user_id,
-        )
-        original_store = OriginalAssetStore(self._settings)
-        try:
-            text, page_count = extract_text_pdf(payload)
-        except Exception:
-            original_store.discard_pending(original_metadata.get("original_asset_token"))
-            raise
-        stem = Path(filename or "document.pdf").stem.strip() or "PDF Document"
-        markdown_content = pdf_text_to_markdown(text, stem)
-        today = utc_now().date().isoformat()
-        return ImportPdfResponse(
-            title=stem,
-            owner_unit_id=self._settings.default_owner_unit_id,
-            effective_at=today,
-            review_due_at=today,
-            audience_type="ALL_EMPLOYEES",
-            audience_group_ids=[],
-            markdown_content=markdown_content,
-            asset_slug=slug_from_title(stem),
-            page_count=page_count,
-            warnings=["已從文字型 PDF 擷取內容並轉為 Markdown 草稿。"],
-            conversion_mode="legacy",
-            conversion_engine="legacy_text",
-            assets=[],
-            **original_metadata,
-            mode="sync",
-        )
+        return self._upload_service.import_pdf(actor, payload, filename=filename)
 
     async def import_pdf_smart(
         self,
@@ -626,92 +264,19 @@ class DocumentService:
         job_store: Any | None = None,
         background_tasks: Any | None = None,
     ) -> ImportPdfResponse | dict[str, object]:
-        """Import PDF via converter service when configured; else legacy text extract."""
-        from ..pdf_convert_jobs import (
-            conversion_to_import_dict,
-            convert_pdf_bytes,
-            should_convert_async,
-        )
-        from ..pdf_text import count_pdf_pages
-
-        ensure_can_import_markdown(actor)
-        safe_name = filename or "document.pdf"
-        original_metadata = OriginalAssetStore(self._settings).store_pending(
-            payload,
-            filename=safe_name,
-            actor_id=actor.user_id,
-        )
-        try:
-            page_count = count_pdf_pages(payload)
-        except Exception:
-            page_count = None
-        if should_convert_async(
-            self._settings,
-            byte_size=len(payload),
-            page_count=page_count,
-            force=async_mode,
-        ):
-            if job_store is None:
-                raise ValueError("Async PDF conversion requires a job store.")
-            job = job_store.create_job(
-                payload=payload,
-                filename=safe_name,
-                actor_id=actor.user_id,
-                page_count=page_count,
-                original_asset=original_metadata,
-            )
-            job_store.schedule(job.job_id, background_tasks)
-            return {
-                "mode": "async",
-                "jobId": job.job_id,
-                "status": job.status,
-                "filename": job.filename,
-                "pageCount": job.page_count,
-                "byteSize": job.byte_size,
-                "message": "PDF conversion queued. Poll /api/documents/pdf-jobs/{jobId}.",
-            }
-        try:
-            result = await convert_pdf_bytes(self._settings, payload, filename=safe_name)
-            data = conversion_to_import_dict(
-                result,
-                filename=safe_name,
-                owner_unit_id=self._settings.default_owner_unit_id,
-                original_asset=original_metadata,
-            )
-        except Exception:
-            OriginalAssetStore(self._settings).discard_pending(
-                original_metadata.get("original_asset_token")
-            )
-            raise
-        return ImportPdfResponse(**data)
-
-    async def _require_editable_draft(
-        self, actor: PortalActor, document_id: str
-    ) -> tuple[KnowledgeDocumentRecord, KnowledgeVersionRecord]:
-        detail = await self.get_document(actor, document_id)
-        document = detail.document
-        ensure_can_edit(
+        return await self._upload_service.import_pdf_smart(
             actor,
-            document.owner_unit_id,
-            document.created_by,
-            tenant_id=document.tenant_id,
+            payload,
+            filename=filename,
+            async_mode=async_mode,
+            job_store=job_store,
+            background_tasks=background_tasks,
         )
-        if detail.draft_version is None:
-            raise ValueError("Document has no editable draft version.")
-        if document.status not in {"DRAFT", "CHANGES_REQUESTED"}:
-            raise ValueError("Document cannot be edited in its current state.")
-        return document, detail.draft_version
 
     async def list_draft_assets(
         self, actor: PortalActor, document_id: str
     ) -> DraftAssetListResponse:
-        _, version = await self._require_editable_draft(actor, document_id)
-        store = DraftAssetStore(self._settings)
-        slug = version.asset_slug or slug_from_title(version.title)
-        return DraftAssetListResponse(
-            asset_slug=slug,
-            items=store.list_assets(document_id, version.version_id, slug),
-        )
+        return await self._upload_service.list_draft_assets(actor, document_id)
 
     async def upload_draft_assets(
         self,
@@ -720,29 +285,9 @@ class DocumentService:
         uploads: list[tuple[str, bytes]],
         correlation_id: str,
     ) -> DraftAssetListResponse:
-        _document, version = await self._require_editable_draft(actor, document_id)
-        store = DraftAssetStore(self._settings)
-        slug = version.asset_slug or slug_from_title(version.title)
-        if not version.asset_slug:
-            version = version.model_copy(update={"asset_slug": slug})
-            await self._repository.save_version(version)
-        for filename, payload in uploads:
-            store.save_asset(
-                document_id=document_id,
-                version_id=version.version_id,
-                asset_slug=slug,
-                filename=filename,
-                payload=payload,
-            )
-        await self._ctx.audit(
-            actor=actor,
-            action="draft_asset.upload",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            metadata={"count": len(uploads)},
+        return await self._upload_service.upload_draft_assets(
+            actor, document_id, uploads, correlation_id
         )
-        return await self.list_draft_assets(actor, document_id)
 
     async def delete_draft_asset(
         self,
@@ -751,24 +296,9 @@ class DocumentService:
         filename: str,
         correlation_id: str,
     ) -> DraftAssetListResponse:
-        _, version = await self._require_editable_draft(actor, document_id)
-        store = DraftAssetStore(self._settings)
-        slug = version.asset_slug or slug_from_title(version.title)
-        store.delete_asset(
-            document_id=document_id,
-            version_id=version.version_id,
-            asset_slug=slug,
-            filename=filename,
+        return await self._upload_service.delete_draft_asset(
+            actor, document_id, filename, correlation_id
         )
-        await self._ctx.audit(
-            actor=actor,
-            action="draft_asset.delete",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            metadata={"filename": filename},
-        )
-        return await self.list_draft_assets(actor, document_id)
 
     async def suggest_asset_ref(
         self,
@@ -777,21 +307,8 @@ class DocumentService:
         filename: str,
         alt_text: str = "",
     ) -> AssetRefSuggestion:
-        _, version = await self._require_editable_draft(actor, document_id)
-        slug = version.asset_slug or slug_from_title(version.title)
-        normalized = filename or DraftAssetStore(self._settings).next_filename(
-            document_id,
-            version.version_id,
-            slug,
-        )
-        return AssetRefSuggestion(
-            asset_slug=slug,
-            filename=normalized,
-            markdown=markdown_asset_ref(
-                asset_slug=slug,
-                filename=normalized,
-                alt_text=alt_text,
-            ),
+        return await self._upload_service.suggest_asset_ref(
+            actor, document_id, filename, alt_text=alt_text
         )
 
     def read_draft_asset(
@@ -801,175 +318,6 @@ class DocumentService:
         asset_slug: str,
         filename: str,
     ) -> tuple[Path, str]:
-        store = DraftAssetStore(self._settings)
-        target = store.asset_dir(document_id, version_id, asset_slug) / filename
-        if not target.is_file():
-            raise PortalNotFoundError("draft asset", filename)
-        return target, asset_content_type(target.suffix)
-
-    async def start_revision(
-        self,
-        actor: PortalActor,
-        document_id: str,
-        correlation_id: str,
-        change_reason: str = "Start a new revision from the published version.",
-    ) -> DocumentDetailResponse:
-        detail = await self.get_document(actor, document_id)
-        document = detail.document
-        ensure_can_edit(
-            actor,
-            document.owner_unit_id,
-            document.created_by,
-            tenant_id=document.tenant_id,
+        return self._upload_service.read_draft_asset(
+            document_id, version_id, asset_slug, filename
         )
-        if document.status != "PUBLISHED" or detail.published_version is None:
-            raise ValueError("Only published documents can start a new revision.")
-        if document.draft_version_id is not None:
-            raise ValueError("Document already has an open draft.")
-
-        published = detail.published_version
-        now = utc_now()
-        version_id = new_id("ver")
-        asset_slug = published.asset_slug or slug_from_title(published.title)
-        store = DraftAssetStore(self._settings)
-        store.copy_bundle(
-            source_document_id=document_id,
-            source_version_id=published.version_id,
-            target_document_id=document_id,
-            target_version_id=version_id,
-            asset_slug=asset_slug,
-        )
-        version = KnowledgeVersionRecord(
-            version_id=version_id,
-            document_id=document_id,
-            version_number=published.version_number + 1,
-            source_type=published.source_type,
-            content_hash=published.content_hash,
-            canonical_content=published.canonical_content,
-            change_summary=f"Revision {published.version_number + 1}",
-            change_reason=change_reason,
-            effective_at=published.effective_at,
-            review_due_at=published.review_due_at,
-            audience_type=published.audience_type,
-            audience_group_ids=published.audience_group_ids,
-            owner_unit_id=published.owner_unit_id,
-            business_contact=published.business_contact,
-            category=published.category,
-            summary=published.summary,
-            title=published.title,
-            asset_slug=asset_slug,
-            status="DRAFT",
-            validation_summary=ValidationSummary(issues=[]),
-            parse_preview=published.parse_preview,
-            original_asset_name=published.original_asset_name,
-            original_asset_sha256=published.original_asset_sha256,
-            original_asset_content_type=published.original_asset_content_type,
-            original_asset_size=published.original_asset_size,
-            etag=new_etag(published.content_hash, published.version_number + 1),
-            created_at=now,
-            created_by=actor.user_id,
-        )
-        OriginalAssetStore(self._settings).copy_version(
-            document_id=document_id,
-            source_version_id=published.version_id,
-            target_version_id=version_id,
-            filename=published.original_asset_name,
-        )
-        updated_document = document.model_copy(
-            update={
-                "draft_version_id": version_id,
-                "status": "DRAFT",
-                "updated_at": now,
-                "updated_by": actor.user_id,
-                "etag": new_etag(document.document_id, published.version_number + 1),
-            }
-        )
-        await self._repository.save_version(version)
-        await self._repository.save_document(updated_document)
-        await self._ctx.audit(
-            actor=actor,
-            action="document.start_revision",
-            target_type="document",
-            target_id=document_id,
-            correlation_id=correlation_id,
-            before={"status": document.status, "draftVersionId": document.draft_version_id},
-            after={"status": updated_document.status, "draftVersionId": updated_document.draft_version_id},
-        )
-        return await self.get_document(actor, document_id)
-
-    async def search_draft(
-        self,
-        actor: PortalActor,
-        document_id: str,
-        query: str,
-        groups: list[str] | None = None,
-        limit: int = 4,
-    ):
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            raise ValueError("Draft version is required.")
-        return search_draft_version(
-            version=detail.draft_version,
-            query=query,
-            groups=groups or [],
-            settings=self._settings,
-            limit=limit,
-        )
-
-    async def run_test_case(
-        self,
-        actor: PortalActor,
-        document_id: str,
-        test_case_id: str,
-        correlation_id: str,
-    ) -> TestRunRecord:
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            raise ValueError("Draft version is required.")
-        cases = await self._repository.list_test_cases(detail.draft_version.version_id)
-        test_case = next((item for item in cases if item.test_case_id == test_case_id), None)
-        ensure_not_found("test_case", test_case_id, test_case)
-
-        status, answer_excerpt, cited_titles, failure_reason = evaluate_test_case(
-            version=detail.draft_version,
-            question=test_case.question,
-            simulated_audience=test_case.simulated_audience,
-            settings=self._settings,
-        )
-        test_run = TestRunRecord(
-            test_run_id=new_id("run"),
-            test_case_id=test_case_id,
-            version_id=detail.draft_version.version_id,
-            status=status,
-            answer_excerpt=answer_excerpt,
-            cited_titles=cited_titles,
-            failure_reason=failure_reason,
-            executed_at=utc_now(),
-            executed_by=actor.user_id,
-        )
-        await self._repository.save_test_run(test_run)
-        await self._ctx.audit(
-            actor=actor,
-            action="test_case.run",
-            target_type="test_case",
-            target_id=test_case_id,
-            correlation_id=correlation_id,
-            metadata={"status": status},
-        )
-        return test_run
-
-    async def list_test_cases(
-        self, actor: PortalActor, document_id: str
-    ) -> list[TestCaseRecord]:
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            return []
-        return await self._repository.list_test_cases(detail.draft_version.version_id)
-
-    async def list_test_runs(
-        self, actor: PortalActor, document_id: str
-    ) -> list[TestRunRecord]:
-        detail = await self.get_document(actor, document_id)
-        if detail.draft_version is None:
-            return []
-        return await self._repository.list_test_runs(detail.draft_version.version_id)
