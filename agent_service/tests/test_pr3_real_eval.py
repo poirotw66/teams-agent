@@ -825,6 +825,130 @@ def test_agent_sandbox_execute_side_uses_formal_workflow(tmp_path: Path):
     assert "AGENT_SANDBOX" in (failed.error_detail or "")
 
 
+def test_agent_sandbox_rejects_planning_as_answer_fallback(tmp_path: Path):
+    """Runner must not treat planning/status placeholders as a real answer (P0)."""
+    repo = InMemoryEvaluationRepository()
+
+    def stub_without_answer(query, manifest, sanitized):
+        return {
+            "status": "SUCCESS",
+            "planning": "agent_workflow",
+            "workflow_bound": True,
+            "query": query,
+        }
+
+    sandbox = RealAgentSandboxAdapter(
+        ToolFixtureService(), workflow_executor=stub_without_answer
+    )
+    runner = EvaluationRunner(
+        repo,
+        releases_dir=tmp_path,
+        strict_real_rag=True,
+        sandbox_adapter=sandbox,
+    )
+    now = datetime.now(timezone.utc)
+    revision = CaseRevision(
+        revision_id="rev-plan",
+        case_id="case-plan",
+        revision_number=1,
+        query="測試",
+        provenance=ProvenanceSpec(source_type="MANUAL", source_id="sandbox"),
+        etag=1,
+        content_hash="h-plan",
+        created_by="admin",
+        created_at=now,
+        updated_by="admin",
+        updated_at=now,
+    )
+    failed = runner._execute_side(
+        run_id="run-plan",
+        case_revision=revision,
+        manifest=TargetManifest(target_id="b", target_side="BASELINE", manifest_hash="h"),
+        side="BASELINE",
+        mode="AGENT_SANDBOX",
+    )
+    assert failed.status == "FAILED"
+    assert "real answer" in (failed.error_detail or "").lower() or "AGENT_SANDBOX" in (
+        failed.error_detail or ""
+    )
+
+
+def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: pytest.MonkeyPatch):
+    """Formal sandbox executor must call AgentWorkflow.respond and return its answer."""
+    from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
+    from ai_ops_backoffice.governance_domain import eval_runtime as eval_runtime_mod
+
+    calls: list[str] = []
+
+    class FakeTurnExecutor:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def execute(self, *, template: str, model_id: str, text: str, history, setup=None):
+            calls.append(text)
+            assert template
+            assert model_id == "gemini-2.5-flash"
+            return FlowObservation(
+                route="KNOWLEDGE",
+                label="POSITIVE",
+                refused_injection=False,
+                detail="agent_workflow resultTypes=['FAQ_ANSWERED']",
+                used_template_chars=len(template),
+                reply_text=f"real-answer:{text}",
+                observed_behaviors=frozenset({"answers_it"}),
+                model_id_used=model_id,
+            )
+
+    class FakeRuntime:
+        workflow = object()
+        extractor = type("E", (), {"model": object()})()
+
+        def apply_candidate(self, template: str, model_id: str) -> None:
+            return None
+
+        def build_request(self, text: str, history):
+            return object()
+
+        def read_side_effects(self):
+            return {"ticket_created": True, "handoff_offered": False}
+
+        async def prepare_case(self, history, *, setup=None):
+            return None
+
+        def note_turn_result(self, **kwargs):
+            return None
+
+    monkeypatch.setattr(
+        eval_runtime_mod,
+        "build_isolated_eval_runtime",
+        lambda model_factory=None: FakeRuntime(),
+    )
+    monkeypatch.setattr(
+        "agent_service.eval_agent_harness.AgentWorkflowTurnExecutor",
+        FakeTurnExecutor,
+    )
+
+    executor = eval_runtime_mod.build_agent_sandbox_workflow_executor(
+        model_factory=lambda _model_id: object()
+    )
+    result = executor(
+        "VPN 怎麼連？",
+        TargetManifest(
+            target_id="c",
+            target_side="CANDIDATE",
+            manifest_hash="h",
+            model_id="gemini-2.5-flash",
+        ),
+        TargetExecutionInput(query="VPN 怎麼連？"),
+    )
+    assert calls == ["VPN 怎麼連？"]
+    assert result["answer"] == "real-answer:VPN 怎麼連？"
+    assert result["status"] == "SUCCESS"
+    assert result["tool_calls"]
+    assert result["planning"] != result["answer"]
+    assert result["planning"] == "agent_workflow resultTypes=['FAQ_ANSWERED']"
+
+
 def test_create_app_wires_model_factory_and_sandbox_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -862,17 +986,6 @@ def test_create_app_wires_model_factory_and_sandbox_adapter(
         return object()
 
     monkeypatch.setattr("agent_service.graph.build_chat_model", fake_model)
-    monkeypatch.setattr(
-        "ai_ops_backoffice.governance_domain.eval_runtime.build_isolated_eval_runtime",
-        lambda model_factory=None: type(
-            "Runtime",
-            (),
-            {
-                "apply_candidate": lambda self, prompt, model_id: None,
-                "extractor": type("Extractor", (), {"model": object()})(),
-            },
-        )(),
-    )
     app = create_app(settings)
     runner = app.state.eval_runner
     assert runner._strict_real_rag is True

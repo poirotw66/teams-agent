@@ -368,21 +368,24 @@ class EvaluationRunner:
                 )
                 if isinstance(workflow_result, dict):
                     sandbox_trace = dict(workflow_result)
-                    answer = str(
-                        workflow_result.get("answer")
-                        or workflow_result.get("planning")
-                        or workflow_result.get("status")
-                        or ""
-                    )
+                    answer = str(workflow_result.get("answer") or "").strip()
+                    status = str(workflow_result.get("status") or "").upper()
+                    if status in {"FAILED", "UNAVAILABLE"} or not answer:
+                        raise EvaluationValidationError(
+                            "AGENT_SANDBOX execution rejected: workflow did not return "
+                            "a real answer from AgentWorkflow execution "
+                            f"(status={status or 'missing'})."
+                        )
                     tokens = workflow_result.get("tokens", 0)
                     cost = float(workflow_result.get("cost_usd") or 0.0)
                     raw_tool_calls = workflow_result.get("tool_calls") or []
                     tool_calls = list(raw_tool_calls)
                     provider_req_id = workflow_result.get("provider_request_id")
                 else:
-                    answer = str(workflow_result)
-                    tokens = 0
-                    cost = 0.0
+                    raise EvaluationValidationError(
+                        "AGENT_SANDBOX execution rejected: workflow executor must return "
+                        "a structured result with answer and tool_calls."
+                    )
             elif self._answering_fn:
                 try:
                     ans_res = self._answering_fn(

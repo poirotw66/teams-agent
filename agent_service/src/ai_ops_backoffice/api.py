@@ -466,30 +466,13 @@ def create_app(
     sandbox_adapter = None
     try:
         from .evaluation_domain import RealAgentSandboxAdapter
-        from .governance_domain.eval_runtime import build_isolated_eval_runtime
-
-        isolated_runtime = build_isolated_eval_runtime(model_factory=_eval_model_factory)
-
-        def _sandbox_workflow_executor(
-            query: str, manifest: object, sanitized_input: object
-        ) -> dict[str, object]:
-            model_id = str(getattr(manifest, "model_id", None) or "").strip()
-            if not model_id:
-                model_id = RagSettings.from_env().model or "eval-probe-model"
-            from agent_service.knowledge import ANSWER_PROMPT
-
-            isolated_runtime.apply_candidate(ANSWER_PROMPT, model_id)
-            return {
-                "status": "SUCCESS",
-                "query": query,
-                "model_id": model_id,
-                "workflow_bound": isolated_runtime.extractor.model is not None,
-                "planning": "agent_workflow",
-            }
+        from .governance_domain.eval_runtime import build_agent_sandbox_workflow_executor
 
         sandbox_adapter = RealAgentSandboxAdapter(
             tool_fixture_service,
-            workflow_executor=_sandbox_workflow_executor,
+            workflow_executor=build_agent_sandbox_workflow_executor(
+                model_factory=_eval_model_factory,
+            ),
         )
     except Exception as sandbox_err:  # pragma: no cover - optional live model deps
         logging.getLogger(__name__).warning(
