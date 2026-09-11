@@ -17,6 +17,7 @@ These extra routes are deliberately unauthenticated:
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -25,6 +26,8 @@ from microsoft_teams.apps.auth import TokenValidator
 
 from .media import render_teams_image, resolve_asset
 from .settings import AgentSettings
+from .source_links import resolve_source_file, source_media_type
+from .source_viewer import render_source_document_html
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +173,46 @@ def create_web_app(
             headers={
                 "Cache-Control": f"private, max-age={settings.asset_url_ttl_seconds}",
                 "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.get("/rag-sources/{path:path}")
+    async def source_document(path: str, request: Request) -> Response:
+        try:
+            resolved = resolve_source_file(
+                path,
+                request.query_params.get("expires"),
+                request.query_params.get("signature"),
+                settings,
+            )
+            want_raw = request.query_params.get("raw", "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if (
+                not want_raw
+                and resolved.suffix.lower() in {".md", ".markdown", ".txt"}
+            ):
+                content = render_source_document_html(resolved, settings)
+                content_type = "text/html; charset=utf-8"
+            else:
+                content = resolved.read_bytes()
+                content_type = source_media_type(resolved)
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail="Not Found") from error
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": f"private, max-age={settings.asset_url_ttl_seconds}",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": (
+                    "inline; filename*=UTF-8''"
+                    + quote(resolved.name)
+                ),
             },
         )
 

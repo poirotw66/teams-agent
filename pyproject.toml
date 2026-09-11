@@ -12,6 +12,7 @@ dependencies = [
     "aiohttp>=3.11,<4",
     "fastapi>=0.115,<1",
     "google-auth[requests]>=2.40,<3",
+    "markdown>=3.5,<4",
     "microsoft-teams-api>=2.0.15,<3",
     "microsoft-teams-apps>=2.0.15,<3",
     "microsoft-teams-cards>=2.0.15,<3",

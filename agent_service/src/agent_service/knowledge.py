@@ -26,7 +26,6 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar, runtime_checkable
-from urllib.parse import quote
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -42,7 +41,7 @@ from .execution_context import (
 from .llm_call_counter import LlmCallCounter
 from .retrieval import HybridIndex, SearchResult, tokenize
 from .settings import RagSettings
-from .source_refs import make_source_ref_id
+from .source_refs import make_source_ref_id, build_citation_url, safe_source_path
 
 KnowledgeLLM = TypeVar("KnowledgeLLM")
 
@@ -476,13 +475,6 @@ class HybridKnowledgeService:
     # --- citations / images ---------------------------------------------
 
     def _citation_for(self, result: SearchResult) -> Citation:
-        url: str | None = None
-        if self.settings.source_base_url:
-            url = (
-                self.settings.source_base_url.rstrip("/")
-                + "/"
-                + quote(result.chunk.source_path)
-            )
         release_id = result.chunk.release_id or self.release_id
         source_ref_id = make_source_ref_id(
             release_id=release_id,
@@ -490,6 +482,14 @@ class HybridKnowledgeService:
             version_id=result.chunk.version_id,
             chunk_id=result.chunk.chunk_id,
             source_path=result.chunk.source_path,
+        )
+        source_path = safe_source_path(result.chunk.source_path)
+        if source_path == "[REDACTED_SOURCE]":
+            source_path = None
+        url = build_citation_url(
+            source_base_url=self.settings.source_base_url,
+            source_path=source_path,
+            source_ref_id=source_ref_id,
         )
         return Citation(
             title=result.chunk.title,
@@ -499,7 +499,7 @@ class HybridKnowledgeService:
             documentId=result.chunk.document_id,
             versionId=result.chunk.version_id,
             releaseId=release_id,
-            sourcePath=result.chunk.source_path,
+            sourcePath=source_path,
             section=result.chunk.section,
             page=result.chunk.page,
             evidence=result.chunk.content[:2400] if result.chunk.content else None,

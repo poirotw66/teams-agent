@@ -19,6 +19,7 @@ class AgentSettings:
     api_audience: str | None = None
     api_timeout_seconds: float = 10.0
     asset_dir: Path | None = None
+    source_dir: Path | None = None
     public_base_url: str | None = None
     asset_signing_key: str | None = None
     asset_url_ttl_seconds: int = 3600
@@ -60,6 +61,9 @@ class AgentSettings:
         asset_dir = Path(
             environ.get("RAG_ASSET_DIR", project_dir / "data" / "sources" / "assets")
         )
+        source_dir = Path(
+            environ.get("RAG_SOURCE_DIR", project_dir / "data")
+        )
 
         try:
             timeout = float(environ.get("AGENT_API_TIMEOUT_SECONDS", "10"))
@@ -74,6 +78,7 @@ class AgentSettings:
             api_audience=environ.get("AGENT_API_AUDIENCE", "").strip() or None,
             api_timeout_seconds=timeout,
             asset_dir=asset_dir.expanduser().resolve(),
+            source_dir=source_dir.expanduser().resolve(),
             public_base_url=(
                 environ.get("BOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
                 or None
@@ -301,6 +306,15 @@ class AgentSettings:
         return bool(
             self.asset_dir
             and self.asset_dir.is_dir()
+            and self.public_base_url
+            and self.asset_signing_key
+        )
+
+    @property
+    def sources_ready(self) -> bool:
+        return bool(
+            self.source_dir
+            and self.source_dir.is_dir()
             and self.public_base_url
             and self.asset_signing_key
         )

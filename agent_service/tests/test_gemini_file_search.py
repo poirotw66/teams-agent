@@ -120,6 +120,7 @@ async def test_known_slug_maps_to_real_title_and_images():
 
     assert result.found is True
     assert result.sources[0].title == "VPN常見Q&A問答"
+    assert result.sources[0].sourcePath == "sources/VPN常見Q&A問答.md"
     assert len(result.images) == 1
     assert result.images[0].path == "assets/vpn.png"
 

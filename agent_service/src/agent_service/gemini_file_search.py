@@ -31,6 +31,7 @@ from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
 from .knowledge import answer_indicates_insufficient_information
 from .llm_call_counter import LlmCallCounter
+from .source_refs import safe_source_path
 from .usage_events import extract_file_search_usage_from_result
 
 logger = logging.getLogger(__name__)
@@ -284,14 +285,24 @@ class GeminiFileSearchKnowledgeService:
                 images=[],
                 backend="GEMINI_FILE_SEARCH",
             )
-        sources = [
-            Citation(
-                title=self._resolve_title(chunk.title),
-                url=chunk.uri,
-                chunkId=chunk.document_name,
+        sources = []
+        for chunk in chunks:
+            raw_source_path = (
+                self.registry.source_path_for(chunk.title)
+                if self.registry is not None
+                else None
             )
-            for chunk in chunks
-        ]
+            source_path = safe_source_path(raw_source_path)
+            if source_path == "[REDACTED_SOURCE]":
+                source_path = None
+            sources.append(
+                Citation(
+                    title=self._resolve_title(chunk.title),
+                    url=chunk.uri,
+                    chunkId=chunk.document_name,
+                    sourcePath=source_path,
+                )
+            )
         return KnowledgeResult(
             found=True,
             answer=answer,

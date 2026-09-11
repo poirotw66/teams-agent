@@ -234,3 +234,37 @@ def test_missing_asset_returns_not_found(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_signed_source_document_is_served(tmp_path: Path) -> None:
+    from teams_agent.source_links import build_source_url
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "guide.md").write_text("# guide\n\n內容說明\n", encoding="utf-8")
+    settings = make_settings(tmp_path, source_dir=data_dir)
+    client = TestClient(create_web_app(settings))
+    url = urlparse(build_source_url("sources/guide.md", settings) or "")
+    query = parse_qs(url.query)
+
+    response = client.get(
+        url.path,
+        params={"expires": query["expires"][0], "signature": query["signature"][0]},
+    )
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "<title>guide</title>" in response.text
+    assert "內容說明" in response.text
+
+    raw = client.get(
+        url.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "raw": "1",
+        },
+    )
+    assert raw.status_code == 200
+    assert raw.text.startswith("# guide")

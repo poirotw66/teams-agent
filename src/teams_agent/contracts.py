@@ -157,6 +157,9 @@ class Citation:
     title: str
     url: str | None = None
     chunkId: str | None = None
+    sourcePath: str | None = None
+    sourceRefId: str | None = None
+    releaseId: str | None = None
 
 
 @dataclass(frozen=True)
@@ -225,14 +228,32 @@ class AgentResponse:
                 title = item.get("title")
                 url = item.get("url")
                 chunk_id = item.get("chunkId")
+                source_path = item.get("sourcePath")
+                source_ref_id = item.get("sourceRefId")
+                release_id = item.get("releaseId")
                 if isinstance(title, str) and (
                     isinstance(url, str) or url is None
                 ):
                     citations.append(
                         Citation(
                             title=title,
-                            url=url,
+                            url=url if isinstance(url, str) and url.strip() else None,
                             chunkId=chunk_id if isinstance(chunk_id, str) else None,
+                            sourcePath=(
+                                source_path
+                                if isinstance(source_path, str) and source_path.strip()
+                                else None
+                            ),
+                            sourceRefId=(
+                                source_ref_id
+                                if isinstance(source_ref_id, str) and source_ref_id.strip()
+                                else None
+                            ),
+                            releaseId=(
+                                release_id
+                                if isinstance(release_id, str) and release_id.strip()
+                                else None
+                            ),
                         )
                     )
 

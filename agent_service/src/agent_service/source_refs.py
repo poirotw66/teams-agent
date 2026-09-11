@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from urllib.parse import quote
+
 from .documents import DocumentChunk
 
 _SAFE_RELEASE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -59,6 +61,31 @@ def safe_source_path(source_path: str | None) -> str | None:
     if ".." in parts:
         return "[REDACTED_SOURCE]"
     return "/".join(parts) or None
+
+
+def build_citation_url(
+    *,
+    source_base_url: str | None,
+    source_path: str | None,
+    source_ref_id: str | None = None,
+) -> str | None:
+    """Compose a clickable citation URL when a formal base URL is configured.
+
+    Prefer ``source_path`` under ``source_base_url``. When path is unavailable,
+    fall back to a durable ``/citations/{sourceRefId}`` identity link. Returns
+    ``None`` when no base URL is configured so callers can leave enrichment to
+    the Teams adapter signed ``/rag-sources/`` path.
+    """
+
+    base = (source_base_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    safe_path = safe_source_path(source_path)
+    if safe_path and safe_path != "[REDACTED_SOURCE]":
+        return f"{base}/{quote(safe_path, safe='/')}"
+    if source_ref_id and str(source_ref_id).strip():
+        return f"{base}/citations/{quote(str(source_ref_id).strip(), safe='')}"
+    return None
 
 
 def _manifest_by_key(release_dir: Path) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
