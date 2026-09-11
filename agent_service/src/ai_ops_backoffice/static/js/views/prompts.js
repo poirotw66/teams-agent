@@ -1,7 +1,7 @@
 import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { presentSystemPage } from "../app/adminChrome.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, showTextPrompt, showToast } from "../components/modal.js";
 import { exampleSelect } from "../components/forms.js";
 import { createPageController } from "../app/lifecycle.js";
 
@@ -115,8 +115,13 @@ export async function renderPrompts() {
         const addAction = (label, path, payload) => {
           const button = el("button", "", label);
           button.addEventListener("click", async () => {
-            const reason = window.prompt(`${label}原因`);
-            if (!reason || reason.trim().length < 3) return;
+            const reason = await showTextPrompt({
+              title: label,
+              message: `請輸入${label}原因（至少 3 個字元）。`,
+              minLength: 3,
+              required: true,
+            });
+            if (reason == null) return;
             await api(path, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -130,10 +135,11 @@ export async function renderPrompts() {
           const evalButton = el("button", "", "執行 Eval");
           evalButton.addEventListener("click", async () => {
             if (!harnessDetail.available) {
-              window.alert(
+              showToast(
                 harnessDetail.configured === false
                   ? "評測執行器尚未設定，無法執行正式評測。"
                   : `評測執行器不可用：${harnessDetail.detail || "unknown"}`,
+                { tone: "error" },
               );
               return;
             }
@@ -142,11 +148,11 @@ export async function renderPrompts() {
               { method: "POST" },
             );
             if (result?.eval?.critical_passed === false) {
-              window.alert("評測完成：品質／閘道不合格（critical 未通過）。");
+              showToast("評測完成：品質／閘道不合格（critical 未通過）。", { tone: "error" });
             } else if (result?.eval?.quality_passed === false) {
-              window.alert("評測完成：品質不合格。");
+              showToast("評測完成：品質不合格。", { tone: "error" });
             } else if (result?.eval?.status === "INCOMPLETE") {
-              window.alert("評測完成：流程不完整（執行失敗或 harness 不可用），非正式放行。");
+              showToast("評測完成：流程不完整（執行失敗或 harness 不可用），非正式放行。", { tone: "warning" });
             }
             await renderPrompts();
           });
@@ -165,13 +171,37 @@ export async function renderPrompts() {
           addAction("停止 Canary", `/api/governance/prompts/${promptId}/canary/stop`, {});
           const evaluate = el("button", "", "評估 Canary 指標");
           evaluate.addEventListener("click", async () => {
-            const sample = window.prompt("樣本數", "50");
-            if (!sample) return;
-            const errorRate = window.prompt("錯誤率 0-1", "0.05");
+            const sample = await showTextPrompt({
+              title: "評估 Canary 指標",
+              message: "請輸入樣本數。",
+              defaultValue: "50",
+              inputType: "number",
+              required: true,
+            });
+            if (sample == null) return;
+            const errorRate = await showTextPrompt({
+              title: "評估 Canary 指標",
+              message: "請輸入錯誤率（0–1）。",
+              defaultValue: "0.05",
+              inputType: "number",
+              required: true,
+            });
             if (errorRate == null) return;
-            const negative = window.prompt("負評率 0-1", "0.1");
+            const negative = await showTextPrompt({
+              title: "評估 Canary 指標",
+              message: "請輸入負評率（0–1）。",
+              defaultValue: "0.1",
+              inputType: "number",
+              required: true,
+            });
             if (negative == null) return;
-            const handoff = window.prompt("Handoff 率 0-1", "0.2");
+            const handoff = await showTextPrompt({
+              title: "評估 Canary 指標",
+              message: "請輸入 Handoff 率（0–1）。",
+              defaultValue: "0.2",
+              inputType: "number",
+              required: true,
+            });
             if (handoff == null) return;
             const result = await api(`/api/governance/prompts/${promptId}/canary/evaluate`, {
               method: "POST",
@@ -212,8 +242,13 @@ export async function renderPrompts() {
     if (allowed.has("ops.prompts.rollback")) {
       const rollback = el("button", "", "回復上一健康版本");
       rollback.addEventListener("click", async () => {
-        const reason = window.prompt("回復原因");
-        if (!reason || reason.trim().length < 3) return;
+        const reason = await showTextPrompt({
+          title: "回復上一健康版本",
+          message: "請輸入回復原因（至少 3 個字元）。",
+          minLength: 3,
+          required: true,
+        });
+        if (reason == null) return;
         await api(`/api/governance/prompts/${promptId}/rollback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,7 +1,7 @@
 import { api, el } from "../api.js";
 import { periodParams, createPeriodControls } from "../components/period.js";
 import { badge } from "../components/badges.js";
-import { showContentModal } from "../components/modal.js";
+import { showContentModal, showTextPrompt } from "../components/modal.js";
 import { showConversationModal, showConversationPage } from "../components/conversationModal.js";
 import { runExport } from "../services/export.js";
 import { getCurrentActiveView } from "../app/activeView.js";
@@ -442,13 +442,6 @@ export async function renderConversations(state = {}) {
     });
     const exportButton = el("button", "", "匯出 CSV");
     exportButton.addEventListener("click", async () => {
-      const reasonPrompt = window.prompt("請輸入匯出原因（至少 3 個字元，將寫入資安稽核紀錄）：", "對話紀錄分析與稽核");
-      if (!reasonPrompt || reasonPrompt.trim().length < 3) {
-        if (reasonPrompt !== null) {
-          alert("匯出原因必須至少 3 個字元。");
-        }
-        return;
-      }
       exportButton.disabled = true;
       exportButton.textContent = "匯出中…";
       const queryFilters = {
@@ -630,7 +623,13 @@ export async function renderConversations(state = {}) {
               copyBtn.textContent = "複製 ID";
             }, 1200);
           } catch {
-            window.prompt("複製對話 ID", item.conversationId);
+            await showTextPrompt({
+              title: "複製對話 ID",
+              message: "瀏覽器不允許直接寫入剪貼簿，請手動複製下列識別碼。",
+              defaultValue: item.conversationId,
+              readOnly: true,
+              confirmLabel: "關閉",
+            });
           }
         });
         idRow.append(idText, copyBtn);

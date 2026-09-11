@@ -13,6 +13,8 @@ function showActionReasonModal(title, promptText, onConfirm) {
   input.placeholder = "請輸入原因…";
   input.style.width = "100%";
   group.append(label, input);
+  const error = el("p", "error");
+  error.setAttribute("role", "alert");
 
   const actions = el("div", "filter-bar");
   actions.style.marginTop = "1rem";
@@ -24,9 +26,11 @@ function showActionReasonModal(title, promptText, onConfirm) {
   confirmBtn.addEventListener("click", async () => {
     const val = input.value.trim();
     if (!val) {
-      alert("請輸入原因");
+      error.textContent = "請輸入原因。";
+      input.focus();
       return;
     }
+    error.textContent = "";
     confirmBtn.disabled = true;
     confirmBtn.textContent = "處理中…";
     try {
@@ -40,7 +44,7 @@ function showActionReasonModal(title, promptText, onConfirm) {
   });
 
   actions.append(cancelBtn, confirmBtn);
-  container.append(group, actions);
+  container.append(group, error, actions);
   showContentModal(title, container);
 }
 

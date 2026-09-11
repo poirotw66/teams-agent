@@ -1,6 +1,11 @@
 import { api, el, metric } from "../api.js";
 import { badge, statusBadge } from "../components/badges.js";
-import { showContentModal, closeContentModal } from "../components/modal.js";
+import {
+  showContentModal,
+  closeContentModal,
+  showTextPrompt,
+  showToast,
+} from "../components/modal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
 import {
   recommendContentType,
@@ -568,7 +573,8 @@ export async function showQualityCaseDetail(caseId, options = {}) {
         confirmBtn.addEventListener("click", async () => {
           const fId = idInput.value.trim();
           if (!fId) {
-            alert("請選擇或輸入 FAQ ID");
+            showToast("請選擇或輸入 FAQ ID", { tone: "error" });
+            idInput.focus();
             return;
           }
           try {
@@ -582,7 +588,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             await showQualityCaseDetail(caseId);
           } catch (err) {
             confirmBtn.disabled = false;
-            alert(`關聯失敗：${err.message || err}`);
+            showToast(`關聯失敗：${err.message || err}`, { tone: "error" });
           }
         });
 
@@ -639,7 +645,8 @@ export async function showQualityCaseDetail(caseId, options = {}) {
         confirmBtn.addEventListener("click", async () => {
           const docId = idInput.value.trim();
           if (!docId) {
-            alert("請選擇或輸入文件 ID");
+            showToast("請選擇或輸入文件 ID", { tone: "error" });
+            idInput.focus();
             return;
           }
           try {
@@ -651,7 +658,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             closeContentModal();
             await showQualityCaseDetail(caseId);
           } catch (err) {
-            alert(`關聯失敗：${err.message || err}`);
+            showToast(`關聯失敗：${err.message || err}`, { tone: "error" });
           }
         });
 
@@ -765,7 +772,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             } catch (err) {
               submitBtn.disabled = false;
               submitBtn.textContent = "建立並連結草稿";
-              alert(`建立草稿失敗：${err.message || err}`);
+              showToast(`建立草稿失敗：${err.message || err}`, { tone: "error" });
             }
           });
 
@@ -810,7 +817,7 @@ export async function showQualityCaseDetail(caseId, options = {}) {
             } catch (err) {
               submit.disabled = false;
               submit.textContent = "建立並連結草稿";
-              alert(`建立草稿失敗：${err.message || err}`);
+              showToast(`建立草稿失敗：${err.message || err}`, { tone: "error" });
             }
           });
           showContentModal("由品質案件建立 FAQ 草稿", form);
@@ -835,10 +842,15 @@ export async function showQualityCaseDetail(caseId, options = {}) {
       if (!allowed.has(capability)) continue;
       const button = el("button", "", transitionLabels[status] || status);
       button.addEventListener("click", async () => {
-        const reason = window.prompt(
-          `請輸入轉為「${transitionLabels[status] || status}」的原因`,
-        );
-        if (terminal && !reason?.trim()) return;
+        const reason = await showTextPrompt({
+          title: `案件狀態轉換：${transitionLabels[status] || status}`,
+          message: terminal
+            ? "請輸入狀態轉換原因（至少 3 個字元）。"
+            : "可選填狀態轉換原因。",
+          minLength: terminal ? 3 : 0,
+          required: terminal,
+        });
+        if (reason == null) return;
         try {
           await api(`/api/quality-cases/${caseId}/transition`, {
             method: "POST",

@@ -28,6 +28,8 @@ function showRenameClusterModal(cluster, onConfirm) {
   input.placeholder = "輸入新聚類名稱…";
   input.style.width = "100%";
   group.append(label, input);
+  const error = el("p", "error");
+  error.setAttribute("role", "alert");
 
   const actions = el("div", "filter-bar");
   actions.style.marginTop = "1rem";
@@ -39,9 +41,11 @@ function showRenameClusterModal(cluster, onConfirm) {
   confirmBtn.addEventListener("click", async () => {
     const val = input.value.trim();
     if (!val) {
-      alert("請輸入聚類名稱");
+      error.textContent = "請輸入聚類名稱。";
+      input.focus();
       return;
     }
+    error.textContent = "";
     confirmBtn.disabled = true;
     confirmBtn.textContent = "更名中…";
     try {
@@ -55,7 +59,7 @@ function showRenameClusterModal(cluster, onConfirm) {
   });
 
   actions.append(cancelBtn, confirmBtn);
-  container.append(callout, group, actions);
+  container.append(callout, group, error, actions);
   showContentModal("重新命名問題聚類", container);
 }
 

@@ -6,6 +6,7 @@ import { navigateTo } from "../app/navigation.js";
 import { periodParams } from "./period.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { withReturnTo } from "../app/returnTo.js";
+import { showToast } from "./modal.js";
 import { closeModalDialog, openModalDialog } from "./modalA11y.js";
 
 function periodToNavFilters(period) {
@@ -380,7 +381,7 @@ export async function showIssueDetailModal(issueTypeId, period = { preset: "30d"
               const detail = await api(`/api/conversations/${encodeURIComponent(fb.conversationId)}`);
               showConversationModal(detail, fb.conversationId);
             } catch (err) {
-              alert(`無法載入對話：${err.message}`);
+              showToast(`無法載入對話：${err.message}`, { tone: "error" });
             }
           });
           item.append(viewConvBtn);

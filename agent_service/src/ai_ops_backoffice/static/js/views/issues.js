@@ -23,6 +23,7 @@ import {
 import { createPageController } from "../app/lifecycle.js";
 import { showIssueDetailModal } from "../components/issueModal.js";
 import { showConversationModal } from "../components/conversationModal.js";
+import { showToast } from "../components/modal.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { withReturnTo } from "../app/returnTo.js";
@@ -461,7 +462,7 @@ function renderIssueRouteDrill(data, period, query) {
             const detail = await api(`/api/conversations/${encodeURIComponent(fb.conversationId)}`);
             showConversationModal(detail, fb.conversationId);
           } catch (err) {
-            alert(`無法載入對話：${err.message}`);
+            showToast(`無法載入對話：${err.message}`, { tone: "error" });
           }
         });
         item.append(viewConvBtn);

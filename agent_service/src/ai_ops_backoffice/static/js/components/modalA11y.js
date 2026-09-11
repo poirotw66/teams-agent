@@ -30,17 +30,19 @@ function removeActiveModal(root, { restoreFocus = false } = {}) {
   if (!activeModal || activeModal.root !== root) return;
   root.removeEventListener("keydown", activeModal.onKeyDown, true);
   const previousFocus = activeModal.previousFocus;
+  const onClose = activeModal.onClose;
   activeModal = null;
   if (restoreFocus && previousFocus?.isConnected) {
     focusWithoutScroll(previousFocus);
   }
+  onClose?.();
 }
 
 /**
  * Apply the shared keyboard contract to any modal rendered into modal-root.
  * The helper is deliberately DOM-only so the auth bootstrap can use it too.
  */
-export function openModalDialog(root, modal, { titleElement, initialFocus } = {}) {
+export function openModalDialog(root, modal, { titleElement, initialFocus, onClose } = {}) {
   if (!root || !modal) return;
 
   const previousFocus =
@@ -87,7 +89,7 @@ export function openModalDialog(root, modal, { titleElement, initialFocus } = {}
     }
   };
 
-  activeModal = { root, modal, previousFocus, onKeyDown };
+  activeModal = { root, modal, previousFocus, onKeyDown, onClose };
   root.addEventListener("keydown", onKeyDown, true);
   root.dataset.modalOpen = "true";
 

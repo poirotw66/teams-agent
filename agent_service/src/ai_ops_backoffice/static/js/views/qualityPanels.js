@@ -80,6 +80,8 @@ function showMergeCandidatesModal(count, onConfirm) {
   titleInput.placeholder = "例如：修正特定情境下的無答案問題";
   titleInput.style.width = "100%";
   titleGroup.append(titleLabel, titleInput);
+  const error = el("p", "error");
+  error.setAttribute("role", "alert");
 
   const descGroup = el("div", "form-group");
   const descLabel = el("label", "form-label", "案件說明：");
@@ -115,9 +117,11 @@ function showMergeCandidatesModal(count, onConfirm) {
   submitBtn.addEventListener("click", async () => {
     const titleVal = titleInput.value.trim();
     if (!titleVal) {
-      alert("請輸入改善案件標題");
+      error.textContent = "請輸入改善案件標題。";
+      titleInput.focus();
       return;
     }
+    error.textContent = "";
     submitBtn.disabled = true;
     submitBtn.textContent = "合併中…";
     try {
@@ -135,7 +139,7 @@ function showMergeCandidatesModal(count, onConfirm) {
   });
 
   actions.append(cancelBtn, submitBtn);
-  container.append(desc, titleGroup, descGroup, prioGroup, actions);
+  container.append(desc, titleGroup, descGroup, prioGroup, error, actions);
   showContentModal("合併品質候選為改善案件", container);
 }
 

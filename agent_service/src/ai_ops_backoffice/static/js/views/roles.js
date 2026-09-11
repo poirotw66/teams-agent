@@ -3,6 +3,7 @@ import { actorCapabilities } from "../app/capabilities.js";
 import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { faqField } from "../components/forms.js";
+import { showTextPrompt } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
 
 export async function renderRoles() {
@@ -49,10 +50,19 @@ export async function renderRoles() {
     if (allowed.has("ops.roles.revoke")) {
       const revoke = el("button", "", "緊急撤權");
       revoke.addEventListener("click", async () => {
-        const principal = window.prompt("要撤權的 principal");
+        const principal = await showTextPrompt({
+          title: "緊急撤權",
+          message: "請輸入要撤權的 principal。",
+          required: true,
+        });
         if (!principal) return;
-        const reason = window.prompt("撤權原因");
-        if (!reason || reason.trim().length < 3) return;
+        const reason = await showTextPrompt({
+          title: "緊急撤權原因",
+          message: "請輸入撤權原因（至少 3 個字）。",
+          minLength: 3,
+          required: true,
+        });
+        if (reason == null) return;
         await api("/api/governance/roles/revoke", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -74,8 +84,13 @@ export async function renderRoles() {
         if (allowed.has("ops.roles.approve") && change.status === "REQUESTED") {
           const approve = el("button", "", "核准");
           approve.addEventListener("click", async () => {
-            const reason = window.prompt("核准原因");
-            if (!reason || reason.trim().length < 3) return;
+            const reason = await showTextPrompt({
+              title: "核准角色變更",
+              message: "請輸入核准原因（至少 3 個字）。",
+              minLength: 3,
+              required: true,
+            });
+            if (reason == null) return;
             await api(`/api/governance/roles/${change.change_id}/approve`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

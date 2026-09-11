@@ -1,5 +1,11 @@
 import { api, el } from "../api.js";
-import { showContentModal, closeContentModal } from "../components/modal.js";
+import {
+  showContentModal,
+  closeContentModal,
+  showConfirm,
+  showTextPrompt,
+  showToast,
+} from "../components/modal.js";
 import { actorCapabilities, getCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
@@ -596,7 +602,7 @@ export function showCaseCreateModal(onSuccess, prefill = {}) {
       closeContentModal();
       if (onSuccess) await onSuccess(created);
     } catch (err) {
-      alert(`建立失敗: ${err.message}`);
+      showToast(`建立失敗: ${err.message}`, { tone: "error" });
     }
   });
 
@@ -662,7 +668,7 @@ async function showCaseDetailModal(caseId, onUpdate) {
           closeContentModal();
           if (onUpdate) onUpdate();
         } catch (err) {
-          alert(`送審失敗: ${err.message}`);
+          showToast(`送審失敗: ${err.message}`, { tone: "error" });
         }
       });
       actionsBar.append(submitBtn);
@@ -679,8 +685,13 @@ async function showCaseDetailModal(caseId, onUpdate) {
     if (r.status === "APPROVED") {
       const newRevBtn = el("button", "btn-secondary", "建立新修訂 (New Revision)");
       newRevBtn.addEventListener("click", async () => {
-        const newQuery = prompt("請輸入修訂後的使用者問題 (Query)：", r.query);
-        if (!newQuery) return;
+        const newQuery = await showTextPrompt({
+          title: "建立新修訂",
+          message: "請輸入修訂後的使用者問題（Query）。",
+          defaultValue: r.query,
+          required: true,
+        });
+        if (newQuery == null) return;
         try {
           await api(`/api/evaluations/cases/${caseId}/revisions`, {
             method: "POST",
@@ -692,11 +703,11 @@ async function showCaseDetailModal(caseId, onUpdate) {
               criticality: r.criticality,
             }),
           });
-          alert("新草稿修訂版本已建立！");
+          showToast("新草稿修訂版本已建立！", { tone: "success" });
           showCaseDetailModal(caseId, onUpdate);
           if (onUpdate) onUpdate();
         } catch (err) {
-          alert(`建立新修訂失敗: ${err.message || err}`);
+          showToast(`建立新修訂失敗: ${err.message || err}`, { tone: "error" });
         }
       });
       actionsBar.append(newRevBtn);
@@ -705,8 +716,12 @@ async function showCaseDetailModal(caseId, onUpdate) {
     if (r.status !== "RETIRED") {
       const retireBtn = el("button", "btn-danger", "退役案例 (Retire)");
       retireBtn.addEventListener("click", async () => {
-        const reason = prompt("請輸入退役原因：");
-        if (!reason) return;
+        const reason = await showTextPrompt({
+          title: "退役評測案例",
+          message: "請輸入退役原因。",
+          required: true,
+        });
+        if (reason == null) return;
         try {
           await api(`/api/evaluations/cases/${caseId}/retire`, {
             method: "POST",
@@ -715,7 +730,7 @@ async function showCaseDetailModal(caseId, onUpdate) {
           closeContentModal();
           if (onUpdate) onUpdate();
         } catch (err) {
-          alert(`退役失敗: ${err.message}`);
+          showToast(`退役失敗: ${err.message}`, { tone: "error" });
         }
       });
       actionsBar.append(retireBtn);
@@ -766,7 +781,7 @@ function showReviewDialog(caseId, revision, onUpdate) {
       closeContentModal();
       if (onUpdate) onUpdate();
     } catch (err) {
-      alert(`審核失敗: ${err.message}`);
+      showToast(`審核失敗: ${err.message}`, { tone: "error" });
     }
   });
 
@@ -819,7 +834,7 @@ function showCreateSetModal(onSuccess) {
       closeContentModal();
       if (onSuccess) onSuccess();
     } catch (err) {
-      alert(`建立題庫失敗: ${err.message}`);
+      showToast(`建立題庫失敗: ${err.message}`, { tone: "error" });
     }
   });
 
@@ -874,7 +889,7 @@ async function showSetDetailModal(setId, allowed = actorCapabilities()) {
               await showSetDetailModal(setId, allowed);
             } catch (err) {
               publishBtn.disabled = false;
-              alert(`發布失敗: ${err.message}`);
+              showToast(`發布失敗: ${err.message}`, { tone: "error" });
             }
           });
           vCard.append(publishBtn);
@@ -952,7 +967,7 @@ async function showPublishVersionModal(setId, onSuccess, canPublish = false) {
       const checkedBoxes = form.querySelectorAll("input[name='rev_id']:checked");
       const revIds = Array.from(checkedBoxes).map(b => b.value);
       if (revIds.length === 0) {
-        alert("請至少選擇一個案例！");
+        showToast("請至少選擇一個案例！", { tone: "error" });
         return;
       }
 
@@ -968,14 +983,14 @@ async function showPublishVersionModal(setId, onSuccess, canPublish = false) {
             method: "POST",
             body: JSON.stringify({ expected_etag: draft.etag }),
           });
-          alert("題庫版本發布成功！此版本成員與 Manifest Hash 已永久鎖定。");
+          showToast("題庫版本發布成功！此版本成員與 Manifest Hash 已永久鎖定。", { tone: "success" });
         } else {
-          alert("題庫版本草稿已建立，請交由具備發布權限的角色完成發布。");
+          showToast("題庫版本草稿已建立，請交由具備發布權限的角色完成發布。", { tone: "success" });
         }
         closeContentModal();
         if (onSuccess) onSuccess();
       } catch (err) {
-        alert(`發布失敗: ${err.message}`);
+        showToast(`發布失敗: ${err.message}`, { tone: "error" });
       }
     });
   } catch (err) {
@@ -1048,11 +1063,11 @@ function showImportModal(onSuccess) {
             const commitRes = await api(`/api/evaluations/imports/${valRes.staged_import_id}/commit?owner_unit_id=${encodeURIComponent(owner_unit_id)}`, {
               method: "POST",
             });
-            alert(`成功匯入 ${commitRes.total} 筆案例！`);
+            showToast(`成功匯入 ${commitRes.total} 筆案例！`, { tone: "success" });
             closeContentModal();
             if (onSuccess) onSuccess();
           } catch (cErr) {
-            alert(`提交失敗: ${cErr.message}`);
+            showToast(`提交失敗: ${cErr.message}`, { tone: "error" });
           }
         });
       }
@@ -1400,7 +1415,7 @@ async function renderRunsTab(container, allowed) {
   preflightBtn.addEventListener("click", async () => {
     const setVersionId = select.value;
     if (!setVersionId) {
-      alert("請先選擇評測題庫版本");
+      showToast("請先選擇評測題庫版本", { tone: "error" });
       return;
     }
     const maxCasesVal = box.querySelector("#run-max-cases")?.value;
@@ -1499,7 +1514,7 @@ async function renderRunsTab(container, allowed) {
       startRunBtn.disabled = false;
       startRunBtn.textContent = "啟動驗收執行";
     } catch (err) {
-      alert(`啟動評測失敗: ${err.message || err}`);
+      showToast(`啟動評測失敗: ${err.message || err}`, { tone: "error" });
       startRunBtn.disabled = false;
       startRunBtn.textContent = "啟動驗收執行";
     }
@@ -1843,8 +1858,14 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
   const qcBtn = modalContent.querySelector("#promote-qc-btn");
   if (qcBtn) {
     qcBtn.addEventListener("click", async () => {
-      const rootCause = prompt("請輸入問題根本原因 (Root Cause)：", candidateExec.failure_classification || "評測判定未達標");
-      if (!rootCause) return;
+      const rootCause = await showTextPrompt({
+        title: "建立品質改善案件",
+        message: "請輸入問題根本原因（Root Cause，至少 3 個字元）。",
+        defaultValue: candidateExec.failure_classification || "評測判定未達標",
+        minLength: 3,
+        required: true,
+      });
+      if (rootCause == null) return;
       try {
         const qcRes = await api(`/api/evaluations/runs/${runId}/cases/${candidateExec.execution_id}/quality-case`, {
           method: "POST",
@@ -1852,7 +1873,12 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
           body: JSON.stringify({ root_cause: rootCause.trim() }),
         });
         const caseId = qcRes.quality_case?.quality_case_id || qcRes.quality_case_id;
-        if (caseId && window.confirm(`已建立改善案件 ${caseId}。是否立即開啟案件？`)) {
+        if (caseId && await showConfirm({
+          title: "品質改善案件已建立",
+          message: `已建立改善案件 ${caseId}。是否立即開啟案件？`,
+          confirmLabel: "立即開啟",
+          cancelLabel: "稍後處理",
+        })) {
           closeContentModal();
           void navigateTo(
             "quality",
@@ -1864,9 +1890,9 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
           );
           return;
         }
-        alert(`已成功建立品質改善案件：${caseId || "(未知 ID)"}`);
+        showToast(`已成功建立品質改善案件：${caseId || "(未知 ID)"}`, { tone: "success" });
       } catch (err) {
-        alert(`建立案件失敗: ${err.message || err}`);
+        showToast(`建立案件失敗: ${err.message || err}`, { tone: "error" });
       }
     });
   }
@@ -1875,12 +1901,12 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
   if (submitBtn) submitBtn.addEventListener("click", async () => {
     const reason = modalContent.querySelector("#review-reason-input").value.trim();
     if (!reason) {
-      alert("請填寫覆核理由");
+      showToast("請填寫覆核理由", { tone: "error" });
       return;
     }
     const metricId = modalContent.querySelector("#review-metric-select")?.value;
     if (!metricId) {
-      alert("請選擇要覆核的指標");
+      showToast("請選擇要覆核的指標", { tone: "error" });
       return;
     }
     const decision = modalContent.querySelector("#review-decision-select").value;
@@ -1896,10 +1922,10 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
           reason: reason,
         }),
       });
-      alert("覆核決策已儲存！");
+      showToast("覆核決策已儲存！", { tone: "success" });
       closeContentModal();
     } catch (err) {
-      alert(`覆核失敗: ${err.message || err}`);
+      showToast(`覆核失敗: ${err.message || err}`, { tone: "error" });
     }
   });
 
@@ -1974,8 +2000,13 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
     if (decisionStatus !== "PASS" && allowed.has("ops.evals.write")) {
       const waiverBtn = el("button", "btn-secondary", "申請例外放行 (Request Waiver)");
       waiverBtn.addEventListener("click", async () => {
-        const waiverReason = prompt("請輸入申請例外放行原因 (須經雙人審核)：");
-        if (!waiverReason) return;
+        const waiverReason = await showTextPrompt({
+          title: "申請例外放行",
+          message: "請輸入申請例外放行原因（須經雙人審核，至少 3 個字元）。",
+          minLength: 3,
+          required: true,
+        });
+        if (waiverReason == null) return;
         try {
           const excRes = await api(`/api/evaluations/gate-decisions/${dec.decision_id}/exceptions`, {
             method: "POST",
@@ -1985,10 +2016,10 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
               validity_hours: 24,
             }),
           });
-          alert(`例外申請已送出 (ID: ${excRes.exception.exception_id})，狀態: ${excRes.exception.status}`);
+          showToast(`例外申請已送出 (ID: ${excRes.exception.exception_id})，狀態: ${excRes.exception.status}`, { tone: "success" });
           closeContentModal();
         } catch (err) {
-          alert(`申請例外放行失敗: ${err.message || err}`);
+          showToast(`申請例外放行失敗: ${err.message || err}`, { tone: "error" });
         }
       });
       waiverSection.append(waiverBtn);
@@ -2100,10 +2131,10 @@ async function renderGatesTab(container, allowed) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ mode: newMode }),
             });
-            alert(`門檻政策已切換為 ${newMode} 模式！`);
+            showToast(`門檻政策已切換為 ${newMode} 模式！`, { tone: "success" });
             loadPolicy();
           } catch (err) {
-            alert(`模式切換失敗: ${err.message || err}`);
+            showToast(`模式切換失敗: ${err.message || err}`, { tone: "error" });
           }
         });
       }
@@ -2175,7 +2206,7 @@ async function renderGatesTab(container, allowed) {
               });
               loadSchedules();
             } catch (err) {
-              alert(`更新排程失敗: ${err.message || err}`);
+              showToast(`更新排程失敗: ${err.message || err}`, { tone: "error" });
             }
           });
         }

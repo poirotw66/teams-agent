@@ -5,7 +5,7 @@ import { loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "..
 import { buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { navigateReturnTo } from "../app/returnTo.js";
 import { badge } from "./badges.js";
-import { showContentModal } from "./modal.js";
+import { showContentModal, showTextPrompt, showToast } from "./modal.js";
 import { closeModalDialog, openModalDialog } from "./modalA11y.js";
 import { formatAssistantHtml, formatTaipeiDateTime, labelRoute } from "../app/labels.js";
 
@@ -123,7 +123,7 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
       );
       onRefresh?.(refreshed, conversationId);
     } catch (error) {
-      alert(`重新整理失敗: ${error.message}`);
+      showToast(`重新整理失敗：${error.message}`, { tone: "error" });
       refreshBtn.disabled = false;
       refreshBtn.textContent = "重新整理";
     }
@@ -143,17 +143,26 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
       copyUrlBtn.textContent = "已複製安全網址";
       setTimeout(() => { copyUrlBtn.textContent = "複製安全網址"; }, 1400);
     } catch {
-      window.prompt("安全網址", safeUrl);
+      await showTextPrompt({
+        title: "安全網址",
+        message: "瀏覽器不允許直接寫入剪貼簿，請手動複製下列網址。",
+        defaultValue: safeUrl,
+        readOnly: true,
+        confirmLabel: "關閉",
+      });
     }
   });
   actions.append(refreshBtn, copyUrlBtn);
   if (allowed.has("ops.conversations.unmasked") && !detail.unmaskAuthorized) {
     const unmaskButton = el("button", "", "申請查看未遮罩內容");
     unmaskButton.addEventListener("click", async () => {
-      const reason = window.prompt("請輸入查看未遮罩內容的原因（至少 3 字）：");
-      if (!reason || reason.trim().length < 3) {
-        return;
-      }
+      const reason = await showTextPrompt({
+        title: "申請查看未遮罩內容",
+        message: "請輸入原因（至少 3 個字）；申請會寫入資安稽核紀錄。",
+        minLength: 3,
+        required: true,
+      });
+      if (reason == null) return;
       const refreshed = await api(
         `/api/conversations/${encodeURIComponent(conversationId)}?${new URLSearchParams({
           unmask_reason: reason.trim(),

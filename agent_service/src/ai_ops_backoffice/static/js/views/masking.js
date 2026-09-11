@@ -3,6 +3,7 @@ import { actorCapabilities } from "../app/capabilities.js";
 import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge } from "../components/badges.js";
 import { faqField } from "../components/forms.js";
+import { showTextPrompt } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
 
 export async function renderMasking() {
@@ -49,8 +50,13 @@ export async function renderMasking() {
         if (allowed.has("ops.retention.write") && item.status === "CANDIDATE") {
           const approve = el("button", "", "核准");
           approve.addEventListener("click", async () => {
-            const reason = window.prompt("核准原因");
-            if (!reason || reason.trim().length < 3) return;
+            const reason = await showTextPrompt({
+              title: "核准遮罩政策",
+              message: "請輸入核准原因（至少 3 個字）。",
+              minLength: 3,
+              required: true,
+            });
+            if (reason == null) return;
             await api(`/api/governance/masking/${item.version_id}/approve`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -63,8 +69,13 @@ export async function renderMasking() {
         if (allowed.has("ops.retention.write") && item.status === "APPROVED") {
           const activate = el("button", "", "啟用");
           activate.addEventListener("click", async () => {
-            const reason = window.prompt("啟用原因");
-            if (!reason || reason.trim().length < 3) return;
+            const reason = await showTextPrompt({
+              title: "啟用遮罩政策",
+              message: "請輸入啟用原因（至少 3 個字）。",
+              minLength: 3,
+              required: true,
+            });
+            if (reason == null) return;
             await api(`/api/governance/masking/${item.version_id}/activate`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

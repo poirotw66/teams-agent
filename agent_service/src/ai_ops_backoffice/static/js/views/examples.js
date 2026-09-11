@@ -1,5 +1,5 @@
 import { api, el } from "../api.js";
-import { showContentModal, closeContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal, showTextPrompt } from "../components/modal.js";
 import { faqField, exampleSelect } from "../components/forms.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { createPageController } from "../app/lifecycle.js";
@@ -250,8 +250,12 @@ async function showExampleDetail(exampleId) {
         expected_etag: record.etag, approve: true, reason: "SYSTEM_ADMIN 已驗證標籤與預期結果",
       }));
       const reject = el("button", "", "拒絕");
-      reject.addEventListener("click", () => {
-        const reason = window.prompt("請輸入拒絕原因");
+      reject.addEventListener("click", async () => {
+        const reason = await showTextPrompt({
+          title: "拒絕品質案例",
+          message: "請輸入拒絕原因。",
+          required: true,
+        });
         if (reason?.trim()) run(`/api/examples/${exampleId}/review`, {
           expected_etag: record.etag, approve: false, reason: reason.trim(),
         });
@@ -260,8 +264,12 @@ async function showExampleDetail(exampleId) {
     }
     if (allowed.has("ops.examples.retire") && record.status !== "RETIRED") {
       const retire = el("button", "", "退役");
-      retire.addEventListener("click", () => {
-        const reason = window.prompt("請輸入退役原因");
+      retire.addEventListener("click", async () => {
+        const reason = await showTextPrompt({
+          title: "退役品質案例",
+          message: "請輸入退役原因。",
+          required: true,
+        });
         if (reason?.trim()) run(`/api/examples/${exampleId}/retire`, {
           expected_etag: record.etag, reason: reason.trim(),
         });

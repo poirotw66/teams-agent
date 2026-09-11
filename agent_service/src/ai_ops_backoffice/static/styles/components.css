@@ -308,6 +308,60 @@ pre {
   margin: 0.45rem 0 0.85rem;
 }
 
+.dialog-content {
+  display: grid;
+  gap: 1rem;
+}
+
+.dialog-message {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.dialog-message-error {
+  color: var(--text-danger, #b91c1c);
+}
+
+.dialog-message-warning {
+  color: var(--text-warning, #92400e);
+}
+
+.toast-stack {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 70;
+  display: grid;
+  gap: 0.6rem;
+  width: min(360px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border-subtle, #cbd5e1);
+  border-radius: var(--radius-sm, 0.5rem);
+  background: var(--bg-card, #ffffff);
+  color: var(--text-primary, #0f172a);
+  box-shadow: var(--shadow-modal);
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+.toast-success {
+  border-color: var(--border-success, #86efac);
+}
+
+.toast-error {
+  border-color: var(--border-danger, #fca5a5);
+  color: var(--text-danger, #b91c1c);
+}
+
+.toast-warning {
+  border-color: var(--border-warning, #fcd34d);
+  color: var(--text-warning, #92400e);
+}
+
 /* ==========================================================================
    7. FORMS, FILTERS & BUTTON ARCHITECTURE
    ========================================================================== */

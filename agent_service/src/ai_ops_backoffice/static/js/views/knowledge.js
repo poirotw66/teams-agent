@@ -1,5 +1,5 @@
 import { api, el, metric } from "../api.js";
-import { showContentModal, closeContentModal } from "../components/modal.js";
+import { showContentModal, closeContentModal, showTextPrompt } from "../components/modal.js";
 import { showConversationModal } from "../components/conversationModal.js";
 import { buildFaqForm, faqPayload } from "../components/faqForms.js";
 import {
@@ -242,8 +242,12 @@ async function showSyncDetail(jobId, panel) {
     if (allowed.has("ops.sync.write") && ["FAILED", "CANCELLED"].includes(job.status)) {
       const retry = el("button", "", "重試");
       retry.addEventListener("click", async () => {
-        const reason = window.prompt("重試原因");
-        if (!reason?.trim()) return;
+        const reason = await showTextPrompt({
+          title: "重試同步工作",
+          message: "請輸入重試原因。",
+          required: true,
+        });
+        if (reason == null) return;
         await api(`/api/sync-jobs/${jobId}/retry`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -256,8 +260,12 @@ async function showSyncDetail(jobId, panel) {
     if (allowed.has("ops.sync.write") && ["QUEUED", "VALIDATING", "BUILDING", "VERIFYING"].includes(job.status)) {
       const cancel = el("button", "", "取消");
       cancel.addEventListener("click", async () => {
-        const reason = window.prompt("取消原因");
-        if (!reason?.trim()) return;
+        const reason = await showTextPrompt({
+          title: "取消同步工作",
+          message: "請輸入取消原因。",
+          required: true,
+        });
+        if (reason == null) return;
         await api(`/api/sync-jobs/${jobId}/cancel`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -676,8 +684,12 @@ async function showFaqDetail(faqId, panel) {
       for (const [kind, label] of [["POSITIVE", "新增正例"], ["NEGATIVE", "新增反例"]]) {
         const button = el("button", "", label);
         button.addEventListener("click", async () => {
-          const utterance = window.prompt(`${label}問法`);
-          if (!utterance) return;
+          const utterance = await showTextPrompt({
+            title: label,
+            message: `請輸入要加入的${label}問法。`,
+            required: true,
+          });
+          if (utterance == null) return;
           await run(`/api/faqs/${faqId}/versions/${current.version_id}/tests`, {
             expected_etag: faq.etag, kind, utterance,
             expected_audience_group_ids: current.content.audience_group_ids,
@@ -698,9 +710,13 @@ async function showFaqDetail(faqId, panel) {
         { expected_etag: faq.etag, approve: true, reason: "管理員已審閱內容與正反例" },
       ));
       const reject = el("button", "", "退回修改");
-      reject.addEventListener("click", () => {
-        const reason = window.prompt("請輸入退回原因");
-        if (!reason?.trim()) return;
+      reject.addEventListener("click", async () => {
+        const reason = await showTextPrompt({
+          title: "退回 FAQ 修改",
+          message: "請輸入退回原因。",
+          required: true,
+        });
+        if (reason == null) return;
         run(`/api/faqs/${faqId}/versions/${current.version_id}/review`, {
           expected_etag: faq.etag, approve: false, reason: reason.trim(),
         });
@@ -741,9 +757,13 @@ async function showFaqDetail(faqId, panel) {
         && version.approved_by;
       if (canRollback) {
         const rollback = el("button", "", "回復此版本");
-        rollback.addEventListener("click", () => {
-          const reason = window.prompt(`請輸入回復 v${version.version_number} 的原因`);
-          if (!reason?.trim()) return;
+        rollback.addEventListener("click", async () => {
+          const reason = await showTextPrompt({
+            title: `回復 v${version.version_number}`,
+            message: "請輸入回復原因。",
+            required: true,
+          });
+          if (reason == null) return;
           run(`/api/faqs/${faqId}/versions/${version.version_id}/rollback`, {
             expected_etag: faq.etag,
             reason: reason.trim(),

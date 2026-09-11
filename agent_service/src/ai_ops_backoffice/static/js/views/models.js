@@ -2,7 +2,12 @@ import { api, el } from "../api.js";
 import { actorCapabilities } from "../app/capabilities.js";
 import { presentSystemPage } from "../app/adminChrome.js";
 import { statusBadge, badge } from "../components/badges.js";
-import { showContentModal, closeContentModal } from "../components/modal.js";
+import {
+  showContentModal,
+  closeContentModal,
+  showTextPrompt,
+  showToast,
+} from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
 
 export async function renderModels() {
@@ -70,8 +75,13 @@ export async function renderModels() {
       if (allowed.has("ops.models.read") && configId) {
         const simulate = el("button", "secondary", "模擬 Fallback");
         simulate.addEventListener("click", async () => {
-          const error = window.prompt("觸發錯誤 (TIMEOUT / RATE_LIMIT / UNAVAILABLE)：", "TIMEOUT");
-          if (!error) return;
+          const error = await showTextPrompt({
+            title: "模擬 Fallback",
+            message: "請輸入要觸發的錯誤代碼（TIMEOUT／RATE_LIMIT／UNAVAILABLE）。",
+            defaultValue: "TIMEOUT",
+            required: true,
+          });
+          if (error == null || !error.trim()) return;
           try {
             const result = await api(`/api/governance/models/${configId}/simulate-fallback`, {
               method: "POST",
@@ -80,7 +90,7 @@ export async function renderModels() {
             });
             showContentModal("Fallback 模擬結果", el("pre", "json-block", JSON.stringify(result, null, 2)));
           } catch (err) {
-            alert(`模擬失敗：${err.message || err}`);
+            showToast(`模擬失敗：${err.message || err}`, { tone: "error" });
           }
         });
         headActions.append(simulate);
@@ -89,8 +99,13 @@ export async function renderModels() {
       if (allowed.has("ops.models.activate") && configId) {
         const rollback = el("button", "secondary", "回復上一模型");
         rollback.addEventListener("click", async () => {
-          const reason = window.prompt("請輸入回復原因：");
-          if (!reason || reason.trim().length < 3) return;
+          const reason = await showTextPrompt({
+            title: "回復上一模型",
+            message: "請輸入回復原因（至少 3 個字元）。",
+            minLength: 3,
+            required: true,
+          });
+          if (reason == null) return;
           try {
             await api(`/api/governance/models/${configId}/rollback`, {
               method: "POST",
@@ -99,7 +114,7 @@ export async function renderModels() {
             });
             await renderModels();
           } catch (err) {
-            alert(`回復失敗：${err.message || err}`);
+            showToast(`回復失敗：${err.message || err}`, { tone: "error" });
           }
         });
         headActions.append(rollback);
@@ -159,7 +174,7 @@ export async function renderModels() {
                 showContentModal("模型安全評測結果", el("pre", "json-block", JSON.stringify(res, null, 2)));
                 await renderModels();
               } catch (err) {
-                alert(`評測失敗：${err.message || err}`);
+                showToast(`評測失敗：${err.message || err}`, { tone: "error" });
                 evalBtn.disabled = false;
                 evalBtn.textContent = "評測 (Eval)";
               }
@@ -170,8 +185,14 @@ export async function renderModels() {
           if (v.status === "EVALUATED" && allowed.has("ops.models.approve")) {
             const approveBtn = el("button", "", "核准 (Approve)");
             approveBtn.addEventListener("click", async () => {
-              const reason = window.prompt("請輸入核准原因：", "模型評測指標通過基準");
-              if (!reason || reason.trim().length < 3) return;
+              const reason = await showTextPrompt({
+                title: "核准模型版本",
+                message: "請輸入核准原因（至少 3 個字元）。",
+                defaultValue: "模型評測指標通過基準",
+                minLength: 3,
+                required: true,
+              });
+              if (reason == null) return;
               try {
                 await api(`/api/governance/models/${configId}/versions/${v.version_id}/approve`, {
                   method: "POST",
@@ -180,7 +201,7 @@ export async function renderModels() {
                 });
                 await renderModels();
               } catch (err) {
-                alert(`核准失敗：${err.message || err}`);
+                showToast(`核准失敗：${err.message || err}`, { tone: "error" });
               }
             });
             actions.append(approveBtn);
@@ -189,8 +210,14 @@ export async function renderModels() {
           if (v.status === "APPROVED" && allowed.has("ops.models.activate")) {
             const activateBtn = el("button", "", "啟用 (Activate)");
             activateBtn.addEventListener("click", async () => {
-              const reason = window.prompt("請輸入啟用原因：", "核准後正式切換線上模型");
-              if (!reason || reason.trim().length < 3) return;
+              const reason = await showTextPrompt({
+                title: "啟用模型版本",
+                message: "請輸入啟用原因（至少 3 個字元）。",
+                defaultValue: "核准後正式切換線上模型",
+                minLength: 3,
+                required: true,
+              });
+              if (reason == null) return;
               try {
                 await api(`/api/governance/models/${configId}/versions/${v.version_id}/activate`, {
                   method: "POST",
@@ -199,7 +226,7 @@ export async function renderModels() {
                 });
                 await renderModels();
               } catch (err) {
-                alert(`啟用失敗：${err.message || err}`);
+                showToast(`啟用失敗：${err.message || err}`, { tone: "error" });
               }
             });
             actions.append(activateBtn);
@@ -338,7 +365,8 @@ function showModelCandidateModal(configId, component, onRefresh) {
     e.preventDefault();
     const reason = reasonInput.value.trim();
     if (reason.length < 3) {
-      alert("變更原因至少需 3 個字元");
+      showToast("變更原因至少需 3 個字元", { tone: "error" });
+      reasonInput.focus();
       return;
     }
     const fallbackId = fallbackInput.value.trim() || null;
@@ -367,7 +395,7 @@ function showModelCandidateModal(configId, component, onRefresh) {
       closeContentModal();
       await onRefresh();
     } catch (err) {
-      alert(`建立失敗：${err.message || err}`);
+      showToast(`建立失敗：${err.message || err}`, { tone: "error" });
     }
   });
 

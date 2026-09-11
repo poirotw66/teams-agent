@@ -20,7 +20,7 @@ async function setup() {
   });
   const mocks = {
     '../api.js': { el, metric() {}, api: async url => { calls.push(url); return { items: [] }; } },
-    '../components/modal.js': { showContentModal() {}, closeContentModal() {} },
+    '../components/modal.js': { showContentModal() {}, closeContentModal() {}, showTextPrompt: async () => null },
     '../components/conversationModal.js': { showConversationModal() {} },
     '../components/faqForms.js': { buildFaqForm() {}, faqPayload() {} },
     '../components/contentGuide.js': { renderContentPolicyBanner() {}, renderDecisionGuide() {} },
