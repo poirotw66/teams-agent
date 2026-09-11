@@ -36,16 +36,41 @@ async function setup() {
     '../knowledge_portal_view.js': { renderNativeKnowledgePortal: async (_app, _caps, _nav, filters) => calls.push(filters) },
     '../app/lifecycle.js': { createPageController: x => x },
   };
-  const source = await readFile(new URL('../../src/ai_ops_backoffice/static/js/views/knowledge.js', import.meta.url), 'utf8');
-  const module = new vm.SourceTextModule(source, { context });
-  await module.link(specifier => {
-    const cleanSpecifier = specifier.split('?')[0];
-    const mock = mocks[cleanSpecifier];
-    if (!mock) throw new Error(`Missing mock for ${cleanSpecifier}`);
-    return new vm.SyntheticModule(Object.keys(mock), function () {
-      for (const [key, value] of Object.entries(mock)) this.setExport(key, value);
-    }, { context });
-  });
+  const baseKnowledgeUrl = new URL('../../src/ai_ops_backoffice/static/js/views/knowledge.js', import.meta.url);
+  const cache = new Map();
+
+  function getMock(cleanSpecifier) {
+    if (mocks[cleanSpecifier]) return mocks[cleanSpecifier];
+    // Match by suffix, e.g. '../../api.js' matches '../api.js'
+    for (const [key, val] of Object.entries(mocks)) {
+      const normalizedKey = key.replace(/^\.\.\//, '');
+      const normalizedSpec = cleanSpecifier.replace(/^(\.\.\/)+/, '');
+      if (normalizedKey === normalizedSpec) return val;
+    }
+    return null;
+  }
+
+  async function loadModule(targetUrl) {
+    const href = targetUrl.href;
+    if (cache.has(href)) return cache.get(href);
+    const source = await readFile(targetUrl, 'utf8');
+    const mod = new vm.SourceTextModule(source, { context, identifier: href });
+    cache.set(href, mod);
+    await mod.link(async (specifier) => {
+      const cleanSpecifier = specifier.split('?')[0];
+      const mock = getMock(cleanSpecifier);
+      if (mock) {
+        return new vm.SyntheticModule(Object.keys(mock), function () {
+          for (const [key, value] of Object.entries(mock)) this.setExport(key, value);
+        }, { context });
+      }
+      const childUrl = new URL(cleanSpecifier, targetUrl);
+      return await loadModule(childUrl);
+    });
+    return mod;
+  }
+
+  const module = await loadModule(baseKnowledgeUrl);
   await module.evaluate();
   return { pages: module.namespace, calls, app };
 }
