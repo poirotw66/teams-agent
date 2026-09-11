@@ -8,7 +8,16 @@ as required by F02 and A04.
 from __future__ import annotations
 
 from typing import Any
-from ai_ops_backoffice.services.source_models import DocumentAccessDecision
+from pydantic import BaseModel
+
+
+class DocumentAccessDecision(BaseModel):
+    """Result of unified document authorization evaluation."""
+
+    allowed: bool
+    reason: str
+    status_code: int = 200
+    safe_error_code: str = "ACCESS_GRANTED"
 
 
 class DocumentAccessDeniedError(Exception):

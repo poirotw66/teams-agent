@@ -457,3 +457,79 @@ def test_a06_t1_bounded_cache_memory_limit() -> None:
     assert cache.get("tenant-1", "src-000000000000000000000003") is not None
     assert cache.get("tenant-1", "src-000000000000000000000004") is not None
     assert cache.get("tenant-1", "src-000000000000000000000005") is not None
+
+
+@pytest.mark.asyncio
+async def test_gcs_storage_chunked_streaming_and_sha256():
+    """Verifies true GCS chunked streaming via blob.open and SHA-256 integrity."""
+    import io
+    from agent_service.artifact_storage import GcsArtifactStorage
+
+    test_content = b"This is a test document for streaming verification." * 100
+    expected_sha = hashlib.sha256(test_content).hexdigest()
+
+    class MockBlob:
+        def __init__(self, name: str):
+            self.name = name
+            self.generation = 12345
+            self.content_type = "text/plain"
+            self.size = len(test_content)
+            self.metadata = {}
+
+        def upload_from_string(self, data, content_type=None):
+            pass
+
+        def open(self, mode="rb"):
+            return io.BytesIO(test_content)
+
+        def download_as_bytes(self, start=None, end=None):
+            if start is not None and end is not None:
+                return test_content[start : end + 1]
+            return test_content
+
+    mock_blob = MockBlob("tenants/t1/artifacts/art-1/test.txt")
+
+    class MockBucket:
+        def blob(self, name):
+            return mock_blob
+
+    class MockClient:
+        def bucket(self, name):
+            return MockBucket()
+
+        def list_blobs(self, bucket_name, prefix=None, max_results=None):
+            return [mock_blob]
+
+    storage = GcsArtifactStorage("my-bucket", client=MockClient())
+    record = await storage.store_artifact(
+        tenant_id="t1",
+        artifact_id="art-1",
+        data=test_content,
+        filename="test.txt",
+    )
+    assert record.sha256 == expected_sha
+    assert mock_blob.metadata.get("sha256") == expected_sha
+
+    # Clear shared store to test direct GCS retrieval
+    storage._SHARED_STORE["my-bucket"].clear()
+
+    rec_fetched, stream = await storage.get_artifact("t1", "art-1")
+    assert rec_fetched.sha256 == expected_sha
+    streamed_chunks = []
+    async for chunk in stream:
+        streamed_chunks.append(chunk)
+    assert b"".join(streamed_chunks) == test_content
+
+    # Test range
+    _, range_bytes = await storage.get_artifact_range("t1", "art-1", 0, 10)
+    assert range_bytes == test_content[0:11]
+
+
+def test_core_agent_service_has_no_backoffice_reverse_dependencies():
+    """A08: Core agent_service modules must not import from ai_ops_backoffice."""
+    from agent_service.document_authorization import DocumentAccessDecision
+    from agent_service.artifact_models import ArtifactRecord
+
+    assert DocumentAccessDecision.__module__ == "agent_service.document_authorization"
+    assert ArtifactRecord.__module__ == "agent_service.artifact_models"
+

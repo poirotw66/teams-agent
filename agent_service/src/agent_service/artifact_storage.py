@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from ai_ops_backoffice.services.source_models import (
+from agent_service.artifact_models import (
     ArtifactKind,
     ArtifactRecord,
     ArtifactScanStatus,
@@ -246,6 +246,7 @@ class GcsArtifactStorage:
         if self.client is not None:
             bucket = self.client.bucket(self.bucket_name)
             blob = bucket.blob(object_key)
+            blob.metadata = {"sha256": sha256}
             blob.upload_from_string(data, content_type=detected_mime)
             generation = blob.generation or 1
         else:
@@ -285,13 +286,14 @@ class GcsArtifactStorage:
             blobs = list(self.client.list_blobs(self.bucket_name, prefix=prefix, max_results=1))
             if blobs:
                 blob = blobs[0]
+                blob_sha256 = (blob.metadata or {}).get("sha256") or ""
                 record = ArtifactRecord(
                     artifact_id=artifact_id,
                     tenant_id=tenant_id,
                     bucket=self.bucket_name,
                     object_key=blob.name,
                     generation=blob.generation or 1,
-                    sha256=blob.md5_hash or "",
+                    sha256=blob_sha256,
                     mime_type=blob.content_type or "application/octet-stream",
                     size=blob.size or 0,
                 )
@@ -309,30 +311,38 @@ class GcsArtifactStorage:
     ) -> tuple[ArtifactRecord, AsyncIterator[bytes]]:
         key = f"{tenant_id}:{artifact_id}"
         entry = self._SHARED_STORE.get(self.bucket_name, {}).get(key)
-        if entry is None and self.client is not None:
+        if entry is not None:
+            record, data = entry
+
+            async def _stream_data() -> AsyncIterator[bytes]:
+                offset = 0
+                while offset < len(data):
+                    chunk = data[offset : offset + CHUNK_SIZE]
+                    offset += len(chunk)
+                    yield chunk
+                    await asyncio.sleep(0)
+
+            return record, _stream_data()
+
+        if self.client is not None:
             record = await self.get_artifact_record(tenant_id, artifact_id)
             if record is None:
                 raise FileNotFoundError(f"Artifact {artifact_id} not found in GCS.")
             bucket = self.client.bucket(self.bucket_name)
             blob = bucket.blob(record.object_key)
-            data = blob.download_as_bytes()
-            entry = (record, data)
-            self._SHARED_STORE[self.bucket_name][key] = entry
 
-        if entry is None:
-            raise FileNotFoundError(f"Artifact {artifact_id} not found in GCS.")
+            async def _stream_gcs_blob() -> AsyncIterator[bytes]:
+                with blob.open("rb") as f:
+                    while True:
+                        chunk = f.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        yield chunk
+                        await asyncio.sleep(0)
 
-        record, data = entry
+            return record, _stream_gcs_blob()
 
-        async def _stream_data() -> AsyncIterator[bytes]:
-            offset = 0
-            while offset < len(data):
-                chunk = data[offset : offset + CHUNK_SIZE]
-                offset += len(chunk)
-                yield chunk
-                await asyncio.sleep(0)
-
-        return record, _stream_data()
+        raise FileNotFoundError(f"Artifact {artifact_id} not found in GCS.")
 
     async def get_artifact_range(
         self,
@@ -341,7 +351,10 @@ class GcsArtifactStorage:
         start: int,
         end: int,
     ) -> tuple[ArtifactRecord, bytes]:
-        record, stream = await self.get_artifact(tenant_id, artifact_id)
+        record = await self.get_artifact_record(tenant_id, artifact_id)
+        if record is None:
+            raise FileNotFoundError(f"Artifact {artifact_id} not found in GCS.")
+
         key = f"{tenant_id}:{artifact_id}"
         entry = self._SHARED_STORE.get(self.bucket_name, {}).get(key)
         if entry is not None:
