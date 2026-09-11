@@ -39,6 +39,7 @@ from .evaluation_domain import (
     EvaluationTransitionError,
     EvaluationValidationError,
     EvaluationVersionConflictError,
+    EvalScheduler,
     ExecutionJobWorker,
     FileEvaluationRepository,
     FileJobRepository,
@@ -462,6 +463,12 @@ def create_app(
         eval_repository=eval_repository,
         gate_repository=gate_repository,
     )
+    eval_scheduler = EvalScheduler(
+        gate_repository=gate_repository,
+        eval_repository=eval_repository,
+        run_service=evaluation_run_service,
+        gate_service=quality_gate_service,
+    )
     (
         sync_worker,
         run_sync_job,
@@ -479,6 +486,8 @@ def create_app(
         example_service=example_service,
         quality_service=quality_service,
         governance_service=governance_service,
+        job_worker=job_worker,
+        eval_scheduler=eval_scheduler,
     )
 
     deps = build_dependencies(

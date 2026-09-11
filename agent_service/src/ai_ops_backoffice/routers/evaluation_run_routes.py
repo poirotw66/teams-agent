@@ -29,6 +29,7 @@ class CreateRunPayload(BaseModel):
     repetitions: int = Field(default=1, ge=1, le=5)
     quality_case_id: str | None = None
     idempotency_key: str | None = None
+    execute_inline: bool | None = None
 
 
 class CancelRunPayload(BaseModel):
@@ -95,7 +96,7 @@ def register_evaluation_run_routes(
             idempotency_key=key,
             correlation_id=correlation_id,
             actor=actor,
-            execute_inline=True,
+            execute_inline=payload.execute_inline,
         )
 
     @router.get("/runs")

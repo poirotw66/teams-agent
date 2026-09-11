@@ -110,6 +110,9 @@ def install_background_runtime(
     example_service=None,
     quality_service=None,
     governance_service=None,
+    job_worker=None,
+    eval_scheduler=None,
+    freshness_tracker=None,
 ):
     """Build sync worker callbacks and FastAPI lifespan."""
 
@@ -508,18 +511,72 @@ def install_background_runtime(
                 except TimeoutError:
                     continue
 
+        if job_worker is not None:
+            job_worker.start()
+
+        async def eval_scheduler_worker() -> None:
+            first_delay_seconds = 5
+            interval_seconds = getattr(resolved_settings, "eval_schedule_interval_seconds", 60)
+            try:
+                await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
+                return
+            except TimeoutError:
+                pass
+            while not stop_sweeper.is_set():
+                try:
+                    dispatched = eval_scheduler.scan_and_dispatch_due_schedules()
+                    if dispatched:
+                        logger.info("Evaluation scheduler dispatched %s due schedules", len(dispatched))
+                except Exception:
+                    logger.exception("Failed to scan and dispatch due evaluation schedules.")
+                try:
+                    await asyncio.wait_for(stop_sweeper.wait(), timeout=interval_seconds)
+                except TimeoutError:
+                    continue
+
+        async def freshness_worker() -> None:
+            first_delay_seconds = 10
+            interval_seconds = getattr(resolved_settings, "freshness_eval_interval_seconds", 300)
+            try:
+                await asyncio.wait_for(stop_sweeper.wait(), timeout=first_delay_seconds)
+                return
+            except TimeoutError:
+                pass
+            while not stop_sweeper.is_set():
+                try:
+                    freshness_tracker.record_worker_heartbeat()
+                except Exception:
+                    logger.exception("Failed to record worker heartbeat for freshness.")
+                try:
+                    await asyncio.wait_for(stop_sweeper.wait(), timeout=interval_seconds)
+                except TimeoutError:
+                    continue
+
+        tasks_to_cancel: list[asyncio.Task] = []
         sweeper = asyncio.create_task(sweep_expired_exports())
+        tasks_to_cancel.append(sweeper)
         recovery = asyncio.create_task(
             query_service.export_jobs.run_recovery_scanner(stop_sweeper)
         )
+        tasks_to_cancel.append(recovery)
         aggregate_worker = asyncio.create_task(materialize_daily_aggregates_worker())
+        tasks_to_cancel.append(aggregate_worker)
         budget_worker = asyncio.create_task(budget_evaluation_worker())
+        tasks_to_cancel.append(budget_worker)
         retention_worker = asyncio.create_task(retention_sweep_worker())
+        tasks_to_cancel.append(retention_worker)
+        if eval_scheduler is not None:
+            tasks_to_cancel.append(asyncio.create_task(eval_scheduler_worker()))
+        if freshness_tracker is not None:
+            tasks_to_cancel.append(asyncio.create_task(freshness_worker()))
+
         try:
             yield
         finally:
             stop_sweeper.set()
-            for task in (sweeper, recovery, aggregate_worker, budget_worker, retention_worker):
+            if job_worker is not None:
+                job_worker.stop()
+            for task in tasks_to_cancel:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task

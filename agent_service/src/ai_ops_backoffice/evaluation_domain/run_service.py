@@ -78,6 +78,9 @@ class EvaluationRunService:
             has_sandbox_adapter=has_sandbox,
         )
 
+    def has_job_repository(self) -> bool:
+        return self._job_repo is not None
+
     def create_run(
         self,
         set_version_id: str,
@@ -90,7 +93,7 @@ class EvaluationRunService:
         idempotency_key: str | None = None,
         correlation_id: str | None = None,
         actor: ActorContext | None = None,
-        execute_inline: bool = True,
+        execute_inline: bool | None = None,
     ) -> dict[str, Any]:
         """Queues and executes an evaluation run."""
         if actor:
@@ -168,7 +171,13 @@ class EvaluationRunService:
         )
         self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
 
-        if execute_inline:
+        should_execute_inline = (
+            execute_inline
+            if execute_inline is not None
+            else (self._job_repo is None)
+        )
+
+        if should_execute_inline:
             run = self._runner.execute_run(run_id)
         elif self._job_repo:
             job = ExecutionJob(

@@ -170,6 +170,7 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
             "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
             "mode": "REAL_RAG",
             "quality_case_id": "quality-case-trace-1",
+            "execute_inline": True,
         },
     )
     assert run_res.status_code == 202
@@ -261,3 +262,98 @@ def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
         },
     )
     assert schema_err_res.status_code == 422
+
+
+def test_evaluation_run_api_async_worker_lifecycle(tmp_path: Path):
+    """Verifies async job queueing and background worker execution loop."""
+    import time
+    settings = _test_settings(tmp_path)
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        kadmin_headers = auth_headers("KNOWLEDGE_ADMIN", "u_kadmin")
+        sowner_headers = auth_headers("SERVICE_OWNER", "u_sowner")
+        aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
+
+        # 1. Setup case and published set version
+        case_res = client.post(
+            "/api/evaluations/cases",
+            headers=kadmin_headers,
+            json={
+                "title": "密碼更新手冊",
+                "query": "密碼多久更換？",
+                "owner_unit_id": "IT Service Desk",
+                "behavior": "ANSWER_WITH_CITATION",
+                "required_facts": [{"criterion_id": "f1", "description": "每三個月定期更換"}],
+                "evidence": [
+                    {
+                        "group_id": "g1",
+                        "items": [{"evidence_id": "e1", "source_type": "DOCUMENT", "source_id": "doc_pwd_policy"}],
+                    }
+                ],
+                "source_type": "DOCUMENT",
+                "source_id": "doc_pwd_policy",
+            },
+        )
+        case_id = case_res.json()["case"]["case_id"]
+        rev_id = case_res.json()["revision"]["revision_id"]
+
+        client.post(
+            f"/api/evaluations/cases/{case_id}/revisions/{rev_id}/submit",
+            headers=kadmin_headers,
+            json={"expected_etag": 1},
+        )
+        client.post(
+            f"/api/evaluations/cases/{case_id}/revisions/{rev_id}/review",
+            headers=sowner_headers,
+            json={"approve": True, "reason": "Approved", "expected_etag": 2},
+        )
+
+        set_res = client.post(
+            "/api/evaluations/sets",
+            headers=kadmin_headers,
+            json={"name": "非同步驗收題庫", "owner_unit_ids": ["IT Service Desk"], "purpose": "DEVELOPMENT"},
+        )
+        set_id = set_res.json()["eval_set"]["set_id"]
+
+        ver_res = client.post(
+            f"/api/evaluations/sets/{set_id}/versions",
+            headers=kadmin_headers,
+            json={"case_revision_ids": [rev_id]},
+        )
+        set_version_id = ver_res.json()["version"]["set_version_id"]
+
+        client.post(
+            f"/api/evaluations/sets/{set_id}/versions/{set_version_id}/publish",
+            headers=sowner_headers,
+            json={"expected_etag": 1},
+        )
+
+        # 2. Create Run without execute_inline (defaults to False with job_repository)
+        run_res = client.post(
+            "/api/evaluations/runs",
+            headers=aiadmin_headers,
+            json={
+                "set_version_id": set_version_id,
+                "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
+                "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+                "mode": "REAL_RAG",
+            },
+        )
+        assert run_res.status_code == 202
+        run_id = run_res.json()["run"]["run_id"]
+        assert run_res.json()["run"]["status"] in {"QUEUED", "RUNNING", "COMPLETED"}
+
+        # 3. Poll until background worker picks up and completes the run
+        deadline = time.time() + 5.0
+        final_status = None
+        while time.time() < deadline:
+            detail_res = client.get(f"/api/evaluations/runs/{run_id}", headers=aiadmin_headers)
+            assert detail_res.status_code == 200
+            run_data = detail_res.json().get("run") or detail_res.json()
+            final_status = run_data.get("status")
+            if final_status in {"COMPLETED", "FAILED"}:
+                break
+            time.sleep(0.1)
+
+        assert final_status == "COMPLETED"
