@@ -147,6 +147,23 @@ def test_all_non_it_with_empty_topic_uses_default_scope_message():
     )
 
 
+def test_assistant_scope_question_renders_service_catalog():
+    issue = make_issue(
+        id=1,
+        description="IT 工作內容簡介",
+        isIT=False,
+        readiness="NOT_IT",
+        route="NOT_IT",
+    )
+    built = build_response(issues=[issue], results=[], settings=make_settings())
+    assert "我目前專門協助處理公司 IT 問題" in built.text
+    assert "帳號與權限" in built.text
+    assert "軟硬體與設備" in built.text
+    assert "服務申請與報修" in built.text
+    assert "不屬於公司 IT 支援範圍" not in built.text
+    assert built.feedback_enabled is False
+
+
 def test_all_non_it_names_topic_without_querying_knowledge():
     issue = make_issue(
         id=1,
@@ -550,3 +567,24 @@ def test_build_response_sanitises_description_even_if_extractor_gate_is_bypassed
 
     assert leaked_phrase not in built.text
     assert NEUTRAL_DESCRIPTION_PLACEHOLDER in built.text
+
+
+def test_render_sources_block_formats_inline_citation_prefixes():
+    from agent_service.response_builder import _render_sources_block
+
+    citations = [
+        Citation(title="員工 IT 支援服務手冊", url="https://kb.example/handbook"),
+        Citation(title="AD 帳號與系統解鎖 FAQ"),
+    ]
+
+    # When has_citations_in_answer is True, prefix with [S1], [S2]
+    numbered = _render_sources_block(citations, has_citations_in_answer=True)
+    assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in numbered
+    assert "- [S2] AD 帳號與系統解鎖 FAQ" in numbered
+
+    # When has_citations_in_answer is False, format without prefix
+    plain = _render_sources_block(citations, has_citations_in_answer=False)
+    assert "- [員工 IT 支援服務手冊](https://kb.example/handbook)" in plain
+    assert "- AD 帳號與系統解鎖 FAQ" in plain
+    assert "[S1]" not in plain
+    assert "[S2]" not in plain

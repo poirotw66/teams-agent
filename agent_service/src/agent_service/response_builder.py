@@ -71,6 +71,14 @@ ALL_NON_IT_MESSAGE = (
     "請描述使用的系統、功能或錯誤訊息，我會協助你確認。"
 )
 
+ASSISTANT_SCOPE_MESSAGE = (
+    "您好！我是公司 IT 支援小幫手，我目前專門協助處理公司 IT 問題。常見服務項目如下：\n"
+    "1. 帳號與權限：密碼重設、VPN 連線、大州系統等系統權限\n"
+    "2. 軟硬體與設備：電腦障礙排除、Outlook 設定、印表機問題\n"
+    "3. 服務申請與報修：線上開立 IT 工單、進度查詢\n\n"
+    "請問您目前遇到了哪一項系統問題需要協助呢？"
+)
+
 GREETING_MESSAGE = "你好！我是 IT 助手，有系統或設備問題都可以告訴我。"
 
 # Result types that trigger the feedback prompt (spec §14: "每次 FAQ 或
@@ -90,16 +98,29 @@ class BuiltResponse:
     feedback_enabled: bool
 
 
-def _render_sources_block(sources: list[Citation]) -> str:
+def _render_sources_block(
+    sources: list[Citation], *, has_citations_in_answer: bool = False
+) -> str:
     """Render a ``來源`` block matching the Teams adapter's own rendering.
 
     Mirrors ``src/teams_agent/contracts.py::format_agent_response`` so the
     two surfaces stay visually consistent: ``- [title](url)`` when a URL
-    is present, ``- title`` otherwise.
+    is present, ``- title`` otherwise. When the answer contains [S1]-style
+    citation markers, includes the [S{index}] prefix.
     """
     lines = [
-        f"- [{citation.title}]({citation.url})" if citation.url else f"- {citation.title}"
-        for citation in sources
+        (
+            f"- [S{index}] [{citation.title}]({citation.url})"
+            if citation.url
+            else f"- [S{index}] {citation.title}"
+        )
+        if has_citations_in_answer
+        else (
+            f"- [{citation.title}]({citation.url})"
+            if citation.url
+            else f"- {citation.title}"
+        )
+        for index, citation in enumerate(sources, start=1)
     ]
     return "\n".join(lines)
 
@@ -154,6 +175,10 @@ def _render_all_not_it(issues: list[Issue]) -> str:
     ]
     if not topics:
         return ALL_NON_IT_MESSAGE
+    from .extractor import _is_assistant_scope_question
+
+    if any(_is_assistant_scope_question(topic) for topic in topics):
+        return ASSISTANT_SCOPE_MESSAGE
     quoted_topics = "、".join(f"「{topic}」" for topic in topics)
     return (
         f"{quoted_topics}不屬於公司 IT 支援範圍，因此我不會查詢企業知識庫。\n"

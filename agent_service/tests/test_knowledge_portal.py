@@ -732,6 +732,23 @@ def test_pending_reviews_include_review_context(tmp_path) -> None:
         )
         assert run.status_code == 200
 
+    test_runs_res = client.get(
+        f"/api/documents/{document_id}/test-runs",
+        headers=contributor_headers,
+    )
+    assert test_runs_res.status_code == 200
+    runs = test_runs_res.json()
+    assert len(runs) == 2
+
+    filtered_res = client.get(
+        f"/api/documents/{document_id}/test-runs?test_case_id={test_case_ids[0]}",
+        headers=contributor_headers,
+    )
+    assert filtered_res.status_code == 200
+    filtered_runs = filtered_res.json()
+    assert len(filtered_runs) == 1
+    assert filtered_runs[0]["test_case_id"] == test_case_ids[0]
+
     submit = client.post(
         f"/api/documents/{document_id}/submit-review",
         json={"etag": etag, "change_reason": "Ready for review"},

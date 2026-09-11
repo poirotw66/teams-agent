@@ -1,6 +1,13 @@
+import re
+
 from microsoft_teams.api import Attachment, MessageActivityInput
 
-from .contracts import AgentResponse, format_agent_response, format_turn_cost_line
+from .contracts import (
+    AgentResponse,
+    format_agent_response,
+    format_teams_answer,
+    format_turn_cost_line,
+)
 from .media import build_asset_url
 from .settings import AgentSettings
 from .source_links import CitationViewerContext, enrich_citation_urls
@@ -162,7 +169,7 @@ def build_agent_activity(
     body = [
         {
             "type": "TextBlock",
-            "text": response.answer,
+            "text": format_teams_answer(response.answer),
             "wrap": True,
         }
     ]
@@ -189,16 +196,25 @@ def build_agent_activity(
         )
 
     if response.citations:
+        has_citations_in_answer = bool(re.search(r"\[S\d+\]", response.answer))
         sources = "\n".join(
-            f"- [{citation.title}]({citation.url})"
-            if citation.url
-            else f"- {citation.title}"
-            for citation in response.citations
+            (
+                f"- [S{index}] [{citation.title}]({citation.url})"
+                if citation.url
+                else f"- [S{index}] {citation.title}"
+            )
+            if has_citations_in_answer
+            else (
+                f"- [{citation.title}]({citation.url})"
+                if citation.url
+                else f"- {citation.title}"
+            )
+            for index, citation in enumerate(response.citations, start=1)
         )
         body.append(
             {
                 "type": "TextBlock",
-                "text": f"**來源**\n{sources}",
+                "text": f"**來源**\n\n{sources}",
                 "wrap": True,
                 "spacing": "Medium",
                 "isSubtle": True,

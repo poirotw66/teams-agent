@@ -694,7 +694,10 @@ def create_app(
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        return await service.list_test_cases(actor, document_id)
+        try:
+            return await service.list_test_cases(actor, document_id)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.post("/api/documents/{document_id}/test-cases")
     async def create_test_case(
@@ -714,10 +717,16 @@ def create_app(
     @app.get("/api/documents/{document_id}/test-runs")
     async def list_test_runs(
         document_id: str,
+        test_case_id: str | None = None,
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        return await service.list_test_runs(actor, document_id)
+        try:
+            return await service.list_test_runs(
+                actor, document_id, test_case_id=test_case_id
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
 
     @app.post("/api/documents/{document_id}/draft-search")
     async def draft_search(

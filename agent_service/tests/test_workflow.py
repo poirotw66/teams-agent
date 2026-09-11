@@ -1787,3 +1787,19 @@ async def test_no_llm_call_happens_after_response_builder_runs(tmp_path: Path) -
     assert extractor_model.calls == 1
     assert knowledge.calls == ["VPN 無法連線"]
     assert ticket_service.created == []
+
+
+@pytest.mark.asyncio
+async def test_assistant_scope_question_in_workflow_returns_service_catalog(tmp_path: Path) -> None:
+    workflow, extractor_model, knowledge, ticket_service, _conv, _settings = build_workflow(
+        tmp_path, issues_sequence=[]
+    )
+    response = await workflow.respond(make_request("IT 工作內容簡介"))
+    assert "我目前專門協助處理公司 IT 問題" in response.answer
+    assert "帳號與權限" in response.answer
+    assert "軟硬體與設備" in response.answer
+    assert "服務申請與報修" in response.answer
+    assert "不屬於公司 IT 支援範圍" not in response.answer
+    assert extractor_model.calls == 0  # Handled deterministically before extractor
+    assert knowledge.calls == []
+    assert ticket_service.created == []

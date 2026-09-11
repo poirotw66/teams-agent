@@ -76,7 +76,7 @@ IT issues include things like: 內部系統無法登入, VPN 問題, Outlook 或
 電腦與周邊設備異常, IT 權限申請, 公司系統操作流程, 工單建立或查詢,
 以及要求聯絡真人客服、線上客服或 IT 支援窗口的升級請求.
 Anything else (weather, small talk, HR/finance policy, general knowledge questions,
-questions about what this assistant can do or answer (for example 你能回答什麼問題),
+questions about what this assistant can do or IT service scope (for example 你能回答什麼問題, IT工作內容簡介),
 etc.) is NOT an IT issue: set isIT=false, readiness="NOT_IT", route="NOT_IT",
 missingInfo=[], faqKey=null.
 
@@ -217,15 +217,56 @@ def _is_human_escalation_request(text: str) -> bool:
     return len(stripped) <= 4
 
 
+_IT_SCOPE_KEYWORDS: tuple[str, ...] = (
+    "工作內容",
+    "在做什麼",
+    "做什麼的",
+    "負責什麼",
+    "服務項目",
+    "服務範圍",
+    "服務內容",
+    "服務目錄",
+    "服務清單",
+    "支援項目",
+    "支援範圍",
+    "工作職責",
+    "業務職掌",
+    "業務介紹",
+    "業務簡介",
+    "服務有哪些",
+    "提供什麼服務",
+    "支援什麼",
+    "有什麼服務",
+    "有那些服務",
+)
+
+_IT_TARGET_KEYWORDS: tuple[str, ...] = (
+    "it",
+    "資訊處",
+    "資訊部",
+    "資訊科",
+    "資訊組",
+    "資訊團隊",
+    "資訊小幫手",
+    "it助手",
+    "it小幫手",
+)
+
+
 def _is_assistant_scope_question(text: str) -> bool:
-    """Detect meta questions about this assistant's scope, not an IT issue."""
+    """Detect meta questions about this assistant's scope or IT service catalog."""
     compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
     if not compact or len(compact) > 48:
         return False
     compact = compact.replace("回瘩", "回答").replace("回覆", "回答")
+    compact_lower = compact.casefold()
     if any(
         marker in compact
-        for marker in ("你的功能", "你的服務", "服務範圍", "問你什麼", "能問什麼")
+        for marker in ("你的功能", "你的服務", "服務範圍", "問你什麼", "能問什麼", "你能做什麼", "你能回答")
+    ):
+        return True
+    if any(target in compact_lower for target in _IT_TARGET_KEYWORDS) and any(
+        keyword in compact for keyword in _IT_SCOPE_KEYWORDS
     ):
         return True
     if not compact.startswith(("你能", "你可以", "你會", "您能", "您可以")):

@@ -231,6 +231,10 @@ async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_pa
         "你能回瘩什麼問題",
         "你可以幫我什麼",
         "你的功能有哪些",
+        "IT 工作內容簡介",
+        "IT工作內容",
+        "IT在做什麼",
+        "IT服務項目有哪些",
     ],
 )
 def test_assistant_scope_questions_are_detected(text: str) -> None:

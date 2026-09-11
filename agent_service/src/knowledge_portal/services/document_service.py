@@ -233,10 +233,13 @@ class DocumentService:
         return await self._version_service.list_test_cases(actor, document_id)
 
     async def list_test_runs(
-        self, actor: PortalActor, document_id: str, test_case_id: str
+        self,
+        actor: PortalActor,
+        document_id: str,
+        test_case_id: str | None = None,
     ) -> list[TestRunRecord]:
         return await self._version_service.list_test_runs(
-            actor, document_id, test_case_id
+            actor, document_id, test_case_id=test_case_id
         )
 
     # Delegation to UploadService

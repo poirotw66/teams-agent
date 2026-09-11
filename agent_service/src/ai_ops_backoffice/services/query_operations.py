@@ -227,12 +227,12 @@ class OperationsQueryMixin:
                     "Operations overview freshness is stale or unknown; "
                     "pipeline sync/aggregation watermarks have not updated recently."
                 )
-        elif latest_event_at is not None:
-            # Fallback only when no tracker is wired: event time is traffic age,
-            # not ingest/aggregation completion.
+        if data_freshness_minutes is None and latest_event_at is not None:
+            # Fallback when tracker has no pipeline watermark yet or no tracker is wired:
+            # event time is traffic age, not ingest/aggregation completion.
             freshness_delta = utc_now() - latest_event_at
             data_freshness_minutes = max(0, int(freshness_delta.total_seconds() // 60))
-            if data_freshness_minutes > 15:
+            if data_delay_warning is None and data_freshness_minutes > 15:
                 data_delay_warning = (
                     f"Latest operational event in the selected period is "
                     f"{data_freshness_minutes} minutes old; this usually means "

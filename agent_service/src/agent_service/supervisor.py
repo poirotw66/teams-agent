@@ -53,7 +53,7 @@ Classify intent:
   details for a pending IT clarification.
 - GREETING: greetings, thanks, or brief courtesy (你好, 早安, 謝謝) without an IT question.
 - NON_IT: food/weather/general knowledge, or anything clearly outside IT (not mere greetings).
-- ASSISTANT_META: questions about what this assistant can do or its scope.
+- ASSISTANT_META: questions about what this assistant can do, its scope, or company IT service catalog / job responsibilities (例如: 你能做什麼, 能回答什麼, IT在做什麼, IT支援服務範圍, IT工作內容簡介).
 - HUMAN_ESCALATION: contact live/ human support without describing a new IT issue.
 - TICKET_QUERY: list or check the user's existing dispatch tickets (派工單/工單).
 - TICKET_CREATE: explicit request to open a new ticket from the current turn.
@@ -81,7 +81,21 @@ class ConversationSupervisor:
         recent_turns: list[str] | None = None,
         execution_context: ExecutionContext | None = None,
     ) -> ConversationSupervisorDecision:
-        if not message.strip() or self._model is None:
+        if not message.strip():
+            return ConversationSupervisorDecision()
+
+        if not pending_clarification:
+            from .extractor import _is_assistant_scope_question
+
+            if _is_assistant_scope_question(message):
+                return ConversationSupervisorDecision(
+                    intent="ASSISTANT_META",
+                    topicRelation="META",
+                    requestedAction="ANSWER",
+                    confidence=1.0,
+                )
+
+        if self._model is None:
             return ConversationSupervisorDecision()
 
         history = "\n".join(recent_turns[-6:]) if recent_turns else "(none)"

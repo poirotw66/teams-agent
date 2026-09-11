@@ -3,7 +3,13 @@ from teams_agent.cards import (
     FEEDBACK_ACTION_MARKER,
     build_agent_activity,
 )
-from teams_agent.contracts import AgentImage, AgentResponse, Citation, IssueResult
+from teams_agent.contracts import (
+    AgentImage,
+    AgentResponse,
+    Citation,
+    IssueResult,
+    format_agent_response,
+)
 from teams_agent.settings import AgentSettings
 
 
@@ -185,3 +191,22 @@ def test_feedback_with_images_still_renders_images_sources_and_actions(
         for item in body
     )
     assert any(item["type"] == "ActionSet" for item in body)
+
+
+def test_response_with_citations_numbered_in_answer_prefixes_sources_with_matching_numbers() -> None:
+    response = AgentResponse(
+        answer="請登出 Teams 重新登入 [S1]。若密碼鎖定請至自助解鎖專區 [S2]。",
+        traceId="trace-1",
+        citations=[
+            Citation(title="員工 IT 支援服務手冊", url="https://kb.example/handbook"),
+            Citation(title="AD 帳號與系統解鎖 FAQ"),
+        ],
+    )
+
+    formatted = format_agent_response(response)
+    activity = build_agent_activity(response, AgentSettings())
+
+    assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in formatted
+    assert "- [S2] AD 帳號與系統解鎖 FAQ" in formatted
+    assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in activity
+    assert "- [S2] AD 帳號與系統解鎖 FAQ" in activity

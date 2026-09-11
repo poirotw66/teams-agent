@@ -619,9 +619,15 @@ class VersionService:
         return await self._repository.list_test_cases(detail.draft_version.version_id)
 
     async def list_test_runs(
-        self, actor: PortalActor, document_id: str
+        self,
+        actor: PortalActor,
+        document_id: str,
+        test_case_id: str | None = None,
     ) -> list[TestRunRecord]:
         detail = await self._document_service.get_document(actor, document_id)
         if detail.draft_version is None:
             return []
-        return await self._repository.list_test_runs(detail.draft_version.version_id)
+        runs = await self._repository.list_test_runs(detail.draft_version.version_id)
+        if test_case_id is not None:
+            return [item for item in runs if item.test_case_id == test_case_id]
+        return runs

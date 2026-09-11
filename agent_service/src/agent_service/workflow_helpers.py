@@ -81,7 +81,7 @@ def non_it_issue_from_message(text: str, *, issue_id: int = 1) -> Issue:
 def assistant_scope_issue(*, issue_id: int = 1) -> Issue:
     return Issue(
         id=issue_id,
-        description="",
+        description="IT 服務範圍與小幫手功能介紹",
         isIT=False,
         readiness="NOT_IT",
         route="NOT_IT",

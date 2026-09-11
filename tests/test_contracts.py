@@ -3,7 +3,9 @@ from microsoft_teams.api import MessageActivity
 from teams_agent.contracts import (
     AgentRequest,
     AgentResponse,
+    Citation,
     format_agent_response,
+    format_teams_answer,
 )
 
 
@@ -331,3 +333,75 @@ def test_agent_response_from_payload_never_raises_on_garbage_top_level_fields() 
     )
 
     assert response.issueResults == []
+
+
+def test_format_teams_answer_bolds_question_and_action_headers() -> None:
+    raw = "問題：Teams 無法登入\n\n處理方式：\n請先登出 Teams，關閉程式後重新登入 [S1]。"
+    formatted = format_teams_answer(raw)
+
+    assert formatted.startswith("**問題：** Teams 無法登入\n\n**處理方式：**\n\n")
+    assert "請先登出 Teams" in formatted
+
+
+def test_format_teams_answer_converts_notes_to_callout() -> None:
+    raw = (
+        "問題：VPN 申請\n\n"
+        "處理方式：\n"
+        "請至系統提出申請。\n\n"
+        "註：若您需要申請的是「VPN 國外連線」，請參考不同的申請方式。"
+    )
+    formatted = format_teams_answer(raw)
+
+    assert "> 💡 **注意事項**：若您需要申請的是「VPN 國外連線」" in formatted
+
+
+def test_format_teams_answer_auto_numbers_and_dedupes_citations() -> None:
+    raw = (
+        "問題：IT 權限申請 如何申請\n\n"
+        "處理方式：\n"
+        "公司 IT 權限統一透過 AccessFlow 權限申請平台申請 [S1]。\n\n"
+        "一般申請流程如下：\n"
+        "員工提出申請 [S1]。\n"
+        "直屬主管核准 [S1]。\n"
+        "系統負責人核准 [S1]。\n"
+        "IT 開通 [S1]。\n\n"
+        "一般權限預計於核准完成後 1 個工作天內開通 [S1]。\n\n"
+        "註：若您需要申請的是「VPN 國外連線」，請參考不同的申請方式 [S2]。"
+    )
+    formatted = format_teams_answer(raw)
+
+    assert "**問題：** IT 權限申請 如何申請" in formatted
+    assert "**處理方式：**" in formatted
+    assert "1. 員工提出申請\n2. 直屬主管核准\n3. 系統負責人核准\n4. IT 開通 [S1]。" in formatted
+    assert "> 💡 **注意事項**：若您需要申請的是「VPN 國外連線」" in formatted
+
+
+def test_format_agent_response_full_presentation() -> None:
+    response = AgentResponse(
+        answer=(
+            "問題：IT 權限申請 如何申請\n\n"
+            "處理方式：\n"
+            "公司 IT 權限統一透過 **AccessFlow** 權限申請平台申請 [S1]。\n\n"
+            "一般申請流程如下：\n"
+            "1. 員工提出申請 [S1]。\n"
+            "2. 直屬主管核准 [S1]。\n"
+            "3. 系統負責人核准 [S1]。\n"
+            "4. IT 開通 [S1]。\n\n"
+            "一般權限預計於核准完成後 **1 個工作天內** 開通 [S1]。\n\n"
+            "註：若您需要申請的是「VPN 國外連線」，請寄信主管 [S2]。"
+        ),
+        traceId="trace-test",
+        citations=[
+            Citation(title="員工 IT 支援服務手冊", url="https://kb.example/handbook"),
+            Citation(title="VPN國外連線短暫申請", url="https://kb.example/vpn"),
+        ],
+    )
+    result = format_agent_response(response)
+
+    assert "**問題：** IT 權限申請 如何申請" in result
+    assert "**處理方式：**" in result
+    assert "1. 員工提出申請\n2. 直屬主管核准\n3. 系統負責人核准\n4. IT 開通 [S1]。" in result
+    assert "> 💡 **注意事項**：若您需要申請的是「VPN 國外連線」，請寄信主管 [S2]。" in result
+    assert "**來源**\n\n- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in result
+    assert "- [S2] [VPN國外連線短暫申請](https://kb.example/vpn)" in result
+
