@@ -166,7 +166,7 @@ class EvaluationRunService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
 
         if execute_inline:
             run = self._runner.execute_run(run_id)
@@ -253,7 +253,7 @@ class EvaluationRunService:
             reason=reason,
             occurred_at=datetime.now(timezone.utc),
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"run": cancelled_run.model_dump(mode="json")}
 
     def list_case_executions(
@@ -387,7 +387,7 @@ class EvaluationRunService:
             reason=reason,
             occurred_at=now,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {
             "review_decision": review_decision.model_dump(mode="json"),
             "execution": updated_execution.model_dump(mode="json"),
@@ -479,5 +479,5 @@ class EvaluationRunService:
             reason="Rescored run with updated metric/judge version",
             occurred_at=datetime.now(timezone.utc),
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"run": updated_run.model_dump(mode="json")}

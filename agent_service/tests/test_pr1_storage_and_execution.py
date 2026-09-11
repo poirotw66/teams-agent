@@ -427,3 +427,231 @@ def test_migration_tool_dry_run_and_backup(tmp_path: Path) -> None:
     assert Path(report.backup_path).exists()
     assert len(target_repo.list_cases()) == 1
     assert target_repo.get_case("case-mig-1") is not None
+
+
+def test_file_evaluation_repo_cas_conflict(tmp_path: Path) -> None:
+    repo = FileEvaluationRepository(tmp_path / "evals.json")
+    state = repo.load()
+    assert state.revision == 1
+
+    # Successful mutation increments revision
+    new_state = state.model_copy(update={"cases": ()})
+    repo.commit_mutation(new_state, expected_revision=1)
+
+    updated = repo.load()
+    assert updated.revision == 2
+
+    # Conflict when expected revision does not match
+    with pytest.raises(EvaluationVersionConflictError):
+        repo.commit_mutation(new_state, expected_revision=1)
+
+
+class _MockFirestoreSnapshot:
+    def __init__(self, doc_id: str, val: dict | None) -> None:
+        self.id = doc_id
+        self.exists = val is not None
+        self._val = val
+
+    def to_dict(self) -> dict | None:
+        return dict(self._val) if self._val is not None else None
+
+
+class _MockFirestoreDoc:
+    def __init__(self, key: str, coll: _MockFirestoreColl) -> None:
+        self.id = key
+        self.key = key
+        self.coll = coll
+
+    def get(self, transaction: Any = None) -> _MockFirestoreSnapshot:
+        _ = transaction
+        data = self.coll.store.get((self.coll.name, self.key))
+        return _MockFirestoreSnapshot(self.key, data)
+
+    def set(self, data: dict, merge: bool = False) -> None:
+        _ = merge
+        self.coll.store[(self.coll.name, self.key)] = dict(data)
+
+    def update(self, data: dict) -> None:
+        existing = self.coll.store.get((self.coll.name, self.key), {})
+        existing.update(data)
+        self.coll.store[(self.coll.name, self.key)] = existing
+
+
+class _MockFirestoreColl:
+    def __init__(self, name: str, store: dict) -> None:
+        self.name = name
+        self.store = store
+
+    def document(self, key: str) -> _MockFirestoreDoc:
+        return _MockFirestoreDoc(key, self)
+
+    def stream(self) -> list[_MockFirestoreSnapshot]:
+        snaps = []
+        for (c, k), _ in self.store.items():
+            if c == self.name:
+                snaps.append(_MockFirestoreDoc(k, self).get())
+        return snaps
+
+    def where(self, field: str, op: str, value: Any) -> Any:
+        class Query:
+            def __init__(self, coll: _MockFirestoreColl, filters: list[tuple[str, str, Any]]) -> None:
+                self.coll = coll
+                self.filters = filters
+                self._lim: int | None = None
+
+            def where(self, f: str, o: str, v: Any) -> Query:
+                return Query(self.coll, [*self.filters, (f, o, v)])
+
+            def limit(self, n: int) -> Query:
+                self._lim = n
+                return self
+
+            def stream(self) -> list[_MockFirestoreSnapshot]:
+                matches = []
+                for (c, k), val in self.coll.store.items():
+                    if c != self.coll.name:
+                        continue
+                    ok = True
+                    for f, o, v in self.filters:
+                        if o == "==" and val.get(f) != v:
+                            ok = False
+                            break
+                        elif o == "in" and val.get(f) not in v:
+                            ok = False
+                            break
+                    if ok:
+                        matches.append(_MockFirestoreDoc(k, self.coll).get())
+                        if self._lim and len(matches) >= self._lim:
+                            break
+                return matches
+
+        return Query(self, [(field, op, value)])
+
+
+class _MockFirestoreClient:
+    def __init__(self) -> None:
+        self.store: dict[tuple[str, str], dict] = {}
+
+    def collection(self, name: str) -> _MockFirestoreColl:
+        return _MockFirestoreColl(name, self.store)
+
+    def transaction(self) -> Any:
+        class Tx:
+            def __init__(self, client: _MockFirestoreClient) -> None:
+                self.client = client
+                self.pending: dict[tuple[str, str], dict] = {}
+
+            def get(self, ref: _MockFirestoreDoc) -> _MockFirestoreSnapshot:
+                if (ref.coll.name, ref.key) in self.pending:
+                    return _MockFirestoreSnapshot(ref.key, self.pending[(ref.coll.name, ref.key)])
+                return ref.get()
+
+            def set(self, ref: _MockFirestoreDoc, data: dict, merge: bool = False) -> None:
+                _ = merge
+                self.pending[(ref.coll.name, ref.key)] = dict(data)
+
+            def update(self, ref: _MockFirestoreDoc, data: dict) -> None:
+                existing = self.pending.get(
+                    (ref.coll.name, ref.key),
+                    self.client.store.get((ref.coll.name, ref.key), {}),
+                )
+                updated = dict(existing)
+                updated.update(data)
+                self.pending[(ref.coll.name, ref.key)] = updated
+
+            def commit(self) -> None:
+                for k, v in self.pending.items():
+                    self.client.store[k] = v
+
+        return Tx(self)
+
+
+def _run_mock_transaction(operation: Any, tx: Any) -> Any:
+    res = operation(tx)
+    tx.commit()
+    return res
+
+
+def test_firestore_evaluation_repo_cas_and_load() -> None:
+    from ai_ops_backoffice.evaluation_domain.models import CandidateGenerationJob
+    from ai_ops_backoffice.evaluation_domain.repository import FirestoreEvaluationRepository
+
+    client = _MockFirestoreClient()
+    repo = FirestoreEvaluationRepository(client, transaction_runner=_run_mock_transaction)
+    state = repo.load()
+    assert state.revision == 1
+
+    # Mutate with candidate_job
+    now = datetime.now(UTC)
+    job = CandidateGenerationJob(
+        job_id="cjob-1",
+        tenant_id="tenant-1",
+        owner_unit_id="IT",
+        status="QUEUED",
+        source_refs=(),
+        target_types=("IT",),
+        requested_count=5,
+        created_by="tester",
+        created_at=now,
+        updated_at=now,
+    )
+    new_state = state.model_copy(update={"candidate_jobs": (job,)})
+    repo.commit_mutation(new_state, expected_revision=1)
+
+    loaded = repo.load()
+    assert loaded.revision == 2
+    assert len(loaded.candidate_jobs) == 1
+    assert loaded.candidate_jobs[0].job_id == "cjob-1"
+
+    # Conflict on stale revision
+    with pytest.raises(EvaluationVersionConflictError):
+        repo.commit_mutation(new_state, expected_revision=1)
+
+
+def test_firestore_job_repo_transactional_claim_and_fencing() -> None:
+    from ai_ops_backoffice.evaluation_domain.job_repository import FirestoreJobRepository
+
+    client = _MockFirestoreClient()
+    job_repo = FirestoreJobRepository(client, transaction_runner=_run_mock_transaction)
+    now = datetime.now(UTC)
+    job = ExecutionJob(
+        tenant_id="tenant-1",
+        job_id="job-fs-1",
+        run_id="run-fs-1",
+        logical_key="run:tenant-1:run-fs-1",
+        state="QUEUED",
+        created_at=now,
+        updated_at=now,
+        max_attempts=2,
+    )
+    job_repo.enqueue_job(job)
+
+    # Claim job
+    claimed = job_repo.claim_job("worker-1", lease_seconds=30.0)
+    assert claimed is not None
+    assert claimed.lease_owner == "worker-1"
+    assert claimed.fencing_token == 2
+    assert claimed.state == "RUNNING"
+
+    # Second claim returns None (already claimed)
+    second_claim = job_repo.claim_job("worker-2", lease_seconds=30.0)
+    assert second_claim is None
+
+    # Heartbeat with wrong fencing token raises JobFencingConflictError
+    with pytest.raises(JobFencingConflictError):
+        job_repo.heartbeat("job-fs-1", "worker-1", fencing_token=999)
+
+    # Heartbeat with wrong worker raises JobLeaseLostError
+    with pytest.raises(JobLeaseLostError):
+        job_repo.heartbeat("job-fs-1", "worker-2", fencing_token=2)
+
+    # Valid heartbeat succeeds
+    hb = job_repo.heartbeat("job-fs-1", "worker-1", fencing_token=2)
+    assert hb.revision > claimed.revision
+
+    # Complete job
+    completed = job_repo.complete_job("job-fs-1", "worker-1", fencing_token=2, state="COMPLETED")
+    assert completed.state == "COMPLETED"
+    assert completed.lease_owner is None
+
+

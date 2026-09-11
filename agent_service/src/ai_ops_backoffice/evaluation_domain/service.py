@@ -186,7 +186,12 @@ class EvaluationService:
             else None
         )
 
-        self._repo.commit_mutation(new_state, audit=audit, idempotency_record=idempotency_rec)
+        self._repo.commit_mutation(
+            new_state,
+            audit=audit,
+            idempotency_record=idempotency_rec,
+            expected_revision=state.revision,
+        )
         return result
 
     def get_case_detail(self, case_id: str, *, actor: ActorContext) -> dict[str, Any]:
@@ -358,7 +363,7 @@ class EvaluationService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"revision": new_rev.model_dump(mode="json")}
 
     def submit_revision(
@@ -411,7 +416,7 @@ class EvaluationService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"revision": updated_rev.model_dump(mode="json")}
 
     def review_revision(
@@ -483,7 +488,7 @@ class EvaluationService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"revision": updated_rev.model_dump(mode="json")}
 
     def retire_case(
@@ -530,7 +535,7 @@ class EvaluationService:
                 occurred_at=now,
                 correlation_id=correlation_id,
             )
-            self._repo.commit_mutation(new_state, audit=audit)
+            self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"case_id": case_id, "status": "RETIRED"}
 
     def mark_source_needs_review(
@@ -578,7 +583,7 @@ class EvaluationService:
                 reason="Source version changed; marked revisions for review",
                 occurred_at=now,
             )
-            self._repo.commit_mutation(new_state, audit=audit)
+            self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
 
         return affected_revision_ids
 
@@ -638,7 +643,7 @@ class EvaluationService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"eval_set": eval_set.model_dump(mode="json")}
 
     def get_set_detail(self, set_id: str, *, actor: ActorContext) -> dict[str, Any]:
@@ -713,7 +718,7 @@ class EvaluationService:
 
         state = self._repo.load()
         new_state = state.model_copy(update={"set_versions": (*state.set_versions, version)})
-        self._repo.commit_mutation(new_state)
+        self._repo.commit_mutation(new_state, expected_revision=state.revision)
         return {"version": version.model_dump(mode="json")}
 
     def publish_set_version(
@@ -804,5 +809,5 @@ class EvaluationService:
             occurred_at=now,
             correlation_id=correlation_id,
         )
-        self._repo.commit_mutation(new_state, audit=audit)
+        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
         return {"version": published_version.model_dump(mode="json")}

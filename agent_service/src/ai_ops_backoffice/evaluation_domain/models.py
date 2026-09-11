@@ -265,6 +265,7 @@ class ImportValidationResult(StrictModel):
 
 
 class EvaluationState(StrictModel):
+    revision: int = 1
     cases: tuple[EvalCase, ...] = ()
     revisions: tuple[CaseRevision, ...] = ()
     sets: tuple[EvalSet, ...] = ()

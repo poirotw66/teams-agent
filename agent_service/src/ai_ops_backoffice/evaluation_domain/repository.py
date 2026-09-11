@@ -8,7 +8,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
-from .errors import EvaluationIdempotencyConflictError
+from .errors import (
+    EvaluationIdempotencyConflictError,
+    EvaluationVersionConflictError,
+)
 from .models import (
     CandidateGenerationJob,
     CaseRevision,
@@ -72,6 +75,7 @@ class EvaluationRepository(Protocol):
         new_state: EvaluationState,
         audit: EvaluationAuditEvent | None = None,
         idempotency_record: EvaluationIdempotencyRecord | None = None,
+        expected_revision: int | None = None,
     ) -> None: ...
 
 
@@ -205,8 +209,14 @@ class InMemoryEvaluationRepository:
         new_state: EvaluationState,
         audit: EvaluationAuditEvent | None = None,
         idempotency_record: EvaluationIdempotencyRecord | None = None,
+        expected_revision: int | None = None,
     ) -> None:
         with self._lock:
+            if expected_revision is not None and hasattr(self._state, "revision"):
+                if self._state.revision != expected_revision:
+                    raise EvaluationVersionConflictError(
+                        f"Revision conflict: expected {expected_revision}, got {self._state.revision}"
+                    )
             audits = list(new_state.audits)
             if audit:
                 audits.append(audit)
@@ -214,8 +224,13 @@ class InMemoryEvaluationRepository:
             if idempotency_record:
                 idempotency = [r for r in idempotency if r.key != idempotency_record.key]
                 idempotency.append(idempotency_record)
+            next_revision = self._state.revision + 1 if hasattr(self._state, "revision") else 1
             updated = new_state.model_copy(
-                update={"audits": tuple(audits), "idempotency": tuple(idempotency)}
+                update={
+                    "audits": tuple(audits),
+                    "idempotency": tuple(idempotency),
+                    "revision": next_revision,
+                }
             )
             self._save(updated)
 
@@ -298,7 +313,10 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
                         )
                 self._state = fresh
                 super().commit_mutation(
-                    new_state, audit=audit, idempotency_record=idempotency_record
+                    new_state,
+                    audit=audit,
+                    idempotency_record=idempotency_record,
+                    expected_revision=expected_revision,
                 )
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
@@ -307,36 +325,75 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
 class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
     """Production GCP Firestore repository for evaluations with tenant isolation and CAS."""
 
-    def __init__(self, client: Any, collection_prefix: str = "ai_ops_eval") -> None:
+    def __init__(
+        self,
+        client: Any,
+        collection_prefix: str = "ai_ops_eval",
+        transaction_runner: Any = None,
+    ) -> None:
         super().__init__()
         self._client = client
         self._prefix = collection_prefix
+        self._transaction_runner = transaction_runner
 
     def _col(self, name: str) -> Any:
         return self._client.collection(f"{self._prefix}_{name}")
 
+    def _run_transaction(self, operation: Any) -> Any:
+        if self._transaction_runner is not None:
+            tx = self._client.transaction() if hasattr(self._client, "transaction") else None
+            return self._transaction_runner(operation, tx)
+        if hasattr(self._client, "transaction"):
+            try:
+                from google.cloud.firestore_v1.transaction import transactional
+                return transactional(operation)(self._client.transaction())
+            except (ImportError, Exception):
+                tx = self._client.transaction()
+                res = operation(tx)
+                if hasattr(tx, "commit"):
+                    tx.commit()
+                return res
+        class _ImmediateTx:
+            def get(self, ref: Any) -> Any:
+                return ref.get()
+            def set(self, ref: Any, data: Any, merge: bool = False) -> None:
+                ref.set(data, merge=merge) if hasattr(ref, "set") else None
+            def update(self, ref: Any, data: Any) -> None:
+                ref.update(data) if hasattr(ref, "update") else (ref.set(data) if hasattr(ref, "set") else None)
+        return operation(_ImmediateTx())
+
     def load(self) -> EvaluationState:
+        meta_ref = self._col("meta").document("root")
+        meta_snap = meta_ref.get() if hasattr(meta_ref, "get") else None
+        current_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
+
         cases = [EvalCase.model_validate(d.to_dict()) for d in self._col("cases").stream()]
         revisions = [CaseRevision.model_validate(d.to_dict()) for d in self._col("revisions").stream()]
         sets = [EvalSet.model_validate(d.to_dict()) for d in self._col("sets").stream()]
         set_versions = [EvalSetVersion.model_validate(d.to_dict()) for d in self._col("set_versions").stream()]
+        candidate_jobs = [CandidateGenerationJob.model_validate(d.to_dict()) for d in self._col("candidate_jobs").stream()]
         runs = [EvaluationRun.model_validate(d.to_dict()) for d in self._col("runs").stream()]
         case_executions = [CaseExecution.model_validate(d.to_dict()) for d in self._col("executions").stream()]
         review_decisions = [ReviewDecision.model_validate(d.to_dict()) for d in self._col("reviews").stream()]
         audits = [EvaluationAuditEvent.model_validate(d.to_dict()) for d in self._col("audits").stream()]
         idempotency = [EvaluationIdempotencyRecord.model_validate(d.to_dict()) for d in self._col("idempotency").stream()]
 
-        return EvaluationState(
+        loaded = EvaluationState(
+            revision=current_rev,
             cases=tuple(cases),
             revisions=tuple(revisions),
             sets=tuple(sets),
             set_versions=tuple(set_versions),
+            candidate_jobs=tuple(candidate_jobs),
             runs=tuple(runs),
             case_executions=tuple(case_executions),
             review_decisions=tuple(review_decisions),
             audits=tuple(audits),
             idempotency=tuple(idempotency),
         )
+        with self._lock:
+            self._state = loaded
+        return loaded
 
     def commit_mutation(
         self,
@@ -346,37 +403,65 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
         expected_revision: int | None = None,
     ) -> None:
         import json
-        batch = self._client.batch()
+        meta_ref = self._col("meta").document("root")
 
-        for c in new_state.cases:
-            ref = self._col("cases").document(c.case_id)
-            batch.set(ref, json.loads(c.model_dump_json()))
-        for r in new_state.revisions:
-            ref = self._col("revisions").document(r.revision_id)
-            batch.set(ref, json.loads(r.model_dump_json()))
-        for s in new_state.sets:
-            ref = self._col("sets").document(s.set_id)
-            batch.set(ref, json.loads(s.model_dump_json()))
-        for sv in new_state.set_versions:
-            ref = self._col("set_versions").document(sv.set_version_id)
-            batch.set(ref, json.loads(sv.model_dump_json()))
-        for run in new_state.runs:
-            ref = self._col("runs").document(run.run_id)
-            batch.set(ref, json.loads(run.model_dump_json()))
-        for ex in new_state.case_executions:
-            ref = self._col("executions").document(ex.execution_id)
-            batch.set(ref, json.loads(ex.model_dump_json()))
-        for rev in new_state.review_decisions:
-            ref = self._col("reviews").document(rev.decision_id)
-            batch.set(ref, json.loads(rev.model_dump_json()))
+        def op(transaction: Any) -> int:
+            meta_snap = meta_ref.get(transaction=transaction) if hasattr(meta_ref, "get") else None
+            curr_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
+            if expected_revision is not None and curr_rev != expected_revision:
+                raise EvaluationVersionConflictError(
+                    f"Revision conflict: expected {expected_revision}, got {curr_rev}"
+                )
+            next_rev = curr_rev + 1
+            transaction.set(meta_ref, {"revision": next_rev})
 
-        if audit:
-            ref = self._col("audits").document(audit.audit_id)
-            batch.set(ref, json.loads(audit.model_dump_json()))
-        if idempotency_record:
-            ref = self._col("idempotency").document(idempotency_record.key)
-            batch.set(ref, json.loads(idempotency_record.model_dump_json()))
+            for c in new_state.cases:
+                ref = self._col("cases").document(c.case_id)
+                transaction.set(ref, json.loads(c.model_dump_json()))
+            for r in new_state.revisions:
+                ref = self._col("revisions").document(r.revision_id)
+                transaction.set(ref, json.loads(r.model_dump_json()))
+            for s in new_state.sets:
+                ref = self._col("sets").document(s.set_id)
+                transaction.set(ref, json.loads(s.model_dump_json()))
+            for sv in new_state.set_versions:
+                ref = self._col("set_versions").document(sv.set_version_id)
+                transaction.set(ref, json.loads(sv.model_dump_json()))
+            for j in new_state.candidate_jobs:
+                ref = self._col("candidate_jobs").document(j.job_id)
+                transaction.set(ref, json.loads(j.model_dump_json()))
+            for run in new_state.runs:
+                ref = self._col("runs").document(run.run_id)
+                transaction.set(ref, json.loads(run.model_dump_json()))
+            for ex in new_state.case_executions:
+                ref = self._col("executions").document(ex.execution_id)
+                transaction.set(ref, json.loads(ex.model_dump_json()))
+            for rev in new_state.review_decisions:
+                ref = self._col("reviews").document(rev.decision_id)
+                transaction.set(ref, json.loads(rev.model_dump_json()))
 
-        batch.commit()
-        self._state = new_state
+            if audit:
+                ref = self._col("audits").document(audit.audit_id)
+                transaction.set(ref, json.loads(audit.model_dump_json()))
+            if idempotency_record:
+                ref = self._col("idempotency").document(idempotency_record.key)
+                transaction.set(ref, json.loads(idempotency_record.model_dump_json()))
+            return next_rev
+
+        next_rev = self._run_transaction(op)
+        with self._lock:
+            audits = list(new_state.audits)
+            if audit:
+                audits.append(audit)
+            idempotency = list(new_state.idempotency)
+            if idempotency_record:
+                idempotency = [r for r in idempotency if r.key != idempotency_record.key]
+                idempotency.append(idempotency_record)
+            self._state = new_state.model_copy(
+                update={
+                    "revision": next_rev,
+                    "audits": tuple(audits),
+                    "idempotency": tuple(idempotency),
+                }
+            )
 

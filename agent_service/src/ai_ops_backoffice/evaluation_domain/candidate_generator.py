@@ -142,7 +142,7 @@ class CandidateGenerationManager:
 
         state = self._service._repo.load()
         new_state = state.model_copy(update={"candidate_jobs": (*state.candidate_jobs, job)})
-        self._service._repo.commit_mutation(new_state)
+        self._service._repo.commit_mutation(new_state, expected_revision=state.revision)
         return job.model_dump(mode="json")
 
     def get_job_status(self, job_id: str, *, actor: ActorContext) -> dict[str, Any]:
@@ -168,5 +168,5 @@ class CandidateGenerationManager:
         state = self._service._repo.load()
         updated_jobs = tuple(j if j.job_id != job_id else cancelled_job for j in state.candidate_jobs)
         new_state = state.model_copy(update={"candidate_jobs": updated_jobs})
-        self._service._repo.commit_mutation(new_state)
+        self._service._repo.commit_mutation(new_state, expected_revision=state.revision)
         return cancelled_job.model_dump(mode="json")
