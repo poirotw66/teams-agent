@@ -7,10 +7,22 @@ from typing import Any
 from .errors import EvaluationDomainError, EvaluationNotFoundError, EvaluationValidationError
 from .tool_fixture_models import (
     MockResponseSpec,
+    ToolCallTrace,
     ToolFixture,
     ToolFixtureVersion,
     calculate_tool_fixture_hash,
 )
+
+SIDE_EFFECT_TOOLS: frozenset[str] = frozenset({
+    "send_email",
+    "email_dispatch",
+    "send_notification",
+    "create_ticket",
+    "dispatch_ticket",
+    "update_production_db",
+    "delete_record",
+    "production_write",
+})
 
 
 class ToolFixtureRepository:
@@ -394,15 +406,91 @@ class ToolFixtureService:
         fixture_id: str,
         version: int | None = None,
         arguments: dict[str, Any],
+        attempt: int = 1,
     ) -> dict[str, Any]:
         """Matches arguments against fixture mock responses or returns default response."""
-        fixture = self._repository.get_fixture(fixture_id)
-        target_version = version or (fixture.current_version if fixture else 1)
-        v = self._repository.get_version(fixture_id, target_version)
-        if not v:
-            return {"status": "error", "error": f"Tool fixture '{fixture_id}' not found"}
+        trace = self.execute_sandbox_tool(
+            tool_name="",
+            arguments=arguments,
+            fixture_id=fixture_id,
+            version=version,
+            attempt=attempt,
+        )
+        if trace.is_error:
+            return {
+                "status": "error",
+                "error_code": "TOOL_EXECUTION_ERROR",
+                "error_message": trace.error_message or "Simulated tool failure",
+            }
+        return trace.result or {"status": "success", "data": {}}
 
-        # Search mock responses for parameter match
+    def execute_sandbox_tool(
+        self,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+        fixture_id: str | None = None,
+        version: int | None = None,
+        call_id: str | None = None,
+        attempt: int = 1,
+    ) -> ToolCallTrace:
+        """Executes a tool within the safe evaluation sandbox.
+        
+        Guarantees that production write, email dispatch, and ticket creation
+        side effects are strictly intercepted and neutralized (F04-T2).
+        """
+        import uuid
+        actual_call_id = call_id or f"call_{uuid.uuid4().hex[:8]}"
+        resolved_tool_name = tool_name
+
+        # Resolve fixture by id or tool_name
+        fixture = None
+        if fixture_id:
+            fixture = self._repository.get_fixture(fixture_id)
+        elif tool_name:
+            for f in self._repository.list_fixtures():
+                if f.tool_name == tool_name:
+                    fixture = f
+                    break
+
+        target_version = version or (fixture.current_version if fixture else 1)
+        v = self._repository.get_version(fixture.fixture_id, target_version) if fixture else None
+        if v:
+            resolved_tool_name = v.tool_name or resolved_tool_name
+
+        # Check side-effect interception
+        is_side_effect = (
+            resolved_tool_name in SIDE_EFFECT_TOOLS
+            or (v is not None and v.is_mutation)
+        )
+
+        if not v:
+            if is_side_effect:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={
+                        "status": "INTERCEPTED",
+                        "side_effect_blocked": True,
+                        "message": "Production side effect blocked in sandbox",
+                    },
+                    is_error=False,
+                    was_intercepted=True,
+                    side_effect_blocked=True,
+                    intercept_reason="Production write/ticket/email side effects are blocked in sandbox",
+                )
+            return ToolCallTrace(
+                call_id=actual_call_id,
+                tool_name=resolved_tool_name,
+                arguments=dict(arguments),
+                result={"status": "error", "error": f"Tool fixture for '{resolved_tool_name}' not found"},
+                is_error=True,
+                error_message=f"Tool fixture for '{resolved_tool_name}' not found",
+            )
+
+        # Search mock responses for matching parameters
+        matched_mock = None
         for mock in v.mock_responses:
             if not mock.match_parameters:
                 continue
@@ -412,16 +500,105 @@ class ToolFixtureService:
                     is_match = False
                     break
             if is_match:
-                if mock.is_error:
-                    return {
-                        "status": "error",
-                        "error_code": mock.error_status or "TOOL_EXECUTION_ERROR",
-                        "error_message": mock.error_message or "Simulated tool failure",
-                    }
-                return mock.response_payload
+                matched_mock = mock
+                break
 
-        # Return default response
-        return v.default_response or {"status": "success", "data": {}}
+        # Handle simulation specs
+        if matched_mock:
+            # Retry simulation: fail first N attempts
+            if matched_mock.retry_after_failures > 0 and attempt <= matched_mock.retry_after_failures:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "error", "attempt": attempt},
+                    duration_ms=matched_mock.latency_ms,
+                    is_error=True,
+                    error_message=f"Simulated transient failure on attempt {attempt}",
+                    retry_count=attempt,
+                )
+            if matched_mock.is_timeout:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "error", "error_code": "TIMEOUT"},
+                    duration_ms=matched_mock.latency_ms or 5000.0,
+                    is_error=True,
+                    error_message="Tool execution timed out",
+                )
+            if matched_mock.is_permission_denied:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "error", "error_code": "PERMISSION_DENIED"},
+                    duration_ms=matched_mock.latency_ms,
+                    is_error=True,
+                    error_message="Permission denied by ACL policy",
+                )
+            if matched_mock.is_empty:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "EMPTY", "results": [], "data": {}},
+                    duration_ms=matched_mock.latency_ms,
+                    is_error=False,
+                )
+            if matched_mock.is_contradictory:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "RESOLVED", "outcome": "FAILED", "conflict": True},
+                    duration_ms=matched_mock.latency_ms,
+                    is_error=False,
+                )
+            if matched_mock.is_error:
+                return ToolCallTrace(
+                    call_id=actual_call_id,
+                    tool_name=resolved_tool_name,
+                    arguments=dict(arguments),
+                    result={"status": "error", "error_code": matched_mock.error_status or "TOOL_EXECUTION_ERROR"},
+                    duration_ms=matched_mock.latency_ms,
+                    is_error=True,
+                    error_message=matched_mock.error_message or "Simulated tool failure",
+                )
+
+            payload = dict(matched_mock.response_payload)
+            if is_side_effect:
+                payload["side_effect_blocked"] = True
+                payload["was_intercepted"] = True
+
+            return ToolCallTrace(
+                call_id=actual_call_id,
+                tool_name=resolved_tool_name,
+                arguments=dict(arguments),
+                result=payload,
+                duration_ms=matched_mock.latency_ms,
+                is_error=False,
+                was_intercepted=is_side_effect,
+                side_effect_blocked=is_side_effect,
+                intercept_reason="Production write/ticket/email side effects are blocked in sandbox" if is_side_effect else None,
+            )
+
+        # Default response
+        default_payload = dict(v.default_response or {"status": "success", "data": {}})
+        if is_side_effect:
+            default_payload["side_effect_blocked"] = True
+            default_payload["was_intercepted"] = True
+
+        return ToolCallTrace(
+            call_id=actual_call_id,
+            tool_name=resolved_tool_name,
+            arguments=dict(arguments),
+            result=default_payload,
+            is_error=False,
+            was_intercepted=is_side_effect,
+            side_effect_blocked=is_side_effect,
+            intercept_reason="Production write/ticket/email side effects are blocked in sandbox" if is_side_effect else None,
+        )
 
     def _seed_default_fixtures(self) -> None:
         """Seeds baseline tool fixtures for IT / HR enterprise scenarios."""

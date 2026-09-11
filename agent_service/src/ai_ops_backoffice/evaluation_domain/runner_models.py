@@ -51,6 +51,21 @@ class MetricResult(StrictModel):
     evidence_refs: tuple[str, ...] = ()
 
 
+class TargetExecutionInput(StrictModel):
+    """Input payload passed to system under test.
+    
+    Guaranteed not to contain golden answer, criteria, or evidence requirements (F01-T3).
+    """
+    query: str
+    conversation_history: tuple[dict[str, str], ...] = ()
+    persona_context: dict[str, Any] = Field(default_factory=dict)
+    actor_id: str = "eval_actor"
+    tenant_id: str = "default"
+    owner_unit_id: str = "default"
+    environment: str = "test"
+    case_id: str = ""
+
+
 class CaseExecution(StrictModel):
     execution_id: str
     run_id: str
@@ -67,9 +82,14 @@ class CaseExecution(StrictModel):
     passed: bool | None = None
     is_critical_failure: bool = False
     used_tokens: int = 0
+    actual_tokens: int | None = None
+    usage_status: Literal["EXACT", "ESTIMATED", "UNKNOWN"] = "EXACT"
     latency_ms: float = 0.0
     estimated_cost_usd: float = 0.0
     error_detail: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    provider_request_id: str | None = None
+    tool_events: tuple[dict[str, Any], ...] = ()
 
 
 class ReviewDecision(StrictModel):
@@ -110,6 +130,7 @@ class RunPreflightResult(StrictModel):
     case_count: int = 0
     estimated_cost_usd: float = 0.0
     estimated_duration_seconds: float = 0.0
+    is_eval_eligible: bool = True
 
 
 class EvaluationRun(StrictModel):
@@ -136,4 +157,6 @@ class EvaluationRun(StrictModel):
     error_message: str | None = None
     actual_cost_usd: float = 0.0
     actual_tokens: int = 0
+    cost_status: Literal["EXACT", "ESTIMATED", "PARTIAL_UNKNOWN", "UNKNOWN"] = "EXACT"
+    is_eval_eligible: bool = True
     correlation_id: str | None = None

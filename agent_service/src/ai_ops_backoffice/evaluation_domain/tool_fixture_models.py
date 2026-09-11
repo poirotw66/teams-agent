@@ -23,6 +23,11 @@ class MockResponseSpec(StrictModel):
     error_status: str | None = None
     error_message: str | None = None
     latency_ms: float = 0.0
+    is_timeout: bool = False
+    is_permission_denied: bool = False
+    is_empty: bool = False
+    is_contradictory: bool = False
+    retry_after_failures: int = 0
 
 
 def calculate_tool_fixture_hash(
@@ -91,6 +96,9 @@ class ToolCallTrace(StrictModel):
     is_error: bool = False
     error_message: str | None = None
     retry_count: int = 0
+    was_intercepted: bool = False
+    side_effect_blocked: bool = False
+    intercept_reason: str | None = None
 
 
 class TurnExecutionTrace(StrictModel):

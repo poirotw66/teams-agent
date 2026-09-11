@@ -82,8 +82,12 @@ class ManifestResolver:
         baseline_target: dict[str, Any],
         candidate_target: dict[str, Any],
         limits: dict[str, Any] | None = None,
+        mode: str = "REAL_RAG",
+        has_retriever_adapter: bool | None = None,
+        has_answering_adapter: bool | None = None,
+        has_sandbox_adapter: bool | None = None,
     ) -> RunPreflightResult:
-        """Performs preflight checks before an evaluation run is queued."""
+        """Performs preflight checks before an evaluation run is queued (Spec 6.1)."""
         blocking_errors: list[str] = []
         warnings: list[str] = []
         limits = limits or {}
@@ -96,6 +100,7 @@ class ManifestResolver:
                 is_valid=False,
                 blocking_errors=tuple(blocking_errors),
                 warnings=tuple(warnings),
+                is_eval_eligible=False,
             )
 
         if set_version.status != "PUBLISHED":
@@ -113,18 +118,49 @@ class ManifestResolver:
         blocking_errors.extend(b_errs)
         blocking_errors.extend(c_errs)
 
-        # 3. Check for knowledge release configuration
+        # 3. Enforcement for REAL_RAG execution mode (Spec 6.1, F01-T1)
+        normalized_mode = mode.upper() if mode else "REAL_RAG"
+        is_eval_eligible = True
+
+        if normalized_mode == "REAL_RAG":
+            if has_retriever_adapter is False or has_answering_adapter is False:
+                blocking_errors.append(
+                    "REAL_RAG mode requires registered real retriever and answer adapters. "
+                    "Ephemeral mock or keyword fallback is prohibited for production evaluation."
+                )
+            # Validate pinned knowledge releases exist on disk if releases_dir is provided
+            if self._releases_dir:
+                if baseline_manifest.knowledge_release_id:
+                    rel_b = self._releases_dir / baseline_manifest.knowledge_release_id
+                    if not (rel_b / "index" / "chunks.json").is_file() and not (rel_b / "chunks.json").is_file():
+                        blocking_errors.append(
+                            f"Pinned baseline knowledge release artifact not found: {baseline_manifest.knowledge_release_id}"
+                        )
+                if candidate_manifest.knowledge_release_id:
+                    rel_c = self._releases_dir / candidate_manifest.knowledge_release_id
+                    if not (rel_c / "index" / "chunks.json").is_file() and not (rel_c / "chunks.json").is_file():
+                        blocking_errors.append(
+                            f"Pinned candidate knowledge release artifact not found: {candidate_manifest.knowledge_release_id}"
+                        )
+        elif normalized_mode == "AGENT_SANDBOX":
+            if has_sandbox_adapter is False:
+                blocking_errors.append("AGENT_SANDBOX mode requires registered agent sandbox adapter.")
+        elif normalized_mode == "OFFLINE_BENCHMARK":
+            is_eval_eligible = False
+            warnings.append(
+                "OFFLINE_BENCHMARK mode is not eligible for quality gate release enforcement (不可作真實品質發布驗收)."
+            )
+
+        # 4. Check for knowledge release configuration
         if not baseline_manifest.knowledge_release_id:
             warnings.append("Baseline has no pinned knowledge_release_id; defaulting to bundled index")
         if not candidate_manifest.knowledge_release_id:
             warnings.append("Candidate has no pinned knowledge_release_id; defaulting to bundled index")
 
-        # 4. Check limits and cost estimation
+        # 5. Check limits and cost estimation
         max_cases = limits.get("max_cases")
         effective_cases = min(case_count, max_cases) if max_cases else case_count
-        # Rough estimation: ~500 tokens per turn * 2 sides + judge tokens
         estimated_tokens = effective_cases * 2 * 1200
-        # gemini-2.5-flash estimation: ~$0.00015 / 1k tokens
         estimated_cost_usd = round(estimated_tokens * 0.0000003, 4)
         estimated_duration_seconds = round(effective_cases * 2 * 1.5, 1)
 
@@ -144,4 +180,5 @@ class ManifestResolver:
             case_count=effective_cases,
             estimated_cost_usd=estimated_cost_usd,
             estimated_duration_seconds=estimated_duration_seconds,
+            is_eval_eligible=is_eval_eligible,
         )

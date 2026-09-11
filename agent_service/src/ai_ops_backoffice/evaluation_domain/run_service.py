@@ -60,14 +60,22 @@ class EvaluationRunService:
         candidate_target: dict[str, Any],
         limits: dict[str, Any] | None = None,
         actor: ActorContext | None = None,
+        mode: str = "REAL_RAG",
     ) -> RunPreflightResult:
         if actor:
             self._authorize(actor, "ops.evals.read")
+        has_retriever = self._runner.has_retriever_adapter() if hasattr(self._runner, "has_retriever_adapter") else True
+        has_answering = self._runner.has_answering_adapter() if hasattr(self._runner, "has_answering_adapter") else True
+        has_sandbox = self._runner.has_sandbox_adapter() if hasattr(self._runner, "has_sandbox_adapter") else True
         return self._resolver.preflight_run(
             set_version_id=set_version_id,
             baseline_target=baseline_target,
             candidate_target=candidate_target,
             limits=limits,
+            mode=mode,
+            has_retriever_adapter=has_retriever,
+            has_answering_adapter=has_answering,
+            has_sandbox_adapter=has_sandbox,
         )
 
     def create_run(
@@ -89,12 +97,20 @@ class EvaluationRunService:
             self._authorize(actor, "ops.evals.run")
 
         limits = limits or {}
+        has_retriever = self._runner.has_retriever_adapter() if hasattr(self._runner, "has_retriever_adapter") else True
+        has_answering = self._runner.has_answering_adapter() if hasattr(self._runner, "has_answering_adapter") else True
+        has_sandbox = self._runner.has_sandbox_adapter() if hasattr(self._runner, "has_sandbox_adapter") else True
+
         # Preflight validation
         preflight = self._resolver.preflight_run(
             set_version_id=set_version_id,
             baseline_target=baseline_target,
             candidate_target=candidate_target,
             limits=limits,
+            mode=mode,
+            has_retriever_adapter=has_retriever,
+            has_answering_adapter=has_answering,
+            has_sandbox_adapter=has_sandbox,
         )
         if not preflight.is_valid:
             raise EvaluationValidationError(
@@ -127,6 +143,7 @@ class EvaluationRunService:
             requested_by=actor.user_id if actor else "system",
             created_at=now,
             correlation_id=correlation_id,
+            is_eval_eligible=preflight.is_eval_eligible,
         )
 
         state = self._repo.load()

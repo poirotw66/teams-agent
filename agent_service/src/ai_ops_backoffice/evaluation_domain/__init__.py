@@ -69,6 +69,11 @@ from .repository import (
 )
 from .run_service import EvaluationRunService
 from .runner import EvaluationRunner
+from .real_rag_adapters import (
+    RealAgentSandboxAdapter,
+    RealRagAnswerAdapter,
+    RealRagRetrieverAdapter,
+)
 from .runner_models import (
     CaseExecution,
     EvaluationRun,
@@ -76,6 +81,7 @@ from .runner_models import (
     ReviewDecision,
     RunComparisonSummary,
     RunPreflightResult,
+    TargetExecutionInput,
     TargetManifest,
 )
 from .scorer import EvaluationScorer
@@ -91,6 +97,7 @@ from .tool_fixture_models import (
 from .tool_fixtures import (
     FileToolFixtureRepository,
     FirestoreToolFixtureRepository,
+    SIDE_EFFECT_TOOLS,
     ToolFixtureRepository,
     ToolFixtureService,
 )
@@ -144,10 +151,15 @@ __all__ = [
     "QualityCaseLink",
     "QualityGateRepository",
     "QualityGateService",
+    "RealAgentSandboxAdapter",
+    "RealRagAnswerAdapter",
+    "RealRagRetrieverAdapter",
     "ReviewDecision",
     "RunComparisonSummary",
     "RunPreflightResult",
+    "SIDE_EFFECT_TOOLS",
     "SourceImpactResult",
+    "TargetExecutionInput",
     "TargetManifest",
     "ToolCallTrace",
     "ToolConstraintsSpec",

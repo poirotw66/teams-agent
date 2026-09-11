@@ -9,29 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .agent_behavior_scorer import AgentBehaviorScorer
-from .errors import EvaluationNotFoundError
-from .models import CaseRevision, EvaluationAuditEvent, EvaluationCriteria
-from .repository import EvaluationRepository
-from .runner_models import (
-    CaseExecution,
-    EvaluationRun,
-    MetricResult,
-    RunComparisonSummary,
-    TargetManifest,
-    TargetSide,
-)
-from .scorer import EvaluationScorer
-from .tool_fixture_models import ToolCallTrace, TrajectoryTrace, TurnExecutionTrace
-from .tool_fixtures import ToolFixtureService
-
-logger = logging.getLogger(__name__)
-
-RetrieverFn = Callable[[str, TargetManifest, CaseRevision], list[dict[str, Any]]]
-ModelAnsweringFn = Callable[
-    [str, TargetManifest, CaseRevision, list[dict[str, Any]]],
-    tuple[str, int, float],  # (answer, tokens, cost_usd)
-]
+from .models import CaseRevision
+from .runner_models import TargetManifest
 
 
 def default_knowledge_retriever(
@@ -82,6 +61,29 @@ def default_knowledge_retriever(
     top_k = manifest.retriever_config.get("top_k", 5)
     return matched_chunks[:top_k]
 
+from .agent_behavior_scorer import AgentBehaviorScorer
+from .errors import EvaluationNotFoundError, EvaluationValidationError
+from .models import CaseRevision, EvaluationAuditEvent, EvaluationCriteria
+from .real_rag_adapters import RealRagAnswerAdapter, RealRagRetrieverAdapter
+from .repository import EvaluationRepository
+from .runner_models import (
+    CaseExecution,
+    EvaluationRun,
+    MetricResult,
+    RunComparisonSummary,
+    TargetExecutionInput,
+    TargetManifest,
+    TargetSide,
+)
+from .scorer import EvaluationScorer
+from .tool_fixture_models import ToolCallTrace, TrajectoryTrace, TurnExecutionTrace
+from .tool_fixtures import ToolFixtureService
+
+logger = logging.getLogger(__name__)
+
+RetrieverFn = Callable[..., list[dict[str, Any]]]
+ModelAnsweringFn = Callable[..., Any]
+
 
 class EvaluationRunner:
     """Orchestrates dual-side evaluation runs, budget controls, and comparison summaries."""
@@ -92,17 +94,32 @@ class EvaluationRunner:
         scorer: EvaluationScorer | None = None,
         agent_scorer: AgentBehaviorScorer | None = None,
         tool_fixture_service: ToolFixtureService | None = None,
-        retriever_fn: RetrieverFn | None = None,
-        answering_fn: ModelAnsweringFn | None = None,
+        retriever_fn: Any | None = None,
+        answering_fn: Any | None = None,
         releases_dir: Path | None = None,
     ) -> None:
         self._repo = repository
         self._scorer = scorer or EvaluationScorer()
         self._agent_scorer = agent_scorer or AgentBehaviorScorer()
         self._tool_fixture_service = tool_fixture_service or ToolFixtureService()
+        self._releases_dir = releases_dir
+
         self._retriever_fn = retriever_fn
         self._answering_fn = answering_fn
-        self._releases_dir = releases_dir
+        # Auto-wire formal REAL_RAG adapters when releases_dir is provided
+        if self._retriever_fn is None and releases_dir is not None:
+            self._retriever_fn = RealRagRetrieverAdapter(releases_dir=releases_dir)
+        if self._answering_fn is None and releases_dir is not None:
+            self._answering_fn = RealRagAnswerAdapter()
+
+    def has_retriever_adapter(self) -> bool:
+        return self._retriever_fn is not None
+
+    def has_answering_adapter(self) -> bool:
+        return self._answering_fn is not None
+
+    def has_sandbox_adapter(self) -> bool:
+        return self._tool_fixture_service is not None
 
     def execute_run(self, run_id: str) -> EvaluationRun:
         """Executes an evaluation run synchronously or from a background worker."""
@@ -119,6 +136,13 @@ class EvaluationRunner:
             raise EvaluationNotFoundError(
                 f"EvalSetVersion {run.set_version_id} not found"
             )
+
+        if run.mode == "REAL_RAG":
+            if not self.has_retriever_adapter() or not self.has_answering_adapter():
+                raise EvaluationValidationError(
+                    "REAL_RAG execution rejected: Missing registered real retriever and answer adapters. "
+                    "Ephemeral mock or keyword fallback is prohibited for production evaluation."
+                )
 
         now = datetime.now(timezone.utc)
         # Update run status to RUNNING
@@ -196,6 +220,9 @@ class EvaluationRunner:
 
         completed_at = datetime.now(timezone.utc)
         final_status = "CANCELLED" if cancel_reason else "COMPLETED"
+        has_unknown_tokens = any(e.usage_status == "UNKNOWN" for e in executed_cases)
+        cost_status = "PARTIAL_UNKNOWN" if has_unknown_tokens else "EXACT"
+        is_eval_eligible = (run.mode != "OFFLINE_BENCHMARK")
 
         final_run = run.model_copy(
             update={
@@ -205,6 +232,8 @@ class EvaluationRunner:
                 "cancel_reason": cancel_reason,
                 "actual_cost_usd": round(total_cost, 4),
                 "actual_tokens": total_tokens,
+                "cost_status": cost_status,
+                "is_eval_eligible": is_eval_eligible,
             }
         )
 
@@ -249,10 +278,25 @@ class EvaluationRunner:
         if case_revision.turns:
             return self._execute_multi_turn(run_id, case_revision, manifest, side, start_time)
 
+        # F01-T3: Strictly sanitize input to target under test - never pass golden answers or criteria
+        sanitized_input = TargetExecutionInput(
+            query=case_revision.query,
+            conversation_history=(),
+            persona_context=manifest.retriever_config.get("persona_context", {}) if manifest.persona_fixture_id else {},
+            actor_id=manifest.target_id,
+            tenant_id="default",
+            owner_unit_id="default",
+            environment=manifest.environment,
+            case_id=case_revision.case_id,
+        )
+
         try:
             # 1. Retrieval phase
             if self._retriever_fn:
-                retrieved = self._retriever_fn(case_revision.query, manifest, case_revision)
+                try:
+                    retrieved = self._retriever_fn(case_revision.query, manifest, sanitized_input)
+                except TypeError:
+                    retrieved = self._retriever_fn(case_revision.query, manifest, case_revision)
             else:
                 retrieved = default_knowledge_retriever(
                     case_revision.query, manifest, case_revision, self._releases_dir
@@ -260,11 +304,21 @@ class EvaluationRunner:
 
             # 2. Answering phase
             tool_calls: list[ToolCallTrace] = []
+            provider_req_id = None
             if self._answering_fn:
-                ans_res = self._answering_fn(
-                    case_revision.query, manifest, case_revision, retrieved
-                )
-                if isinstance(ans_res, tuple) and len(ans_res) == 4:
+                try:
+                    ans_res = self._answering_fn(
+                        case_revision.query, manifest, sanitized_input, retrieved
+                    )
+                except TypeError:
+                    ans_res = self._answering_fn(
+                        case_revision.query, manifest, case_revision, retrieved
+                    )
+
+                if isinstance(ans_res, tuple) and len(ans_res) == 5:
+                    answer, tokens, cost, raw_tool_calls, provider_req_id = ans_res
+                    tool_calls = list(raw_tool_calls)
+                elif isinstance(ans_res, tuple) and len(ans_res) == 4:
                     answer, tokens, cost, raw_tool_calls = ans_res
                     tool_calls = list(raw_tool_calls)
                 else:
@@ -276,6 +330,26 @@ class EvaluationRunner:
                 cost = 0.00005
 
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+            # Spec 6.2: Unknown token usage handling
+            if tokens is None or str(tokens).upper() == "UNKNOWN":
+                actual_tokens = None
+                used_tokens = 0
+                usage_status = "UNKNOWN"
+            else:
+                actual_tokens = int(tokens)
+                used_tokens = int(tokens)
+                usage_status = "EXACT"
+
+            evidence_ids = tuple(
+                str(c.get("chunk_id") or c.get("evidence_id") or c.get("source_id"))
+                for c in retrieved
+                if (c.get("chunk_id") or c.get("evidence_id") or c.get("source_id"))
+            )
+            tool_events = tuple(
+                c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c)
+                for c in tool_calls
+            )
 
             # 3. Scoring phase
             metric_results, failure_class, passed = self._scorer.evaluate_execution(
@@ -301,7 +375,7 @@ class EvaluationRunner:
 
             trace_ref: dict[str, Any] = {}
             if tool_calls:
-                trace_ref["tool_calls"] = [c.model_dump(mode="json") for c in tool_calls]
+                trace_ref["tool_calls"] = list(tool_events)
 
             return CaseExecution(
                 execution_id=execution_id,
@@ -318,9 +392,14 @@ class EvaluationRunner:
                 failure_classification=failure_class,
                 passed=passed,
                 is_critical_failure=is_critical,
-                used_tokens=tokens,
+                used_tokens=used_tokens,
+                actual_tokens=actual_tokens,
+                usage_status=usage_status,
                 latency_ms=duration_ms,
                 estimated_cost_usd=cost,
+                evidence_ids=evidence_ids,
+                provider_request_id=provider_req_id,
+                tool_events=tool_events,
             )
 
         except Exception as e:
@@ -359,6 +438,7 @@ class EvaluationRunner:
         execution_id = f"exec_{run_id[:8]}_{side.lower()}_{case_revision.case_id[:8]}"
         conversation_history: list[dict[str, str]] = []
         turn_traces: list[TurnExecutionTrace] = []
+        all_tool_calls: list[ToolCallTrace] = []
         total_tokens = 0
         total_cost = 0.0
         all_retrieved: list[dict[str, Any]] = []
@@ -367,8 +447,23 @@ class EvaluationRunner:
             for idx, turn in enumerate(case_revision.turns):
                 user_query = turn.user_query
 
+                # F01-T3: Sanitize turn input
+                turn_input = TargetExecutionInput(
+                    query=user_query,
+                    conversation_history=tuple(conversation_history),
+                    persona_context=manifest.retriever_config.get("persona_context", {}) if manifest.persona_fixture_id else {},
+                    actor_id=manifest.target_id,
+                    tenant_id="default",
+                    owner_unit_id="default",
+                    environment=manifest.environment,
+                    case_id=case_revision.case_id,
+                )
+
                 if self._retriever_fn:
-                    retrieved = self._retriever_fn(user_query, manifest, case_revision)
+                    try:
+                        retrieved = self._retriever_fn(user_query, manifest, turn_input)
+                    except TypeError:
+                        retrieved = self._retriever_fn(user_query, manifest, case_revision)
                 else:
                     retrieved = default_knowledge_retriever(
                         user_query, manifest, case_revision, self._releases_dir
@@ -379,14 +474,22 @@ class EvaluationRunner:
                 if self._answering_fn:
                     try:
                         ans_res = self._answering_fn(
-                            user_query, manifest, case_revision, retrieved, conversation_history
+                            user_query, manifest, turn_input, retrieved, conversation_history
                         )
                     except TypeError:
-                        ans_res = self._answering_fn(
-                            user_query, manifest, case_revision, retrieved
-                        )
+                        try:
+                            ans_res = self._answering_fn(
+                                user_query, manifest, turn_input, retrieved
+                            )
+                        except TypeError:
+                            ans_res = self._answering_fn(
+                                user_query, manifest, case_revision, retrieved
+                            )
 
-                    if isinstance(ans_res, tuple) and len(ans_res) == 4:
+                    if isinstance(ans_res, tuple) and len(ans_res) == 5:
+                        answer, tokens, cost, raw_tool_calls, _ = ans_res
+                        tool_calls = list(raw_tool_calls)
+                    elif isinstance(ans_res, tuple) and len(ans_res) == 4:
                         answer, tokens, cost, raw_tool_calls = ans_res
                         tool_calls = list(raw_tool_calls)
                     else:
@@ -396,7 +499,9 @@ class EvaluationRunner:
                     tokens = 120
                     cost = 0.00004
 
-                total_tokens += tokens
+                all_tool_calls.extend(tool_calls)
+                if tokens is not None:
+                    total_tokens += tokens
                 total_cost += cost
 
                 # Mandatory GE3 rule: Expected answer is NEVER used as assistant history.
@@ -478,6 +583,16 @@ class EvaluationRunner:
 
             is_critical = (not overall_passed) and (case_revision.criticality == "CRITICAL")
 
+            evidence_ids = tuple(
+                str(c.get("chunk_id") or c.get("evidence_id") or c.get("source_id"))
+                for c in all_retrieved
+                if (c.get("chunk_id") or c.get("evidence_id") or c.get("source_id"))
+            )
+            tool_events = tuple(
+                c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c)
+                for c in all_tool_calls
+            )
+
             return CaseExecution(
                 execution_id=execution_id,
                 run_id=run_id,
@@ -497,8 +612,12 @@ class EvaluationRunner:
                 passed=overall_passed,
                 is_critical_failure=is_critical,
                 used_tokens=total_tokens,
+                actual_tokens=total_tokens,
+                usage_status="EXACT",
                 latency_ms=duration_ms,
                 estimated_cost_usd=round(total_cost, 6),
+                evidence_ids=evidence_ids,
+                tool_events=tool_events,
             )
 
         except Exception as e:
