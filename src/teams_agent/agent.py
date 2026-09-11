@@ -174,8 +174,10 @@ async def on_message(ctx: ActivityContext[MessageActivity]) -> None:
 async def _handle_message(
     ctx: ActivityContext[MessageActivity],
     *,
-    started_at: float,
+    started_at: float | None = None,
 ) -> None:
+    if started_at is None:
+        started_at = time.perf_counter()
     value = ctx.activity.value
     if isinstance(value, dict) and value.get(FEEDBACK_ACTION_MARKER):
         await _handle_feedback(ctx, value)
@@ -321,8 +323,10 @@ async def _answer_streaming(
     request: AgentRequest,
     correlation_id: str,
     *,
-    started_at: float,
+    started_at: float | None = None,
 ) -> bool:
+    if started_at is None:
+        started_at = time.perf_counter()
     """Stream workflow progress, then finalize with the answer.
 
     Returns True when the user has been given something -- an answer or an
