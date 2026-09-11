@@ -106,7 +106,10 @@ async def test_conversation_volume_daily_weekly_monthly_trends(tmp_path: Path) -
     # Seed events over multiple days
     # Day 1: 2 turns with gemini-2.5-flash and vpn.connection_failed
     # Day 2: 1 turn with gemini-2.5-pro and network.internet_slow
-    day1 = now - timedelta(days=5)
+    # Keep the ten-minute second turn on the same UTC calendar day even when
+    # the suite runs close to midnight; the assertion is about two populated
+    # daily buckets, not a midnight boundary.
+    day1 = now - timedelta(days=5, hours=1)
     day2 = now - timedelta(days=1)
 
     events = [

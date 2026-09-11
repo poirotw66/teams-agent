@@ -41,6 +41,81 @@ function evaluationBehaviorForCase(caseType) {
   }[String(caseType || "").toUpperCase()] || "ANSWER_WITH_CITATION";
 }
 
+async function resolveQualityCaseSourceRefs(qualityCase) {
+  const refs = [];
+  const documentIds = [...new Set((qualityCase.document_ids || []).filter(Boolean))];
+  const faqIds = [...new Set((qualityCase.faq_ids || []).filter(Boolean))];
+
+  await Promise.all([
+    ...documentIds.map(async (documentId) => {
+      const ref = {
+        source_type: "DOCUMENT",
+        source_id: documentId,
+        version_id: null,
+        title: documentId,
+        resolution_status: "UNRESOLVED",
+      };
+      try {
+        const detail = await api(`/api/knowledge/documents/${encodeURIComponent(documentId)}`);
+        const document = detail.document || detail;
+        ref.title = document.title || document.document_id || documentId;
+        ref.version_id = document.current_published_version_id
+          || document.currentPublishedVersionId
+          || detail.published_version?.version_id
+          || detail.publishedVersion?.version_id
+          || null;
+        ref.resolution_status = ref.version_id ? "RESOLVED" : "UNRESOLVED";
+      } catch {
+        ref.resolution_status = "UNAVAILABLE";
+      }
+      refs.push(ref);
+    }),
+    ...faqIds.map(async (faqId) => {
+      const ref = {
+        source_type: "FAQ",
+        source_id: faqId,
+        version_id: null,
+        title: faqId,
+        resolution_status: "UNRESOLVED",
+      };
+      try {
+        const detail = await api(`/api/faqs/${encodeURIComponent(faqId)}`);
+        const faq = detail.faq || detail;
+        const versions = Array.isArray(detail.versions) ? detail.versions : [];
+        const published = versions.find((version) =>
+          version.version_id === faq.published_version_id
+          || ["PUBLISHED", "ACTIVE"].includes(String(version.status || "").toUpperCase()),
+        );
+        ref.title = faq.title || faq.faq_key || faqId;
+        ref.version_id = faq.published_version_id
+          || faq.publishedVersionId
+          || detail.published_version?.version_id
+          || published?.version_id
+          || null;
+        ref.resolution_status = ref.version_id ? "RESOLVED" : "UNRESOLVED";
+      } catch {
+        ref.resolution_status = "UNAVAILABLE";
+      }
+      refs.push(ref);
+    }),
+  ]);
+
+  return refs.sort((left, right) =>
+    `${left.source_type}:${left.source_id}`.localeCompare(`${right.source_type}:${right.source_id}`),
+  );
+}
+
+function formatQualityCaseSourceRefs(sourceRefs, fallbackVersionId = null) {
+  if (sourceRefs.length) {
+    return sourceRefs.map((ref) => {
+      const version = ref.version_id || "版本未解析";
+      const state = ref.resolution_status === "UNAVAILABLE" ? "讀取失敗" : version;
+      return `${ref.source_type} ${ref.title || ref.source_id} · ${state}`;
+    }).join("；");
+  }
+  return fallbackVersionId || "建立時未保存來源版本";
+}
+
 function renderEvaluationTracking(detail, caseId, qualityCase, allowed, options) {
   const panel = el("section", "case-evaluation-tracking");
   panel.style.padding = "1rem";
@@ -73,6 +148,9 @@ function renderEvaluationTracking(detail, caseId, qualityCase, allowed, options)
     for (const item of candidates) {
       const candidate = item.case || {};
       const revision = item.current_revision || {};
+      const sourceRefs = Array.isArray(candidate.metadata?.quality_case_source_refs)
+        ? candidate.metadata.quality_case_source_refs
+        : [];
       const card = el("div", "card-item");
       card.style.marginBottom = "0.55rem";
       card.append(
@@ -85,7 +163,10 @@ function renderEvaluationTracking(detail, caseId, qualityCase, allowed, options)
         el(
           "p",
           "metric-label",
-          `來源：品質案件 ${caseId} · 來源版本：${revision.provenance?.source_version_id || "尚未指定"}`,
+          `來源：品質案件 ${caseId} · 關聯來源版本：${formatQualityCaseSourceRefs(
+            sourceRefs,
+            revision.provenance?.source_version_id,
+          )}`,
         ),
       );
       card.append(
@@ -160,24 +241,36 @@ function renderEvaluationTracking(detail, caseId, qualityCase, allowed, options)
     const addCandidate = el("button", "button-primary", candidates.length ? "再建立驗收修訂" : "加入驗收候選");
     addCandidate.type = "button";
     addCandidate.addEventListener("click", async () => {
-      const { showCaseCreateModal } = await import("./evaluations.js");
-      showCaseCreateModal(
-        async () => showQualityCaseDetail(caseId, options),
-        {
-          title: `改善驗收：${qualityCase.title || caseId}`,
-          owner_unit_id: qualityCase.owner_unit_id,
-          query: qualityCase.description || qualityCase.title || "",
-          behavior: evaluationBehaviorForCase(qualityCase.case_type),
-          criticality: qualityCase.priority === "CRITICAL" ? "CRITICAL" : "NORMAL",
-          source_type: "QUALITY_CASE",
-          source_id: caseId,
-          metadata: {
-            quality_case_id: caseId,
-            quality_case_type: qualityCase.case_type,
+      addCandidate.disabled = true;
+      const originalLabel = addCandidate.textContent;
+      addCandidate.textContent = "讀取來源版本…";
+      try {
+        const sourceRefs = await resolveQualityCaseSourceRefs(qualityCase);
+        const firstResolvedVersion = sourceRefs.find((ref) => ref.version_id)?.version_id || null;
+        const { showCaseCreateModal } = await import("./evaluations.js");
+        showCaseCreateModal(
+          async () => showQualityCaseDetail(caseId, options),
+          {
+            title: `改善驗收：${qualityCase.title || caseId}`,
+            owner_unit_id: qualityCase.owner_unit_id,
+            query: qualityCase.description || qualityCase.title || "",
+            behavior: evaluationBehaviorForCase(qualityCase.case_type),
+            criticality: qualityCase.priority === "CRITICAL" ? "CRITICAL" : "NORMAL",
+            source_type: "QUALITY_CASE",
+            source_id: caseId,
+            source_version_id: firstResolvedVersion,
+            metadata: {
+              quality_case_id: caseId,
+              quality_case_type: qualityCase.case_type,
+              quality_case_source_refs: sourceRefs,
+            },
+            tags: ["quality-case", qualityCase.case_type].filter(Boolean),
           },
-          tags: ["quality-case", qualityCase.case_type].filter(Boolean),
-        },
-      );
+        );
+      } finally {
+        addCandidate.disabled = false;
+        addCandidate.textContent = originalLabel;
+      }
     });
     panel.append(addCandidate);
   }

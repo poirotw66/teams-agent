@@ -13,6 +13,21 @@ import { navigateReturnTo, parseReturnTo, withReturnTo } from "../app/returnTo.j
 
 let currentActiveTab = "cases";
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function safeClassToken(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
 function actorCanManageOwnerUnits(ownerUnitIds = []) {
   const current = getCapabilities() || {};
   if (["SYSTEM_ADMIN", "AI_ADMIN", "AUDITOR"].includes(current.role)) {
@@ -301,15 +316,15 @@ async function loadCasesList(container, allowed) {
         const queryPreview = String(r.query || "").replace(/\s+/g, " ").trim();
         const critMark = r.criticality === "CRITICAL" ? "重大 · " : "";
         if (bu) {
-          titleCell.innerHTML = `<strong>${c.title || "（無標題）"}</strong><span class="bu-eval-query-preview text-muted">${queryPreview}</span>`;
+          titleCell.innerHTML = `<strong>${escapeHtml(c.title || "（無標題）")}</strong><span class="bu-eval-query-preview text-muted">${escapeHtml(queryPreview)}</span>`;
           titleCell.title = `${critMark}${c.owner_unit_id || ""}｜rev ${r.revision_number}\n${r.query || ""}`;
         } else {
-          titleCell.innerHTML = `<strong>${c.title}</strong><br><span class="text-muted">${r.query}</span>`;
+          titleCell.innerHTML = `<strong>${escapeHtml(c.title)}</strong><br><span class="text-muted">${escapeHtml(r.query)}</span>`;
         }
 
         const behaviorCell = el("td");
         const behaviorLabel = labelBehavior(r.behavior);
-        behaviorCell.innerHTML = `<span class="badge badge-info" title="${r.behavior}">${behaviorLabel}</span>`;
+        behaviorCell.innerHTML = `<span class="badge badge-info" title="${escapeHtml(r.behavior)}">${escapeHtml(behaviorLabel)}</span>`;
 
         const actionsCell = el("td");
         const viewBtn = el(
@@ -322,15 +337,15 @@ async function loadCasesList(container, allowed) {
 
         if (bu) {
           const statusCell = el("td");
-          statusCell.innerHTML = `<span class="status-tag status-${String(r.status || "").toLowerCase()}" title="${r.status}">${labelStatus(r.status)} · v${r.revision_number}</span>`;
+          statusCell.innerHTML = `<span class="status-tag status-${safeClassToken(r.status)}" title="${escapeHtml(r.status)}">${escapeHtml(labelStatus(r.status))} · v${escapeHtml(r.revision_number)}</span>`;
           const healthCell = el("td");
           const healthLabel = labelSourceHealth(r.source_health);
           if (r.source_health === "NEEDS_REVIEW") {
-            healthCell.innerHTML = `<span class="badge badge-warning" title="${r.source_health}">${healthLabel}</span>`;
+            healthCell.innerHTML = `<span class="badge badge-warning" title="${escapeHtml(r.source_health)}">${escapeHtml(healthLabel)}</span>`;
           } else if (r.source_health === "SOURCE_UNAVAILABLE") {
-            healthCell.innerHTML = `<span class="badge badge-danger" title="${r.source_health}">${healthLabel}</span>`;
+            healthCell.innerHTML = `<span class="badge badge-danger" title="${escapeHtml(r.source_health)}">${escapeHtml(healthLabel)}</span>`;
           } else {
-            healthCell.innerHTML = `<span class="badge badge-success" title="${r.source_health || "VALID"}">${healthLabel}</span>`;
+            healthCell.innerHTML = `<span class="badge badge-success" title="${escapeHtml(r.source_health || "VALID")}">${escapeHtml(healthLabel)}</span>`;
           }
           row.append(titleCell, behaviorCell, statusCell, healthCell, actionsCell);
         } else {
@@ -348,7 +363,7 @@ async function loadCasesList(container, allowed) {
             healthCell.innerHTML = `<span class="badge badge-success">正常</span>`;
           }
           const statusCell = el("td");
-          statusCell.innerHTML = `<span class="status-tag status-${r.status.toLowerCase()}">${r.status} (rev ${r.revision_number})</span>`;
+          statusCell.innerHTML = `<span class="status-tag status-${safeClassToken(r.status)}">${escapeHtml(r.status)} (rev ${escapeHtml(r.revision_number)})</span>`;
           row.append(titleCell, behaviorCell, critCell, ownerCell, healthCell, statusCell, actionsCell);
         }
         tbody.append(row);
@@ -357,7 +372,7 @@ async function loadCasesList(container, allowed) {
       table.append(tbody);
       tableContainer.replaceChildren(table);
     } catch (err) {
-      tableContainer.replaceChildren(el("div", "error", `載入失敗: ${err.message}`));
+      tableContainer.replaceChildren(el("div", "error", `載入失敗: ${err.message || err}`));
     }
   };
 
@@ -403,7 +418,7 @@ async function loadSetsList(container, allowed) {
       for (const s of res.items) {
         const row = el("tr");
         const nameCell = el("td");
-        nameCell.innerHTML = `<strong>${s.name}</strong><br><span class="text-muted">${s.description || ""}</span>`;
+        nameCell.innerHTML = `<strong>${escapeHtml(s.name)}</strong><br><span class="text-muted">${escapeHtml(s.description || "")}</span>`;
 
         const purposeCell = el("td");
         purposeCell.innerHTML = s.purpose === "HOLDOUT"
@@ -424,7 +439,7 @@ async function loadSetsList(container, allowed) {
       table.append(tbody);
       tableContainer.replaceChildren(table);
     } catch (err) {
-      tableContainer.replaceChildren(el("div", "error", `載入失敗: ${err.message}`));
+      tableContainer.replaceChildren(el("div", "error", `載入失敗: ${err.message || err}`));
     }
   };
 
@@ -513,12 +528,8 @@ export function showCaseCreateModal(onSuccess, prefill = {}) {
   content.querySelector("#case-tags").value = Array.isArray(prefill.tags)
     ? prefill.tags.join(", ")
     : prefill.tags || "";
-  if (prefill.behavior && behaviorSelect.querySelector(`option[value="${prefill.behavior}"]`)) {
-    behaviorSelect.value = prefill.behavior;
-  }
-  if (prefill.criticality && criticalitySelect.querySelector(`option[value="${prefill.criticality}"]`)) {
-    criticalitySelect.value = prefill.criticality;
-  }
+  if (prefill.behavior) behaviorSelect.value = prefill.behavior;
+  if (prefill.criticality) criticalitySelect.value = prefill.criticality;
 
   const form = content.querySelector("#new-case-form");
   if (prefill.source_type === "QUALITY_CASE") {
@@ -603,36 +614,36 @@ async function showCaseDetailModal(caseId, onUpdate) {
     const r = res.current_revision;
 
     content.innerHTML = `
-      <h3>${c.title}</h3>
+      <h3>${escapeHtml(c.title)}</h3>
       <div class="meta-grid">
-        <div><strong>Case ID:</strong> ${c.case_id}</div>
-        <div><strong>負責單位:</strong> ${c.owner_unit_id}</div>
-        <div><strong>目前版本:</strong> rev ${r.revision_number} (${r.status})</div>
-        <div><strong>建立者:</strong> ${r.created_by}</div>
-        <div><strong>行為類型:</strong> ${r.behavior}</div>
-        <div><strong>重要性:</strong> ${r.criticality}</div>
-        <div><strong>來源健康度:</strong> ${r.source_health}</div>
-        <div><strong>內容雜湊:</strong> <code>${r.content_hash.slice(0, 10)}...</code></div>
+        <div><strong>Case ID:</strong> ${escapeHtml(c.case_id)}</div>
+        <div><strong>負責單位:</strong> ${escapeHtml(c.owner_unit_id)}</div>
+        <div><strong>目前版本:</strong> rev ${escapeHtml(r.revision_number)} (${escapeHtml(r.status)})</div>
+        <div><strong>建立者:</strong> ${escapeHtml(r.created_by)}</div>
+        <div><strong>行為類型:</strong> ${escapeHtml(r.behavior)}</div>
+        <div><strong>重要性:</strong> ${escapeHtml(r.criticality)}</div>
+        <div><strong>來源健康度:</strong> ${escapeHtml(r.source_health)}</div>
+        <div><strong>內容雜湊:</strong> <code>${escapeHtml((r.content_hash || "").slice(0, 10))}...</code></div>
       </div>
       <div class="section-block">
         <h4>問題內容</h4>
-        <div class="content-box">${r.query}</div>
+        <div class="content-box">${escapeHtml(r.query)}</div>
       </div>
       ${r.criteria.reference_answer ? `
       <div class="section-block">
         <h4>參考回答</h4>
-        <div class="content-box">${r.criteria.reference_answer}</div>
+        <div class="content-box">${escapeHtml(r.criteria.reference_answer)}</div>
       </div>` : ""}
       <div class="section-block">
         <h4>必要事實重點</h4>
         <ul>
-          ${(r.criteria.required_facts || []).map(f => `<li>${f.description}</li>`).join("") || "<li>(無)</li>"}
+          ${(r.criteria.required_facts || []).map(f => `<li>${escapeHtml(f.description)}</li>`).join("") || "<li>(無)</li>"}
         </ul>
       </div>
       <div class="section-block">
         <h4>禁止主張</h4>
         <ul>
-          ${(r.criteria.forbidden_claims || []).map(fc => `<li>${fc}</li>`).join("") || "<li>(無)</li>"}
+          ${(r.criteria.forbidden_claims || []).map(fc => `<li>${escapeHtml(fc)}</li>`).join("") || "<li>(無)</li>"}
         </ul>
       </div>
       <div class="action-footer" id="case-actions-bar"></div>
@@ -710,7 +721,7 @@ async function showCaseDetailModal(caseId, onUpdate) {
       actionsBar.append(retireBtn);
     }
   } catch (err) {
-    content.innerHTML = `<div class="error">讀取失敗: ${err.message}</div>`;
+    content.innerHTML = `<div class="error">讀取失敗: ${escapeHtml(err.message || err)}</div>`;
   }
 }
 
@@ -828,12 +839,12 @@ async function showSetDetailModal(setId, allowed = actorCapabilities()) {
     const canPublishSet = allowed.has("ops.evals.sets.publish") && actorCanManageOwnerUnits(s.owner_unit_ids);
 
     content.innerHTML = `
-      <h3>${s.name}</h3>
+      <h3>${escapeHtml(s.name)}</h3>
       <div class="meta-grid">
-        <div><strong>Set ID:</strong> ${s.set_id}</div>
-        <div><strong>用途:</strong> ${s.purpose}</div>
-        <div><strong>負責單位:</strong> ${s.owner_unit_ids.join(", ")}</div>
-        <div><strong>負責人:</strong> ${s.lead_owner}</div>
+        <div><strong>Set ID:</strong> ${escapeHtml(s.set_id)}</div>
+        <div><strong>用途:</strong> ${escapeHtml(s.purpose)}</div>
+        <div><strong>負責單位:</strong> ${escapeHtml(s.owner_unit_ids.join(", "))}</div>
+        <div><strong>負責人:</strong> ${escapeHtml(s.lead_owner)}</div>
       </div>
       <h4>題庫版本</h4>
       <div id="versions-list">
@@ -846,8 +857,8 @@ async function showSetDetailModal(setId, allowed = actorCapabilities()) {
     for (const v of versions) {
       const vCard = el("div", "card-item");
       vCard.innerHTML = `
-        <strong>v${v.version}</strong> (${v.status}) - ${v.case_revision_ids.length} 題
-        <br><small class="text-muted">Manifest Hash: <code>${v.manifest_hash ? v.manifest_hash.slice(0, 12) : "尚未發布"}</code> | 發布時間: ${v.published_at || "-"}</small>
+        <strong>v${escapeHtml(v.version)}</strong> (${escapeHtml(v.status)}) - ${escapeHtml(v.case_revision_ids.length)} 題
+        <br><small class="text-muted">Manifest Hash: <code>${escapeHtml(v.manifest_hash ? v.manifest_hash.slice(0, 12) : "尚未發布")}</code> | 發布時間: ${escapeHtml(v.published_at || "-")}</small>
       `;
       if (v.status === "DRAFT") {
         if (canPublishSet) {
@@ -896,7 +907,7 @@ async function showSetDetailModal(setId, allowed = actorCapabilities()) {
       actions.append(el("p", "text-muted", "目前角色可發布既有草稿，但沒有建立新版本的權限。"));
     }
   } catch (err) {
-    content.innerHTML = `<div class="error">讀取失敗: ${err.message}</div>`;
+    content.innerHTML = `<div class="error">讀取失敗: ${escapeHtml(err.message || err)}</div>`;
   }
 }
 
@@ -924,8 +935,8 @@ async function showPublishVersionModal(setId, onSuccess, canPublish = false) {
         <div class="cases-selector" style="max-height: 250px; overflow-y: auto; border: 1px solid #ccc; padding: 8px;">
           ${approvedCases.map(item => `
             <label style="display:block; margin-bottom: 4px;">
-              <input type="checkbox" name="rev_id" value="${item.current_revision.revision_id}" checked>
-              <strong>${item.case.title}</strong> (rev ${item.current_revision.revision_number}) - ${item.current_revision.behavior}
+              <input type="checkbox" name="rev_id" value="${escapeHtml(item.current_revision.revision_id)}" checked>
+              <strong>${escapeHtml(item.case.title)}</strong> (rev ${escapeHtml(item.current_revision.revision_number)}) - ${escapeHtml(item.current_revision.behavior)}
             </label>
           `).join("")}
         </div>
@@ -968,7 +979,7 @@ async function showPublishVersionModal(setId, onSuccess, canPublish = false) {
       }
     });
   } catch (err) {
-    content.innerHTML = `<div class="error">讀取失敗: ${err.message}</div>`;
+    content.innerHTML = `<div class="error">讀取失敗: ${escapeHtml(err.message || err)}</div>`;
   }
 }
 
@@ -1018,15 +1029,15 @@ function showImportModal(onSuccess) {
       if (!valRes.is_valid) {
         resultDiv.innerHTML = `
           <div class="error">
-            <strong>驗證失敗！共 ${valRes.error_rows} 筆錯誤：</strong>
-            <ul>${valRes.errors.map(err => `<li>第 ${err.row} 列: [${err.field}] ${err.message}</li>`).join("")}</ul>
+            <strong>驗證失敗！共 ${escapeHtml(valRes.error_rows)} 筆錯誤：</strong>
+            <ul>${valRes.errors.map(err => `<li>第 ${escapeHtml(err.row)} 列: [${escapeHtml(err.field)}] ${escapeHtml(err.message)}</li>`).join("")}</ul>
           </div>
         `;
       } else {
         resultDiv.innerHTML = `
           <div class="alert alert-success">
-            <strong>驗證通過！</strong> 共 ${valRes.valid_rows} 筆有效案例。
-            ${valRes.similar_warnings.length > 0 ? `<br><small>提示：有 ${valRes.similar_warnings.length} 題在現有題庫中已有相似問題。</small>` : ""}
+            <strong>驗證通過！</strong> 共 ${escapeHtml(valRes.valid_rows)} 筆有效案例。
+            ${valRes.similar_warnings.length > 0 ? `<br><small>提示：有 ${escapeHtml(valRes.similar_warnings.length)} 題在現有題庫中已有相似問題。</small>` : ""}
           </div>
           <button id="commit-import-btn" class="btn-primary" style="margin-top: 8px;">確認原子寫入題庫</button>
         `;
@@ -1046,7 +1057,7 @@ function showImportModal(onSuccess) {
         });
       }
     } catch (err) {
-      resultDiv.innerHTML = `<div class="error">驗證請求失敗: ${err.message}</div>`;
+      resultDiv.innerHTML = `<div class="error">驗證請求失敗: ${escapeHtml(err.message || err)}</div>`;
     }
   });
 
@@ -1154,13 +1165,13 @@ function showCandidateJobModal(onSuccess) {
 
       statusDiv.innerHTML = `
         <div class="alert alert-success">
-          <strong>生成成功！</strong> 已生成 ${res.created_candidate_case_ids.length} 筆草稿候選題。<br>
-          <small>消耗 Token: ${res.used_tokens} | 預估成本: $${res.estimated_cost_usd} USD</small>
+          <strong>生成成功！</strong> 已生成 ${escapeHtml(res.created_candidate_case_ids.length)} 筆草稿候選題。<br>
+          <small>消耗 Token: ${escapeHtml(res.used_tokens)} | 預估成本: $${escapeHtml(res.estimated_cost_usd)} USD</small>
         </div>
       `;
       if (onSuccess) onSuccess();
     } catch (err) {
-      statusDiv.innerHTML = `<div class="error">生成失敗: ${err.message}</div>`;
+      statusDiv.innerHTML = `<div class="error">生成失敗: ${escapeHtml(err.message || err)}</div>`;
     }
   });
 
@@ -1169,6 +1180,19 @@ function showCandidateJobModal(onSuccess) {
 
 async function renderRunsTab(container, allowed) {
   container.replaceChildren();
+  if (!allowed.has("ops.evals.run")) {
+    const readOnly = el("div", "content-box");
+    readOnly.append(
+      el("h3", "", "執行驗收"),
+      el(
+        "div",
+        "callout warning",
+        "目前角色只有驗收讀取權限，沒有執行預檢或啟動驗收的權限。請改看「驗收結果」或聯絡具備驗收執行權限的管理者。",
+      ),
+    );
+    container.append(readOnly);
+    return;
+  }
   const returnContext = parseReturnTo(loadNavFilters().returnTo);
   const qualityCaseId = returnContext?.view === "quality"
     ? returnContext.filters.caseId || ""
@@ -1290,7 +1314,7 @@ async function renderRunsTab(container, allowed) {
     for (const s of setsRes.items || []) {
       const detail = await api(`/api/evaluations/sets/${s.set_id}`);
       for (const v of detail.versions || []) {
-        select.innerHTML += `<option value="${v.set_version_id}">${s.name} - ${v.version}（${v.status}，${v.case_revision_ids.length} 題）</option>`;
+        select.innerHTML += `<option value="${escapeHtml(v.set_version_id)}">${escapeHtml(s.name)} - ${escapeHtml(v.version)}（${escapeHtml(v.status)}，${escapeHtml(v.case_revision_ids.length)} 題）</option>`;
       }
     }
   } catch (err) {
@@ -1408,27 +1432,27 @@ async function renderRunsTab(container, allowed) {
         resultsDiv.innerHTML = `
           <div class="alert alert-success">
             <strong>預檢通過</strong><br>
-            • 案例題數: ${res.case_count} 題<br>
-            • 預估耗費: $${res.estimated_cost_usd} USD（約 ${res.estimated_duration_seconds} 秒）
-            ${res.warnings && res.warnings.length ? `<br>提醒: ${res.warnings.join("; ")}` : ""}
+            • 案例題數: ${escapeHtml(res.case_count)} 題<br>
+            • 預估耗費: $${escapeHtml(res.estimated_cost_usd)} USD（約 ${escapeHtml(res.estimated_duration_seconds)} 秒）
+            ${res.warnings && res.warnings.length ? `<br>提醒: ${escapeHtml(res.warnings.join("; "))}` : ""}
           </div>
         `;
         advancedIds.innerHTML = `
-          基準 Manifest: <code>${res.resolved_baseline_manifest ? res.resolved_baseline_manifest.manifest_hash.slice(0, 16) : ""}…</code><br>
-          候選 Manifest: <code>${res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : ""}…</code>
+          基準 Manifest: <code>${escapeHtml(res.resolved_baseline_manifest ? res.resolved_baseline_manifest.manifest_hash.slice(0, 16) : "")}…</code><br>
+          候選 Manifest: <code>${escapeHtml(res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : "")}…</code>
         `;
         startRunBtn.style.display = "inline-block";
       } else {
         resultsDiv.innerHTML = `
           <div class="alert alert-danger">
             <strong>預檢阻擋</strong><br>
-            ${res.blocking_errors.join("<br>")}
+            ${res.blocking_errors.map((error) => escapeHtml(error)).join("<br>")}
           </div>
         `;
         startRunBtn.style.display = "none";
       }
     } catch (err) {
-      resultsDiv.innerHTML = `<div class="alert alert-danger">預檢失敗: ${err.message || err}</div>`;
+      resultsDiv.innerHTML = `<div class="alert alert-danger">預檢失敗: ${escapeHtml(err.message || err)}</div>`;
     }
   });
 
@@ -1467,7 +1491,7 @@ async function renderRunsTab(container, allowed) {
       resultsDiv.innerHTML = `
         <div class="alert alert-success">
           <strong>評測執行已啟動／完成排程</strong><br>
-          Run ID: <code>${res.run?.run_id || res.run_id || "—"}</code>｜狀態: ${res.run?.status || "—"}<br>
+          Run ID: <code>${escapeHtml(res.run?.run_id || res.run_id || "—")}</code>｜狀態: ${escapeHtml(res.run?.status || "—")}<br>
           可至「驗收結果」頁籤查看對比分析${qualityCaseId ? "；返回案件後會顯示本次結果" : ""}。<br>
           <span class="text-muted">注意：執行完成只代表評測跑完，不代表品質通過或發布閘道通過；請對照通過率、退步案例與門檻政策。</span>
         </div>
@@ -1546,13 +1570,13 @@ async function renderResultsTab(container, allowed) {
       const statusLabel = labelStatus(r.status);
 
       tr.innerHTML = `
-        <td><code>${r.run_id}</code></td>
-        <td><code>${r.set_version_id.slice(0, 14)}...</code></td>
-        <td title="${r.mode || ""}">${modeLabel}</td>
-        <td><span class="badge ${r.summary && r.summary.pass_rate >= 0.9 ? "badge-success" : "badge-warning"}">${passRateStr}</span></td>
-        <td>${coverageStr}</td>
-        <td>$${r.actual_cost_usd}</td>
-        <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}" title="${r.status || ""}">${statusLabel}</span></td>
+        <td><code>${escapeHtml(r.run_id)}</code></td>
+        <td><code>${escapeHtml((r.set_version_id || "").slice(0, 14))}...</code></td>
+        <td title="${escapeHtml(r.mode || "")}">${escapeHtml(modeLabel)}</td>
+        <td><span class="badge ${r.summary && r.summary.pass_rate >= 0.9 ? "badge-success" : "badge-warning"}">${escapeHtml(passRateStr)}</span></td>
+        <td>${escapeHtml(coverageStr)}</td>
+        <td>$${escapeHtml(r.actual_cost_usd)}</td>
+        <td><span class="badge ${r.status === "COMPLETED" ? "badge-success" : "badge-secondary"}" title="${escapeHtml(r.status || "")}">${escapeHtml(statusLabel)}</span></td>
         <td>
           <button class="btn-secondary btn-sm view-cases-btn">查看比對</button>
           <button class="btn-primary btn-sm eval-gate-btn" style="margin-left: 4px;">門檻判定</button>
@@ -1581,7 +1605,7 @@ async function renderResultsTab(container, allowed) {
     // Default load latest run comparison
     await loadCaseComparison(caseCompContainer, latestRun.run_id, allowed);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="text-danger">載入執行清單失敗: ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger">載入執行清單失敗: ${escapeHtml(err.message || err)}</td></tr>`;
   }
 }
 
@@ -1602,28 +1626,28 @@ function renderRunSummaryCards(container, summary) {
     <div class="summary-cards-grid" style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
       <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid ${passRateColor}; background: #fff;">
         <div class="text-muted">品質通過率</div>
-        <h2 style="margin: 4px 0; color: ${passRateColor};">${passRate}</h2>
+        <h2 style="margin: 4px 0; color: ${passRateColor};">${escapeHtml(passRate)}</h2>
         <small>候選版通過的可判定案例比例</small>
       </div>
       <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #dc3545; background: #fff;">
         <div class="text-muted">新增失敗 (Regressions)</div>
-        <h2 style="margin: 4px 0; color: #dc3545;">${summary.regressions ? summary.regressions.length : 0}</h2>
+        <h2 style="margin: 4px 0; color: #dc3545;">${escapeHtml(summary.regressions ? summary.regressions.length : 0)}</h2>
         <small>候選版不如基準版之案例</small>
       </div>
       <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #28a745; background: #fff;">
         <div class="text-muted">已修復 (Fixed)</div>
-        <h2 style="margin: 4px 0; color: #28a745;">${summary.fixes ? summary.fixes.length : 0}</h2>
+        <h2 style="margin: 4px 0; color: #28a745;">${escapeHtml(summary.fixes ? summary.fixes.length : 0)}</h2>
         <small>候選版成功改善之案例</small>
       </div>
       <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #ffc107; background: #fff;">
         <div class="text-muted">重大失敗 (Critical)</div>
-        <h2 style="margin: 4px 0; color: #856404;">${summary.critical_failures ? summary.critical_failures.length : 0}</h2>
+        <h2 style="margin: 4px 0; color: #856404;">${escapeHtml(summary.critical_failures ? summary.critical_failures.length : 0)}</h2>
         <small>標記重大之失敗題數</small>
       </div>
       <div class="card" style="flex: 1 1 180px; min-width: 0; padding: 12px; border-left: 4px solid #17a2b8; background: #fff;">
         <div class="text-muted">完成比例</div>
-        <h2 style="margin: 4px 0; color: #17a2b8;">${coverage}</h2>
-        <small>${summary.judged_cases} / ${summary.total_cases} 題已完成判定</small>
+        <h2 style="margin: 4px 0; color: #17a2b8;">${escapeHtml(coverage)}</h2>
+        <small>${escapeHtml(summary.judged_cases)} / ${escapeHtml(summary.total_cases)} 題已完成判定</small>
       </div>
     </div>
   `;
@@ -1646,7 +1670,7 @@ async function loadCaseComparison(container, runId, allowed) {
   container.replaceChildren();
   const box = el("div", "sub-content-box");
   box.innerHTML = `
-    <h4>案例比對清單 (Run: <code>${runId}</code>)</h4>
+    <h4>案例比對清單 (Run: <code>${escapeHtml(runId)}</code>)</h4>
     <p class="metric-label">「新增失敗」= 基準通過但候選失敗（退步）；若候選答案為空而基準有答，屬漏答退步，請開細節並排比對。</p>
     <div class="table-responsive">
       <table class="data-table">
@@ -1684,20 +1708,31 @@ async function loadCaseComparison(container, runId, allowed) {
     }
 
     tbody.replaceChildren();
-    const allRevs = Object.keys(candidateCases);
+    // A partial run must not hide a case simply because one side has no
+    // execution record.  The comparison surface is also the place where
+    // missing/error outcomes become explicit "未判定" results.
+    const allRevs = [...new Set([
+      ...Object.keys(baselineCases),
+      ...Object.keys(candidateCases),
+    ])];
     if (!allRevs.length) {
       tbody.innerHTML = '<tr><td colspan="7">無案例紀錄</td></tr>';
       return;
     }
 
     for (const revId of allRevs) {
-      const c = candidateCases[revId];
+      const c = candidateCases[revId] || {};
       const b = baselineCases[revId] || {};
+      const caseId = c.case_id || b.case_id || revId;
 
       const baselineOutcome = executionOutcome(b);
       const candidateOutcome = executionOutcome(c);
       let diffTag = '<span class="badge badge-secondary">相同</span>';
-      if (baselineOutcome.pass && candidateOutcome.inconclusive) {
+      if (!candidateCases[revId]) {
+        diffTag = '<span class="badge badge-warning">候選缺少執行紀錄（未判定）</span>';
+      } else if (!baselineCases[revId]) {
+        diffTag = '<span class="badge badge-warning">基準缺少執行紀錄（未判定）</span>';
+      } else if (baselineOutcome.pass && candidateOutcome.inconclusive) {
         diffTag = '<span class="badge badge-warning">退步：候選未判定（不計入通過）</span>';
       } else if (baselineOutcome.pass && !candidateOutcome.pass) {
         const missedAnswer = Boolean((b.answer || "").trim()) && !(c.answer || "").trim();
@@ -1712,12 +1747,12 @@ async function loadCaseComparison(container, runId, allowed) {
 
       const tr = el("tr");
       tr.innerHTML = `
-        <td><code>${c.case_id}</code></td>
-        <td><span class="badge ${baselineOutcome.className}">${baselineOutcome.label}</span></td>
-        <td><span class="badge ${candidateOutcome.className}">${candidateOutcome.label}</span></td>
+        <td><code>${escapeHtml(caseId)}</code></td>
+        <td><span class="badge ${escapeHtml(baselineOutcome.className)}">${escapeHtml(baselineOutcome.label)}</span></td>
+        <td><span class="badge ${escapeHtml(candidateOutcome.className)}">${escapeHtml(candidateOutcome.label)}</span></td>
         <td>${diffTag}</td>
-        <td>${c.failure_classification || "-"}</td>
-        <td>${c.latency_ms}</td>
+        <td>${escapeHtml(c.failure_classification || (!candidateCases[revId] ? "候選缺少執行紀錄" : "-"))}</td>
+        <td>${escapeHtml(c.latency_ms ?? "-")}</td>
         <td>
           <button class="btn-secondary btn-sm inspect-btn">檢視細節與覆核</button>
         </td>
@@ -1730,27 +1765,28 @@ async function loadCaseComparison(container, runId, allowed) {
       tbody.append(tr);
     }
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入比對案例失敗: ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入比對案例失敗: ${escapeHtml(err.message || err)}</td></tr>`;
   }
 }
 
 function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
   const baselineOutcome = executionOutcome(baselineExec);
   const candidateOutcome = executionOutcome(candidateExec);
+  const canReview = allowed.has("ops.evals.write") && Boolean(candidateExec.execution_id);
   const modalContent = el("div", "execution-modal-content");
   modalContent.innerHTML = `
     <h3>案例執行細節與人工覆核</h3>
     <div style="display: flex; gap: 16px; margin-bottom: 16px;">
       <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;">
         <strong>【基準版回答】</strong>
-        <p style="white-space: pre-wrap; margin-top: 8px;">${baselineExec.answer || "(無回答)"}</p>
+        <p style="white-space: pre-wrap; margin-top: 8px;">${escapeHtml(baselineExec.answer || "(無回答)")}</p>
       </div>
       <div style="flex: 1; background: #f8f9fa; padding: 12px; border-radius: 4px;${!((candidateExec.answer || "").trim()) && (baselineExec.answer || "").trim() ? "border:2px solid #dc3545;" : ""}">
         <strong>【候選版回答】${!((candidateExec.answer || "").trim()) && (baselineExec.answer || "").trim() ? " <span class=\"badge badge-danger\">漏答</span>" : ""}</strong>
-        <p style="white-space: pre-wrap; margin-top: 8px;">${candidateExec.answer || "(無回答)"}</p>
+        <p style="white-space: pre-wrap; margin-top: 8px;">${escapeHtml(candidateExec.answer || "(無回答)")}</p>
       </div>
     </div>
-    <p class="callout ${candidateOutcome.inconclusive ? "warning" : ""}"><strong>候選判定：${candidateOutcome.label}</strong>。執行完成不等於品質通過；ERROR／未判定一律不計入通過。${candidateExec.error_detail ? `原因：${candidateExec.error_detail}` : ""}</p>
+    <p class="callout ${candidateOutcome.inconclusive ? "warning" : ""}"><strong>候選判定：${escapeHtml(candidateOutcome.label)}</strong>。執行完成不等於品質通過；ERROR／未判定一律不計入通過。${candidateExec.error_detail ? `原因：${escapeHtml(candidateExec.error_detail)}` : ""}</p>
     <h4>指標判定結果 (Candidate Metrics)</h4>
     <table class="data-table" style="margin-bottom: 16px;">
       <thead>
@@ -1764,21 +1800,21 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
       <tbody>
         ${(candidateExec.metric_results || []).map(m => `
           <tr>
-            <td><code>${m.metric_id}</code></td>
-            <td><span class="badge ${m.pass_status === "PASS" ? "badge-success" : m.pass_status === "FAIL" ? "badge-danger" : m.pass_status === "INCONCLUSIVE" ? "badge-warning" : "badge-secondary"}">${m.pass_status}</span></td>
-            <td>${m.score !== null ? m.score : "-"}</td>
-            <td>${m.reason || "-"}</td>
+            <td><code>${escapeHtml(m.metric_id)}</code></td>
+            <td><span class="badge ${m.pass_status === "PASS" ? "badge-success" : m.pass_status === "FAIL" ? "badge-danger" : m.pass_status === "INCONCLUSIVE" ? "badge-warning" : "badge-secondary"}">${escapeHtml(m.pass_status)}</span></td>
+            <td>${m.score != null ? escapeHtml(m.score) : "-"}</td>
+            <td>${escapeHtml(m.reason || "-")}</td>
           </tr>
-        `).join("")}
+        `).join("") || '<tr><td colspan="4" class="text-muted">目前沒有可供覆核的指標紀錄。</td></tr>'}
       </tbody>
     </table>
-    <div class="review-section" style="background: #eef2f7; padding: 12px; border-radius: 4px;">
+    ${canReview ? `<div class="review-section" style="background: #eef2f7; padding: 12px; border-radius: 4px;">
       <strong>人工覆核決策 (Human Review)</strong>
       <p class="text-muted" style="margin-top: 4px;">覆核將以 Append-only 方式記錄決策歷史，不竄改原始觀測數據。</p>
       <div class="form-group" style="margin-top: 8px;">
         <label>選擇指標</label>
         <select id="review-metric-select" class="form-select">
-          ${(candidateExec.metric_results || []).map(m => `<option value="${m.metric_id}">${m.metric_id}</option>`).join("")}
+          ${(candidateExec.metric_results || []).map(m => `<option value="${escapeHtml(m.metric_id)}">${escapeHtml(m.metric_id)}</option>`).join("")}
         </select>
       </div>
       <div class="form-group">
@@ -1795,8 +1831,8 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
       <div class="btn-row">
         <button id="submit-review-btn" class="btn-primary">送出覆核決策</button>
       </div>
-    </div>
-    ${!candidateExec.passed && allowed.has("ops.evals.write") ? `
+    </div>` : `<div class="callout"><strong>目前為唯讀檢視。</strong> 只有具備驗收寫入權限且存在候選執行紀錄時，才能提交人工覆核。</div>`}
+    ${candidateExec.execution_id && !candidateExec.passed && allowed.has("ops.evals.write") ? `
     <div class="qc-section" style="margin-top: 16px; padding: 12px; border: 1px dashed #ced4da; border-radius: 4px; background: #fff;">
       <strong>營運閉環 (GE-4 Quality Case Loop)</strong>
       <p class="text-muted" style="margin-top: 4px;">本案例判定未通過，可直接轉為品質改善案件進行後續追蹤與複測。</p>
@@ -1836,7 +1872,7 @@ function showExecutionDetailModal(runId, candidateExec, baselineExec, allowed) {
   }
 
   const submitBtn = modalContent.querySelector("#submit-review-btn");
-  submitBtn.addEventListener("click", async () => {
+  if (submitBtn) submitBtn.addEventListener("click", async () => {
     const reason = modalContent.querySelector("#review-reason-input").value.trim();
     if (!reason) {
       alert("請填寫覆核理由");
@@ -1899,25 +1935,25 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
     content.innerHTML = `
       <h3>發布門檻判定結果 (Quality Gate Decision)</h3>
       <div class="meta-grid" style="margin-bottom: 16px;">
-        <div><strong>判定 ID:</strong> <code>${dec.decision_id}</code></div>
-        <div><strong>政策:</strong> ${dec.policy_id} (v${dec.policy_version})</div>
+        <div><strong>判定 ID:</strong> <code>${escapeHtml(dec.decision_id)}</code></div>
+        <div><strong>政策:</strong> ${escapeHtml(dec.policy_id)} (v${escapeHtml(dec.policy_version)})</div>
         <div><strong>判定狀態:</strong> ${statusBadge}</div>
-        <div><strong>運作模式:</strong> ${dec.mode_at_evaluation || "—"}</div>
-        <div><strong>候選 Hash:</strong> <code>${dec.target_manifest_hash ? dec.target_manifest_hash.slice(0, 16) : ""}...</code></div>
-        <div><strong>判定時間:</strong> ${dec.created_at || "—"}</div>
+        <div><strong>運作模式:</strong> ${escapeHtml(dec.mode_at_evaluation || "—")}</div>
+        <div><strong>候選 Hash:</strong> <code>${escapeHtml(dec.target_manifest_hash ? dec.target_manifest_hash.slice(0, 16) : "")}...</code></div>
+        <div><strong>判定時間:</strong> ${escapeHtml(dec.created_at || "—")}</div>
       </div>
       <div class="section-block">
         <h4>判定理由與分析</h4>
-        <div class="content-box">${blockingReasons.length ? blockingReasons.join("<br>") : "未記錄阻擋原因。"}</div>
+        <div class="content-box">${blockingReasons.length ? blockingReasons.map((reason) => escapeHtml(reason)).join("<br>") : "未記錄阻擋原因。"}</div>
       </div>
       <div class="section-block">
         <h4>指標門檻檢核細項</h4>
         <ul>
           ${(dec.rule_results || []).map(r => `
             <li>
-              <strong>${r.rule_name}:</strong>
+              <strong>${escapeHtml(r.rule_name)}:</strong>
               ${r.passed ? "✅ 符合" : "❌ 不符"}
-              <span class="text-muted">(${r.details || ""})</span>
+              <span class="text-muted">(${escapeHtml(r.details || "")})</span>
             </li>
           `).join("") || `
             <li>候選通過率：${metrics.pass_rate == null ? "—" : `${Math.round(metrics.pass_rate * 100)}%`}</li>
@@ -1929,7 +1965,7 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
       ${blockingReasons.length ? `
       <div class="alert alert-danger" style="margin-top: 12px;">
         <strong>阻擋原因：</strong><br>
-        ${blockingReasons.join("<br>")}
+        ${blockingReasons.map((reason) => escapeHtml(reason)).join("<br>")}
       </div>` : ""}
       <div id="waiver-section" style="margin-top: 16px;"></div>
     `;
@@ -1958,7 +1994,7 @@ async function showGateDecisionModal(runId, targetManifestHash, allowed) {
       waiverSection.append(waiverBtn);
     }
   } catch (err) {
-    content.innerHTML = `<div class="error">門檻判定失敗: ${err.message || err}</div>`;
+    content.innerHTML = `<div class="error">門檻判定失敗: ${escapeHtml(err.message || err)}</div>`;
   }
 }
 
@@ -2028,7 +2064,7 @@ async function renderGatesTab(container, allowed) {
     try {
       const res = await api("/api/evaluations/gate-policies/default-gate-policy");
       if (res.error) {
-        policyContainer.innerHTML = `<div class="text-muted">${res.error}</div>`;
+        policyContainer.innerHTML = `<div class="text-muted">${escapeHtml(res.error)}</div>`;
         return;
       }
       const p = res.policy;
@@ -2037,14 +2073,14 @@ async function renderGatesTab(container, allowed) {
 
       policyContainer.innerHTML = `
         <div class="meta-grid">
-          <div><strong>政策 ID:</strong> <code>${p.policy_id}</code></div>
-          <div><strong>政策名稱:</strong> ${p.name}</div>
-          <div><strong>目前版本:</strong> v${p.current_version} (生效版本: v${p.active_version})</div>
-          <div><strong>運作模式:</strong> <span class="badge ${isEnforce ? "badge-danger" : "badge-warning"}">${v.mode || "REPORT_ONLY"}</span></div>
-          <div><strong>最低覆蓋率要求:</strong> ${(v.minimum_coverage ?? 1.0) * 100}%</div>
-          <div><strong>最低通過率要求:</strong> ${(v.minimum_pass_rate ?? 0.95) * 100}%</div>
-          <div><strong>重大失敗容忍度:</strong> ${v.critical_rule || "ZERO_TOLERANCE"} (零容忍)</div>
-          <div><strong>最大退步案例數:</strong> ${v.max_regression_count ?? 0} 題</div>
+          <div><strong>政策 ID:</strong> <code>${escapeHtml(p.policy_id)}</code></div>
+          <div><strong>政策名稱:</strong> ${escapeHtml(p.name)}</div>
+          <div><strong>目前版本:</strong> v${escapeHtml(p.current_version)} (生效版本: v${escapeHtml(p.active_version)})</div>
+          <div><strong>運作模式:</strong> <span class="badge ${isEnforce ? "badge-danger" : "badge-warning"}">${escapeHtml(v.mode || "REPORT_ONLY")}</span></div>
+          <div><strong>最低覆蓋率要求:</strong> ${escapeHtml((v.minimum_coverage ?? 1.0) * 100)}%</div>
+          <div><strong>最低通過率要求:</strong> ${escapeHtml((v.minimum_pass_rate ?? 0.95) * 100)}%</div>
+          <div><strong>重大失敗容忍度:</strong> ${escapeHtml(v.critical_rule || "ZERO_TOLERANCE")} (零容忍)</div>
+          <div><strong>最大退步案例數:</strong> ${escapeHtml(v.max_regression_count ?? 0)} 題</div>
         </div>
         ${allowed.has("ops.evals.gates.manage") ? `
         <div style="margin-top: 12px;">
@@ -2072,7 +2108,7 @@ async function renderGatesTab(container, allowed) {
         });
       }
     } catch (err) {
-      policyContainer.innerHTML = `<div class="error">載入門檻政策失敗: ${err.message || err}</div>`;
+      policyContainer.innerHTML = `<div class="error">載入門檻政策失敗: ${escapeHtml(err.message || err)}</div>`;
     }
   };
   await loadPolicy();
@@ -2091,14 +2127,14 @@ async function renderGatesTab(container, allowed) {
       impactResult.innerHTML = `
         <div class="alert ${imp.affected_case_ids.length > 0 ? "alert-warning" : "alert-success"}">
           <strong>分析完成：</strong><br>
-          • 受影響驗收案例數: ${imp.affected_case_ids.length} 題 ${imp.affected_case_ids.length ? `(ID: <code>${imp.affected_case_ids.join(", ")}</code>)` : ""}<br>
-          • 需複核案例數 (Requires Review): ${imp.requires_review_count} 題<br>
-          • 受影響已發布題庫版本: ${imp.affected_set_version_ids.length ? imp.affected_set_version_ids.map(id => `<code>${id}</code>`).join(", ") : "無"}<br>
+          • 受影響驗收案例數: ${escapeHtml(imp.affected_case_ids.length)} 題 ${imp.affected_case_ids.length ? `(ID: <code>${escapeHtml(imp.affected_case_ids.join(", "))}</code>)` : ""}<br>
+          • 需複核案例數 (Requires Review): ${escapeHtml(imp.requires_review_count)} 題<br>
+          • 受影響已發布題庫版本: ${imp.affected_set_version_ids.length ? imp.affected_set_version_ids.map(id => `<code>${escapeHtml(id)}</code>`).join(", ") : "無"}<br>
           • 是否直接衝擊線上 Active Manifest: <strong>${imp.has_active_manifest_impact ? "⚠️ 是 (需優先重測)" : "否"}</strong>
         </div>
       `;
     } catch (err) {
-      impactResult.innerHTML = `<div class="error">分析失敗: ${err.message || err}</div>`;
+      impactResult.innerHTML = `<div class="error">分析失敗: ${escapeHtml(err.message || err)}</div>`;
     }
   });
 
@@ -2115,11 +2151,11 @@ async function renderGatesTab(container, allowed) {
       for (const s of schedules) {
         const tr = el("tr");
         tr.innerHTML = `
-          <td><code>${s.schedule_id}</code></td>
-          <td>${s.name}</td>
-          <td><code>${(s.set_version_id || "").slice(0, 14)}...</code></td>
-          <td>${s.frequency}</td>
-          <td>$${s.budget_limit_usd}</td>
+          <td><code>${escapeHtml(s.schedule_id)}</code></td>
+          <td>${escapeHtml(s.name)}</td>
+          <td><code>${escapeHtml((s.set_version_id || "").slice(0, 14))}...</code></td>
+          <td>${escapeHtml(s.frequency)}</td>
+          <td>$${escapeHtml(s.budget_limit_usd)}</td>
           <td><span class="badge ${s.is_enabled ? "badge-success" : "badge-secondary"}">${s.is_enabled ? "啟用中" : "已停用"}</span></td>
           <td>
             ${allowed.has("ops.evals.write") ? `
@@ -2147,7 +2183,7 @@ async function renderGatesTab(container, allowed) {
         schedTbody.append(tr);
       }
     } catch (err) {
-      schedTbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入排程失敗: ${err.message || err}</td></tr>`;
+      schedTbody.innerHTML = `<tr><td colspan="7" class="text-danger">載入排程失敗: ${escapeHtml(err.message || err)}</td></tr>`;
     }
   };
   await loadSchedules();

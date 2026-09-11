@@ -6,7 +6,7 @@
   "dataScopeRules": [
     {
       "rule": "owner_unit_scope",
-      "description": "SERVICE_OWNER, KNOWLEDGE_ADMIN, and ANALYST rows are filtered to actor owner_unit_ids unless role is SYSTEM_ADMIN, AI_ADMIN, or AUDITOR."
+      "description": "SERVICE_OWNER, KNOWLEDGE_ADMIN, ANALYST, and VIEWER rows are filtered to actor owner_unit_ids unless role is SYSTEM_ADMIN, AI_ADMIN, or AUDITOR."
     },
     {
       "rule": "unmasked_conversations",
@@ -200,6 +200,19 @@
         "ops.feedback.read",
         "ops.issues.read",
         "ops.summary.read"
+      ],
+      "dataScope": "assigned_owner_units"
+    },
+    {
+      "role": "VIEWER",
+      "capabilities": [
+        "ops.conversations.read",
+        "ops.evals.read",
+        "ops.examples.read",
+        "ops.exports.read",
+        "ops.feedback.read",
+        "ops.knowledge.read",
+        "ops.quality.read"
       ],
       "dataScope": "assigned_owner_units"
     },

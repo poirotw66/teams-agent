@@ -63,7 +63,9 @@ def register_evaluation_run_routes(
         payload: PreflightRunPayload,
         actor: ActorContext = Depends(current_actor),
     ) -> dict[str, Any]:
-        require_capability(actor, "ops.evals.read")
+        # Preflight resolves manifests, cost and execution targets for a run;
+        # it is part of the run operation, not a read-only result query.
+        require_capability(actor, "ops.evals.run")
         res = run_service.preflight_run(
             set_version_id=payload.set_version_id,
             baseline_target=payload.baseline_target,

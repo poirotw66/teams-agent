@@ -51,11 +51,21 @@ function touchConversationsFreshness(suffix = "") {
     : `最後更新：${nowTime}`;
 }
 
+function isConversationDetailRoute() {
+  const navFilters = loadNavFilters();
+  return navFilters.view === "conversations" && Boolean(navFilters.conversationId);
+}
+
 function startConversationPolling() {
   stopConversationPolling();
   if (!conversationAutoRefresh) return;
   conversationPollTimer = setInterval(async () => {
     if (document.hidden || conversationPollInFlight || getCurrentActiveView() !== "conversations") {
+      return;
+    }
+    // Polling owns the list only.  Re-rendering while a detail route is open
+    // would replace the user's selected turn and scroll position with the list.
+    if (isConversationDetailRoute()) {
       return;
     }
     if (isConversationFilterEditing()) {
@@ -80,7 +90,7 @@ document.addEventListener("visibilitychange", () => {
     stopConversationPolling();
   } else if (conversationAutoRefresh && getCurrentActiveView() === "conversations") {
     startConversationPolling();
-    if (!conversationPollInFlight) {
+    if (!conversationPollInFlight && !isConversationDetailRoute()) {
       renderConversations({
         ...currentConversationState,
         forceRefresh: true,
@@ -519,9 +529,15 @@ export async function renderConversations(state = {}) {
     const body = el("tbody");
     for (const item of data.items) {
       const row = el("tr");
+      const matchedTurn =
+        item.turns?.find((turn) => turn.turnId === item.matchedTurnId) ||
+        item.turns?.at(-1) ||
+        item.turns?.[0] ||
+        null;
+      const selectedTurnId = item.matchedTurnId || matchedTurn?.turnId || "";
       const preview =
-        item.turns?.[0]?.userMessage ||
-        item.turns?.[0]?.messageMasked ||
+        matchedTurn?.userMessage ||
+        matchedTurn?.messageMasked ||
         item.preview ||
         item.summary ||
         "";
@@ -529,7 +545,7 @@ export async function renderConversations(state = {}) {
       const detailHash = buildLocationHash(
         workspaceForView("conversations") || "knowledge_ops",
         "conversations",
-        { conversationId: item.conversationId, turnId: item.turns?.[0]?.turnId || "" },
+        { conversationId: item.conversationId, turnId: selectedTurnId },
       );
       const link = el("a", "", isBuShellEnabled() ? preview || `對話 ${shortId}` : item.conversationId);
       link.href = detailHash;
@@ -544,18 +560,19 @@ export async function renderConversations(state = {}) {
           saveNavFilters({
             view: "conversations",
             conversationId: item.conversationId,
-            turnId: item.turns?.[0]?.turnId || "",
             ...currentConversationState.filters,
+            turnId: selectedTurnId,
+            conversationId: item.conversationId,
             preset: currentConversationState.period.preset || "",
             start: currentConversationState.period.start || "",
             end: currentConversationState.period.end || "",
           });
           syncLocationHash("conversations", {
             conversationId: item.conversationId,
-            turnId: item.turns?.[0]?.turnId || "",
+            turnId: selectedTurnId,
           });
           showConversationPage(detail, item.conversationId, {
-            selectedTurnId: item.turns?.[0]?.turnId || "",
+            selectedTurnId,
           });
           return;
         }

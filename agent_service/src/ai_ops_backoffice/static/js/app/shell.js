@@ -63,6 +63,8 @@ export function renderNav(active, options = {}) {
   const nav = document.getElementById("nav");
   nav.replaceChildren();
   const visible = visibleWorkspaces();
+  const storedRoute = loadNavFilters();
+  const routeState = storedRoute.view === active ? storedRoute : {};
   let workspaceId = activeWorkspaceId();
   if (!visible.some((item) => item.id === workspaceId)) {
     workspaceId = visible[0]?.id || "platform";
@@ -115,8 +117,7 @@ export function renderNav(active, options = {}) {
   document.title = `${title}｜AI 資訊客服營運後台`;
 
   if (!options.skipHashSync) {
-    const stored = loadNavFilters();
-    const { view: _view, ...filters } = stored.view === active ? stored : { view: active };
+    const { view: _view, ...filters } = routeState;
     syncLocationHash(active, filters);
   }
 
@@ -128,9 +129,9 @@ export function renderNav(active, options = {}) {
   }
 
   if (typeof routesRef[active] === "function") {
-    routesRef[active]();
+    routesRef[active](routeState);
   } else if (workspace?.items[0]) {
-    routesRef[workspace.items[0][0]]();
+    routesRef[workspace.items[0][0]]({});
   }
 }
 

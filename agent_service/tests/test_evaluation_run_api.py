@@ -74,6 +74,7 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
     kadmin_headers = auth_headers("KNOWLEDGE_ADMIN", "u_kadmin")
     sowner_headers = auth_headers("SERVICE_OWNER", "u_sowner")
     aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
+    viewer_headers = auth_headers("VIEWER", "u_viewer")
 
     # 1. Create case, submit, approve
     case_res = client.post(
@@ -135,6 +136,17 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
     assert pub_res.status_code == 200
 
     # 3. Preflight Run Check
+    viewer_preflight_res = client.post(
+        "/api/evaluations/runs/preflight",
+        headers=viewer_headers,
+        json={
+            "set_version_id": set_version_id,
+            "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
+            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+        },
+    )
+    assert viewer_preflight_res.status_code == 403
+
     preflight_res = client.post(
         "/api/evaluations/runs/preflight",
         headers=aiadmin_headers,

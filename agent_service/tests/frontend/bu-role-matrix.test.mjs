@@ -27,6 +27,22 @@ const ROLE_FIXTURES = {
     expectPrimary: ['我的工作', '改善案件', '對話紀錄', '品質驗收', '營運分析'],
     forbidPrimary: ['知識內容'],
   },
+  VIEWER: {
+    capabilities: [
+      'ops.conversations.read',
+      'ops.feedback.read',
+      'ops.knowledge.read',
+      'ops.quality.read',
+      'ops.evals.read',
+      'ops.examples.read',
+      'ops.exports.read',
+    ],
+    knowledgeBridgeEnabled: true,
+    knowledgeCapabilities: ['knowledge.read'],
+    expectPrimary: ['我的工作', '改善案件', '知識內容', '對話紀錄', '品質驗收'],
+    expectSystem: ['分類正反例'],
+    forbidPrimary: ['營運分析'],
+  },
   KNOWLEDGE_ADMIN: {
     capabilities: [
       'ops.summary.read',
@@ -134,6 +150,8 @@ async function setupBuShell() {
       replaceChildren(...children) { this.children = children; },
       addEventListener(name, fn) { this.handlers[name] = fn; },
       setAttribute(name, value) { this[name] = value; },
+      removeAttribute(name) { delete this[name]; },
+      removeEventListener(name) { delete this.handlers[name]; },
     };
     Object.defineProperty(node, 'textContent', {
       get() { return this.text; },

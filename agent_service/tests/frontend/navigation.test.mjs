@@ -15,6 +15,8 @@ async function setup() {
       replaceChildren(...children) { this.children = children; },
       addEventListener(name, fn) { this.handlers[name] = fn; },
       setAttribute(name, value) { this[name] = value; },
+      removeAttribute(name) { delete this[name]; },
+      removeEventListener(name) { delete this.handlers[name]; },
     };
     Object.defineProperty(node, 'textContent', {
       get() { return this.text; },

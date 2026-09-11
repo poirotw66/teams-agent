@@ -64,6 +64,8 @@ function appendNavLink(container, viewId, label, active) {
 export function renderBuNav(active, options = {}, routeRefs = {}) {
   const routesRef = routeRefs.routes || null;
   const lifecycleViewsRef = routeRefs.lifecycleViews || null;
+  const storedRoute = loadNavFilters();
+  const routeState = storedRoute.view === active ? storedRoute : {};
   applyBuShellBodyClass(true);
   setCurrentActiveView(active);
   const nav = document.getElementById("nav");
@@ -112,8 +114,7 @@ export function renderBuNav(active, options = {}, routeRefs = {}) {
   document.title = `${title}｜資訊客服營運工作台`;
 
   if (!options.skipHashSync) {
-    const stored = loadNavFilters();
-    const { view: _view, ...filters } = stored.view === active ? stored : { view: active };
+    const { view: _view, ...filters } = routeState;
     ensureWorkspaceForView(active);
     syncLocationHash(active, filters);
   }
@@ -126,11 +127,11 @@ export function renderBuNav(active, options = {}, routeRefs = {}) {
   }
 
   if (typeof routesRef?.[active] === "function") {
-    routesRef[active]();
+    routesRef[active](routeState);
   } else {
     const fallback = visiblePrimaryNav()[0]?.[0];
     if (fallback && typeof routesRef?.[fallback] === "function") {
-      routesRef[fallback]();
+      routesRef[fallback]({});
     }
   }
 }

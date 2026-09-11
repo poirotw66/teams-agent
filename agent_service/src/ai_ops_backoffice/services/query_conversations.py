@@ -3,14 +3,121 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from typing import Any
 
 from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import OperationalEvent, utc_now
+from agent_service.operations.contracts import OperationalEvent
 from agent_service.operations.scope import filter_events_by_scope
 
 from .query_helpers import _summarize_turn_events
-from .query_math import percentile as _percentile
+
+
+def _matched_turn_for_filters(
+    turn_records: list[dict[str, Any]],
+    turn_payloads: dict[str, dict[str, Any]],
+    *,
+    query: str | None,
+    source: str | None,
+    issue_type_id: str | None,
+    route: str | None,
+    model: str | None,
+    has_feedback: bool | None,
+    handoff: bool | None,
+    user_filter: str | None,
+) -> tuple[str | None, list[str]]:
+    """Pick the turn that actually matched a conversation filter."""
+
+    active_filters: list[tuple[str, Callable[[dict[str, Any], dict[str, Any]], bool]]] = []
+
+    if query:
+        needle = query.casefold()
+
+        def query_matches(turn: dict[str, Any], payload: dict[str, Any]) -> bool:
+            values = [
+                turn.get("userMessage"),
+                turn.get("aiReply"),
+                turn.get("ticketId"),
+                *(payload.get(field) for field in (
+                    "messageMasked",
+                    "answerMasked",
+                    "descriptionMasked",
+                    "userMessage",
+                    "aiReply",
+                    "text",
+                    "ticketId",
+                )),
+            ]
+            return any(value and needle in str(value).casefold() for value in values)
+
+        active_filters.append(("query", query_matches))
+
+    if source:
+        needle = source.casefold()
+
+        def source_matches(turn: dict[str, Any], payload: dict[str, Any]) -> bool:
+            values = [
+                *(turn.get("documentIds") or []),
+                *(turn.get("sourcePaths") or []),
+                *(turn.get("releaseIds") or []),
+                payload.get("documentId"),
+                payload.get("sourcePath"),
+                payload.get("faqKey"),
+                payload.get("releaseId"),
+            ]
+            refs = turn.get("sourceRefs") or []
+            values.extend(
+                ref.get(key)
+                for ref in refs
+                if isinstance(ref, dict)
+                for key in ("documentId", "sourcePath", "title", "chunkId")
+            )
+            citations = payload.get("citations") or []
+            values.extend(
+                citation.get(key)
+                for citation in citations
+                if isinstance(citation, dict)
+                for key in ("documentId", "sourcePath", "title", "chunkId")
+            )
+            return any(value and needle in str(value).casefold() for value in values)
+
+        active_filters.append(("source", source_matches))
+
+    if issue_type_id:
+        active_filters.append(("issue_type", lambda turn, _payload: turn.get("issueTypeId") == issue_type_id))
+    if route:
+        active_filters.append(("route", lambda turn, _payload: turn.get("route") == route))
+    if model:
+        active_filters.append(("model", lambda turn, _payload: turn.get("model") == model))
+    if has_feedback is not None:
+        active_filters.append(
+            ("feedback", lambda turn, _payload: bool(turn.get("feedbackRating")) is has_feedback),
+        )
+    if handoff is not None:
+        active_filters.append(
+            ("handoff", lambda turn, _payload: bool(turn.get("handoffStatus")) is handoff),
+        )
+    if user_filter:
+        active_filters.append(
+            ("user", lambda turn, _payload: turn.get("actorRef") == user_filter),
+        )
+
+    if not turn_records:
+        return None, []
+    if not active_filters:
+        turn = turn_records[-1]
+        return turn.get("turnId"), ["latest"]
+
+    scored: list[tuple[int, int, dict[str, Any], list[str]]] = []
+    for index, turn in enumerate(turn_records):
+        payload = turn_payloads.get(str(turn.get("turnId")), {})
+        reasons = [name for name, predicate in active_filters if predicate(turn, payload)]
+        scored.append((len(reasons), index, turn, reasons))
+
+    # Prefer a turn satisfying all filters; otherwise choose the most relevant
+    # available turn and expose the reasons that matched it.
+    _score, _index, selected, reasons = max(scored, key=lambda item: (item[0], item[1]))
+    return selected.get("turnId"), reasons
 
 
 class ConversationsQueryMixin:
@@ -167,7 +274,9 @@ class ConversationsQueryMixin:
                 if event.event_type == "route.selected" and event.payload.get("route")
             }
             turn_records = []
+            turn_payloads: dict[str, dict[str, Any]] = {}
             for t_event in sorted(turns, key=lambda x: x.occurred_at):
+                turn_payloads[str(t_event.turn_id)] = t_event.payload or {}
                 t_summary = _summarize_turn_events(t_event, conv_events)
                 source_events = [
                     item
@@ -233,6 +342,18 @@ class ConversationsQueryMixin:
                         "ticketBackend": t_summary.get("ticketBackend"),
                     }
                 )
+            matched_turn_id, matched_turn_reasons = _matched_turn_for_filters(
+                turn_records,
+                turn_payloads,
+                query=query,
+                source=source,
+                issue_type_id=issue_type_id,
+                route=route,
+                model=model,
+                has_feedback=has_feedback,
+                handoff=handoff,
+                user_filter=user_filter,
+            )
             conv_ticket_ids = sorted(
                 {
                     str(t["ticketId"])
@@ -273,6 +394,8 @@ class ConversationsQueryMixin:
                     "ticketCount": len(conv_ticket_ids),
                     "ticketStatus": conv_ticket_status,
                     "handoffStatus": conv_handoff_status,
+                    "matchedTurnId": matched_turn_id,
+                    "matchedTurnReasons": matched_turn_reasons,
                     "turns": turn_records,
                 }
             )
