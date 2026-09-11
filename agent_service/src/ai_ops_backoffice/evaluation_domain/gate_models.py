@@ -76,6 +76,11 @@ class GateDecision(StrictModel):
     target_manifest_hash: str
     decision: GateDecisionStatus
     mode_at_evaluation: GateMode
+    tenant_id: str = "default"
+    suite_versions: tuple[str, ...] = ()
+    run_ids: tuple[str, ...] = ()
+    result_digest: str = ""
+    actor_id: str = "system"
     blocking_reasons: tuple[str, ...] = ()
     metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
     valid_until: datetime
@@ -100,13 +105,20 @@ class EvalSchedule(StrictModel):
     tenant_id: str
     name: str
     set_version_id: str
+    owner_unit_id: str = "IT Service Desk"
+    timezone: str = "UTC"
     frequency: ScheduleFrequency = "DAILY"
     cron_expression: str | None = None
+    next_due_at: datetime | None = None
+    misfire_policy: Literal["COALESCE_LATEST", "RUN_ALL", "SKIP"] = "COALESCE_LATEST"
+    target_selector: str = "CANDIDATE_LATEST"
     budget_limit_usd: float = Field(default=5.0, gt=0.0)
     target_refs: dict[str, Any] = Field(default_factory=dict)
     is_enabled: bool = True
     last_run_id: str | None = None
     last_run_at: datetime | None = None
+    missed_count: int = 0
+    revision: int = 1
     created_by: str
     created_at: datetime
     updated_by: str

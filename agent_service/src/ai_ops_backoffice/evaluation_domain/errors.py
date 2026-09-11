@@ -31,3 +31,12 @@ class EvaluationTransitionError(EvaluationDomainError):
 
 class EvaluationAuditWriteError(EvaluationDomainError):
     """Raised when an audit record cannot be written."""
+
+
+class JobLeaseLostError(EvaluationDomainError):
+    """Raised when a worker attempts to update a job whose lease has expired or been claimed by another worker."""
+
+
+class JobFencingConflictError(EvaluationDomainError):
+    """Raised when a worker's fencing token is outdated compared to the job's current fencing token."""
+

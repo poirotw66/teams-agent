@@ -11,6 +11,8 @@ from .errors import (
     EvaluationNotFoundError,
     EvaluationValidationError,
 )
+from .job_models import ExecutionJob
+from .job_repository import JobRepository
 from .manifest import ManifestResolver
 from .models import EvaluationAuditEvent
 from .repository import EvaluationRepository
@@ -36,11 +38,13 @@ class EvaluationRunService:
         manifest_resolver: ManifestResolver | None = None,
         runner: EvaluationRunner | None = None,
         scorer: EvaluationScorer | None = None,
+        job_repository: JobRepository | None = None,
     ) -> None:
         self._repo = repository
         self._resolver = manifest_resolver or ManifestResolver(repository)
         self._scorer = scorer or EvaluationScorer()
         self._runner = runner or EvaluationRunner(repository, scorer=self._scorer)
+        self._job_repo = job_repository
 
     @staticmethod
     def _authorize(actor: ActorContext, capability: str, owner_unit_id: str | None = None) -> None:
@@ -149,8 +153,23 @@ class EvaluationRunService:
 
         if execute_inline:
             run = self._runner.execute_run(run_id)
+        elif self._job_repo:
+            job = ExecutionJob(
+                tenant_id=tenant_id,
+                job_id=str(uuid.uuid4()),
+                run_id=run_id,
+                logical_key=f"run:{tenant_id}:{run_id}",
+                state="QUEUED",
+                created_at=now,
+                updated_at=now,
+            )
+            self._job_repo.enqueue_job(job)
 
-        return {"run": run.model_dump(mode="json")}
+        return {
+            "run": run.model_dump(mode="json"),
+            "runId": run_id,
+            "statusUrl": f"/api/evaluations/runs/{run_id}",
+        }
 
     def get_run(self, run_id: str, actor: ActorContext | None = None) -> dict[str, Any]:
         if actor:
@@ -167,7 +186,8 @@ class EvaluationRunService:
     ) -> list[dict[str, Any]]:
         if actor:
             self._authorize(actor, "ops.evals.read")
-        runs = self._repo.list_runs(set_version_id=set_version_id)
+        tenant = actor.tenant_id if actor else None
+        runs = self._repo.list_runs(set_version_id=set_version_id, tenant_id=tenant)
         return [r.model_dump(mode="json") for r in runs]
 
     def cancel_run(
@@ -181,6 +201,11 @@ class EvaluationRunService:
         run = self._repo.get_run(run_id)
         if not run:
             raise EvaluationNotFoundError(f"Evaluation run {run_id} not found")
+
+        if self._job_repo:
+            job = self._job_repo.get_job_by_run_id(run_id)
+            if job:
+                self._job_repo.request_cancellation(job.job_id)
 
         if run.status in {"COMPLETED", "FAILED", "CANCELLED"}:
             return {"run": run.model_dump(mode="json")}

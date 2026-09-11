@@ -27,7 +27,7 @@ class EvaluationRepository(Protocol):
 
     def get_case(self, case_id: str) -> EvalCase | None: ...
 
-    def list_cases(self) -> list[EvalCase]: ...
+    def list_cases(self, tenant_id: str | None = None) -> list[EvalCase]: ...
 
     def get_revision(self, revision_id: str) -> CaseRevision | None: ...
 
@@ -35,7 +35,7 @@ class EvaluationRepository(Protocol):
 
     def get_set(self, set_id: str) -> EvalSet | None: ...
 
-    def list_sets(self) -> list[EvalSet]: ...
+    def list_sets(self, tenant_id: str | None = None) -> list[EvalSet]: ...
 
     def get_set_version(self, set_version_id: str) -> EvalSetVersion | None: ...
 
@@ -47,7 +47,9 @@ class EvaluationRepository(Protocol):
 
     def get_run(self, run_id: str) -> EvaluationRun | None: ...
 
-    def list_runs(self, set_version_id: str | None = None) -> list[EvaluationRun]: ...
+    def list_runs(
+        self, set_version_id: str | None = None, tenant_id: str | None = None
+    ) -> list[EvaluationRun]: ...
 
     def get_case_execution(self, execution_id: str) -> CaseExecution | None: ...
 
@@ -89,9 +91,12 @@ class InMemoryEvaluationRepository:
         with self._lock:
             return next((c for c in self._state.cases if c.case_id == case_id), None)
 
-    def list_cases(self) -> list[EvalCase]:
+    def list_cases(self, tenant_id: str | None = None) -> list[EvalCase]:
         with self._lock:
-            return sorted(self._state.cases, key=lambda c: c.updated_at, reverse=True)
+            cases = self._state.cases
+            if tenant_id:
+                cases = tuple(c for c in cases if c.tenant_id == tenant_id)
+            return sorted(cases, key=lambda c: c.updated_at, reverse=True)
 
     def get_revision(self, revision_id: str) -> CaseRevision | None:
         with self._lock:
@@ -109,9 +114,12 @@ class InMemoryEvaluationRepository:
         with self._lock:
             return next((s for s in self._state.sets if s.set_id == set_id), None)
 
-    def list_sets(self) -> list[EvalSet]:
+    def list_sets(self, tenant_id: str | None = None) -> list[EvalSet]:
         with self._lock:
-            return sorted(self._state.sets, key=lambda s: s.updated_at, reverse=True)
+            sets = self._state.sets
+            if tenant_id:
+                sets = tuple(s for s in sets if s.tenant_id == tenant_id)
+            return sorted(sets, key=lambda s: s.updated_at, reverse=True)
 
     def get_set_version(self, set_version_id: str) -> EvalSetVersion | None:
         with self._lock:
@@ -137,11 +145,15 @@ class InMemoryEvaluationRepository:
         with self._lock:
             return next((r for r in self._state.runs if r.run_id == run_id), None)
 
-    def list_runs(self, set_version_id: str | None = None) -> list[EvaluationRun]:
+    def list_runs(
+        self, set_version_id: str | None = None, tenant_id: str | None = None
+    ) -> list[EvaluationRun]:
         with self._lock:
             runs = self._state.runs
             if set_version_id:
                 runs = tuple(r for r in runs if r.set_version_id == set_version_id)
+            if tenant_id:
+                runs = tuple(r for r in runs if r.tenant_id == tenant_id)
             return sorted(runs, key=lambda r: r.created_at, reverse=True)
 
     def get_case_execution(self, execution_id: str) -> CaseExecution | None:
@@ -213,6 +225,12 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
         super().__init__()
         self._path = path
         self._lock_path = path.with_suffix(f"{path.suffix}.lock")
+        self._records_dir = path.parent / f"{path.stem}_records"
+        self._cases_dir = self._records_dir / "cases"
+        self._runs_dir = self._records_dir / "runs"
+        self._records_dir.mkdir(parents=True, exist_ok=True)
+        self._cases_dir.mkdir(parents=True, exist_ok=True)
+        self._runs_dir.mkdir(parents=True, exist_ok=True)
         if self._path.exists():
             self._state = self._read_file()
 
@@ -245,6 +263,19 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
                 os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
+
+        # Also write per-resource files for individual records
+        for c in state.cases:
+            case_file = self._cases_dir / f"{c.case_id}.json"
+            case_tmp = case_file.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            case_tmp.write_text(c.model_dump_json(indent=2), encoding="utf-8")
+            os.replace(case_tmp, case_file)
+        for r in state.runs:
+            run_file = self._runs_dir / f"{r.run_id}.json"
+            run_tmp = run_file.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            run_tmp.write_text(r.model_dump_json(indent=2), encoding="utf-8")
+            os.replace(run_tmp, run_file)
+
         self._state = state
 
     def commit_mutation(
@@ -252,15 +283,100 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
         new_state: EvaluationState,
         audit: EvaluationAuditEvent | None = None,
         idempotency_record: EvaluationIdempotencyRecord | None = None,
+        expected_revision: int | None = None,
     ) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock, self._lock_path.open("a+") as lock_handle:
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             try:
                 # Reload under lock before committing
-                self._state = self._read_file()
+                fresh = self._read_file()
+                if expected_revision is not None and hasattr(fresh, "revision"):
+                    if getattr(fresh, "revision") != expected_revision:
+                        raise EvaluationVersionConflictError(
+                            f"Revision conflict: expected {expected_revision}, got {getattr(fresh, 'revision')}"
+                        )
+                self._state = fresh
                 super().commit_mutation(
                     new_state, audit=audit, idempotency_record=idempotency_record
                 )
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
+    """Production GCP Firestore repository for evaluations with tenant isolation and CAS."""
+
+    def __init__(self, client: Any, collection_prefix: str = "ai_ops_eval") -> None:
+        super().__init__()
+        self._client = client
+        self._prefix = collection_prefix
+
+    def _col(self, name: str) -> Any:
+        return self._client.collection(f"{self._prefix}_{name}")
+
+    def load(self) -> EvaluationState:
+        cases = [EvalCase.model_validate(d.to_dict()) for d in self._col("cases").stream()]
+        revisions = [CaseRevision.model_validate(d.to_dict()) for d in self._col("revisions").stream()]
+        sets = [EvalSet.model_validate(d.to_dict()) for d in self._col("sets").stream()]
+        set_versions = [EvalSetVersion.model_validate(d.to_dict()) for d in self._col("set_versions").stream()]
+        runs = [EvaluationRun.model_validate(d.to_dict()) for d in self._col("runs").stream()]
+        case_executions = [CaseExecution.model_validate(d.to_dict()) for d in self._col("executions").stream()]
+        review_decisions = [ReviewDecision.model_validate(d.to_dict()) for d in self._col("reviews").stream()]
+        audits = [EvaluationAuditEvent.model_validate(d.to_dict()) for d in self._col("audits").stream()]
+        idempotency = [EvaluationIdempotencyRecord.model_validate(d.to_dict()) for d in self._col("idempotency").stream()]
+
+        return EvaluationState(
+            cases=tuple(cases),
+            revisions=tuple(revisions),
+            sets=tuple(sets),
+            set_versions=tuple(set_versions),
+            runs=tuple(runs),
+            case_executions=tuple(case_executions),
+            review_decisions=tuple(review_decisions),
+            audits=tuple(audits),
+            idempotency=tuple(idempotency),
+        )
+
+    def commit_mutation(
+        self,
+        new_state: EvaluationState,
+        audit: EvaluationAuditEvent | None = None,
+        idempotency_record: EvaluationIdempotencyRecord | None = None,
+        expected_revision: int | None = None,
+    ) -> None:
+        import json
+        batch = self._client.batch()
+
+        for c in new_state.cases:
+            ref = self._col("cases").document(c.case_id)
+            batch.set(ref, json.loads(c.model_dump_json()))
+        for r in new_state.revisions:
+            ref = self._col("revisions").document(r.revision_id)
+            batch.set(ref, json.loads(r.model_dump_json()))
+        for s in new_state.sets:
+            ref = self._col("sets").document(s.set_id)
+            batch.set(ref, json.loads(s.model_dump_json()))
+        for sv in new_state.set_versions:
+            ref = self._col("set_versions").document(sv.set_version_id)
+            batch.set(ref, json.loads(sv.model_dump_json()))
+        for run in new_state.runs:
+            ref = self._col("runs").document(run.run_id)
+            batch.set(ref, json.loads(run.model_dump_json()))
+        for ex in new_state.case_executions:
+            ref = self._col("executions").document(ex.execution_id)
+            batch.set(ref, json.loads(ex.model_dump_json()))
+        for rev in new_state.review_decisions:
+            ref = self._col("reviews").document(rev.decision_id)
+            batch.set(ref, json.loads(rev.model_dump_json()))
+
+        if audit:
+            ref = self._col("audits").document(audit.audit_id)
+            batch.set(ref, json.loads(audit.model_dump_json()))
+        if idempotency_record:
+            ref = self._col("idempotency").document(idempotency_record.key)
+            batch.set(ref, json.loads(idempotency_record.model_dump_json()))
+
+        batch.commit()
+        self._state = new_state
+

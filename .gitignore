@@ -40,6 +40,9 @@ data/releases/
 data/portal_originals/
 data/ops/events/
 data/ops/exports/
+data/ops/evaluations/fixtures/
+data/ops/evaluations/gates/
+data/ops/evaluations/jobs/
 
 # Terraform local state and secrets (see infra/terraform/README.md)
 **/.terraform/

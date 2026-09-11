@@ -9,6 +9,8 @@ from .errors import (
     EvaluationTransitionError,
     EvaluationValidationError,
     EvaluationVersionConflictError,
+    JobFencingConflictError,
+    JobLeaseLostError,
 )
 from .gate_evaluator import GateEvaluator
 from .gate_models import (
@@ -20,8 +22,22 @@ from .gate_models import (
     QualityCaseLink,
     SourceImpactResult,
 )
-from .gate_repository import QualityGateRepository
+from .gate_repository import (
+    FileQualityGateRepository,
+    FirestoreQualityGateRepository,
+    InMemoryQualityGateRepository,
+    QualityGateRepository,
+)
 from .gate_service import GateBlockedError, QualityGateService
+from .job_models import ExecutionJob, JobCheckpoint
+from .job_repository import (
+    FileJobRepository,
+    FirestoreJobRepository,
+    InMemoryJobRepository,
+    JobRepository,
+)
+from .job_worker import ExecutionJobWorker
+from .migration import EvaluationMigrationTool, MigrationReport
 from .import_export import EvaluationImportExportManager
 from .manifest import ManifestResolver, calculate_target_manifest_hash
 from .models import (
@@ -48,6 +64,7 @@ from .models import (
 from .repository import (
     EvaluationRepository,
     FileEvaluationRepository,
+    FirestoreEvaluationRepository,
     InMemoryEvaluationRepository,
 )
 from .run_service import EvaluationRunService
@@ -71,7 +88,12 @@ from .tool_fixture_models import (
     TrajectoryTrace,
     TurnExecutionTrace,
 )
-from .tool_fixtures import ToolFixtureRepository, ToolFixtureService
+from .tool_fixtures import (
+    FileToolFixtureRepository,
+    FirestoreToolFixtureRepository,
+    ToolFixtureRepository,
+    ToolFixtureService,
+)
 
 __all__ = [
     "AgentBehaviorScorer",

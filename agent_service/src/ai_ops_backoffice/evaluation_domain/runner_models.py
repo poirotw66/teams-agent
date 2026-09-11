@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 TargetSide = Literal["BASELINE", "CANDIDATE"]
-RunStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLING", "CANCELLED"]
+RunStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLING", "CANCELLED", "PARTIAL"]
 ExecutionStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"]
 MetricStatus = Literal["PASS", "FAIL", "INCONCLUSIVE", "NOT_APPLICABLE"]
 FailureClassification = Literal[

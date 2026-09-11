@@ -39,11 +39,23 @@ from .evaluation_domain import (
     EvaluationTransitionError,
     EvaluationValidationError,
     EvaluationVersionConflictError,
+    ExecutionJobWorker,
     FileEvaluationRepository,
+    FileJobRepository,
+    FileQualityGateRepository,
+    FileToolFixtureRepository,
+    FirestoreEvaluationRepository,
+    FirestoreJobRepository,
+    FirestoreQualityGateRepository,
+    FirestoreToolFixtureRepository,
     GateBlockedError,
     InMemoryEvaluationRepository,
+    InMemoryJobRepository,
+    InMemoryQualityGateRepository,
     ManifestResolver,
+    QualityGateRepository,
     QualityGateService,
+    ToolFixtureRepository,
     ToolFixtureService,
 )
 from .example_domain import (
@@ -346,14 +358,75 @@ def create_app(
     configure_policy_runtime(
         PolicyRuntime(settings=policy_settings, governance=governance_service)
     )
-    eval_store_mode = resolved_settings.eval_store_mode.upper()
+    eval_store_mode = (
+        resolved_settings.eval_store_mode or resolved_settings.ops_store_mode
+    ).upper()
     if eval_store_mode == "MEMORY":
         eval_repository: EvaluationRepository = InMemoryEvaluationRepository()
+    elif eval_store_mode == "FIRESTORE":
+        from agent_service.operations.firestore import build_firestore_client
+        eval_repository = FirestoreEvaluationRepository(
+            build_firestore_client(resolved_settings.gcp_project_id, None),
+            collection_prefix=resolved_settings.eval_firestore_collection,
+        )
     else:
         eval_store_path = resolved_settings.eval_store_path or (
             resolved_settings.ops_store_path.parent / "evaluations" / "golden_evals.json"
         )
         eval_repository = FileEvaluationRepository(eval_store_path)
+
+    fixture_store_mode = (
+        resolved_settings.fixture_store_mode or resolved_settings.ops_store_mode
+    ).upper()
+    if fixture_store_mode == "MEMORY":
+        fixture_repository: ToolFixtureRepository = ToolFixtureRepository()
+    elif fixture_store_mode == "FIRESTORE":
+        from agent_service.operations.firestore import build_firestore_client
+        fixture_repository = FirestoreToolFixtureRepository(
+            build_firestore_client(resolved_settings.gcp_project_id, None),
+            prefix=resolved_settings.fixture_firestore_collection_prefix,
+        )
+    else:
+        fixture_store_path = resolved_settings.fixture_store_path or (
+            resolved_settings.ops_store_path.parent / "evaluations" / "fixtures"
+        )
+        fixture_repository = FileToolFixtureRepository(fixture_store_path)
+
+    tool_fixture_service = ToolFixtureService(repository=fixture_repository)
+
+    gate_store_mode = (
+        resolved_settings.gate_store_mode or resolved_settings.ops_store_mode
+    ).upper()
+    if gate_store_mode == "MEMORY":
+        gate_repository: QualityGateRepository = InMemoryQualityGateRepository()
+    elif gate_store_mode == "FIRESTORE":
+        from agent_service.operations.firestore import build_firestore_client
+        gate_repository = FirestoreQualityGateRepository(
+            build_firestore_client(resolved_settings.gcp_project_id, None),
+            prefix=resolved_settings.gate_firestore_collection_prefix,
+        )
+    else:
+        gate_store_path = resolved_settings.gate_store_path or (
+            resolved_settings.ops_store_path.parent / "evaluations" / "gates"
+        )
+        gate_repository = FileQualityGateRepository(gate_store_path)
+
+    job_store_mode = (
+        resolved_settings.job_store_mode or resolved_settings.ops_store_mode
+    ).upper()
+    if job_store_mode == "MEMORY":
+        job_repository: JobRepository = InMemoryJobRepository()
+    elif job_store_mode == "FIRESTORE":
+        from agent_service.operations.firestore import build_firestore_client
+        job_repository = FirestoreJobRepository(
+            build_firestore_client(resolved_settings.gcp_project_id, None),
+            collection=resolved_settings.job_firestore_collection,
+        )
+    else:
+        job_store_path = resolved_settings.job_store_path or (
+            resolved_settings.ops_store_path.parent / "evaluations" / "jobs"
+        )
+        job_repository = FileJobRepository(job_store_path)
 
     evaluation_service = EvaluationService(
         eval_repository,
@@ -366,7 +439,6 @@ def create_app(
     )
     manifest_resolver = ManifestResolver(eval_repository, releases_dir=releases_dir)
     eval_scorer = EvaluationScorer()
-    tool_fixture_service = ToolFixtureService()
     agent_scorer = AgentBehaviorScorer()
     eval_runner = EvaluationRunner(
         eval_repository,
@@ -375,13 +447,21 @@ def create_app(
         tool_fixture_service=tool_fixture_service,
         releases_dir=releases_dir,
     )
+    job_worker = ExecutionJobWorker(
+        job_repository=job_repository,
+        runner=eval_runner,
+    )
     evaluation_run_service = EvaluationRunService(
         eval_repository,
         manifest_resolver=manifest_resolver,
         runner=eval_runner,
         scorer=eval_scorer,
+        job_repository=job_repository,
     )
-    quality_gate_service = QualityGateService(eval_repository=eval_repository)
+    quality_gate_service = QualityGateService(
+        eval_repository=eval_repository,
+        gate_repository=gate_repository,
+    )
     (
         sync_worker,
         run_sync_job,
@@ -588,6 +668,8 @@ def create_app(
         require_capability=require_capability,
     )
     app.state.quality_gate_service = quality_gate_service
+    app.state.job_repository = job_repository
+    app.state.job_worker = job_worker
     register_gate_routes(
         app,
         gate_service=quality_gate_service,
