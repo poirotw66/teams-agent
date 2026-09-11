@@ -8,6 +8,7 @@ from typing import Any
 from agent_service.operations.contracts import OperationalEvent
 from agent_service.operations.taxonomy import TaxonomyRepository
 
+
 def _is_published_knowledge_hit(event: OperationalEvent) -> bool:
     if event.payload.get("isDraft") is True:
         return False
@@ -55,6 +56,15 @@ def _summarize_turn_events(
         None,
     )
     answer_masked = next(
+        (
+            str(item.payload.get("answerMasked"))
+            for item in related
+            if item.event_type in {"answer.completed", "faq.answered", "knowledge.answered"}
+            and item.payload.get("renderedResponse") is True
+            and item.payload.get("answerMasked")
+        ),
+        None,
+    ) or next(
         (
             str(item.payload.get("answerMasked"))
             for item in related
@@ -226,6 +236,4 @@ def _build_issue_hierarchy(
             }
         )
     return hierarchy
-
-
 

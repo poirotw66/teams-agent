@@ -244,7 +244,9 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
     } else {
       const noSourceMessage = turn.resultType === "NEED_MORE_INFO"
         ? "此回合是補充資訊流程，尚未產生知識庫回答，因此沒有引用來源。"
-        : "此回合沒有保存可追溯的文件／段落來源。";
+        : turn.route === "NOT_IT"
+          ? "此回合被判定為非 IT 問題，因此沒有查詢企業知識庫。"
+          : "此回合沒有保存可追溯的文件／段落來源。";
       side.append(el("p", "metric-label", noSourceMessage));
     }
     side.append(
@@ -307,9 +309,19 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
     if (answerText) {
       const assistant = el("div", "bu-turn-assistant");
       assistant.append(el("div", "meta", "AI 回答"));
-      const answer = el("div", "bu-answer-body");
-      answer.innerHTML = formatAssistantHtml(answerText);
-      assistant.append(answer);
+      if (answerText === "[REDACTED_CREDENTIAL]") {
+        assistant.append(
+          el(
+            "div",
+            "callout warning",
+            "這個回合的回答因偵測到疑似憑證資訊而被遮罩；原文未保存，無法從此紀錄還原。",
+          ),
+        );
+      } else {
+        const answer = el("div", "bu-answer-body");
+        answer.innerHTML = formatAssistantHtml(answerText);
+        assistant.append(answer);
+      }
       assistant.append(
         el(
           "small",
@@ -318,6 +330,17 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
         ),
       );
       block.append(assistant);
+    } else if (userText) {
+      const missingAnswer = el("div", "bu-turn-assistant is-missing");
+      missingAnswer.append(el("div", "meta", "AI 回答"));
+      missingAnswer.append(
+        el(
+          "p",
+          "muted",
+          "此舊回合沒有保存可顯示的 AI 回答；新回合會記錄完整的實際回覆。",
+        ),
+      );
+      block.append(missingAnswer);
     }
 
     if (turn.feedbackRating === "DOWN") {

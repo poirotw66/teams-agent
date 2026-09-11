@@ -161,6 +161,17 @@ def test_free_text_password_help_is_preserved_but_assigned_credential_is_not() -
     )
 
 
+def test_password_question_word_is_not_treated_as_an_assigned_credential() -> None:
+    help_text = (
+        "請檢查密碼是否輸入正確、是否被上鎖，或是否因三個月密碼到期需插實體網路線。"
+    )
+
+    masked = mask_text(help_text)
+
+    assert masked.text == help_text
+    assert masked.contains_credential is False
+
+
 def test_common_explicit_credential_value_formats_are_removed() -> None:
     credential_texts = (
         f"我的密碼是 {_SYNTHETIC_SECRET}",

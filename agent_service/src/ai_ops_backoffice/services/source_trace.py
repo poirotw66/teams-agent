@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from agent_service.source_refs import (
     ResolvedSource,
@@ -19,6 +20,12 @@ from agent_service.source_refs import (
 
 _SAFE_RELEASE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _SOURCE_EVENTS = frozenset({"knowledge.retrieved", "knowledge.answered"})
+_ReleaseLoad = tuple[
+    Path,
+    list[dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, list[dict[str, Any]]],
+]
 
 
 class SourceTraceResolver:
@@ -31,6 +38,12 @@ class SourceTraceResolver:
 
     def __init__(self, releases_dir: Path) -> None:
         self.releases_dir = releases_dir.expanduser().resolve()
+        # Release artifacts are immutable once published.  Conversation list
+        # queries resolve the same citations repeatedly, so keep parsed
+        # manifests/chunks in-process and invalidate them when the index file
+        # changes.  Without this, a 25-row list can reread every release JSON
+        # file once per turn and make a detail deep link feel stalled.
+        self._release_cache: dict[str, tuple[int, int, _ReleaseLoad]] = {}
 
     def _active_release_id(self) -> str | None:
         pointer = self.releases_dir / "active_release.json"
@@ -65,14 +78,23 @@ class SourceTraceResolver:
             return None
         index_path = release_root / "index" / "chunks.json"
         if not index_path.is_file():
+            self._release_cache.pop(release_id, None)
             return None
         try:
+            stat = index_path.stat()
+            cache_key = (stat.st_mtime_ns, stat.st_size)
+            cached = self._release_cache.get(release_id)
+            if cached is not None and cached[:2] == cache_key:
+                return cached[2]
             payload = json.loads(index_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            self._release_cache.pop(release_id, None)
             return None
         chunks = [item for item in payload.get("chunks", []) if isinstance(item, dict)]
         by_id, by_title = _manifest_by_key(release_root)
-        return release_root, chunks, by_id, by_title
+        loaded = (release_root, chunks, by_id, by_title)
+        self._release_cache[release_id] = (cache_key[0], cache_key[1], loaded)
+        return loaded
 
     @staticmethod
     def _citation_values(citation: dict[str, Any]) -> tuple[str | None, ...]:
@@ -148,7 +170,6 @@ class SourceTraceResolver:
                 by_id=by_id,
                 by_title=by_title,
             )
-            metadata = chunk.get("metadata") if isinstance(chunk.get("metadata"), dict) else {}
             document_id = str(
                 citation.get("documentId")
                 or chunk.get("document_id")

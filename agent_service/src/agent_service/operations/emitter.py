@@ -461,6 +461,36 @@ class OperationalEventEmitter:
             if result:
                 for kind, body, suffix in self._result_payloads(result, state.get("knowledge_release_id")):
                     add(kind, body, occurrence, suffix, **fields)
+        # Persist the exact deterministic response rendered to the user.  A
+        # clarification or NOT_IT turn can have no IssueResult.answer, while
+        # the adapter still sends a useful response.  Keeping this as a
+        # separate answer.completed fact also lets the backoffice show one
+        # complete turn without replacing the per-issue provenance events.
+        rendered_response = str(state.get("final_response") or "").strip()
+        if rendered_response:
+            rendered = mask_text(rendered_response)
+            response_result_type = next(
+                (
+                    result.resultType
+                    for result in results
+                    if result.resultType not in {"FAILED", "NO_KNOWLEDGE"}
+                ),
+                next(
+                    (issue.route for issue in issues if issue.route == "NOT_IT"),
+                    "RESPONSE_RENDERED",
+                ),
+            )
+            add(
+                "answer.completed",
+                {
+                    "resultType": response_result_type,
+                    "backend": None,
+                    "answerMasked": rendered.text,
+                    "answerWasMasked": rendered.was_masked,
+                    "renderedResponse": True,
+                },
+                "rendered-response",
+            )
         if state.get("handoff_handled"):
             case = state.get("handoff_case")
             status = getattr(case, "status", "OFFERED")

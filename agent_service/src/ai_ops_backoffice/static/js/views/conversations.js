@@ -195,10 +195,6 @@ export async function renderConversations(state = {}) {
     if (hasFeedback) filters.set("has_feedback", hasFeedback);
     if (handoff) filters.set("handoff", handoff);
     if (channelScope) filters.set("channel_scope", channelScope);
-    if (state.forceRefresh) filters.set("refresh", "true");
-
-    const data = await api(`/api/conversations?${filters.toString()}`);
-
     let detailError = null;
     if (
       isBuShellEnabled() &&
@@ -207,8 +203,12 @@ export async function renderConversations(state = {}) {
       !state.skipDetail
     ) {
       try {
+        // A deep link already identifies the exact resource.  Load its detail
+        // directly instead of waiting for the full conversation list first.
+        // The list remains a recovery context only when detail fails.
+        const detailQuery = state.forceRefresh ? "?refresh=true" : "";
         const detail = await api(
-          `/api/conversations/${encodeURIComponent(conversationId)}?refresh=true`,
+          `/api/conversations/${encodeURIComponent(conversationId)}${detailQuery}`,
         );
         showConversationPage(detail, conversationId, { selectedTurnId: turnId });
         return;
@@ -219,6 +219,9 @@ export async function renderConversations(state = {}) {
         detailError = error;
       }
     }
+
+    if (state.forceRefresh) filters.set("refresh", "true");
+    const data = await api(`/api/conversations?${filters.toString()}`);
 
     if (state.isPolling) {
       if (isConversationFilterEditing()) {
@@ -580,7 +583,7 @@ export async function renderConversations(state = {}) {
           return;
         }
         event.preventDefault();
-        const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}?refresh=true`);
+        const detail = await api(`/api/conversations/${encodeURIComponent(item.conversationId)}`);
         if (isBuShellEnabled()) {
           saveNavFilters({
             view: "conversations",

@@ -179,6 +179,69 @@ def test_teams_channel_emits_adapter_health_usage() -> None:
     assert "elapsedMs" not in teams_usage[0].payload
 
 
+def test_turn_events_keep_the_rendered_response_for_clarification_and_not_it() -> None:
+    emitter, _ = _emitter()
+    state = _state()
+    state["issues"] = [
+        Issue(
+            id=1,
+            description="公司網路沒有網路",
+            isIT=True,
+            readiness="NEED_MORE_INFO",
+            route="KNOWLEDGE",
+        )
+    ]
+    state["issue_results"] = [
+        IssueResult(
+            issueId=1,
+            resultType="NEED_MORE_INFO",
+            questions=["請提供系統或應用程式名稱"],
+        )
+    ]
+    state["final_response"] = "為了協助確認公司網路沒有網路，請檢查密碼是否輸入正確。"
+
+    events = emitter.build_turn_events(_request(message="沒有網路"), state, cost_summary=None)
+
+    rendered = next(
+        event
+        for event in events
+        if event.event_type == "answer.completed"
+        and event.payload.get("renderedResponse") is True
+    )
+    assert rendered.payload["resultType"] == "NEED_MORE_INFO"
+    assert rendered.payload["answerMasked"] == state["final_response"]
+    assert rendered.payload["answerWasMasked"] is False
+
+    not_it_state = dict(state)
+    not_it_state["issues"] = [
+        Issue(
+            id=1,
+            description="說話",
+            isIT=False,
+            readiness="NOT_IT",
+            route="NOT_IT",
+        )
+    ]
+    not_it_state["issue_results"] = []
+    not_it_state["final_response"] = "說話不屬於公司 IT 支援範圍。"
+    not_it_request = _request(message="說話").model_copy(
+        update={"requestId": "request-8", "correlationId": "correlation-not-it"}
+    )
+    not_it_events = emitter.build_turn_events(
+        not_it_request,
+        not_it_state,
+        cost_summary=None,
+    )
+    not_it_rendered = next(
+        event
+        for event in not_it_events
+        if event.event_type == "answer.completed"
+        and event.payload.get("renderedResponse") is True
+    )
+    assert not_it_rendered.payload["resultType"] == "NOT_IT"
+    assert not_it_rendered.payload["answerMasked"] == not_it_state["final_response"]
+
+
 def test_same_request_and_conversation_in_another_tenant_does_not_collide() -> None:
     emitter, _ = _emitter()
     tenant_a = emitter.build_turn_events(_request(tenant_id="tenant-a"), _state(), cost_summary=None)
