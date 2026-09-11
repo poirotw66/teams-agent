@@ -660,3 +660,68 @@ def test_a05_t1_data_freshness_metadata_and_p95_sla():
     p95_sched = tracker.calculate_p95_latency("SCHEDULE_DUE", "SCHEDULE_DISPATCHED")
     assert p95_sched is not None
     assert p95_sched <= 120.0  # Verified: p95 <= 2 minutes
+
+
+def test_activate_target_endpoint(tmp_path: Path):
+    """Verifies POST /api/evaluations/activate-target invokes gate enforcement and updates active pointer."""
+    from ai_ops_backoffice.settings import BackofficeSettings
+    from ai_ops_backoffice.api import create_app
+    from fastapi.testclient import TestClient
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        eval_store_mode="MEMORY",
+        gate_store_mode="MEMORY",
+        fixture_store_mode="MEMORY",
+        job_store_mode="MEMORY",
+    )
+    app = create_app(settings)
+    client = TestClient(app)
+
+    headers = {
+        "X-Backoffice-User-Id": "u-admin",
+        "X-Backoffice-Role": "SYSTEM_ADMIN",
+        "X-Backoffice-Owner-Units": "IT Service Desk",
+        "X-Backoffice-Tenant-Id": "tenant-1",
+    }
+
+    # Activate target in REPORT_ONLY mode (default-gate-policy defaults to REPORT_ONLY)
+    manifest = {
+        "target_id": "knowledge-v1",
+        "target_side": "CANDIDATE",
+        "manifest_hash": "hash-cand-1",
+        "knowledge_release_id": "rel-001",
+    }
+    res = client.post(
+        "/api/evaluations/activate-target",
+        headers=headers,
+        json={
+            "target_type": "KNOWLEDGE",
+            "candidate_manifest": manifest,
+            "active_version_ref": "rel-001",
+            "environment": "prod",
+            "policy_id": "default-gate-policy",
+        },
+    )
+    assert res.status_code == 200
+    pointer = res.json()["pointer"]
+    assert pointer["active_version_ref"] == "rel-001"
+    assert pointer["active_manifest_hash"] == "hash-cand-1"
+    assert pointer["etag"] == 1

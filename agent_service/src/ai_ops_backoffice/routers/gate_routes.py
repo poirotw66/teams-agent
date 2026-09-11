@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from agent_service.operations.access import ActorContext
 
 from ..evaluation_domain.gate_service import QualityGateService
+from ..evaluation_domain.runner_models import TargetManifest
 
 
 class CreateGatePolicyPayload(BaseModel):
@@ -80,6 +81,17 @@ class VerifyReleasePayload(BaseModel):
 class CreateQualityCasePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     root_cause: str
+
+
+class ActivateTargetPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_type: Literal["KNOWLEDGE", "FAQ", "PROMPT", "AGENT", "ROUTER"]
+    candidate_manifest: dict[str, Any]
+    active_version_ref: str
+    environment: str = "prod"
+    policy_id: str = "default-gate-policy"
+    expected_pointer_etag: int | None = None
+    break_glass_id: str | None = None
 
 
 def register_gate_routes(
@@ -337,5 +349,26 @@ def register_gate_routes(
             actor=actor,
         )
         return {"quality_case": case_link.model_dump(mode="json")}
+
+    # 7. Activate Target with Gate Enforcement
+    @router.post("/activate-target")
+    async def activate_target(
+        payload: ActivateTargetPayload,
+        actor: ActorContext = Depends(current_actor),
+    ) -> dict[str, Any]:
+        require_capability(actor, "ops.evals.write")
+        manifest = TargetManifest.model_validate(payload.candidate_manifest)
+        pointer = gate_service.activate_target(
+            tenant_id=actor.tenant_id or "default",
+            environment=payload.environment,
+            target_type=payload.target_type,
+            candidate_manifest=manifest,
+            active_version_ref=payload.active_version_ref,
+            actor=actor,
+            policy_id=payload.policy_id,
+            expected_pointer_etag=payload.expected_pointer_etag,
+            break_glass_id=payload.break_glass_id,
+        )
+        return {"pointer": pointer.model_dump(mode="json")}
 
     app.include_router(router)
