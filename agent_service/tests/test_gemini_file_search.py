@@ -384,7 +384,7 @@ async def test_enforce_acl_true_is_the_default():
 @pytest.mark.asyncio
 async def test_usage_extracted_and_exposed_after_search():
     service = GeminiFileSearchKnowledgeService(
-        api_key="key", file_search_store="fileSearchStores/x", model="gemini-2.5-flash"
+        api_key="key", file_search_store="fileSearchStores/x", model="gemini-3.5-flash-lite"
     )
     usage_metadata = make_usage_metadata(prompt=16, tool_use_prompt=2004, candidates=426)
     response = make_response(grounding_chunks=None, usage_metadata=usage_metadata)
@@ -400,7 +400,7 @@ async def test_usage_extracted_and_exposed_after_search():
     assert service.last_usage.input_tokens == 16 + 2004
     assert service.last_usage.candidates_tokens == 426
     # Cost should be computed (not necessarily non-None for every model, but
-    # gemini-2.5-flash is expected to be priced in usage.py's table).
+    # gemini-3.5-flash-lite is expected to be priced in usage.py's table).
     assert service.last_cost_usd is not None
     assert service.last_cost_usd >= 0
 

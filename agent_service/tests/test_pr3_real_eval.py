@@ -887,7 +887,7 @@ def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: p
         def execute(self, *, template: str, model_id: str, text: str, history, setup=None):
             calls.append(text)
             assert template
-            assert model_id == "gemini-2.5-flash"
+            assert model_id == "gemini-3.8-flash"
             return FlowObservation(
                 route="KNOWLEDGE",
                 label="POSITIVE",
@@ -937,7 +937,7 @@ def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: p
             target_id="c",
             target_side="CANDIDATE",
             manifest_hash="h",
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.8-flash",
         ),
         TargetExecutionInput(query="VPN 怎麼連？"),
     )

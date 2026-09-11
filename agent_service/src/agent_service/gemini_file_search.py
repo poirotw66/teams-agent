@@ -102,7 +102,7 @@ class GeminiFileSearchKnowledgeService:
         self,
         api_key: str | None,
         file_search_store: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.5-flash-lite",
         top_k: int = 4,
         registry: FileSearchDocumentRegistry | None = None,
         max_images: int = 2,

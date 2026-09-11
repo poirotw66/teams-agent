@@ -354,7 +354,14 @@ class EvaluationRunner:
         start_time = time.perf_counter()
 
         if case_revision.turns:
-            return self._execute_multi_turn(run_id, case_revision, manifest, side, start_time)
+            return self._execute_multi_turn(
+                run_id,
+                case_revision,
+                manifest,
+                side,
+                start_time,
+                mode=mode,
+            )
 
         # F01-T3: Strictly sanitize input to target under test - never pass golden answers or criteria
         sanitized_input = TargetExecutionInput(
@@ -542,6 +549,8 @@ class EvaluationRunner:
         manifest: TargetManifest,
         side: TargetSide,
         start_time: float,
+        *,
+        mode: str = "REAL_RAG",
     ) -> CaseExecution:
         """Executes a multi-turn scenario where agent answers form conversational history."""
         execution_id = f"exec_{run_id[:8]}_{side.lower()}_{case_revision.case_id[:8]}"
@@ -580,7 +589,31 @@ class EvaluationRunner:
                 all_retrieved.extend(retrieved)
 
                 tool_calls: list[ToolCallTrace] = []
-                if self._answering_fn:
+                if mode == "AGENT_SANDBOX":
+                    if self._sandbox_adapter is None:
+                        raise EvaluationValidationError(
+                            "AGENT_SANDBOX execution rejected: Missing registered "
+                            "formal Agent workflow adapter."
+                        )
+                    workflow_result = self._sandbox_adapter.execute_workflow_turn(
+                        user_query, manifest, turn_input
+                    )
+                    if not isinstance(workflow_result, dict):
+                        raise EvaluationValidationError(
+                            "AGENT_SANDBOX execution rejected: workflow executor must "
+                            "return a structured result with answer and tool_calls."
+                        )
+                    answer = str(workflow_result.get("answer") or "").strip()
+                    status = str(workflow_result.get("status") or "").upper()
+                    if status in {"FAILED", "UNAVAILABLE"} or not answer:
+                        raise EvaluationValidationError(
+                            "AGENT_SANDBOX multi-turn rejected: workflow did not return "
+                            f"a real answer (status={status or 'missing'}, turn={idx})."
+                        )
+                    tokens = workflow_result.get("tokens", 0)
+                    cost = float(workflow_result.get("cost_usd") or 0.0)
+                    tool_calls = list(workflow_result.get("tool_calls") or [])
+                elif self._answering_fn:
                     try:
                         ans_res = self._answering_fn(
                             user_query, manifest, turn_input, retrieved, conversation_history

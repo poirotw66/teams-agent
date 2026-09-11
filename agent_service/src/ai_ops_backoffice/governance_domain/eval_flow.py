@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .constants import INJECTION_SIGNATURES, PROVIDER_MODELS
+from .constants import INJECTION_SIGNATURES, PROVIDER_MODELS, is_allowlisted_model
 
 _VPN = re.compile(r"(?i)vpn|連線|无法连接|無法連線|outlook|寄信|mailbox|email")
 _GREETING = re.compile(r"(?i)^(你好|您好|嗨|hello|hi)[\s!！。.?？]*$")
@@ -233,7 +233,7 @@ class DeterministicAgentFlowHarness:
         history: list[dict[str, str]] | None = None,
         model_id: str | None = None,
     ) -> FlowObservation:
-        if not model_id or model_id not in _ALLOWED_MODELS:
+        if not is_allowlisted_model(model_id):
             return FlowObservation(
                 route="UNAVAILABLE",
                 label="UNAVAILABLE",
@@ -431,7 +431,7 @@ class AgentWorkflowFlowHarness:
             return UnavailableFlowHarness().observe(
                 template=template, text=text, history=history, model_id=model_id
             )
-        if not model_id or model_id not in _ALLOWED_MODELS:
+        if not is_allowlisted_model(model_id):
             return self._observation_unavailable(model_id=model_id)
         executor = self._executor
         if self._runtime_factory is not None:
@@ -462,7 +462,7 @@ class AgentWorkflowFlowHarness:
             return UnavailableFlowHarness().observe(
                 template=template, text=text, history=history, model_id=model_id
             )
-        if not model_id or model_id not in _ALLOWED_MODELS:
+        if not is_allowlisted_model(model_id):
             return self._observation_unavailable(model_id=model_id)
         # Fresh runtime per observe: candidate/baseline and concurrent evals
         # do not share conversation, handoff, or ticket mutable state.

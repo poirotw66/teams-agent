@@ -597,6 +597,22 @@ def create_app(
         except Exception as exc:
             raise handle_errors(exc) from exc
 
+    @app.post("/api/releases/{release_id}/promote")
+    async def promote_candidate_release(
+        release_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+    ):
+        try:
+            return await service.promote_candidate_release(
+                actor,
+                release_id,
+                correlation_id=correlation_id_value,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
     @app.post("/api/releases/{release_id}/sync-agent")
     async def sync_agent_release(
         release_id: str,

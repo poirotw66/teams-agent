@@ -102,7 +102,7 @@ class CandidateGenerationManager:
                 source_type="SYNTHETIC",
                 source_id=s_id,
                 source_version_id=s_version,
-                generator_model="gemini-2.5-flash",
+                generator_model="gemini-3.8-flash",
                 generator_prompt_version="synth-eval-v1",
             )
 

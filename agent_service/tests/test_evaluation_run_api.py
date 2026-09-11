@@ -154,8 +154,8 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
         headers=viewer_headers,
         json={
             "set_version_id": set_version_id,
-            "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
-            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+            "baseline_target": {"prompt_version": "default", "model_id": "gemini-3.8-flash"},
+            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-3.8-flash"},
         },
     )
     assert viewer_preflight_res.status_code == 403
@@ -165,8 +165,8 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
         headers=aiadmin_headers,
         json={
             "set_version_id": set_version_id,
-            "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
-            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+            "baseline_target": {"prompt_version": "default", "model_id": "gemini-3.8-flash"},
+            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-3.8-flash"},
         },
     )
     assert preflight_res.status_code == 200
@@ -179,8 +179,8 @@ def test_evaluation_run_api_lifecycle(tmp_path: Path):
         headers=aiadmin_headers,
         json={
             "set_version_id": set_version_id,
-            "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
-            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+            "baseline_target": {"prompt_version": "default", "model_id": "gemini-3.8-flash"},
+            "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-3.8-flash"},
             "mode": "REAL_RAG",
             "quality_case_id": "quality-case-trace-1",
             "execute_inline": True,
@@ -348,8 +348,8 @@ def test_evaluation_run_api_async_worker_lifecycle(tmp_path: Path):
             headers=aiadmin_headers,
             json={
                 "set_version_id": set_version_id,
-                "baseline_target": {"prompt_version": "default", "model_id": "gemini-2.5-flash"},
-                "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-2.5-flash"},
+                "baseline_target": {"prompt_version": "default", "model_id": "gemini-3.8-flash"},
+                "candidate_target": {"prompt_version": "candidate-v1", "model_id": "gemini-3.8-flash"},
                 "mode": "REAL_RAG",
             },
         )

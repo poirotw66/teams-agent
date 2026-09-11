@@ -237,7 +237,7 @@ def test_missing_asset_returns_not_found(tmp_path: Path) -> None:
 
 
 def test_signed_source_document_is_served(tmp_path: Path) -> None:
-    from teams_agent.source_links import build_source_url
+    from teams_agent.source_links import CitationViewerContext, build_source_url
 
     data_dir = tmp_path / "data"
     sources = data_dir / "sources"
@@ -245,12 +245,24 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
     (sources / "guide.md").write_text("# guide\n\n內容說明\n", encoding="utf-8")
     settings = make_settings(tmp_path, source_dir=data_dir)
     client = TestClient(create_web_app(settings))
-    url = urlparse(build_source_url("sources/guide.md", settings) or "")
+    url = urlparse(
+        build_source_url(
+            "sources/guide.md",
+            settings,
+            viewer=CitationViewerContext(subject="user-1", groups=("it",)),
+        )
+        or ""
+    )
     query = parse_qs(url.query)
 
     response = client.get(
         url.path,
-        params={"expires": query["expires"][0], "signature": query["signature"][0]},
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": query["subject"][0],
+            "groups": query.get("groups", [""])[0],
+        },
     )
 
     assert response.status_code == 200
@@ -263,8 +275,21 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
         params={
             "expires": query["expires"][0],
             "signature": query["signature"][0],
+            "subject": query["subject"][0],
+            "groups": query.get("groups", [""])[0],
             "raw": "1",
         },
     )
     assert raw.status_code == 200
     assert raw.text.startswith("# guide")
+
+    denied = client.get(
+        url.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": "other-user",
+            "groups": query.get("groups", [""])[0],
+        },
+    )
+    assert denied.status_code == 403

@@ -57,7 +57,7 @@ def _make_dummy_manifest(manifest_hash: str = "manifest_hash_1", version: str = 
         target_side="CANDIDATE",
         app_revision=version,
         prompt_version=f"prompt_{version}",
-        model_id="gemini-2.5-flash",
+        model_id="gemini-3.8-flash",
         manifest_hash=manifest_hash,
     )
 

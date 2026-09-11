@@ -284,7 +284,7 @@ class RealRagAnswerAdapter:
         # 2. Target-manifest-aware LangChain chat model
         chat_model = self._resolve_chat_model(manifest)
         if chat_model:
-            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
             prompt_template = self._resolve_prompt_template(manifest)
             context = "\n\n".join(
@@ -295,12 +295,28 @@ class RealRagAnswerAdapter:
                 system_content = prompt_template.format(question=query, context=context)
             except (KeyError, ValueError):
                 system_content = f"{prompt_template}\n\n問題：{query}\n\n依據：\n{context}"
-            messages = [
-                SystemMessage(content=system_content),
+            history = list(conversation_history or [])
+            if not history:
+                history = [
+                    {"role": str(item.get("role") or ""), "content": str(item.get("content") or "")}
+                    for item in (getattr(sanitized_input, "conversation_history", None) or ())
+                    if isinstance(item, dict)
+                ]
+            messages: list[Any] = [SystemMessage(content=system_content)]
+            for item in history:
+                role = str(item.get("role") or "").strip().lower()
+                content = str(item.get("content") or "").strip()
+                if not content:
+                    continue
+                if role in {"assistant", "ai", "model"}:
+                    messages.append(AIMessage(content=content))
+                else:
+                    messages.append(HumanMessage(content=content))
+            messages.append(
                 HumanMessage(
                     content=f"使用者原始問題：{query}\n請根據上述已授權知識內容直接回答。"
-                ),
-            ]
+                )
+            )
             response = chat_model.invoke(messages)
             answer = response.content if hasattr(response, "content") else str(response)
             usage = getattr(response, "usage_metadata", None) or {}
@@ -308,8 +324,11 @@ class RealRagAnswerAdapter:
             req_id = getattr(response, "id", None) or getattr(
                 response, "response_metadata", {}
             ).get("id")
-            prompt_chars = len(query) + sum(
-                len(e.get("content", "")) for e in retrieved_evidence
+            history_chars = sum(len(str(item.get("content") or "")) for item in history)
+            prompt_chars = (
+                len(query)
+                + history_chars
+                + sum(len(e.get("content", "")) for e in retrieved_evidence)
             )
             cost = self._priced_cost(
                 model_id=manifest.model_id,

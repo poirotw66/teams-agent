@@ -465,7 +465,27 @@ def create_app(
             from agent_service.knowledge import ANSWER_PROMPT
 
             return ANSWER_PROMPT
-        # Formal apps must resolve named prompt versions explicitly; missing = fail.
+        try:
+            state = governance_repository.load()
+            for item in state.prompt_versions:
+                if item.version == version or item.version_id == version:
+                    template = str(item.template or "").strip()
+                    if template:
+                        return template
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "governance prompt lookup failed for version=%s", version, exc_info=True
+            )
+        try:
+            for candidate in prompt_repository.load().candidates:
+                if candidate.version == version or candidate.candidate_id == version:
+                    content = str(candidate.content or "").strip()
+                    if content:
+                        return content
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "prompt repository lookup failed for version=%s", version, exc_info=True
+            )
         return None
 
     resolved_eval_chat_model = eval_chat_model

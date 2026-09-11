@@ -30,7 +30,7 @@ class TargetManifest(StrictModel):
     target_side: TargetSide
     app_revision: str = "v1"
     prompt_version: str = "default"
-    model_id: str = "gemini-2.5-flash"
+    model_id: str = "gemini-3.8-flash"
     temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     knowledge_release_id: str | None = None
     faq_version_id: str | None = None

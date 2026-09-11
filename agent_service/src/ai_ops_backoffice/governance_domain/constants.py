@@ -26,10 +26,53 @@ SECRET_REF_PREFIX = "secret://"
 
 PROVIDER_MODELS: dict[str, frozenset[str]] = {
     "google_genai": frozenset(
-        {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-embedding-2"}
+        {
+            # Current agentic RAG defaults (see agent_service/.env / README).
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-embedding-2",
+            # Retained for priced usage history and existing governance fixtures.
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+        }
     ),
     "azure_openai": frozenset({"gpt-4o-mini"}),
 }
+
+# Bare model ids used by governance / eval allowlist checks.
+DEFAULT_AGENT_MODEL_ID = "gemini-3.8-flash"
+DEFAULT_RAG_MODEL_ID = "gemini-3.1-flash-lite"
+DEFAULT_FILE_SEARCH_MODEL_ID = "gemini-3.5-flash-lite"
+DEFAULT_AGENT_MODEL = f"google_genai:{DEFAULT_AGENT_MODEL_ID}"
+DEFAULT_RAG_MODEL = f"google_genai:{DEFAULT_RAG_MODEL_ID}"
+
+
+def normalize_allowlisted_model_id(model_id: str | None) -> str:
+    """Strip provider / models/ prefixes so allowlist checks match env model names."""
+
+    value = str(model_id or "").strip()
+    if not value:
+        return ""
+    if ":" in value:
+        value = value.split(":", 1)[1]
+    return value.removeprefix("models/").strip()
+
+
+def is_allowlisted_model(
+    model_id: str | None,
+    *,
+    provider: str | None = None,
+) -> bool:
+    bare = normalize_allowlisted_model_id(model_id)
+    if not bare:
+        return False
+    if provider:
+        return bare in PROVIDER_MODELS.get(provider, frozenset())
+    return any(bare in models for models in PROVIDER_MODELS.values())
+
 
 FALLBACK_TRIGGERS = frozenset({"TIMEOUT", "RATE_LIMIT", "UNAVAILABLE"})
 

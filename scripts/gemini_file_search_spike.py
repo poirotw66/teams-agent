@@ -407,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     query = subparsers.add_parser("query", help="Run a Traditional Chinese grounded query.")
     query.add_argument("--store", required=True)
-    query.add_argument("--model", default="gemini-2.5-flash")
+    query.add_argument("--model", default="gemini-3.5-flash-lite")
     query.add_argument("--top-k", type=int, default=4)
     query.add_argument("--metadata-filter", default=None, help="e.g. 'category=\"vpn\"'")
     query.add_argument("question")

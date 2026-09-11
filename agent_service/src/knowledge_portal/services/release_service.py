@@ -773,6 +773,117 @@ class ReleaseService:
         )
         return release
 
+    async def promote_candidate_release(
+        self,
+        actor: PortalActor,
+        release_id: str,
+        *,
+        correlation_id: str | None = None,
+        reason: str = "Promote evaluated candidate release after gate pass",
+    ) -> ReleaseRecord:
+        """Activate an existing candidate release without rebuilding the corpus.
+
+        Used after a release was persisted as ``GATE_BLOCKED`` (or otherwise built
+        but not activated). Reuses the same release ID and target_manifest_hash so
+        a later PASS decision can promote the identical candidate.
+        """
+
+        ensure_can_publish(actor)
+        target = await self._ctx.repository.get_release(release_id)
+        ensure_not_found("release", release_id, target)
+        if target.status not in {"GATE_BLOCKED", "READY", "RELOAD_FAILED", "ROLLED_BACK"}:
+            raise PortalPermissionError(
+                f"Release '{release_id}' status {target.status} cannot be promoted; "
+                "expected GATE_BLOCKED, READY, RELOAD_FAILED, or ROLLED_BACK."
+            )
+
+        corr = correlation_id or new_id("corr")
+        gate_hash = (
+            target.target_manifest_hash
+            or knowledge_release_target_manifest_hash(release_id=target.release_id)
+        )
+        try:
+            require_release_gate(
+                getattr(self._ctx, "release_gate_checker", None),
+                target_manifest_hash=gate_hash,
+                target_type="KNOWLEDGE",
+                tenant_id=getattr(actor, "tenant_id", None),
+            )
+        except ReleaseGateBlockedError as exc:
+            blocked = target.model_copy(
+                update={
+                    "status": "GATE_BLOCKED",
+                    "failure_summary": str(exc),
+                    "activated_at": None,
+                    "target_manifest_hash": gate_hash,
+                }
+            )
+            await self._ctx.repository.save_release(blocked)
+            await self._ctx.audit(
+                actor=actor,
+                action="release.gate_blocked",
+                target_type="release",
+                target_id=target.release_id,
+                correlation_id=corr,
+                reason=str(exc),
+                result="FAILURE",
+            )
+            raise PermissionError(str(exc)) from exc
+
+        async with self._coordination_lock("promote_candidate"):
+            release = target.model_copy(
+                update={
+                    "status": "DEPLOYING",
+                    "activated_at": utc_now(),
+                    "approved_by": actor.user_id,
+                    "failure_summary": "",
+                    "target_manifest_hash": gate_hash,
+                }
+            )
+            await self._deactivate_other_releases(release.release_id)
+            await self._ctx.repository.save_release(release)
+            await self._ctx.repository.set_active_release_id(release.release_id)
+            write_active_release_pointer(
+                self._ctx.settings.release_artifact_dir,
+                release.release_id,
+            )
+
+            reload_success, reload_error = await self._notify_agent_reload(
+                release.release_id, corr
+            )
+            current_active = await self._ctx.repository.get_active_release_id()
+            if current_active == release.release_id:
+                if reload_success:
+                    release = release.model_copy(
+                        update={
+                            "status": "ACTIVE",
+                            "verified_at": utc_now(),
+                            "failure_summary": "",
+                        }
+                    )
+                else:
+                    release = release.model_copy(
+                        update={
+                            "status": "RELOAD_FAILED",
+                            "failure_summary": reload_error or "Agent reload failed",
+                        }
+                    )
+                await self._ctx.repository.save_release(release)
+
+            await self._ctx.audit(
+                actor=actor,
+                action="release.promote_candidate",
+                target_type="release",
+                target_id=release.release_id,
+                correlation_id=corr,
+                reason=reason,
+                metadata={
+                    "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
+                    "targetManifestHash": gate_hash,
+                },
+            )
+            return release
+
     async def _deactivate_other_releases(self, active_release_id: str) -> None:
         for item in await self._ctx.repository.list_releases():
             if item.release_id == active_release_id:

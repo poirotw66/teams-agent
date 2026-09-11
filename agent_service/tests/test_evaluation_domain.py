@@ -437,4 +437,4 @@ def test_ge1_a08_candidate_generator_lifecycle():
         rev = detail["current_revision"]
         assert rev["status"] == "DRAFT"
         assert rev["provenance"]["source_type"] == "SYNTHETIC"
-        assert rev["provenance"]["generator_model"] == "gemini-2.5-flash"
+        assert rev["provenance"]["generator_model"] == "gemini-3.8-flash"

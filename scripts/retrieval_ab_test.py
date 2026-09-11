@@ -471,7 +471,7 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
             # but google-genai wants the bare model id. Stripping the provider
             # prefix also keeps both backends on the SAME model, without which
             # the §18.7 comparison would not be like-for-like.
-            model=_bare_model_id(settings.model) or "gemini-2.5-flash",
+            model=_bare_model_id(settings.model) or "gemini-3.8-flash",
             top_k=settings.top_k,
             registry=registry,
         )

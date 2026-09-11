@@ -17,9 +17,9 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Mapping
 
-from .constants import PROVIDER_MODELS
+from .constants import PROVIDER_MODELS, is_allowlisted_model
 from .eval_flow import (
     AgentWorkflowFlowHarness,
     PromptFlowHarness,
@@ -160,6 +160,8 @@ class IsolatedEvalAgentRuntime:
     _effect_baseline: dict[str, Any] | None = None
     _last_request_text: str = ""
     _last_answer: str = ""
+    _last_issue_results: list[Any] = field(default_factory=list)
+    _tool_trace: list[dict[str, Any]] = field(default_factory=list)
     _prompt_canary: str | None = None
     last_binding: dict[str, Any] = field(default_factory=dict)
     last_inference: dict[str, Any] = field(default_factory=dict)
@@ -167,7 +169,7 @@ class IsolatedEvalAgentRuntime:
     def apply_candidate(self, template: str, model_id: str) -> None:
         if not str(template or "").strip():
             raise EvalBindingError("empty_candidate_template")
-        if model_id not in _ALLOWED_MODELS:
+        if not is_allowlisted_model(model_id):
             raise EvalBindingError(f"model_not_allowlisted:{model_id}")
         model = self.model_factory(model_id)
         if model is None:
@@ -210,14 +212,20 @@ class IsolatedEvalAgentRuntime:
             original = self.extractor._call_model
 
             async def _recording_call_model(**kwargs: Any) -> Any:
+                response = await original(**kwargs)
+                usage = getattr(response, "usage_metadata", None) or {}
+                if not usage and hasattr(response, "response_metadata"):
+                    meta = getattr(response, "response_metadata", None) or {}
+                    usage = meta.get("token_usage") or meta.get("usage") or {}
                 self.last_inference = {
                     "system_prompt_template": kwargs.get("system_prompt_template"),
                     "model_id": self._candidate_model_id,
                     "model": type(kwargs.get("model")).__name__
                     if kwargs.get("model") is not None
                     else None,
+                    "usage_metadata": dict(usage) if isinstance(usage, dict) else {},
                 }
-                return await original(**kwargs)
+                return response
 
             self.extractor._call_model = _recording_call_model  # type: ignore[method-assign]
             self.extractor._eval_call_wrapped = True
@@ -252,6 +260,14 @@ class IsolatedEvalAgentRuntime:
         created = getattr(self.ticket_service, "created_tickets", None)
         if isinstance(created, list):
             created.clear()
+        if hasattr(self.ticket_service, "tool_calls"):
+            self.ticket_service.tool_calls = []
+        knowledge = getattr(self, "knowledge_service", None)
+        if knowledge is not None and hasattr(knowledge, "tool_calls"):
+            knowledge.tool_calls = []
+        self._tool_trace = []
+        self._last_issue_results = []
+        self.last_inference = {}
         await self._seed_history(history or [])
         resolved_setup = setup or _infer_setup_from_history(history or [])
         if resolved_setup == _SETUP_ACTIVE_HANDOFF:
@@ -389,9 +405,64 @@ class IsolatedEvalAgentRuntime:
         answer: str,
         issue_results: list[Any] | None = None,
     ) -> None:
-        _ = issue_results
         self._last_request_text = text
         self._last_answer = answer
+        self._last_issue_results = list(issue_results or [])
+        self._append_tool_trace_from_issue_results(self._last_issue_results)
+
+    def _append_tool_trace_from_issue_results(self, issue_results: list[Any]) -> None:
+        for index, item in enumerate(issue_results):
+            if isinstance(item, Mapping):
+                result_type = item.get("resultType") or item.get("route")
+                sources = item.get("sources") or []
+                faq_key = item.get("faqKey") or item.get("faq_key")
+                missing = item.get("missingInfo") or item.get("missing_info") or []
+            else:
+                result_type = getattr(item, "resultType", None) or getattr(item, "route", None)
+                sources = getattr(item, "sources", None) or []
+                faq_key = getattr(item, "faqKey", None) or getattr(item, "faq_key", None)
+                missing = getattr(item, "missingInfo", None) or getattr(
+                    item, "missing_info", None
+                ) or []
+            order = len(self._tool_trace)
+            self._tool_trace.append(
+                {
+                    "call_id": f"issue-{order}",
+                    "tool_name": f"workflow.issue_result.{result_type or 'UNKNOWN'}",
+                    "arguments": {
+                        "result_type": result_type,
+                        "faq_key": faq_key,
+                        "missing_info": list(missing) if missing else [],
+                        "source_count": len(list(sources) or []),
+                        "turn_order": order,
+                        "issue_index": index,
+                    },
+                    "result": {
+                        "sources": [
+                            {
+                                "title": getattr(src, "title", None)
+                                if not isinstance(src, Mapping)
+                                else src.get("title"),
+                                "chunk_id": getattr(src, "chunkId", None)
+                                if not isinstance(src, Mapping)
+                                else src.get("chunkId") or src.get("chunk_id"),
+                            }
+                            for src in list(sources or [])
+                        ]
+                    },
+                    "duration_ms": 0.0,
+                    "is_error": str(result_type or "").upper()
+                    in {"FAILED", "NO_KNOWLEDGE", "UNAVAILABLE"},
+                    "was_intercepted": False,
+                    "side_effect_blocked": False,
+                    "intercept_reason": None,
+                }
+            )
+
+    def consume_tool_trace(self) -> list[dict[str, Any]]:
+        traces = list(self._tool_trace)
+        self._tool_trace = []
+        return traces
 
     def build_request(
         self,
@@ -513,57 +584,129 @@ class _FixtureKnowledgeService:
     recall, ACL filtering, or citation quality.
     """
 
+    def __init__(self) -> None:
+        self.tool_calls: list[dict[str, Any]] = []
+
     async def search(self, query: str, user_context: Any, **kwargs: Any) -> Any:
         from agent_service.contracts import Citation, KnowledgeResult
 
-        _ = user_context, kwargs
+        groups = getattr(user_context, "groups", None) or getattr(
+            user_context, "audience_group_ids", None
+        ) or ()
+        _ = kwargs
         normalized = (query or "").casefold()
         miss_markers = ("網路打不開", "無法上網", "打不開", "按鈕無法點選")
         if any(marker in query for marker in miss_markers):
-            return KnowledgeResult(
+            result = KnowledgeResult(
                 found=False, answer="", sources=[], images=[], backend="eval-fixture"
             )
-        hit = (
-            ("vpn" in normalized and any(token in query for token in ("密碼", "鎖定", "lock")))
-            or ("帳號鎖定" in query)
-            or ("vpn 密碼鎖定" in normalized)
-        )
-        if hit:
-            return KnowledgeResult(
-                found=True,
-                answer="VPN 或帳號鎖定時，請先自助解鎖；仍無法登入再聯繫資訊小幫手。[S1]",
-                sources=[
-                    Citation(
-                        title="帳號與 VPN 解鎖 FAQ",
-                        url="eval://fixture/unlock",
-                        chunkId="eval-unlock-1",
-                    )
-                ],
-                images=[],
-                backend="eval-fixture",
+        else:
+            hit = (
+                ("vpn" in normalized and any(token in query for token in ("密碼", "鎖定", "lock")))
+                or ("帳號鎖定" in query)
+                or ("vpn 密碼鎖定" in normalized)
             )
-        return KnowledgeResult(
-            found=False, answer="", sources=[], images=[], backend="eval-fixture"
+            if hit:
+                result = KnowledgeResult(
+                    found=True,
+                    answer="VPN 或帳號鎖定時，請先自助解鎖；仍無法登入再聯繫資訊小幫手。[S1]",
+                    sources=[
+                        Citation(
+                            title="帳號與 VPN 解鎖 FAQ",
+                            url="eval://fixture/unlock",
+                            chunkId="eval-unlock-1",
+                        )
+                    ],
+                    images=[],
+                    backend="eval-fixture",
+                )
+            else:
+                result = KnowledgeResult(
+                    found=False, answer="", sources=[], images=[], backend="eval-fixture"
+                )
+        self.tool_calls.append(
+            {
+                "call_id": f"knowledge-search-{len(self.tool_calls)}",
+                "tool_name": "knowledge.search",
+                "arguments": {
+                    "query": query,
+                    "groups": list(groups) if groups else [],
+                    "backend": "eval-fixture",
+                },
+                "result": {
+                    "found": bool(result.found),
+                    "source_count": len(list(result.sources or [])),
+                    "chunk_ids": [
+                        getattr(src, "chunkId", None) for src in list(result.sources or [])
+                    ],
+                },
+                "duration_ms": 0.0,
+                "is_error": False,
+                "was_intercepted": True,
+                "side_effect_blocked": False,
+                "intercept_reason": "sandbox_fixture",
+            }
         )
+        return result
+
+    def consume_tool_calls(self) -> list[dict[str, Any]]:
+        calls = list(self.tool_calls)
+        self.tool_calls = []
+        return calls
 
 
 class _EvalTicketService:
     def __init__(self) -> None:
         self.created_tickets: list[Any] = []
+        self.tool_calls: list[dict[str, Any]] = []
 
     async def get_ticket_items(self, *, correlation_id: str | None = None) -> list[Any]:
         _ = correlation_id
+        self.tool_calls.append(
+            {
+                "call_id": f"ticket-items-{len(self.tool_calls)}",
+                "tool_name": "ticket.get_ticket_items",
+                "arguments": {"correlation_id": correlation_id},
+                "result": {"items": []},
+                "duration_ms": 0.0,
+                "is_error": False,
+                "was_intercepted": True,
+                "side_effect_blocked": False,
+                "intercept_reason": "sandbox_fixture",
+            }
+        )
         return []
 
     async def create_ticket(self, draft: Any, **kwargs: Any) -> Any:
         self.created_tickets.append(draft)
+        arguments = {
+            "title": getattr(draft, "title", None),
+            "description": getattr(draft, "description", None),
+            "category": getattr(draft, "category", None),
+            "priority": getattr(draft, "priority", None),
+        }
+        arguments.update({key: kwargs[key] for key in kwargs})
         from agent_service.contracts import Ticket
 
-        return Ticket(
+        ticket = Ticket(
             id=f"EVAL-{len(self.created_tickets)}",
             title=getattr(draft, "title", "eval-ticket") or "eval-ticket",
             status="OPEN",
         )
+        self.tool_calls.append(
+            {
+                "call_id": f"ticket-create-{len(self.tool_calls)}",
+                "tool_name": "ticket.create_ticket",
+                "arguments": arguments,
+                "result": {"ticket_id": ticket.id, "status": ticket.status},
+                "duration_ms": 0.0,
+                "is_error": False,
+                "was_intercepted": True,
+                "side_effect_blocked": False,
+                "intercept_reason": "sandbox_fixture",
+            }
+        )
+        return ticket
 
     async def list_tickets_by_requester(
         self, requester_id: str, *, correlation_id: str | None = None
@@ -576,6 +719,11 @@ class _EvalTicketService:
     ) -> Any:
         _ = ticket_id, requester_id, correlation_id
         return None
+
+    def consume_tool_calls(self) -> list[dict[str, Any]]:
+        calls = list(self.tool_calls)
+        self.tool_calls = []
+        return calls
 
 
 def _wants_agent_harness() -> bool:
@@ -657,34 +805,66 @@ def build_agent_sandbox_workflow_executor(
         runtime: IsolatedEvalAgentRuntime,
     ) -> list[dict[str, Any]]:
         traces: list[dict[str, Any]] = []
-        effects = runtime.read_side_effects()
+        if hasattr(runtime, "consume_tool_trace"):
+            traces.extend(list(runtime.consume_tool_trace()))
+        for attr in ("ticket_service", "knowledge_service"):
+            service = getattr(runtime, attr, None)
+            if service is not None and hasattr(service, "consume_tool_calls"):
+                traces.extend(service.consume_tool_calls())
+        effects = (
+            runtime.read_side_effects()
+            if hasattr(runtime, "read_side_effects")
+            else {}
+        )
         for index, (name, value) in enumerate(sorted(effects.items())):
             if value in (None, False, "", "not_applicable"):
                 continue
+            arguments: dict[str, Any]
+            result: dict[str, Any]
+            if isinstance(value, dict):
+                arguments = dict(value.get("arguments") or value)
+                result = {
+                    "value": value.get("result", value),
+                    "order": len(traces) + index,
+                }
+            else:
+                arguments = {"effect": name}
+                result = {"value": value, "order": len(traces) + index}
             traces.append(
                 {
-                    "call_id": f"effect-{index}",
-                    "tool_name": f"side_effect.{name}",
-                    "arguments": {},
-                    "result": {"value": value},
-                    "duration_ms": 0.0,
-                    "is_error": False,
+                    "call_id": f"effect-{len(traces)}",
+                    "tool_name": (
+                        str(value.get("tool_name"))
+                        if isinstance(value, dict) and value.get("tool_name")
+                        else f"side_effect.{name}"
+                    ),
+                    "arguments": arguments,
+                    "result": result,
+                    "duration_ms": float(
+                        value.get("duration_ms") if isinstance(value, dict) else 0.0
+                    ),
+                    "is_error": bool(
+                        value.get("is_error") if isinstance(value, dict) else False
+                    ),
                     "was_intercepted": True,
-                    "side_effect_blocked": False,
+                    "side_effect_blocked": bool(
+                        value.get("blocked") if isinstance(value, dict) else False
+                    ),
                     "intercept_reason": "sandbox_observation",
                 }
             )
         detail = str(getattr(observation, "detail", "") or "")
-        if detail:
+        route = getattr(observation, "route", None)
+        behaviors = sorted(getattr(observation, "observed_behaviors", ()) or ())
+        if detail or route or behaviors:
             traces.append(
                 {
                     "call_id": "workflow-route",
                     "tool_name": "agent_workflow.route",
                     "arguments": {
-                        "route": getattr(observation, "route", None),
-                        "behaviors": sorted(
-                            getattr(observation, "observed_behaviors", ()) or ()
-                        ),
+                        "route": route,
+                        "behaviors": behaviors,
+                        "turn_order": len(traces),
                     },
                     "result": {"detail": detail},
                     "duration_ms": 0.0,
@@ -697,6 +877,8 @@ def build_agent_sandbox_workflow_executor(
         return traces
 
     def executor(query: str, manifest: Any, sanitized_input: Any) -> dict[str, Any]:
+        from agent_service.usage import estimate_cost_usd
+
         model_id = _resolve_model_id(manifest)
         if not model_id:
             raise EvalBindingError("agent_sandbox_model_id_missing")
@@ -724,8 +906,41 @@ def build_agent_sandbox_workflow_executor(
                 f"detail={getattr(observation, 'detail', '')}"
             )
         tool_calls = _tool_calls_from_runtime(observation=observation, runtime=runtime)
-        prompt_chars = len(template) + len(query) + len(answer)
-        estimated_tokens = max(1, int(prompt_chars / 4))
+        usage = {}
+        if isinstance(getattr(runtime, "last_inference", None), dict):
+            usage = dict(runtime.last_inference.get("usage_metadata") or {})
+        input_tokens = int(
+            usage.get("input_tokens")
+            or usage.get("prompt_tokens")
+            or usage.get("promptTokenCount")
+            or 0
+        )
+        output_tokens = int(
+            usage.get("output_tokens")
+            or usage.get("completion_tokens")
+            or usage.get("candidatesTokenCount")
+            or 0
+        )
+        total_tokens = int(
+            usage.get("total_tokens")
+            or usage.get("totalTokenCount")
+            or (input_tokens + output_tokens)
+        )
+        if total_tokens <= 0:
+            history_chars = sum(
+                len(str(item.get("content") or "")) for item in _history(sanitized_input)
+            )
+            prompt_chars = len(template) + len(query) + history_chars
+            answer_chars = len(answer)
+            total_tokens = max(1, int((prompt_chars + answer_chars) / 4))
+            input_tokens = max(1, int(prompt_chars / 4))
+            output_tokens = max(0, total_tokens - input_tokens)
+            usage_status = "ESTIMATED"
+        else:
+            if input_tokens <= 0 and output_tokens <= 0:
+                input_tokens = total_tokens
+            usage_status = "EXACT"
+        priced = estimate_cost_usd(model_id, input_tokens, output_tokens)
         return {
             "status": "SUCCESS",
             "answer": answer,
@@ -737,8 +952,11 @@ def build_agent_sandbox_workflow_executor(
                 getattr(observation, "observed_behaviors", ()) or ()
             ),
             "model_id": model_id,
-            "tokens": estimated_tokens,
-            "cost_usd": 0.0,
+            "tokens": total_tokens,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "usage_status": usage_status,
+            "cost_usd": float(priced) if priced is not None else 0.0,
             "workflow_bound": True,
         }
 

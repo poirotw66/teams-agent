@@ -15,6 +15,7 @@ from .constants import (
     REQUIRED_QUALITY_CASE_IDS,
     RUNNER_VERSION,
     SAFETY_CRITICAL_ROUTES,
+    is_allowlisted_model,
 )
 from .eval_flow import (
     PromptFlowHarness,
@@ -395,7 +396,7 @@ async def _real_flow_cases(
         ]
         return incomplete, 0.0, None, False
 
-    model_bound = bool(candidate.model_id) and candidate.model_id in _ALLOWED_MODELS
+    model_bound = is_allowlisted_model(candidate.model_id)
     results: list[EvalCaseResult] = [
         _case(
             "real-flow-harness",
@@ -766,7 +767,7 @@ def _build_eval_run(
 def evaluate_model(*, version: Any, actor_id: str) -> EvalRun:
     from .constants import FALLBACK_TRIGGERS, PROVIDER_MODELS
 
-    allowed = version.model_id in PROVIDER_MODELS.get(version.provider, frozenset())
+    allowed = is_allowlisted_model(version.model_id, provider=version.provider)
     fallback_ok = not version.fallback_on or set(version.fallback_on) <= FALLBACK_TRIGGERS
     cases = [
         _case("allowlist", "model_allowlist", allowed, f"{version.provider}/{version.model_id}", critical=True),

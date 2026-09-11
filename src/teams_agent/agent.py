@@ -11,6 +11,7 @@ from microsoft_teams.apps.plugins import StreamNotAllowedError, TerminalStreamEr
 
 from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
+from .source_links import CitationViewerContext, register_viewer_membership
 from .contracts import AgentRequest, AgentResponse, FeedbackRequest, account_field
 from .directory import EntraAppTokenProvider, build_user_directory_service
 from .health_telemetry import AdapterHealthReporter, classify_gateway_status
@@ -296,10 +297,25 @@ async def _handle_message(
     )
 
 def _build_activity(response: AgentResponse, request: AgentRequest):
+    subject = (
+        request.user.entraObjectId
+        or request.user.teamsUserId
+        or request.user.email
+        or "anonymous"
+    )
+    viewer = CitationViewerContext(
+        subject=subject,
+        groups=tuple(request.user.groups or ()),
+        tenant_id=request.conversation.tenantId,
+    )
+    # Refresh live membership on every authenticated turn so citation opens
+    # re-authorize against current groups rather than signed URL claims.
+    register_viewer_membership(viewer, agent_settings)
     return build_agent_activity(
         response,
         agent_settings,
         conversation_id=request.conversation.conversationId,
+        viewer=viewer,
     )
 
 

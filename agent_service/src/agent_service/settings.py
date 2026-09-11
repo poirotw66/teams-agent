@@ -64,7 +64,7 @@ class RagSettings:
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
     gemini_file_search_store: str | None = None
-    gemini_file_search_model: str = "gemini-2.5-flash"
+    gemini_file_search_model: str = "gemini-3.5-flash-lite"
     gemini_file_search_enforce_acl: bool = True
     rag_require_file_search_acl: bool = False
     knowledge_backend_state_mode: str = "MEMORY"
@@ -190,7 +190,7 @@ class RagSettings:
             or "HYBRID",
             gemini_file_search_store=_str_env("GEMINI_FILE_SEARCH_STORE"),
             gemini_file_search_model=(
-                _str_env("GEMINI_FILE_SEARCH_MODEL") or "gemini-2.5-flash"
+                _str_env("GEMINI_FILE_SEARCH_MODEL") or "gemini-3.5-flash-lite"
             ),
             gemini_file_search_enforce_acl=_bool_env(
                 "GEMINI_FILE_SEARCH_ENFORCE_ACL", True

@@ -206,7 +206,30 @@ class OperationsQueryMixin:
         latest_event_at = max((event.occurred_at for event in events), default=None)
         data_freshness_minutes = None
         data_delay_warning = None
-        if latest_event_at is not None:
+
+        freshness_meta = None
+        tracker = getattr(self, "_freshness_tracker", None)
+        if tracker is not None:
+            freshness_meta = tracker.compute_freshness(
+                resource_type="operations_overview",
+                watermark=None,
+            ).model_dump(mode="json")
+            lag_seconds = freshness_meta.get("lagSeconds")
+            if lag_seconds is None:
+                lag_seconds = freshness_meta.get("lag_seconds")
+            if lag_seconds is not None:
+                try:
+                    data_freshness_minutes = max(0, int(float(lag_seconds) // 60))
+                except (TypeError, ValueError):
+                    data_freshness_minutes = None
+            if freshness_meta.get("status") in {"STALE", "UNKNOWN", "DELAYED", "FAILED"}:
+                data_delay_warning = (
+                    "Operations overview freshness is stale or unknown; "
+                    "pipeline sync/aggregation watermarks have not updated recently."
+                )
+        elif latest_event_at is not None:
+            # Fallback only when no tracker is wired: event time is traffic age,
+            # not ingest/aggregation completion.
             freshness_delta = utc_now() - latest_event_at
             data_freshness_minutes = max(0, int(freshness_delta.total_seconds() // 60))
             if data_freshness_minutes > 15:
@@ -215,20 +238,6 @@ class OperationsQueryMixin:
                     f"{data_freshness_minutes} minutes old; this usually means "
                     "no recent traffic, not a batch pipeline failure."
                 )
-
-        freshness_meta = None
-        tracker = getattr(self, "_freshness_tracker", None)
-        if tracker is not None:
-            if latest_event_at is not None:
-                tracker.record_stage_event(
-                    "operations-overview",
-                    "AGGREGATION_COMPLETED",
-                    at=latest_event_at,
-                )
-            freshness_meta = tracker.compute_freshness(
-                resource_type="operations_overview",
-                watermark=None,
-            ).model_dump(mode="json")
 
         metrics_source = "event_scan"
         turn_count_value = len(turns)

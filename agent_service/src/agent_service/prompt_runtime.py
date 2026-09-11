@@ -149,11 +149,11 @@ class GovernanceRuntime:
         baseline_name = self._settings.agent_model or self._settings.model or ""
         provider, _, model_id = baseline_name.partition(":")
         if not model_id:
-            provider, model_id = "google_genai", baseline_name or "gemini-2.5-flash"
+            provider, model_id = "google_genai", baseline_name or "gemini-3.8-flash"
         baseline = ResolvedModelConfig(
             provider=provider or "google_genai",
-            model_id=model_id or "gemini-2.5-flash",
-            model_name=baseline_name or f"google_genai:{model_id or 'gemini-2.5-flash'}",
+            model_id=model_id or "gemini-3.8-flash",
+            model_name=baseline_name or f"google_genai:{model_id or 'gemini-3.8-flash'}",
             source="settings_baseline",
         )
         if self._mode != "GOVERNED" or self._governance is None:

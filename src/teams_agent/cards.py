@@ -3,7 +3,7 @@ from microsoft_teams.api import Attachment, MessageActivityInput
 from .contracts import AgentResponse, format_agent_response, format_turn_cost_line
 from .media import build_asset_url
 from .settings import AgentSettings
-from .source_links import enrich_citation_urls
+from .source_links import CitationViewerContext, enrich_citation_urls
 
 ADAPTIVE_CARD_CONTENT_TYPE = "application/vnd.microsoft.card.adaptive"
 
@@ -135,8 +135,9 @@ def build_agent_activity(
     settings: AgentSettings,
     conversation_id: str | None = None,
     now: int | None = None,
+    viewer: CitationViewerContext | None = None,
 ) -> MessageActivityInput | str:
-    response = enrich_citation_urls(response, settings, now=now)
+    response = enrich_citation_urls(response, settings, now=now, viewer=viewer)
     feedback_issue_ids = (
         _feedback_issue_ids(response)
         if response.feedbackEnabled and conversation_id

@@ -48,7 +48,7 @@ class ManifestResolver:
             "target_side": side,
             "app_revision": target_ref.get("app_revision", "v1"),
             "prompt_version": target_ref.get("prompt_version", "default"),
-            "model_id": target_ref.get("model_id", "gemini-2.5-flash"),
+            "model_id": target_ref.get("model_id", "gemini-3.8-flash"),
             "temperature": float(target_ref.get("temperature", 0.0)),
             "knowledge_release_id": knowledge_release_id,
             "faq_version_id": target_ref.get("faq_version_id"),

@@ -457,6 +457,12 @@ def install_background_runtime(
                         result.get("written"),
                         len(result.get("days") or []),
                     )
+                    if freshness_tracker is not None:
+                        freshness_tracker.record_sync_success("conversations")
+                        freshness_tracker.record_stage_event(
+                            "operations-overview",
+                            "AGGREGATION_COMPLETED",
+                        )
                 except Exception:
                     logger.exception("Failed to materialize daily aggregates.")
                 try:
@@ -549,7 +555,6 @@ def install_background_runtime(
             while not stop_sweeper.is_set():
                 try:
                     freshness_tracker.record_worker_heartbeat()
-                    freshness_tracker.record_sync_success("conversations")
                 except Exception:
                     logger.exception("Failed to record worker heartbeat for freshness.")
                 try:

@@ -187,6 +187,21 @@ class PortalService:
             actor, request, correlation_id, idempotency_key=idempotency_key
         )
 
+    async def promote_candidate_release(
+        self,
+        actor: PortalActor,
+        release_id: str,
+        *,
+        correlation_id: str | None = None,
+        reason: str = "Promote evaluated candidate release after gate pass",
+    ) -> ReleaseRecord:
+        return await self._releases.promote_candidate_release(
+            actor,
+            release_id,
+            correlation_id=correlation_id,
+            reason=reason,
+        )
+
     async def sync_agent_release(
         self,
         actor: PortalActor,

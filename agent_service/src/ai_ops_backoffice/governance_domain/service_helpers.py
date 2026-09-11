@@ -19,6 +19,8 @@ from .constants import (
     PROVIDER_MODELS,
     READ,
     WRITE,
+    is_allowlisted_model,
+    normalize_allowlisted_model_id,
 )
 from .errors import (
     GovernanceAuthorizationError,
@@ -121,7 +123,7 @@ def _baseline_prompt(now: datetime) -> tuple[PromptRecord, PromptVersion]:
         input_schema_version="issue-extractor-input-v1",
         output_schema_version="issue-extractor-output-v1",
         taxonomy_version="imported-baseline",
-        model_id="gemini-2.5-flash",
+        model_id="gemini-3.8-flash",
         created_by="system-baseline",
         created_at=now,
         submitted_by="system-baseline",
@@ -150,7 +152,7 @@ def _baseline_model(now: datetime) -> tuple[ModelConfigRecord, ModelConfigVersio
         version_id=version_id,
         config_id="issue-extractor-model",
         provider="google_genai",
-        model_id="gemini-2.5-flash",
+        model_id="gemini-3.8-flash",
         component="issue-extractor",
         status="ACTIVE",
         temperature=0.0,
@@ -160,9 +162,9 @@ def _baseline_model(now: datetime) -> tuple[ModelConfigRecord, ModelConfigVersio
         secret_ref="secret://gemini-api-key",
         region="asia-east1",
         pricing_version="v1",
-        fallback_model_id="gemini-2.0-flash",
+        fallback_model_id="gemini-3.1-flash-lite",
         fallback_on=("TIMEOUT", "UNAVAILABLE"),
-        content_hash=content_hash("google_genai:gemini-2.5-flash"),
+        content_hash=content_hash("google_genai:gemini-3.8-flash"),
         created_by="system-baseline",
         created_at=now,
         approved_by="system-baseline",
@@ -379,10 +381,13 @@ def _activate_prompt(
 def _validate_model(
     provider: str, model_id: str, fallback_model_id: str | None, fallback_on: tuple[str, ...]
 ) -> None:
-    allowed = PROVIDER_MODELS.get(provider)
-    if allowed is None or model_id not in allowed:
+    if not is_allowlisted_model(model_id, provider=provider):
         raise GovernanceValidationError("model is not on the provider allowlist")
-    if fallback_model_id and (fallback_model_id not in allowed or fallback_model_id == model_id):
+    if fallback_model_id and (
+        not is_allowlisted_model(fallback_model_id, provider=provider)
+        or normalize_allowlisted_model_id(fallback_model_id)
+        == normalize_allowlisted_model_id(model_id)
+    ):
         raise GovernanceValidationError("fallback model must be a different allowlisted model")
     if set(fallback_on) - FALLBACK_TRIGGERS:
         raise GovernanceValidationError("fallback trigger is not permitted")

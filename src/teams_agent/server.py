@@ -184,6 +184,11 @@ def create_web_app(
                 request.query_params.get("expires"),
                 request.query_params.get("signature"),
                 settings,
+                subject=request.query_params.get("subject"),
+                groups=request.query_params.get("groups"),
+                source_ref_id=request.query_params.get("sourceRefId"),
+                tenant_id=request.query_params.get("tenantId"),
+                authenticated_subject=_authenticated_viewer_subject(request),
             )
             want_raw = request.query_params.get("raw", "").lower() in {
                 "1",
@@ -217,6 +222,46 @@ def create_web_app(
         )
 
     return app
+
+
+def _authenticated_viewer_subject(request: Request) -> str | None:
+    """Extract login identity from Authorization when a bearer token is present.
+
+    Teams OpenUrl clicks often have no header; those opens still re-check live
+    membership + document ACL. When a bearer identity is present it must match
+    the signed citation subject.
+    """
+
+    authorization = request.headers.get("authorization") or request.headers.get(
+        "Authorization"
+    )
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    # Prefer explicit gateway headers set by an authenticated front door.
+    for header in ("x-viewer-subject", "X-Viewer-Subject"):
+        value = request.headers.get(header)
+        if value and str(value).strip():
+            return str(value).strip()
+    # Best-effort JWT claim peek (signature validated by upstream when used).
+    try:
+        import base64
+        import json
+
+        parts = token.split(".")
+        if len(parts) < 2:
+            return None
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except Exception:  # noqa: BLE001 - treat unreadable tokens as absent identity
+        return None
+    for key in ("oid", "sub", "preferred_username", "upn", "email"):
+        value = claims.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def build_http_adapter(
