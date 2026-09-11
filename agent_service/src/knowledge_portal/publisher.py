@@ -82,6 +82,7 @@ class ReleasePublisher:
                         original_asset_name=(
                             version.original_asset_name if original_available else None
                         ),
+                        artifact_ref=getattr(version, "original_artifact_ref", None),
                     )
                 )
 

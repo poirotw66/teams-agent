@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from agent_service.knowledge_release import write_active_release_pointer
+from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,14 @@ class ReleaseService:
                         )
 
             async with self._coordination_lock("rollback"):
+                try:
+                    require_release_gate(
+                        getattr(self._ctx, "release_gate_checker", None),
+                        target_manifest_hash=target.corpus_hash,
+                        target_type="KNOWLEDGE",
+                    )
+                except ReleaseGateBlockedError as exc:
+                    raise PortalPermissionError(str(exc)) from exc
                 await self._deactivate_other_releases(target.release_id)
                 await self._ctx.repository.set_active_release_id(target.release_id)
                 write_active_release_pointer(
@@ -673,6 +682,23 @@ class ReleaseService:
         )
         await self._deactivate_other_releases(release.release_id)
         await self._ctx.repository.save_release(release)
+        try:
+            require_release_gate(
+                getattr(self._ctx, "release_gate_checker", None),
+                target_manifest_hash=release.corpus_hash,
+                target_type="KNOWLEDGE",
+            )
+        except ReleaseGateBlockedError as exc:
+            await self._ctx.audit(
+                actor=actor,
+                action="release.gate_blocked",
+                target_type="release",
+                target_id=release.release_id,
+                correlation_id=correlation_id,
+                reason=str(exc),
+                result="FAILURE",
+            )
+            raise PermissionError(str(exc)) from exc
         await self._ctx.repository.set_active_release_id(release.release_id)
         write_active_release_pointer(
             self._ctx.settings.release_artifact_dir,

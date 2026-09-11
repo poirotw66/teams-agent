@@ -2,11 +2,24 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.settings import BackofficeSettings
+
+
+def _stub_eval_model_invoker(
+    query: str,
+    manifest: Any,
+    sanitized_input: Any,
+    evidence: list[dict[str, Any]],
+    history: list[dict[str, str]],
+) -> tuple[str, int, float, list[Any], str]:
+    """Deterministic invoker for formal-app API tests (no live model)."""
+    content = evidence[0].get("content", "") if evidence else "無相關資訊"
+    return f"根據知識庫：{content}", 48, 0.00002, [], "stub-eval-req"
 
 
 def _test_settings(tmp_path: Path) -> BackofficeSettings:
@@ -68,7 +81,7 @@ def auth_headers(role: str, user_id: str | None = None) -> dict[str, str]:
 
 def test_evaluation_run_api_lifecycle(tmp_path: Path):
     settings = _test_settings(tmp_path)
-    app = create_app(settings)
+    app = create_app(settings, eval_model_invoker=_stub_eval_model_invoker)
     client = TestClient(app)
 
     kadmin_headers = auth_headers("KNOWLEDGE_ADMIN", "u_kadmin")
@@ -268,7 +281,7 @@ def test_evaluation_run_api_async_worker_lifecycle(tmp_path: Path):
     """Verifies async job queueing and background worker execution loop."""
     import time
     settings = _test_settings(tmp_path)
-    app = create_app(settings)
+    app = create_app(settings, eval_model_invoker=_stub_eval_model_invoker)
 
     with TestClient(app) as client:
         kadmin_headers = auth_headers("KNOWLEDGE_ADMIN", "u_kadmin")

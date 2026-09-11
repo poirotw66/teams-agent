@@ -757,3 +757,126 @@ class FirestoreQualityGateRepository:
         if not docs:
             return None
         return QualityCaseLink.model_validate(docs[0].to_dict())
+
+    def _run_transaction(self, operation: Any) -> Any:
+        if hasattr(self._client, "transaction"):
+            try:
+                from google.cloud.firestore_v1.transaction import transactional
+
+                return transactional(operation)(self._client.transaction())
+            except (ImportError, Exception):
+                tx = self._client.transaction()
+                res = operation(tx)
+                if hasattr(tx, "commit"):
+                    tx.commit()
+                return res
+
+        class _ImmediateTx:
+            def get(self, ref: Any) -> Any:
+                return ref.get()
+
+            def set(self, ref: Any, data: Any, merge: bool = False) -> None:
+                if hasattr(ref, "set"):
+                    ref.set(data, merge=merge)
+
+            def create(self, ref: Any, data: Any) -> None:
+                if hasattr(ref, "create"):
+                    ref.create(data)
+                elif hasattr(ref, "set"):
+                    ref.set(data)
+
+        return operation(_ImmediateTx())
+
+    @staticmethod
+    def _pointer_doc_id(tenant_id: str, environment: str, target_type: str) -> str:
+        return f"{tenant_id}_{environment}_{target_type}"
+
+    def save_active_pointer(
+        self, pointer: ActiveReleasePointer, expected_etag: int | None = None
+    ) -> None:
+        doc_id = self._pointer_doc_id(
+            pointer.tenant_id, pointer.environment, pointer.target_type
+        )
+        ref = self._col("pointers").document(doc_id)
+
+        def _save(transaction: Any) -> None:
+            snapshot = ref.get(transaction=transaction)
+            if expected_etag is not None:
+                if getattr(snapshot, "exists", False):
+                    current = snapshot.to_dict().get("etag")
+                    if current != expected_etag:
+                        raise EvaluationVersionConflictError(
+                            f"Active pointer {doc_id} etag mismatch: "
+                            f"expected {expected_etag}, got {current}"
+                        )
+                elif expected_etag != 0:
+                    raise EvaluationVersionConflictError(
+                        f"Active pointer {doc_id} does not exist for expected etag {expected_etag}"
+                    )
+            transaction.set(ref, json.loads(pointer.model_dump_json()))
+
+        self._run_transaction(_save)
+
+    def get_active_pointer(
+        self, tenant_id: str, environment: str, target_type: str
+    ) -> ActiveReleasePointer | None:
+        doc_id = self._pointer_doc_id(tenant_id, environment, target_type)
+        doc = self._col("pointers").document(doc_id).get()
+        if not doc.exists:
+            return None
+        return ActiveReleasePointer.model_validate(doc.to_dict())
+
+    def list_active_pointers(
+        self, tenant_id: str | None = None
+    ) -> list[ActiveReleasePointer]:
+        q = self._col("pointers")
+        if tenant_id:
+            q = q.where("tenant_id", "==", tenant_id)
+        return [ActiveReleasePointer.model_validate(d.to_dict()) for d in q.stream()]
+
+    def save_break_glass(self, bg: BreakGlassRequest) -> None:
+        ref = self._col("break_glasses").document(bg.break_glass_id)
+        ref.set(json.loads(bg.model_dump_json()))
+
+    def get_break_glass(self, break_glass_id: str) -> BreakGlassRequest | None:
+        doc = self._col("break_glasses").document(break_glass_id).get()
+        if not doc.exists:
+            return None
+        return BreakGlassRequest.model_validate(doc.to_dict())
+
+    def save_activation_audit(self, audit: ActivationAuditRecord) -> None:
+        ref = self._col("activation_audits").document(audit.activation_id)
+        ref.set(json.loads(audit.model_dump_json()))
+
+    def list_activation_audits(
+        self, tenant_id: str | None = None
+    ) -> list[ActivationAuditRecord]:
+        q = self._col("activation_audits")
+        if tenant_id:
+            q = q.where("tenant_id", "==", tenant_id)
+        return [ActivationAuditRecord.model_validate(d.to_dict()) for d in q.stream()]
+
+    def save_schedule_dispatch(self, dispatch: ScheduleDispatchResult) -> bool:
+        """Create-if-absent on logical_key. Returns True if created, False if duplicate."""
+        ref = self._col("dispatches").document(dispatch.logical_key)
+
+        def _save(transaction: Any) -> bool:
+            snapshot = ref.get(transaction=transaction)
+            if getattr(snapshot, "exists", False):
+                return False
+            data = json.loads(dispatch.model_dump_json())
+            if hasattr(transaction, "create"):
+                transaction.create(ref, data)
+            else:
+                transaction.set(ref, data)
+            return True
+
+        return bool(self._run_transaction(_save))
+
+    def get_schedule_dispatch(
+        self, logical_key: str
+    ) -> ScheduleDispatchResult | None:
+        doc = self._col("dispatches").document(logical_key).get()
+        if not doc.exists:
+            return None
+        return ScheduleDispatchResult.model_validate(doc.to_dict())

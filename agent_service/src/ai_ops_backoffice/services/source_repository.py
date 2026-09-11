@@ -329,3 +329,21 @@ class FirestoreSourceRecordRepository:
             return await self._fallback.delete_source_record(tenant_id, source_ref_id)
         doc_ref.delete()
         return True
+
+    def get_source_record_sync(
+        self, tenant_id: str, source_ref_id: str
+    ) -> SourceRecord | None:
+        doc_ref = self._doc_ref(tenant_id, source_ref_id)
+        if doc_ref is None:
+            return self._fallback.get_source_record_sync(tenant_id, source_ref_id)
+        snapshot = doc_ref.get()
+        if not snapshot.exists:
+            return None
+        return SourceRecord.model_validate(snapshot.to_dict())
+
+    def save_source_record_sync(self, record: SourceRecord) -> None:
+        doc_ref = self._doc_ref(record.tenant_id, record.source_ref_id)
+        if doc_ref is None:
+            self._fallback.save_source_record_sync(record)
+            return
+        doc_ref.set(record.model_dump(mode="json"))

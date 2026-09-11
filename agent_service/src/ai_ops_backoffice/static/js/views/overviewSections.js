@@ -376,8 +376,14 @@ export function buildOverviewHeader({
 
   const tz = data.timezone || "Asia/Taipei";
   const updateTimeStr = formatLocalClock(data.updatedAt, tz);
-  const freshnessChip = el("span", "overview-freshness-chip", `摘要更新：${updateTimeStr}（時區：${tz}）`);
-  freshnessChip.title = "本次營運摘要 API 產生時間（非事件管線最後寫入時間）";
+  const freshness = data.freshness || null;
+  const freshnessLabel = freshness?.status
+    ? `資料新鮮度：${freshness.status}${freshness.lag_seconds != null ? `（延遲 ${Math.round(freshness.lag_seconds)}s）` : ""}`
+    : `摘要更新：${updateTimeStr}（時區：${tz}）`;
+  const freshnessChip = el("span", "overview-freshness-chip", freshnessLabel);
+  freshnessChip.title = freshness?.status
+    ? "來自 FreshnessMetadata 契約（含 worker heartbeat 與 watermark）"
+    : "本次營運摘要 API 產生時間（非事件管線最後寫入時間）";
   badgeRow.append(statusPill, freshnessChip);
 
   if (data.dataFreshnessMinutes != null) {

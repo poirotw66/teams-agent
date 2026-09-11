@@ -230,6 +230,8 @@ class ActorContext:
     role: BackofficeRole
     owner_unit_ids: tuple[str, ...]
     tenant_id: str | None = None
+    groups: tuple[str, ...] = ()
+    revoked: bool = False
 
     def has_capability(self, capability: str) -> bool:
         return capability in CAPABILITIES.get(self.role, frozenset())

@@ -14,7 +14,8 @@ function routeLabel(route) {
 }
 
 function sourceTraceStatusLabel(status) {
-  if (status === "LEGACY_BACKFILLED") return "歷史事件已由發布版本回填";
+  if (status === "LEGACY_UNVERIFIED") return "身分未確認（不可下載原檔）";
+  if (status === "LEGACY_BACKFILLED") return "歷史事件已由發布版本回填（待確認）";
   if (status === "UNRESOLVED") return "尚未能定位發布版本";
   return "已鎖定發布版本";
 }
@@ -38,6 +39,31 @@ function sourcePreviewContent(source) {
   if (source.sourcePath) {
     content.append(el("p", "metric-label", `轉換來源：${source.sourcePath}`));
   }
+  const locator = source.locator || {};
+  const locatorBits = [];
+  if (locator.locator_type || locator.locatorType) {
+    locatorBits.push(`類型：${locator.locator_type || locator.locatorType}`);
+  }
+  if (locator.page_label || locator.pageLabel || locator.page_index != null || locator.pageIndex != null) {
+    locatorBits.push(
+      `頁面：${locator.page_label || locator.pageLabel || (Number(locator.page_index ?? locator.pageIndex) + 1)}`,
+    );
+  }
+  if (locator.section_path || locator.sectionPath) {
+    locatorBits.push(`章節：${locator.section_path || locator.sectionPath}`);
+  }
+  if (locator.sheet_name || locator.sheetName) {
+    locatorBits.push(`工作表：${locator.sheet_name || locator.sheetName}`);
+  }
+  if (locator.cell_range || locator.cellRange) {
+    locatorBits.push(`範圍：${locator.cell_range || locator.cellRange}`);
+  }
+  if (locatorBits.length) {
+    content.append(el("p", "metric-label", `定位：${locatorBits.join("｜")}`));
+  }
+  if (locator.degraded_reason || locator.degradedReason) {
+    content.append(el("p", "metric-label", locator.degraded_reason || locator.degradedReason));
+  }
   const notice = el("div", source.originalAssetAvailable ? "callout success" : "callout warning");
   notice.append(
     el(
@@ -56,13 +82,36 @@ function sourcePreviewContent(source) {
   content.append(notice);
   const evidence = source.evidence?.excerpt || "目前沒有可顯示的段落內容。";
   content.append(el("h3", "", "回答引用的段落"));
-  content.append(el("pre", "json-block source-evidence", evidence));
+  const evidenceBlock = el("pre", "json-block source-evidence", evidence);
+  if (locator.paragraph_id || locator.paragraphId) {
+    evidenceBlock.dataset.paragraphId = locator.paragraph_id || locator.paragraphId;
+  }
+  if (locator.bbox || (Array.isArray(locator.bbox) && locator.bbox.length)) {
+    evidenceBlock.dataset.bbox = JSON.stringify(locator.bbox);
+  }
+  if (locator.page_index != null || locator.pageIndex != null) {
+    evidenceBlock.dataset.pageIndex = String(locator.page_index ?? locator.pageIndex);
+    evidenceBlock.classList.add("source-highlight-target");
+  }
+  content.append(evidenceBlock);
   if (source.evidence?.truncated) {
     content.append(el("p", "metric-label", "段落過長，以上為受控預覽。"));
   }
-  if (source.downloadUrl) {
+  const canDownload =
+    source.downloadUrl &&
+    source.actions?.canDownloadOriginal !== false &&
+    source.mappingStatus !== "LEGACY_UNVERIFIED" &&
+    source.traceStatus !== "LEGACY_UNVERIFIED";
+  if (canDownload) {
     const download = el("a", "drill-link", `開啟原始檔${source.originalAssetName ? `：${source.originalAssetName}` : ""}`);
     download.href = source.downloadUrl;
+    if (locator.page_label || locator.pageLabel || locator.page_index != null || locator.pageIndex != null) {
+      const pageHash = locator.page_label || locator.pageLabel || String(Number(locator.page_index ?? locator.pageIndex) + 1);
+      download.hash = `page=${encodeURIComponent(pageHash)}`;
+      if (locator.bbox) {
+        download.hash += `&bbox=${encodeURIComponent(JSON.stringify(locator.bbox))}`;
+      }
+    }
     download.target = "_blank";
     download.rel = "noopener";
     content.append(download);

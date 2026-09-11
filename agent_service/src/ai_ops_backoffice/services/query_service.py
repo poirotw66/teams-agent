@@ -5,7 +5,7 @@ import json
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -77,6 +77,11 @@ from .query_helpers import (
     _summarize_turn_events,
 )
 from .source_trace import SourceTraceResolver
+from .source_repository import (
+    FileSourceRecordRepository,
+    FirestoreSourceRecordRepository,
+)
+from .freshness_service import FreshnessTracker
 
 
 class BackofficeQueryService(
@@ -110,7 +115,48 @@ class BackofficeQueryService(
         releases_dir = getattr(settings, "knowledge_release_dir", None) or (
             settings.ops_store_path.parent.parent / "releases"
         )
-        self._source_trace = SourceTraceResolver(releases_dir)
+        source_store_mode = (getattr(settings, "source_store_mode", None) or "FILE").upper()
+        if source_store_mode == "FIRESTORE":
+            from google.cloud import firestore
+
+            source_repository = FirestoreSourceRecordRepository(
+                client=firestore.Client(project=settings.gcp_project_id),
+                project_id=settings.gcp_project_id,
+            )
+        else:
+            source_path = getattr(settings, "source_store_path", None) or (
+                settings.ops_store_path.parent / "sources" / "records"
+            )
+            source_repository = FileSourceRecordRepository(source_path)
+
+        artifact_backend = (
+            getattr(settings, "artifact_storage_backend", None) or "FILE"
+        ).upper()
+        artifact_storage = None
+        if artifact_backend == "GCS":
+            from agent_service.artifact_storage import GcsArtifactStorage
+
+            bucket = getattr(settings, "artifact_gcs_bucket", None)
+            if not bucket:
+                raise ValueError(
+                    "AI_OPS_ARTIFACT_GCS_BUCKET (or AI_OPS_EXPORT_GCS_BUCKET) is required for GCS artifact storage."
+                )
+            artifact_storage = GcsArtifactStorage(bucket_name=bucket)
+        else:
+            from agent_service.artifact_storage import LocalFileArtifactStorage
+
+            artifact_path = getattr(settings, "artifact_storage_path", None) or (
+                settings.ops_store_path.parent / "sources" / "artifacts"
+            )
+            artifact_storage = LocalFileArtifactStorage(artifact_path)
+
+        self._source_trace = SourceTraceResolver(
+            releases_dir,
+            source_repository=source_repository,
+            artifact_storage=artifact_storage,
+        )
+        self._freshness_tracker = FreshnessTracker()
+        self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}
         export_store_path = settings.ops_store_path.parent / "exports"
@@ -359,3 +405,15 @@ class BackofficeQueryService(
         removed = await purge()
         self._invalidate_cache()
         return {"removed": removed}
+
+    def bind_revocation_lookup(self, loader: Callable[[], set[str]]) -> None:
+        """Bind authoritative revoked-principal lookup used by request auth (F02/A04)."""
+        self._revoked_principals_loader = loader
+
+    def is_principal_revoked(self, user_id: str, tenant_id: str | None = None) -> bool:
+        """Return True when the principal is revoked in governance state."""
+        del tenant_id  # reserved for future tenant-scoped revocation lists
+        loader = self._revoked_principals_loader
+        if loader is None:
+            return False
+        return str(user_id) in {str(item) for item in (loader() or set())}

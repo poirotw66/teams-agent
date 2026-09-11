@@ -189,13 +189,76 @@ class EvaluationRunService:
                 created_at=now,
                 updated_at=now,
             )
-            self._job_repo.enqueue_job(job)
+            try:
+                self._job_repo.enqueue_job(job)
+            except Exception as enqueue_err:
+                # Compensation: do not leave an undispatched QUEUED run.
+                self._mark_run_enqueue_failed(run_id, str(enqueue_err), actor=actor)
+                raise EvaluationValidationError(
+                    f"Failed to enqueue execution job for run {run_id}: {enqueue_err}"
+                ) from enqueue_err
 
         return {
             "run": run.model_dump(mode="json"),
             "runId": run_id,
             "statusUrl": f"/api/evaluations/runs/{run_id}",
         }
+
+    def _mark_run_enqueue_failed(
+        self,
+        run_id: str,
+        error: str,
+        *,
+        actor: ActorContext | None = None,
+    ) -> None:
+        state = self._repo.load()
+        run = next((r for r in state.runs if r.run_id == run_id), None)
+        if not run:
+            return
+        failed = run.model_copy(
+            update={
+                "status": "FAILED",
+                "cancel_reason": f"job_enqueue_failed: {error}",
+                "completed_at": datetime.now(timezone.utc),
+            }
+        )
+        runs = [r for r in state.runs if r.run_id != run_id] + [failed]
+        self._repo.commit_mutation(
+            state.model_copy(update={"runs": tuple(runs)}),
+            expected_revision=state.revision,
+        )
+
+    def recover_undispatched_runs(self, *, older_than_seconds: float = 30.0) -> int:
+        """Enqueue jobs for QUEUED runs that never received a durable job (outbox recovery)."""
+        if not self._job_repo:
+            return 0
+        now = datetime.now(timezone.utc)
+        recovered = 0
+        for run in self._repo.list_runs():
+            if run.status != "QUEUED":
+                continue
+            age = (now - run.created_at).total_seconds()
+            if age < older_than_seconds:
+                continue
+            existing = self._job_repo.get_job_by_run_id(run.run_id)
+            if existing is not None and existing.state in {"QUEUED", "RUNNING"}:
+                continue
+            logical_key = f"run:{run.tenant_id}:{run.run_id}"
+            job = ExecutionJob(
+                tenant_id=run.tenant_id,
+                job_id=str(uuid.uuid4()),
+                run_id=run.run_id,
+                logical_key=logical_key,
+                state="QUEUED",
+                created_at=now,
+                updated_at=now,
+            )
+            try:
+                self._job_repo.enqueue_job(job)
+            except Exception:
+                continue
+            recovered += 1
+        return recovered
 
     def get_run(self, run_id: str, actor: ActorContext | None = None) -> dict[str, Any]:
         if actor:

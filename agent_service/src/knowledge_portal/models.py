@@ -137,6 +137,7 @@ class KnowledgeVersionRecord(StrictModel):
     original_asset_sha256: str | None = None
     original_asset_content_type: str | None = None
     original_asset_size: int | None = None
+    original_artifact_ref: str | None = None
     etag: str
     created_at: datetime
     created_by: str
@@ -188,6 +189,7 @@ class ReleaseManifestEntry(StrictModel):
     source_type: str = "DERIVED_MARKDOWN"
     original_asset_available: bool = False
     original_asset_name: str | None = None
+    artifact_ref: str | None = None
 
 
 class ReleaseRecord(StrictModel):

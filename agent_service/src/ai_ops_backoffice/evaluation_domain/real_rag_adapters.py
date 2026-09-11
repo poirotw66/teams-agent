@@ -153,9 +153,9 @@ class RealRagRetrieverAdapter:
 
 class RealRagAnswerAdapter:
     """Formal answering pipeline adapter for REAL_RAG evaluation.
-    
-    Generates grounded answers based on retrieved evidence, prompt version,
-    and records token usage or UNKNOWN status (Spec 6.2).
+
+    Applies target manifest prompt/model when provided, records governed pricing,
+    and rejects synthetic answers in strict formal mode (Spec 6.1–6.2).
     """
 
     def __init__(
@@ -163,14 +163,68 @@ class RealRagAnswerAdapter:
         *,
         model_invoker: Callable[..., Any] | None = None,
         chat_model: Any | None = None,
+        model_factory: Callable[[str], Any] | None = None,
+        prompt_resolver: Callable[[str], str | None] | None = None,
+        cost_estimator: Callable[..., float | None] | None = None,
         allow_synthetic_fallback: bool = False,
     ) -> None:
         self._model_invoker = model_invoker
         self._chat_model = chat_model
+        self._model_factory = model_factory
+        self._prompt_resolver = prompt_resolver
+        self._cost_estimator = cost_estimator
         self._allow_synthetic_fallback = allow_synthetic_fallback
 
     def is_real_model_configured(self) -> bool:
-        return bool(self._model_invoker or self._chat_model)
+        if self._model_invoker or self._chat_model:
+            return True
+        if self._model_factory is None:
+            return False
+        # Factory alone is not enough: it must be able to produce a live model.
+        try:
+            probed = self._model_factory("") or self._model_factory("probe")
+        except Exception:
+            return False
+        return probed is not None
+
+    def _resolve_prompt_template(self, manifest: TargetManifest) -> str:
+        version = (manifest.prompt_version or "").strip()
+        if version and self._prompt_resolver is not None:
+            resolved = self._prompt_resolver(version)
+            if resolved:
+                return resolved
+        from agent_service.knowledge import ANSWER_PROMPT
+
+        return ANSWER_PROMPT
+
+    def _resolve_chat_model(self, manifest: TargetManifest) -> Any | None:
+        model_id = (manifest.model_id or "").strip()
+        if model_id and self._model_factory is not None:
+            built = self._model_factory(model_id)
+            if built is not None:
+                return built
+        return self._chat_model
+
+    def _priced_cost(
+        self,
+        *,
+        model_id: str | None,
+        total_tokens: int | None,
+        prompt_chars: int,
+        answer_chars: int,
+    ) -> float:
+        from agent_service.usage import estimate_cost_usd
+
+        total = total_tokens
+        if total is None or total <= 0:
+            total = max(1, int((prompt_chars + answer_chars) / 4))
+        ratio = prompt_chars / max(1, prompt_chars + answer_chars)
+        input_tokens = max(0, int(total * ratio))
+        output_tokens = max(0, total - input_tokens)
+        model_name = (model_id or "").strip() or "unknown"
+        estimator = self._cost_estimator or estimate_cost_usd
+        priced = estimator(model_name, input_tokens, output_tokens)
+        return float(priced) if priced is not None else 0.0
 
     def __call__(
         self,
@@ -206,25 +260,42 @@ class RealRagAnswerAdapter:
                     res.get("request_id") or res.get("provider_request_id"),
                 )
 
-        # 2. External LangChain chat model
-        if self._chat_model:
+        # 2. Target-manifest-aware LangChain chat model
+        chat_model = self._resolve_chat_model(manifest)
+        if chat_model:
             from langchain_core.messages import HumanMessage, SystemMessage
-            from agent_service.knowledge import ANSWER_PROMPT
 
+            prompt_template = self._resolve_prompt_template(manifest)
             context = "\n\n".join(
                 f"[{ev.get('title') or ev.get('source_id') or f'S{i}'}]\n{ev.get('content', '')}"
                 for i, ev in enumerate(retrieved_evidence, start=1)
             )
+            try:
+                system_content = prompt_template.format(question=query, context=context)
+            except (KeyError, ValueError):
+                system_content = f"{prompt_template}\n\n問題：{query}\n\n依據：\n{context}"
             messages = [
-                SystemMessage(content=ANSWER_PROMPT.format(question=query, context=context)),
-                HumanMessage(content=f"使用者原始問題：{query}\n請根據上述已授權知識內容直接回答。"),
+                SystemMessage(content=system_content),
+                HumanMessage(
+                    content=f"使用者原始問題：{query}\n請根據上述已授權知識內容直接回答。"
+                ),
             ]
-            response = self._chat_model.invoke(messages)
+            response = chat_model.invoke(messages)
             answer = response.content if hasattr(response, "content") else str(response)
             usage = getattr(response, "usage_metadata", None) or {}
             tokens = usage.get("total_tokens")
-            req_id = getattr(response, "id", None) or getattr(response, "response_metadata", {}).get("id")
-            cost = round((tokens or 0) * 0.0000003, 6)
+            req_id = getattr(response, "id", None) or getattr(
+                response, "response_metadata", {}
+            ).get("id")
+            prompt_chars = len(query) + sum(
+                len(e.get("content", "")) for e in retrieved_evidence
+            )
+            cost = self._priced_cost(
+                model_id=manifest.model_id,
+                total_tokens=tokens,
+                prompt_chars=prompt_chars,
+                answer_chars=len(str(answer)),
+            )
             return answer, tokens, cost, [], req_id
 
         # 3. If no real model is configured and synthetic fallback is not allowed: fail-fast!
@@ -239,7 +310,7 @@ class RealRagAnswerAdapter:
             return (
                 f"抱歉，目前的知識庫中沒有找到與「{query}」相關的已授權資訊。",
                 85,
-                0.00003,
+                0.0,
                 [],
                 None,
             )
@@ -258,8 +329,12 @@ class RealRagAnswerAdapter:
 
         prompt_len = len(query) + sum(len(e.get("content", "")) for e in retrieved_evidence)
         estimated_tokens = int((prompt_len + len(answer)) / 2)
-        cost = round(estimated_tokens * 0.0000003, 6)
-
+        cost = self._priced_cost(
+            model_id=manifest.model_id or "synthetic-local",
+            total_tokens=estimated_tokens,
+            prompt_chars=prompt_len,
+            answer_chars=len(answer),
+        )
         return answer, estimated_tokens, cost, [], None
 
 

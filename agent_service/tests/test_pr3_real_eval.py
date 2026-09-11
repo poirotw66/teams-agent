@@ -689,3 +689,193 @@ def test_real_agent_sandbox_adapter_workflow():
         TargetExecutionInput(query="問題"),
     )
     assert res == {"status": "SUCCESS", "query": "問題"}
+
+
+def test_create_app_forces_strict_real_rag_and_rejects_synthetic_without_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Formal create_app must enable strict REAL_RAG and refuse synthetic answers."""
+    from ai_ops_backoffice.api import create_app
+    from ai_ops_backoffice.settings import BackofficeSettings
+
+    monkeypatch.delenv("RAG_MODEL", raising=False)
+    monkeypatch.delenv("RAG_AGENT_MODEL", raising=False)
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        eval_store_mode="MEMORY",
+        gate_store_mode="MEMORY",
+        fixture_store_mode="MEMORY",
+        job_store_mode="MEMORY",
+    )
+
+    app_without_model = create_app(settings)
+    runner_without_model = app_without_model.state.eval_runner
+    assert runner_without_model._strict_real_rag is True
+    assert runner_without_model.has_retriever_adapter() is True
+    assert runner_without_model.has_answering_adapter() is False
+    answering = runner_without_model._answering_fn
+    assert isinstance(answering, RealRagAnswerAdapter)
+    assert answering.is_real_model_configured() is False
+    assert answering._allow_synthetic_fallback is False
+
+    def stub_invoker(query, manifest, sanitized_input, evidence, history):
+        return ("正式模型回答", 10, 0.00001, [], "req-formal-1")
+
+    app_with_model = create_app(settings, eval_model_invoker=stub_invoker)
+    runner_with_model = app_with_model.state.eval_runner
+    assert runner_with_model._strict_real_rag is True
+    assert runner_with_model.has_answering_adapter() is True
+    wired = runner_with_model._answering_fn
+    assert isinstance(wired, RealRagAnswerAdapter)
+    assert wired.is_real_model_configured() is True
+    assert wired._allow_synthetic_fallback is False
+
+
+def test_agent_sandbox_execute_side_uses_formal_workflow(tmp_path: Path):
+    """AGENT_SANDBOX runs must invoke the formal sandbox workflow adapter (F04)."""
+    repo = InMemoryEvaluationRepository()
+    calls: list[str] = []
+
+    def workflow(query, manifest, sanitized):
+        calls.append(query)
+        return {
+            "status": "SUCCESS",
+            "planning": "agent_workflow",
+            "answer": "sandbox-answer",
+            "tokens": 3,
+            "cost_usd": 0.0,
+        }
+
+    sandbox = RealAgentSandboxAdapter(ToolFixtureService(), workflow_executor=workflow)
+    runner = EvaluationRunner(
+        repo,
+        releases_dir=tmp_path,
+        strict_real_rag=True,
+        sandbox_adapter=sandbox,
+        answering_fn=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("REAL_RAG answer path must not run")
+        ),
+    )
+
+    now = datetime.now(timezone.utc)
+    revision = CaseRevision(
+        revision_id="rev-1",
+        case_id="case-1",
+        revision_number=1,
+        query="如何重置密碼？",
+        provenance=ProvenanceSpec(source_type="MANUAL", source_id="sandbox"),
+        etag=1,
+        content_hash="h1",
+        created_by="admin",
+        created_at=now,
+        updated_by="admin",
+        updated_at=now,
+    )
+    baseline = TargetManifest(target_id="b", target_side="BASELINE", manifest_hash="h1")
+    candidate = TargetManifest(target_id="c", target_side="CANDIDATE", manifest_hash="h2")
+
+    baseline_exec = runner._execute_side(
+        run_id="run-sandbox-1",
+        case_revision=revision,
+        manifest=baseline,
+        side="BASELINE",
+        mode="AGENT_SANDBOX",
+    )
+    candidate_exec = runner._execute_side(
+        run_id="run-sandbox-1",
+        case_revision=revision,
+        manifest=candidate,
+        side="CANDIDATE",
+        mode="AGENT_SANDBOX",
+    )
+    assert calls == ["如何重置密碼？", "如何重置密碼？"]
+    assert baseline_exec.answer == "sandbox-answer"
+    assert candidate_exec.answer == "sandbox-answer"
+    assert (baseline_exec.trace_ref or {}).get("sandbox", {}).get("planning") == "agent_workflow"
+    assert runner.has_sandbox_adapter() is True
+
+    bare = EvaluationRunner(repo, releases_dir=tmp_path, strict_real_rag=True)
+    assert bare.has_sandbox_adapter() is False
+    failed = bare._execute_side(
+        run_id="run-sandbox-2",
+        case_revision=revision,
+        manifest=baseline,
+        side="BASELINE",
+        mode="AGENT_SANDBOX",
+    )
+    assert failed.status == "FAILED"
+    assert "AGENT_SANDBOX" in (failed.error_detail or "")
+
+
+def test_create_app_wires_model_factory_and_sandbox_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Formal app should expose model_factory and attempt AGENT_SANDBOX wiring (A09)."""
+    from ai_ops_backoffice.api import create_app
+    from ai_ops_backoffice.settings import BackofficeSettings
+    from ai_ops_backoffice.evaluation_domain.real_rag_adapters import RealRagAnswerAdapter
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url="http://127.0.0.1:8000",
+        adapter_api_url="http://127.0.0.1:3978",
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        eval_store_mode="MEMORY",
+        gate_store_mode="MEMORY",
+        fixture_store_mode="MEMORY",
+        job_store_mode="MEMORY",
+    )
+
+    def fake_model(_model_id: str):
+        return object()
+
+    monkeypatch.setattr("agent_service.graph.build_chat_model", fake_model)
+    monkeypatch.setattr(
+        "ai_ops_backoffice.governance_domain.eval_runtime.build_isolated_eval_runtime",
+        lambda model_factory=None: type(
+            "Runtime",
+            (),
+            {
+                "apply_candidate": lambda self, prompt, model_id: None,
+                "extractor": type("Extractor", (), {"model": object()})(),
+            },
+        )(),
+    )
+    app = create_app(settings)
+    runner = app.state.eval_runner
+    assert runner._strict_real_rag is True
+    assert isinstance(runner._answering_fn, RealRagAnswerAdapter)
+    assert runner._answering_fn._model_factory is not None
+    assert runner.has_sandbox_adapter() is True

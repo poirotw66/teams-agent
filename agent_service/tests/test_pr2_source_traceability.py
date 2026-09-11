@@ -490,7 +490,7 @@ async def test_gcs_storage_chunked_streaming_and_sha256():
     mock_blob = MockBlob("tenants/t1/artifacts/art-1/test.txt")
 
     class MockBucket:
-        def blob(self, name):
+        def blob(self, name, generation=None):
             return mock_blob
 
     class MockClient:
@@ -533,3 +533,115 @@ def test_core_agent_service_has_no_backoffice_reverse_dependencies():
     assert DocumentAccessDecision.__module__ == "agent_service.document_authorization"
     assert ArtifactRecord.__module__ == "agent_service.artifact_models"
 
+
+
+def test_f08_source_map_marker_sets_page_index(tmp_path: Path) -> None:
+    from agent_service.documents import chunk_markdown
+
+    source = tmp_path / "doc.md"
+    source.write_text(
+        "# Title\n\n"
+        "<!-- source-map:page_index=2 page_label=3 coordinate_system=PDF_POINTS_72DPI -->\n"
+        "## Setup\n\nReset the password from the portal.\n",
+        encoding="utf-8",
+    )
+    chunks = chunk_markdown(source, "sources/doc.md", chunk_size=2000, overlap=50)
+    assert chunks
+    assert chunks[0].page_index == 2
+    assert chunks[0].page_label == "3"
+    assert chunks[0].section_path is not None
+    assert "source-map" not in chunks[0].content
+    locator = SourceTraceResolver._build_locator(
+        "PDF",
+        chunks[0].to_dict(),
+        {},
+        {},
+    )
+    assert locator.page_index == 2
+    assert locator.page_label == "3"
+
+
+def test_f03_legacy_unverified_blocks_download_in_preview(tmp_path: Path) -> None:
+    resolver = SourceTraceResolver(tmp_path)
+    source = SourceRecord(
+        source_ref_id="src-000000000000000000000099",
+        tenant_id="tenant-alpha",
+        document_id="doc-9",
+        version_id="ver-9",
+        release_id="rel-9",
+        mapping_status=MappingStatus.LEGACY_UNVERIFIED,
+        source_type="PDF",
+        original_asset_name="doc.pdf",
+        excerpt="legacy excerpt",
+    )
+    resolved = resolver._source_record_to_resolved(source)
+    preview = resolver.preview_payload(resolved)
+    assert preview["actions"]["canDownloadOriginal"] is False
+    assert "身分未確認" in preview["actions"]["nextSteps"]
+
+
+def test_f02_acl_and_revocation_deny_access() -> None:
+    from agent_service.document_authorization import authorize_document_access
+    from agent_service.operations.access import ActorContext
+
+    actor = ActorContext(
+        user_id="u1",
+        display_name="User",
+        role="ANALYST",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+        groups=("ALL_EMPLOYEES",),
+        revoked=False,
+    )
+    document = {
+        "tenant_id": "tenant-a",
+        "owner_unit_id": "IT Service Desk",
+        "acl_groups": ["HR_EXEC"],
+    }
+    denied = authorize_document_access(actor, document, action="preview")
+    assert denied.allowed is False
+    assert denied.safe_error_code == "ACL_DENIED"
+
+    revoked_actor = ActorContext(
+        user_id="u1",
+        display_name="User",
+        role="ANALYST",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+        groups=("HR_EXEC",),
+        revoked=True,
+    )
+    revoked = authorize_document_access(revoked_actor, document, action="preview")
+    assert revoked.allowed is False
+    assert revoked.safe_error_code == "REVOKED"
+
+
+def test_f07_original_asset_dual_write_to_artifact_storage(tmp_path: Path) -> None:
+    from agent_service.artifact_storage import LocalFileArtifactStorage
+    from knowledge_portal.original_assets import OriginalAssetStore
+    from knowledge_portal.settings import PortalSettings
+
+    settings = PortalSettings.from_env()
+    settings = PortalSettings(
+        **{
+            **settings.__dict__,
+            "data_dir": tmp_path,
+            "original_assets_dir": tmp_path / "originals",
+            "artifact_storage_backend": "FILE",
+            "artifact_storage_path": tmp_path / "artifacts",
+            "default_tenant_id": "tenant-a",
+        }
+    )
+    store = OriginalAssetStore(
+        settings,
+        artifact_storage=LocalFileArtifactStorage(tmp_path / "artifacts"),
+    )
+    pending = store.store_pending(b"%PDF-1.4 demo", filename="guide.pdf", actor_id="actor-1")
+    committed = store.commit_pending(
+        pending["original_asset_token"],
+        document_id="doc-1",
+        version_id="ver-1",
+        actor_id="actor-1",
+    )
+    assert committed["original_artifact_ref"] == "art-doc-1-ver-1"
+    assert (tmp_path / "originals" / "versions" / "doc-1" / "ver-1" / "guide.pdf").is_file()

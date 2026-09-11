@@ -140,12 +140,26 @@ class IdempotencyStore:
 
 
 class PortalServiceContext:
-    def __init__(self, settings: PortalSettings, repository: PortalRepository) -> None:
+    def __init__(
+        self,
+        settings: PortalSettings,
+        repository: PortalRepository,
+        *,
+        release_gate_checker: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.repository = repository
         self.publisher = ReleasePublisher(settings)
-        self.migration = KnowledgeMigrationService(settings, repository, self.publisher)
+        self.migration = KnowledgeMigrationService(
+            settings,
+            repository,
+            self.publisher,
+            release_gate_checker=release_gate_checker,
+        )
         self.idempotency = IdempotencyStore()
+        # Optional Quality Gate checker. None keeps local/test allow path;
+        # when injected, publish/activate must consult it before pointer flip.
+        self.release_gate_checker = release_gate_checker
 
     async def claim_idempotency(
         self, key: str, payload_hash: str

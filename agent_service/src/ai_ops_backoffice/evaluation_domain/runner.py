@@ -62,7 +62,11 @@ def default_knowledge_retriever(
     return matched_chunks[:top_k]
 
 from .agent_behavior_scorer import AgentBehaviorScorer
-from .errors import EvaluationNotFoundError, EvaluationValidationError
+from .errors import (
+    EvaluationNotFoundError,
+    EvaluationValidationError,
+    EvaluationVersionConflictError,
+)
 from .models import CaseRevision, EvaluationAuditEvent, EvaluationCriteria
 from .real_rag_adapters import RealRagAnswerAdapter, RealRagRetrieverAdapter
 from .repository import EvaluationRepository
@@ -83,6 +87,7 @@ logger = logging.getLogger(__name__)
 
 RetrieverFn = Callable[..., list[dict[str, Any]]]
 ModelAnsweringFn = Callable[..., Any]
+_CAS_MAX_ATTEMPTS = 3
 
 
 class EvaluationRunner:
@@ -98,6 +103,12 @@ class EvaluationRunner:
         answering_fn: Any | None = None,
         releases_dir: Path | None = None,
         strict_real_rag: bool = False,
+        chat_model: Any | None = None,
+        model_invoker: Any | None = None,
+        model_factory: Any | None = None,
+        prompt_resolver: Any | None = None,
+        lease_guard: Callable[[], None] | None = None,
+        sandbox_adapter: Any | None = None,
     ) -> None:
         self._repo = repository
         self._scorer = scorer or EvaluationScorer()
@@ -105,6 +116,8 @@ class EvaluationRunner:
         self._tool_fixture_service = tool_fixture_service or ToolFixtureService()
         self._releases_dir = releases_dir
         self._strict_real_rag = strict_real_rag
+        self._lease_guard = lease_guard
+        self._sandbox_adapter = sandbox_adapter
 
         self._retriever_fn = retriever_fn
         self._answering_fn = answering_fn
@@ -112,7 +125,13 @@ class EvaluationRunner:
         if self._retriever_fn is None and releases_dir is not None:
             self._retriever_fn = RealRagRetrieverAdapter(releases_dir=releases_dir)
         if self._answering_fn is None and releases_dir is not None:
-            self._answering_fn = RealRagAnswerAdapter(allow_synthetic_fallback=not strict_real_rag)
+            self._answering_fn = RealRagAnswerAdapter(
+                chat_model=chat_model,
+                model_invoker=model_invoker,
+                model_factory=model_factory,
+                prompt_resolver=prompt_resolver,
+                allow_synthetic_fallback=not strict_real_rag,
+            )
 
     def has_retriever_adapter(self) -> bool:
         return self._retriever_fn is not None
@@ -125,7 +144,11 @@ class EvaluationRunner:
         return True
 
     def has_sandbox_adapter(self) -> bool:
-        return self._tool_fixture_service is not None
+        if self._sandbox_adapter is not None:
+            if hasattr(self._sandbox_adapter, "is_real_workflow_configured"):
+                return bool(self._sandbox_adapter.is_real_workflow_configured())
+            return True
+        return False
 
     def execute_run(self, run_id: str) -> EvaluationRun:
         """Executes an evaluation run synchronously or from a background worker."""
@@ -148,6 +171,12 @@ class EvaluationRunner:
                 raise EvaluationValidationError(
                     "REAL_RAG execution rejected: Missing registered real retriever and answer adapters. "
                     "Ephemeral mock or keyword fallback is prohibited for production evaluation."
+                )
+        if run.mode == "AGENT_SANDBOX":
+            if not self.has_sandbox_adapter():
+                raise EvaluationValidationError(
+                    "AGENT_SANDBOX execution rejected: Missing registered formal Agent workflow adapter. "
+                    "Tool fixtures alone are not sufficient for production sandbox evaluation."
                 )
 
         now = datetime.now(timezone.utc)
@@ -196,6 +225,7 @@ class EvaluationRunner:
                 case_revision=revision,
                 manifest=run.baseline_manifest,
                 side="BASELINE",
+                mode=run.mode,
             )
             executed_cases.append(b_exec)
             total_tokens += b_exec.used_tokens
@@ -207,15 +237,11 @@ class EvaluationRunner:
                 case_revision=revision,
                 manifest=run.candidate_manifest,
                 side="CANDIDATE",
+                mode=run.mode,
             )
             executed_cases.append(c_exec)
             total_tokens += c_exec.used_tokens
             total_cost += c_exec.estimated_cost_usd
-
-        # Save all executed cases
-        current_state = self._repo.load()
-        existing_executions = [e for e in current_state.case_executions if e.run_id != run_id]
-        existing_executions.extend(executed_cases)
 
         # Compute comparison summary
         summary = self._compute_comparison_summary(
@@ -243,32 +269,51 @@ class EvaluationRunner:
             }
         )
 
-        # Commit mutation atomically
-        runs = [r for r in current_state.runs if r.run_id != run_id]
-        runs.append(final_run)
-        new_state = current_state.model_copy(
-            update={
-                "runs": tuple(runs),
-                "case_executions": tuple(existing_executions),
-            }
-        )
-        audit = EvaluationAuditEvent(
-            audit_id=str(uuid.uuid4()),
-            entity_type="EVAL_RUN",
-            entity_id=run_id,
-            action="RUN_COMPLETED" if final_status == "COMPLETED" else "RUN_CANCELLED",
-            actor_id=run.requested_by,
-            actor_role="SYSTEM",
-            owner_unit_id=run.owner_unit_id,
-            tenant_id=run.tenant_id,
-            before={"status": run.status},
-            after={"status": final_status, "actual_cost_usd": total_cost},
-            reason=cancel_reason or "Evaluation run finished successfully",
-            occurred_at=completed_at,
-            correlation_id=run.correlation_id,
-        )
-        self._repo.commit_mutation(new_state, audit=audit)
-        return final_run
+        # Commit mutation atomically with CAS
+        last_conflict: EvaluationVersionConflictError | None = None
+        for attempt in range(_CAS_MAX_ATTEMPTS):
+            self._check_lease()
+            current_state = self._repo.load()
+            runs = [r for r in current_state.runs if r.run_id != run_id]
+            runs.append(final_run)
+            # Preserve executions from concurrent writers for other runs; replace this run's.
+            other_executions = [e for e in current_state.case_executions if e.run_id != run_id]
+            new_state = current_state.model_copy(
+                update={
+                    "runs": tuple(runs),
+                    "case_executions": tuple(other_executions + executed_cases),
+                }
+            )
+            audit = EvaluationAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                entity_type="EVAL_RUN",
+                entity_id=run_id,
+                action="RUN_COMPLETED" if final_status == "COMPLETED" else "RUN_CANCELLED",
+                actor_id=run.requested_by,
+                actor_role="SYSTEM",
+                owner_unit_id=run.owner_unit_id,
+                tenant_id=run.tenant_id,
+                before={"status": run.status},
+                after={"status": final_status, "actual_cost_usd": total_cost},
+                reason=cancel_reason or "Evaluation run finished successfully",
+                occurred_at=completed_at,
+                correlation_id=run.correlation_id,
+            )
+            try:
+                self._repo.commit_mutation(
+                    new_state, audit=audit, expected_revision=current_state.revision
+                )
+                return final_run
+            except EvaluationVersionConflictError as exc:
+                last_conflict = exc
+                logger.warning(
+                    "CAS conflict completing run %s (attempt %s/%s)",
+                    run_id,
+                    attempt + 1,
+                    _CAS_MAX_ATTEMPTS,
+                )
+        assert last_conflict is not None
+        raise last_conflict
 
     def _execute_side(
         self,
@@ -276,6 +321,7 @@ class EvaluationRunner:
         case_revision: CaseRevision,
         manifest: TargetManifest,
         side: TargetSide,
+        mode: str = "REAL_RAG",
     ) -> CaseExecution:
         """Executes a single side (baseline or candidate) for a case revision."""
         execution_id = f"exec_{run_id[:8]}_{side.lower()}_{case_revision.case_id[:8]}"
@@ -308,10 +354,36 @@ class EvaluationRunner:
                     case_revision.query, manifest, case_revision, self._releases_dir
                 )
 
-            # 2. Answering phase
+            # 2. Answering / sandbox workflow phase
             tool_calls: list[ToolCallTrace] = []
             provider_req_id = None
-            if self._answering_fn:
+            sandbox_trace: dict[str, Any] | None = None
+            if mode == "AGENT_SANDBOX":
+                if self._sandbox_adapter is None:
+                    raise EvaluationValidationError(
+                        "AGENT_SANDBOX execution rejected: Missing registered formal Agent workflow adapter."
+                    )
+                workflow_result = self._sandbox_adapter.execute_workflow_turn(
+                    case_revision.query, manifest, sanitized_input
+                )
+                if isinstance(workflow_result, dict):
+                    sandbox_trace = dict(workflow_result)
+                    answer = str(
+                        workflow_result.get("answer")
+                        or workflow_result.get("planning")
+                        or workflow_result.get("status")
+                        or ""
+                    )
+                    tokens = workflow_result.get("tokens", 0)
+                    cost = float(workflow_result.get("cost_usd") or 0.0)
+                    raw_tool_calls = workflow_result.get("tool_calls") or []
+                    tool_calls = list(raw_tool_calls)
+                    provider_req_id = workflow_result.get("provider_request_id")
+                else:
+                    answer = str(workflow_result)
+                    tokens = 0
+                    cost = 0.0
+            elif self._answering_fn:
                 try:
                     ans_res = self._answering_fn(
                         case_revision.query, manifest, sanitized_input, retrieved
@@ -382,6 +454,8 @@ class EvaluationRunner:
             trace_ref: dict[str, Any] = {}
             if tool_calls:
                 trace_ref["tool_calls"] = list(tool_events)
+            if sandbox_trace is not None:
+                trace_ref["sandbox"] = sandbox_trace
 
             return CaseExecution(
                 execution_id=execution_id,
@@ -724,9 +798,36 @@ class EvaluationRunner:
             latency_p95_ms=round(p95, 2),
         )
 
+    def _check_lease(self) -> None:
+        """Fail closed when an attached job lease guard reports lease loss."""
+        if self._lease_guard is not None:
+            self._lease_guard()
+
+    def bind_lease_guard(self, lease_guard: Callable[[], None] | None) -> None:
+        """Attach or clear a lease guard for the current job execution."""
+        self._lease_guard = lease_guard
+
     def _save_run_state(self, run: EvaluationRun) -> None:
-        """Helper to update run state in repository."""
-        state = self._repo.load()
-        runs = [r for r in state.runs if r.run_id != run.run_id]
-        runs.append(run)
-        self._repo.commit_mutation(state.model_copy(update={"runs": tuple(runs)}))
+        """Update run state with CAS retries to avoid lost concurrent updates."""
+        last_conflict: EvaluationVersionConflictError | None = None
+        for attempt in range(_CAS_MAX_ATTEMPTS):
+            self._check_lease()
+            state = self._repo.load()
+            runs = [r for r in state.runs if r.run_id != run.run_id]
+            runs.append(run)
+            try:
+                self._repo.commit_mutation(
+                    state.model_copy(update={"runs": tuple(runs)}),
+                    expected_revision=state.revision,
+                )
+                return
+            except EvaluationVersionConflictError as exc:
+                last_conflict = exc
+                logger.warning(
+                    "CAS conflict saving run %s (attempt %s/%s)",
+                    run.run_id,
+                    attempt + 1,
+                    _CAS_MAX_ATTEMPTS,
+                )
+        assert last_conflict is not None
+        raise last_conflict

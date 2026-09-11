@@ -6,6 +6,7 @@ from typing import Any
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import MASKING_POLICY_VERSION, mask_text
+from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
 
 from .artifacts import write_faq_activation_artifact
 from .authorization import (
@@ -46,12 +47,17 @@ class FaqDomainService:
         taxonomy: FaqTaxonomyPort | None = None,
         self_approval_exception: FaqSelfApprovalExceptionPort | None = None,
         artifact_dir: Path | None = None,
+        release_gate_checker: Any | None = None,
     ) -> None:
         self._repository = repository
         self._authorization = authorization or AccessPolicyAuthorization()
         self._taxonomy = taxonomy or DenyUnknownTaxonomy()
         self._self_approval_exception = self_approval_exception or DenySelfApprovalException()
         self._artifact_dir = artifact_dir
+        self._release_gate_checker = release_gate_checker
+
+    def set_release_gate_checker(self, checker: Any | None) -> None:
+        self._release_gate_checker = checker
 
     def _authorize(self, actor: ActorContext, capability: str, owner_unit_id: str) -> None:
         self._authorization.require(actor=actor, capability=capability, owner_unit_id=owner_unit_id)
@@ -604,6 +610,15 @@ class FaqDomainService:
                 "activation requires an APPROVED version; rollback requires a previously approved SUPERSEDED version"
             )
         self._validate_submission(version)
+        try:
+            require_release_gate(
+                self._release_gate_checker,
+                target_manifest_hash=getattr(version, "content_hash", None)
+                or version.version_id,
+                target_type="FAQ",
+            )
+        except ReleaseGateBlockedError as exc:
+            raise FaqValidationError(str(exc)) from exc
         previous_id = self._repository.get_active_version_id(faq.faq_key)
         changed = [self._replace(version, status="ACTIVE")]
         if previous_id and previous_id != version_id:

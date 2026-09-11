@@ -99,6 +99,11 @@ class BackofficeSettings:
     job_store_mode: str | None = None
     job_store_path: Path | None = None
     job_firestore_collection: str = "ai_ops_execution_jobs"
+    source_store_mode: str = "FILE"
+    source_store_path: Path | None = None
+    artifact_storage_backend: str = "FILE"
+    artifact_storage_path: Path | None = None
+    artifact_gcs_bucket: str | None = None
     environment: str = "dev"
 
     def validate_for_production(self) -> list[str]:
@@ -437,6 +442,29 @@ class BackofficeSettings:
             job_firestore_collection=os.environ.get(
                 "AI_OPS_JOB_FIRESTORE_COLLECTION", "ai_ops_execution_jobs"
             ),
+            source_store_mode=(
+                os.environ.get("AI_OPS_SOURCE_STORE_MODE")
+                or os.environ.get("OPS_STORE_MODE")
+                or "FILE"
+            ).upper(),
+            source_store_path=Path(
+                os.environ.get(
+                    "AI_OPS_SOURCE_STORE_PATH",
+                    ops_dir / "sources" / "records",
+                )
+            ).expanduser().resolve(),
+            artifact_storage_backend=(
+                os.environ.get("AI_OPS_ARTIFACT_STORAGE_BACKEND", "FILE") or "FILE"
+            ).upper(),
+            artifact_storage_path=Path(
+                os.environ.get(
+                    "AI_OPS_ARTIFACT_STORAGE_PATH",
+                    ops_dir / "sources" / "artifacts",
+                )
+            ).expanduser().resolve(),
+            artifact_gcs_bucket=os.environ.get("AI_OPS_ARTIFACT_GCS_BUCKET")
+            or os.environ.get("AI_OPS_EXPORT_GCS_BUCKET")
+            or None,
             environment=(
                 os.environ.get("AI_OPS_DEPLOYMENT_ENV")
                 or os.environ.get("AGENT_DEPLOYMENT_ENV")

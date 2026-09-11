@@ -54,6 +54,10 @@ class PortalSettings:
     pdf_jobs_dir: Path | None = None
     pdf_prompt_template: str = "slide"
     original_assets_dir: Path | None = None
+    artifact_storage_backend: str = "NONE"
+    artifact_gcs_bucket: str | None = None
+    artifact_storage_path: Path | None = None
+    default_tenant_id: str = "default"
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -231,6 +235,27 @@ class PortalSettings:
                 .resolve()
                 if os.environ.get("KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR")
                 else None
+            ),
+            artifact_storage_backend=(
+                os.environ.get("KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_BACKEND")
+                or os.environ.get("AI_OPS_ARTIFACT_STORAGE_BACKEND")
+                or "NONE"
+            ).upper(),
+            artifact_gcs_bucket=(
+                os.environ.get("KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET")
+                or os.environ.get("AI_OPS_ARTIFACT_GCS_BUCKET")
+                or os.environ.get("AI_OPS_EXPORT_GCS_BUCKET")
+                or None
+            ),
+            artifact_storage_path=(
+                Path(os.environ["KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_PATH"])
+                .expanduser()
+                .resolve()
+                if os.environ.get("KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_PATH")
+                else None
+            ),
+            default_tenant_id=os.environ.get(
+                "KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID", "default"
             ),
         )
 

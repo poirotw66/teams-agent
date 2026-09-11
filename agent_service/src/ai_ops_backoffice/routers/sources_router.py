@@ -81,7 +81,7 @@ def register_sources_routes(
 
         payload = query_service._source_trace.preview_payload(source)
         payload["previewUrl"] = f"/api/sources/{source.source_ref_id}"
-        if source.original_asset_available:
+        if source.original_asset_available and source.mapping_status != "LEGACY_UNVERIFIED":
             payload["downloadUrl"] = f"/api/sources/{source.source_ref_id}/file"
 
         await audit_read(
@@ -110,6 +110,11 @@ def register_sources_routes(
             source_ref_id, tenant_id=tenant_id
         )
         if source is None or not source.original_asset_available:
+            raise HTTPException(
+                status_code=404,
+                detail="Original source file is not available or access denied.",
+            )
+        if source.mapping_status == "LEGACY_UNVERIFIED":
             raise HTTPException(
                 status_code=404,
                 detail="Original source file is not available or access denied.",

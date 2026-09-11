@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +84,13 @@ class DocumentChunk:
     source_type: str | None = None
     original_asset_available: bool = False
     original_asset_name: str | None = None
+    # Ingestion source-map fields for citation jump/highlight (F08).
+    page_index: int | None = None
+    page_label: str | None = None
+    bbox: list[float] | None = None
+    coordinate_system: str | None = None
+    section_path: str | None = None
+    paragraph_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -100,7 +107,9 @@ class DocumentChunk:
             normalized["metadata"] = DocumentMetadata.from_dict(normalized["metadata"])
         elif "metadata" in normalized:
             normalized["metadata"] = None
-        return cls(**normalized)
+        known = {item.name for item in fields(cls)}
+        filtered = {key: item for key, item in normalized.items() if key in known}
+        return cls(**filtered)
 
 
 def _coerce_date_value(value: Any) -> str | None:
@@ -304,19 +313,67 @@ def chunk_markdown(
                 + ",".join(image.path for image in images)
             ).encode()
         ).hexdigest()[:20]
+        source_map = _parse_source_map_marker(content)
+        cleaned = _strip_source_map_marker(content)
+        heading_match = re.search(r"(?m)^#{1,3}\s+(.+)$", cleaned)
+        section_path = source_map.get("section_path") or (
+            heading_match.group(1).strip() if heading_match else None
+        )
+        page_index = source_map.get("page_index")
+        page_label = source_map.get("page_label")
         chunks.append(
             DocumentChunk(
                 chunk_id=digest,
                 title=title,
                 source_path=relative_path,
-                content=content,
+                content=cleaned,
                 classification=str(metadata.get("classification", "internal")),
                 allowed_groups=allowed_groups,
                 images=images,
                 metadata=doc_metadata,
+                section=section_path,
+                page=page_index,
+                page_index=page_index,
+                page_label=page_label,
+                section_path=section_path,
+                paragraph_id=f"p-{index + 1}",
+                bbox=source_map.get("bbox"),
+                coordinate_system=source_map.get("coordinate_system"),
             )
         )
     return chunks
+
+
+_SOURCE_MAP_RE = re.compile(r"<!--\s*source-map:([^>]+)-->", re.IGNORECASE)
+
+
+def _parse_source_map_marker(content: str) -> dict[str, Any]:
+    match = _SOURCE_MAP_RE.search(content or "")
+    if not match:
+        return {}
+    attrs = dict(re.findall(r"(\w+)=([^\s]+)", match.group(1)))
+    result: dict[str, Any] = {}
+    if "page_index" in attrs:
+        try:
+            result["page_index"] = int(attrs["page_index"])
+        except ValueError:
+            pass
+    if "page_label" in attrs:
+        result["page_label"] = attrs["page_label"]
+    if "section_path" in attrs:
+        result["section_path"] = attrs["section_path"].replace("_", " ")
+    if "coordinate_system" in attrs:
+        result["coordinate_system"] = attrs["coordinate_system"]
+    if "bbox" in attrs:
+        try:
+            result["bbox"] = [float(part) for part in attrs["bbox"].split(",")]
+        except ValueError:
+            pass
+    return result
+
+
+def _strip_source_map_marker(content: str) -> str:
+    return _SOURCE_MAP_RE.sub("", content or "").strip()
 
 
 def load_metadata(data_dir: Path) -> dict[str, dict[str, Any]]:

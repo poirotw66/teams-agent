@@ -26,6 +26,7 @@ class ExecutionJobWorker:
         worker_id: str | None = None,
         lease_seconds: float = 60.0,
         heartbeat_interval_seconds: float = 15.0,
+        run_service: Any | None = None,
     ) -> None:
         self._repo = job_repository
         self._runner = runner
@@ -34,6 +35,11 @@ class ExecutionJobWorker:
         self._heartbeat_interval = heartbeat_interval_seconds
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._run_service = run_service
+
+    def set_run_service(self, run_service: Any | None) -> None:
+        """Attach EvaluationRunService after construction (create_app wiring order)."""
+        self._run_service = run_service
 
     @property
     def worker_id(self) -> str:
@@ -87,9 +93,36 @@ class ExecutionJobWorker:
                 )
                 return
 
-            # Execute run using EvaluationRunner
-            # Checkpoint callback can be hooked into runner if needed
-            run = self._runner.execute_run(job.run_id)
+            def _lease_guard() -> None:
+                try:
+                    self._repo.heartbeat(
+                        job.job_id,
+                        self._worker_id,
+                        fencing_token,
+                        extend_seconds=self._lease_seconds,
+                    )
+                except (JobLeaseLostError, JobFencingConflictError):
+                    raise
+                self._repo.save_checkpoint(
+                    job.job_id,
+                    self._worker_id,
+                    fencing_token,
+                    checkpoint_ref=f"{job.run_id}:running",
+                )
+
+            if hasattr(self._runner, "bind_lease_guard"):
+                self._runner.bind_lease_guard(_lease_guard)
+            try:
+                self._repo.save_checkpoint(
+                    job.job_id,
+                    self._worker_id,
+                    fencing_token,
+                    checkpoint_ref=f"{job.run_id}:started",
+                )
+                run = self._runner.execute_run(job.run_id)
+            finally:
+                if hasattr(self._runner, "bind_lease_guard"):
+                    self._runner.bind_lease_guard(None)
 
             # Determine final state based on run status
             final_state = "COMPLETED"
@@ -138,6 +171,10 @@ class ExecutionJobWorker:
         def _run_loop() -> None:
             while not self._stop_event.is_set():
                 try:
+                    if self._run_service is not None and hasattr(
+                        self._run_service, "recover_undispatched_runs"
+                    ):
+                        self._run_service.recover_undispatched_runs()
                     job = self.step()
                     if not job:
                         self._stop_event.wait(1.0)

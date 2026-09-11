@@ -36,8 +36,18 @@ from .settings import PortalSettings
 class PortalService:
     """Thin application facade over domain services."""
 
-    def __init__(self, settings: PortalSettings, repository: PortalRepository) -> None:
-        ctx = PortalServiceContext(settings, repository)
+    def __init__(
+        self,
+        settings: PortalSettings,
+        repository: PortalRepository,
+        *,
+        release_gate_checker: object | None = None,
+    ) -> None:
+        # Optional gate checker: None keeps local/test allow path (REPORT_ONLY-compatible).
+        # When injected, publish/activate/migration consult it before flipping pointers.
+        ctx = PortalServiceContext(
+            settings, repository, release_gate_checker=release_gate_checker
+        )
         self._ctx = ctx
         self._documents = DocumentService(ctx)
         self._reviews = ReviewService(ctx, self._documents)

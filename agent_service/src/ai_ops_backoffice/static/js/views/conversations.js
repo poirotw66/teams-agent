@@ -65,10 +65,17 @@ function isConversationFilterEditing(active = document.activeElement) {
   return Boolean(active.closest?.(".filter-bar, .bu-ops-note, .conversation-detail"));
 }
 
-function touchConversationsFreshness(suffix = "") {
+function touchConversationsFreshness(suffix = "", freshness = null) {
   const badge = document.getElementById("conversations-freshness");
   if (!badge) return;
   const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  if (freshness?.status) {
+    const lag =
+      freshness.lag_seconds != null ? `（延遲 ${Math.round(freshness.lag_seconds)}s）` : "";
+    badge.textContent = `新鮮度：${freshness.status}${lag}${suffix}`;
+    badge.title = "來自 API FreshnessMetadata（含 worker heartbeat 與 watermark）";
+    return;
+  }
   badge.textContent = suffix
     ? `最後更新：${nowTime}${suffix}`
     : `最後更新：${nowTime}`;
@@ -222,10 +229,11 @@ export async function renderConversations(state = {}) {
 
     if (state.forceRefresh) filters.set("refresh", "true");
     const data = await api(`/api/conversations?${filters.toString()}`);
+    const listFreshness = data.freshness || null;
 
     if (state.isPolling) {
       if (isConversationFilterEditing()) {
-        touchConversationsFreshness("（編輯中，暫不重整）");
+        touchConversationsFreshness("（編輯中，暫不重整）", listFreshness);
         return;
       }
       state._preserveScrollY = window.scrollY || document.documentElement.scrollTop || 0;
@@ -252,9 +260,21 @@ export async function renderConversations(state = {}) {
     liveControls.style.gap = "0.6rem";
 
     const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-    const freshnessBadge = el("span", "meta-chip", `最後更新：${nowTime}`);
+    const freshnessBadge = el(
+      "span",
+      "meta-chip",
+      listFreshness?.status
+        ? `新鮮度：${listFreshness.status}${
+            listFreshness.lag_seconds != null
+              ? `（延遲 ${Math.round(listFreshness.lag_seconds)}s）`
+              : ""
+          }`
+        : `最後更新：${nowTime}`,
+    );
     freshnessBadge.id = "conversations-freshness";
-    freshnessBadge.title = "目前對話清單資料抓取時間點";
+    freshnessBadge.title = listFreshness?.status
+      ? "來自 API FreshnessMetadata（含 worker heartbeat 與 watermark）"
+      : "目前對話清單資料抓取時間點";
 
     const autoRefreshLabel = el(
       "label",

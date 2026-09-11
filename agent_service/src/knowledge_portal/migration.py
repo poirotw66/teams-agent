@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
+from typing import Any
 
 from agent_service.documents import parse_front_matter
+from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
 
 from .draft_assets import slug_from_title
 from .models import (
@@ -70,10 +72,18 @@ def _parse_source_file(
 
 
 class KnowledgeMigrationService:
-    def __init__(self, settings: PortalSettings, repository, publisher: ReleasePublisher) -> None:
+    def __init__(
+        self,
+        settings: PortalSettings,
+        repository,
+        publisher: ReleasePublisher,
+        *,
+        release_gate_checker: Any | None = None,
+    ) -> None:
         self._settings = settings
         self._repository = repository
         self._publisher = publisher
+        self.release_gate_checker = release_gate_checker
 
     async def bootstrap_release_0001(
         self,
@@ -195,6 +205,14 @@ class KnowledgeMigrationService:
             }
         )
         await self._repository.save_release(release)
+        try:
+            require_release_gate(
+                self.release_gate_checker,
+                target_manifest_hash=release.corpus_hash,
+                target_type="KNOWLEDGE",
+            )
+        except ReleaseGateBlockedError as exc:
+            raise PermissionError(str(exc)) from exc
         await self._repository.set_active_release_id(release.release_id)
         write_active_release_pointer(
             self._settings.release_artifact_dir,

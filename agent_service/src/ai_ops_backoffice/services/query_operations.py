@@ -216,6 +216,14 @@ class OperationsQueryMixin:
                     "no recent traffic, not a batch pipeline failure."
                 )
 
+        freshness_meta = None
+        tracker = getattr(self, "_freshness_tracker", None)
+        if tracker is not None:
+            freshness_meta = tracker.compute_freshness(
+                resource_type="operations_overview",
+                watermark=latest_event_at,
+            ).model_dump(mode="json")
+
         metrics_source = "event_scan"
         turn_count_value = len(turns)
         issue_occurrence_count = len(issues)
@@ -326,6 +334,7 @@ class OperationsQueryMixin:
             "latestEventAt": latest_event_at.isoformat() if latest_event_at else None,
             "dataFreshnessMinutes": data_freshness_minutes,
             "dataDelayWarning": data_delay_warning,
+            "freshness": freshness_meta,
             "conversationCount": len(conversations),
             "turnCount": turn_count_value,
             "activeUserCount": len(actors),

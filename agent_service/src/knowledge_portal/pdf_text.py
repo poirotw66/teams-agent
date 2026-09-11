@@ -36,10 +36,15 @@ def extract_text_pdf(payload: bytes, *, min_chars_per_page: int = 12) -> tuple[s
         raise ValueError("PDF has no pages.")
 
     chunks: list[str] = []
-    for page in reader.pages:
+    for page_index, page in enumerate(reader.pages):
         page_text = (page.extract_text() or "").strip()
         if page_text:
-            chunks.append(page_text)
+            chunks.append(
+                "<!-- source-map:"
+                f"page_index={page_index} page_label={page_index + 1} "
+                "coordinate_system=PDF_POINTS_72DPI -->\n"
+                f"{page_text}"
+            )
 
     text = "\n\n".join(chunks).strip()
     if not text or len(text) < min(min_chars_per_page, min_chars_per_page * page_count):

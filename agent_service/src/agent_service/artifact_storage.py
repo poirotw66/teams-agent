@@ -329,7 +329,11 @@ class GcsArtifactStorage:
             if record is None:
                 raise FileNotFoundError(f"Artifact {artifact_id} not found in GCS.")
             bucket = self.client.bucket(self.bucket_name)
-            blob = bucket.blob(record.object_key)
+            # Pin immutable generation when available (F07).
+            if getattr(record, "generation", None):
+                blob = bucket.blob(record.object_key, generation=int(record.generation))
+            else:
+                blob = bucket.blob(record.object_key)
 
             async def _stream_gcs_blob() -> AsyncIterator[bytes]:
                 with blob.open("rb") as f:
@@ -363,7 +367,10 @@ class GcsArtifactStorage:
 
         if self.client is not None:
             bucket = self.client.bucket(self.bucket_name)
-            blob = bucket.blob(record.object_key)
+            if getattr(record, "generation", None):
+                blob = bucket.blob(record.object_key, generation=int(record.generation))
+            else:
+                blob = bucket.blob(record.object_key)
             range_bytes = blob.download_as_bytes(start=start, end=end)
             return record, range_bytes
 

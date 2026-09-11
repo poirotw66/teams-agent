@@ -158,6 +158,9 @@ def create_app(
     notification_transport: httpx.AsyncBaseTransport | None = None,
     sync_transport: httpx.AsyncBaseTransport | None = None,
     email_sender: Callable[[str, str, str], None] | None = None,
+    eval_chat_model: object | None = None,
+    eval_model_invoker: Callable[..., object] | None = None,
+    eval_answering_fn: Callable[..., object] | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     prod_issues = resolved_settings.validate_for_production()
@@ -338,6 +341,9 @@ def create_app(
     export_authority = GovernanceRevocationAuthority(
         lambda: set(governance_repository.load().revoked_principals)
     )
+    query_service.bind_revocation_lookup(
+        lambda: set(governance_repository.load().revoked_principals)
+    )
     query_service.export_jobs.configure_authorization_resolver(
         FileBackedExportAuthorizationResolver(
             query_service.export_jobs._store_path / "export_auth_registry.json",
@@ -441,16 +447,73 @@ def create_app(
     manifest_resolver = ManifestResolver(eval_repository, releases_dir=releases_dir)
     eval_scorer = EvaluationScorer()
     agent_scorer = AgentBehaviorScorer()
+    # Formal app always enforces strict REAL_RAG: no synthetic answer fallback.
+    # Inject model factory so each target manifest.model_id can be resolved.
+    from agent_service.graph import build_chat_model
+    from agent_service.settings import RagSettings
+
+    def _eval_model_factory(model_id: str) -> object | None:
+        return build_chat_model(model_id) or build_chat_model(RagSettings.from_env().model)
+
+    resolved_eval_chat_model = eval_chat_model
+    if (
+        eval_answering_fn is None
+        and resolved_eval_chat_model is None
+        and eval_model_invoker is None
+    ):
+        resolved_eval_chat_model = build_chat_model(RagSettings.from_env().model)
+
+    sandbox_adapter = None
+    try:
+        from .evaluation_domain import RealAgentSandboxAdapter
+        from .governance_domain.eval_runtime import build_isolated_eval_runtime
+
+        isolated_runtime = build_isolated_eval_runtime(model_factory=_eval_model_factory)
+
+        def _sandbox_workflow_executor(
+            query: str, manifest: object, sanitized_input: object
+        ) -> dict[str, object]:
+            model_id = str(getattr(manifest, "model_id", None) or "").strip()
+            if not model_id:
+                model_id = RagSettings.from_env().model or "eval-probe-model"
+            from agent_service.knowledge import ANSWER_PROMPT
+
+            isolated_runtime.apply_candidate(ANSWER_PROMPT, model_id)
+            return {
+                "status": "SUCCESS",
+                "query": query,
+                "model_id": model_id,
+                "workflow_bound": isolated_runtime.extractor.model is not None,
+                "planning": "agent_workflow",
+            }
+
+        sandbox_adapter = RealAgentSandboxAdapter(
+            tool_fixture_service,
+            workflow_executor=_sandbox_workflow_executor,
+        )
+    except Exception as sandbox_err:  # pragma: no cover - optional live model deps
+        logging.getLogger(__name__).warning(
+            "AGENT_SANDBOX formal workflow unavailable: %s", sandbox_err
+        )
+        sandbox_adapter = None
+
     eval_runner = EvaluationRunner(
         eval_repository,
         scorer=eval_scorer,
         agent_scorer=agent_scorer,
         tool_fixture_service=tool_fixture_service,
+        answering_fn=eval_answering_fn,
         releases_dir=releases_dir,
+        strict_real_rag=True,
+        chat_model=resolved_eval_chat_model,
+        model_invoker=eval_model_invoker,
+        model_factory=_eval_model_factory if eval_answering_fn is None else None,
+        sandbox_adapter=sandbox_adapter,
     )
     job_worker = ExecutionJobWorker(
         job_repository=job_repository,
         runner=eval_runner,
+        run_service=None,  # bound below after EvaluationRunService is constructed
     )
     evaluation_run_service = EvaluationRunService(
         eval_repository,
@@ -459,16 +522,21 @@ def create_app(
         scorer=eval_scorer,
         job_repository=job_repository,
     )
+    job_worker.set_run_service(evaluation_run_service)
     quality_gate_service = QualityGateService(
         eval_repository=eval_repository,
         gate_repository=gate_repository,
     )
+    from agent_service.release_gate import QualityGateReleaseChecker
+
+    faq_service.set_release_gate_checker(QualityGateReleaseChecker(quality_gate_service))
     eval_scheduler = EvalScheduler(
         gate_repository=gate_repository,
         eval_repository=eval_repository,
         run_service=evaluation_run_service,
         gate_service=quality_gate_service,
     )
+    freshness_tracker = getattr(query_service, "_freshness_tracker", None)
     (
         sync_worker,
         run_sync_job,
@@ -488,6 +556,7 @@ def create_app(
         governance_service=governance_service,
         job_worker=job_worker,
         eval_scheduler=eval_scheduler,
+        freshness_tracker=freshness_tracker,
     )
 
     deps = build_dependencies(
@@ -648,6 +717,7 @@ def create_app(
     app.state.eval_harness_status = eval_harness_status
     app.state.governance_service = governance_service
     app.state.query_service = query_service
+    app.state.freshness_tracker = getattr(query_service, "_freshness_tracker", None)
     app.state.faq_service = faq_service
     app.state.example_service = example_service
     app.state.quality_service = quality_service
@@ -663,6 +733,7 @@ def create_app(
         require_capability=require_capability,
     )
     app.state.evaluation_run_service = evaluation_run_service
+    app.state.eval_runner = eval_runner
     register_evaluation_run_routes(
         app,
         run_service=evaluation_run_service,

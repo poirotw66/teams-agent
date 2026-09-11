@@ -39,6 +39,8 @@ def resolve_actor(
     entra_tenant_id: str | None,
     entra_client_id: str | None,
     header_tenant_id: str | None = None,
+    header_groups: str | None = None,
+    revoked: bool = False,
 ) -> ActorContext:
     mode = auth_mode.upper()
     if mode == "ENTRA":
@@ -96,10 +98,15 @@ def resolve_actor(
         if item.strip()
     ]
     tenant_id = (header_tenant_id or "").strip() or "local-development"
+    groups = tuple(
+        item.strip() for item in (header_groups or "").split(",") if item.strip()
+    )
     return ActorContext(
         user_id=header_user_id,
         display_name=header_user_name or header_user_id,
         role=role,  # type: ignore[arg-type]
         owner_unit_ids=tuple(owner_units),
         tenant_id=tenant_id,
+        groups=groups,
+        revoked=bool(revoked),
     )

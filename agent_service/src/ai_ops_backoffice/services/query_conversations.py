@@ -400,10 +400,21 @@ class ConversationsQueryMixin:
                 }
             )
         next_index = start + len(page_ids)
+        latest_event_at = None
+        if events:
+            latest_event_at = max((event.occurred_at for event in events), default=None)
+        freshness_meta = None
+        tracker = getattr(self, "_freshness_tracker", None)
+        if tracker is not None:
+            freshness_meta = tracker.compute_freshness(
+                resource_type="conversations",
+                watermark=latest_event_at,
+            ).model_dump(mode="json")
         return {
             "items": items,
             "nextCursor": str(next_index) if next_index < len(filtered_ids) else None,
             "hasMore": next_index < len(filtered_ids),
+            "freshness": freshness_meta,
         }
 
 

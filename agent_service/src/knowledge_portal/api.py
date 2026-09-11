@@ -41,10 +41,74 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
-def create_app(settings: PortalSettings | None = None) -> FastAPI:
+def create_app(
+    settings: PortalSettings | None = None,
+    *,
+    release_gate_checker: object | None = None,
+) -> FastAPI:
     resolved_settings = settings or PortalSettings.from_env()
     repository = build_repository(resolved_settings)
-    service = PortalService(resolved_settings, repository)
+    resolved_checker = release_gate_checker
+    if resolved_checker is None:
+        # Production/staging: load shared gate store so portal publish cannot bypass ENFORCE.
+        env = (
+            getattr(resolved_settings, "deployment_environment", None)
+            or __import__("os").environ.get("AGENT_DEPLOYMENT_ENV")
+            or __import__("os").environ.get("ENV")
+            or "dev"
+        ).lower()
+        if env in {"prod", "production", "staging"}:
+            try:
+                from ai_ops_backoffice.evaluation_domain import (
+                    FileQualityGateRepository,
+                    FirestoreQualityGateRepository,
+                    QualityGateService,
+                    InMemoryEvaluationRepository,
+                )
+                from agent_service.release_gate import QualityGateReleaseChecker
+                import os
+                from pathlib import Path as _Path
+
+                gate_mode = (os.environ.get("AI_OPS_GATE_STORE_MODE") or "FILE").upper()
+                if gate_mode == "FIRESTORE":
+                    from agent_service.operations.firestore import build_firestore_client
+
+                    gate_repo = FirestoreQualityGateRepository(
+                        build_firestore_client(
+                            os.environ.get("AI_OPS_GCP_PROJECT")
+                            or os.environ.get("GOOGLE_CLOUD_PROJECT"),
+                            None,
+                        ),
+                        prefix=os.environ.get(
+                            "AI_OPS_GATE_FIRESTORE_COLLECTION_PREFIX", "ai_ops_gate"
+                        ),
+                    )
+                else:
+                    gate_path = _Path(
+                        os.environ.get(
+                            "AI_OPS_GATE_STORE_PATH",
+                            _Path(resolved_settings.release_artifact_dir).parent
+                            / "ops"
+                            / "evaluations"
+                            / "gates",
+                        )
+                    )
+                    gate_repo = FileQualityGateRepository(gate_path)
+                gate_service = QualityGateService(
+                    eval_repository=InMemoryEvaluationRepository(),
+                    gate_repository=gate_repo,
+                )
+                resolved_checker = QualityGateReleaseChecker(gate_service)
+            except Exception as exc:  # pragma: no cover - fail closed in prod
+                logger.error("Failed to wire release gate for portal: %s", exc)
+                raise
+    # Optional injection for combined backoffice+portal deployments.
+    # Standalone portal defaults to None only in local/dev/test.
+    service = PortalService(
+        resolved_settings,
+        repository,
+        release_gate_checker=resolved_checker,
+    )
     pdf_job_store = PdfConvertJobStore(resolved_settings)
 
     def authorize(authorization: str | None = Header(default=None)) -> None:

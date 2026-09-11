@@ -65,9 +65,11 @@ def build_dependencies(
             default="", alias="X-Backoffice-Owner-Units"
         ),
         x_backoffice_tenant_id: str | None = Header(default=None, alias="X-Backoffice-Tenant-Id"),
+        x_backoffice_groups: str | None = Header(default="", alias="X-Backoffice-Groups"),
+        x_backoffice_revoked: str | None = Header(default="false", alias="X-Backoffice-Revoked"),
     ) -> ActorContext:
         try:
-            return resolve_actor(
+            actor = resolve_actor(
                 auth_mode=resolved_settings.auth_mode,
                 authorization=authorization,
                 header_user_id=x_backoffice_user_id,
@@ -75,12 +77,21 @@ def build_dependencies(
                 header_role=x_backoffice_role,
                 header_owner_units=x_backoffice_owner_units,
                 header_tenant_id=x_backoffice_tenant_id,
+                header_groups=x_backoffice_groups,
+                revoked=(x_backoffice_revoked or "").lower() in {"1", "true", "yes", "on"},
                 default_owner_unit_id=resolved_settings.default_owner_unit_id,
                 entra_tenant_id=resolved_settings.entra_tenant_id,
                 entra_client_id=resolved_settings.entra_client_id,
             )
         except BackofficeAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        # Shared revoke check against governance when available (A04 / F02).
+        revoked_checker = getattr(query_service, "is_principal_revoked", None)
+        if callable(revoked_checker) and revoked_checker(actor.user_id, actor.tenant_id):
+            from dataclasses import replace
+
+            actor = replace(actor, revoked=True)
+        return actor
 
     def require_capability(actor: ActorContext, capability: str) -> None:
         if not actor.has_capability(capability):

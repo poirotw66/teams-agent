@@ -1,12 +1,13 @@
 """Private original-file storage for knowledge versions.
 
-This local implementation mirrors the boundary expected from a future GCS
-backend: callers receive an opaque pending token, while only the portal and
-release publisher can resolve the private file.
+Local filesystem remains the portal working copy. When artifact storage is
+configured (FILE or GCS), commit also dual-writes an immutable artifact record
+so multi-instance preview/download can pin generation (F07).
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import mimetypes
@@ -22,14 +23,53 @@ from .settings import PortalSettings
 _TOKEN_PATTERN = re.compile(r"^orig-[0-9a-f]{24}$")
 
 
+def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
+    """Build optional artifact storage for original-asset dual-write."""
+    backend = (settings.artifact_storage_backend or "FILE").upper()
+    if backend == "GCS":
+        from agent_service.artifact_storage import GcsArtifactStorage
+
+        bucket = settings.artifact_gcs_bucket
+        if not bucket:
+            raise ValueError(
+                "KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET (or AI_OPS_ARTIFACT_GCS_BUCKET) "
+                "is required when artifact storage backend is GCS."
+            )
+        return GcsArtifactStorage(bucket_name=bucket)
+    if backend in {"FILE", "LOCAL"}:
+        from agent_service.artifact_storage import LocalFileArtifactStorage
+
+        base = settings.artifact_storage_path or (
+            (settings.original_assets_dir or settings.data_dir / "portal_originals")
+            / "artifacts"
+        )
+        return LocalFileArtifactStorage(base)
+    if backend in {"NONE", "OFF", "DISABLED"}:
+        return None
+    raise ValueError(f"Unsupported portal artifact storage backend: {backend}")
+
+
 class OriginalAssetStore:
-    def __init__(self, settings: PortalSettings) -> None:
+    def __init__(
+        self,
+        settings: PortalSettings,
+        *,
+        artifact_storage: Any | None = None,
+    ) -> None:
         self.root = (
             settings.original_assets_dir
             or (settings.data_dir / "portal_originals")
         ).expanduser().resolve()
         self.pending_root = self.root / "pending"
         self.versions_root = self.root / "versions"
+        self._settings = settings
+        if artifact_storage is not None:
+            self._artifact_storage = artifact_storage
+        else:
+            try:
+                self._artifact_storage = build_portal_artifact_storage(settings)
+            except ValueError:
+                self._artifact_storage = None
 
     def store_pending(
         self,
@@ -78,6 +118,44 @@ class OriginalAssetStore:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         return pending_dir, metadata
 
+    def _dual_write_artifact(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        filename: str,
+        content_type: str,
+        payload: bytes,
+    ) -> str | None:
+        if self._artifact_storage is None:
+            return None
+        from agent_service.artifact_models import ArtifactKind
+
+        artifact_id = f"art-{document_id}-{version_id}"
+        tenant_id = self._settings.default_tenant_id or "default"
+
+        async def _store() -> str:
+            record = await self._artifact_storage.store_artifact(
+                tenant_id,
+                artifact_id,
+                payload,
+                filename=filename,
+                mime_type=content_type,
+                kind=ArtifactKind.ORIGINAL,
+            )
+            return str(record.artifact_id)
+
+        try:
+            return asyncio.run(_store())
+        except RuntimeError:
+            # Nested event loop (e.g. already inside FastAPI request). Use a
+            # dedicated loop instead of failing the local commit path.
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(_store())
+            finally:
+                loop.close()
+
     def commit_pending(
         self,
         token: str,
@@ -96,16 +174,25 @@ class OriginalAssetStore:
             raise ValueError("Invalid document/version target.") from exc
         target_dir.mkdir(parents=True, exist_ok=True)
         filename = normalize_upload_filename(str(metadata.get("filename") or "document.pdf"))
+        payload_path = pending_dir / "payload"
+        payload = payload_path.read_bytes()
         target = target_dir / filename
-        shutil.move(str(pending_dir / "payload"), target)
+        target.write_bytes(payload)
         shutil.rmtree(pending_dir, ignore_errors=True)
+        content_type = str(metadata.get("content_type") or "application/octet-stream")
+        artifact_ref = self._dual_write_artifact(
+            document_id=document_id,
+            version_id=version_id,
+            filename=filename,
+            content_type=content_type,
+            payload=payload,
+        )
         return {
             "original_asset_name": filename,
             "original_asset_sha256": str(metadata.get("sha256") or ""),
-            "original_asset_content_type": str(
-                metadata.get("content_type") or "application/octet-stream"
-            ),
+            "original_asset_content_type": content_type,
             "original_asset_size": int(metadata.get("size") or target.stat().st_size),
+            "original_artifact_ref": artifact_ref,
         }
 
     def discard_pending(self, token: str | None) -> None:

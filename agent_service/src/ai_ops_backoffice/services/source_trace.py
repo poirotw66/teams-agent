@@ -159,7 +159,13 @@ class SourceTraceResolver:
     ) -> SourceLocator:
         st = (source_type or "").upper()
         if "PDF" in st:
-            raw_idx = chunk.get("page_index") or citation.get("pageIndex")
+            raw_idx = (
+                chunk.get("page_index")
+                if chunk.get("page_index") is not None
+                else chunk.get("page")
+                if chunk.get("page") is not None
+                else citation.get("pageIndex")
+            )
             page_idx = int(raw_idx) if raw_idx is not None else None
             page_lbl = chunk.get("page_label") or citation.get("pageLabel")
             bbox = chunk.get("bbox") or citation.get("bbox")
@@ -216,6 +222,7 @@ class SourceTraceResolver:
             sec_path = (
                 chunk.get("section_path")
                 or citation.get("sectionPath")
+                or chunk.get("section")
                 or chunk.get("heading")
             )
             para_id = chunk.get("paragraph_id") or citation.get("paragraphId")
@@ -405,12 +412,22 @@ class SourceTraceResolver:
             )
             if is_edited:
                 mapping_status = MappingStatus.EDITED_DERIVATIVE.value
+            elif not had_complete_identity:
+                # Incomplete identity must not be labeled EXACT/AVAILABLE (F03).
+                mapping_status = MappingStatus.LEGACY_UNVERIFIED.value
             elif original_available:
                 mapping_status = MappingStatus.AVAILABLE.value
             else:
                 mapping_status = MappingStatus.ORIGINAL_NOT_PRESERVED.value
 
             locator = self._build_locator(source_type, chunk, entry or {}, citation)
+
+            # Prefer authoritative tenant from release/manifest over request tenant (F02).
+            authoritative_tenant = (
+                str((entry or {}).get("tenant_id") or chunk.get("tenant_id") or "").strip()
+                or None
+            )
+            resolved_tenant = authoritative_tenant or tenant_id
 
             resolved = ResolvedSource(
                 source_ref_id=source_ref_id,
@@ -422,11 +439,17 @@ class SourceTraceResolver:
                 source_path=chunk_source_path,
                 content=str(chunk.get("content") or "") or None,
                 source_type=source_type,
-                original_asset_available=original_available,
+                original_asset_available=(
+                    original_available and had_complete_identity and not is_edited
+                ),
                 original_asset_name=original_path.name if original_path else None,
                 original_asset_path=original_path,
-                trace_status="EXACT" if had_complete_identity else "LEGACY_BACKFILLED",
-                tenant_id=tenant_id,
+                trace_status=(
+                    "EXACT"
+                    if had_complete_identity
+                    else "LEGACY_UNVERIFIED"
+                ),
+                tenant_id=resolved_tenant,
                 artifact_ref=str((entry or {}).get("artifact_ref") or "") or None,
                 mapping_status=mapping_status,
                 locator=locator,
@@ -514,7 +537,17 @@ class SourceTraceResolver:
                     tenant_id=tenant_id,
                 )
                 if resolved is not None:
-                    record = self._resolved_to_source_record(resolved, tenant_id=tenant_id)
+                    # Never let request tenant overwrite authoritative source tenant (F02).
+                    if (
+                        resolved.tenant_id
+                        and tenant_id
+                        and resolved.tenant_id != tenant_id
+                        and tenant_id not in {"default", "local-development"}
+                    ):
+                        continue
+                    record = self._resolved_to_source_record(
+                        resolved, tenant_id=resolved.tenant_id or tenant_id
+                    )
                     if hasattr(self.source_repository, "save_source_record_sync"):
                         self.source_repository.save_source_record_sync(record)
                     self.cache.put(record)
@@ -599,7 +632,11 @@ class SourceTraceResolver:
                 "actions": {
                     "canDownloadOriginal": bool(
                         source.original_asset_available
-                        and source.mapping_status != MappingStatus.SOURCE_MISSING.value
+                        and source.mapping_status
+                        not in {
+                            MappingStatus.SOURCE_MISSING.value,
+                            MappingStatus.LEGACY_UNVERIFIED.value,
+                        }
                     ),
                     "canViewEvidence": bool(content),
                     "nextSteps": (
@@ -607,6 +644,8 @@ class SourceTraceResolver:
                         if source.mapping_status == MappingStatus.ORIGINAL_NOT_PRESERVED.value
                         else "若需調閱已封存或遺失之原檔，請聯絡管理員。"
                         if source.mapping_status == MappingStatus.SOURCE_MISSING.value
+                        else "身分未確認前不可下載原檔；請先完成版本核對。"
+                        if source.mapping_status == MappingStatus.LEGACY_UNVERIFIED.value
                         else "點擊開啟原檔檢視。"
                     ),
                 },

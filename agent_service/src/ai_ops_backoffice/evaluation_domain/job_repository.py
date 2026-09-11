@@ -430,21 +430,38 @@ class FirestoreJobRepository:
         return operation(_ImmediateTx())
 
     def enqueue_job(self, job: ExecutionJob) -> ExecutionJob:
-        def enqueue_tx(transaction: Any) -> ExecutionJob:
-            query = (
-                self._client.collection(self._collection)
-                .where("tenant_id", "==", job.tenant_id)
-                .where("logical_key", "==", job.logical_key)
-                .where("state", "in", ["QUEUED", "RUNNING"])
-                .limit(1)
-            )
-            docs = list(query.stream())
-            if docs:
-                return ExecutionJob.model_validate(docs[0].to_dict())
+        """Enqueue with transactional logical-key dedup via a deterministic dedup document."""
+        import hashlib
 
-            doc_ref = self._doc_ref(job.job_id)
+        digest = hashlib.sha256(
+            f"{job.tenant_id}:{job.logical_key}".encode("utf-8")
+        ).hexdigest()[:32]
+        dedup_id = f"lk_{job.tenant_id}_{digest}"
+        dedup_ref = self._client.collection(self._collection).document(dedup_id)
+        job_ref = self._doc_ref(job.job_id)
+
+        def enqueue_tx(transaction: Any) -> ExecutionJob:
+            dedup_snap = dedup_ref.get(transaction=transaction)
+            if getattr(dedup_snap, "exists", False):
+                existing_id = (dedup_snap.to_dict() or {}).get("job_id")
+                if existing_id:
+                    existing_ref = self._doc_ref(existing_id)
+                    existing_snap = existing_ref.get(transaction=transaction)
+                    if getattr(existing_snap, "exists", False):
+                        existing = ExecutionJob.model_validate(existing_snap.to_dict())
+                        if existing.state in {"QUEUED", "RUNNING"}:
+                            return existing
             data = json.loads(job.model_dump_json())
-            transaction.set(doc_ref, data)
+            transaction.set(job_ref, data)
+            transaction.set(
+                dedup_ref,
+                {
+                    "job_id": job.job_id,
+                    "tenant_id": job.tenant_id,
+                    "logical_key": job.logical_key,
+                    "state": job.state,
+                },
+            )
             return job
 
         return self._run_transaction(enqueue_tx)
