@@ -20,6 +20,29 @@ let currentConversationState = {
   history: [],
 };
 
+const CONVERSATION_FILTER_KEYS = [
+  "conversationId",
+  "query",
+  "source",
+  "channelScope",
+  "issueTypeId",
+  "route",
+  "model",
+  "actorRef",
+  "hasFeedback",
+  "handoff",
+  "turnId",
+  "returnTo",
+];
+
+function pickConversationFilters(source = {}) {
+  return Object.fromEntries(
+    CONVERSATION_FILTER_KEYS
+      .filter((key) => Object.prototype.hasOwnProperty.call(source, key))
+      .map((key) => [key, source[key]]),
+  );
+}
+
 export function stopConversationPolling() {
   if (conversationPollTimer) {
     clearInterval(conversationPollTimer);
@@ -107,16 +130,25 @@ export async function renderConversations(state = {}) {
   }
   try {
     const navFilters = loadNavFilters();
+    const routeState = navFilters.view === "conversations" ? navFilters : {};
+    const routeEntry = state.view === "conversations";
     const period =
       state.period ||
-      (navFilters.view === "conversations" && (navFilters.preset || navFilters.start)
+      (routeState.view === "conversations" && (routeState.preset || routeState.start)
         ? {
-            preset: navFilters.preset || (navFilters.start ? "custom" : "30d"),
-            start: navFilters.start || "",
-            end: navFilters.end || "",
+            preset: routeState.preset || (routeState.start ? "custom" : "30d"),
+            start: routeState.start || "",
+            end: routeState.end || "",
           }
         : currentConversationState.period || { preset: "30d" });
-    const savedFilters = state.filters || currentConversationState.filters || {};
+    const stateFilters = state.filters
+      ? pickConversationFilters(state.filters)
+      : routeEntry
+        ? pickConversationFilters(state)
+        : {};
+    const savedFilters = routeEntry
+      ? { ...pickConversationFilters(routeState), ...stateFilters }
+      : { ...(currentConversationState.filters || {}), ...stateFilters };
     const cursor = state.cursor !== undefined ? state.cursor : currentConversationState.cursor;
     const history = state.history !== undefined ? state.history : currentConversationState.history;
 

@@ -197,6 +197,18 @@ def test_upload_and_list_draft_assets(draft_asset_client: TestClient) -> None:
     assert listing.json()["items"][0]["filename"] == "p01.png"
 
 
+def test_missing_draft_asset_returns_not_found(draft_asset_client: TestClient) -> None:
+    document_id = _create_document(draft_asset_client)
+
+    response = draft_asset_client.get(
+        f"/api/documents/{document_id}/draft/assets/missing.png",
+        headers=portal_headers(user_id="author.one", name="Author One"),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "NOT_FOUND"
+
+
 def test_missing_asset_is_blocking_on_validate(draft_asset_client: TestClient) -> None:
     title = sample_document_payload()["title"]
     asset_slug = slug_from_title(title)

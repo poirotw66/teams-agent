@@ -35,8 +35,8 @@ from ..models import (
     new_etag,
     utc_now,
 )
-from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..original_assets import OriginalAssetStore
+from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..rbac import (
     PortalPermissionError,
     ensure_can_edit,
@@ -804,7 +804,7 @@ class DocumentService:
         store = DraftAssetStore(self._settings)
         target = store.asset_dir(document_id, version_id, asset_slug) / filename
         if not target.is_file():
-            raise PortalNotFoundError(f"Draft asset not found: {filename}")
+            raise PortalNotFoundError("draft asset", filename)
         return target, asset_content_type(target.suffix)
 
     async def start_revision(

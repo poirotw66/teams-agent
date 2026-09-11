@@ -270,29 +270,47 @@ async function loadQualityTasks(tab) {
       filtered = filtered.filter((item) => item.status === "OBSERVING");
       scopeNote = "觀察中案件";
     }
+    const rows = filtered.slice(0, 12).map((item) => ({
+      title: item.title || item.case_id,
+      type: "改善案件",
+      nextStep: item.status === "OBSERVING" ? "觀察成效" : "查證並處理",
+      owner: item.assignee_id || item.owner_unit_id || "—",
+      status: item.status,
+      kind: "item",
+      actionLabel: "處理案件",
+      open: () => {
+        navigateTo(
+          "quality",
+          withReturnTo(
+            { caseId: item.case_id, tab: "cases" },
+            "workHub",
+            { tab },
+          ),
+        );
+      },
+    }));
+    const remaining = filtered.length - rows.length;
+    if (remaining > 0) {
+      rows.push({
+        title: "改善案件",
+        type: "改善案件（彙總）",
+        nextStep: `其餘 ${remaining} 件請開啟改善案件清單`,
+        owner: "—",
+        status: `${remaining} 件其餘`,
+        kind: "aggregate",
+        actionLabel: `查看其餘案件（共 ${filtered.length} 件）`,
+        open: () =>
+          navigateTo(
+            "quality",
+            withReturnTo({ tab: "cases" }, "workHub", { tab }),
+          ),
+      });
+    }
     return {
       ok: true,
       itemCount: filtered.length,
       scopeNote,
-      rows: filtered.slice(0, 12).map((item) => ({
-        title: item.title || item.case_id,
-        type: "改善案件",
-        nextStep: item.status === "OBSERVING" ? "觀察成效" : "查證並處理",
-        owner: item.assignee_id || item.owner_unit_id || "—",
-        status: item.status,
-        kind: "item",
-        actionLabel: "處理案件",
-        open: () => {
-          navigateTo(
-            "quality",
-            withReturnTo(
-              { caseId: item.case_id, tab: "cases" },
-              "workHub",
-              { tab },
-            ),
-          );
-        },
-      })),
+      rows,
     };
   } catch (error) {
     return { ok: false, error, rows: [], itemCount: 0, scopeNote: "" };
@@ -307,19 +325,37 @@ async function loadEvalReviews() {
   try {
     const data = await api("/api/evaluations/cases?status=IN_REVIEW&limit=20");
     const items = data.items || data.cases || [];
+    const reportedTotal = Number(data.total ?? data.count ?? items.length);
+    const total = Number.isFinite(reportedTotal)
+      ? Math.max(items.length, reportedTotal)
+      : items.length;
+    const rows = items.slice(0, 12).map((item) => ({
+      title: item.title || item.case_id || "驗收題目",
+      type: "品質驗收",
+      nextStep: "審核題目",
+      owner: item.owner_unit_id || "—",
+      status: item.status || "IN_REVIEW",
+      kind: "item",
+      actionLabel: "審核題目",
+      open: () => navigateTo("evaluations", { tab: "cases", caseId: item.case_id }),
+    }));
+    const remaining = Math.max(0, total - rows.length);
+    if (remaining > 0) {
+      rows.push({
+        title: "驗收題目",
+        type: "品質驗收（彙總）",
+        nextStep: `其餘 ${remaining} 件請開啟品質驗收清單`,
+        owner: "—",
+        status: `${remaining} 件其餘`,
+        kind: "aggregate",
+        actionLabel: `查看其餘驗收題目（共 ${total} 件）`,
+        open: () => navigateTo("evaluations", { tab: "cases" }),
+      });
+    }
     return {
       ok: true,
-      itemCount: items.length,
-      rows: items.slice(0, 12).map((item) => ({
-        title: item.title || item.case_id || "驗收題目",
-        type: "品質驗收",
-        nextStep: "審核題目",
-        owner: item.owner_unit_id || "—",
-        status: item.status || "IN_REVIEW",
-        kind: "item",
-        actionLabel: "審核題目",
-        open: () => navigateTo("evaluations", { tab: "cases", caseId: item.case_id }),
-      })),
+      itemCount: total,
+      rows,
     };
   } catch (error) {
     return { ok: false, error, rows: [], itemCount: 0 };
@@ -429,14 +465,16 @@ async function renderWorkHub(state = {}) {
   const trackingCount = countUnits(trackingRows);
 
   const stats = el("div", "stats bu-work-stats");
+  const mineHint =
+    tab === "mine" && cases.scopeNote
+      ? cases.scopeNote
+      : "指派給我的進行中案件";
   for (const [key, label, value, hint] of [
     [
       "mine",
       "我的待處理",
       String(mineCount.display),
-      cases.scopeNote
-        ? `${cases.scopeNote}；數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。`
-        : "數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。",
+      `${mineHint}；數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。`,
     ],
     [
       "review",
