@@ -97,12 +97,14 @@ class EvaluationRunner:
         retriever_fn: Any | None = None,
         answering_fn: Any | None = None,
         releases_dir: Path | None = None,
+        strict_real_rag: bool = False,
     ) -> None:
         self._repo = repository
         self._scorer = scorer or EvaluationScorer()
         self._agent_scorer = agent_scorer or AgentBehaviorScorer()
         self._tool_fixture_service = tool_fixture_service or ToolFixtureService()
         self._releases_dir = releases_dir
+        self._strict_real_rag = strict_real_rag
 
         self._retriever_fn = retriever_fn
         self._answering_fn = answering_fn
@@ -110,13 +112,17 @@ class EvaluationRunner:
         if self._retriever_fn is None and releases_dir is not None:
             self._retriever_fn = RealRagRetrieverAdapter(releases_dir=releases_dir)
         if self._answering_fn is None and releases_dir is not None:
-            self._answering_fn = RealRagAnswerAdapter()
+            self._answering_fn = RealRagAnswerAdapter(allow_synthetic_fallback=not strict_real_rag)
 
     def has_retriever_adapter(self) -> bool:
         return self._retriever_fn is not None
 
     def has_answering_adapter(self) -> bool:
-        return self._answering_fn is not None
+        if self._answering_fn is None:
+            return False
+        if self._strict_real_rag and hasattr(self._answering_fn, "is_real_model_configured"):
+            return bool(self._answering_fn.is_real_model_configured())
+        return True
 
     def has_sandbox_adapter(self) -> bool:
         return self._tool_fixture_service is not None

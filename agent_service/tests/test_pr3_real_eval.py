@@ -580,3 +580,112 @@ def test_f04_t2_sandbox_intercepts_production_side_effects(tmp_path: Path):
     assert mutation_trace.side_effect_blocked is True
     assert mutation_trace.intercept_reason == "Production write/ticket/email side effects are blocked in sandbox"
     assert mutation_trace.result.get("side_effect_blocked") is True
+
+
+# =====================================================================
+# Additional Formal Adapter Tests: Strict Fail-Fast, Real Invoker & ACL
+# =====================================================================
+
+def test_real_rag_answer_adapter_fails_without_invoker_when_synthetic_disabled():
+    """RealRagAnswerAdapter raises EvaluationValidationError when no real model is configured."""
+    adapter = RealRagAnswerAdapter(allow_synthetic_fallback=False)
+    assert adapter.is_real_model_configured() is False
+    with pytest.raises(EvaluationValidationError) as exc_info:
+        adapter(
+            query="測試問題",
+            manifest=TargetManifest(target_id="t1", target_side="CANDIDATE", manifest_hash="h"),
+            sanitized_input=TargetExecutionInput(query="測試問題"),
+            retrieved_evidence=[{"content": "依據內容"}],
+        )
+    assert "requires a registered real model invoker" in str(exc_info.value)
+
+
+def test_real_rag_answer_adapter_with_model_invoker():
+    """RealRagAnswerAdapter propagates real model tokens, cost, and provider request ID."""
+    def mock_invoker(query, manifest, sanitized_input, evidence, history):
+        return ("真實模型回答內容", 42, 0.00012, [ToolCallTrace(call_id="call-1", tool_name="doc_search")], "req-prov-12345")
+
+    adapter = RealRagAnswerAdapter(model_invoker=mock_invoker, allow_synthetic_fallback=False)
+    assert adapter.is_real_model_configured() is True
+    ans, tokens, cost, tools, req_id = adapter(
+        query="請說明",
+        manifest=TargetManifest(target_id="t1", target_side="CANDIDATE", manifest_hash="h"),
+        sanitized_input=TargetExecutionInput(query="請說明"),
+        retrieved_evidence=[{"content": "測試"}],
+    )
+    assert ans == "真實模型回答內容"
+    assert tokens == 42
+    assert cost == 0.00012
+    assert len(tools) == 1
+    assert req_id == "req-prov-12345"
+
+
+def test_real_rag_retriever_adapter_strict_acl(tmp_path: Path):
+    """RealRagRetrieverAdapter enforces ACL policies using HybridIndex."""
+    releases_dir = tmp_path / "releases"
+    rel_dir = releases_dir / "rel-acl" / "index"
+    rel_dir.mkdir(parents=True, exist_ok=True)
+    chunks_data = {
+        "version": 1,
+        "chunks": [
+            {
+                "chunk_id": "c_hr",
+                "title": "HR機密手冊",
+                "source_path": "hr.md",
+                "content": "薪資與績效機密資訊",
+                "acl_groups": ["HR_EXEC"],
+            },
+            {
+                "chunk_id": "c_all",
+                "title": "員工指南",
+                "source_path": "all.md",
+                "content": "日常出勤與休假手冊資訊",
+                "acl_groups": ["ALL_EMPLOYEES"],
+            },
+        ],
+    }
+    (rel_dir / "chunks.json").write_text(json.dumps(chunks_data), encoding="utf-8")
+
+    retriever = RealRagRetrieverAdapter(releases_dir=releases_dir)
+    manifest_strict = TargetManifest(
+        target_id="t1",
+        target_side="CANDIDATE",
+        manifest_hash="h",
+        knowledge_release_id="rel-acl",
+        acl_policy="STRICT",
+    )
+
+    # User with only ALL_EMPLOYEES should NOT see HR_EXEC chunk
+    input_general = TargetExecutionInput(
+        query="休假與薪資",
+        persona_context={"acl_groups": ["ALL_EMPLOYEES"]},
+    )
+    results_general = retriever("休假與薪資", manifest_strict, input_general)
+    retrieved_ids = [r["chunk_id"] for r in results_general]
+    assert "c_all" in retrieved_ids
+    assert "c_hr" not in retrieved_ids
+
+    # User with HR_EXEC sees HR chunk
+    input_hr = TargetExecutionInput(
+        query="休假與薪資",
+        persona_context={"acl_groups": ["HR_EXEC"]},
+    )
+    results_hr = retriever("休假與薪資", manifest_strict, input_hr)
+    retrieved_hr_ids = [r["chunk_id"] for r in results_hr]
+    assert "c_hr" in retrieved_hr_ids
+
+
+def test_real_agent_sandbox_adapter_workflow():
+    """RealAgentSandboxAdapter delegates workflow execution turns when configured."""
+    def dummy_workflow(q, m, inp):
+        return {"status": "SUCCESS", "query": q}
+
+    tool_svc = ToolFixtureService()
+    sandbox = RealAgentSandboxAdapter(tool_svc, workflow_executor=dummy_workflow)
+    assert sandbox.is_real_workflow_configured() is True
+    res = sandbox.execute_workflow_turn(
+        "問題",
+        TargetManifest(target_id="m1", target_side="CANDIDATE", manifest_hash="h"),
+        TargetExecutionInput(query="問題"),
+    )
+    assert res == {"status": "SUCCESS", "query": "問題"}
