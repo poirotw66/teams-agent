@@ -189,10 +189,13 @@ class BackofficeQueryService(
                         raise RuntimeError(
                             f"Failed to initialize Firestore client for freshness tracking: {exc}"
                         ) from exc
-                    logger.warning("Failed to initialize Firestore client for freshness: %s", exc)
+            shared_store = getattr(getattr(self._runtime, "freshness_recorder", None), "_store", None)
+            collection = getattr(settings, "freshness_firestore_collection", "freshness_state")
             self._freshness_tracker = FreshnessTracker(
                 persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json",
                 firestore_client=freshness_firestore_client,
+                firestore_collection=collection,
+                store=shared_store,
             )
         self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))

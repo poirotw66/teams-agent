@@ -106,38 +106,17 @@ class BackofficeSettings:
     artifact_gcs_bucket: str | None = None
     environment: str = "dev"
     workers_enabled: bool = True
+    freshness_firestore_collection: str = "freshness_state"
 
-    def validate_for_production(self) -> list[str]:
+    def validate_for_production(self, *, require_gcp_project: bool = False) -> list[str]:
         """Validate settings for production deployment to prevent ephemeral data loss."""
-        issues: list[str] = []
-        is_prod = self.environment in {"prod", "production"}
-        if is_prod:
-            if self.auth_mode != "ENTRA":
-                issues.append("auth_mode must be ENTRA in production; configure ENTRA.")
-            eval_mode = self.eval_store_mode or self.ops_store_mode
-            gate_mode = self.gate_store_mode or self.ops_store_mode
-            fixture_mode = self.fixture_store_mode or self.ops_store_mode
-            job_mode = self.job_store_mode or self.ops_store_mode
-            file_stores = [
-                ("ops_store_mode", self.ops_store_mode),
-                ("ops_audit_store_mode", self.ops_audit_store_mode),
-                ("export_job_store_mode", self.export_job_store_mode),
-                ("faq_store_mode", self.faq_store_mode),
-                ("example_store_mode", self.example_store_mode),
-                ("quality_store_mode", self.quality_store_mode),
-                ("sync_store_mode", self.sync_store_mode),
-                ("budget_store_mode", self.budget_store_mode),
-                ("governance_store_mode", self.governance_store_mode),
-                ("prompt_poc_store_mode", self.prompt_poc_store_mode),
-                ("eval_store_mode", eval_mode),
-                ("gate_store_mode", gate_mode),
-                ("fixture_store_mode", fixture_mode),
-                ("job_store_mode", job_mode),
-            ]
-            for name, mode in file_stores:
-                if mode in {"FILE", "MEMORY"}:
-                    issues.append(f"{name} must not be {mode} in production; configure FIRESTORE.")
-        return issues
+        from .config_validator import validate_backoffice_settings
+
+        return validate_backoffice_settings(
+            self,
+            require_production=self.environment in {"prod", "production", "staging"},
+            require_gcp_project=require_gcp_project,
+        )
 
     @classmethod
     def from_env(cls) -> BackofficeSettings:
@@ -476,4 +455,9 @@ class BackofficeSettings:
             environment=resolved_env,
             workers_enabled=os.environ.get("AI_OPS_WORKERS_ENABLED", "true").lower()
             in {"1", "true", "yes", "on"},
+            freshness_firestore_collection=(
+                os.environ.get("AI_OPS_FRESHNESS_COLLECTION")
+                or os.environ.get("OPS_FRESHNESS_COLLECTION")
+                or "freshness_state"
+            ).strip(),
         )

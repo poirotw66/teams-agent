@@ -94,6 +94,13 @@ class EventIngestionService:
                     at=ingested_at,
                     tenant_id=tenant_id,
                 )
+            if hasattr(self._freshness_tracker, "record_backlog"):
+                self._freshness_tracker.record_backlog(
+                    resource_type="conversations",
+                    backlog_count=0,
+                    at=ingested_at,
+                    tenant_id=tenant_id,
+                )
         return persisted
 
     async def ingest_many(self, events: list[OperationalEvent]) -> int:

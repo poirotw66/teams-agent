@@ -1822,6 +1822,9 @@ def test_settings_cascading_and_config_validator(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT_CHAT", "chat-model")
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT_EMBED", "embed-model")
     monkeypatch.setenv("AI_OPS_BACKOFFICE_TOKEN", "prod-secret-token")
+    monkeypatch.setenv("AI_OPS_BACKOFFICE_AUTH_MODE", "ENTRA")
+    monkeypatch.setenv("AI_OPS_ENTRA_TENANT_ID", "test-tenant-id")
+    monkeypatch.setenv("AI_OPS_ENTRA_CLIENT_ID", "test-client-id")
 
     settings = BackofficeSettings.from_env()
     assert settings.ops_store_mode == "FIRESTORE"
@@ -1834,6 +1837,8 @@ def test_settings_cascading_and_config_validator(monkeypatch, tmp_path) -> None:
 
     issues = validate_production_config(settings)
     assert issues == []
+    # Runtime validate_for_production is unified with pre-flight validator
+    assert settings.validate_for_production() == []
 
     # 2. Production with FILE mode or empty GCP project yields actionable errors
     monkeypatch.setenv("ENVIRONMENT", "production")
@@ -2042,3 +2047,191 @@ def test_operations_freshness_recorder_decoupling(tmp_path) -> None:
     settings = replace(OpsSettings.from_env(), store_mode="FILE", store_path=tmp_path / "events.jsonl")
     built = build_freshness_recorder(settings)
     assert isinstance(built, OperationsFreshnessRecorder)
+
+
+def test_freshness_idle_pipeline_requires_recent_backlog_evidence() -> None:
+    """Verify idle pipeline reports REALTIME only with fresh backlog evidence; avoids false DELAYED and false REALTIME."""
+    from datetime import datetime, timedelta, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    t0 = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    current_time = t0 + timedelta(minutes=5)  # 5 minutes later (> 60s realtime threshold)
+
+    tracker = FreshnessTracker(
+        worker_stale_threshold_seconds=600.0,
+        realtime_lag_threshold_seconds=60.0,
+        clock=lambda: current_time,
+    )
+    # Worker is alive
+    tracker.record_worker_heartbeat("worker-1", at=current_time)
+    # Historic sync at t0
+    tracker.record_sync_success("conversations", at=t0)
+
+    # 1. Without recent backlog evidence, lag is measured against historical watermark (5 mins -> DELAYED)
+    meta_without_evidence = tracker.compute_freshness("conversations", now=current_time)
+    assert meta_without_evidence.status == "DELAYED"
+    assert meta_without_evidence.lag_seconds == 300.0
+
+    # 2. Ingestion/worker records fresh backlog evidence with count=0 (idle pipeline)
+    tracker.record_backlog("conversations", backlog_count=0, at=current_time)
+    meta_with_fresh_idle = tracker.compute_freshness("conversations", now=current_time)
+    assert meta_with_fresh_idle.status == "REALTIME"
+    assert meta_with_fresh_idle.lag_seconds == 0.0
+    assert meta_with_fresh_idle.event_watermark == t0
+
+    # 3. If backlog has pending items, lag is measured against oldest pending item
+    t_pending = current_time - timedelta(seconds=90)
+    tracker.record_backlog("conversations", backlog_count=5, oldest_pending_at=t_pending, at=current_time)
+    meta_pending = tracker.compute_freshness("conversations", now=current_time)
+    assert meta_pending.status == "DELAYED"
+    assert meta_pending.lag_seconds == 90.0
+
+    # 4. Stale backlog evidence (> worker_stale_threshold) is disregarded
+    stale_check_time = current_time + timedelta(seconds=700)
+    meta_stale_evidence = tracker.compute_freshness("conversations", now=stale_check_time)
+    assert meta_stale_evidence.status == "DELAYED"
+    assert meta_stale_evidence.lag_seconds == 1000.0
+
+
+def test_runtime_and_query_service_share_same_freshness_collection(tmp_path: Path) -> None:
+    """Verify OpsSettings and BackofficeSettings align on the exact same Firestore collection."""
+    from dataclasses import replace
+
+    from agent_service.operations.runtime import build_freshness_recorder
+    from agent_service.operations.settings import OpsSettings
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+    from ai_ops_backoffice.settings import BackofficeSettings
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+
+    ops_settings = replace(
+        OpsSettings.from_env(),
+        freshness_firestore_collection="custom_freshness_col",
+        store_mode="FILE",
+        store_path=tmp_path / "events.jsonl",
+    )
+    recorder = build_freshness_recorder(ops_settings)
+    assert recorder is not None
+    assert recorder._store._firestore_collection == "custom_freshness_col"
+
+    bo_settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="FILE",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="FILE",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        freshness_firestore_collection="custom_freshness_col",
+    )
+    query_service = BackofficeQueryService(bo_settings)
+    assert query_service._freshness_tracker._firestore_collection == "custom_freshness_col"
+
+
+@pytest.mark.asyncio
+async def test_worker_health_server_reports_stalled_status() -> None:
+    """Verify worker health probe reports HTTP 503 and 'stalled' status when worker stops progressing."""
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    import httpx
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+    from ai_ops_backoffice.worker_main import _start_health_server
+
+    class DummyStalledState:
+        def __init__(self) -> None:
+            self.freshness_tracker = FreshnessTracker(
+                worker_stale_threshold_seconds=10.0,
+                heartbeat_interval_seconds=4.0,
+            )
+            # Heartbeat from 30 seconds ago (older than 10s stale threshold)
+            stale_hb = datetime.now(timezone.utc) - timedelta(seconds=30)
+            self.freshness_tracker.record_worker_heartbeat("worker-1", at=stale_hb)
+            self.settings = type("DummySettings", (), {"ops_store_mode": "FIRESTORE"})()
+
+    class DummyStalledApp:
+        def __init__(self) -> None:
+            self.state = DummyStalledState()
+
+    stop_server = asyncio.Event()
+    bound_ports: list[int] = []
+
+    server_task = asyncio.create_task(
+        _start_health_server(
+            "127.0.0.1",
+            0,
+            stop_server,
+            on_started=lambda p: bound_ports.append(p),
+            app=DummyStalledApp(),
+        )
+    )
+
+    for _ in range(50):
+        if bound_ports:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(bound_ports) == 1
+    port = bound_ports[0]
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"http://127.0.0.1:{port}/healthz")
+        assert res.status_code == 503
+        data = res.json()
+        assert data["status"] == "stalled"
+        assert data["dependencies"]["stalled"] is True
+
+    stop_server.set()
+    await server_task
+
+
+def test_freshness_store_concurrency_and_single_doc_lookups(tmp_path: Path) -> None:
+    """Verify FreshnessStore provides O(1) single-doc lookups and multi-threaded monotonic safety."""
+    import concurrent.futures
+    from datetime import datetime, timedelta, timezone
+
+    from agent_service.operations.freshness_store import FreshnessStore
+
+    base_time = datetime(2026, 9, 12, 10, 0, 0, tzinfo=timezone.utc)
+    store = FreshnessStore(persistent_path=tmp_path / "freshness_test.json")
+
+    # Concurrent out-of-order writes across multiple threads
+    num_threads = 8
+    timestamps = [base_time + timedelta(seconds=i * 10) for i in range(50)]
+    # Shuffle into out-of-order sequence
+    import random
+    shuffled = list(timestamps)
+    random.seed(42)
+    random.shuffle(shuffled)
+
+    def write_worker(sub_list: list[datetime]) -> None:
+        for ts in sub_list:
+            store.save_watermark("tenant-conc:conversations", ts)
+            store.save_heartbeat("worker-conc-1", ts)
+
+    chunks = [shuffled[i::num_threads] for i in range(num_threads)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = [executor.submit(write_worker, chunk) for chunk in chunks]
+        concurrent.futures.wait(futures)
+
+    # Monotonic guarantee: the latest timestamp must be preserved
+    max_ts = max(timestamps)
+    assert store.get_watermark("tenant-conc:conversations") == max_ts
+    assert store.get_heartbeat("worker-conc-1") == max_ts
+
+    # Verify reload from disk preserves latest state
+    store_reloaded = FreshnessStore(persistent_path=tmp_path / "freshness_test.json")
+    assert store_reloaded.get_watermark("tenant-conc:conversations") == max_ts
+    assert store_reloaded.get_heartbeat("worker-conc-1") == max_ts

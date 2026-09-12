@@ -76,11 +76,7 @@ def build_freshness_recorder(settings: OpsSettings) -> FreshnessRecorder | None:
     if settings.store_path:
         persistent_path = settings.store_path.parent / "freshness" / "sync_watermarks.json"
 
-    collection = (
-        f"{settings.firestore_collection}_freshness"
-        if settings.firestore_collection
-        else "freshness_state"
-    )
+    collection = settings.freshness_firestore_collection
 
     return OperationsFreshnessRecorder(
         persistent_path=persistent_path,

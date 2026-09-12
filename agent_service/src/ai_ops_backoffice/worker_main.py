@@ -53,6 +53,8 @@ async def _start_health_server(
                 status_str = "OK"
 
                 last_hb_str: str | None = None
+                tracker = None
+                last_hb: datetime | None = None
                 dependencies_status: dict[str, Any] = {}
 
                 if health_provider is not None:
@@ -76,12 +78,21 @@ async def _start_health_server(
                     if job_worker is not None:
                         dependencies_status["job_worker_running"] = getattr(job_worker, "_running", False)
 
-                if not is_running or consecutive_errors >= 10:
+                is_stalled = False
+                if tracker is not None and last_hb is not None:
+                    stale_thresh = getattr(tracker, "_worker_stale_threshold", 600.0)
+                    elapsed_hb = time.time() - last_hb.timestamp()
+                    if elapsed_hb > stale_thresh:
+                        is_stalled = True
+                        dependencies_status["stalled"] = True
+                        dependencies_status["elapsed_since_heartbeat_seconds"] = round(elapsed_hb, 1)
+
+                if not is_running or consecutive_errors >= 10 or is_stalled:
                     status_code = 503
                     status_str = "Service Unavailable"
 
                 body_dict = {
-                    "status": "ok" if status_code == 200 else "degraded",
+                    "status": "ok" if status_code == 200 else ("stalled" if is_stalled else "degraded"),
                     "worker": "ai_ops_worker",
                     "process_alive": True,
                     "loop_running": is_running,

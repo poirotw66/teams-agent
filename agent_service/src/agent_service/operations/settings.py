@@ -43,6 +43,7 @@ class OpsSettings:
     delivery_poll_seconds: float = 1.0
     delivery_batch_size: int = 100
     delivery_inline_sinks: bool = False
+    freshness_firestore_collection: str = "freshness_state"
 
     @classmethod
     def from_env(cls, data_dir: Path | None = None) -> OpsSettings:
@@ -95,4 +96,9 @@ class OpsSettings:
             delivery_poll_seconds=float(environ.get("OPS_DELIVERY_POLL_SECONDS", "1")),
             delivery_batch_size=int(environ.get("OPS_DELIVERY_BATCH_SIZE", "100")),
             delivery_inline_sinks=_bool_env("OPS_DELIVERY_INLINE_SINKS", False),
+            freshness_firestore_collection=(
+                environ.get("OPS_FRESHNESS_COLLECTION")
+                or environ.get("AI_OPS_FRESHNESS_COLLECTION")
+                or "freshness_state"
+            ).strip(),
         )

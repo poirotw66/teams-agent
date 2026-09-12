@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
-import threading
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from agent_service.operations.contracts import FreshnessMetadata, utc_now
+from agent_service.operations.contracts import FreshnessMetadata
+from agent_service.operations.freshness_store import FreshnessStore
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,16 @@ class FreshnessTracker:
         clock: Any = None,
         firestore_client: Any = None,
         firestore_collection: str = "freshness_state",
+        store: FreshnessStore | None = None,
     ) -> None:
-        self._lock = threading.RLock()
+        self._store = store or FreshnessStore(
+            persistent_path=persistent_path,
+            firestore_client=firestore_client,
+            firestore_collection=firestore_collection,
+            clock=clock,
+            max_stage_events=max_stage_events,
+        )
+        self._lock = self._store._lock
         # Stale threshold must exceed the heartbeat interval or healthy workers look dead.
         self._heartbeat_interval = heartbeat_interval_seconds
         self._worker_stale_threshold = max(
@@ -49,336 +56,79 @@ class FreshnessTracker:
         self._firestore_client = firestore_client
         self._firestore_collection = firestore_collection
         self._clock = clock
-        self._last_mtime: float = 0.0
-        self._last_firestore_poll: float = 0.0
-        self._last_worker_heartbeat: datetime | None = None
         self._is_worker_connected: bool = True
-        self._worker_heartbeats: dict[str, datetime] = {}
-        self._last_successful_sync: dict[str, datetime] = {}
-        self._pending_backlog: dict[str, dict[str, Any]] = {}
-        # correlation_id -> stage -> timestamp with bounded FIFO capacity
-        self._stage_events: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        if self._persistent_path and self._persistent_path.exists():
-            self._load_persistent_sync()
-        if self._firestore_client is not None:
-            self._load_firestore_sync()
+
+    @property
+    def _last_mtime(self) -> float:
+        return self._store._last_file_mtime
+
+    @_last_mtime.setter
+    def _last_mtime(self, val: float) -> None:
+        self._store._last_file_mtime = val
+
+    @property
+    def _last_firestore_poll(self) -> float:
+        return self._store._last_firestore_poll
+
+    @_last_firestore_poll.setter
+    def _last_firestore_poll(self, val: float) -> None:
+        self._store._last_firestore_poll = val
+
+    @property
+    def _worker_heartbeats(self) -> dict[str, datetime]:
+        return self._store._worker_heartbeats
+
+    @property
+    def _last_successful_sync(self) -> dict[str, datetime]:
+        return self._store._last_successful_sync
+
+    @property
+    def _pending_backlog(self) -> dict[str, dict[str, Any]]:
+        return self._store._pending_backlog
+
+    @property
+    def _stage_events(self) -> OrderedDict[str, dict[str, Any]]:
+        return self._store._stage_events
+
+    @property
+    def _last_worker_heartbeat(self) -> datetime | None:
+        return self._store.get_latest_heartbeat()
+
+    @_last_worker_heartbeat.setter
+    def _last_worker_heartbeat(self, val: datetime | None) -> None:
+        if val is not None:
+            self._store.save_heartbeat("worker-1", val)
 
     def now(self) -> datetime:
-        return self._clock() if self._clock is not None else utc_now()
+        return self._store.now()
 
     def _load_persistent_sync(self) -> None:
-        try:
-            if self._persistent_path and self._persistent_path.exists():
-                self._last_mtime = self._persistent_path.stat().st_mtime
-                raw = self._persistent_path.read_text(encoding="utf-8")
-                if not raw.strip():
-                    return
-                data = json.loads(raw)
-                if isinstance(data, dict):
-                    watermarks = data.get("watermarks") if "watermarks" in data and isinstance(data["watermarks"], dict) else data
-                    for k, v in watermarks.items():
-                        if isinstance(v, str) and k != "heartbeats" and k != "backlogs":
-                            try:
-                                dt = datetime.fromisoformat(v)
-                                existing = self._last_successful_sync.get(k)
-                                if existing is None or dt > existing:
-                                    self._last_successful_sync[k] = dt
-                            except Exception:
-                                pass
-                    hb_data = data.get("heartbeats") if "heartbeats" in data and isinstance(data["heartbeats"], dict) else {}
-                    for wid, ts_str in hb_data.items():
-                        if isinstance(ts_str, str):
-                            try:
-                                hb_dt = datetime.fromisoformat(ts_str)
-                                existing_hb = self._worker_heartbeats.get(wid)
-                                if existing_hb is None or hb_dt > existing_hb:
-                                    self._worker_heartbeats[wid] = hb_dt
-                                    if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
-                                        self._last_worker_heartbeat = hb_dt
-                            except Exception:
-                                pass
-                    backlog_data = data.get("backlogs") if "backlogs" in data and isinstance(data["backlogs"], dict) else {}
-                    for k, b_info in backlog_data.items():
-                        if isinstance(b_info, dict):
-                            oldest_raw = b_info.get("oldest_pending_at")
-                            oldest_dt = datetime.fromisoformat(oldest_raw) if oldest_raw else None
-                            rec_raw = b_info.get("recorded_at")
-                            rec_dt = datetime.fromisoformat(rec_raw) if rec_raw else None
-                            self._pending_backlog[k] = {
-                                "count": b_info.get("count", 0),
-                                "oldest_pending_at": oldest_dt,
-                                "recorded_at": rec_dt,
-                            }
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to load persistent sync watermarks: %s", exc)
+        self._store.load_persistent()
 
     def _load_firestore_sync(self) -> None:
-        if self._firestore_client is None:
-            return
-        try:
-            col = self._firestore_client.collection(self._firestore_collection)
-            has_granular = False
-            # 1. Primary: Load granular documents (wm_* and hb_*)
-            if hasattr(col, "stream"):
-                try:
-                    for doc in col.stream():
-                        doc_id = getattr(doc, "id", "")
-                        data = doc.to_dict() or {}
-                        if doc_id.startswith("wm_"):
-                            has_granular = True
-                            k = data.get("key") or doc_id[3:].replace("_", ":")
-                            v = data.get("at")
-                            if isinstance(v, str):
-                                try:
-                                    dt = datetime.fromisoformat(v)
-                                    existing = self._last_successful_sync.get(k)
-                                    if existing is None or dt > existing:
-                                        self._last_successful_sync[k] = dt
-                                except Exception:
-                                    pass
-                        elif doc_id.startswith("hb_"):
-                            has_granular = True
-                            wid = data.get("worker_id") or doc_id[3:]
-                            ts_str = data.get("at")
-                            if isinstance(ts_str, str):
-                                try:
-                                    hb_dt = datetime.fromisoformat(ts_str)
-                                    existing_hb = self._worker_heartbeats.get(wid)
-                                    if existing_hb is None or hb_dt > existing_hb:
-                                        self._worker_heartbeats[wid] = hb_dt
-                                        if (
-                                            self._last_worker_heartbeat is None
-                                            or hb_dt > self._last_worker_heartbeat
-                                        ):
-                                            self._last_worker_heartbeat = hb_dt
-                                except Exception:
-                                    pass
-                        elif doc_id.startswith("bl_"):
-                            has_granular = True
-                            k = data.get("key") or doc_id[3:].replace("_", ":")
-                            count = data.get("count", 0)
-                            oldest_raw = data.get("oldest_pending_at")
-                            oldest_dt = datetime.fromisoformat(oldest_raw) if oldest_raw else None
-                            self._pending_backlog[k] = {
-                                "count": count,
-                                "oldest_pending_at": oldest_dt,
-                                "recorded_at": self.now(),
-                            }
-                except Exception:
-                    pass
-
-            # 2. Fallback to aggregate documents if no granular docs found
-            if not has_granular:
-                wm_ref = col.document("watermarks")
-                snap_wm = wm_ref.get() if hasattr(wm_ref, "get") else None
-                if snap_wm and getattr(snap_wm, "exists", False):
-                    wm_data = snap_wm.to_dict() or {}
-                    for k, v in wm_data.items():
-                        if isinstance(v, str):
-                            try:
-                                dt = datetime.fromisoformat(v)
-                                existing = self._last_successful_sync.get(k)
-                                if existing is None or dt > existing:
-                                    self._last_successful_sync[k] = dt
-                            except Exception:
-                                pass
-                hb_ref = col.document("heartbeats")
-                snap_hb = hb_ref.get() if hasattr(hb_ref, "get") else None
-                if snap_hb and getattr(snap_hb, "exists", False):
-                    hb_data = snap_hb.to_dict() or {}
-                    for wid, ts_str in hb_data.items():
-                        if isinstance(ts_str, str):
-                            try:
-                                hb_dt = datetime.fromisoformat(ts_str)
-                                existing_hb = self._worker_heartbeats.get(wid)
-                                if existing_hb is None or hb_dt > existing_hb:
-                                    self._worker_heartbeats[wid] = hb_dt
-                                    if (
-                                        self._last_worker_heartbeat is None
-                                        or hb_dt > self._last_worker_heartbeat
-                                    ):
-                                        self._last_worker_heartbeat = hb_dt
-                            except Exception:
-                                pass
-            import time
-            self._last_firestore_poll = time.time()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to load Firestore sync watermarks: %s", exc)
+        self._store.load_firestore()
 
     def _save_firestore_watermark(self, key: str, at: datetime) -> None:
-        if self._firestore_client is None:
-            return
-        try:
-            col = self._firestore_client.collection(self._firestore_collection)
-            doc_id = f"wm_{key.replace(':', '_')}"
-            ref_indiv = col.document(doc_id)
-
-            # Monotonic verification: inspect remote document to prevent older instance overwrite
-            snap = ref_indiv.get() if hasattr(ref_indiv, "get") else None
-            if snap and getattr(snap, "exists", False):
-                existing_data = snap.to_dict() or {}
-                existing_at_str = existing_data.get("at")
-                if isinstance(existing_at_str, str):
-                    try:
-                        existing_at = datetime.fromisoformat(existing_at_str)
-                        if at < existing_at:
-                            with self._lock:
-                                cur = self._last_successful_sync.get(key)
-                                if cur is None or existing_at > cur:
-                                    self._last_successful_sync[key] = existing_at
-                            return
-                    except Exception:
-                        pass
-            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
-                stored_entry = ref_indiv.coll.store.get((ref_indiv.coll.name, ref_indiv.key), {})
-                existing_at_str = stored_entry.get("at")
-                if isinstance(existing_at_str, str):
-                    try:
-                        existing_at = datetime.fromisoformat(existing_at_str)
-                        if at < existing_at:
-                            with self._lock:
-                                cur = self._last_successful_sync.get(key)
-                                if cur is None or existing_at > cur:
-                                    self._last_successful_sync[key] = existing_at
-                            return
-                    except Exception:
-                        pass
-
-            payload = {
-                "key": key,
-                "at": at.isoformat(),
-                "updated_at": self.now().isoformat(),
-            }
-            if hasattr(ref_indiv, "set"):
-                ref_indiv.set(payload, merge=True)
-            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
-                ref_indiv.coll.store.setdefault((ref_indiv.coll.name, ref_indiv.key), {}).update(payload)
-
-            # Also maintain aggregate document for backwards compatibility
-            ref = col.document("watermarks")
-            if hasattr(ref, "set"):
-                ref.set({key: at.isoformat()}, merge=True)
-            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
-                ref.coll.store.setdefault((ref.coll.name, ref.key), {})[key] = at.isoformat()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to save Firestore sync watermark for %s: %s", key, exc)
+        self._store._save_firestore_watermark(key, at)
 
     def _save_firestore_heartbeat(self, worker_id: str, at: datetime) -> None:
-        if self._firestore_client is None:
-            return
-        try:
-            col = self._firestore_client.collection(self._firestore_collection)
-            doc_id = f"hb_{worker_id}"
-            ref_indiv = col.document(doc_id)
-
-            snap = ref_indiv.get() if hasattr(ref_indiv, "get") else None
-            if snap and getattr(snap, "exists", False):
-                existing_data = snap.to_dict() or {}
-                existing_at_str = existing_data.get("at")
-                if isinstance(existing_at_str, str):
-                    try:
-                        existing_at = datetime.fromisoformat(existing_at_str)
-                        if at < existing_at:
-                            with self._lock:
-                                cur = self._worker_heartbeats.get(worker_id)
-                                if cur is None or existing_at > cur:
-                                    self._worker_heartbeats[worker_id] = existing_at
-                            return
-                    except Exception:
-                        pass
-            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
-                stored_entry = ref_indiv.coll.store.get((ref_indiv.coll.name, ref_indiv.key), {})
-                existing_at_str = stored_entry.get("at")
-                if isinstance(existing_at_str, str):
-                    try:
-                        existing_at = datetime.fromisoformat(existing_at_str)
-                        if at < existing_at:
-                            with self._lock:
-                                cur = self._worker_heartbeats.get(worker_id)
-                                if cur is None or existing_at > cur:
-                                    self._worker_heartbeats[worker_id] = existing_at
-                            return
-                    except Exception:
-                        pass
-
-            payload = {
-                "worker_id": worker_id,
-                "at": at.isoformat(),
-                "updated_at": self.now().isoformat(),
-            }
-            if hasattr(ref_indiv, "set"):
-                ref_indiv.set(payload, merge=True)
-            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
-                ref_indiv.coll.store.setdefault((ref_indiv.coll.name, ref_indiv.key), {}).update(payload)
-
-            ref = col.document("heartbeats")
-            if hasattr(ref, "set"):
-                ref.set({worker_id: at.isoformat()}, merge=True)
-            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
-                ref.coll.store.setdefault((ref.coll.name, ref.key), {})[worker_id] = at.isoformat()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to save Firestore heartbeat for %s: %s", worker_id, exc)
+        self._store._save_firestore_heartbeat(worker_id, at)
 
     def _reload_persistent_sync_if_needed(self) -> None:
-        if self._persistent_path and self._persistent_path.exists():
-            try:
-                mtime = self._persistent_path.stat().st_mtime
-                if mtime > self._last_mtime:
-                    self._load_persistent_sync()
-            except Exception:
-                pass
-        if self._firestore_client is not None:
-            import time
-            now_ts = time.time()
-            if now_ts - self._last_firestore_poll > 2.0:
-                self._load_firestore_sync()
+        self._store.reload_if_needed()
 
     def _save_persistent_sync(self) -> None:
-        try:
-            if self._persistent_path:
-                self._persistent_path.parent.mkdir(parents=True, exist_ok=True)
-                payload = {
-                    "watermarks": {k: v.isoformat() for k, v in self._last_successful_sync.items()},
-                    "heartbeats": {k: v.isoformat() for k, v in self._worker_heartbeats.items()},
-                    "backlogs": {
-                        k: {
-                            "count": v.get("count", 0),
-                            "oldest_pending_at": (
-                                v.get("oldest_pending_at").isoformat()
-                                if v.get("oldest_pending_at")
-                                else None
-                            ),
-                            "recorded_at": (
-                                v.get("recorded_at").isoformat()
-                                if v.get("recorded_at")
-                                else None
-                            ),
-                        }
-                        for k, v in self._pending_backlog.items()
-                    },
-                }
-                tmp = self._persistent_path.with_suffix(".tmp")
-                tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-                tmp.replace(self._persistent_path)
-                self._last_mtime = self._persistent_path.stat().st_mtime
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to save persistent sync watermarks: %s", exc)
+        self._store._save_persistent()
 
-    def record_worker_heartbeat(self, worker_id: str = "worker-1", at: datetime | None = None) -> None:
+    def record_worker_heartbeat(
+        self,
+        worker_id: str = "worker-1",
+        at: datetime | None = None,
+    ) -> None:
         now_val = at or self.now()
         with self._lock:
-            existing = self._worker_heartbeats.get(worker_id)
-            if existing is not None and now_val < existing:
-                return  # Monotonic advance: never rewind
-            self._last_worker_heartbeat = (
-                max(self._last_worker_heartbeat, now_val)
-                if self._last_worker_heartbeat is not None
-                else now_val
-            )
             self._is_worker_connected = True
-            self._worker_heartbeats[worker_id] = now_val
-            self._save_persistent_sync()
-            self._save_firestore_heartbeat(worker_id, now_val)
+            self._store.save_heartbeat(worker_id, now_val)
 
     def record_backlog(
         self,
@@ -391,34 +141,15 @@ class FreshnessTracker:
         """Records pending backlog count and oldest unprocessed item timestamp (Spec 7.3, A05-T1)."""
         key = f"{tenant_id}:{resource_type}" if tenant_id else resource_type
         now_val = at or self.now()
-        with self._lock:
-            self._pending_backlog[key] = {
-                "count": max(0, backlog_count),
-                "oldest_pending_at": oldest_pending_at,
-                "recorded_at": now_val,
-            }
-            self._save_persistent_sync()
-            self._save_firestore_backlog(key, max(0, backlog_count), oldest_pending_at)
+        self._store.save_backlog(key, backlog_count, oldest_pending_at, now_val)
 
-    def _save_firestore_backlog(self, key: str, count: int, oldest_pending_at: datetime | None) -> None:
-        if self._firestore_client is None:
-            return
-        try:
-            col = self._firestore_client.collection(self._firestore_collection)
-            doc_id = f"bl_{key.replace(':', '_')}"
-            ref = col.document(doc_id)
-            payload = {
-                "key": key,
-                "count": count,
-                "oldest_pending_at": oldest_pending_at.isoformat() if oldest_pending_at else None,
-                "updated_at": self.now().isoformat(),
-            }
-            if hasattr(ref, "set"):
-                ref.set(payload, merge=True)
-            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
-                ref.coll.store.setdefault((ref.coll.name, ref.key), {}).update(payload)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to save Firestore backlog for %s: %s", key, exc)
+    def _save_firestore_backlog(
+        self,
+        key: str,
+        count: int,
+        oldest_pending_at: datetime | None,
+    ) -> None:
+        self._store.save_backlog(key, count, oldest_pending_at, self.now())
 
     def set_worker_disconnected(self) -> None:
         with self._lock:
@@ -429,10 +160,11 @@ class FreshnessTracker:
         with self._lock:
             if not self._is_worker_connected:
                 return False
-            if self._last_worker_heartbeat is None:
+            latest_hb = self._store.get_latest_heartbeat()
+            if latest_hb is None:
                 return False
             check_time = now or self.now()
-            elapsed = (check_time - self._last_worker_heartbeat).total_seconds()
+            elapsed = (check_time - latest_hb).total_seconds()
             return elapsed <= self._worker_stale_threshold
 
     def record_stage_event(
@@ -444,13 +176,7 @@ class FreshnessTracker:
     ) -> None:
         """Records a timestamp for an event stage tagged by correlationId (A05-T1)."""
         now_val = at or self.now()
-        with self._lock:
-            if correlation_id not in self._stage_events and len(self._stage_events) >= self._max_stage_events:
-                self._stage_events.popitem(last=False)
-            entry = self._stage_events.setdefault(correlation_id, {})
-            entry[stage] = now_val
-            if tenant_id:
-                entry["_tenant_id"] = tenant_id
+        self._store.save_stage_event(correlation_id, stage, now_val, tenant_id=tenant_id)
 
     def record_sync_success(
         self,
@@ -460,14 +186,7 @@ class FreshnessTracker:
     ) -> None:
         key = f"{tenant_id}:{resource_type}" if tenant_id else resource_type
         now_val = at or self.now()
-        with self._lock:
-            existing = self._last_successful_sync.get(key)
-            if existing is not None and now_val < existing:
-                return  # Monotonic advance: never rewind
-            self._last_successful_sync[key] = now_val
-            # Strictly tenant-isolated: do not update global key when tenant_id is provided
-            self._save_persistent_sync()
-            self._save_firestore_watermark(key, now_val)
+        self._store.save_watermark(key, now_val)
 
     def compute_freshness(
         self,
@@ -489,8 +208,8 @@ class FreshnessTracker:
 
         Idle Pipeline Handling:
         When the pipeline is healthy (worker alive), has synchronization evidence,
-        and has zero pending backlog (idle), it returns REALTIME with lag_seconds=0.0,
-        while preserving the historical event_watermark.
+        and has recent verified backlog evidence of 0 (idle), it returns REALTIME
+        with lag_seconds=0.0, while preserving the historical event_watermark.
         """
         self._reload_persistent_sync_if_needed()
         now_dt = now or self.now()
@@ -534,17 +253,28 @@ class FreshnessTracker:
                     last_successful_sync_at=last_sync,
                 )
 
-            # Resolve backlog state
+            # Resolve backlog state and freshness
             stored_backlog = self._pending_backlog.get(lookup_key)
             if stored_backlog is None and not tenant_id:
                 stored_backlog = self._pending_backlog.get(resource_type)
 
             effective_backlog_count = backlog_count
             effective_oldest_pending = None
+            backlog_is_fresh = False
+
             if stored_backlog is not None:
-                if effective_backlog_count is None:
+                rec_at = stored_backlog.get("recorded_at")
+                if rec_at is not None:
+                    elapsed = (now_dt - rec_at).total_seconds()
+                    if elapsed <= self._worker_stale_threshold:
+                        backlog_is_fresh = True
+                else:
+                    backlog_is_fresh = worker_alive
+
+                if effective_backlog_count is None and backlog_is_fresh:
                     effective_backlog_count = stored_backlog.get("count", 0)
-                effective_oldest_pending = stored_backlog.get("oldest_pending_at")
+                if backlog_is_fresh:
+                    effective_oldest_pending = stored_backlog.get("oldest_pending_at")
 
             effective_has_backlog = has_pending_backlog
             if effective_has_backlog is None:
@@ -554,9 +284,10 @@ class FreshnessTracker:
                     effective_has_backlog = False
 
             # Determine pipeline lag vs raw event age
-            # If idle pipeline (no backlog, healthy worker, sync evidence exists):
+            # If idle pipeline (explicit is_idle=True, OR explicit has_pending_backlog=False,
+            # OR recent observed backlog evidence exists and count is 0):
             # lag represents processing backlog delay (0.0), preserving event_watermark.
-            if effective_has_backlog is False or is_idle is True or (effective_backlog_count == 0 and effective_has_backlog is not True):
+            if is_idle is True or effective_has_backlog is False or (effective_backlog_count == 0 and backlog_is_fresh and effective_has_backlog is not True):
                 lag_seconds = 0.0
             elif effective_has_backlog is True and effective_oldest_pending is not None:
                 lag_seconds = max(0.0, (now_dt - effective_oldest_pending).total_seconds())

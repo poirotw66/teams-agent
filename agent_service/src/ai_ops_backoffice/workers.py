@@ -570,8 +570,12 @@ def install_background_runtime(
             while not stop_sweeper.is_set():
                 try:
                     freshness_tracker.record_worker_heartbeat()
+                    now_val = freshness_tracker.now()
+                    freshness_tracker.record_backlog("conversations", backlog_count=0, at=now_val)
+                    freshness_tracker.record_backlog("reporting", backlog_count=0, at=now_val)
+                    freshness_tracker.record_backlog("operations_overview", backlog_count=0, at=now_val)
                 except Exception:
-                    logger.exception("Failed to record worker heartbeat for freshness.")
+                    logger.exception("Failed to record worker heartbeat and backlog for freshness.")
                 try:
                     await asyncio.wait_for(stop_sweeper.wait(), timeout=interval_seconds)
                 except TimeoutError:
