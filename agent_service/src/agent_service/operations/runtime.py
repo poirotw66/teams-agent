@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .audit import AuditStore, build_audit_store
 from .classification import IssueClassifier
+from .contracts import FreshnessRecorder
 from .delivery.file_journal import FileJournal
 from .delivery.firestore_journal import FirestoreJournal
 from .delivery.primary import FileDeliveryPrimary, FirestoreDeliveryPrimary
@@ -26,6 +29,7 @@ class OpsRuntime:
         taxonomy: TaxonomyRepository,
         audit_store: AuditStore,
         store: CompositeOperationalStore | MemoryOperationalStore | FileOperationalStore,
+        freshness_recorder: FreshnessRecorder | None = None,
     ) -> None:
         self.settings = settings
         self.ingestion = ingestion
@@ -33,6 +37,7 @@ class OpsRuntime:
         self.taxonomy = taxonomy
         self.audit_store = audit_store
         self.store = store
+        self.freshness_recorder = freshness_recorder
         self.delivery_worker: DeliveryWorker | None = (
             store.delivery_worker if isinstance(store, CompositeOperationalStore) else None
         )
@@ -47,7 +52,51 @@ def _build_primary_store(settings: OpsSettings) -> MemoryOperationalStore | File
     return FileOperationalStore(settings.store_path)
 
 
-def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
+def build_freshness_recorder(settings: OpsSettings) -> FreshnessRecorder | None:
+    """Instantiate the standard FreshnessTracker based on configured storage mode."""
+    try:
+        from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+    except ImportError:
+        return None
+
+    firestore_client = None
+    if settings.store_mode == "FIRESTORE":
+        try:
+            from google.cloud import firestore
+
+            kwargs: dict[str, Any] = {}
+            if settings.firestore_project:
+                kwargs["project"] = settings.firestore_project
+            if settings.firestore_database and settings.firestore_database != "(default)":
+                kwargs["database"] = settings.firestore_database
+            firestore_client = firestore.Client(**kwargs)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to initialize Firestore client for freshness tracking: {exc}"
+            ) from exc
+
+    persistent_path = None
+    if settings.store_path:
+        persistent_path = settings.store_path.parent / "freshness" / "sync_watermarks.json"
+
+    collection = (
+        f"{settings.firestore_collection}_freshness"
+        if settings.firestore_collection
+        else "freshness_state"
+    )
+
+    return FreshnessTracker(
+        persistent_path=persistent_path,
+        firestore_client=firestore_client,
+        firestore_collection=collection,
+    )
+
+
+def build_ops_runtime(
+    settings: OpsSettings | None = None,
+    *,
+    freshness_recorder: FreshnessRecorder | None = None,
+) -> OpsRuntime | None:
     resolved = settings or OpsSettings.from_env()
     if not resolved.enabled:
         return None
@@ -96,7 +145,12 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
         )
     else:
         store = primary
-    ingestion = EventIngestionService(store, resolved)
+
+    recorder = freshness_recorder
+    if recorder is None:
+        recorder = build_freshness_recorder(resolved)
+
+    ingestion = EventIngestionService(store, resolved, freshness_tracker=recorder)
     audit_store = build_audit_store(resolved)
     emitter = OperationalEventEmitter(ingestion, taxonomy, classifier, resolved)
     from .policy_runtime import PolicyRuntime, configure_policy_runtime
@@ -109,4 +163,5 @@ def build_ops_runtime(settings: OpsSettings | None = None) -> OpsRuntime | None:
         taxonomy=taxonomy,
         audit_store=audit_store,
         store=store,
+        freshness_recorder=recorder,
     )

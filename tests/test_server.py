@@ -855,3 +855,165 @@ def test_real_oidc_id_token_cryptographic_verification(tmp_path: Path) -> None:
     verified = verify_viewer_token(viewer_token, settings)
     assert verified is not None
     assert verified["sub"] == "entra-oid-live-999"  # OID was extracted and verified!
+
+
+def test_oidc_strict_tenant_isolation(tmp_path: Path) -> None:
+    """Verify that configured tenant A strictly rejects tokens signed for tenant B."""
+    import time
+    from urllib.parse import parse_qs, urlparse
+
+    import jwt
+    import pytest
+    from fastapi import HTTPException
+    from fastapi.testclient import TestClient
+
+    from teams_agent.server import create_web_app, verify_entra_id_token
+
+    tenant_a = "tenant-uuid-alpha"
+    tenant_b = "tenant-uuid-bravo"
+    client_id = "client-app-uuid"
+    secret_key = "test-secret-key-for-tenant-isolation-test!"
+    now_ts = int(time.time())
+
+    token_for_b = jwt.encode(
+        {
+            "iss": f"https://login.microsoftonline.com/{tenant_b}/v2.0",
+            "tid": tenant_b,
+            "aud": client_id,
+            "sub": "user-from-tenant-b",
+            "oid": "oid-from-tenant-b",
+            "nonce": "test-nonce-abc",
+            "exp": now_ts + 3600,
+            "iat": now_ts,
+        },
+        secret_key,
+        algorithm="HS256",
+    )
+
+    # Unit check: direct verification with tenant_a config MUST reject token_for_b
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            token_for_b,
+            client_id=client_id,
+            tenant_id=tenant_a,
+            expected_nonce="test-nonce-abc",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "issuer mismatch" in exc.value.detail or "tenant mismatch" in exc.value.detail
+
+    # Unit check: token with forged iss but tid=tenant_b MUST also be rejected
+    forged_token = jwt.encode(
+        {
+            "iss": f"https://login.microsoftonline.com/{tenant_a}/v2.0",
+            "tid": tenant_b,
+            "aud": client_id,
+            "sub": "user-from-tenant-b",
+            "oid": "oid-from-tenant-b",
+            "nonce": "test-nonce-abc",
+            "exp": now_ts + 3600,
+            "iat": now_ts,
+        },
+        secret_key,
+        algorithm="HS256",
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            forged_token,
+            client_id=client_id,
+            tenant_id=tenant_a,
+            expected_nonce="test-nonce-abc",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "tenant mismatch" in exc.value.detail
+
+    # Unit check: multi-tenant allowlist allows tenant_b but rejects tenant_c
+    claims_b = verify_entra_id_token(
+        token_for_b,
+        client_id=client_id,
+        tenant_id="common",
+        allowed_tenants=[tenant_a, tenant_b],
+        expected_nonce="test-nonce-abc",
+        signing_key=secret_key,
+        allowed_algorithms=["HS256"],
+    )
+    assert claims_b["tid"] == tenant_b
+
+    token_for_c = jwt.encode(
+        {
+            "iss": "https://login.microsoftonline.com/tenant-uuid-charlie/v2.0",
+            "tid": "tenant-uuid-charlie",
+            "aud": client_id,
+            "sub": "user-c",
+            "nonce": "test-nonce-abc",
+            "exp": now_ts + 3600,
+            "iat": now_ts,
+        },
+        secret_key,
+        algorithm="HS256",
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            token_for_c,
+            client_id=client_id,
+            tenant_id="common",
+            allowed_tenants=[tenant_a, tenant_b],
+            expected_nonce="test-nonce-abc",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+
+    # Integration check: SSO callback endpoint rejects foreign tenant token
+    sources = tmp_path / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.md").write_text("# Doc\n", encoding="utf-8")
+
+    settings = make_settings(
+        tmp_path,
+        source_dir=sources,
+        tenant_id=tenant_a,
+        client_id=client_id,
+        client_secret="sec",
+        asset_signing_key="key",
+        public_base_url="https://agent.example.com",
+    )
+
+    app = create_web_app(settings)
+    app.state.id_token_key = secret_key
+    app.state.id_token_algorithms = ["HS256"]
+    client = TestClient(app)
+
+    login_resp = client.get("/sources/auth/login?redirect_url=/sources/doc.md", follow_redirects=False)
+    session_cookie = login_resp.cookies["sso_auth_session"]
+    parsed_auth = urlparse(login_resp.headers["location"])
+    auth_params = parse_qs(parsed_auth.query)
+    state = auth_params["state"][0]
+    expected_nonce = auth_params["nonce"][0]
+
+    token_b_with_nonce = jwt.encode(
+        {
+            "iss": f"https://login.microsoftonline.com/{tenant_b}/v2.0",
+            "tid": tenant_b,
+            "aud": client_id,
+            "sub": "foreign-user",
+            "oid": "foreign-oid",
+            "nonce": expected_nonce,
+            "exp": now_ts + 3600,
+            "iat": now_ts,
+        },
+        secret_key,
+        algorithm="HS256",
+    )
+
+    async def foreign_token_exchanger(_c: str, _cb: str) -> dict:
+        return {"id_token": token_b_with_nonce}
+
+    app.state.oauth_token_exchanger = foreign_token_exchanger
+    client.cookies.set("sso_auth_session", session_cookie)
+    cb_resp = client.get(f"/sources/auth/callback?code=code&state={state}", follow_redirects=False)
+    assert cb_resp.status_code == 401
+    assert "teams_viewer_token" not in cb_resp.cookies

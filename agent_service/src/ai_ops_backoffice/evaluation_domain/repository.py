@@ -427,24 +427,6 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
             self._state = loaded
         return loaded
 
-    def delete_outbox_jobs(self, outbox_ids: set[str] | list[str]) -> None:
-        target_ids = {str(i) for i in outbox_ids}
-        with self._lock:
-            remaining = [
-                j for j in getattr(self._state, "outbox_jobs", ())
-                if str(j.get("outbox_id", j.get("job_id"))) not in target_ids
-            ]
-            self._state = self._state.model_copy(update={"outbox_jobs": tuple(remaining)})
-        for oid in target_ids:
-            ref = self._col("outbox_jobs").document(oid)
-            if hasattr(ref, "delete"):
-                try:
-                    ref.delete()
-                except Exception:
-                    pass
-            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
-                ref.coll.store.pop((ref.coll.name, ref.key), None)
-
     def get_case(self, case_id: str) -> EvalCase | None:
         with self._lock:
             cached = next((c for c in self._state.cases if c.case_id == case_id), None)

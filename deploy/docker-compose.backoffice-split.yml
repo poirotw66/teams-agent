@@ -1,0 +1,62 @@
+# Docker Compose configuration for splitting AI Ops Backoffice into dedicated API and Worker instances.
+#
+# Spec: Running the background worker (sweeper, aggregation, retention, eval runner)
+# in a separate process/container from the customer-facing API instance.
+
+version: "3.8"
+
+services:
+  backoffice-api:
+    build:
+      context: ..
+      dockerfile: agent_service/Dockerfile.backoffice
+    image: ai-ops-backoffice:latest
+    container_name: ai-ops-backoffice-api
+    restart: unless-stopped
+    command: ["python", "-m", "ai_ops_backoffice.main"]
+    environment:
+      - AI_OPS_WORKERS_ENABLED=false
+      - AI_OPS_BACKOFFICE_HOST=0.0.0.0
+      - AI_OPS_BACKOFFICE_PORT=8080
+      - AI_OPS_STORE_MODE=FILE
+      - RAG_DATA_DIR=/app/data
+    ports:
+      - "8080:8080"
+    volumes:
+      - backoffice-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  backoffice-worker:
+    build:
+      context: ..
+      dockerfile: agent_service/Dockerfile.backoffice
+    image: ai-ops-backoffice:latest
+    container_name: ai-ops-backoffice-worker
+    restart: unless-stopped
+    command: ["python", "-m", "ai_ops_backoffice.worker_main"]
+    environment:
+      - AI_OPS_WORKERS_ENABLED=true
+      - AI_OPS_WORKER_PORT=8081
+      - PORT=8081
+      - AI_OPS_STORE_MODE=FILE
+      - RAG_DATA_DIR=/app/data
+    ports:
+      - "8081:8081"
+    volumes:
+      - backoffice-data:/app/data
+    depends_on:
+      - backoffice-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  backoffice-data:

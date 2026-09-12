@@ -40,6 +40,7 @@ data/releases/
 data/portal_originals/
 data/ops/events/
 data/ops/exports/
+data/ops/freshness/
 data/ops/evaluations/fixtures/
 data/ops/evaluations/gates/
 data/ops/evaluations/jobs/

@@ -78,7 +78,10 @@ class FreshnessTracker:
                     for k, v in watermarks.items():
                         if isinstance(v, str) and k != "heartbeats":
                             try:
-                                self._last_successful_sync[k] = datetime.fromisoformat(v)
+                                dt = datetime.fromisoformat(v)
+                                existing = self._last_successful_sync.get(k)
+                                if existing is None or dt > existing:
+                                    self._last_successful_sync[k] = dt
                             except Exception:
                                 pass
                     hb_data = data.get("heartbeats") if "heartbeats" in data and isinstance(data["heartbeats"], dict) else {}
@@ -86,9 +89,11 @@ class FreshnessTracker:
                         if isinstance(ts_str, str):
                             try:
                                 hb_dt = datetime.fromisoformat(ts_str)
-                                self._worker_heartbeats[wid] = hb_dt
-                                if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
-                                    self._last_worker_heartbeat = hb_dt
+                                existing_hb = self._worker_heartbeats.get(wid)
+                                if existing_hb is None or hb_dt > existing_hb:
+                                    self._worker_heartbeats[wid] = hb_dt
+                                    if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
+                                        self._last_worker_heartbeat = hb_dt
                             except Exception:
                                 pass
         except Exception as exc:  # noqa: BLE001
@@ -106,7 +111,10 @@ class FreshnessTracker:
                 for k, v in wm_data.items():
                     if isinstance(v, str):
                         try:
-                            self._last_successful_sync[k] = datetime.fromisoformat(v)
+                            dt = datetime.fromisoformat(v)
+                            existing = self._last_successful_sync.get(k)
+                            if existing is None or dt > existing:
+                                self._last_successful_sync[k] = dt
                         except Exception:
                             pass
             hb_ref = col.document("heartbeats")
@@ -117,9 +125,11 @@ class FreshnessTracker:
                     if isinstance(ts_str, str):
                         try:
                             hb_dt = datetime.fromisoformat(ts_str)
-                            self._worker_heartbeats[wid] = hb_dt
-                            if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
-                                self._last_worker_heartbeat = hb_dt
+                            existing_hb = self._worker_heartbeats.get(wid)
+                            if existing_hb is None or hb_dt > existing_hb:
+                                self._worker_heartbeats[wid] = hb_dt
+                                if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
+                                    self._last_worker_heartbeat = hb_dt
                         except Exception:
                             pass
             import time
@@ -132,6 +142,16 @@ class FreshnessTracker:
             return
         try:
             col = self._firestore_client.collection(self._firestore_collection)
+            # Granular document per tenant/resource to eliminate hotspot contention
+            doc_id = f"wm_{key.replace(':', '_')}"
+            ref_indiv = col.document(doc_id)
+            payload = {"key": key, "at": at.isoformat()}
+            if hasattr(ref_indiv, "set"):
+                ref_indiv.set(payload, merge=True)
+            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
+                ref_indiv.coll.store.setdefault((ref_indiv.coll.name, ref_indiv.key), {}).update(payload)
+
+            # Aggregate document for batch queries and backward compatibility
             ref = col.document("watermarks")
             if hasattr(ref, "set"):
                 ref.set({key: at.isoformat()}, merge=True)
@@ -145,6 +165,16 @@ class FreshnessTracker:
             return
         try:
             col = self._firestore_client.collection(self._firestore_collection)
+            # Granular document per worker to eliminate hotspot contention
+            doc_id = f"hb_{worker_id}"
+            ref_indiv = col.document(doc_id)
+            payload = {"worker_id": worker_id, "at": at.isoformat()}
+            if hasattr(ref_indiv, "set"):
+                ref_indiv.set(payload, merge=True)
+            elif hasattr(ref_indiv, "coll") and hasattr(ref_indiv.coll, "store"):
+                ref_indiv.coll.store.setdefault((ref_indiv.coll.name, ref_indiv.key), {}).update(payload)
+
+            # Aggregate document for batch queries and backward compatibility
             ref = col.document("heartbeats")
             if hasattr(ref, "set"):
                 ref.set({worker_id: at.isoformat()}, merge=True)
@@ -185,7 +215,14 @@ class FreshnessTracker:
     def record_worker_heartbeat(self, worker_id: str = "worker-1", at: datetime | None = None) -> None:
         now_val = at or self.now()
         with self._lock:
-            self._last_worker_heartbeat = now_val
+            existing = self._worker_heartbeats.get(worker_id)
+            if existing is not None and now_val < existing:
+                return  # Monotonic advance: never rewind
+            self._last_worker_heartbeat = (
+                max(self._last_worker_heartbeat, now_val)
+                if self._last_worker_heartbeat is not None
+                else now_val
+            )
             self._is_worker_connected = True
             self._worker_heartbeats[worker_id] = now_val
             self._save_persistent_sync()
@@ -232,6 +269,9 @@ class FreshnessTracker:
         key = f"{tenant_id}:{resource_type}" if tenant_id else resource_type
         now_val = at or self.now()
         with self._lock:
+            existing = self._last_successful_sync.get(key)
+            if existing is not None and now_val < existing:
+                return  # Monotonic advance: never rewind
             self._last_successful_sync[key] = now_val
             # Strictly tenant-isolated: do not update global key when tenant_id is provided
             self._save_persistent_sync()

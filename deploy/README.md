@@ -385,3 +385,24 @@ Mock API 使用 Secret Manager Bearer Token 保護建立與查詢操作，資料
 Firestore `mock_tickets` collection。此服務僅供驗收，不代表正式工單系統。
 重新執行完整的 `deploy-gcp.sh` 會把工單模式重設為 `DISABLED`；需要時再執行
 本腳本即可恢復 Mock 工單環境。
+
+## AI Ops Backoffice 獨立 Worker 部署 (Spec A05-T1)
+
+為了確保後台背景工作（匯出任務清理、每日統計聚合、預算監控、評測排程與評測工作執行）不會受到 API 請求流量排隊或逾時干擾，營運環境支援將 API 服務與專用 Worker 拆分執行：
+
+| 服務實例 | 角色與配置 | 部署方式 |
+|---|---|---|
+| **Backoffice API** (`ai-ops-backoffice-api`) | 提供 HTTP API 與前端介面，設定 `AI_OPS_WORKERS_ENABLED=false`，允許水平擴展 (`min=0, max=10`)。 | `uvicorn ai_ops_backoffice.main:app` |
+| **Backoffice Worker** (`ai-ops-backoffice-worker`) | 專責背景工作排程與執行，設定 `AI_OPS_WORKERS_ENABLED=true`，配置 `--no-cpu-throttling` 與單一實例 (`min=1, max=1`) 避免 CPU 限制或重複排程。 | `python -m ai_ops_backoffice.worker_main` |
+
+### 本地 Docker Compose 測試
+
+```bash
+docker compose -f deploy/docker-compose.backoffice-split.yml up --build
+```
+
+### GCP Cloud Run 部署
+
+```bash
+./deploy/deploy-backoffice.sh
+```

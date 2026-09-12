@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -131,3 +131,22 @@ class FreshnessMetadata(StrictModel):
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+class FreshnessRecorder(Protocol):
+    """Interface for recording stage latencies and synchronization watermarks."""
+
+    def record_stage_event(
+        self,
+        correlation_id: str,
+        stage: str,
+        at: datetime | None = None,
+        tenant_id: str | None = None,
+    ) -> None: ...
+
+    def record_sync_success(
+        self,
+        resource_type: str,
+        at: datetime | None = None,
+        tenant_id: str | None = None,
+    ) -> None: ...

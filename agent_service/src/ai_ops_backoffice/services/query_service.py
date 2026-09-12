@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -9,6 +10,8 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore
@@ -95,7 +98,12 @@ class BackofficeQueryService(
     KnowledgeQueryMixin,
     ExportsQueryMixin,
 ):
-    def __init__(self, settings: BackofficeSettings) -> None:
+    def __init__(
+        self,
+        settings: BackofficeSettings,
+        *,
+        freshness_tracker: FreshnessTracker | None = None,
+    ) -> None:
         self._settings = settings
         ops_settings = replace(
             OpsSettings.from_env(),
@@ -106,8 +114,9 @@ class BackofficeQueryService(
             metrics_path=settings.ops_metrics_path,
             classification_rules_path=settings.ops_classification_rules_path,
             audit_store_mode=settings.ops_audit_store_mode,
+            firestore_project=settings.gcp_project_id,
         )
-        runtime = build_ops_runtime(ops_settings)
+        runtime = build_ops_runtime(ops_settings, freshness_recorder=freshness_tracker)
         if runtime is None:
             raise RuntimeError("Operational events are disabled.")
         self._runtime = runtime
@@ -162,19 +171,29 @@ class BackofficeQueryService(
             source_repository=source_repository,
             artifact_storage=artifact_storage,
         )
-        freshness_firestore_client = None
-        if settings.ops_store_mode == "FIRESTORE" or getattr(settings, "source_store_mode", "").upper() == "FIRESTORE":
-            try:
-                from google.cloud import firestore
-                freshness_firestore_client = firestore.Client(project=settings.gcp_project_id)
-            except Exception:
-                pass
-        self._freshness_tracker = FreshnessTracker(
-            persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json",
-            firestore_client=freshness_firestore_client,
-        )
-        if hasattr(self._runtime, "ingestion") and self._runtime.ingestion is not None:
-            self._runtime.ingestion._freshness_tracker = self._freshness_tracker
+        if freshness_tracker is not None:
+            self._freshness_tracker = freshness_tracker
+        elif getattr(self._runtime, "freshness_recorder", None) is not None and isinstance(
+            self._runtime.freshness_recorder, FreshnessTracker
+        ):
+            self._freshness_tracker = self._runtime.freshness_recorder
+        else:
+            freshness_firestore_client = None
+            if settings.ops_store_mode == "FIRESTORE" or getattr(settings, "source_store_mode", "").upper() == "FIRESTORE":
+                try:
+                    from google.cloud import firestore
+
+                    freshness_firestore_client = firestore.Client(project=settings.gcp_project_id)
+                except Exception as exc:
+                    if settings.ops_store_mode == "FIRESTORE":
+                        raise RuntimeError(
+                            f"Failed to initialize Firestore client for freshness tracking: {exc}"
+                        ) from exc
+                    logger.warning("Failed to initialize Firestore client for freshness: %s", exc)
+            self._freshness_tracker = FreshnessTracker(
+                persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json",
+                firestore_client=freshness_firestore_client,
+            )
         self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from .contracts import OperationalEvent, utc_now
+from .contracts import FreshnessRecorder, OperationalEvent, utc_now
 from .masking import redact_secrets
 from .policy_runtime import active_masking_policy_version
 from .retention import retention_expiry
@@ -31,11 +31,15 @@ class EventIngestionService:
         self,
         store: OperationalStore,
         settings: OpsSettings,
-        freshness_tracker: Any = None,
+        freshness_tracker: FreshnessRecorder | None = None,
     ) -> None:
         self._store = store
         self._settings = settings
         self._freshness_tracker = freshness_tracker
+
+    @property
+    def freshness_recorder(self) -> FreshnessRecorder | None:
+        return self._freshness_tracker
 
     async def ingest(self, event: OperationalEvent) -> bool:
         # This is the persistence boundary.  Emitters should mask at source, but

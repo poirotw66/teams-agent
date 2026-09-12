@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -1520,3 +1521,288 @@ def test_firestore_backed_freshness_tracker_multi_instance_sharing() -> None:
     freshness = api_tracker.compute_freshness("conversations", tenant_id="tenant-fs", now=current_time)
     assert freshness.status == "REALTIME"
     assert freshness.event_watermark == t0
+
+
+@pytest.mark.asyncio
+async def test_ops_runtime_freshness_wiring_and_live_ingestion(tmp_path: Path) -> None:
+    """Verify shared runtime construction wires FreshnessRecorder and live ingestion updates watermarks."""
+    from dataclasses import replace
+
+    from agent_service.operations.contracts import OperationalEvent, utc_now
+    from agent_service.operations.runtime import build_ops_runtime
+    from agent_service.operations.settings import OpsSettings
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    ops_settings = replace(
+        OpsSettings.from_env(),
+        enabled=True,
+        environment="test",
+        store_mode="MEMORY",
+        store_path=tmp_path / "events",
+        taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+    )
+
+    tracker = FreshnessTracker()
+    runtime = build_ops_runtime(ops_settings, freshness_recorder=tracker)
+    assert runtime is not None
+    assert runtime.freshness_recorder is tracker
+    assert runtime.ingestion.freshness_recorder is tracker
+
+    t_event = utc_now()
+    event = OperationalEvent(
+        event_id="evt-live-1",
+        event_type="conversation.started",
+        occurred_at=t_event,
+        correlation_id="corr-live-100",
+        tenant_id="tenant-acme",
+        payload={"message": "Hello from user"},
+    )
+
+    persisted = await runtime.ingestion.ingest(event)
+    assert persisted is True
+
+    # Freshness recorder must have received the stage event and sync success automatically
+    tracker.record_worker_heartbeat("worker-1", at=t_event)
+    meta = tracker.compute_freshness("conversations", tenant_id="tenant-acme", now=t_event)
+    assert meta.status == "REALTIME"
+    assert meta.event_watermark is not None
+
+
+def test_backoffice_query_service_firestore_fail_fast(tmp_path: Path) -> None:
+    """Verify that BackofficeQueryService fails fast with RuntimeError when Firestore initialization fails."""
+    from unittest.mock import patch
+
+    from ai_ops_backoffice.services.query_service import BackofficeQueryService
+    from ai_ops_backoffice.settings import BackofficeSettings
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8080,
+        service_token="test",
+        auth_mode="HEADER",
+        ops_store_mode="FIRESTORE",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT",
+        entra_tenant_id=None,
+        entra_client_id=None,
+        gcp_project_id="test-proj",
+    )
+
+    # When Firestore client creation fails, it must NOT silently downgrade to local files
+    with patch("google.cloud.firestore.Client", side_effect=Exception("Connection refused")):
+        with pytest.raises(RuntimeError) as exc_info:
+            BackofficeQueryService(settings)
+        assert "Failed to initialize Firestore client" in str(exc_info.value)
+
+
+def test_freshness_monotonic_advance_and_granular_docs() -> None:
+    """Verify watermarks never rewind and Firestore writes individual documents per tenant and worker."""
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    class FakeDocRef:
+        def __init__(self, storage: dict[str, dict], key: str):
+            self._storage = storage
+            self._key = key
+
+        def get(self):
+            doc_key = self._key
+            class Snap:
+                exists = doc_key in self._storage
+                def to_dict(self_inner):
+                    return self._storage.get(doc_key, {})
+            return Snap()
+
+        def set(self, payload: dict, merge: bool = False):
+            if merge and self._key in self._storage:
+                self._storage[self._key].update(payload)
+            else:
+                self._storage[self._key] = dict(payload)
+
+    class FakeClient:
+        def __init__(self):
+            self.storage: dict[str, dict] = {}
+
+        def collection(self, col_name: str):
+            client = self
+            class FakeCol:
+                def document(self, doc_id: str):
+                    return FakeDocRef(client.storage, f"{col_name}/{doc_id}")
+            return FakeCol()
+
+    shared_firestore = FakeClient()
+    t1 = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 9, 12, 12, 5, 0, tzinfo=timezone.utc)
+    t_old = datetime(2026, 9, 12, 11, 55, 0, tzinfo=timezone.utc)
+
+    tracker = FreshnessTracker(
+        clock=lambda: t2,
+        firestore_client=shared_firestore,
+    )
+
+    # 1. Initial write
+    tracker.record_sync_success("conversations", at=t1, tenant_id="tenant-corp")
+    tracker.record_worker_heartbeat("worker-node-1", at=t1)
+
+    # Check granular documents were written
+    assert "freshness_state/wm_tenant-corp_conversations" in shared_firestore.storage
+    assert "freshness_state/hb_worker-node-1" in shared_firestore.storage
+
+    # 2. Advance forward
+    tracker.record_sync_success("conversations", at=t2, tenant_id="tenant-corp")
+    tracker.record_worker_heartbeat("worker-node-1", at=t2)
+    meta = tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=t2)
+    assert meta.event_watermark == t2
+
+    # 3. Monotonic advance: out-of-order older event arrives -> MUST NOT rewind!
+    tracker.record_sync_success("conversations", at=t_old, tenant_id="tenant-corp")
+    tracker.record_worker_heartbeat("worker-node-1", at=t_old)
+    meta_after_old = tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=t2)
+    assert meta_after_old.event_watermark == t2  # Still t2! Did not rewind to t_old!
+
+
+@pytest.mark.asyncio
+async def test_multi_instance_end_to_end_freshness_lifecycle(tmp_path: Path) -> None:
+    """Verify end-to-end lifecycle across Agent, dedicated Worker, and Backoffice API instances."""
+    from dataclasses import replace
+    from datetime import timedelta
+
+    from agent_service.operations.contracts import OperationalEvent
+    from agent_service.operations.runtime import build_ops_runtime
+    from agent_service.operations.settings import OpsSettings
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    class FakeDocRef:
+        def __init__(self, storage: dict[str, dict], key: str):
+            self._storage = storage
+            self._key = key
+
+        def get(self):
+            doc_key = self._key
+            class Snap:
+                exists = doc_key in self._storage
+                def to_dict(self_inner):
+                    return self._storage.get(doc_key, {})
+            return Snap()
+
+        def set(self, payload: dict, merge: bool = False):
+            if merge and self._key in self._storage:
+                self._storage[self._key].update(payload)
+            else:
+                self._storage[self._key] = dict(payload)
+
+    class SharedFirestore:
+        def __init__(self):
+            self.storage: dict[str, dict] = {}
+
+        def collection(self, col_name: str):
+            client = self
+            class FakeCol:
+                def document(self, doc_id: str):
+                    return FakeDocRef(client.storage, f"{col_name}/{doc_id}")
+            return FakeCol()
+
+    shared_db = SharedFirestore()
+    t0 = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    current_time = t0
+
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+
+    # 1. Instance A: Agent Service Instance
+    agent_tracker = FreshnessTracker(
+        clock=lambda: current_time,
+        firestore_client=shared_db,
+    )
+    ops_settings = replace(
+        OpsSettings.from_env(),
+        enabled=True,
+        environment="test",
+        store_mode="MEMORY",
+        store_path=tmp_path / "agent_events",
+        taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+    )
+    agent_runtime = build_ops_runtime(ops_settings, freshness_recorder=agent_tracker)
+    assert agent_runtime is not None
+
+    # 2. Instance B: Dedicated Background Worker Instance
+    worker_tracker = FreshnessTracker(
+        clock=lambda: current_time,
+        firestore_client=shared_db,
+    )
+
+    # 3. Instance C: Backoffice API Instance
+    api_tracker = FreshnessTracker(
+        clock=lambda: current_time,
+        firestore_client=shared_db,
+    )
+
+    # Initially: No heartbeat -> Worker is not active -> UNKNOWN
+    assert api_tracker.is_worker_active(current_time) is False
+    assert api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time).status == "UNKNOWN"
+
+    # Worker starts up and heartbeats
+    worker_tracker.record_worker_heartbeat("worker-node-1", at=current_time)
+
+    # Agent receives user message and ingests event
+    t_turn = current_time + timedelta(seconds=10)
+    current_time = t_turn
+    event = OperationalEvent(
+        event_id="evt-e2e-1",
+        event_type="turn.received",
+        occurred_at=t_turn,
+        ingested_at=t_turn,
+        correlation_id="conv-e2e-101",
+        tenant_id="tenant-corp",
+        payload={"query": "Need help with VPN"},
+    )
+    persisted = await agent_runtime.ingestion.ingest(event)
+    assert persisted is True
+
+    # API instance polls Firestore
+    api_tracker._last_firestore_poll = 0.0
+    freshness = api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time)
+    assert freshness.status == "REALTIME"
+    assert freshness.event_watermark == t_turn
+
+    # Worker crashes (advancing time past worker stale threshold: 600s + 600s)
+    current_time = current_time + timedelta(seconds=1201)
+    freshness_crashed = api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time)
+    assert freshness_crashed.status == "DELAYED"
+
+    # Worker restarts, heartbeats and executes sync
+    worker_tracker.record_worker_heartbeat("worker-node-1", at=current_time)
+    worker_tracker.record_sync_success("conversations", at=current_time, tenant_id="tenant-corp")
+    api_tracker._last_firestore_poll = 0.0
+    freshness_recovered = api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time)
+    assert freshness_recovered.status == "REALTIME"
+
+    # Out-of-order older turn from delayed agent instance arrives
+    t_delayed_turn = t_turn - timedelta(minutes=5)
+    delayed_event = OperationalEvent(
+        event_id="evt-e2e-delayed",
+        event_type="turn.received",
+        occurred_at=t_delayed_turn,
+        ingested_at=t_delayed_turn,
+        correlation_id="conv-e2e-100",
+        tenant_id="tenant-corp",
+        payload={"query": "Older message"},
+    )
+    await agent_runtime.ingestion.ingest(delayed_event)
+
+    # Watermark must not rewind
+    api_tracker._last_firestore_poll = 0.0
+    freshness_after_delayed = api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time)
+    assert freshness_after_delayed.event_watermark == current_time
+    assert freshness_after_delayed.event_watermark != t_delayed_turn
