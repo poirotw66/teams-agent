@@ -34,6 +34,8 @@ class FreshnessTracker:
         max_stage_events: int = 5000,
         persistent_path: Path | None = None,
         clock: Any = None,
+        firestore_client: Any = None,
+        firestore_collection: str = "freshness_state",
     ) -> None:
         self._lock = threading.RLock()
         # Stale threshold must exceed the heartbeat interval or healthy workers look dead.
@@ -44,8 +46,11 @@ class FreshnessTracker:
         self._realtime_lag_threshold = realtime_lag_threshold_seconds
         self._max_stage_events = max_stage_events
         self._persistent_path = persistent_path
+        self._firestore_client = firestore_client
+        self._firestore_collection = firestore_collection
         self._clock = clock
         self._last_mtime: float = 0.0
+        self._last_firestore_poll: float = 0.0
         self._last_worker_heartbeat: datetime | None = None
         self._is_worker_connected: bool = True
         self._worker_heartbeats: dict[str, datetime] = {}
@@ -54,6 +59,8 @@ class FreshnessTracker:
         self._stage_events: OrderedDict[str, dict[str, Any]] = OrderedDict()
         if self._persistent_path and self._persistent_path.exists():
             self._load_persistent_sync()
+        if self._firestore_client is not None:
+            self._load_firestore_sync()
 
     def now(self) -> datetime:
         return self._clock() if self._clock is not None else utc_now()
@@ -87,6 +94,65 @@ class FreshnessTracker:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load persistent sync watermarks: %s", exc)
 
+    def _load_firestore_sync(self) -> None:
+        if self._firestore_client is None:
+            return
+        try:
+            col = self._firestore_client.collection(self._firestore_collection)
+            wm_ref = col.document("watermarks")
+            snap_wm = wm_ref.get() if hasattr(wm_ref, "get") else None
+            if snap_wm and getattr(snap_wm, "exists", False):
+                wm_data = snap_wm.to_dict() or {}
+                for k, v in wm_data.items():
+                    if isinstance(v, str):
+                        try:
+                            self._last_successful_sync[k] = datetime.fromisoformat(v)
+                        except Exception:
+                            pass
+            hb_ref = col.document("heartbeats")
+            snap_hb = hb_ref.get() if hasattr(hb_ref, "get") else None
+            if snap_hb and getattr(snap_hb, "exists", False):
+                hb_data = snap_hb.to_dict() or {}
+                for wid, ts_str in hb_data.items():
+                    if isinstance(ts_str, str):
+                        try:
+                            hb_dt = datetime.fromisoformat(ts_str)
+                            self._worker_heartbeats[wid] = hb_dt
+                            if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
+                                self._last_worker_heartbeat = hb_dt
+                        except Exception:
+                            pass
+            import time
+            self._last_firestore_poll = time.time()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load Firestore sync watermarks: %s", exc)
+
+    def _save_firestore_watermark(self, key: str, at: datetime) -> None:
+        if self._firestore_client is None:
+            return
+        try:
+            col = self._firestore_client.collection(self._firestore_collection)
+            ref = col.document("watermarks")
+            if hasattr(ref, "set"):
+                ref.set({key: at.isoformat()}, merge=True)
+            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
+                ref.coll.store.setdefault((ref.coll.name, ref.key), {})[key] = at.isoformat()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to save Firestore sync watermark for %s: %s", key, exc)
+
+    def _save_firestore_heartbeat(self, worker_id: str, at: datetime) -> None:
+        if self._firestore_client is None:
+            return
+        try:
+            col = self._firestore_client.collection(self._firestore_collection)
+            ref = col.document("heartbeats")
+            if hasattr(ref, "set"):
+                ref.set({worker_id: at.isoformat()}, merge=True)
+            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
+                ref.coll.store.setdefault((ref.coll.name, ref.key), {})[worker_id] = at.isoformat()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to save Firestore heartbeat for %s: %s", worker_id, exc)
+
     def _reload_persistent_sync_if_needed(self) -> None:
         if self._persistent_path and self._persistent_path.exists():
             try:
@@ -95,6 +161,11 @@ class FreshnessTracker:
                     self._load_persistent_sync()
             except Exception:
                 pass
+        if self._firestore_client is not None:
+            import time
+            now_ts = time.time()
+            if now_ts - self._last_firestore_poll > 2.0:
+                self._load_firestore_sync()
 
     def _save_persistent_sync(self) -> None:
         try:
@@ -118,6 +189,7 @@ class FreshnessTracker:
             self._is_worker_connected = True
             self._worker_heartbeats[worker_id] = now_val
             self._save_persistent_sync()
+            self._save_firestore_heartbeat(worker_id, now_val)
 
     def set_worker_disconnected(self) -> None:
         with self._lock:
@@ -163,6 +235,7 @@ class FreshnessTracker:
             self._last_successful_sync[key] = now_val
             # Strictly tenant-isolated: do not update global key when tenant_id is provided
             self._save_persistent_sync()
+            self._save_firestore_watermark(key, now_val)
 
     def compute_freshness(
         self,

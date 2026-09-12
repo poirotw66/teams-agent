@@ -27,9 +27,15 @@ class OperationalStore(Protocol):
 
 
 class EventIngestionService:
-    def __init__(self, store: OperationalStore, settings: OpsSettings) -> None:
+    def __init__(
+        self,
+        store: OperationalStore,
+        settings: OpsSettings,
+        freshness_tracker: Any = None,
+    ) -> None:
         self._store = store
         self._settings = settings
+        self._freshness_tracker = freshness_tracker
 
     async def ingest(self, event: OperationalEvent) -> bool:
         # This is the persistence boundary.  Emitters should mask at source, but
@@ -61,7 +67,30 @@ class EventIngestionService:
                 "payload": payload,
             }
         )
-        return await self._store.append(event)
+        persisted = await self._store.append(event)
+        if persisted and self._freshness_tracker is not None:
+            tenant_id = getattr(event, "tenant_id", None)
+            ingested_at = event.ingested_at or utc_now()
+            if hasattr(self._freshness_tracker, "record_stage_event"):
+                self._freshness_tracker.record_stage_event(
+                    correlation_id=event.correlation_id,
+                    stage="EVENT_INGESTED",
+                    at=ingested_at,
+                    tenant_id=tenant_id,
+                )
+                self._freshness_tracker.record_stage_event(
+                    correlation_id="conversations",
+                    stage="EVENT_INGESTED",
+                    at=ingested_at,
+                    tenant_id=tenant_id,
+                )
+            if hasattr(self._freshness_tracker, "record_sync_success"):
+                self._freshness_tracker.record_sync_success(
+                    resource_type="conversations",
+                    at=ingested_at,
+                    tenant_id=tenant_id,
+                )
+        return persisted
 
     async def ingest_many(self, events: list[OperationalEvent]) -> int:
         inserted = 0

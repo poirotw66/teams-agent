@@ -162,9 +162,19 @@ class BackofficeQueryService(
             source_repository=source_repository,
             artifact_storage=artifact_storage,
         )
+        freshness_firestore_client = None
+        if settings.ops_store_mode == "FIRESTORE" or getattr(settings, "source_store_mode", "").upper() == "FIRESTORE":
+            try:
+                from google.cloud import firestore
+                freshness_firestore_client = firestore.Client(project=settings.gcp_project_id)
+            except Exception:
+                pass
         self._freshness_tracker = FreshnessTracker(
-            persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json"
+            persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json",
+            firestore_client=freshness_firestore_client,
         )
+        if hasattr(self._runtime, "ingestion") and self._runtime.ingestion is not None:
+            self._runtime.ingestion._freshness_tracker = self._freshness_tracker
         self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}

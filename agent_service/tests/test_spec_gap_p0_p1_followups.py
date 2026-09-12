@@ -1279,3 +1279,244 @@ async def test_standalone_worker_health_server_and_file_touch(tmp_path) -> None:
 
     stop_server.set()
     await server_task
+
+
+def test_outbox_deletion_advances_revision_and_rejects_stale_commit() -> None:
+    from ai_ops_backoffice.evaluation_domain.errors import EvaluationVersionConflictError
+    from ai_ops_backoffice.evaluation_domain.repository import InMemoryEvaluationRepository
+
+    repo = InMemoryEvaluationRepository()
+    outbox_job_1 = {"outbox_id": "outbox-1", "job_id": "job-1", "tenant_id": "t1"}
+    outbox_job_2 = {"outbox_id": "outbox-2", "job_id": "job-2", "tenant_id": "t1"}
+    state = repo.load()
+    initial_rev = state.revision
+    repo.commit_mutation(
+        state.model_copy(update={"outbox_jobs": (outbox_job_1, outbox_job_2)}),
+        expected_revision=initial_rev,
+    )
+    current_state = repo.load()
+    rev_after_insert = current_state.revision
+    assert len(current_state.outbox_jobs) == 2
+
+    stale_state = current_state
+
+    # Worker deletes outbox job 1
+    repo.delete_outbox_jobs(["outbox-1"])
+
+    state_after_delete = repo.load()
+    assert state_after_delete.revision > rev_after_insert
+    assert len(state_after_delete.outbox_jobs) == 1
+    assert state_after_delete.outbox_jobs[0]["outbox_id"] == "outbox-2"
+
+    # Concurrent commit using stale expected_revision must be rejected
+    with pytest.raises(EvaluationVersionConflictError):
+        repo.commit_mutation(
+            stale_state.model_copy(update={"outbox_jobs": ()}),
+            expected_revision=rev_after_insert,
+        )
+
+
+def test_firestore_outbox_deletion_advances_revision_and_propagates_errors() -> None:
+    from unittest.mock import MagicMock
+
+    from ai_ops_backoffice.evaluation_domain.models import EvaluationState
+    from ai_ops_backoffice.evaluation_domain.repository import FirestoreEvaluationRepository
+
+    mock_client = MagicMock()
+    mock_coll = MagicMock()
+    mock_client.collection.return_value = mock_coll
+    mock_meta_doc = MagicMock()
+    mock_job_doc = MagicMock()
+
+    def doc_side_effect(name: str):
+        if name == "root":
+            return mock_meta_doc
+        return mock_job_doc
+
+    mock_coll.document.side_effect = doc_side_effect
+
+    mock_meta_snap = MagicMock()
+    mock_meta_snap.exists = True
+    mock_meta_snap.to_dict.return_value = {"revision": 5}
+    mock_meta_doc.get.return_value = mock_meta_snap
+
+    repo = FirestoreEvaluationRepository(client=mock_client)
+    repo._state = EvaluationState(
+        revision=5,
+        outbox_jobs=({"outbox_id": "outbox-1"}, {"outbox_id": "outbox-2"}),
+    )
+
+    repo.delete_outbox_jobs(["outbox-1"])
+
+    assert repo._state.revision == 6
+    assert len(repo._state.outbox_jobs) == 1
+
+    # Failure path: Firestore delete raises exception -> must propagate, NOT be swallowed
+    mock_tx = MagicMock()
+    mock_tx.delete.side_effect = RuntimeError("Firestore unavailable")
+
+    def run_tx_raising(fn):
+        return fn(mock_tx)
+
+    repo._run_transaction = run_tx_raising
+    with pytest.raises(RuntimeError, match="Firestore unavailable"):
+        repo.delete_outbox_jobs(["outbox-2"])
+
+
+def test_completed_and_terminal_jobs_preserve_state_on_re_enqueue() -> None:
+    from ai_ops_backoffice.evaluation_domain.job_repository import (
+        ExecutionJob,
+        InMemoryJobRepository,
+    )
+
+    repo = InMemoryJobRepository()
+    now = datetime.now(timezone.utc)
+    job = ExecutionJob(
+        job_id="job-term-1",
+        run_id="run-term-1",
+        tenant_id="t-term",
+        logical_key="eval_run_t1_r1",
+        state="QUEUED",
+        created_at=now,
+        updated_at=now,
+    )
+    res1 = repo.enqueue_job(job)
+    assert res1.state == "QUEUED"
+
+    claimed = repo.claim_job(worker_id="w-1")
+    assert claimed is not None
+    completed = repo.complete_job(
+        job_id="job-term-1",
+        worker_id="w-1",
+        fencing_token=claimed.fencing_token,
+        state="COMPLETED",
+    )
+    assert completed.state == "COMPLETED"
+
+    # Re-enqueueing the same job (same job_id or same logical_key) must preserve COMPLETED state
+    re_enqueued = repo.enqueue_job(
+        ExecutionJob(
+            job_id="job-term-1",
+            run_id="run-term-1",
+            tenant_id="t-term",
+            logical_key="eval_run_t1_r1",
+            state="QUEUED",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    assert re_enqueued.state == "COMPLETED"
+
+    re_enqueued_diff_id = repo.enqueue_job(
+        ExecutionJob(
+            job_id="job-term-2-new-id",
+            run_id="run-term-1",
+            tenant_id="t-term",
+            logical_key="eval_run_t1_r1",
+            state="QUEUED",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    assert re_enqueued_diff_id.state == "COMPLETED"
+    assert re_enqueued_diff_id.job_id == "job-term-1"
+
+
+@pytest.mark.asyncio
+async def test_conversation_ingestion_syncs_freshness_to_realtime(tmp_path) -> None:
+    from dataclasses import replace
+
+    from agent_service.operations.contracts import OperationalEvent
+    from agent_service.operations.ingestion import EventIngestionService
+    from agent_service.operations.settings import OpsSettings
+    from agent_service.operations.stores.file_store import FileOperationalStore
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    t0 = datetime(2026, 9, 12, 10, 0, 0, tzinfo=timezone.utc)
+    current_time = t0
+    tracker = FreshnessTracker(clock=lambda: current_time)
+    tracker.record_worker_heartbeat("worker-1", at=t0)
+
+    store = FileOperationalStore(tmp_path / "ops_events")
+    settings = replace(OpsSettings.from_env(), enabled=True, store_path=tmp_path / "ops_events", environment="test")
+    ingestion = EventIngestionService(store, settings, freshness_tracker=tracker)
+
+    event = OperationalEvent(
+        event_id="evt-fresh-1",
+        correlation_id="corr-conv-1",
+        tenant_id="tenant-acme",
+        actor_ref="user-1",
+        occurred_at=t0,
+        ingested_at=t0,
+        environment="test",
+        event_type="turn.received",
+        payload={"message": "hello"},
+    )
+    persisted = await ingestion.ingest(event)
+    assert persisted is True
+
+    freshness = tracker.compute_freshness("conversations", tenant_id="tenant-acme")
+    assert freshness.status == "REALTIME"
+    assert freshness.event_watermark == t0
+
+
+def test_firestore_backed_freshness_tracker_multi_instance_sharing() -> None:
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    class FakeDocRef:
+        def __init__(self, data_store: dict, key: str):
+            self._data = data_store
+            self._key = key
+
+        def get(self):
+            class Snap:
+                def __init__(self, doc_data):
+                    self.exists = doc_data is not None
+                    self._doc_data = doc_data
+
+                def to_dict(self):
+                    return dict(self._doc_data) if self._doc_data else {}
+            return Snap(self._data.get(self._key))
+
+        def set(self, payload: dict, merge: bool = False):
+            if merge and self._key in self._data:
+                self._data[self._key].update(payload)
+            else:
+                self._data[self._key] = dict(payload)
+
+    class FakeClient:
+        def __init__(self):
+            self._storage: dict[str, dict] = {}
+
+        def collection(self, col_name: str):
+            client = self
+            class FakeCol:
+                def document(self, doc_id: str):
+                    return FakeDocRef(client._storage, f"{col_name}/{doc_id}")
+            return FakeCol()
+
+    shared_firestore = FakeClient()
+    t0 = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    current_time = t0
+
+    worker_tracker = FreshnessTracker(
+        clock=lambda: current_time,
+        firestore_client=shared_firestore,
+    )
+    api_tracker = FreshnessTracker(
+        clock=lambda: current_time,
+        firestore_client=shared_firestore,
+    )
+
+    assert api_tracker.is_worker_active(current_time) is False
+    assert api_tracker.compute_freshness("conversations", tenant_id="tenant-fs", now=current_time).status == "UNKNOWN"
+
+    worker_tracker.record_worker_heartbeat("worker-cloudrun-1", at=t0)
+    worker_tracker.record_sync_success("conversations", at=t0, tenant_id="tenant-fs")
+
+    api_tracker._last_firestore_poll = 0.0
+
+    assert api_tracker.is_worker_active(current_time) is True
+    freshness = api_tracker.compute_freshness("conversations", tenant_id="tenant-fs", now=current_time)
+    assert freshness.status == "REALTIME"
+    assert freshness.event_watermark == t0

@@ -188,6 +188,82 @@ def _mark_sso_state_consumed(state_id: str) -> bool:
         return True
 
 
+def verify_entra_id_token(
+    id_token: str,
+    *,
+    client_id: str,
+    tenant_id: str,
+    expected_nonce: str,
+    jwks_client: Any = None,
+    signing_key: Any = None,
+    allowed_algorithms: list[str] | None = None,
+) -> dict[str, Any]:
+    """Cryptographically verify Microsoft Entra ID token according to OIDC standards."""
+    import jwt
+
+    if not id_token or not isinstance(id_token, str):
+        raise HTTPException(status_code=401, detail="Missing or invalid ID token.")
+
+    algorithms = allowed_algorithms or ["RS256"]
+    key = signing_key
+    if key is None:
+        if jwks_client is not None:
+            try:
+                key = jwks_client.get_signing_key_from_jwt(id_token).key
+            except Exception as err:
+                raise HTTPException(status_code=401, detail=f"Failed to fetch JWKS signing key: {err}") from err
+        else:
+            jwks_url = f"https://login.microsoftonline.com/{tenant_id or 'common'}/discovery/v2.0/keys"
+            try:
+                client = jwt.PyJWKClient(jwks_url)
+                key = client.get_signing_key_from_jwt(id_token).key
+            except Exception as err:
+                raise HTTPException(status_code=401, detail=f"Failed to resolve OIDC signing key: {err}") from err
+
+    try:
+        claims = jwt.decode(
+            id_token,
+            key,
+            algorithms=algorithms,
+            audience=client_id,
+            options={
+                "verify_signature": True,
+                "verify_aud": True,
+                "verify_exp": True,
+                "require": ["exp", "iss", "aud", "nonce"],
+            },
+        )
+    except jwt.ExpiredSignatureError as err:
+        raise HTTPException(status_code=401, detail="ID token has expired.") from err
+    except jwt.InvalidAudienceError as err:
+        raise HTTPException(status_code=401, detail="ID token audience mismatch.") from err
+    except jwt.MissingRequiredClaimError as err:
+        raise HTTPException(status_code=401, detail=f"ID token missing required claim: {err}") from err
+    except jwt.PyJWTError as err:
+        raise HTTPException(status_code=401, detail=f"ID token signature verification failed: {err}") from err
+
+    # Validate Issuer (iss)
+    token_iss = str(claims.get("iss") or "").strip()
+    token_tid = str(claims.get("tid") or tenant_id or "").strip()
+    allowed_issuers = {
+        f"https://login.microsoftonline.com/{token_tid}/v2.0",
+        f"https://sts.windows.net/{token_tid}/",
+    }
+    if tenant_id and tenant_id not in ("common", "organizations", "consumers"):
+        allowed_issuers.add(f"https://login.microsoftonline.com/{tenant_id}/v2.0")
+        allowed_issuers.add(f"https://sts.windows.net/{tenant_id}/")
+
+    if token_iss not in allowed_issuers:
+        raise HTTPException(status_code=401, detail=f"ID token issuer mismatch: {token_iss}")
+
+    # Validate Nonce (nonce)
+    token_nonce = str(claims.get("nonce") or "").strip()
+    if not token_nonce or token_nonce != expected_nonce:
+        raise HTTPException(status_code=401, detail="ID token nonce mismatch.")
+
+    return claims
+
+
 def create_web_app(
     settings: AgentSettings,
     readiness: dict[str, object] | None = None,
@@ -290,14 +366,14 @@ def create_web_app(
         # If user is already authenticated through gateway headers or existing valid cookie
         auth_subject = _authenticated_viewer_subject(request, settings)
         if auth_subject:
-            target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+            target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
             return Response(status_code=302, headers={"Location": target})
 
         token = request.query_params.get("token") or request.query_params.get("viewer_token")
         if token and str(token).strip():
             payload = verify_viewer_token(str(token).strip(), settings)
             if payload and payload.get("sub"):
-                target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+                target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
                 resp = Response(status_code=302, headers={"Location": target})
                 resp.set_cookie(
                     "teams_viewer_token",
@@ -574,16 +650,49 @@ def create_web_app(
         token_exchanger = getattr(request.app.state, "oauth_token_exchanger", None)
         if token_exchanger is not None:
             token_data = await token_exchanger(code, callback_url)
-            # Entra Object ID (oid) takes highest priority to align with Teams entraObjectId
-            subject = (
-                token_data.get("oid")
-                or token_data.get("sub")
-                or token_data.get("preferred_username")
-                or token_data.get("email")
-            )
-            groups = list(token_data.get("groups") or [])
-            if token_data.get("tenant_id"):
-                tenant_id = token_data["tenant_id"]
+            # If an id_token string is provided by the exchanger, perform full OIDC verification
+            if "id_token" in token_data and isinstance(token_data["id_token"], str):
+                claims = verify_entra_id_token(
+                    token_data["id_token"],
+                    client_id=client_id,
+                    tenant_id=tenant_id,
+                    expected_nonce=expected_nonce,
+                    jwks_client=getattr(request.app.state, "jwks_client", None),
+                    signing_key=getattr(request.app.state, "id_token_key", None),
+                    allowed_algorithms=getattr(request.app.state, "id_token_algorithms", None),
+                )
+                subject = (
+                    claims.get("oid")
+                    or claims.get("sub")
+                    or claims.get("preferred_username")
+                    or claims.get("email")
+                )
+                groups = list(claims.get("groups") or [])
+                tid = claims.get("tid")
+                if tid:
+                    tenant_id = tid
+            else:
+                # If mock/adapter dictionary is returned directly, validate claims if present
+                now_ts = time.time()
+                exp = token_data.get("exp")
+                if exp is not None and float(exp) < now_ts - 60:
+                    raise HTTPException(status_code=401, detail="ID token has expired.")
+                aud = token_data.get("aud")
+                if aud and aud != client_id:
+                    raise HTTPException(status_code=401, detail="ID token audience mismatch.")
+                token_nonce = token_data.get("nonce")
+                if expected_nonce and token_nonce and token_nonce != expected_nonce:
+                    raise HTTPException(status_code=401, detail="ID token nonce mismatch.")
+
+                subject = (
+                    token_data.get("oid")
+                    or token_data.get("sub")
+                    or token_data.get("preferred_username")
+                    or token_data.get("email")
+                )
+                groups = list(token_data.get("groups") or [])
+                if token_data.get("tenant_id"):
+                    tenant_id = token_data["tenant_id"]
         elif client_id and client_secret:
             import httpx
 
@@ -598,38 +707,32 @@ def create_web_app(
                         "redirect_uri": callback_url,
                     },
                 )
-                if token_resp.status_code == 200:
-                    token_json = token_resp.json()
-                    id_token = token_json.get("id_token")
-                    if id_token:
-                        parts = id_token.split(".")
-                        if len(parts) >= 2:
-                            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
-                            claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+                if token_resp.status_code != 200:
+                    raise HTTPException(status_code=401, detail="Token endpoint returned non-200.")
+                token_json = token_resp.json()
+                id_token = token_json.get("id_token")
+                if not id_token:
+                    raise HTTPException(status_code=401, detail="Missing id_token in token response.")
 
-                            # Validate token claims (exp, aud, iss, nonce)
-                            now_ts = time.time()
-                            exp = claims.get("exp")
-                            if exp is not None and float(exp) < now_ts - 60:
-                                raise HTTPException(status_code=401, detail="ID token has expired.")
-                            aud = claims.get("aud")
-                            if aud and aud != client_id:
-                                raise HTTPException(status_code=401, detail="ID token audience mismatch.")
-                            token_nonce = claims.get("nonce")
-                            if expected_nonce and token_nonce and token_nonce != expected_nonce:
-                                raise HTTPException(status_code=401, detail="ID token nonce mismatch.")
-
-                            # Align subject: prefer Entra Object ID (oid) to match Teams entraObjectId
-                            subject = (
-                                claims.get("oid")
-                                or claims.get("sub")
-                                or claims.get("preferred_username")
-                                or claims.get("email")
-                            )
-                            groups = list(claims.get("groups") or [])
-                            tid = claims.get("tid")
-                            if tid:
-                                tenant_id = tid
+                claims = verify_entra_id_token(
+                    id_token,
+                    client_id=client_id,
+                    tenant_id=tenant_id,
+                    expected_nonce=expected_nonce,
+                    jwks_client=getattr(request.app.state, "jwks_client", None),
+                    signing_key=getattr(request.app.state, "id_token_key", None),
+                    allowed_algorithms=getattr(request.app.state, "id_token_algorithms", None),
+                )
+                subject = (
+                    claims.get("oid")
+                    or claims.get("sub")
+                    or claims.get("preferred_username")
+                    or claims.get("email")
+                )
+                groups = list(claims.get("groups") or [])
+                tid = claims.get("tid")
+                if tid:
+                    tenant_id = tid
 
         if not subject:
             raise HTTPException(status_code=401, detail="Failed to resolve authenticated subject from SSO.")
@@ -686,7 +789,7 @@ def create_web_app(
         if not payload or not payload.get("sub"):
             raise HTTPException(status_code=401, detail="Invalid or expired viewer token.")
 
-        target = redirect_url if redirect_url.startswith(("/", settings.public_base_url)) else "/healthz"
+        target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
         resp = Response(status_code=302, headers={"Location": target})
         resp.set_cookie(
             "teams_viewer_token",

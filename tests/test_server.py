@@ -625,5 +625,233 @@ def test_sources_sso_security_validations_and_subject_alignment(tmp_path: Path) 
     assert "Missing or invalid SSO session cookie" in stolen_state_resp.text
 
 
+def test_sources_login_endpoints_reject_open_redirect(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.md").write_text("# Doc\n", encoding="utf-8")
+
+    settings = make_settings(
+        tmp_path,
+        source_dir=sources,
+        asset_signing_key="test-key-safe-redirect-32-bytes-long!",
+        public_base_url="https://agent.example.com",
+    )
+    app = create_web_app(settings)
+    client = TestClient(app)
+
+    from teams_agent.source_links import create_viewer_token
+
+    token = create_viewer_token("user-test", settings)
+
+    # 1. GET /sources/login with protocol-relative URL
+    resp_get_proto = client.get(f"/sources/login?token={token}&redirect_url=//attacker.com/malicious", follow_redirects=False)
+    assert resp_get_proto.status_code == 302
+    assert resp_get_proto.headers["location"] == "/healthz"
+
+    # 2. GET /sources/login with backslash escape
+    resp_get_bs = client.get(f"/sources/login?token={token}&redirect_url=/\\attacker.com", follow_redirects=False)
+    assert resp_get_bs.status_code == 302
+    assert resp_get_bs.headers["location"] == "/healthz"
+
+    # 3. GET /sources/login with safe relative path
+    resp_get_safe = client.get(f"/sources/login?token={token}&redirect_url=/sources/doc.md", follow_redirects=False)
+    assert resp_get_safe.status_code == 302
+    assert resp_get_safe.headers["location"] == "/sources/doc.md"
+
+    # 4. POST /sources/login with open redirect attempt
+    resp_post_evil = client.post(
+        "/sources/login",
+        data={"token": token, "redirect_url": "//evil.com"},
+        follow_redirects=False,
+    )
+    assert resp_post_evil.status_code == 302
+    assert resp_post_evil.headers["location"] == "/healthz"
+
+    # 5. POST /sources/login with safe relative path
+    resp_post_safe = client.post(
+        "/sources/login",
+        data={"token": token, "redirect_url": "/sources/doc.md"},
+        follow_redirects=False,
+    )
+    assert resp_post_safe.status_code == 302
+    assert resp_post_safe.headers["location"] == "/sources/doc.md"
 
 
+def test_real_oidc_id_token_cryptographic_verification(tmp_path: Path) -> None:
+    import time
+    from urllib.parse import parse_qs, urlparse
+
+    import jwt
+    from fastapi import HTTPException
+
+    from teams_agent.server import verify_entra_id_token
+
+    tenant_id = "test-entra-tenant-uuid"
+    client_id = "test-entra-client-uuid"
+    secret_key = "test-hmac-secret-for-oidc-32-bytes-long!"
+    now_ts = int(time.time())
+
+    # 1. Direct unit verification of verify_entra_id_token
+    valid_payload = {
+        "iss": f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+        "aud": client_id,
+        "sub": "entra-sub-001",
+        "oid": "entra-oid-001",
+        "preferred_username": "testuser@company.com",
+        "email": "testuser@company.com",
+        "nonce": "test-nonce-12345",
+        "exp": now_ts + 3600,
+        "iat": now_ts,
+    }
+    valid_token = jwt.encode(valid_payload, secret_key, algorithm="HS256")
+
+    # Happy path: valid signature, iss, aud, exp, nonce
+    claims = verify_entra_id_token(
+        valid_token,
+        client_id=client_id,
+        tenant_id=tenant_id,
+        expected_nonce="test-nonce-12345",
+        signing_key=secret_key,
+        allowed_algorithms=["HS256"],
+    )
+    assert claims["oid"] == "entra-oid-001"
+    assert claims["sub"] == "entra-sub-001"
+
+    # Bad signature
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            valid_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="test-nonce-12345",
+            signing_key="wrong-secret-key",
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "signature verification failed" in exc.value.detail
+
+    # Bad issuer (iss)
+    bad_iss_token = jwt.encode({**valid_payload, "iss": "https://evil.com/v2.0"}, secret_key, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            bad_iss_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="test-nonce-12345",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "issuer mismatch" in exc.value.detail
+
+    # Bad audience (aud)
+    bad_aud_token = jwt.encode({**valid_payload, "aud": "wrong-client-id"}, secret_key, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            bad_aud_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="test-nonce-12345",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "audience mismatch" in exc.value.detail
+
+    # Expired token (exp)
+    expired_token = jwt.encode({**valid_payload, "exp": now_ts - 100}, secret_key, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            expired_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="test-nonce-12345",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "expired" in exc.value.detail
+
+    # Nonce mismatch (nonce)
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            valid_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="different-nonce-99999",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "nonce mismatch" in exc.value.detail
+
+    # Missing required claim (missing nonce)
+    missing_nonce_payload = {k: v for k, v in valid_payload.items() if k != "nonce"}
+    missing_nonce_token = jwt.encode(missing_nonce_payload, secret_key, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        verify_entra_id_token(
+            missing_nonce_token,
+            client_id=client_id,
+            tenant_id=tenant_id,
+            expected_nonce="test-nonce-12345",
+            signing_key=secret_key,
+            allowed_algorithms=["HS256"],
+        )
+    assert exc.value.status_code == 401
+    assert "missing required claim" in exc.value.detail
+
+    # 2. End-to-end integration test through viewer_auth_callback with real signed token
+    sources = tmp_path / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.md").write_text("# Doc\n", encoding="utf-8")
+
+    settings = make_settings(
+        tmp_path,
+        source_dir=sources,
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret="test-client-secret",
+        asset_signing_key="test-key-oidc-flow-32-bytes-long!",
+        public_base_url="https://agent.example.com",
+    )
+    app = create_web_app(settings)
+    app.state.id_token_key = secret_key
+    app.state.id_token_algorithms = ["HS256"]
+
+    client = TestClient(app)
+
+    # Step A: Initiate SSO login
+    login_resp = client.get("/sources/auth/login?redirect_url=/sources/doc.md", follow_redirects=False)
+    assert login_resp.status_code == 302
+    session_cookie = login_resp.cookies["sso_auth_session"]
+    parsed_auth = urlparse(login_resp.headers["location"])
+    auth_params = parse_qs(parsed_auth.query)
+    state = auth_params["state"][0]
+    expected_nonce = auth_params["nonce"][0]
+
+    # Step B: Generate real signed ID token containing the expected nonce from Step A
+    id_token_for_callback = jwt.encode(
+        {**valid_payload, "nonce": expected_nonce, "oid": "entra-oid-live-999"},
+        secret_key,
+        algorithm="HS256",
+    )
+
+    # Mock token exchanger returning the real signed id_token string
+    async def token_exchanger_with_real_token(_code: str, _cb: str) -> dict:
+        return {"id_token": id_token_for_callback}
+
+    app.state.oauth_token_exchanger = token_exchanger_with_real_token
+
+    # Step C: Execute callback with valid signed token
+    client.cookies.set("sso_auth_session", session_cookie)
+    cb_resp = client.get(f"/sources/auth/callback?code=real-test-code&state={state}", follow_redirects=False)
+    assert cb_resp.status_code == 302
+    assert cb_resp.headers["location"] == "/sources/doc.md"
+
+    from teams_agent.source_links import verify_viewer_token
+
+    viewer_token = cb_resp.cookies["teams_viewer_token"]
+    verified = verify_viewer_token(viewer_token, settings)
+    assert verified is not None
+    assert verified["sub"] == "entra-oid-live-999"  # OID was extracted and verified!

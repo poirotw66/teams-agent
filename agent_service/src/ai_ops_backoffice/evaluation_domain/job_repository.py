@@ -70,12 +70,15 @@ class InMemoryJobRepository:
 
     def enqueue_job(self, job: ExecutionJob) -> ExecutionJob:
         with self._lock:
-            # Idempotency / Deduplication: check if active job already exists for logical_key
+            # Check if same job_id already exists
+            if job.job_id in self._jobs:
+                return self._jobs[job.job_id]
+            # Idempotency / Deduplication: check if active or terminal job already exists for logical_key
             for existing in self._jobs.values():
                 if (
                     existing.tenant_id == job.tenant_id
                     and existing.logical_key == job.logical_key
-                    and existing.state in {"QUEUED", "RUNNING"}
+                    and existing.state in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"}
                 ):
                     return existing
             self._jobs[job.job_id] = job
@@ -441,6 +444,10 @@ class FirestoreJobRepository:
         job_ref = self._doc_ref(job.job_id)
 
         def enqueue_tx(transaction: Any) -> ExecutionJob:
+            job_snap = job_ref.get(transaction=transaction)
+            if getattr(job_snap, "exists", False):
+                return ExecutionJob.model_validate(job_snap.to_dict())
+
             dedup_snap = dedup_ref.get(transaction=transaction)
             if getattr(dedup_snap, "exists", False):
                 existing_id = (dedup_snap.to_dict() or {}).get("job_id")
@@ -449,7 +456,7 @@ class FirestoreJobRepository:
                     existing_snap = existing_ref.get(transaction=transaction)
                     if getattr(existing_snap, "exists", False):
                         existing = ExecutionJob.model_validate(existing_snap.to_dict())
-                        if existing.state in {"QUEUED", "RUNNING"}:
+                        if existing.state in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"}:
                             return existing
             data = json.loads(job.model_dump_json())
             transaction.set(job_ref, data)

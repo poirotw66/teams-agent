@@ -241,7 +241,10 @@ class InMemoryEvaluationRepository:
                 j for j in getattr(self._state, "outbox_jobs", ())
                 if str(j.get("outbox_id", j.get("job_id"))) not in target_ids
             ]
-            self._state = self._state.model_copy(update={"outbox_jobs": tuple(remaining)})
+            next_revision = self._state.revision + 1 if hasattr(self._state, "revision") else 1
+            self._state = self._state.model_copy(
+                update={"outbox_jobs": tuple(remaining), "revision": next_revision}
+            )
             self._save(self._state)
 
 
@@ -733,3 +736,35 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
                 }
             )
 
+    def delete_outbox_jobs(self, outbox_ids: set[str] | list[str]) -> None:
+        target_ids = {str(i) for i in outbox_ids}
+        if not target_ids:
+            return
+
+        meta_ref = self._col("meta").document("root")
+
+        def op(transaction: Any) -> int:
+            meta_snap = meta_ref.get(transaction=transaction) if hasattr(meta_ref, "get") else None
+            curr_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
+            next_rev = curr_rev + 1
+            transaction.set(meta_ref, {"revision": next_rev})
+
+            for oid in target_ids:
+                ref = self._col("outbox_jobs").document(oid)
+                if hasattr(transaction, "delete"):
+                    transaction.delete(ref)
+                elif hasattr(ref, "delete"):
+                    ref.delete()
+                elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
+                    ref.coll.store.pop((ref.coll.name, ref.key), None)
+            return next_rev
+
+        next_rev = self._run_transaction(op)
+        with self._lock:
+            remaining = [
+                j for j in getattr(self._state, "outbox_jobs", ())
+                if str(j.get("outbox_id", j.get("job_id"))) not in target_ids
+            ]
+            self._state = self._state.model_copy(
+                update={"outbox_jobs": tuple(remaining), "revision": next_rev}
+            )
