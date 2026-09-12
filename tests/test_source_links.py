@@ -135,6 +135,7 @@ def test_resolve_source_file_serves_markdown(tmp_path: Path) -> None:
         settings,
         now=1_000,
         subject=params["subject"][0],
+        authenticated_subject=params["subject"][0],
         groups="forged-vip",
         source_ref_id=(params.get("sourceRefId") or [None])[0],
         tenant_id=(params.get("tenantId") or [None])[0],
@@ -163,6 +164,7 @@ def test_foreign_subject_cannot_open_signed_source(tmp_path: Path) -> None:
             settings,
             now=1_000,
             subject="attacker",
+            authenticated_subject="attacker",
             membership_store=store,
         )
 
@@ -214,6 +216,7 @@ def test_portal_release_doc_path_is_used_for_hashed_sources(tmp_path: Path) -> N
         settings,
         now=1_000,
         subject=params["subject"][0],
+        authenticated_subject=params["subject"][0],
         source_ref_id=(params.get("sourceRefId") or [None])[0],
         tenant_id=(params.get("tenantId") or [None])[0],
         membership_store=store,
@@ -258,6 +261,7 @@ def test_acl_denied_when_live_groups_no_longer_match(tmp_path: Path) -> None:
             settings,
             now=1_000,
             subject=params["subject"][0],
+            authenticated_subject=params["subject"][0],
             groups="vip-only",  # forged URL claim must be ignored
             source_ref_id=(params.get("sourceRefId") or [None])[0],
             membership_store=store,
@@ -285,8 +289,12 @@ def test_revoked_membership_blocks_open_even_with_valid_signature(tmp_path: Path
             settings,
             now=1_000,
             subject=params["subject"][0],
+            authenticated_subject=params["subject"][0],
+            tenant_id=(params.get("tenantId") or [None])[0],
             membership_store=store,
         )
+
+
 
 
 def test_authenticated_subject_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -349,3 +357,194 @@ def test_sign_source_access_binds_subject(tmp_path: Path) -> None:
         groups=("other",),
     )
     assert sig_a == sig_c
+
+
+def test_unauthenticated_viewer_rejected_when_auth_required(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    store = InMemoryViewerMembershipStore()
+    url = build_source_url(
+        "sources/大州系統_功能無法點選.md",
+        settings,
+        now=1_000,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    params = parse_qs(urlparse(url).query)
+    # Reject when authenticated_subject is missing
+    with pytest.raises(PermissionError, match="Viewer authentication is required"):
+        resolve_source_file(
+            "sources/大州系統_功能無法點選.md",
+            params["expires"][0],
+            params["signature"][0],
+            settings,
+            now=1_000,
+            subject=params["subject"][0],
+            authenticated_subject=None,
+            tenant_id=(params.get("tenantId") or [None])[0],
+            membership_store=store,
+        )
+
+
+def test_tenant_mismatch_in_link_or_membership_is_rejected(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    store = InMemoryViewerMembershipStore()
+    url = build_source_url(
+        "sources/大州系統_功能無法點選.md",
+        settings,
+        now=1_000,
+        viewer=_viewer(),  # tenant_id="t1"
+        membership_store=store,
+    )
+    assert url is not None
+    params = parse_qs(urlparse(url).query)
+
+    # 1. Tampered tenantId in URL breaks HMAC signature
+    with pytest.raises(PermissionError, match="Invalid source signature"):
+        resolve_source_file(
+            "sources/大州系統_功能無法點選.md",
+            params["expires"][0],
+            params["signature"][0],
+            settings,
+            now=1_000,
+            subject=params["subject"][0],
+            authenticated_subject=params["subject"][0],
+            tenant_id="foreign-tenant",
+            membership_store=store,
+        )
+
+    # 2. Re-signing with foreign tenant when membership is t1 is rejected in authorize_source_open
+    foreign_sig = sign_source_access(
+        "sources/大州系統_功能無法點選.md",
+        int(params["expires"][0]),
+        settings.asset_signing_key or "",
+        subject=params["subject"][0],
+        tenant_id="foreign-tenant",
+    )
+    with pytest.raises(PermissionError, match="Viewer tenant does not match citation tenant"):
+        resolve_source_file(
+            "sources/大州系統_功能無法點選.md",
+            params["expires"][0],
+            foreign_sig,
+            settings,
+            now=1_000,
+            subject=params["subject"][0],
+            authenticated_subject=params["subject"][0],
+            tenant_id="foreign-tenant",
+            membership_store=store,
+        )
+
+
+def test_viewer_hmac_token_minting_and_verification(tmp_path: Path) -> None:
+    from teams_agent.source_links import create_viewer_token, verify_viewer_token
+
+    settings = _settings(tmp_path)
+    token = create_viewer_token("user-1", settings, tenant_id="tenant-1", expires_in=100, now=1000)
+    assert token.startswith("v1.")
+    verified = verify_viewer_token(token, settings, now=1050)
+    assert verified is not None
+    assert verified["sub"] == "user-1"
+    assert verified["tid"] == "tenant-1"
+
+    # Expired token
+    assert verify_viewer_token(token, settings, now=1150) is None
+
+    # Tampered token
+    tampered = token[:-4] + "abcd"
+    assert verify_viewer_token(tampered, settings, now=1050) is None
+
+
+def test_file_backed_viewer_membership_store(tmp_path: Path) -> None:
+    from teams_agent.viewer_sessions import FileBackedViewerMembershipStore
+
+    store_file = tmp_path / "sessions" / "viewers.json"
+    store1 = FileBackedViewerMembershipStore(store_file, default_ttl_seconds=100)
+    store2 = FileBackedViewerMembershipStore(store_file, default_ttl_seconds=100)
+
+    # Instance 1 remembers user-1
+    entry = store1.remember(
+        "user-1",
+        groups=("it", "ops"),
+        tenant_id="t1",
+        revoked=False,
+        ttl_seconds=50,
+        now=1000,
+    )
+    assert entry.subject == "user-1"
+
+    # Instance 2 resolves user-1 from persistent file
+    resolved = store2.resolve("user-1", now=1020)
+    assert resolved is not None
+    assert resolved.subject == "user-1"
+    assert resolved.groups == ("it", "ops")
+    assert resolved.tenant_id == "t1"
+    assert not resolved.revoked
+
+    # Instance 1 revokes user-1
+    store1.revoke("user-1")
+
+    # Instance 2 sees revocation
+    revoked = store2.resolve("user-1", now=1030)
+    assert revoked is not None
+    assert revoked.revoked is True
+    assert revoked.groups == ()
+
+    # Expired entry
+    assert store2.resolve("user-1", now=1100) is None
+
+
+def test_gcs_viewer_membership_store() -> None:
+    from teams_agent.viewer_sessions import GcsViewerMembershipStore
+
+    store1 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
+    store2 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
+
+    # Instance 1 remembers user across GCS shared store
+    entry = store1.remember(
+        "user-cloud-1",
+        groups=("finance",),
+        tenant_id="t-cloud",
+        now=1000,
+        ttl_seconds=60,
+    )
+    assert entry.subject == "user-cloud-1"
+
+    # Instance 2 resolves user-cloud-1
+    resolved = store2.resolve("user-cloud-1", now=1020)
+    assert resolved is not None
+    assert resolved.subject == "user-cloud-1"
+    assert resolved.groups == ("finance",)
+    assert resolved.tenant_id == "t-cloud"
+
+    # Instance 1 revokes
+    store1.revoke("user-cloud-1")
+    revoked = store2.resolve("user-cloud-1", now=1030)
+    assert revoked is not None
+    assert revoked.revoked is True
+    assert revoked.groups == ()
+
+
+def test_authoritative_revocation_source_blocks_resolution() -> None:
+    from teams_agent.viewer_sessions import (
+        CallableRevocationResolver,
+        InMemoryViewerMembershipStore,
+    )
+
+    revoked_principals = set()
+    resolver = CallableRevocationResolver(lambda subj, tid: subj in revoked_principals)
+    store = InMemoryViewerMembershipStore(revocation_resolver=resolver)
+
+    store.remember("user-active", groups=("it",), now=1000, ttl_seconds=100)
+    active = store.resolve("user-active", now=1020)
+    assert active is not None
+    assert not active.revoked
+    assert active.groups == ("it",)
+
+    # Principal is added to authoritative revocation source
+    revoked_principals.add("user-active")
+    authoritative_revoked = store.resolve("user-active", now=1030)
+    assert authoritative_revoked is not None
+    assert authoritative_revoked.revoked is True
+    assert authoritative_revoked.groups == ()
+
+

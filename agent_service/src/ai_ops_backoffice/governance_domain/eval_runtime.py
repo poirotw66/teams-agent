@@ -14,10 +14,11 @@ from __future__ import annotations
 import os
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any
 
 from .constants import PROVIDER_MODELS, is_allowlisted_model
 from .eval_flow import (
@@ -149,6 +150,9 @@ class IsolatedEvalAgentRuntime:
     tenant_id: str = "eval-tenant"
     teams_user_id: str = "eval-user"
     entra_object_id: str = "eval-entra"
+    user_display_name: str = "Eval User"
+    user_email: str = "eval@example.com"
+    user_groups: list[str] = field(default_factory=lambda: ["ALL_EMPLOYEES"])
     # External channel conversation id (AgentRequest.conversation.conversationId).
     teams_conversation_id: str = field(
         default_factory=lambda: f"eval-teams-{uuid.uuid4().hex[:12]}"
@@ -487,8 +491,9 @@ class IsolatedEvalAgentRuntime:
             user=UserIdentity(
                 teamsUserId=self.teams_user_id,
                 entraObjectId=self.entra_object_id,
-                displayName="Eval User",
-                email="eval@example.com",
+                displayName=self.user_display_name,
+                email=self.user_email,
+                groups=list(self.user_groups),
             ),
             message=MessageContent(text=text, locale="zh-TW"),
             correlationId=f"eval-corr-{uuid.uuid4().hex[:10]}",
@@ -552,20 +557,79 @@ def _score_injection_defense(
 
 
 class _FixtureFaqRepository:
-    """Small fixed FAQ catalog for isolated eval probes."""
+    """FAQ catalog for isolated eval probes: loads requested faq_version_id, or falls back to fixture only when unspecified."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        faq_version_id: str | None = None,
+        faq_repository: Any = None,
+    ) -> None:
         from agent_service.contracts import FaqEntry
 
-        self._entries = {
-            "account.unlock": FaqEntry(
+        self.version_id = str(faq_version_id or "eval-faq-v1")
+        self._entries: dict[str, FaqEntry] = {}
+
+        if faq_version_id and faq_version_id not in ("eval-faq-v1", "default"):
+            resolved = False
+            if faq_repository is not None:
+                try:
+                    version_record = faq_repository.get_version(self.version_id)
+                    if version_record:
+                        faq_rec = faq_repository.get_faq(version_record.faq_id)
+                        faq_key = getattr(faq_rec, "faq_key", self.version_id)
+                        self._entries[faq_key] = FaqEntry(
+                            id=version_record.version_id,
+                            faqKey=faq_key,
+                            enabled=getattr(version_record, "status", "ACTIVE") in ("ACTIVE", "ENABLED"),
+                            answer=version_record.answer,
+                            versionId=self.version_id,
+                        )
+                        resolved = True
+                except Exception:
+                    resolved = False
+
+            if not resolved:
+                import json
+
+                for p in (
+                    Path("data/faq/faq_state.json"),
+                    Path("data/faq.json"),
+                    Path("../data/faq/faq_state.json"),
+                ):
+                    if p.is_file():
+                        try:
+                            state = json.loads(p.read_text(encoding="utf-8"))
+                            for v in state.get("versions", []):
+                                if v.get("version_id") == self.version_id:
+                                    faq_id = v.get("faq_id")
+                                    faq_key = next(
+                                        (f.get("faq_key") for f in state.get("faqs", []) if f.get("faq_id") == faq_id),
+                                        self.version_id,
+                                    )
+                                    self._entries[faq_key] = FaqEntry(
+                                        id=v.get("version_id"),
+                                        faqKey=faq_key,
+                                        enabled=True,
+                                        answer=v.get("answer", ""),
+                                        versionId=self.version_id,
+                                    )
+                                    resolved = True
+                                    break
+                            if resolved:
+                                break
+                        except Exception:
+                            pass
+
+            if not resolved:
+                raise EvalBindingError(f"faq_version_not_found:{self.version_id}")
+        else:
+            self._entries["account.unlock"] = FaqEntry(
                 id="faq-account-unlock",
                 faqKey="account.unlock",
                 enabled=True,
                 answer="帳號鎖定時請至自助解鎖頁面，或聯繫資訊小幫手。",
-                versionId="eval-faq-v1",
+                versionId=self.version_id,
             )
-        }
 
     def get(self, faq_key: str, audience_group_ids: tuple[str, ...] = ()) -> Any:
         _ = audience_group_ids
@@ -577,23 +641,125 @@ class _FixtureFaqRepository:
 
 
 class _FixtureKnowledgeService:
-    """Deterministic knowledge hits for **flow regression** probes only.
+    """Knowledge search for eval probes: queries release chunks if knowledge_release_id is present, else falls back to fixtures."""
 
-    Hits are keyed to concrete VPN/account-lock phrasing used by the
-    ``rag-retry-hit`` fixture case. This does **not** prove production RAG
-    recall, ACL filtering, or citation quality.
-    """
-
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        release_id: str | None = None,
+        releases_dir: Any | None = None,
+    ) -> None:
         self.tool_calls: list[dict[str, Any]] = []
+        self.release_id = str(release_id).strip() if release_id else None
+        self.releases_dir = releases_dir
+        self._chunks: list[dict[str, Any]] | None = None
+
+    def _load_release_chunks(self) -> list[dict[str, Any]]:
+        if self._chunks is not None:
+            return self._chunks
+        if not self.release_id:
+            self._chunks = []
+            return self._chunks
+        if not self.releases_dir:
+            raise EvalBindingError(f"releases_dir_not_configured_for_release:{self.release_id}")
+        import json
+
+        rel_dir = Path(self.releases_dir) / self.release_id
+        cand1 = rel_dir / "index" / "chunks.json"
+        cand2 = rel_dir / "chunks.json"
+        chosen = cand1 if cand1.is_file() else (cand2 if cand2.is_file() else None)
+        if not chosen:
+            raise EvalBindingError(f"knowledge_release_not_found:{self.release_id}")
+        try:
+            data = json.loads(chosen.read_text(encoding="utf-8"))
+            self._chunks = list(data.get("chunks", []))
+        except Exception as exc:
+            raise EvalBindingError(f"knowledge_release_read_failed:{self.release_id}:{exc}") from exc
+        return self._chunks
 
     async def search(self, query: str, user_context: Any, **kwargs: Any) -> Any:
         from agent_service.contracts import Citation, KnowledgeResult
 
-        groups = getattr(user_context, "groups", None) or getattr(
-            user_context, "audience_group_ids", None
-        ) or ()
+        groups = set(
+            getattr(user_context, "groups", None)
+            or getattr(user_context, "audience_group_ids", None)
+            or ()
+        )
         _ = kwargs
+
+        # When an explicit release_id is requested, NEVER fall back to eval-fixture
+        if self.release_id:
+            chunks = self._load_release_chunks()
+            query_tokens = [t.lower() for t in query.split() if len(t) > 1]
+            cjk_chars = [ch for ch in query if "\u4e00" <= ch <= "\u9fff" or ch.isalnum()]
+            for i in range(len(cjk_chars) - 1):
+                query_tokens.append("".join(cjk_chars[i:i + 2]).lower())
+            if not query_tokens:
+                query_tokens = [query.lower()]
+
+            matched: list[tuple[int, dict[str, Any]]] = []
+            for chunk in chunks:
+                chunk_groups = set(chunk.get("allowed_groups") or chunk.get("acl_groups") or [])
+                if chunk_groups and not (chunk_groups & groups):
+                    continue
+                content = str(chunk.get("content", "")).lower()
+                title = str(chunk.get("title", "")).lower()
+                score = sum(1 for tok in query_tokens if tok in content or tok in title)
+                if score > 0:
+                    matched.append((score, chunk))
+
+            matched.sort(key=lambda x: x[0], reverse=True)
+            if matched:
+                top_chunks = [item[1] for item in matched[:3]]
+                citations = [
+                    Citation(
+                        title=str(c.get("title", "Release Doc")),
+                        url=str(c.get("source_path", c.get("source_id", f"release://{self.release_id}"))),
+                        chunkId=str(c.get("chunk_id", "")),
+                    )
+                    for c in top_chunks
+                ]
+                combined_answer = "\n".join(str(c.get("content", ""))[:200] for c in top_chunks)
+                result = KnowledgeResult(
+                    found=True,
+                    answer=combined_answer,
+                    sources=citations,
+                    images=[],
+                    backend="release-index",
+                )
+            else:
+                result = KnowledgeResult(
+                    found=False,
+                    answer="",
+                    sources=[],
+                    images=[],
+                    backend="release-index",
+                )
+
+            self.tool_calls.append(
+                {
+                    "call_id": f"knowledge-search-{len(self.tool_calls)}",
+                    "tool_name": "knowledge.search",
+                    "arguments": {
+                        "query": query,
+                        "groups": list(groups) if groups else [],
+                        "backend": "release-index",
+                        "release_id": self.release_id,
+                    },
+                    "result": {
+                        "found": result.found,
+                        "source_count": len(result.sources),
+                        "chunk_ids": [c.chunkId for c in result.sources],
+                    },
+                    "duration_ms": 0.0,
+                    "is_error": False,
+                    "was_intercepted": True,
+                    "side_effect_blocked": False,
+                    "intercept_reason": "sandbox_release_index",
+                }
+            )
+            return result
+
+        # Only used when no knowledge_release_id was specified
         normalized = (query or "").casefold()
         miss_markers = ("網路打不開", "無法上網", "打不開", "按鈕無法點選")
         if any(marker in query for marker in miss_markers):
@@ -883,7 +1049,14 @@ def build_agent_sandbox_workflow_executor(
         if not model_id:
             raise EvalBindingError("agent_sandbox_model_id_missing")
         template = _resolve_template(manifest)
-        runtime = build_isolated_eval_runtime(model_factory=model_factory)
+        try:
+            runtime = build_isolated_eval_runtime(
+                model_factory=model_factory,
+                manifest=manifest,
+                persona_context=getattr(sanitized_input, "persona_context", None),
+            )
+        except TypeError:
+            runtime = build_isolated_eval_runtime(model_factory=model_factory)
         turn_executor = AgentWorkflowTurnExecutor(
             runtime.workflow,
             request_factory=runtime.build_request,
@@ -966,6 +1139,8 @@ def build_agent_sandbox_workflow_executor(
 def build_isolated_eval_runtime(
     *,
     model_factory: ModelFactory | None = None,
+    manifest: Any | None = None,
+    persona_context: dict[str, Any] | None = None,
 ) -> IsolatedEvalAgentRuntime:
     """Construct a full in-memory AgentWorkflow for formal eval probes."""
     from agent_service.conversation import ConversationService, InMemoryConversationRepository
@@ -984,9 +1159,59 @@ def build_isolated_eval_runtime(
     conversation_repository = InMemoryConversationRepository()
     conversation_service = ConversationService(conversation_repository, settings)
     handoff_repository = InMemoryHandoffRepository()
-    faq_service = FaqService(_FixtureFaqRepository())
-    knowledge_service = _FixtureKnowledgeService()
+
+    faq_version_id = getattr(manifest, "faq_version_id", None) if manifest else None
+    knowledge_release_id = (
+        getattr(manifest, "knowledge_release_id", None) if manifest else None
+    )
+
+    faq_service = FaqService(_FixtureFaqRepository(faq_version_id=faq_version_id))
+    releases_dir = (
+        getattr(settings, "knowledge_release_dir", None)
+        or getattr(settings, "release_artifact_dir", None)
+        or (getattr(settings, "data_dir", Path("data")) / "releases")
+    )
+    knowledge_service = _FixtureKnowledgeService(
+        release_id=knowledge_release_id,
+        releases_dir=releases_dir,
+    )
     ticket_service = _EvalTicketService()
+
+    # Extract persona context from manifest persona_fixture or passed persona_context
+    persona: dict[str, Any] = {}
+    if manifest and getattr(manifest, "persona_fixture_id", None):
+        cfg = getattr(manifest, "retriever_config", None) or {}
+        if isinstance(cfg, dict) and cfg.get("persona_context"):
+            persona.update(cfg["persona_context"])
+    if persona_context and isinstance(persona_context, dict):
+        persona.update(persona_context)
+
+    tenant_id = persona.get("tenant_id") or persona.get("tenantId") or "eval-tenant"
+    teams_user_id = (
+        persona.get("teams_user_id")
+        or persona.get("teamsUserId")
+        or persona.get("user_id")
+        or persona.get("userId")
+        or "eval-user"
+    )
+    entra_object_id = (
+        persona.get("entra_object_id")
+        or persona.get("entraObjectId")
+        or teams_user_id
+        or "eval-entra"
+    )
+    user_display_name = (
+        persona.get("display_name")
+        or persona.get("displayName")
+        or "Eval User"
+    )
+    user_email = persona.get("email") or "eval@example.com"
+    user_groups = list(
+        persona.get("acl_groups")
+        or persona.get("groups")
+        or ["ALL_EMPLOYEES"]
+    )
+
     # Workflow collaborators start unbound; apply_candidate installs the model.
     extractor = IssueExtractor(settings, model=None)
     workflow = AgentWorkflow(
@@ -1014,6 +1239,12 @@ def build_isolated_eval_runtime(
         conversation_repository=conversation_repository,
         model_factory=factory,
         knowledge_service=knowledge_service,
+        tenant_id=tenant_id,
+        teams_user_id=teams_user_id,
+        entra_object_id=entra_object_id,
+        user_display_name=user_display_name,
+        user_email=user_email,
+        user_groups=user_groups,
     )
 
 

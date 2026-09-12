@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 from agent_service.operations.access import ActorContext
@@ -406,9 +407,24 @@ class ConversationsQueryMixin:
         freshness_meta = None
         tracker = getattr(self, "_freshness_tracker", None)
         if tracker is not None:
+            if latest_event_at is not None:
+                tracker.record_stage_event("conversations", "EVENT_INGESTED", at=latest_event_at)
+            tracker.record_stage_event("conversations", "CONVERSATION_LIST_RENDERED")
+            now_dt = datetime.now(timezone.utc)
+            for item in items:
+                for turn in item.get("turns") or []:
+                    corr_id = turn.get("correlationId")
+                    if corr_id:
+                        occ_str = turn.get("occurredAt")
+                        try:
+                            occ_dt = datetime.fromisoformat(occ_str) if occ_str else latest_event_at
+                        except Exception:
+                            occ_dt = latest_event_at
+                        tracker.record_stage_event(corr_id, "EVENT_INGESTED", at=occ_dt)
+                        tracker.record_stage_event(corr_id, "CONVERSATION_LIST_RENDERED", at=now_dt)
             freshness_meta = tracker.compute_freshness(
                 resource_type="conversations",
-                watermark=None,
+                watermark=latest_event_at,
             ).model_dump(mode="json")
         return {
             "items": items,

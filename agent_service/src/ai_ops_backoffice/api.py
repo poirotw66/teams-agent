@@ -5,6 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI
@@ -25,6 +26,7 @@ from .deps import build_dependencies
 from .evaluation_domain import (
     AgentBehaviorScorer,
     CandidateGenerationManager,
+    EvalScheduler,
     EvaluationAuditWriteError,
     EvaluationAuthorizationError,
     EvaluationDomainError,
@@ -39,7 +41,6 @@ from .evaluation_domain import (
     EvaluationTransitionError,
     EvaluationValidationError,
     EvaluationVersionConflictError,
-    EvalScheduler,
     ExecutionJobWorker,
     FileEvaluationRepository,
     FileJobRepository,
@@ -53,6 +54,7 @@ from .evaluation_domain import (
     InMemoryEvaluationRepository,
     InMemoryJobRepository,
     InMemoryQualityGateRepository,
+    JobRepository,
     ManifestResolver,
     QualityGateRepository,
     QualityGateService,
@@ -148,6 +150,105 @@ class _NoStoreStaticCacheMiddleware(BaseHTTPMiddleware):
         if path == "/" or path.startswith(("/static/", "/knowledge-ui")):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
         return response
+
+
+def build_eval_prompt_resolver(
+    governance_repository: Any = None,
+    prompt_repository: Any = None,
+) -> Callable[[str], str | None]:
+    def resolver(prompt_version: str) -> str | None:
+        version = str(prompt_version or "").strip()
+        if not version or version == "default":
+            from agent_service.knowledge import ANSWER_PROMPT
+
+            return ANSWER_PROMPT
+
+        target_prompt_id: str | None = None
+        target_version = version
+        if ":" in version:
+            target_prompt_id, target_version = version.split(":", 1)
+            target_prompt_id = target_prompt_id.strip()
+            target_version = target_version.strip()
+
+        # 1. Match immutable version_id / candidate_id first
+        if governance_repository is not None:
+            try:
+                state = governance_repository.load()
+                for item in state.prompt_versions:
+                    if item.version_id == version:
+                        template = str(item.template or "").strip()
+                        if template:
+                            return template
+            except Exception:
+                logger.debug(
+                    "governance prompt lookup by version_id failed for version=%s", version, exc_info=True
+                )
+        if prompt_repository is not None:
+            try:
+                for candidate in prompt_repository.load().candidates:
+                    if candidate.candidate_id == version:
+                        content = str(candidate.content or "").strip()
+                        if content:
+                            return content
+            except Exception:
+                logger.debug(
+                    "prompt repository lookup by candidate_id failed for version=%s", version, exc_info=True
+                )
+
+        # 2. Match (prompt_id, version) precisely
+        if target_prompt_id:
+            if governance_repository is not None:
+                try:
+                    state = governance_repository.load()
+                    for item in state.prompt_versions:
+                        if item.prompt_id == target_prompt_id and item.version == target_version:
+                            template = str(item.template or "").strip()
+                            if template:
+                                return template
+                except Exception:
+                    pass
+            if prompt_repository is not None:
+                try:
+                    for candidate in prompt_repository.load().candidates:
+                        if candidate.prompt_id == target_prompt_id and candidate.version == target_version:
+                            content = str(candidate.content or "").strip()
+                            if content:
+                                return content
+                except Exception:
+                    pass
+            return None
+
+        # If an explicit immutable ID was requested but not found in step 1, fail closed.
+        if version.startswith(("pv-", "cand-", "prompt-")):
+            return None
+
+        # 3. Fallback: match generic version label only when no prompt identity was specified
+        if governance_repository is not None:
+            try:
+                state = governance_repository.load()
+                for item in state.prompt_versions:
+                    if item.version == target_version:
+                        template = str(item.template or "").strip()
+                        if template:
+                            return template
+            except Exception:
+                logger.debug(
+                    "governance prompt lookup failed for version=%s", version, exc_info=True
+                )
+        if prompt_repository is not None:
+            try:
+                for candidate in prompt_repository.load().candidates:
+                    if candidate.version == target_version:
+                        content = str(candidate.content or "").strip()
+                        if content:
+                            return content
+            except Exception:
+                logger.debug(
+                    "prompt repository lookup failed for version=%s", version, exc_info=True
+                )
+        return None
+
+    return resolver
 
 
 def create_app(
@@ -459,34 +560,9 @@ def create_app(
         # Fail closed: never silently substitute the environment default model.
         return build_chat_model(requested)
 
-    def _eval_prompt_resolver(prompt_version: str) -> str | None:
-        version = str(prompt_version or "").strip()
-        if not version or version == "default":
-            from agent_service.knowledge import ANSWER_PROMPT
-
-            return ANSWER_PROMPT
-        try:
-            state = governance_repository.load()
-            for item in state.prompt_versions:
-                if item.version == version or item.version_id == version:
-                    template = str(item.template or "").strip()
-                    if template:
-                        return template
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "governance prompt lookup failed for version=%s", version, exc_info=True
-            )
-        try:
-            for candidate in prompt_repository.load().candidates:
-                if candidate.version == version or candidate.candidate_id == version:
-                    content = str(candidate.content or "").strip()
-                    if content:
-                        return content
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "prompt repository lookup failed for version=%s", version, exc_info=True
-            )
-        return None
+    _eval_prompt_resolver = build_eval_prompt_resolver(
+        governance_repository, prompt_repository
+    )
 
     resolved_eval_chat_model = eval_chat_model
     if (

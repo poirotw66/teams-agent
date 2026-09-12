@@ -9,6 +9,7 @@ const RELEASE_STATUS_LABELS = {
   ROLLED_BACK: "已取代",
   BUILDING: "建立中",
   READY: "待啟用",
+  GATE_BLOCKED: "發布卡關 (Gate 阻擋)",
   RELOAD_FAILED: "生效失敗 (待重試)",
   FAILED: "建立失敗",
 };
@@ -106,7 +107,7 @@ export async function renderReleasesView(app) {
               <tr>
                 <td>${escapeHtml(item.release_id)}${item.release_id === activeId ? " <span class=\"muted\">（使用中）</span>" : ""}</td>
                 <td>
-                  <span class="status-badge ${item.status === "ACTIVE" ? "success" : item.status === "RELOAD_FAILED" ? "danger" : item.status === "DEPLOYING" ? "warning" : "default"}">
+                  <span class="status-badge ${item.status === "ACTIVE" ? "success" : item.status === "RELOAD_FAILED" || item.status === "GATE_BLOCKED" ? "danger" : item.status === "DEPLOYING" ? "warning" : "default"}">
                     ${escapeHtml(releaseStatusLabel(item.status))}
                   </span>
                   ${item.failure_summary ? `<br><small class="text-danger">${escapeHtml(item.failure_summary)}</small>` : ""}
@@ -117,6 +118,8 @@ export async function renderReleasesView(app) {
                 <td>
                   ${can("manage_releases") && item.status === "RELOAD_FAILED" ? `
                     <button type="button" class="btn warning btn-sm" data-sync="${escapeHtml(item.release_id)}">重試通知 Agent</button>` : ""}
+                  ${can("manage_releases") && item.release_id !== activeId && (item.status === "READY" || item.status === "GATE_BLOCKED") ? `
+                    <button type="button" class="btn primary btn-sm" data-promote="${escapeHtml(item.release_id)}">啟用此版本</button>` : ""}
                   ${can("manage_releases") && item.release_id !== activeId ? `
                     <button type="button" class="btn secondary btn-sm" data-rollback="${escapeHtml(item.release_id)}">查看差異並切換</button>` : ""}
                 </td>
@@ -146,6 +149,80 @@ export async function renderReleasesView(app) {
           showToast(error.message, true);
           button.disabled = false;
           button.textContent = "重試通知 Agent";
+        }
+      });
+    });
+
+    container.querySelectorAll("[data-promote]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const releaseId = button.dataset.promote;
+        const confirmed = await openDialog({
+          title: "確認啟用發布版本",
+          bodyHtml: `<p>確定要啟用候選版本 <strong>${escapeHtml(releaseId)}</strong> 嗎？系統將執行 Release Gate 門檻檢驗，通過後將此版本設定為正式使用中的知識索引並通知 Teams 智慧助理。</p>`,
+          confirmLabel: "確認啟用",
+          cancelLabel: "取消",
+        });
+        if (!confirmed) return;
+
+        button.disabled = true;
+        const originalText = button.textContent;
+        button.textContent = "啟用中…";
+        try {
+          const res = await api(`/api/releases/${encodeURIComponent(releaseId)}/promote`, {
+            method: "POST",
+          });
+          if (res?.status === "RELOAD_FAILED") {
+            await openDialog({
+              title: "版本已啟用，但 Agent 重新載入失敗",
+              bodyHtml: `<p class="text-warning"><strong>版本 ${escapeHtml(releaseId)} 已更新為啟用狀態，但通知 Teams 智慧助理重新載入時發生錯誤：</strong></p><p class="muted" style="margin-top: 8px;">${escapeHtml(res.failure_summary || "Agent reload 失敗")}</p><p class="muted" style="margin-top: 8px;">請稍後於清單中點擊「重試通知 Agent」，或確認背景服務狀態。</p>`,
+              confirmLabel: "了解",
+              cancelLabel: null,
+            });
+          } else {
+            showToast("已成功啟用候選版本");
+          }
+          await refresh();
+        } catch (error) {
+          const status = error.status;
+          const code = String(error.code || "").toUpperCase();
+          const msg = String(error.message || "");
+          const isGateBlocked = code === "RELEASE_GATE_BLOCKED" || msg.includes("Release gate blocked") || msg.includes("門檻") || msg.includes("Gate");
+          const isForbidden = status === 403 && !isGateBlocked;
+          const isNotFound = status === 404 || msg.includes("404");
+
+          if (isGateBlocked) {
+            await openDialog({
+              title: "啟用失敗：Release Gate 門檻未通過",
+              bodyHtml: `<p class="text-danger"><strong>${escapeHtml(error.message || "發布門檻檢驗未通過")}</strong></p><p class="muted" style="margin-top: 8px;">請確認該版本已在營運後台完成 Eval 評估並通過品質指標，或由管理員建立例外後再試。</p>`,
+              confirmLabel: "關閉",
+              cancelLabel: null,
+            });
+          } else if (isForbidden) {
+            await openDialog({
+              title: "啟用失敗：權限不足",
+              bodyHtml: `<p class="text-danger"><strong>您沒有發布或啟用版本的權限（需具備 knowledge.publish 權限）。</strong></p><p class="muted" style="margin-top: 8px;">${escapeHtml(error.message || "請洽詢系統管理員協助授權。")}</strong></p>`,
+              confirmLabel: "關閉",
+              cancelLabel: null,
+            });
+          } else if (isNotFound) {
+            await openDialog({
+              title: "啟用失敗：找不到版本",
+              bodyHtml: `<p class="text-danger"><strong>找不到指定的候選版本 ${escapeHtml(releaseId)}。</strong></p><p class="muted" style="margin-top: 8px;">該版本可能已被刪除或尚未建立完成，請重新整理頁面後再試。</p>`,
+              confirmLabel: "關閉",
+              cancelLabel: null,
+            });
+          } else {
+            await openDialog({
+              title: "啟用失敗：系統或連線錯誤",
+              bodyHtml: `<p class="text-danger"><strong>啟用操作遭遇非預期錯誤：${escapeHtml(error.message || "網路連線異常或服務暫時無法回應")}</strong></p><p class="muted" style="margin-top: 8px;">請檢查網路連線或稍後再試。若問題持續發生，請聯繫系統維運團隊。</p>`,
+              confirmLabel: "關閉",
+              cancelLabel: null,
+            });
+          }
+          await refresh();
+        } finally {
+          button.disabled = false;
+          button.textContent = originalText;
         }
       });
     });

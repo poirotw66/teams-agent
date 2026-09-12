@@ -7,7 +7,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,9 +37,9 @@ from .models import (
     UpdateDraftRequest,
     ValidationSummary,
 )
-from .pdf_text import ScannedPdfError
 from .pdf_convert_jobs import PdfConvertJobStore
 from .pdf_converter_client import PdfConverterError
+from .pdf_text import ScannedPdfError
 from .rbac import PortalPermissionError
 from .repository import PortalNotFoundError, VersionConflictError, build_repository
 from .service import PortalService
@@ -59,15 +68,16 @@ def create_app(
         ).lower()
         if env in {"prod", "production", "staging"}:
             try:
+                import os
+                from pathlib import Path as _Path
+
+                from agent_service.release_gate import QualityGateReleaseChecker
                 from ai_ops_backoffice.evaluation_domain import (
                     FileQualityGateRepository,
                     FirestoreQualityGateRepository,
-                    QualityGateService,
                     InMemoryEvaluationRepository,
+                    QualityGateService,
                 )
-                from agent_service.release_gate import QualityGateReleaseChecker
-                import os
-                from pathlib import Path as _Path
 
                 gate_mode = (os.environ.get("AI_OPS_GATE_STORE_MODE") or "FILE").upper()
                 if gate_mode == "FIRESTORE":
@@ -174,10 +184,15 @@ def create_app(
                 status_code=404,
                 detail={"code": PortalErrorCode.NOT_FOUND.value, "message": str(exc)},
             )
-        if isinstance(exc, PortalPermissionError):
+        if isinstance(exc, (PortalPermissionError, PermissionError)):
+            code = (
+                "RELEASE_GATE_BLOCKED"
+                if "gate" in str(exc).lower()
+                else PortalErrorCode.FORBIDDEN.value
+            )
             return HTTPException(
                 status_code=403,
-                detail={"code": PortalErrorCode.FORBIDDEN.value, "message": str(exc)},
+                detail={"code": code, "message": str(exc)},
             )
         if isinstance(exc, (VersionConflictError, IdempotencyConflictError)):
             return HTTPException(

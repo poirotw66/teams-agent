@@ -458,7 +458,14 @@ def install_background_runtime(
                         len(result.get("days") or []),
                     )
                     if freshness_tracker is not None:
-                        freshness_tracker.record_sync_success("conversations")
+                        freshness_tracker.record_sync_success("reporting")
+                        freshness_tracker.record_sync_success("daily_aggregates")
+                        freshness_tracker.record_sync_success("operations_overview")
+                        freshness_tracker.record_sync_success("operations-overview")
+                        freshness_tracker.record_stage_event(
+                            "operations_overview",
+                            "AGGREGATION_COMPLETED",
+                        )
                         freshness_tracker.record_stage_event(
                             "operations-overview",
                             "AGGREGATION_COMPLETED",

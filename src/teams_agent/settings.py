@@ -47,6 +47,9 @@ class AgentSettings:
     teams_inbound_auth_mode: str = "botframework"
     allow_unauthenticated_requests: bool = False
     playground_test_user_email: str | None = None
+    viewer_membership_store_path: Path | None = None
+    viewer_membership_backend: str = "memory"
+    viewer_membership_gcs_bucket: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -122,11 +125,31 @@ class AgentSettings:
             playground_test_user_email=(
                 environ.get("PLAYGROUND_TEST_USER_EMAIL", "").strip() or None
             ),
+            viewer_membership_store_path=(
+                Path(environ["VIEWER_MEMBERSHIP_STORE_PATH"]).resolve()
+                if environ.get("VIEWER_MEMBERSHIP_STORE_PATH", "").strip()
+                else None
+            ),
+            viewer_membership_backend=(
+                environ.get("VIEWER_MEMBERSHIP_BACKEND", "memory").strip().lower()
+            ),
+            viewer_membership_gcs_bucket=(
+                environ.get("VIEWER_MEMBERSHIP_GCS_BUCKET", "").strip()
+                or environ.get("ARTIFACT_GCS_BUCKET", "").strip()
+                or environ.get("GCS_BUCKET", "").strip()
+                or None
+            ),
         )
         settings.validate()
         return settings
 
     def validate(self) -> None:
+        if self.viewer_membership_backend not in {"memory", "file", "gcs"}:
+            raise SettingsError("VIEWER_MEMBERSHIP_BACKEND must be 'memory', 'file', or 'gcs'.")
+        if self.viewer_membership_backend == "gcs" and not self.viewer_membership_gcs_bucket:
+            raise SettingsError(
+                "VIEWER_MEMBERSHIP_GCS_BUCKET is required when VIEWER_MEMBERSHIP_BACKEND is 'gcs'."
+            )
         if self.mode not in {"echo", "api"}:
             raise SettingsError("AGENT_MODE must be either 'echo' or 'api'.")
         if self.user_directory_mode not in {"disabled", "graph"}:

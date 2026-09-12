@@ -254,7 +254,24 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
         or ""
     )
     query = parse_qs(url.query)
+    from teams_agent.source_links import create_viewer_token
 
+    token = create_viewer_token("user-1", settings)
+    auth_headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Opening without authentication is forbidden in production
+    unauth_resp = client.get(
+        url.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": query["subject"][0],
+            "groups": query.get("groups", [""])[0],
+        },
+    )
+    assert unauth_resp.status_code == 403
+
+    # 2. Opening with authenticated Bearer token succeeds
     response = client.get(
         url.path,
         params={
@@ -263,6 +280,7 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
             "subject": query["subject"][0],
             "groups": query.get("groups", [""])[0],
         },
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -279,9 +297,39 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
             "groups": query.get("groups", [""])[0],
             "raw": "1",
         },
+        headers=auth_headers,
     )
     assert raw.status_code == 200
     assert raw.text.startswith("# guide")
+
+    # 3. Forged gateway header without gateway secret is rejected
+    forged = client.get(
+        url.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": query["subject"][0],
+            "groups": query.get("groups", [""])[0],
+        },
+        headers={"X-Viewer-Subject": "user-1"},
+    )
+    assert forged.status_code == 403
+
+    # 4. Verified gateway header with secret succeeds
+    gateway_resp = client.get(
+        url.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": query["subject"][0],
+            "groups": query.get("groups", [""])[0],
+        },
+        headers={
+            "X-Viewer-Subject": "user-1",
+            "X-Gateway-Secret": settings.asset_signing_key or "",
+        },
+    )
+    assert gateway_resp.status_code == 200
 
     denied = client.get(
         url.path,
@@ -291,5 +339,104 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
             "subject": "other-user",
             "groups": query.get("groups", [""])[0],
         },
+        headers=auth_headers,
     )
     assert denied.status_code == 403
+
+
+def test_direct_teams_click_establishes_cookie_session(tmp_path: Path) -> None:
+    from teams_agent.source_links import CitationViewerContext, build_source_url
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "manual.md").write_text("# manual\n\n員工使用手冊內容\n", encoding="utf-8")
+    settings = make_settings(tmp_path, source_dir=data_dir)
+    client = TestClient(create_web_app(settings))
+
+    # Build URL clicked by Teams user: contains token parameter
+    full_url = build_source_url(
+        "sources/manual.md",
+        settings,
+        viewer=CitationViewerContext(subject="user-teams-1", groups=("all",)),
+    )
+    assert full_url is not None
+    assert "token=" in full_url
+
+    parsed = urlparse(full_url)
+    query = parse_qs(parsed.query)
+
+    # 1. Direct browser click with query param token succeeds without Authorization header
+    resp = client.get(parsed.path, params={k: v[0] for k, v in query.items()})
+    assert resp.status_code == 200
+    assert "員工使用手冊內容" in resp.text
+    # Verifies session cookie was set
+    assert "teams_viewer_token" in resp.cookies
+
+    # 2. Subsequent requests in browser session use cookie without token in query
+    subsequent_params = {
+        "expires": query["expires"][0],
+        "signature": query["signature"][0],
+        "subject": query["subject"][0],
+    }
+    cookie_resp = client.get(
+        parsed.path,
+        params=subsequent_params,
+    )
+    assert cookie_resp.status_code == 200
+    assert "員工使用手冊內容" in cookie_resp.text
+
+
+def test_unauthenticated_browser_redirects_to_login_and_submits(tmp_path: Path) -> None:
+    from teams_agent.source_links import (
+        CitationViewerContext,
+        build_source_url,
+        create_viewer_token,
+    )
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "faq.md").write_text("# faq\n\n問答說明\n", encoding="utf-8")
+    settings = make_settings(tmp_path, source_dir=data_dir)
+    client = TestClient(create_web_app(settings))
+
+    full_url = build_source_url(
+        "sources/faq.md",
+        settings,
+        viewer=CitationViewerContext(subject="user-login-1", groups=("all",)),
+    )
+    assert full_url is not None
+    parsed = urlparse(full_url)
+    query = parse_qs(parsed.query)
+
+    # 1. Unauthenticated browser request (Accept: text/html) redirects to /sources/login
+    unauth_resp = client.get(
+        parsed.path,
+        params={
+            "expires": query["expires"][0],
+            "signature": query["signature"][0],
+            "subject": query["subject"][0],
+        },
+        headers={"Accept": "text/html,application/xhtml+xml"},
+        follow_redirects=False,
+    )
+    assert unauth_resp.status_code == 302
+    assert "/sources/login?redirect_url=" in unauth_resp.headers["location"]
+
+    # 2. GET /sources/login renders Traditional Chinese verification page
+    login_page = client.get("/sources/login")
+    assert login_page.status_code == 200
+    assert "知識庫來源文件存取驗證" in login_page.text
+
+    # 3. Submitting valid token to /sources/login establishes session cookie
+    valid_token = create_viewer_token("user-login-1", settings)
+    login_post = client.post(
+        "/sources/login",
+        data={"token": valid_token, "redirect_url": parsed.path},
+        follow_redirects=False,
+    )
+    assert login_post.status_code == 302
+    assert "teams_viewer_token" in login_post.cookies
+
+

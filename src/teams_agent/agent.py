@@ -11,12 +11,12 @@ from microsoft_teams.apps.plugins import StreamNotAllowedError, TerminalStreamEr
 
 from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
-from .source_links import CitationViewerContext, register_viewer_membership
 from .contracts import AgentRequest, AgentResponse, FeedbackRequest, account_field
 from .directory import EntraAppTokenProvider, build_user_directory_service
 from .health_telemetry import AdapterHealthReporter, classify_gateway_status
 from .server import build_http_adapter
 from .settings import AgentSettings
+from .source_links import CitationViewerContext, register_viewer_membership
 from .text import clean_message_text
 
 logger = logging.getLogger(__name__)

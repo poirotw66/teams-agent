@@ -1,6 +1,7 @@
 import asyncio
 import codecs
 import json
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -11,6 +12,8 @@ from google.oauth2.id_token import fetch_id_token
 
 from .contracts import AgentRequest, AgentResponse, FeedbackRequest
 from .settings import AgentSettings
+
+logger = logging.getLogger(__name__)
 
 Transport = Callable[
     [str, dict[str, Any], dict[str, str], float],
@@ -47,16 +50,27 @@ async def aiohttp_transport(
     timeout_seconds: float,
 ) -> object:
     timeout = ClientTimeout(total=timeout_seconds)
-    async with (
-        ClientSession(timeout=timeout) as session,
-        session.post(url, json=payload, headers=headers) as response,
-    ):
-        if response.status >= 400:
-            body = await response.text()
-            raise AgentGatewayError(
-                f"Agent API returned HTTP {response.status}: {body[:200]}"
-            )
-        return await response.json()
+    session = ClientSession(timeout=timeout)
+    try:
+        async with session.post(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise AgentGatewayError(
+                    f"Agent API returned HTTP {response.status}: {body[:200]}"
+                )
+            return await response.json()
+    finally:
+        try:
+            loop = asyncio.get_running_loop()
+            if (
+                not loop.is_closed()
+                and not getattr(session, "closed", False)
+                and callable(getattr(session, "close", None))
+            ):
+                await session.close()
+        except (ClientError, RuntimeError, AttributeError, OSError):
+            logger.debug("Failed closing HTTP session cleanly", exc_info=True)
+
 
 
 async def aiohttp_stream_transport(
@@ -87,25 +101,37 @@ async def aiohttp_stream_transport(
         sock_read=max(timeout_seconds * 2, 60.0),
     )
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    async with (
-        ClientSession(timeout=timeout) as session,
-        session.post(url, json=payload, headers=headers) as response,
-    ):
-        if response.status >= 400:
-            body = await response.text()
-            raise AgentGatewayError(
-                f"Agent API returned HTTP {response.status}: {body[:200]}"
-            )
-        buffer = ""
-        async for chunk in response.content.iter_any():
-            buffer += decoder.decode(chunk)
-            while "\n\n" in buffer:
-                block, buffer = buffer.split("\n\n", 1)
-                if block.strip():
-                    yield block
-        buffer += decoder.decode(b"", final=True)
-        if buffer.strip():
-            yield buffer
+    session = ClientSession(timeout=timeout)
+    try:
+        async with session.post(url, json=payload, headers=headers) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise AgentGatewayError(
+                    f"Agent API returned HTTP {response.status}: {body[:200]}"
+                )
+            buffer = ""
+            async for chunk in response.content.iter_any():
+                buffer += decoder.decode(chunk)
+                while "\n\n" in buffer:
+                    block, buffer = buffer.split("\n\n", 1)
+                    if block.strip():
+                        yield block
+            buffer += decoder.decode(b"", final=True)
+            if buffer.strip():
+                yield buffer
+    finally:
+        try:
+            loop = asyncio.get_running_loop()
+            if (
+                not loop.is_closed()
+                and not getattr(session, "closed", False)
+                and callable(getattr(session, "close", None))
+            ):
+                await session.close()
+        except (ClientError, RuntimeError, AttributeError, OSError):
+            logger.debug("Failed closing HTTP stream session cleanly", exc_info=True)
+
+
 
 
 def parse_sse_block(block: str) -> tuple[str, dict[str, Any]] | None:

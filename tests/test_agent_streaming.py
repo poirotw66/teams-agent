@@ -115,7 +115,8 @@ def stub_stream(events, error: Exception | None = None):
 
 def install_gateway(monkeypatch, answer_stream=None, answer=None):
     class FakeGateway:
-        pass
+        async def post_json(self, *args, **kwargs):
+            return {"accepted": True}
 
     gateway = FakeGateway()
     if answer_stream is not None:
@@ -123,7 +124,9 @@ def install_gateway(monkeypatch, answer_stream=None, answer=None):
     if answer is not None:
         gateway.answer = answer
     monkeypatch.setattr(agent_module, "agent_gateway", gateway)
+    monkeypatch.setattr(agent_module.adapter_health, "_gateway", gateway)
     return gateway
+
 
 
 # --- which turns stream -------------------------------------------------

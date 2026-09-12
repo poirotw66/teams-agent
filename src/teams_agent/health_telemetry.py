@@ -36,6 +36,7 @@ class AdapterHealthReporter:
     ) -> None:
         self._settings = settings
         self._gateway = gateway
+        self._tasks: set[asyncio.Task[Any]] = set()
 
     async def report_reply(
         self,
@@ -82,4 +83,6 @@ class AdapterHealthReporter:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(self.report_reply(**kwargs))
+        task = loop.create_task(self.report_reply(**kwargs))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)

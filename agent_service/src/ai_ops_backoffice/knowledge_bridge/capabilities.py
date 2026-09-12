@@ -141,6 +141,8 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
         return "knowledge.rollback"
     if path.startswith("releases/") and path.endswith("/sync-agent") and method == "POST":
         return "knowledge.publish"
+    if path.startswith("releases/") and path.endswith("/promote") and method == "POST":
+        return "knowledge.publish"
     if path.startswith("releases") and method == "GET":
         return "knowledge.read"
     if path == "audit-events" and method == "GET":

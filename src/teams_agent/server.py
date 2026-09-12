@@ -15,6 +15,7 @@ These extra routes are deliberately unauthenticated:
   without any bearer token.
 """
 
+import html
 import logging
 from typing import Any
 from urllib.parse import quote
@@ -26,7 +27,11 @@ from microsoft_teams.apps.auth import TokenValidator
 
 from .media import render_teams_image, resolve_asset
 from .settings import AgentSettings
-from .source_links import resolve_source_file, source_media_type
+from .source_links import (
+    resolve_source_file,
+    source_media_type,
+    verify_viewer_token,
+)
 from .source_viewer import render_source_document_html
 
 logger = logging.getLogger(__name__)
@@ -178,6 +183,7 @@ def create_web_app(
 
     @app.get("/rag-sources/{path:path}")
     async def source_document(path: str, request: Request) -> Response:
+        auth_subject = _authenticated_viewer_subject(request, settings)
         try:
             resolved = resolve_source_file(
                 path,
@@ -188,7 +194,7 @@ def create_web_app(
                 groups=request.query_params.get("groups"),
                 source_ref_id=request.query_params.get("sourceRefId"),
                 tenant_id=request.query_params.get("tenantId"),
-                authenticated_subject=_authenticated_viewer_subject(request),
+                authenticated_subject=auth_subject,
             )
             want_raw = request.query_params.get("raw", "").lower() in {
                 "1",
@@ -205,10 +211,18 @@ def create_web_app(
                 content = resolved.read_bytes()
                 content_type = source_media_type(resolved)
         except PermissionError as error:
+            accept = request.headers.get("accept", "").lower()
+            if "text/html" in accept:
+                redirect_target = f"/sources/login?redirect_url={quote(str(request.url))}"
+                return Response(
+                    status_code=302,
+                    headers={"Location": redirect_target},
+                )
             raise HTTPException(status_code=403, detail=str(error)) from error
         except FileNotFoundError as error:
             raise HTTPException(status_code=404, detail="Not Found") from error
-        return Response(
+
+        response = Response(
             content=content,
             media_type=content_type,
             headers={
@@ -220,18 +234,234 @@ def create_web_app(
                 ),
             },
         )
+        # Establish or refresh browser session cookie when token is verified
+        token_param = request.query_params.get("token") or request.query_params.get("viewer_token")
+        if token_param and auth_subject:
+            response.set_cookie(
+                "teams_viewer_token",
+                token_param.strip(),
+                max_age=settings.asset_url_ttl_seconds,
+                httponly=True,
+                samesite="lax",
+            )
+        return response
+
+    @app.get("/sources/login")
+    async def viewer_login_page(request: Request) -> Response:
+        token = request.query_params.get("token") or request.query_params.get("viewer_token")
+        redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        if token and str(token).strip():
+            payload = verify_viewer_token(str(token).strip(), settings)
+            if payload and payload.get("sub"):
+                target = redirect_url if redirect_url.startswith("/") else "/healthz"
+                resp = Response(status_code=302, headers={"Location": target})
+                resp.set_cookie(
+                    "teams_viewer_token",
+                    str(token).strip(),
+                    max_age=settings.asset_url_ttl_seconds,
+                    httponly=True,
+                    samesite="lax",
+                )
+                return resp
+
+        # Traditional Chinese viewer login / verification page
+        escaped_redirect = html.escape(redirect_url)
+        page = f"""<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知識庫來源存取驗證</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 48px 16px;
+      display: flex;
+      justify-content: center;
+    }}
+    .card {{
+      max-width: 480px;
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      padding: 32px;
+      box-sizing: border-box;
+    }}
+    h2 {{
+      margin-top: 0;
+      color: #242424;
+      font-size: 20px;
+    }}
+    p {{
+      color: #616161;
+      line-height: 1.6;
+      font-size: 14px;
+    }}
+    .callout {{
+      background: #f0f4ff;
+      border-left: 4px solid #5b5fc7;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #242424;
+      margin: 20px 0;
+      line-height: 1.5;
+    }}
+    label {{
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #242424;
+      margin-bottom: 8px;
+    }}
+    input[type=text] {{
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid #c8c8c8;
+      border-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }}
+    input[type=text]:focus {{
+      outline: none;
+      border-color: #5b5fc7;
+      box-shadow: 0 0 0 2px rgba(91,95,199,0.2);
+    }}
+    button {{
+      width: 100%;
+      background: #5b5fc7;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }}
+    button:hover {{
+      background: #4f52b2;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>知識庫來源文件存取驗證</h2>
+    <p>為了維護企業資訊安全，存取引用來源文件需具備有效的 Teams 使用者檢視憑證。</p>
+    <div class="callout">
+      <strong>如何取得憑證？</strong><br />
+      在 Teams 中向智慧助理提問時，系統會自動在參考來源連結中附帶一次性安全檢視憑證。直接點擊 Teams 回應中的來源連結即可完成驗證與瀏覽。
+    </div>
+    <form method="POST" action="/sources/login">
+      <input type="hidden" name="redirect_url" value="{escaped_redirect}" />
+      <label for="token">檢視憑證 (Viewer Token)：</label>
+      <input type="text" id="token" name="token" placeholder="請輸入或貼上有效的 Viewer Token" required />
+      <button type="submit">驗證身分並開啟文件</button>
+    </form>
+  </div>
+</body>
+</html>"""
+        return Response(content=page.encode("utf-8"), media_type="text/html; charset=utf-8")
+
+    @app.post("/sources/login")
+    async def viewer_login_submit(request: Request) -> Response:
+        form_data: dict[str, Any] = {}
+        raw_body = await request.body()
+        if raw_body:
+            content_type = request.headers.get("content-type", "").lower()
+            if "application/json" in content_type:
+                try:
+                    import json
+
+                    form_data = json.loads(raw_body.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    form_data = {}
+            else:
+                from urllib.parse import parse_qs
+
+                try:
+                    parsed_qs = parse_qs(raw_body.decode("utf-8"))
+                    form_data = {k: v[0] for k, v in parsed_qs.items()}
+                except (ValueError, UnicodeDecodeError):
+                    form_data = {}
+        token = str(form_data.get("token") or "").strip()
+        redirect_url = str(form_data.get("redirect_url") or "").strip()
+        payload = verify_viewer_token(token, settings)
+        if not payload or not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Invalid or expired viewer token.")
+
+        target = redirect_url if redirect_url.startswith(("/", settings.public_base_url)) else "/healthz"
+        resp = Response(status_code=302, headers={"Location": target})
+        resp.set_cookie(
+            "teams_viewer_token",
+            token,
+            max_age=settings.asset_url_ttl_seconds,
+            httponly=True,
+            samesite="lax",
+        )
+        return resp
+
+    @app.post("/sources/logout")
+    async def viewer_logout() -> Response:
+        resp = Response(content=b'{"status":"ok"}', media_type="application/json")
+        resp.delete_cookie("teams_viewer_token")
+        return resp
 
     return app
 
 
-def _authenticated_viewer_subject(request: Request) -> str | None:
-    """Extract login identity from Authorization when a bearer token is present.
+def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> str | None:
+    """Extract and cryptographically verify login identity.
 
-    Teams OpenUrl clicks often have no header; those opens still re-check live
-    membership + document ACL. When a bearer identity is present it must match
-    the signed citation subject.
+    External requests cannot spoof identity:
+    - X-Viewer-Subject is trusted only if accompanied by a verified X-Gateway-Secret.
+    - Bearer tokens are cryptographically verified using HMAC asset_signing_key or JWT signature.
+    - Query parameter `token` / `viewer_token` is cryptographically verified via HMAC.
+    - Session cookie `teams_viewer_token` is cryptographically verified via HMAC.
+    - Unsigned / unverified tokens are rejected.
     """
+    import hmac
 
+    # 1. Gateway header forwarding (only trusted when gateway secret matches)
+    for header in ("x-viewer-subject", "X-Viewer-Subject"):
+        value = request.headers.get(header)
+        if value and str(value).strip():
+            gateway_secret = request.headers.get("x-gateway-secret") or request.headers.get("X-Gateway-Secret")
+            expected_secret = settings.asset_signing_key or settings.api_token
+            if (
+                expected_secret
+                and gateway_secret
+                and hmac.compare_digest(gateway_secret.strip(), expected_secret.strip())
+            ):
+                return str(value).strip()
+            # If secret is missing or mismatched, header is untrusted and ignored
+
+    # 2. Direct Teams citation click token in query params
+    query_token = request.query_params.get("token") or request.query_params.get("viewer_token")
+    if query_token and str(query_token).strip():
+        payload = verify_viewer_token(str(query_token).strip(), settings)
+        if payload and isinstance(payload.get("sub"), str) and payload["sub"].strip():
+            query_tenant = request.query_params.get("tenantId")
+            token_tenant = payload.get("tid")
+            if not query_tenant or not token_tenant or str(query_tenant).strip() == str(token_tenant).strip():
+                return payload["sub"].strip()
+
+    # 3. Browser session cookie from previous authenticated click or /sources/login
+    cookie_token = request.cookies.get("teams_viewer_token") or request.cookies.get("viewer_token")
+    if cookie_token and str(cookie_token).strip():
+        payload = verify_viewer_token(str(cookie_token).strip(), settings)
+        if payload and isinstance(payload.get("sub"), str) and payload["sub"].strip():
+            query_tenant = request.query_params.get("tenantId")
+            token_tenant = payload.get("tid")
+            if not query_tenant or not token_tenant or str(query_tenant).strip() == str(token_tenant).strip():
+                return payload["sub"].strip()
+
+    # 4. Bearer token in Authorization header
     authorization = request.headers.get("authorization") or request.headers.get(
         "Authorization"
     )
@@ -240,28 +470,39 @@ def _authenticated_viewer_subject(request: Request) -> str | None:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         return None
-    # Prefer explicit gateway headers set by an authenticated front door.
-    for header in ("x-viewer-subject", "X-Viewer-Subject"):
-        value = request.headers.get(header)
-        if value and str(value).strip():
-            return str(value).strip()
-    # Best-effort JWT claim peek (signature validated by upstream when used).
-    try:
-        import base64
-        import json
 
-        parts = token.split(".")
-        if len(parts) < 2:
-            return None
-        padded = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
-    except Exception:  # noqa: BLE001 - treat unreadable tokens as absent identity
-        return None
-    for key in ("oid", "sub", "preferred_username", "upn", "email"):
-        value = claims.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    raw_token = token.strip()
+
+    # Try HMAC viewer token
+    payload = verify_viewer_token(raw_token, settings)
+    if payload and isinstance(payload.get("sub"), str) and payload["sub"].strip():
+        return payload["sub"].strip()
+
+    # Try JWT cryptographic signature verification
+    verification_keys = [k for k in (settings.asset_signing_key, settings.client_secret) if k]
+    if verification_keys:
+        try:
+            import jwt
+
+            for key in verification_keys:
+                try:
+                    claims = jwt.decode(
+                        raw_token,
+                        key,
+                        algorithms=["HS256", "HS384", "HS512"],
+                        options={"verify_signature": True},
+                    )
+                    for claim_name in ("oid", "sub", "preferred_username", "upn", "email"):
+                        val = claims.get(claim_name)
+                        if isinstance(val, str) and val.strip():
+                            return val.strip()
+                except (jwt.PyJWTError, ValueError):
+                    continue
+        except ImportError:
+            logger.debug("PyJWT not installed; skipping JWT token decoding")
+
     return None
+
 
 
 def build_http_adapter(

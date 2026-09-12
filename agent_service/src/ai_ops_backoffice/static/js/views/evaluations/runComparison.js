@@ -123,6 +123,8 @@ export async function renderResultsTab(container, allowed) {
       const tr = el("tr");
       const candidateManifestHash =
         r.candidate_manifest?.manifest_hash || r.candidate_manifest_hash || "";
+      const candidateKnowledgeReleaseId =
+        r.candidate_manifest?.knowledge_release_id || "";
       const passRateStr = r.summary && r.summary.pass_rate !== null ? `${Math.round(r.summary.pass_rate * 100)}%` : "-";
       const coverageStr = r.summary ? `${Math.round(r.summary.coverage * 100)}%` : "-";
       const modeLabel = r.mode === "REAL_RAG"
@@ -143,6 +145,7 @@ export async function renderResultsTab(container, allowed) {
         <td>
           <button class="btn-secondary btn-sm view-cases-btn">查看比對</button>
           <button class="btn-primary btn-sm eval-gate-btn" style="margin-left: 4px;">門檻判定</button>
+          ${candidateKnowledgeReleaseId ? `<button class="btn-success btn-sm promote-release-btn" style="margin-left: 4px;">啟用此版本</button>` : ""}
         </td>
       `;
 
@@ -161,6 +164,99 @@ export async function renderResultsTab(container, allowed) {
         }
         showGateDecisionModal(r.run_id, candidateManifestHash, allowed);
       });
+
+      const promoteBtn = tr.querySelector(".promote-release-btn");
+      if (promoteBtn) {
+        promoteBtn.addEventListener("click", async () => {
+          const confirmed = await showConfirm({
+            title: "確認啟用候選發布版本",
+            message: `確定要將候選版本 ${candidateKnowledgeReleaseId} 啟用為正式版本嗎？系統將執行 Release Gate 門檻檢查，通過後將此版本設定為正式使用中的知識索引並通知 Teams 智慧助理。`,
+            confirmLabel: "確認啟用",
+            cancelLabel: "取消",
+          });
+          if (!confirmed) return;
+
+          promoteBtn.disabled = true;
+          const origText = promoteBtn.textContent;
+          promoteBtn.textContent = "啟用中…";
+          try {
+            let res;
+            try {
+              res = await api(`/api/knowledge/releases/${encodeURIComponent(candidateKnowledgeReleaseId)}/promote`, { method: "POST" });
+            } catch (err) {
+              if (err.status === 404 || String(err.message || "").includes("404")) {
+                res = await api(`/api/releases/${encodeURIComponent(candidateKnowledgeReleaseId)}/promote`, { method: "POST" });
+              } else {
+                throw err;
+              }
+            }
+
+            if (res?.status === "RELOAD_FAILED") {
+              const warnModal = el("div", "warn-modal");
+              warnModal.innerHTML = `
+                <div class="callout warning" style="margin-bottom: 12px;">
+                  <strong>版本已啟用，但 Agent 重新載入失敗</strong>
+                  <p style="margin-top: 6px; color: #856404;">候選版本 <strong>${escapeHtml(candidateKnowledgeReleaseId)}</strong> 已設定為正式使用中版本，但通知 Teams 智慧助理重新載入時發生錯誤：</p>
+                  <p class="metric-label" style="margin-top: 6px;">${escapeHtml(res.failure_summary || "Agent reload 失敗")}</p>
+                </div>
+                <p class="metric-label">請稍後於發布管理頁面點擊「重試通知 Agent」，或確認背景服務狀態。</p>
+              `;
+              showContentModal("版本已啟用 (Agent 待重新載入)", warnModal);
+            } else {
+              showToast(`候選版本 ${candidateKnowledgeReleaseId} 已成功啟用為正式版本！`, { tone: "success" });
+            }
+          } catch (err) {
+            const status = err.status;
+            const code = String(err.code || "").toUpperCase();
+            const msg = String(err.message || "");
+            const isGateBlocked = code === "RELEASE_GATE_BLOCKED" || msg.includes("Release gate blocked") || msg.includes("門檻") || msg.includes("Gate");
+            const isForbidden = status === 403 && !isGateBlocked;
+            const isNotFound = status === 404 || msg.includes("404");
+
+            const errorModal = el("div", "error-modal");
+            if (isGateBlocked) {
+              errorModal.innerHTML = `
+                <div class="callout danger" style="margin-bottom: 12px;">
+                  <strong>啟用失敗：Release Gate 門檻未通過</strong>
+                  <p style="margin-top: 6px; color: #dc3545;">${escapeHtml(err.message || "發布門檻檢驗未通過")}</p>
+                </div>
+                <p class="metric-label">該候選版本尚未通過門檻或存在重大缺失。請在「門檻判定」頁面檢視詳細判定標準，或由具權限人員建立審核例外後重試。</p>
+              `;
+              showContentModal("啟用失敗 (Release Gate Blocked)", errorModal);
+            } else if (isForbidden) {
+              errorModal.innerHTML = `
+                <div class="callout danger" style="margin-bottom: 12px;">
+                  <strong>啟用失敗：權限不足</strong>
+                  <p style="margin-top: 6px; color: #dc3545;">您沒有發布或啟用版本的權限（需具備 knowledge.publish 權限）。</p>
+                </div>
+                <p class="metric-label">${escapeHtml(err.message || "請洽詢系統管理員協助授權。")}</p>
+              `;
+              showContentModal("啟用失敗 (權限不足)", errorModal);
+            } else if (isNotFound) {
+              errorModal.innerHTML = `
+                <div class="callout danger" style="margin-bottom: 12px;">
+                  <strong>啟用失敗：找不到指定版本</strong>
+                  <p style="margin-top: 6px; color: #dc3545;">找不到候選版本 ${escapeHtml(candidateKnowledgeReleaseId)}，可能已被刪除或尚未建立完成。</p>
+                </div>
+                <p class="metric-label">請重新整理頁面確認版本清單。</p>
+              `;
+              showContentModal("啟用失敗 (找不到版本)", errorModal);
+            } else {
+              errorModal.innerHTML = `
+                <div class="callout danger" style="margin-bottom: 12px;">
+                  <strong>啟用失敗：系統或連線錯誤</strong>
+                  <p style="margin-top: 6px; color: #dc3545;">${escapeHtml(err.message || "網路連線異常或服務暫時無法回應")}</p>
+                </div>
+                <p class="metric-label">請檢查網路連線或稍後再試。若問題持續發生，請聯繫系統維運團隊。</p>
+              `;
+              showContentModal("啟用失敗 (系統錯誤)", errorModal);
+            }
+          } finally {
+            promoteBtn.disabled = false;
+            promoteBtn.textContent = origText;
+          }
+        });
+      }
 
       tbody.append(tr);
     }

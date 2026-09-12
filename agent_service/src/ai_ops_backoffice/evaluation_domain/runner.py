@@ -67,7 +67,7 @@ from .errors import (
     EvaluationValidationError,
     EvaluationVersionConflictError,
 )
-from .models import CaseRevision, EvaluationAuditEvent, EvaluationCriteria
+from .models import EvaluationAuditEvent, EvaluationCriteria
 from .real_rag_adapters import RealRagAnswerAdapter, RealRagRetrieverAdapter
 from .repository import EvaluationRepository
 from .runner_models import (
@@ -76,7 +76,6 @@ from .runner_models import (
     MetricResult,
     RunComparisonSummary,
     TargetExecutionInput,
-    TargetManifest,
     TargetSide,
 )
 from .scorer import EvaluationScorer
@@ -414,6 +413,7 @@ class EvaluationRunner:
                     raw_tool_calls = workflow_result.get("tool_calls") or []
                     tool_calls = list(raw_tool_calls)
                     provider_req_id = workflow_result.get("provider_request_id")
+                    upstream_usage_status = workflow_result.get("usage_status")
                 else:
                     raise EvaluationValidationError(
                         "AGENT_SANDBOX execution rejected: workflow executor must return "
@@ -429,23 +429,30 @@ class EvaluationRunner:
                         case_revision.query, manifest, case_revision, retrieved
                     )
 
-                if isinstance(ans_res, tuple) and len(ans_res) == 5:
+                if isinstance(ans_res, tuple) and len(ans_res) >= 6:
+                    answer, tokens, cost, raw_tool_calls, provider_req_id, upstream_usage_status = ans_res[:6]
+                    tool_calls = list(raw_tool_calls)
+                elif isinstance(ans_res, tuple) and len(ans_res) == 5:
                     answer, tokens, cost, raw_tool_calls, provider_req_id = ans_res
                     tool_calls = list(raw_tool_calls)
+                    upstream_usage_status = None
                 elif isinstance(ans_res, tuple) and len(ans_res) == 4:
                     answer, tokens, cost, raw_tool_calls = ans_res
                     tool_calls = list(raw_tool_calls)
+                    upstream_usage_status = None
                 else:
                     answer, tokens, cost = ans_res[:3]
+                    upstream_usage_status = None
             else:
                 # Default mock answer fallback
                 answer = f"這是針對「{case_revision.query}」的依據回覆 [來源: {manifest.target_id}]"
                 tokens = 150
                 cost = 0.00005
+                upstream_usage_status = None
 
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-            # Spec 6.2: Unknown token usage handling
+            # Spec 6.2: Token usage handling (preserve upstream ESTIMATED / EXACT / UNKNOWN)
             if tokens is None or str(tokens).upper() == "UNKNOWN":
                 actual_tokens = None
                 used_tokens = 0
@@ -453,7 +460,14 @@ class EvaluationRunner:
             else:
                 actual_tokens = int(tokens)
                 used_tokens = int(tokens)
-                usage_status = "EXACT"
+                if upstream_usage_status and str(upstream_usage_status).upper() in {
+                    "ESTIMATED",
+                    "EXACT",
+                    "UNKNOWN",
+                }:
+                    usage_status = str(upstream_usage_status).upper()
+                else:
+                    usage_status = "EXACT"
 
             evidence_ids = tuple(
                 str(c.get("chunk_id") or c.get("evidence_id") or c.get("source_id"))
@@ -560,6 +574,7 @@ class EvaluationRunner:
         total_tokens = 0
         total_cost = 0.0
         all_retrieved: list[dict[str, Any]] = []
+        turn_usage_statuses: list[str] = []
 
         try:
             for idx, turn in enumerate(case_revision.turns):
@@ -589,6 +604,7 @@ class EvaluationRunner:
                 all_retrieved.extend(retrieved)
 
                 tool_calls: list[ToolCallTrace] = []
+                turn_usage: str | None = None
                 if mode == "AGENT_SANDBOX":
                     if self._sandbox_adapter is None:
                         raise EvaluationValidationError(
@@ -613,6 +629,7 @@ class EvaluationRunner:
                     tokens = workflow_result.get("tokens", 0)
                     cost = float(workflow_result.get("cost_usd") or 0.0)
                     tool_calls = list(workflow_result.get("tool_calls") or [])
+                    turn_usage = workflow_result.get("usage_status")
                 elif self._answering_fn:
                     try:
                         ans_res = self._answering_fn(
@@ -628,7 +645,10 @@ class EvaluationRunner:
                                 user_query, manifest, case_revision, retrieved
                             )
 
-                    if isinstance(ans_res, tuple) and len(ans_res) == 5:
+                    if isinstance(ans_res, tuple) and len(ans_res) >= 6:
+                        answer, tokens, cost, raw_tool_calls, _, turn_usage = ans_res[:6]
+                        tool_calls = list(raw_tool_calls)
+                    elif isinstance(ans_res, tuple) and len(ans_res) == 5:
                         answer, tokens, cost, raw_tool_calls, _ = ans_res
                         tool_calls = list(raw_tool_calls)
                     elif isinstance(ans_res, tuple) and len(ans_res) == 4:
@@ -645,6 +665,11 @@ class EvaluationRunner:
                 if tokens is not None:
                     total_tokens += tokens
                 total_cost += cost
+
+                if tokens is None or str(tokens).upper() == "UNKNOWN":
+                    turn_usage_statuses.append("UNKNOWN")
+                else:
+                    turn_usage_statuses.append(str(turn_usage).upper() if turn_usage else "EXACT")
 
                 # Mandatory GE3 rule: Expected answer is NEVER used as assistant history.
                 # Actual model answer is used.
@@ -735,6 +760,13 @@ class EvaluationRunner:
                 for c in all_tool_calls
             )
 
+            if any(s == "UNKNOWN" for s in turn_usage_statuses):
+                multi_turn_usage = "UNKNOWN"
+            elif any(s == "ESTIMATED" for s in turn_usage_statuses):
+                multi_turn_usage = "ESTIMATED"
+            else:
+                multi_turn_usage = "EXACT"
+
             return CaseExecution(
                 execution_id=execution_id,
                 run_id=run_id,
@@ -755,7 +787,7 @@ class EvaluationRunner:
                 is_critical_failure=is_critical,
                 used_tokens=total_tokens,
                 actual_tokens=total_tokens,
-                usage_status="EXACT",
+                usage_status=multi_turn_usage,
                 latency_ms=duration_ms,
                 estimated_cost_usd=round(total_cost, 6),
                 evidence_ids=evidence_ids,

@@ -719,7 +719,7 @@ class ReleaseService:
                 reason=str(exc),
                 result="FAILURE",
             )
-            raise PermissionError(str(exc)) from exc
+            raise PortalPermissionError(str(exc)) from exc
 
         await self._deactivate_other_releases(release.release_id)
         await self._ctx.repository.save_release(release)
@@ -828,7 +828,7 @@ class ReleaseService:
                 reason=str(exc),
                 result="FAILURE",
             )
-            raise PermissionError(str(exc)) from exc
+            raise PortalPermissionError(str(exc)) from exc
 
         async with self._coordination_lock("promote_candidate"):
             release = target.model_copy(

@@ -74,9 +74,7 @@ def _rewrite_markdown_images(
         target = match.group(2).strip().strip("<>").split()[0]
         if "://" in target or target.startswith("#"):
             return match.group(0)
-        asset_path = target
-        if asset_path.startswith("assets/"):
-            asset_path = asset_path[len("assets/") :]
+        asset_path = target.removeprefix("assets/")
         url = build_asset_url(asset_path, settings, now=now)
         if not url:
             return match.group(0)

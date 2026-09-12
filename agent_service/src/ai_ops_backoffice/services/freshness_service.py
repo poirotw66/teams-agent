@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-import statistics
 import threading
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from datetime import datetime
+from typing import Literal
 
 from agent_service.operations.contracts import FreshnessMetadata, utc_now
 
@@ -93,6 +92,12 @@ class FreshnessTracker:
         with self._lock:
             worker_alive = self.is_worker_active(now_dt)
             last_sync = self._last_successful_sync.get(resource_type)
+            if last_sync is None:
+                norm_key = (resource_type or "").strip().lower()
+                for alt in (norm_key.replace("_", "-"), norm_key.replace("-", "_")):
+                    if alt in self._last_successful_sync:
+                        last_sync = self._last_successful_sync[alt]
+                        break
             pipeline_watermark = self._latest_pipeline_watermark(resource_type)
             # Explicit watermark wins for callers that already resolved pipeline time.
             # Otherwise prefer ingest/aggregation completion over raw event time.
@@ -138,13 +143,45 @@ class FreshnessTracker:
             )
 
     def _latest_pipeline_watermark(self, resource_type: str) -> datetime | None:
-        preferred_stages = (
-            "AGGREGATION_COMPLETED",
-            "EVENT_INGESTED",
-            "SOURCE_SYNC_COMPLETED",
-            "CONVERSATION_LIST_RENDERED",
-        )
+        norm = (resource_type or "").strip().lower()
+        if norm == "conversations":
+            preferred_stages = (
+                "CONVERSATION_LIST_RENDERED",
+                "EVENT_INGESTED",
+            )
+        elif norm in (
+            "reporting",
+            "daily_aggregates",
+            "operations_summary",
+            "operations-overview",
+            "operations_overview",
+        ):
+            preferred_stages = (
+                "AGGREGATION_COMPLETED",
+            )
+        elif norm in ("sources", "knowledge"):
+            preferred_stages = (
+                "SOURCE_SYNC_COMPLETED",
+            )
+        else:
+            preferred_stages = (
+                "AGGREGATION_COMPLETED",
+                "EVENT_INGESTED",
+                "SOURCE_SYNC_COMPLETED",
+                "CONVERSATION_LIST_RENDERED",
+            )
+
         latest: datetime | None = None
+        # Check resource-keyed stage events first (supporting hyphen / underscore normalization)
+        for key in (norm, norm.replace("_", "-"), norm.replace("-", "_")):
+            if key in self._stage_events:
+                for stage in preferred_stages:
+                    stamp = self._stage_events[key].get(stage)
+                    if stamp is not None and (latest is None or stamp > latest):
+                        latest = stamp
+        if latest is not None:
+            return latest
+
         for stages in self._stage_events.values():
             for stage in preferred_stages:
                 stamp = stages.get(stage)
@@ -152,7 +189,6 @@ class FreshnessTracker:
                     continue
                 if latest is None or stamp > latest:
                     latest = stamp
-        _ = resource_type
         return latest
 
     def calculate_p95_latency(
@@ -163,7 +199,7 @@ class FreshnessTracker:
         """Computes p95 latency in seconds between two stages across all correlation traces (A05-T1)."""
         with self._lock:
             durations: list[float] = []
-            for corr_id, stages in self._stage_events.items():
+            for stages in self._stage_events.values():
                 if start_stage in stages and end_stage in stages:
                     duration = (stages[end_stage] - stages[start_stage]).total_seconds()
                     if duration >= 0:
@@ -176,5 +212,5 @@ class FreshnessTracker:
 
             durations.sort()
             # Calculate 95th percentile
-            k = int(round(0.95 * (len(durations) - 1)))
+            k = round(0.95 * (len(durations) - 1))
             return round(durations[k], 3)

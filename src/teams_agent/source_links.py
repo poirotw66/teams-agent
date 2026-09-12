@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import mimetypes
 import re
 from dataclasses import dataclass, replace
@@ -32,12 +33,85 @@ from .settings import AgentSettings
 from .viewer_sessions import (
     InMemoryViewerMembershipStore,
     ViewerMembership,
-    default_viewer_membership_store,
+    ViewerMembershipResolver,
+    get_viewer_membership_store,
 )
 
 _SOURCE_SIGN_PREFIX = "rag-source-v3\n"
 _ALLOWED_SUFFIXES = {".md", ".markdown", ".txt", ".pdf"}
 _SAFE_RELEASE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+logger = logging.getLogger(__name__)
+
+
+def create_viewer_token(
+    subject: str,
+    settings: AgentSettings,
+    *,
+    tenant_id: str | None = None,
+    expires_in: int = 3600,
+    now: float | None = None,
+) -> str:
+    """Mint a cryptographically signed HMAC viewer token."""
+
+    key = settings.asset_signing_key or ""
+    if not key:
+        raise ValueError("asset_signing_key is required to create a viewer token.")
+    current_time = int(time()) if now is None else int(now)
+    payload_dict = {
+        "sub": str(subject).strip(),
+        "tid": str(tenant_id).strip() if tenant_id else None,
+        "exp": current_time + max(1, int(expires_in)),
+        "iat": current_time,
+    }
+    payload_bytes = json.dumps(payload_dict, separators=(",", ":")).encode("utf-8")
+    import base64
+
+    encoded_payload = base64.urlsafe_b64encode(payload_bytes).decode("ascii").rstrip("=")
+    signature = hmac.new(
+        key.encode("utf-8"),
+        f"v1.{encoded_payload}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"v1.{encoded_payload}.{signature}"
+
+
+def verify_viewer_token(
+    token: str,
+    settings: AgentSettings,
+    *,
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    """Verify an HMAC viewer token against asset_signing_key."""
+
+    key = settings.asset_signing_key or ""
+    if not key or not token or not isinstance(token, str):
+        return None
+    parts = token.strip().split(".")
+    if len(parts) != 3 or parts[0] != "v1":
+        return None
+    _, encoded_payload, signature = parts
+    expected = hmac.new(
+        key.encode("utf-8"),
+        f"v1.{encoded_payload}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return None
+    try:
+        import base64
+
+        padded = encoded_payload + "=" * (-len(encoded_payload) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        exp = int(payload.get("exp", 0))
+        current = int(time()) if now is None else int(now)
+        if exp < current:
+            return None
+        return payload
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+
 
 
 @dataclass(frozen=True)
@@ -57,6 +131,7 @@ def sign_source_access(
     *,
     subject: str,
     source_ref_id: str | None = None,
+    tenant_id: str | None = None,
     groups: tuple[str, ...] | list[str] = (),
 ) -> str:
     """HMAC binding for source delivery.
@@ -67,9 +142,11 @@ def sign_source_access(
 
     _ = groups
     payload = (
-        f"{_SOURCE_SIGN_PREFIX}{path}\n{expires}\n{subject}\n{source_ref_id or ''}"
+        f"{_SOURCE_SIGN_PREFIX}{path}\n{expires}\n{subject}\n"
+        f"{source_ref_id or ''}\n{tenant_id or ''}"
     ).encode()
     return hmac.new(key.encode(), payload, hashlib.sha256).hexdigest()
+
 
 
 def sign_source_path(path: str, expires: int, key: str) -> str:
@@ -133,7 +210,7 @@ def build_source_url(
     release_id: str | None = None,
     viewer: CitationViewerContext | None = None,
     source_ref_id: str | None = None,
-    membership_store: InMemoryViewerMembershipStore | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
 ) -> str | None:
     if not settings.sources_ready:
         return None
@@ -146,7 +223,7 @@ def build_source_url(
     subject = str(viewer.subject).strip()
     issued_at = int(time()) if now is None else now
     expires = issued_at + settings.asset_url_ttl_seconds
-    store = membership_store or default_viewer_membership_store()
+    store = membership_store or get_viewer_membership_store(settings)
     store.remember(
         subject,
         groups=viewer.groups,
@@ -161,6 +238,7 @@ def build_source_url(
         settings.asset_signing_key or "",
         subject=subject,
         source_ref_id=source_ref_id,
+        tenant_id=viewer.tenant_id,
     )
     encoded_path = quote(delivery, safe="/")
     query = (
@@ -171,6 +249,18 @@ def build_source_url(
         query += f"&sourceRefId={quote(source_ref_id, safe='')}"
     if viewer.tenant_id:
         query += f"&tenantId={quote(str(viewer.tenant_id), safe='')}"
+    if settings.asset_signing_key:
+        try:
+            viewer_token = create_viewer_token(
+                subject,
+                settings,
+                tenant_id=viewer.tenant_id,
+                expires_in=settings.asset_url_ttl_seconds,
+                now=float(issued_at),
+            )
+            query += f"&token={quote(viewer_token, safe='')}"
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.debug("Failed to create viewer token: %s", exc)
     return f"{settings.public_base_url}/rag-sources/{encoded_path}?{query}"
 
 
@@ -187,7 +277,7 @@ def resolve_source_file(
     tenant_id: str | None = None,
     revoked: bool = False,
     authenticated_subject: str | None = None,
-    membership_store: InMemoryViewerMembershipStore | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
 ) -> Path:
     if not settings.sources_ready:
         raise PermissionError("RAG source delivery is not configured.")
@@ -207,11 +297,18 @@ def resolve_source_file(
     if not claimed_subject:
         raise PermissionError("Viewer identity is required to open a source citation.")
 
-    # Login identity (when present) must match the signed subject binding.
+    # Login identity check: strictly enforce authenticated subject in production
     auth_subject = str(authenticated_subject or "").strip()
-    if auth_subject and auth_subject != claimed_subject:
-        raise PermissionError("Viewer identity does not match the signed citation subject.")
-    viewer_subject = auth_subject or claimed_subject
+    if not settings.allow_unauthenticated_requests:
+        if not auth_subject:
+            raise PermissionError("Viewer authentication is required to open a source citation.")
+        if auth_subject != claimed_subject:
+            raise PermissionError("Viewer identity does not match the signed citation subject.")
+        viewer_subject = auth_subject
+    else:
+        if auth_subject and auth_subject != claimed_subject:
+            raise PermissionError("Viewer identity does not match the signed citation subject.")
+        viewer_subject = auth_subject or claimed_subject
 
     expected = sign_source_access(
         delivery,
@@ -219,6 +316,7 @@ def resolve_source_file(
         settings.asset_signing_key or "",
         subject=claimed_subject,
         source_ref_id=source_ref_id,
+        tenant_id=tenant_id,
     )
     if not signature or not hmac.compare_digest(signature, expected):
         raise PermissionError("Invalid source signature or viewer binding.")
@@ -274,7 +372,7 @@ def authorize_source_open(
     tenant_id: str | None = None,
     revoked: bool = False,
     source_ref_id: str | None = None,
-    membership_store: InMemoryViewerMembershipStore | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
     now: float | None = None,
 ) -> None:
     """Re-check document ACL with live viewer membership (shared-auth rules)."""
@@ -282,12 +380,22 @@ def authorize_source_open(
     if revoked or not subject:
         raise PermissionError("Source reference not found or access denied.")
 
-    store = membership_store or default_viewer_membership_store()
+    store = membership_store or get_viewer_membership_store(settings)
     membership = store.resolve(subject, now=now)
     if membership is None:
         raise PermissionError("Source reference not found or access denied.")
     if membership.revoked:
         raise PermissionError("Source reference not found or access denied.")
+
+    # Validate that if the URL claimed a tenant, it matches the viewer's live membership tenant
+    if (
+        tenant_id
+        and membership.tenant_id
+        and str(tenant_id).strip() != str(membership.tenant_id).strip()
+    ):
+        raise PermissionError("Viewer tenant does not match citation tenant.")
+
+    effective_tenant = membership.tenant_id or tenant_id
 
     document = load_source_acl_document(
         settings,
@@ -301,7 +409,7 @@ def authorize_source_open(
 
     actor = SimpleNamespace(
         user_id=subject,
-        tenant_id=tenant_id or membership.tenant_id,
+        tenant_id=effective_tenant,
         groups=list(membership.groups),
         revoked=membership.revoked,
         active=not membership.revoked,
@@ -322,8 +430,9 @@ def _authorize_document_access(actor: Any, document: dict[str, Any]) -> dict[str
 
     actor_tenant = getattr(actor, "tenant_id", None)
     doc_tenant = document.get("tenant_id")
-    if actor_tenant and doc_tenant and str(actor_tenant) != str(doc_tenant):
+    if doc_tenant and (not actor_tenant or str(actor_tenant) != str(doc_tenant)):
         return {"allowed": False, "reason": "TENANT_MISMATCH"}
+
 
     if bool(document.get("is_deleted")):
         return {"allowed": False, "reason": "DELETED"}
@@ -462,7 +571,7 @@ def enrich_citation_urls(
     *,
     now: int | None = None,
     viewer: CitationViewerContext | None = None,
-    membership_store: InMemoryViewerMembershipStore | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
 ) -> AgentResponse:
     """Fill missing citation URLs from ``sourcePath`` when delivery is ready."""
 
@@ -497,7 +606,7 @@ def register_viewer_membership(
     viewer: CitationViewerContext,
     settings: AgentSettings,
     *,
-    membership_store: InMemoryViewerMembershipStore | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
     now: float | None = None,
 ) -> ViewerMembership | None:
     """Refresh live membership from an authenticated bot/Playground turn."""
@@ -505,7 +614,7 @@ def register_viewer_membership(
     subject = str(viewer.subject or "").strip()
     if not subject:
         return None
-    store = membership_store or default_viewer_membership_store()
+    store = membership_store or get_viewer_membership_store(settings)
     return store.remember(
         subject,
         groups=viewer.groups,
@@ -514,6 +623,7 @@ def register_viewer_membership(
         ttl_seconds=float(settings.asset_url_ttl_seconds),
         now=now,
     )
+
 
 
 def _normalize_source_path(path: str) -> PurePosixPath | None:
