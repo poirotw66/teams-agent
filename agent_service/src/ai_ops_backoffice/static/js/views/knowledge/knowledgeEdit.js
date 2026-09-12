@@ -8,9 +8,10 @@ import {
 import { actorCapabilities } from "../../app/capabilities.js";
 import { loadNavFilters } from "../../app/navigation.js";
 import { isBuShellEnabled } from "../../app/buShellConfig.js";
+import { loadingState } from "../../components/state.js";
 
 export async function renderFaqManagement(panel) {
-  panel.replaceChildren(el("h2", "", "FAQ 管理"), el("p", "empty", "載入中…"));
+  panel.replaceChildren(el("h2", "", "FAQ 管理"), loadingState("正在載入 FAQ…", 3));
   const allowed = actorCapabilities();
   if (!allowed.has("ops.faq.read")) {
     panel.replaceChildren(el("h2", "", "FAQ 管理"), el("div", "forbidden", "FORBIDDEN"));
@@ -51,8 +52,8 @@ export async function renderFaqManagement(panel) {
     keyword.placeholder = "關鍵字";
     keyword.setAttribute("aria-label", "關鍵字");
     const owner = el("input");
-    owner.placeholder = "Owner";
-    owner.setAttribute("aria-label", "Owner");
+    owner.placeholder = "負責單位";
+    owner.setAttribute("aria-label", "負責單位");
     const status = el("select");
     status.setAttribute("aria-label", "狀態");
     status.innerHTML = `
@@ -81,7 +82,7 @@ export async function renderFaqManagement(panel) {
       }
       const table = el("table");
       table.innerHTML =
-        "<thead><tr><th>FAQ</th><th>分類</th><th>關鍵字</th><th>狀態</th><th>Owner</th><th>版本</th><th>操作</th></tr></thead>";
+        "<thead><tr><th>FAQ</th><th>分類</th><th>關鍵字</th><th>狀態</th><th>負責單位</th><th>版本</th><th>操作</th></tr></thead>";
       const body = el("tbody");
       for (const item of data.items) {
         const row = el("tr");
@@ -132,7 +133,9 @@ export async function renderFaqManagement(panel) {
     }
     const summary = el("span", "metric-label", "");
     actions.append(query, category, keyword, owner, status, searchButton, summary);
-    panel.replaceChildren(heading, policy, decision, governedNote, actions, result);
+    const guidance = el("div", "bu-content-guidance-stack");
+    guidance.append(policy, decision);
+    panel.replaceChildren(heading, guidance, governedNote, actions, result);
     await load();
     if (navFilters.faqId) {
       await showFaqDetail(String(navFilters.faqId), panel);

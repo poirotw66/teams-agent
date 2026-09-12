@@ -8,7 +8,8 @@ import { getCurrentActiveView } from "../app/activeView.js";
 import { loadNavFilters, saveNavFilters, syncLocationHash, buildLocationHash, workspaceForView } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
-import { formatTaipeiDateTime, formatUserFacingError, labelRoute } from "../app/labels.js";
+import { formatTaipeiDateTime, formatUserFacingError, labelRoute, labelStatus } from "../app/labels.js";
+import { loadingState } from "../components/state.js";
 
 let conversationPollTimer = null;
 let conversationAutoRefresh = false;
@@ -69,10 +70,11 @@ function touchConversationsFreshness(suffix = "", freshness = null) {
   const badge = document.getElementById("conversations-freshness");
   if (!badge) return;
   const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
-  if (freshness?.status) {
+  const freshnessStatus = String(freshness?.status || "").trim();
+  if (freshnessStatus && freshnessStatus !== "UNKNOWN") {
     const lag =
       freshness.lag_seconds != null ? `（延遲 ${Math.round(freshness.lag_seconds)}s）` : "";
-    badge.textContent = `新鮮度：${freshness.status}${lag}${suffix}`;
+    badge.textContent = `資料新鮮度：${freshnessStatus}${lag}${suffix}`;
     badge.title = "來自 API FreshnessMetadata（含 worker heartbeat 與 watermark）";
     return;
   }
@@ -133,7 +135,7 @@ document.addEventListener("visibilitychange", () => {
 export async function renderConversations(state = {}) {
   const app = document.getElementById("app");
   if (!state.isPolling) {
-    app.replaceChildren(el("div", "empty", "載入中…"));
+    app.replaceChildren(loadingState("正在載入對話紀錄…", 5));
   }
   try {
     const navFilters = loadNavFilters();
@@ -240,10 +242,10 @@ export async function renderConversations(state = {}) {
       state._preserveFocusId = document.activeElement?.id || "";
     }
 
-    const panel = el("section", "panel");
+    const panel = el("section", "panel bu-conversation-surface");
 
     // Header with Title & Real-time Live Controls
-    const headerRow = el("div", "split");
+    const headerRow = el("div", "bu-page-header bu-conversation-header");
     headerRow.style.display = "flex";
     headerRow.style.justifyContent = "space-between";
     headerRow.style.alignItems = "center";
@@ -260,11 +262,12 @@ export async function renderConversations(state = {}) {
     liveControls.style.gap = "0.6rem";
 
     const nowTime = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+    const freshnessStatus = String(listFreshness?.status || "").trim();
     const freshnessBadge = el(
       "span",
       "meta-chip",
-      listFreshness?.status
-        ? `新鮮度：${listFreshness.status}${
+      freshnessStatus && freshnessStatus !== "UNKNOWN"
+        ? `資料新鮮度：${freshnessStatus}${
             listFreshness.lag_seconds != null
               ? `（延遲 ${Math.round(listFreshness.lag_seconds)}s）`
               : ""
@@ -272,7 +275,7 @@ export async function renderConversations(state = {}) {
         : `最後更新：${nowTime}`,
     );
     freshnessBadge.id = "conversations-freshness";
-    freshnessBadge.title = listFreshness?.status
+    freshnessBadge.title = freshnessStatus && freshnessStatus !== "UNKNOWN"
       ? "來自 API FreshnessMetadata（含 worker heartbeat 與 watermark）"
       : "目前對話清單資料抓取時間點";
 
@@ -295,16 +298,17 @@ export async function renderConversations(state = {}) {
     const autoRefreshText = el(
       "span",
       "",
-      conversationAutoRefresh ? "🟢 即時自動更新（5s）" : "⚡ 即時自動更新"
+      conversationAutoRefresh ? "即時更新（每 5 秒）" : "即時更新",
     );
+    autoRefreshCheckbox.setAttribute("aria-label", "啟用對話清單即時更新");
     autoRefreshLabel.append(autoRefreshCheckbox, autoRefreshText);
 
     autoRefreshCheckbox.addEventListener("change", () => {
       conversationAutoRefresh = autoRefreshCheckbox.checked;
       autoRefreshLabel.classList.toggle("is-ok", conversationAutoRefresh);
       autoRefreshText.textContent = conversationAutoRefresh
-        ? "🟢 即時自動更新（5s）"
-        : "⚡ 即時自動更新";
+        ? "即時更新（每 5 秒）"
+        : "即時更新";
       if (conversationAutoRefresh) {
         startConversationPolling();
         touchConversationsFreshness("（已開啟自動更新）");
@@ -363,51 +367,66 @@ export async function renderConversations(state = {}) {
       panel.append(detailErrorBox);
     }
 
-    const filterBar = el("div", "filter-bar");
+    const filterBar = el("div", "filter-bar bu-filter-primary");
+    const filterField = (label, control, className = "") => {
+      const field = el("label", `bu-filter-field ${className}`.trim());
+      field.append(el("span", "", label), control);
+      return field;
+    };
     const convIdInput = el("input");
     convIdInput.id = "conversation-id-filter";
-    convIdInput.placeholder = "Conversation ID";
+    convIdInput.placeholder = "輸入對話 ID";
+    convIdInput.setAttribute("aria-label", "對話 ID");
     convIdInput.value = conversationId || "";
 
     const queryInput = el("input");
     queryInput.id = "conversation-query-filter";
     queryInput.placeholder = isBuShellEnabled() ? "關鍵字（提問／回答）" : "訊息關鍵字 (Query)";
+    queryInput.setAttribute("aria-label", "關鍵字（提問或回答）");
     queryInput.value = query || "";
 
     const sourceInput = el("input");
     sourceInput.id = "conversation-source-filter";
-    sourceInput.placeholder = "來源 (Doc / Path / FAQ)";
+    sourceInput.placeholder = "文件、路徑或 FAQ";
+    sourceInput.setAttribute("aria-label", "來源");
     sourceInput.value = source || "";
 
     const channelSelect = el("select", "");
     channelSelect.id = "conversation-channel-scope";
+    channelSelect.setAttribute("aria-label", "通道");
     channelSelect.innerHTML =
       '<option value="">全部通道</option><option value="playground">Playground 測試</option><option value="personal">Teams 個人 (1:1)</option><option value="channel">Teams 頻道</option><option value="group_chat">群組對話</option>';
     if (channelScope) channelSelect.value = channelScope;
 
     const issueInput = el("input");
     issueInput.id = "conversation-issue-type";
-    issueInput.placeholder = "Issue Type ID";
+    issueInput.placeholder = "問題類型 ID 或名稱";
+    issueInput.setAttribute("aria-label", "問題類型");
     issueInput.value = issueTypeId || "";
     const routeInput = el("input");
     routeInput.id = "conversation-route";
-    routeInput.placeholder = "Route";
+    routeInput.placeholder = "處理方式，例如 RAG";
+    routeInput.setAttribute("aria-label", "處理方式");
     routeInput.value = route;
     const modelInput = el("input");
     modelInput.id = "conversation-model";
-    modelInput.placeholder = "Model";
+    modelInput.placeholder = "模型名稱";
+    modelInput.setAttribute("aria-label", "模型");
     modelInput.value = model;
     const actorRefInput = el("input");
     actorRefInput.id = "conversation-actor-ref";
-    actorRefInput.placeholder = "Actor Ref / User ID";
+    actorRefInput.placeholder = "使用者識別碼";
+    actorRefInput.setAttribute("aria-label", "使用者");
     actorRefInput.value = actorRef || "";
     const feedbackSelect = el("select", "");
     feedbackSelect.id = "conversation-has-feedback";
+    feedbackSelect.setAttribute("aria-label", "回饋");
     feedbackSelect.innerHTML =
       '<option value="">全部回饋</option><option value="true">有回饋</option><option value="false">無回饋</option>';
     if (hasFeedback) feedbackSelect.value = hasFeedback;
     const handoffSelect = el("select", "");
     handoffSelect.id = "conversation-handoff";
+    handoffSelect.setAttribute("aria-label", "轉人工");
     handoffSelect.innerHTML =
       '<option value="">全部轉人工</option><option value="true">有轉人工</option><option value="false">無轉人工</option>';
     if (handoff) handoffSelect.value = handoff;
@@ -452,6 +471,8 @@ export async function renderConversations(state = {}) {
       (nextPeriod) => applyAll(nextPeriod),
       { hideApplyButton: isBuShellEnabled() },
     );
+    periodControls.classList.add("bu-period-controls");
+    periodControls.prepend(el("span", "bu-filter-section-label", "期間"));
     const applyFilters = el(
       "button",
       isBuShellEnabled() ? "button-primary" : "",
@@ -481,7 +502,7 @@ export async function renderConversations(state = {}) {
         ...Object.fromEntries(periodParams(period)),
       };
       try {
-        await runExport("csv", "conversations", 30, queryFilters, reasonPrompt.trim());
+        await runExport("csv", "conversations", period, queryFilters);
       } catch (error) {
         showContentModal("匯出失敗", el("div", "error", error.message));
       } finally {
@@ -491,9 +512,37 @@ export async function renderConversations(state = {}) {
     });
 
     if (isBuShellEnabled()) {
-      filterBar.append(queryInput, channelSelect, feedbackSelect, applyFilters, exportButton);
-      panel.append(filterBar);
-      panel.append(periodControls);
+      const filterSurface = el("div", "bu-filter-surface");
+      filterBar.append(
+        filterField("關鍵字", queryInput, "is-wide"),
+        filterField("通道", channelSelect),
+        filterField("回饋", feedbackSelect),
+      );
+      filterSurface.append(filterBar, periodControls);
+      const actionBar = el("div", "filter-bar bu-filter-actions-row");
+      const actionGroup = el("div", "bu-filter-actions");
+      const clearFilters = el("button", "bu-filter-clear", "清除條件");
+      clearFilters.type = "button";
+      clearFilters.addEventListener("click", () => {
+        for (const input of [
+          convIdInput,
+          queryInput,
+          sourceInput,
+          issueInput,
+          routeInput,
+          modelInput,
+          actorRefInput,
+        ]) {
+          input.value = "";
+        }
+        channelSelect.value = "";
+        feedbackSelect.value = "";
+        handoffSelect.value = "";
+        void applyAll({ preset: "30d", start: "", end: "" });
+      });
+      actionGroup.append(applyFilters, exportButton, clearFilters);
+      actionBar.append(actionGroup);
+      filterSurface.append(actionBar);
       const advanced = el("details", "bu-ops-note");
       const activeExtras = [
         conversationId && `對話 ID`,
@@ -513,25 +562,40 @@ export async function renderConversations(state = {}) {
       );
       const advancedBar = el("div", "filter-bar");
       advancedBar.append(
-        convIdInput,
-        sourceInput,
-        issueInput,
-        routeInput,
-        modelInput,
-        actorRefInput,
-        handoffSelect,
+        filterField("對話 ID", convIdInput),
+        filterField("來源", sourceInput),
+        filterField("問題類型", issueInput),
+        filterField("處理方式", routeInput),
+        filterField("模型", modelInput),
+        filterField("使用者", actorRefInput),
+        filterField("轉人工", handoffSelect),
       );
       advanced.append(advancedBar);
-      panel.append(advanced);
+      filterSurface.append(advanced);
+      const periodLabels = {
+        today: "今天",
+        "1d": "最近 1 日",
+        "7d": "最近 1 週",
+        "30d": "最近 1 個月",
+        month: "本月",
+        "6m": "最近 6 個月",
+        "1y": "最近 1 年",
+        custom: "自訂期間",
+      };
       const chips = [];
-      if (period.preset) chips.push(`期間：${period.preset}`);
+      if (period.preset) chips.push(`期間：${periodLabels[period.preset] || period.preset}`);
       if (query) chips.push(`關鍵字：${query}`);
       if (channelScope) chips.push(`通道：${channelSelect.options[channelSelect.selectedIndex]?.text || channelScope}`);
       if (hasFeedback) chips.push(`回饋：${hasFeedback === "true" ? "有" : "無"}`);
       for (const extra of activeExtras) chips.push(extra);
       if (chips.length) {
-        panel.append(el("p", "metric-label", `目前查詢：${chips.join(" · ")}`));
+        const querySummary = el("div", "bu-filter-meta");
+        querySummary.append(
+          el("strong", "", `目前查詢：${chips.join(" · ")}`),
+        );
+        filterSurface.append(querySummary);
       }
+      panel.append(filterSurface);
     } else {
       filterBar.append(
         convIdInput,
@@ -549,6 +613,15 @@ export async function renderConversations(state = {}) {
       );
       panel.append(filterBar);
       panel.append(periodControls);
+    }
+
+    if (isBuShellEnabled()) {
+      const resultSummary = el("div", "bu-filter-meta");
+      resultSummary.append(
+        el("strong", "", `目前顯示 ${data.items.length} 筆`),
+        el("span", "", data.nextCursor ? "尚有更多結果" : "已是目前範圍的全部結果"),
+      );
+      panel.append(resultSummary);
     }
 
     if (!data.items.length) {
@@ -575,6 +648,16 @@ export async function renderConversations(state = {}) {
         "<thead><tr><th>時間／對話</th><th>回合</th><th>使用者</th><th>頻道</th><th>處理方式</th><th>派工／工單</th><th>最近更新</th></tr></thead>";
     }
     const body = el("tbody");
+    const actorLabels = new Map();
+    const actorDisplay = (actorRef) => {
+      const value = String(actorRef || "").trim();
+      if (!value) return { label: "未提供", technical: "" };
+      if (!actorLabels.has(value)) {
+        const index = actorLabels.size;
+        actorLabels.set(value, index < 26 ? String.fromCharCode(65 + index) : `#${index + 1}`);
+      }
+      return { label: `使用者 ${actorLabels.get(value)}`, technical: value };
+    };
     for (const item of data.items) {
       const row = el("tr");
       const matchedTurn =
@@ -660,8 +743,14 @@ export async function renderConversations(state = {}) {
         row.append(summaryCell);
         row.append(el("td", "", formatTaipeiDateTime(item.lastOccurredAt)));
         row.append(el("td", "", String(item.turnCount)));
-        const actorShort = String(item.actorRef || "-");
-        row.append(el("td", "", actorShort.length > 18 ? `${actorShort.slice(0, 14)}…` : actorShort));
+        const actor = actorDisplay(item.actorRef);
+        const actorCell = el("td");
+        const actorLabel = el("span", "", actor.label);
+        if (actor.technical) {
+          actorLabel.title = `技術識別碼：${actor.technical}`;
+        }
+        actorCell.append(actorLabel);
+        row.append(actorCell);
       } else {
         const conversationCell = el("td");
         conversationCell.append(link);
@@ -703,7 +792,8 @@ export async function renderConversations(state = {}) {
         badges.push(tBadge);
       }
       if (item.handoffStatus) {
-        const hBadge = el("span", "meta-chip", `轉人工 ${item.handoffStatus}`);
+        const hBadge = el("span", "meta-chip", `轉人工：${labelStatus(item.handoffStatus)}`);
+        hBadge.title = `技術狀態：${item.handoffStatus}`;
         badges.push(hBadge);
       }
       if (badges.length > 0) {

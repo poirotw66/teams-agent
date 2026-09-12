@@ -46,10 +46,12 @@ export function customPeriodInputs(startValue = "", endValue = "") {
   const start = el("input");
   start.type = "date";
   start.id = "custom-start-date";
+  start.setAttribute("aria-label", "開始日期");
   start.value = startValue;
   const end = el("input");
   end.type = "date";
   end.id = "custom-end-date";
+  end.setAttribute("aria-label", "結束日期");
   end.value = endValue;
   wrap.append(el("label", "", "開始"), start, el("label", "", "結束"), end);
   return wrap;

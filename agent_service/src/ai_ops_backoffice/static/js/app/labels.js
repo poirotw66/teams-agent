@@ -47,6 +47,10 @@ const STATUS_LABELS = {
   RUNNING: "執行中",
   PENDING: "待執行",
   CANCELLED: "已取消",
+  CREATED: "已建立",
+  ROUTED_TO_TICKET: "已轉工單",
+  QUEUED: "已排入佇列",
+  SUMMARY_REVIEW: "摘要覆核中",
 };
 
 const BEHAVIOR_LABELS = {

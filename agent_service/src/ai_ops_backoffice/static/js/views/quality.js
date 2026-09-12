@@ -4,17 +4,18 @@ import { createExportButton, runExport } from "../services/export.js";
 import { drillLink, loadNavFilters, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
-import { formatUserFacingError } from "../app/labels.js";
+import { formatTaipeiDateTime, formatUserFacingError } from "../app/labels.js";
 import { withReturnTo } from "../app/returnTo.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 import { buildGapPanel, buildQualityLoopPanel } from "./qualityPanels.js";
+import { loadingState } from "../components/state.js";
 
 export { showQualityCaseDetail };
 
 
 export async function renderQuality(state = {}) {
   const app = document.getElementById("app");
-  app.replaceChildren(el("div", "empty", "載入中…"));
+  app.replaceChildren(loadingState("正在整理改善案件與回饋…", 4));
   try {
     const navFilters = loadNavFilters();
     const buShell = isBuShellEnabled();
@@ -68,7 +69,7 @@ export async function renderQuality(state = {}) {
       loadFeedback ? api("/api/taxonomy") : Promise.resolve(null),
     ]);
 
-    const panel = el("section", "panel");
+    const panel = el("section", "panel bu-feedback-surface");
     if (feedback) {
     panel.append(el("h2", "", "回饋與待觀察事件"));
     panel.append(
@@ -87,9 +88,15 @@ export async function renderQuality(state = {}) {
     );
     panel.append(shortcuts);
     const filterBar = el("div", "filter-bar quality-filters");
+    const filterField = (label, control, className = "") => {
+      const field = el("label", `bu-filter-field ${className}`.trim());
+      field.append(el("span", "", label), control);
+      return field;
+    };
     const issueInput = el("input");
     issueInput.id = "feedback-issue-type";
     issueInput.placeholder = "問題類型（顯示名稱或 ID）";
+    issueInput.setAttribute("aria-label", "問題類型");
     issueInput.value = issueTypeId || "";
     const issueList = el("datalist");
     issueList.id = "feedback-issue-type-options";
@@ -106,31 +113,37 @@ export async function renderQuality(state = {}) {
     issueInput.setAttribute("list", issueList.id);
     const ratingSelect = el("select", "");
     ratingSelect.id = "feedback-rating";
+    ratingSelect.setAttribute("aria-label", "評價");
     ratingSelect.innerHTML =
       '<option value="">全部評價</option><option value="UP">好評</option><option value="DOWN">負評</option>';
     if (rating) ratingSelect.value = rating;
     const reasonInput = el("input");
     reasonInput.id = "feedback-reason";
     reasonInput.placeholder = "回饋原因（關鍵字，採包含比對）";
+    reasonInput.setAttribute("aria-label", "回饋原因");
     reasonInput.value = reason || "";
     const resolvedSelect = el("select", "");
     resolvedSelect.id = "feedback-resolved";
+    resolvedSelect.setAttribute("aria-label", "解決狀態");
     resolvedSelect.innerHTML =
       '<option value="">全部解決狀態</option><option value="RESOLVED">已解決</option><option value="UNRESOLVED">未解決</option>';
     if (resolved) resolvedSelect.value = resolved;
     const handoffSelect = el("select", "");
     handoffSelect.id = "feedback-handoff";
+    handoffSelect.setAttribute("aria-label", "轉人工");
     handoffSelect.innerHTML =
       '<option value="">全部轉人工</option><option value="true">有轉人工</option><option value="false">無轉人工</option>';
     if (handoff) handoffSelect.value = handoff;
     const routeSelect = el("select", "");
     routeSelect.id = "feedback-route";
+    routeSelect.setAttribute("aria-label", "處理方式");
     routeSelect.innerHTML =
       '<option value="">全部處理方式</option><option value="FAQ">FAQ</option><option value="KNOWLEDGE">知識檢索 (RAG)</option><option value="DIRECT">直接回覆</option><option value="ESCALATE">轉人工</option>';
     if (route) routeSelect.value = route;
     const modelInput = el("input");
     modelInput.id = "feedback-model";
-    modelInput.placeholder = "模型 (Model)";
+    modelInput.placeholder = "模型名稱";
+    modelInput.setAttribute("aria-label", "模型");
     modelInput.value = model || "";
     const currentFilters = () => ({
       issueTypeId: issueInput.value.trim(),
@@ -143,9 +156,18 @@ export async function renderQuality(state = {}) {
       ...(navFilters.returnTo ? { returnTo: navFilters.returnTo } : {}),
     });
     const applyFilters = el("button", buShell ? "button-secondary" : "", "套用篩選");
-    applyFilters.addEventListener("click", () =>
-      renderQuality({ period, filters: currentFilters(), cursor: "", history: [], tab: "feedback" }),
-    );
+    applyFilters.addEventListener("click", () => {
+      const nextPeriod = typeof periodControls?.readPeriod === "function"
+        ? periodControls.readPeriod()
+        : period;
+      return renderQuality({
+        period: nextPeriod,
+        filters: currentFilters(),
+        cursor: "",
+        history: [],
+        tab: "feedback",
+      });
+    });
     const exportButton = createExportButton("feedback", 30, () => ({
       issue_type_id: issueInput.value || undefined,
       rating: ratingSelect.value || undefined,
@@ -156,30 +178,54 @@ export async function renderQuality(state = {}) {
       route: routeSelect.value || undefined,
       ...Object.fromEntries(periodParams(period)),
     }));
-    filterBar.append(
-      issueInput,
-      ratingSelect,
-      routeSelect,
-      modelInput,
-      reasonInput,
-      resolvedSelect,
-      handoffSelect,
-      applyFilters,
-      exportButton,
-    );
+    if (buShell) {
+      filterBar.append(
+        filterField("問題類型", issueInput, "is-wide"),
+        filterField("評價", ratingSelect),
+        filterField("處理方式", routeSelect),
+        filterField("模型", modelInput),
+        filterField("回饋原因", reasonInput, "is-wide"),
+        filterField("解決狀態", resolvedSelect),
+        filterField("轉人工", handoffSelect),
+      );
+    } else {
+      filterBar.append(
+        issueInput,
+        ratingSelect,
+        routeSelect,
+        modelInput,
+        reasonInput,
+        resolvedSelect,
+        handoffSelect,
+        applyFilters,
+        exportButton,
+      );
+    }
     filterBar.append(issueList);
-    panel.append(filterBar);
-    panel.append(
-      createPeriodControls(period, (nextPeriod) =>
-        renderQuality({
-          period: nextPeriod,
-          filters: currentFilters(),
-          cursor: "",
-          history: [],
-          tab: "feedback",
-        }),
-      ),
+    const periodControls = createPeriodControls(period, (nextPeriod) =>
+      renderQuality({
+        period: nextPeriod,
+        filters: currentFilters(),
+        cursor: "",
+        history: [],
+        tab: "feedback",
+      }),
+      { hideApplyButton: buShell },
     );
+    periodControls.classList.add("bu-period-controls");
+    periodControls.prepend(el("span", "bu-filter-section-label", "期間"));
+    if (buShell) {
+      const filterSurface = el("div", "bu-filter-surface");
+      filterSurface.append(filterBar, periodControls);
+      const actionBar = el("div", "filter-bar bu-filter-actions-row");
+      const actionGroup = el("div", "bu-filter-actions");
+      actionGroup.append(applyFilters, exportButton);
+      actionBar.append(actionGroup);
+      filterSurface.append(actionBar);
+      panel.append(filterSurface);
+    } else {
+      panel.append(filterBar, periodControls);
+    }
 
     const ratingLabels = { UP: "好評", DOWN: "負評" };
     if (!feedback.items.length) {
@@ -234,7 +280,7 @@ export async function renderQuality(state = {}) {
             || (trace.documentIds || []).join(", ")
             || "-";
         const row = el("tr");
-        row.append(el("td", "", item.occurredAt));
+        row.append(el("td", "", formatTaipeiDateTime(item.occurredAt)));
         row.append(el("td", "", ratingLabels[item.rating] || item.rating));
         row.append(
           el(
@@ -343,21 +389,25 @@ export async function renderQuality(state = {}) {
     }
     if (pager.childElementCount) panel.append(pager);
     }
-    const exportPanel = el("section", "panel");
-    exportPanel.append(el("h3", "", "非同步匯出"));
+    const exportPanel = el("section", "panel bu-export-panel");
+    exportPanel.append(el("h3", "", "匯出營運摘要"));
+    exportPanel.append(
+      el("p", "metric-label", "匯出會留下稽核原因；不會改變案件或文件狀態。"),
+    );
     const csvButton = el("button", buShell ? "button-secondary" : "", "建立 CSV 營運摘要匯出");
     csvButton.addEventListener("click", async () => {
       await runExport("csv");
     });
     const xlsxButton = el("button", buShell ? "button-secondary" : "", "建立 XLSX 營運摘要匯出");
-    xlsxButton.style.marginLeft = "0.5rem";
     xlsxButton.addEventListener("click", async () => {
       await runExport("xlsx");
     });
-    exportPanel.append(csvButton, xlsxButton);
+    const exportActions = el("div", "bu-filter-actions");
+    exportActions.append(csvButton, xlsxButton);
+    exportPanel.append(exportActions);
 
     if (buShell) {
-      const header = el("div");
+      const header = el("div", "bu-page-header");
       header.append(el("h2", "", "改善案件"));
       header.append(
         el("p", "metric-label", "將回饋轉成可追蹤的改善，直到驗證結果。"),

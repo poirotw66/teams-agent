@@ -14,6 +14,7 @@ import {
 import { loadNavFilters } from "../../app/navigation.js";
 import { escapeHtml, safeClassToken } from "./shared.js";
 import { loadSetsList } from "./sets.js";
+import { loadingState } from "../../components/state.js";
 
 export async function renderCasesTab(container, allowed) {
   container.replaceChildren();
@@ -58,7 +59,8 @@ export async function loadCasesList(container, allowed) {
   const toolbar = el("div", "toolbar-grid");
 
   const searchInput = el("input", "search-input");
-  searchInput.placeholder = "搜尋問題關鍵字或標題...";
+  searchInput.placeholder = "搜尋問題或標題";
+  searchInput.setAttribute("aria-label", "搜尋驗收題目");
   const navFilters = loadNavFilters();
   if (navFilters.view === "evaluations" && navFilters.q) {
     searchInput.value = navFilters.q;
@@ -66,6 +68,7 @@ export async function loadCasesList(container, allowed) {
 
   const bu = isBuShellEnabled();
   const statusSelect = el("select", "form-select");
+  statusSelect.setAttribute("aria-label", "題目狀態");
   statusSelect.innerHTML = bu
     ? `
     <option value="">全部狀態</option>
@@ -85,6 +88,7 @@ export async function loadCasesList(container, allowed) {
   `;
 
   const behaviorSelect = el("select", "form-select");
+  behaviorSelect.setAttribute("aria-label", "行為類型");
   behaviorSelect.innerHTML = bu
     ? `
     <option value="">全部行為類型</option>
@@ -104,6 +108,7 @@ export async function loadCasesList(container, allowed) {
   `;
 
   const criticalitySelect = el("select", "form-select");
+  criticalitySelect.setAttribute("aria-label", "重要性");
   criticalitySelect.innerHTML = bu
     ? `
     <option value="">重要性</option>
@@ -117,6 +122,7 @@ export async function loadCasesList(container, allowed) {
   `;
 
   const healthSelect = el("select", "form-select");
+  healthSelect.setAttribute("aria-label", "來源健康度");
   healthSelect.innerHTML = bu
     ? `
     <option value="">來源健康度</option>
@@ -132,7 +138,7 @@ export async function loadCasesList(container, allowed) {
   `;
 
   const searchBtn = el("button", bu ? "button-primary" : "btn-primary", "篩選");
-  const summarySpan = el("span", "text-muted", "載入中...");
+  const summarySpan = el("span", "text-muted", "正在載入題目…");
 
   const actionButtons = el("div", bu ? "filter-bar" : "btn-group");
 
@@ -162,7 +168,7 @@ export async function loadCasesList(container, allowed) {
   container.append(toolbar, tableContainer);
 
   const fetchCases = async () => {
-    tableContainer.replaceChildren(el("p", "loading-text", "資料讀取中..."));
+    tableContainer.replaceChildren(loadingState("正在載入驗收題目…", 3));
     try {
       const params = new URLSearchParams();
       if (searchInput.value.trim()) params.set("q", searchInput.value.trim());
@@ -273,7 +279,7 @@ export async function loadCasesList(container, allowed) {
       table.append(tbody);
       tableContainer.replaceChildren(table);
     } catch (err) {
-      tableContainer.replaceChildren(el("div", "error", `載入失敗: ${err.message || err}`));
+      tableContainer.replaceChildren(el("div", "error", `資料讀取失敗：${err.message || err}。請保留篩選條件後重試。`));
     }
   };
 

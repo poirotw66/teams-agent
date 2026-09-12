@@ -11,6 +11,7 @@ import {
   renderFaqManagement,
   renderKnowledgePortalEntry,
 } from "./knowledge.js";
+import { loadingState } from "../components/state.js";
 
 let contentListsGeneration = 0;
 
@@ -54,7 +55,7 @@ async function renderContentLists(state = {}) {
   const tab = state.tab || navFilters.tab || "documents";
   const allowed = actorCapabilities();
 
-  const header = el("div");
+  const header = el("div", "bu-page-header");
   const returnBar = buildReturnBar();
   if (returnBar) {
     header.append(returnBar);
@@ -65,7 +66,7 @@ async function renderContentLists(state = {}) {
   );
 
   const secondary = el("div", "bu-content-secondary");
-  secondary.append(el("span", "metric-label", "進階："));
+  secondary.append(el("span", "metric-label", "內容流程"));
   if (canUseKnowledgeUi()) {
     secondary.append(drillLink("待審核", "knowledgeReviews"));
     secondary.append(drillLink("發布紀錄", "knowledgeReleases"));
@@ -124,7 +125,7 @@ async function renderContentLists(state = {}) {
 
   // Documents: mount portal into a dedicated container so chrome is never scooped.
   const mount = el("div", "bu-content-docs");
-  mount.append(el("div", "empty", "載入文件清單…"));
+  mount.append(loadingState("正在載入文件清單…", 4));
   app.replaceChildren(header, tabs, mount);
   await renderKnowledgePortalEntry(undefined, mount);
   if (generation !== contentListsGeneration) {

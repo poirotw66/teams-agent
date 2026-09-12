@@ -7,6 +7,7 @@ export function faqField(label, name, value = "", multiline = false, required = 
   input.name = name;
   input.value = value;
   input.required = required;
+  input.setAttribute("aria-label", label);
   wrap.append(input);
   return wrap;
 }

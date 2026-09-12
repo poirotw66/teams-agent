@@ -9,6 +9,7 @@ import { actorCapabilities, canUseKnowledgeUi, getCapabilities } from "../app/ca
 import { labelStatus } from "../app/labels.js";
 import { drillLink, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { withReturnTo } from "../app/returnTo.js";
+import { loadingState } from "../components/state.js";
 
 function currentUserId() {
   const caps = getCapabilities() || {};
@@ -411,18 +412,18 @@ function countUnits(rows) {
 async function renderWorkHub(state = {}) {
   const app = document.getElementById("app");
   const tab = state.tab || "mine";
-  app.replaceChildren(el("div", "empty", "載入中…"));
+  app.replaceChildren(loadingState("正在整理你的工作佇列…", 4));
 
   const caps = getCapabilities() || {};
   const displayName = caps.displayName || caps.userName || "同事";
 
-  const header = el("div");
+  const header = el("div", "bu-page-header");
   header.append(el("h2", "", `早安，${displayName}`));
   header.append(
     el(
       "p",
       "metric-label",
-      "先處理影響回答品質的工作。標示「彙總」的項目會先進入清單，再選一筆才到處理畫面；其餘可直接處理。",
+      "依照目前角色與可見範圍，先處理需要你下一步的工作。每個數字都只計入目前分頁可處理的項目。",
     ),
   );
 
@@ -464,17 +465,25 @@ async function renderWorkHub(state = {}) {
   const reviewCount = countUnits(reviewRows);
   const trackingCount = countUnits(trackingRows);
 
+  const workNavLink = document.querySelector('[data-view-id="workHub"]');
+  if (workNavLink) {
+    workNavLink.removeAttribute("data-count");
+    workNavLink.removeAttribute("title");
+    if (!errors.length) {
+      const navCount = String(mineCount.display + reviewCount.display + trackingCount.display);
+      workNavLink.dataset.count = navCount;
+      workNavLink.title = `我的工作、待審核與追蹤中項目總數：${navCount} 件`;
+    }
+  }
+
   const stats = el("div", "stats bu-work-stats");
-  const mineHint =
-    tab === "mine" && cases.scopeNote
-      ? cases.scopeNote
-      : "指派給我的進行中案件";
+  const mineHint = "指派給我的改善案件與依權限可見的文件待辦";
   for (const [key, label, value, hint] of [
     [
       "mine",
       "我的待處理",
       String(mineCount.display),
-      `${mineHint}；數字為任務件數。彙總入口以背後件數計，點進後還需再選一筆。`,
+      `${mineHint}；數字為任務件數。彙總入口會再進入清單選取。`,
     ],
     [
       "review",
@@ -497,7 +506,7 @@ async function renderWorkHub(state = {}) {
     const card = el("button", `stat${key === tab ? " is-active" : ""}`);
     card.type = "button";
     card.title = hint;
-    card.append(el("span", "", label), el("b", "", value));
+    card.append(el("span", "", label), el("b", "", value), el("span", "stat-hint", hint));
     card.addEventListener("click", () => {
       saveNavFilters({ view: "workHub", tab: key });
       syncLocationHash("workHub", { tab: key });
@@ -510,20 +519,27 @@ async function renderWorkHub(state = {}) {
     tab === "review" ? reviewRows : tab === "tracking" ? trackingRows : mineRows;
 
   const surface = el("section", "panel");
+  const surfaceHeading = el("div", "bu-work-surface-heading");
+  surfaceHeading.append(
+    el(
+      "h3",
+      "",
+      tab === "mine" ? "待處理工作" : tab === "review" ? "待我審核" : "追蹤中的工作",
+    ),
+    el("span", "metric-label", `${listRows.length ? `顯示 ${listRows.length} 筆` : "目前沒有項目"}`),
+  );
+  surface.append(surfaceHeading);
   surface.append(
     el(
       "p",
       "metric-label",
       tab === "mine"
-        ? "我的待處理：只顯示指派給我的改善案件；未指派或他人案件不會混入此區。文件待辦另依你的文件權限列出。"
+        ? "改善案件只顯示指派給你的項目；文件待辦則依你的文件權限列出。"
         : tab === "review"
-          ? "待我審核：文件審核與驗收題目。彙總列會先開清單。"
-          : "追蹤中：觀察中的改善案件與相關文件動態。",
+          ? "文件修訂與驗收題目會集中在這裡；彙總列會先開啟清單。"
+          : "只顯示觀察中的改善案件與相關文件動態。",
     ),
   );
-  if (cases.ok && tab === "mine" && cases.scopeNote) {
-    surface.append(el("p", "metric-label", cases.scopeNote));
-  }
   if (errors.length) {
     for (const node of errors) surface.append(node);
   }

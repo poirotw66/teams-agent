@@ -1,6 +1,7 @@
 export const OVERVIEW_ISSUE_NAMES = {
   "vpn.connection_failed": "VPN 連線異常與斷線",
   "other.unclassified": "一般未分類問題",
+  "other.not_it": "非 IT 問題",
   "password.account_locked": "密碼鎖定與重設需求",
   "other.greeting": "問候與引導交談",
   "email.outlook_sync": "Outlook 信件同步失敗",

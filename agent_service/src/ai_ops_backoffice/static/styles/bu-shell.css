@@ -195,6 +195,24 @@ body.bu-shell-v1 .bu-nav-items a.active {
   box-shadow: inset 3px 0 0 var(--brand-600);
 }
 
+body.bu-shell-v1 .bu-nav-items a[data-count]::after {
+  content: attr(data-count);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  margin-left: auto;
+  padding: 0 0.3rem;
+  border: 1px solid var(--brand-200);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--brand-800);
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 body.bu-shell-v1 .bu-nav-items a:focus-visible,
 body.bu-shell-v1 .bu-quality-tabs button:focus-visible,
 body.bu-shell-v1 .bu-case-crumb a:focus-visible,
@@ -510,7 +528,11 @@ body.bu-shell-v1 .stats:not(.bu-work-stats) .stat b {
 
 body.bu-shell-v1 .bu-content-docs,
 body.bu-shell-v1 .bu-content-docs-mount {
-  margin-top: 0.5rem;
+  margin-top: 0;
+}
+
+body.bu-shell-v1 #app > .bu-quality-tabs {
+  margin-bottom: 0.35rem;
 }
 
 @media (max-width: 760px) {
@@ -1070,4 +1092,380 @@ body.bu-shell-v1 .bu-turn.is-selected {
   outline: 2px solid var(--accent, #2563eb);
   outline-offset: 2px;
   background: rgba(239, 246, 255, 0.8);
+}
+
+/* Shared task-page rhythm. Keep one visible heading, one action surface, and
+ * enough whitespace to scan without making the content feel empty. */
+body.bu-shell-v1 .bu-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  margin: 0 0 1rem;
+}
+
+body.bu-shell-v1 .bu-page-header h2,
+body.bu-shell-v1 .bu-page-header h3 {
+  margin: 0 0 0.25rem;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+body.bu-shell-v1 .bu-page-header h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+body.bu-shell-v1 .bu-page-header .metric-label,
+body.bu-shell-v1 .bu-page-header .page-subtitle {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+body.bu-shell-v1 .bu-conversation-surface {
+  padding-top: 1.15rem;
+}
+
+body.bu-shell-v1 .bu-conversation-header {
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+body.bu-shell-v1 .bu-conversation-header .meta-group {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+body.bu-shell-v1 .bu-filter-surface {
+  margin: 0 0 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .bu-filter-surface .filter-bar {
+  margin-bottom: 0.6rem;
+}
+
+body.bu-shell-v1 .bu-filter-surface .filter-bar:last-child,
+body.bu-shell-v1 .bu-filter-surface > :last-child {
+  margin-bottom: 0;
+}
+
+body.bu-shell-v1 .bu-filter-field {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+  min-width: 8.5rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+body.bu-shell-v1 .bu-filter-field.is-wide {
+  flex: 1 1 17rem;
+}
+
+body.bu-shell-v1 .bu-filter-field input,
+body.bu-shell-v1 .bu-filter-field select {
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* The legacy quality filter gives inputs a 220px flex basis. In the BU
+ * stacked field layout that basis becomes a vertical height, so reset it to
+ * keep text filters compact and scannable. */
+body.bu-shell-v1 .bu-feedback-surface .bu-filter-field input {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 2.15rem;
+  height: auto;
+}
+
+body.bu-shell-v1 .bu-filter-actions {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+body.bu-shell-v1 .bu-filter-section-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+body.bu-shell-v1 .bu-filter-actions-row {
+  justify-content: flex-end;
+  margin-bottom: 0.25rem;
+}
+
+body.bu-shell-v1 .bu-filter-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+body.bu-shell-v1 .bu-filter-meta strong {
+  color: var(--text-secondary);
+  font-weight: 650;
+}
+
+body.bu-shell-v1 .bu-filter-clear {
+  border: 0;
+  padding: 0;
+  min-height: auto;
+  color: var(--brand-700);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+body.bu-shell-v1 .bu-loading-state {
+  margin: 0.5rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+body.bu-shell-v1 .bu-loading-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+body.bu-shell-v1 .bu-skeleton-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+body.bu-shell-v1 .bu-skeleton-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 2fr) minmax(4rem, 1fr) minmax(3rem, 0.6fr);
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+body.bu-shell-v1 .bu-skeleton-block {
+  display: block;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ececf1 25%, #f8f8fa 45%, #ececf1 65%);
+  background-size: 220% 100%;
+  animation: bu-skeleton-shimmer 1.3s ease-in-out infinite;
+}
+
+body.bu-shell-v1 .bu-skeleton-block-wide {
+  width: 78%;
+}
+
+body.bu-shell-v1 .bu-skeleton-block-short {
+  width: 58%;
+}
+
+@keyframes bu-skeleton-shimmer {
+  to {
+    background-position: -120% 0;
+  }
+}
+
+body.bu-shell-v1 .bu-danger-zone {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+}
+
+body.bu-shell-v1 .bu-danger-zone h3 {
+  margin: 0 0 0.25rem;
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+
+body.bu-shell-v1 .bu-danger-zone .metric-label {
+  margin: 0 0 0.75rem;
+  color: #7a3340;
+}
+
+body.bu-shell-v1 .bu-danger-zone button {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+body.bu-shell-v1 .bu-run-selection-state {
+  margin: 0.25rem 0 0.9rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: #6b4b11;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+body.bu-shell-v1 .bu-run-selection-state.is-valid {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+body.bu-shell-v1 .bu-run-selection-state[hidden] {
+  display: none;
+}
+
+body.bu-shell-v1 .bu-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+body.bu-shell-v1 .bu-status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+body.bu-shell-v1 .bu-content-secondary {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+body.bu-shell-v1 .bu-content-secondary > .metric-label {
+  margin-right: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+body.bu-shell-v1 .bu-content-guidance-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+body.bu-shell-v1 .bu-content-guidance-stack .content-guide {
+  margin: 0;
+}
+
+body.bu-shell-v1 .bu-work-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 900px;
+}
+
+body.bu-shell-v1 .bu-work-stats .stat-hint {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-weight: 400;
+}
+
+body.bu-shell-v1 .bu-work-surface-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.35rem;
+}
+
+body.bu-shell-v1 .bu-work-surface-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+body.bu-shell-v1 .bu-eval-toolbar .search-input {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+body.bu-shell-v1 .bu-eval-toolbar > select,
+body.bu-shell-v1 .bu-eval-toolbar > .form-select {
+  min-width: 8.5rem;
+}
+
+body.bu-shell-v1 .bu-eval-toolbar > .filter-bar {
+  margin: 0;
+}
+
+body.bu-shell-v1 .bu-eval-form .form-group select,
+body.bu-shell-v1 .bu-eval-form .form-group input {
+  width: 100%;
+}
+
+body.bu-shell-v1 .bu-eval-form .form-group > .metric-label {
+  min-height: 1.15rem;
+}
+
+@media (max-width: 760px) {
+  body.bu-shell-v1 .bu-page-header {
+    display: block;
+  }
+
+  body.bu-shell-v1 .bu-page-header > * + * {
+    margin-top: 0.65rem;
+  }
+
+  body.bu-shell-v1 .bu-conversation-header .meta-group {
+    justify-content: flex-start;
+  }
+
+  body.bu-shell-v1 .bu-filter-field,
+  body.bu-shell-v1 .bu-filter-field.is-wide {
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
+
+  body.bu-shell-v1 .bu-filter-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  body.bu-shell-v1 .bu-filter-actions > button {
+    flex: 1 1 auto;
+  }
+
+  body.bu-shell-v1 .bu-work-stats {
+    grid-template-columns: 1fr;
+    max-width: none;
+  }
+
+  body.bu-shell-v1 .bu-content-guidance-stack {
+    grid-template-columns: 1fr;
+  }
+
+  body.bu-shell-v1 .bu-skeleton-row {
+    grid-template-columns: minmax(7rem, 2fr) minmax(4rem, 1fr);
+  }
+
+  body.bu-shell-v1 .bu-skeleton-row .bu-skeleton-block-short {
+    display: none;
+  }
 }

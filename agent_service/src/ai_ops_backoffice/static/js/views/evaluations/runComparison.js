@@ -73,7 +73,7 @@ export async function renderResultsTab(container, allowed) {
   container.replaceChildren();
   const box = el("div", "content-box");
   box.innerHTML = `
-    <h3>驗收結果與版本比較 (Evaluation Results)</h3>
+    <h3>驗收結果與版本比較</h3>
     <p class="metric-label">執行完成 ≠ 品質通過／閘道通過。請用下方通過率、退步案例與門檻政策判斷是否可發布。</p>
     <div id="results-summary-container"></div>
     <div class="table-responsive" style="margin-top: 20px;">
@@ -91,7 +91,7 @@ export async function renderResultsTab(container, allowed) {
           </tr>
         </thead>
         <tbody id="runs-table-body">
-          <tr><td colspan="8">載入中...</td></tr>
+          <tr><td colspan="8">正在載入驗收執行紀錄…</td></tr>
         </tbody>
       </table>
     </div>

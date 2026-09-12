@@ -23,7 +23,7 @@ export async function renderRunsTab(container, allowed) {
   const qualityCaseId = returnContext?.view === "quality"
     ? returnContext.filters.caseId || ""
     : "";
-  const box = el("div", "content-box");
+  const box = el("div", "content-box bu-eval-form");
   box.innerHTML = `
     <h3>執行驗收</h3>
     <p class="text-muted">選擇題庫版本、正式版／候選版 Prompt 與模型，先預檢再啟動比較。</p>
@@ -31,27 +31,27 @@ export async function renderRunsTab(container, allowed) {
       <div class="form-group">
         <label for="run-set-version">評測題庫版本</label>
         <select id="run-set-version" class="form-select">
-          <option value="">載入中...</option>
+          <option value="" disabled selected>正在載入題庫版本…</option>
         </select>
       </div>
       <div class="form-group">
         <label for="baseline-prompt">基準（正式版）</label>
         <select id="baseline-prompt" class="form-select">
-          <option value="">載入中...</option>
+          <option value="" disabled selected>正在載入提示版本…</option>
         </select>
         <p id="baseline-prompt-meta" class="metric-label"></p>
       </div>
       <div class="form-group">
         <label for="candidate-prompt">候選版</label>
         <select id="candidate-prompt" class="form-select">
-          <option value="">載入中...</option>
+          <option value="" disabled selected>正在載入提示版本…</option>
         </select>
         <p id="candidate-prompt-meta" class="metric-label"></p>
       </div>
       <div class="form-group">
         <label for="target-model">模型</label>
         <select id="target-model" class="form-select">
-          <option value="">載入中...</option>
+          <option value="" disabled selected>正在載入模型…</option>
         </select>
       </div>
       <div class="form-group">
@@ -70,7 +70,8 @@ export async function renderRunsTab(container, allowed) {
         <p class="metric-label">預檢通過後會顯示 Manifest Hash 等技術欄位；日常操作不需手填版本代碼。</p>
         <div id="run-advanced-ids" class="metric-label"></div>
       </details>
-      <div class="btn-row">
+      <div id="run-selection-state" class="bu-run-selection-state" role="status"></div>
+      <div class="btn-row bu-run-actions">
         <button id="preflight-btn" class="button-primary" type="button">執行預檢</button>
         <button id="start-run-btn" class="button-primary" type="button" style="display: none;">啟動驗收執行</button>
       </div>
@@ -100,9 +101,45 @@ export async function renderRunsTab(container, allowed) {
   const preflightBtn = box.querySelector("#preflight-btn");
   const startRunBtn = box.querySelector("#start-run-btn");
   const resultsDiv = box.querySelector("#preflight-results");
+  const selectionState = box.querySelector("#run-selection-state");
 
   let resolvedPreflight = null;
   const promptOptionsByValue = new Map();
+  preflightBtn.disabled = true;
+  startRunBtn.disabled = true;
+
+  function updateSelectionState(message, valid = false) {
+    selectionState.hidden = !message;
+    selectionState.textContent = message || "";
+    selectionState.classList.toggle("is-valid", valid);
+  }
+
+  function validateSelectionState() {
+    const problems = [];
+    if (!select.value) problems.push("請先選擇評測題庫版本。");
+    if (!baselineSelect.value) problems.push("請選擇基準正式版。");
+    if (!candidateSelect.value) problems.push("請選擇候選版。");
+    if (baselineSelect.value && candidateSelect.value && baselineSelect.value === candidateSelect.value) {
+      problems.push("基準版與候選版相同，無法比較；請選擇不同版本。");
+    }
+    if (!modelSelect.value) problems.push("請選擇模型。");
+    const valid = problems.length === 0;
+    preflightBtn.disabled = !valid;
+    if (!valid) {
+      updateSelectionState(problems.join(" "), false);
+    } else {
+      updateSelectionState("設定完整，可以執行預檢。", true);
+    }
+    return valid;
+  }
+
+  function invalidatePreflight() {
+    resolvedPreflight = null;
+    startRunBtn.style.display = "none";
+    startRunBtn.disabled = true;
+    resultsDiv.replaceChildren();
+    validateSelectionState();
+  }
 
   function formatTaipei(iso) {
     if (!iso) return "—";
@@ -136,7 +173,7 @@ export async function renderRunsTab(container, allowed) {
 
   try {
     const setsRes = await api("/api/evaluations/sets");
-    select.innerHTML = '<option value="">-- 請選擇題庫版本 --</option>';
+    select.innerHTML = '<option value="" disabled selected>請選擇題庫版本</option>';
     for (const s of setsRes.items || []) {
       const detail = await api(`/api/evaluations/sets/${s.set_id}`);
       for (const v of detail.versions || []) {
@@ -144,7 +181,7 @@ export async function renderRunsTab(container, allowed) {
       }
     }
   } catch (err) {
-    select.innerHTML = '<option value="">無法載入題庫版本</option>';
+    select.innerHTML = '<option value="" disabled selected>無法載入題庫版本</option>';
   }
 
   try {
@@ -159,12 +196,12 @@ export async function renderRunsTab(container, allowed) {
     } else if (item?.active) {
       versions.push(item.active);
     }
-    baselineSelect.innerHTML = "";
-    candidateSelect.innerHTML = "";
+    baselineSelect.innerHTML = '<option value="" disabled selected>請選擇基準正式版</option>';
+    candidateSelect.innerHTML = '<option value="" disabled selected>請選擇與基準不同的候選版</option>';
     promptOptionsByValue.clear();
     if (!versions.length) {
-      baselineSelect.innerHTML = '<option value="default">default（無治理版本資料）</option>';
-      candidateSelect.innerHTML = '<option value="default">default（無治理版本資料）</option>';
+      baselineSelect.innerHTML = '<option value="" disabled selected>沒有可用的基準版本</option>';
+      candidateSelect.innerHTML = '<option value="" disabled selected>沒有可用的候選版本</option>';
     } else {
       const sorted = [...versions].sort((a, b) => {
         const aActive = a.version_id === activeId || a.status === "ACTIVE" ? 0 : 1;
@@ -188,17 +225,23 @@ export async function renderRunsTab(container, allowed) {
       const candidate =
         sorted.find((v) => v !== official && String(v.status || "").toUpperCase() !== "ACTIVE") ||
         sorted.find((v) => v !== official) ||
-        official;
+        null;
       baselineSelect.value = official.version || official.version_id;
-      candidateSelect.value = candidate.version || candidate.version_id;
+      candidateSelect.value = candidate ? candidate.version || candidate.version_id : "";
     }
     syncPromptMeta(baselineSelect, baselineMeta);
     syncPromptMeta(candidateSelect, candidateMeta);
-    baselineSelect.addEventListener("change", () => syncPromptMeta(baselineSelect, baselineMeta));
-    candidateSelect.addEventListener("change", () => syncPromptMeta(candidateSelect, candidateMeta));
+    baselineSelect.addEventListener("change", () => {
+      syncPromptMeta(baselineSelect, baselineMeta);
+      invalidatePreflight();
+    });
+    candidateSelect.addEventListener("change", () => {
+      syncPromptMeta(candidateSelect, candidateMeta);
+      invalidatePreflight();
+    });
   } catch (err) {
-    baselineSelect.innerHTML = '<option value="default">default</option>';
-    candidateSelect.innerHTML = '<option value="candidate-v1.1">candidate-v1.1</option>';
+    baselineSelect.innerHTML = '<option value="" disabled selected>無法載入基準版本</option>';
+    candidateSelect.innerHTML = '<option value="" disabled selected>無法載入候選版本</option>';
   }
 
   try {
@@ -222,17 +265,20 @@ export async function renderRunsTab(container, allowed) {
   } catch (err) {
     modelSelect.innerHTML = '<option value="gemini-2.5-flash">gemini-2.5-flash</option>';
   }
+  select.addEventListener("change", invalidatePreflight);
+  modelSelect.addEventListener("change", invalidatePreflight);
+  validateSelectionState();
 
   preflightBtn.addEventListener("click", async () => {
-    const setVersionId = select.value;
-    if (!setVersionId) {
-      showToast("請先選擇評測題庫版本", { tone: "error" });
+    if (!validateSelectionState()) {
+      showToast("請先完成驗收版本設定", { tone: "error" });
       return;
     }
+    const setVersionId = select.value;
     const maxCasesVal = box.querySelector("#run-max-cases")?.value;
     const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
     const baselinePrompt = (baselineSelect.value || "").trim() || "default";
-    const candidatePrompt = (candidateSelect.value || "").trim() || baselinePrompt;
+    const candidatePrompt = candidateSelect.value.trim();
     const targetModel = (modelSelect.value || "").trim() || "gemini-2.5-flash";
 
     resultsDiv.innerHTML = '<div class="alert alert-info">正在執行預檢中...</div>';
@@ -268,6 +314,7 @@ export async function renderRunsTab(container, allowed) {
           候選 Manifest: <code>${escapeHtml(res.resolved_candidate_manifest ? res.resolved_candidate_manifest.manifest_hash.slice(0, 16) : "")}…</code>
         `;
         startRunBtn.style.display = "inline-block";
+        startRunBtn.disabled = false;
       } else {
         resultsDiv.innerHTML = `
           <div class="alert alert-danger">
@@ -276,14 +323,18 @@ export async function renderRunsTab(container, allowed) {
           </div>
         `;
         startRunBtn.style.display = "none";
+        startRunBtn.disabled = true;
       }
     } catch (err) {
       resultsDiv.innerHTML = `<div class="alert alert-danger">預檢失敗: ${escapeHtml(err.message || err)}</div>`;
+      resolvedPreflight = null;
+      startRunBtn.style.display = "none";
+      startRunBtn.disabled = true;
     }
   });
 
   startRunBtn.addEventListener("click", async () => {
-    if (!resolvedPreflight) return;
+    if (!resolvedPreflight || !validateSelectionState()) return;
     startRunBtn.disabled = true;
     startRunBtn.textContent = "執行評測中...";
 
@@ -291,7 +342,7 @@ export async function renderRunsTab(container, allowed) {
       const maxCasesVal = box.querySelector("#run-max-cases")?.value;
       const limits = maxCasesVal ? { max_cases: parseInt(maxCasesVal, 10) } : {};
       const baselinePrompt = (baselineSelect.value || "").trim() || "default";
-      const candidatePrompt = (candidateSelect.value || "").trim() || baselinePrompt;
+      const candidatePrompt = candidateSelect.value.trim();
       const targetModel = (modelSelect.value || "").trim() || "gemini-2.5-flash";
       const runMode = box.querySelector("#run-mode")?.value || "REAL_RAG";
 

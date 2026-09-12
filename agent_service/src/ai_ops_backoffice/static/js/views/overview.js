@@ -16,6 +16,8 @@ import {
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 import { loadNavFilters } from "../app/navigation.js";
+import { loadingState } from "../components/state.js";
+import { formatUserFacingError } from "../app/labels.js";
 
 let currentOverviewPreset = "7d";
 let currentOverviewTrendTab = "conv";
@@ -62,7 +64,7 @@ export async function renderOverview(forceRefresh = false) {
   if (issueTypeId) query.set("issue_type_id", issueTypeId);
   if (forceRefresh) query.set("refresh", "true");
 
-  app.replaceChildren(el("div", "empty", "載入營運數據中…"));
+  app.replaceChildren(loadingState("正在整理營運數據…", 5));
 
   try {
     const data = await api(`/api/operations/summary?${query.toString()}`);
@@ -149,7 +151,13 @@ export async function renderOverview(forceRefresh = false) {
     if (!stillOnOverview()) {
       return;
     }
-    app.replaceChildren(el("div", error.message === "FORBIDDEN" ? "forbidden" : "error", error.message));
+    app.replaceChildren(
+      el(
+        "div",
+        error.message === "FORBIDDEN" ? "forbidden" : "error",
+        formatUserFacingError(error),
+      ),
+    );
   }
 }
 

@@ -31,7 +31,7 @@ export async function renderEvaluations() {
     container.append(back);
   }
 
-  const header = el("div", "page-header");
+  const header = el("div", "page-header bu-page-header");
   const title = el(
     "h2",
     "",
@@ -47,6 +47,7 @@ export async function renderEvaluations() {
   header.append(title, subtitle);
 
   const tabsNav = el("div", isBuShellEnabled() ? "bu-quality-tabs" : "tabs-nav");
+  tabsNav.setAttribute("aria-label", "驗收流程");
   const tabCasesBtn = el("button", `${isBuShellEnabled() ? "" : "tab-btn "}${currentActiveTab === "cases" ? "active" : ""}`.trim(), "驗收題庫");
   const tabRunsBtn = el("button", `${isBuShellEnabled() ? "" : "tab-btn "}${currentActiveTab === "runs" ? "active" : ""}`.trim(), "執行驗收");
   const tabResultsBtn = el("button", `${isBuShellEnabled() ? "" : "tab-btn "}${currentActiveTab === "results" ? "active" : ""}`.trim(), "驗收結果");

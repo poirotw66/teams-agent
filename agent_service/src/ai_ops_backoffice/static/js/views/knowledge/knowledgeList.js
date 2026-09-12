@@ -6,6 +6,8 @@ import { runExport } from "../../services/export.js";
 import { getCapabilities } from "../../app/capabilities.js";
 import { buildLocationHash, navigateTo } from "../../app/navigation.js";
 import { isBuShellEnabled } from "../../app/buShellConfig.js";
+import { loadingState } from "../../components/state.js";
+import { formatUserFacingError } from "../../app/labels.js";
 
 export async function renderKnowledge() {
   const app = document.getElementById("app");
@@ -60,8 +62,8 @@ export async function renderKnowledge() {
   query.placeholder = "搜尋標題或文件 ID";
   query.setAttribute("aria-label", "搜尋知識文件");
   const owner = el("input");
-  owner.placeholder = "Owner";
-  owner.setAttribute("aria-label", "Owner");
+  owner.placeholder = "負責單位";
+  owner.setAttribute("aria-label", "負責單位");
   const status = el("select");
   status.setAttribute("aria-label", "生命週期狀態");
   for (const [value, label] of [
@@ -110,7 +112,7 @@ export async function renderKnowledge() {
   panel.append(tableContainer);
 
   async function loadDocuments(cursor = "") {
-    tableContainer.replaceChildren(el("p", "empty", "載入文件中…"));
+    tableContainer.replaceChildren(loadingState("正在載入文件清單…", 4));
     const params = new URLSearchParams();
     if (query.value.trim()) params.set("query", query.value.trim());
     if (owner.value.trim()) params.set("owner_unit_id", owner.value.trim());
@@ -126,7 +128,7 @@ export async function renderKnowledge() {
         }),
       );
     } catch (error) {
-      tableContainer.replaceChildren(el("div", "error", error.message));
+      tableContainer.replaceChildren(el("div", "error", formatUserFacingError(error)));
     }
   }
 
@@ -168,7 +170,7 @@ export function renderKnowledgeInventory(data, loadDocuments, options = {}) {
   const table = el("table");
   table.innerHTML = [
     "<thead><tr>",
-    "<th>文件</th><th>格式</th><th>Owner</th><th>生命週期</th><th>解析 / 索引</th>",
+    "<th>文件</th><th>格式</th><th>負責單位</th><th>生命週期</th><th>解析 / 索引</th>",
     "<th style=\"text-align:right;\">命中</th><th style=\"text-align:right;\">對話</th>",
     "<th style=\"text-align:right;\">正面</th><th style=\"text-align:right;\">負面</th><th>操作</th>",
     "</tr></thead>",

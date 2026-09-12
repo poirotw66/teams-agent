@@ -354,14 +354,14 @@ export function buildOverviewHeader({
   const modelInput = el("input");
   modelInput.type = "text";
   modelInput.id = "overview-model";
-  modelInput.placeholder = "Model（選填）";
+  modelInput.placeholder = "模型（選填）";
   modelInput.value = model;
   modelInput.setAttribute("aria-label", "模型篩選");
 
   const issueInput = el("input");
   issueInput.type = "text";
   issueInput.id = "overview-issue-type";
-  issueInput.placeholder = "Issue Type（選填）";
+  issueInput.placeholder = "問題類型（選填）";
   issueInput.value = issueTypeId;
   issueInput.setAttribute("aria-label", "Issue 篩選");
 
@@ -385,14 +385,14 @@ export function buildOverviewHeader({
     onApply({ modelInput, issueInput, intervalControl });
   });
 
-  const refresh = el("button", "btn button-primary", "🔄 重新整理");
+  const refresh = el("button", "btn button-primary", "重新整理");
   refresh.type = "button";
   refresh.title = "即刻向後端取得最新營運數據（繞過快取）";
   refresh.addEventListener("click", () => {
     onRefresh({ modelInput, issueInput, intervalControl });
   });
 
-  const exportBtn = el("button", "btn", "📥 匯出 CSV");
+  const exportBtn = el("button", "btn", "匯出 CSV");
   exportBtn.type = "button";
   exportBtn.title = "下載本期營運摘要與趨勢報表";
   exportBtn.addEventListener("click", () => onExport(data));
@@ -513,7 +513,7 @@ export function buildHeroKpiGrid(data, metrics) {
   cardTraffic.innerHTML = `
       <div class="hero-card-header">
         <span class="hero-card-tag">對話服務量能</span>
-        <span class="hero-icon-badge">💬</span>
+        <span class="hero-icon-badge" aria-hidden="true">量</span>
       </div>
       <div class="hero-card-body">
         <div class="hero-main-stat">${convCount.toLocaleString()}</div>
@@ -861,40 +861,40 @@ export function buildSplitAnalyticsGrid(data, metrics) {
 
 export function buildQuickNavPanel() {
   const quickNavPanel = el("div", "quick-nav-panel");
-  quickNavPanel.append(el("h3", "quick-nav-title", "⚡ 常用營運功能導航"));
+  quickNavPanel.append(el("h3", "quick-nav-title", "常用營運功能"));
   const quickNavGrid = el("div", "quick-nav-grid");
 
   const quickActions = [
     {
-      icon: "🔍",
+      icon: "析",
       title: "Issue 深入分析",
       desc: "檢視各類問題發生趨勢、對話樣本與解答分佈",
       view: "issues",
       filters: {},
     },
     {
-      icon: "🔀",
+      icon: "分",
       title: "路由來源管理",
       desc: "檢查與配置各業務分類的 AI / 人工轉派分流策略",
       view: "routes",
       filters: {},
     },
     {
-      icon: "⭐",
+      icon: "質",
       title: "品質與負評案件",
       desc: "追蹤使用者差評、澄清未果與回饋已解決標記",
       view: "quality",
       filters: { rating: "DOWN" },
     },
     {
-      icon: "💰",
+      icon: "費",
       title: "成本與費用分析",
       desc: "監控各模型 Token 消耗、預估花費與預算告警",
       view: "costs",
       filters: {},
     },
     {
-      icon: "📚",
+      icon: "知",
       title: "知識文件庫",
       desc: "檢視企業知識文件覆蓋度、命中解答率與待補缺口",
       view: "knowledgePortal",
@@ -933,7 +933,7 @@ export function buildMetricsGlossary(definitions) {
   const details = el("details", "overview-glossary");
   const summary = el("summary", "glossary-summary");
   summary.innerHTML = `
-        <span class="glossary-summary-title">📖 指標計算定義與公式說明 (點擊展開 ${Object.keys(definitions).length} 項指標)</span>
+        <span class="glossary-summary-title">指標計算定義與公式說明（點擊展開 ${Object.keys(definitions).length} 項指標）</span>
         <span class="glossary-toggle-icon">▾</span>
       `;
   details.append(summary);
