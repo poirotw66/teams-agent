@@ -657,12 +657,12 @@ def test_query_conversations_decouples_event_time_and_keeps_idle_stream_realtime
         async def _scoped_events(self, actor, period, force_refresh=False):
             return self._events
 
-    tracker = FreshnessTracker()
     now = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    tracker = FreshnessTracker(clock=lambda: now)
     tracker.record_worker_heartbeat(worker_id="w1", at=now)
-    # Healthy pipeline sync ran 10 seconds ago
+    # Healthy pipeline sync ran 10 seconds ago for tenant-1
     t_sync = now - timedelta(seconds=10)
-    tracker.record_sync_success("conversations", at=t_sync)
+    tracker.record_sync_success("conversations", at=t_sync, tenant_id="tenant-1")
 
     # Business event occurred 3 days ago (idle / historical conversation)
     t_ancient_event = now - timedelta(days=3)
@@ -704,6 +704,18 @@ def test_query_conversations_decouples_event_time_and_keeps_idle_stream_realtime
     empty_service = MockService(tracker, [])
     empty_res = asyncio.run(empty_service.list_conversations(actor))
     assert empty_res["freshness"]["status"] == "REALTIME"
+
+    # 5. Strict Tenant Isolation: tenant-2 with no sync data MUST be UNKNOWN, not REALTIME
+    actor_tenant2 = ActorContext(
+        user_id="user-2",
+        display_name="User Two",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=(),
+        tenant_id="tenant-2",
+    )
+    res_tenant2 = asyncio.run(service.list_conversations(actor_tenant2))
+    assert res_tenant2["freshness"]["status"] == "UNKNOWN"
+    assert res_tenant2["freshness"]["lag_seconds"] is None
 
 
 def test_eval_prompt_resolver_rejects_ambiguous_bare_version() -> None:
@@ -1046,3 +1058,224 @@ async def test_background_workers_enabled_flag_and_decoupled_execution(tmp_path,
         pass
 
 
+def test_freshness_strict_tenant_isolation_never_leaks_watermark_or_stages() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    now = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    tracker = FreshnessTracker(clock=lambda: now)
+    tracker.record_worker_heartbeat(worker_id="worker-shared", at=now)
+
+    # Sync tenant-A 10 seconds ago
+    t_sync_a = now - timedelta(seconds=10)
+    tracker.record_sync_success("conversations", at=t_sync_a, tenant_id="tenant-A")
+
+    # Record stage event for tenant-A
+    tracker.record_stage_event("corr-a-1", "EVENT_INGESTED", at=t_sync_a, tenant_id="tenant-A")
+
+    # Verify tenant-A gets REALTIME
+    res_a = tracker.compute_freshness("conversations", tenant_id="tenant-A")
+    assert res_a.status == "REALTIME"
+    assert res_a.lag_seconds == 10.0
+
+    # Verify tenant-B (no sync) gets UNKNOWN and does NOT leak tenant-A's watermark or stage
+    res_b = tracker.compute_freshness("conversations", tenant_id="tenant-B")
+    assert res_b.status == "UNKNOWN"
+    assert res_b.lag_seconds is None
+    assert res_b.event_watermark is None
+
+
+def test_freshness_cross_process_persistence_and_heartbeat_sharing(tmp_path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    now = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    shared_file = tmp_path / "freshness" / "sync_watermarks.json"
+
+    # Worker process tracker (writer)
+    worker_tracker = FreshnessTracker(persistent_path=shared_file, clock=lambda: now)
+    # API process tracker (reader)
+    api_tracker = FreshnessTracker(persistent_path=shared_file, clock=lambda: now)
+
+    # Initially API tracker has no heartbeats and no sync
+    assert api_tracker.is_worker_active(now) is False
+    initial_res = api_tracker.compute_freshness("conversations", tenant_id="tenant-1", now=now)
+    assert initial_res.status == "UNKNOWN"
+
+    # Worker records heartbeat and sync success
+    worker_tracker.record_worker_heartbeat("worker-bg", at=now)
+    worker_tracker.record_sync_success("conversations", at=now - timedelta(seconds=5), tenant_id="tenant-1")
+
+    # API tracker automatically reloads on read from the shared persistent file!
+    assert api_tracker.is_worker_active(now) is True
+    freshness = api_tracker.compute_freshness("conversations", tenant_id="tenant-1", now=now)
+    assert freshness.status == "REALTIME"
+    assert freshness.lag_seconds == 5.0
+
+
+def test_outbox_deletion_never_drops_concurrent_runs_or_outbox_jobs() -> None:
+    from unittest.mock import MagicMock
+
+    from agent_service.operations.access import ActorContext
+    from ai_ops_backoffice.evaluation_domain.job_repository import InMemoryJobRepository
+    from ai_ops_backoffice.evaluation_domain.models import EvalSet, EvalSetVersion
+    from ai_ops_backoffice.evaluation_domain.repository import InMemoryEvaluationRepository
+    from ai_ops_backoffice.evaluation_domain.run_service import EvaluationRunService
+    from ai_ops_backoffice.evaluation_domain.runner_models import RunPreflightResult, TargetManifest
+
+    repo = InMemoryEvaluationRepository()
+    actor = ActorContext(
+        user_id="user-ops",
+        display_name="Ops Lead",
+        role="AI_ADMIN",
+        owner_unit_ids=("it_support",),
+        tenant_id="tenant-outbox",
+    )
+    now = datetime.now(timezone.utc)
+    eval_set = EvalSet(
+        set_id="set-race-1",
+        tenant_id="tenant-outbox",
+        owner_unit_ids=("it_support",),
+        name="Connectivity Set",
+        lead_owner="tester",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+    set_ver = EvalSetVersion(
+        set_version_id="sv-race-1",
+        set_id="set-race-1",
+        version=1,
+        case_revision_ids=(),
+        manifest_hash="hash-race",
+        created_by="tester",
+        created_at=now,
+        etag=1,
+    )
+    repo.commit_mutation(repo.load().model_copy(update={
+        "sets": (eval_set,),
+        "set_versions": (set_ver,),
+    }))
+
+    manifest = TargetManifest(target_id="tgt-1", target_side="BASELINE", manifest_hash="h1")
+    preflight = RunPreflightResult(
+        is_valid=True,
+        resolved_baseline_manifest=manifest,
+        resolved_candidate_manifest=manifest,
+        blocking_errors=(),
+        is_eval_eligible=True,
+    )
+    resolver = MagicMock()
+    resolver.preflight_run.return_value = preflight
+
+    job_repo = InMemoryJobRepository()
+    service = EvaluationRunService(
+        repository=repo,
+        manifest_resolver=resolver,
+        job_repository=job_repo,
+    )
+
+    # 1. Create Run 1 which enqueues outbox job 1
+    res1 = service.create_run(
+        actor=actor,
+        set_version_id="sv-race-1",
+        baseline_target={"manifest_hash": "h1"},
+        candidate_target={"manifest_hash": "h1"},
+    )
+    run_id_1 = res1["runId"]
+
+    # 2. Concurrently create Run 2 which enqueues outbox job 2
+    res2 = service.create_run(
+        actor=actor,
+        set_version_id="sv-race-1",
+        baseline_target={"manifest_hash": "h2"},
+        candidate_target={"manifest_hash": "h2"},
+    )
+    run_id_2 = res2["runId"]
+
+    # Now verify both runs exist in the repository
+    assert repo.get_run(run_id_1) is not None
+    assert repo.get_run(run_id_2) is not None
+    state_before_removal = repo.load()
+    assert len(state_before_removal.runs) == 2
+
+    # 3. Simulate Worker finishing Job 1 and calling delete_outbox_jobs on outbox job 1
+    # Notice that when execute_inline is not used, create_run enqueues to job_repo and immediately deletes from outbox if dispatch succeeds.
+    # To test delete_outbox_jobs specifically:
+    # If job was already removed during dispatch, add mock outbox jobs to test targeted delete_outbox_jobs
+    repo.commit_mutation(repo.load().model_copy(update={
+        "outbox_jobs": (
+            {"outbox_id": "outbox-1", "run_id": run_id_1},
+            {"outbox_id": "outbox-2", "run_id": run_id_2},
+        )
+    }))
+    assert len(repo.load().outbox_jobs) == 2
+
+    # Call _remove_outbox_job on outbox-1
+    service._remove_outbox_job("outbox-1")
+
+    # 4. Critical Assertion:
+    # Removing Outbox Job 1 MUST NOT overwrite or drop Run 2 or outbox-2!
+    state_after = repo.load()
+    assert repo.get_run(run_id_1) is not None
+    assert repo.get_run(run_id_2) is not None
+    assert len(state_after.runs) == 2
+    remaining_outbox_ids = [str(j.get("outbox_id", j.get("job_id"))) for j in state_after.outbox_jobs]
+    assert "outbox-1" not in remaining_outbox_ids
+    assert "outbox-2" in remaining_outbox_ids
+
+
+@pytest.mark.asyncio
+async def test_standalone_worker_health_server_and_file_touch(tmp_path) -> None:
+    import asyncio
+
+    import httpx
+
+    from ai_ops_backoffice.worker_main import _run_health_file_touch, _start_health_server
+
+    # 1. Test health file touch
+    health_file = tmp_path / "worker_health.txt"
+    stop_file_touch = asyncio.Event()
+    touch_task = asyncio.create_task(_run_health_file_touch(health_file, stop_file_touch, interval=0.01))
+    await asyncio.sleep(0.03)
+    stop_file_touch.set()
+    await touch_task
+
+    assert health_file.is_file()
+    content = health_file.read_text(encoding="utf-8").strip()
+    assert "T" in content  # ISO timestamp format
+
+    # 2. Test lightweight health check HTTP server
+    stop_server = asyncio.Event()
+    bound_ports: list[int] = []
+
+    server_task = asyncio.create_task(
+        _start_health_server(
+            "127.0.0.1",
+            0,
+            stop_server,
+            on_started=lambda p: bound_ports.append(p),
+        )
+    )
+
+    # Wait for server to bind
+    for _ in range(50):
+        if bound_ports:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(bound_ports) == 1
+    port = bound_ports[0]
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"http://127.0.0.1:{port}/healthz")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert data["worker"] == "ai_ops_worker"
+
+    stop_server.set()
+    await server_task

@@ -234,6 +234,22 @@ LLM token 來自 provider 回傳的 usage metadata；embedding token 為查詢�
 
 Swagger UI：`http://localhost:8000/docs`
 
+## 背景工作架構與分離部署
+
+在多 instance 正式營運環境（如 Cloud Run 水平擴展或 Kubernetes）中，背景工作（資料保留清理、每日用量彙總、預算警報檢查、評估排程器與執行任務）應運行於獨立的 Worker 程序，以避免多個 API instance 重複執行與並行競態。
+
+1. **API 服務模式**：
+   在對外提供 HTTP 服務的 Pod／容器上設定 `AI_OPS_WORKERS_ENABLED=false`，API 伺服器將正常處理所有請求，但不啟動背景迴圈。
+
+2. **獨立背景 Worker 程序**：
+   執行專用 Worker 進入點：
+   ```bash
+   python -m ai_ops_backoffice.worker_main
+   ```
+   - **健康檢查 Probe**：設定 `AI_OPS_WORKER_PORT` 或 `PORT`（例如 8080），Worker 會啟動輕量 HTTP 探針伺服器，於 `/healthz` 回應 `200 OK`。
+   - **存活用檔案**：設定 `AI_OPS_WORKER_HEALTH_FILE=/tmp/ai_ops_worker_healthy`，可供容器存活探針（liveness probe）檢查檔案更新時間。
+   - **狀態共享**：請確保 API 與 Worker 連接相同的 Firestore 儲存庫或共享檔案（`sync_watermarks.json`），以維護同步新鮮度水位與 Heartbeat 一致性。
+
 ## 驗證
 
 ```bash

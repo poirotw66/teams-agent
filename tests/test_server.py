@@ -532,4 +532,98 @@ def test_sources_sso_login_and_callback_flow(tmp_path: Path) -> None:
     assert auto_redirect.headers["location"] == "/rag-sources/sources/corp_guide.md"
 
 
+def test_sources_sso_security_validations_and_subject_alignment(tmp_path: Path) -> None:
+    from urllib.parse import quote
+
+    from teams_agent.source_links import verify_viewer_token
+    from teams_agent.viewer_sessions import get_viewer_membership_store
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "doc.md").write_text("# Doc\n", encoding="utf-8")
+
+    settings = make_settings(
+        tmp_path,
+        source_dir=data_dir,
+        client_id="client-sec-1",
+        client_secret="sec-xyz",
+        tenant_id="tenant-sec-1",
+    )
+    app = create_web_app(settings)
+
+    # Pre-register existing membership with groups ("sec_audit", "it_ops") for Entra object ID
+    entra_oid = "00001111-2222-3333-4444-555566667777"
+    store = get_viewer_membership_store(settings)
+    store.remember(entra_oid, groups=["sec_audit", "it_ops"], tenant_id="tenant-sec-1")
+
+    # Exchanger returns Entra OID and email, with EMPTY groups
+    async def mock_token_exchanger(code: str, redirect_uri: str) -> dict[str, Any]:
+        return {
+            "oid": entra_oid,
+            "sub": "some-sub-id",
+            "preferred_username": "bob@company.com",
+            "email": "bob@company.com",
+            "tenant_id": "tenant-sec-1",
+            "groups": [],  # Empty groups from token
+        }
+
+    app.state.oauth_token_exchanger = mock_token_exchanger
+    client = TestClient(app)
+
+    # 1. Test safe redirect check against open redirect attack
+    malicious_redirect = "//evil.com/phishing"
+    login_resp = client.get(f"/sources/auth/login?redirect_url={quote(malicious_redirect)}", follow_redirects=False)
+    assert login_resp.status_code == 302
+    session_cookie = login_resp.cookies.get("sso_auth_session")
+    assert session_cookie is not None
+    parsed_auth = urlparse(login_resp.headers["location"])
+    auth_params = parse_qs(parsed_auth.query)
+    state = auth_params["state"][0]
+
+    # Callback with malicious redirect falls back to /healthz, NEVER evil.com
+    cb_resp = client.get(f"/sources/auth/callback?code=mock-code&state={state}", follow_redirects=False)
+    assert cb_resp.status_code == 302
+    assert cb_resp.headers["location"] == "/healthz"
+
+    # 2. Subject alignment & groups preservation:
+    # Token subject MUST be entra_oid (not bob@company.com)
+    viewer_token = cb_resp.cookies["teams_viewer_token"]
+    payload = verify_viewer_token(viewer_token, settings)
+    assert payload is not None
+    assert payload["sub"] == entra_oid
+
+    # Existing membership groups ("sec_audit", "it_ops") must NOT have been wiped out by empty groups in token
+    current_membership = store.resolve(entra_oid)
+    assert current_membership is not None
+    assert "sec_audit" in current_membership.groups
+    assert "it_ops" in current_membership.groups
+
+    # 3. One-time state consumption check:
+    # Replaying with the session cookie MUST be rejected with "already been consumed"
+    client.cookies.set("sso_auth_session", session_cookie)
+    replay_resp = client.get(f"/sources/auth/callback?code=mock-code&state={state}", follow_redirects=False)
+    assert replay_resp.status_code == 403
+    assert "already been consumed" in replay_resp.text
+
+    # Replaying without session cookie MUST be rejected with "Missing or invalid SSO session cookie"
+    client.cookies.delete("sso_auth_session")
+    no_cookie_resp = client.get(f"/sources/auth/callback?code=mock-code&state={state}", follow_redirects=False)
+    assert no_cookie_resp.status_code == 403
+    assert "Missing or invalid SSO session cookie" in no_cookie_resp.text
+
+    # 4. CSRF / session cookie binding check: callback without session cookie MUST be rejected with 403
+    client_victim = TestClient(app)
+    login_resp2 = client_victim.get("/sources/auth/login?redirect_url=/sources/doc.md", follow_redirects=False)
+    assert login_resp2.status_code == 302
+    state2 = parse_qs(urlparse(login_resp2.headers["location"]).query)["state"][0]
+
+    # Attacker without victim's session cookie tries to consume victim's state
+    client_attacker = TestClient(app)
+    stolen_state_resp = client_attacker.get(f"/sources/auth/callback?code=mock-code&state={state2}")
+    assert stolen_state_resp.status_code == 403
+    assert "Missing or invalid SSO session cookie" in stolen_state_resp.text
+
+
+
 

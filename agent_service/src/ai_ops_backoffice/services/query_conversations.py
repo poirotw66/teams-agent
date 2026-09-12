@@ -404,16 +404,18 @@ class ConversationsQueryMixin:
         freshness_meta = None
         tracker = getattr(self, "_freshness_tracker", None)
         if tracker is not None:
-            now_dt = datetime.now(timezone.utc)
-            tracker.record_stage_event("conversations", "CONVERSATION_LIST_RENDERED", at=now_dt)
+            now_dt = tracker.now() if hasattr(tracker, "now") else datetime.now(timezone.utc)
+            tenant_id = getattr(actor, "tenant_id", None)
+            tracker.record_stage_event("conversations", "CONVERSATION_LIST_RENDERED", at=now_dt, tenant_id=tenant_id)
             for item in items:
                 for turn in item.get("turns") or []:
                     corr_id = turn.get("correlationId")
                     if corr_id:
-                        tracker.record_stage_event(corr_id, "CONVERSATION_LIST_RENDERED", at=now_dt)
+                        tracker.record_stage_event(corr_id, "CONVERSATION_LIST_RENDERED", at=now_dt, tenant_id=tenant_id)
             freshness_meta = tracker.compute_freshness(
                 resource_type="conversations",
                 watermark=None,
+                tenant_id=tenant_id,
             ).model_dump(mode="json")
         return {
             "items": items,

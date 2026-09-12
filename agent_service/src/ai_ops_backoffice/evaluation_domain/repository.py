@@ -234,6 +234,16 @@ class InMemoryEvaluationRepository:
             )
             self._save(updated)
 
+    def delete_outbox_jobs(self, outbox_ids: set[str] | list[str]) -> None:
+        target_ids = {str(i) for i in outbox_ids}
+        with self._lock:
+            remaining = [
+                j for j in getattr(self._state, "outbox_jobs", ())
+                if str(j.get("outbox_id", j.get("job_id"))) not in target_ids
+            ]
+            self._state = self._state.model_copy(update={"outbox_jobs": tuple(remaining)})
+            self._save(self._state)
+
 
 class FileEvaluationRepository(InMemoryEvaluationRepository):
     def __init__(self, path: Path) -> None:
@@ -321,6 +331,18 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
+    def delete_outbox_jobs(self, outbox_ids: set[str] | list[str]) -> None:
+        import fcntl
+
+        with open(self._lock_path, "w") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                if self._path.exists():
+                    self._state = self._read_file()
+                super().delete_outbox_jobs(outbox_ids)
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
 
 class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
     """Production GCP Firestore repository for evaluations with tenant isolation and CAS."""
@@ -402,6 +424,24 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
             self._state = loaded
         return loaded
 
+    def delete_outbox_jobs(self, outbox_ids: set[str] | list[str]) -> None:
+        target_ids = {str(i) for i in outbox_ids}
+        with self._lock:
+            remaining = [
+                j for j in getattr(self._state, "outbox_jobs", ())
+                if str(j.get("outbox_id", j.get("job_id"))) not in target_ids
+            ]
+            self._state = self._state.model_copy(update={"outbox_jobs": tuple(remaining)})
+        for oid in target_ids:
+            ref = self._col("outbox_jobs").document(oid)
+            if hasattr(ref, "delete"):
+                try:
+                    ref.delete()
+                except Exception:
+                    pass
+            elif hasattr(ref, "coll") and hasattr(ref.coll, "store"):
+                ref.coll.store.pop((ref.coll.name, ref.key), None)
+
     def get_case(self, case_id: str) -> EvalCase | None:
         with self._lock:
             cached = next((c for c in self._state.cases if c.case_id == case_id), None)
@@ -435,40 +475,33 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
         return None
 
     def get_run(self, run_id: str) -> EvaluationRun | None:
-        with self._lock:
-            cached = next((r for r in self._state.runs if r.run_id == run_id), None)
-        if cached is not None:
-            return cached
+        # Mutable entity: Query Firestore directly so multi-instance updates are visible immediately
         doc = self._col("runs").document(run_id).get()
         if getattr(doc, "exists", False) and doc.to_dict():
             data = dict(doc.to_dict())
             data.pop("_revision", None)
             run = EvaluationRun.model_validate(data)
             with self._lock:
-                if not any(r.run_id == run_id for r in self._state.runs):
-                    self._state = self._state.model_copy(update={"runs": self._state.runs + (run,)})
+                runs = [r for r in self._state.runs if r.run_id != run_id] + [run]
+                self._state = self._state.model_copy(update={"runs": tuple(runs)})
             return run
-        return None
+        with self._lock:
+            return next((r for r in self._state.runs if r.run_id == run_id), None)
 
     def get_case_execution(self, execution_id: str) -> CaseExecution | None:
-        with self._lock:
-            cached = next(
-                (e for e in self._state.case_executions if e.execution_id == execution_id), None
-            )
-        if cached is not None:
-            return cached
         doc = self._col("executions").document(execution_id).get()
         if getattr(doc, "exists", False) and doc.to_dict():
             data = dict(doc.to_dict())
             data.pop("_revision", None)
             exec_item = CaseExecution.model_validate(data)
             with self._lock:
-                if not any(e.execution_id == execution_id for e in self._state.case_executions):
-                    self._state = self._state.model_copy(
-                        update={"case_executions": self._state.case_executions + (exec_item,)}
-                    )
+                execs = [e for e in self._state.case_executions if e.execution_id != execution_id] + [exec_item]
+                self._state = self._state.model_copy(
+                    update={"case_executions": tuple(execs)}
+                )
             return exec_item
-        return None
+        with self._lock:
+            return next((e for e in self._state.case_executions if e.execution_id == execution_id), None)
 
     def get_set(self, set_id: str) -> EvalSet | None:
         with self._lock:
@@ -507,22 +540,19 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
         return None
 
     def get_candidate_job(self, job_id: str) -> CandidateGenerationJob | None:
-        with self._lock:
-            cached = next((j for j in self._state.candidate_jobs if j.job_id == job_id), None)
-        if cached is not None:
-            return cached
         doc = self._col("candidate_jobs").document(job_id).get()
         if getattr(doc, "exists", False) and doc.to_dict():
             data = dict(doc.to_dict())
             data.pop("_revision", None)
             job = CandidateGenerationJob.model_validate(data)
             with self._lock:
-                if not any(j.job_id == job_id for j in self._state.candidate_jobs):
-                    self._state = self._state.model_copy(
-                        update={"candidate_jobs": self._state.candidate_jobs + (job,)}
-                    )
+                jobs = [j for j in self._state.candidate_jobs if j.job_id != job_id] + [job]
+                self._state = self._state.model_copy(
+                    update={"candidate_jobs": tuple(jobs)}
+                )
             return job
-        return None
+        with self._lock:
+            return next((j for j in self._state.candidate_jobs if j.job_id == job_id), None)
 
     def commit_mutation(
         self,

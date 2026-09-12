@@ -244,9 +244,26 @@ rate table (USD); unknown models log tokens only and skip pricing.
 
 Swagger UI: `http://localhost:8000/docs`
 
+## Background Worker Architecture & Decoupling
+
+In multi-instance production deployments (e.g. Cloud Run with auto-scaling or Kubernetes), background workers (retention sweep, daily aggregates, budget alerts, evaluation scheduler, and job executor) should run in a dedicated worker process to avoid redundant executions and race conditions across API instances.
+
+1. **API Server Mode**:
+   Set `AI_OPS_WORKERS_ENABLED=false` on web-facing pods/services. The API server will serve all HTTP requests without launching background task loops.
+
+2. **Dedicated Worker Process**:
+   Run the dedicated worker entrypoint:
+   ```bash
+   python -m ai_ops_backoffice.worker_main
+   ```
+   - **Healthcheck Probe**: Configure `AI_OPS_WORKER_PORT` or `PORT` (e.g. 8080) for an HTTP healthcheck server responding with `200 OK` on `/healthz`.
+   - **Liveness File**: Configure `AI_OPS_WORKER_HEALTH_FILE=/tmp/ai_ops_worker_healthy` for container file-based liveness probes.
+   - **Shared State**: Ensure both API and Worker processes share the same Firestore configuration or persistent volume (`sync_watermarks.json`) so sync freshness and heartbeats are observed consistently.
+
 ## Verification
 
 ```bash
 uv run pytest -q
 uv run ruff check src tests
 ```
+

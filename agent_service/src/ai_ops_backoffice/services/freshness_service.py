@@ -6,7 +6,7 @@ import threading
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from agent_service.operations.contracts import FreshnessMetadata, utc_now
 
@@ -33,6 +33,7 @@ class FreshnessTracker:
         heartbeat_interval_seconds: float = 300.0,
         max_stage_events: int = 5000,
         persistent_path: Path | None = None,
+        clock: Any = None,
     ) -> None:
         self._lock = threading.RLock()
         # Stale threshold must exceed the heartbeat interval or healthy workers look dead.
@@ -43,51 +44,93 @@ class FreshnessTracker:
         self._realtime_lag_threshold = realtime_lag_threshold_seconds
         self._max_stage_events = max_stage_events
         self._persistent_path = persistent_path
+        self._clock = clock
+        self._last_mtime: float = 0.0
         self._last_worker_heartbeat: datetime | None = None
         self._is_worker_connected: bool = True
+        self._worker_heartbeats: dict[str, datetime] = {}
         self._last_successful_sync: dict[str, datetime] = {}
         # correlation_id -> stage -> timestamp with bounded FIFO capacity
-        self._stage_events: OrderedDict[str, dict[str, datetime]] = OrderedDict()
+        self._stage_events: OrderedDict[str, dict[str, Any]] = OrderedDict()
         if self._persistent_path and self._persistent_path.exists():
             self._load_persistent_sync()
+
+    def now(self) -> datetime:
+        return self._clock() if self._clock is not None else utc_now()
 
     def _load_persistent_sync(self) -> None:
         try:
             if self._persistent_path and self._persistent_path.exists():
-                data = json.loads(self._persistent_path.read_text(encoding="utf-8"))
-                for k, v in data.items():
-                    if isinstance(v, str):
-                        self._last_successful_sync[k] = datetime.fromisoformat(v)
+                self._last_mtime = self._persistent_path.stat().st_mtime
+                raw = self._persistent_path.read_text(encoding="utf-8")
+                if not raw.strip():
+                    return
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    watermarks = data.get("watermarks") if "watermarks" in data and isinstance(data["watermarks"], dict) else data
+                    for k, v in watermarks.items():
+                        if isinstance(v, str) and k != "heartbeats":
+                            try:
+                                self._last_successful_sync[k] = datetime.fromisoformat(v)
+                            except Exception:
+                                pass
+                    hb_data = data.get("heartbeats") if "heartbeats" in data and isinstance(data["heartbeats"], dict) else {}
+                    for wid, ts_str in hb_data.items():
+                        if isinstance(ts_str, str):
+                            try:
+                                hb_dt = datetime.fromisoformat(ts_str)
+                                self._worker_heartbeats[wid] = hb_dt
+                                if self._last_worker_heartbeat is None or hb_dt > self._last_worker_heartbeat:
+                                    self._last_worker_heartbeat = hb_dt
+                            except Exception:
+                                pass
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load persistent sync watermarks: %s", exc)
+
+    def _reload_persistent_sync_if_needed(self) -> None:
+        if self._persistent_path and self._persistent_path.exists():
+            try:
+                mtime = self._persistent_path.stat().st_mtime
+                if mtime > self._last_mtime:
+                    self._load_persistent_sync()
+            except Exception:
+                pass
 
     def _save_persistent_sync(self) -> None:
         try:
             if self._persistent_path:
                 self._persistent_path.parent.mkdir(parents=True, exist_ok=True)
-                data = {k: v.isoformat() for k, v in self._last_successful_sync.items()}
+                payload = {
+                    "watermarks": {k: v.isoformat() for k, v in self._last_successful_sync.items()},
+                    "heartbeats": {k: v.isoformat() for k, v in self._worker_heartbeats.items()},
+                }
                 tmp = self._persistent_path.with_suffix(".tmp")
-                tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
                 tmp.replace(self._persistent_path)
+                self._last_mtime = self._persistent_path.stat().st_mtime
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to save persistent sync watermarks: %s", exc)
 
     def record_worker_heartbeat(self, worker_id: str = "worker-1", at: datetime | None = None) -> None:
+        now_val = at or self.now()
         with self._lock:
-            self._last_worker_heartbeat = at or utc_now()
+            self._last_worker_heartbeat = now_val
             self._is_worker_connected = True
+            self._worker_heartbeats[worker_id] = now_val
+            self._save_persistent_sync()
 
     def set_worker_disconnected(self) -> None:
         with self._lock:
             self._is_worker_connected = False
 
     def is_worker_active(self, now: datetime | None = None) -> bool:
+        self._reload_persistent_sync_if_needed()
         with self._lock:
             if not self._is_worker_connected:
                 return False
             if self._last_worker_heartbeat is None:
                 return False
-            check_time = now or utc_now()
+            check_time = now or self.now()
             elapsed = (check_time - self._last_worker_heartbeat).total_seconds()
             return elapsed <= self._worker_stale_threshold
 
@@ -96,13 +139,17 @@ class FreshnessTracker:
         correlation_id: str,
         stage: StageName,
         at: datetime | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         """Records a timestamp for an event stage tagged by correlationId (A05-T1)."""
+        now_val = at or self.now()
         with self._lock:
             if correlation_id not in self._stage_events and len(self._stage_events) >= self._max_stage_events:
                 self._stage_events.popitem(last=False)
             entry = self._stage_events.setdefault(correlation_id, {})
-            entry[stage] = at or utc_now()
+            entry[stage] = now_val
+            if tenant_id:
+                entry["_tenant_id"] = tenant_id
 
     def record_sync_success(
         self,
@@ -111,11 +158,10 @@ class FreshnessTracker:
         tenant_id: str | None = None,
     ) -> None:
         key = f"{tenant_id}:{resource_type}" if tenant_id else resource_type
-        now_val = at or utc_now()
+        now_val = at or self.now()
         with self._lock:
             self._last_successful_sync[key] = now_val
-            if tenant_id:
-                self._last_successful_sync[resource_type] = now_val
+            # Strictly tenant-isolated: do not update global key when tenant_id is provided
             self._save_persistent_sync()
 
     def compute_freshness(
@@ -132,20 +178,24 @@ class FreshnessTracker:
         EVENT_INGESTED / AGGREGATION_COMPLETED stage or last successful sync.
         UI render time (CONVERSATION_LIST_RENDERED) is never used as sync evidence.
         """
-        now_dt = now or utc_now()
+        self._reload_persistent_sync_if_needed()
+        now_dt = now or self.now()
         with self._lock:
             worker_alive = self.is_worker_active(now_dt)
-            lookup_key = f"{tenant_id}:{resource_type}" if tenant_id else resource_type
-            last_sync = self._last_successful_sync.get(lookup_key)
-            if last_sync is None and tenant_id:
-                last_sync = self._last_successful_sync.get(resource_type)
-            if last_sync is None:
-                norm_key = (resource_type or "").strip().lower()
-                for alt in (norm_key.replace("_", "-"), norm_key.replace("-", "_")):
-                    if alt in self._last_successful_sync:
-                        last_sync = self._last_successful_sync[alt]
-                        break
-            pipeline_watermark = self._latest_pipeline_watermark(resource_type)
+            if tenant_id:
+                lookup_key = f"{tenant_id}:{resource_type}"
+                last_sync = self._last_successful_sync.get(lookup_key)
+            else:
+                lookup_key = resource_type
+                last_sync = self._last_successful_sync.get(lookup_key)
+                if last_sync is None:
+                    norm_key = (resource_type or "").strip().lower()
+                    for alt in (norm_key.replace("_", "-"), norm_key.replace("-", "_")):
+                        if alt in self._last_successful_sync:
+                            last_sync = self._last_successful_sync[alt]
+                            break
+
+            pipeline_watermark = self._latest_pipeline_watermark(resource_type, tenant_id=tenant_id)
 
             # Explicit watermark wins for callers that already resolved pipeline time.
             # Otherwise prefer ingest/aggregation completion or last_sync.
@@ -196,7 +246,7 @@ class FreshnessTracker:
                 last_successful_sync_at=last_sync,
             )
 
-    def _latest_pipeline_watermark(self, resource_type: str) -> datetime | None:
+    def _latest_pipeline_watermark(self, resource_type: str, tenant_id: str | None = None) -> datetime | None:
         norm = (resource_type or "").strip().lower()
         if norm == "conversations":
             primary_stages: tuple[StageName, ...] = ("EVENT_INGESTED",)
@@ -216,31 +266,39 @@ class FreshnessTracker:
                 "EVENT_INGESTED",
                 "SOURCE_SYNC_COMPLETED",
             )
-        return self._scan_stages(norm, primary_stages)
+        return self._scan_stages(norm, primary_stages, tenant_id=tenant_id)
 
-    def _latest_ui_render_watermark(self, resource_type: str) -> datetime | None:
+    def _latest_ui_render_watermark(self, resource_type: str, tenant_id: str | None = None) -> datetime | None:
         norm = (resource_type or "").strip().lower()
-        return self._scan_stages(norm, ("CONVERSATION_LIST_RENDERED",))
+        return self._scan_stages(norm, ("CONVERSATION_LIST_RENDERED",), tenant_id=tenant_id)
 
-    def _scan_stages(self, norm: str, stages: tuple[StageName, ...]) -> datetime | None:
+    def _scan_stages(
+        self,
+        norm: str,
+        stages: tuple[StageName, ...],
+        tenant_id: str | None = None,
+    ) -> datetime | None:
         if not stages:
             return None
         latest: datetime | None = None
-        for key in (norm, norm.replace("_", "-"), norm.replace("-", "_")):
+        keys_to_check = [f"{tenant_id}:{norm}"] if tenant_id else [norm, norm.replace("_", "-"), norm.replace("-", "_")]
+        for key in keys_to_check:
             if key in self._stage_events:
                 for stage in stages:
                     stamp = self._stage_events[key].get(stage)
-                    if stamp is not None and (latest is None or stamp > latest):
+                    if isinstance(stamp, datetime) and (latest is None or stamp > latest):
                         latest = stamp
         if latest is not None:
             return latest
+
         for st in self._stage_events.values():
+            if tenant_id is not None and st.get("_tenant_id") != tenant_id:
+                continue
             for stage in stages:
                 stamp = st.get(stage)
-                if stamp is None:
-                    continue
-                if latest is None or stamp > latest:
-                    latest = stamp
+                if isinstance(stamp, datetime):
+                    if latest is None or stamp > latest:
+                        latest = stamp
         return latest
 
     def calculate_p95_latency(

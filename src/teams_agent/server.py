@@ -21,6 +21,7 @@ import hmac
 import html
 import json
 import logging
+import threading
 import time
 import uuid
 from typing import Any
@@ -145,6 +146,46 @@ def build_readiness(settings: AgentSettings) -> dict[str, object]:
         "teamsAuth": "ready" if settings.teams_auth_ready else "not_configured",
         "ragImages": "ready" if settings.images_ready else "disabled",
     }
+
+
+_consumed_sso_states: dict[str, float] = {}
+_sso_lock = threading.Lock()
+
+
+def _is_safe_redirect_target(url: str, allowed_base_url: str | None = None) -> bool:
+    if not url:
+        return False
+    # Prohibit protocol-relative and backslash URLs that evade browser domain boundaries
+    if url.startswith(("//", "/\\", "\\\\", "\\/")):
+        return False
+    # Allow safe relative paths
+    if url.startswith("/") and not url.startswith(("//", "/\\")):
+        return True
+    if allowed_base_url:
+        from urllib.parse import urlparse
+        try:
+            target = urlparse(url)
+            base = urlparse(allowed_base_url)
+            return (
+                target.scheme in ("http", "https")
+                and target.scheme == base.scheme
+                and target.netloc == base.netloc
+            )
+        except ValueError:
+            return False
+    return False
+
+
+def _mark_sso_state_consumed(state_id: str) -> bool:
+    now_ts = time.time()
+    with _sso_lock:
+        expired = [k for k, ts in _consumed_sso_states.items() if now_ts - ts > 600]
+        for k in expired:
+            _consumed_sso_states.pop(k, None)
+        if state_id in _consumed_sso_states:
+            return False
+        _consumed_sso_states[state_id] = now_ts
+        return True
 
 
 def create_web_app(
@@ -416,7 +457,7 @@ def create_web_app(
         redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
         auth_subject = _authenticated_viewer_subject(request, settings)
         if auth_subject:
-            target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+            target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
             return Response(status_code=302, headers={"Location": target})
 
         tenant_id = settings.tenant_id or "common"
@@ -431,15 +472,26 @@ def create_web_app(
         base_url = settings.public_base_url or str(request.base_url).rstrip("/")
         callback_url = f"{base_url}/sources/auth/callback"
 
+        state_id = uuid.uuid4().hex
+        nonce = uuid.uuid4().hex
         state_payload = {
+            "state_id": state_id,
             "redirect_url": redirect_url,
             "ts": time.time(),
-            "nonce": uuid.uuid4().hex,
         }
         secret = settings.asset_signing_key or settings.api_token or "viewer-state-secret"
         state_bytes = json.dumps(state_payload, sort_keys=True).encode("utf-8")
         sig = hmac.new(secret.encode("utf-8"), state_bytes, hashlib.sha256).hexdigest()
         state_param = f"{base64.urlsafe_b64encode(state_bytes).decode('ascii')}.{sig}"
+
+        session_payload = {
+            "state_id": state_id,
+            "nonce": nonce,
+            "ts": time.time(),
+        }
+        session_bytes = json.dumps(session_payload, sort_keys=True).encode("utf-8")
+        session_sig = hmac.new(secret.encode("utf-8"), session_bytes, hashlib.sha256).hexdigest()
+        session_cookie_val = f"{base64.urlsafe_b64encode(session_bytes).decode('ascii')}.{session_sig}"
 
         auth_url = (
             f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
@@ -449,8 +501,17 @@ def create_web_app(
             f"&response_mode=query"
             f"&scope=openid%20profile%20email"
             f"&state={quote(state_param)}"
+            f"&nonce={quote(nonce)}"
         )
-        return Response(status_code=302, headers={"Location": auth_url})
+        resp = Response(status_code=302, headers={"Location": auth_url})
+        resp.set_cookie(
+            "sso_auth_session",
+            session_cookie_val,
+            max_age=600,
+            httponly=True,
+            samesite="lax",
+        )
+        return resp
 
     @app.get("/sources/auth/callback")
     async def viewer_auth_callback(request: Request) -> Response:
@@ -472,8 +533,34 @@ def create_web_app(
         except Exception as err:
             raise HTTPException(status_code=403, detail="Invalid or expired SSO state.") from err
 
-        redirect_url = str(state_data.get("redirect_url") or "")
-        target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+        state_id = str(state_data.get("state_id") or "")
+
+        # Verify browser session cookie binding
+        raw_session_cookie = request.cookies.get("sso_auth_session")
+        if not raw_session_cookie or "." not in raw_session_cookie:
+            raise HTTPException(status_code=403, detail="Missing or invalid SSO session cookie (CSRF protection).")
+
+        raw_sess, _, sess_sig = raw_session_cookie.partition(".")
+        try:
+            sess_bytes = base64.urlsafe_b64decode(raw_sess.encode("ascii"))
+            expected_sess_sig = hmac.new(secret.encode("utf-8"), sess_bytes, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sess_sig, expected_sess_sig):
+                raise HTTPException(status_code=403, detail="Invalid SSO session signature.")
+            session_data = json.loads(sess_bytes.decode("utf-8"))
+        except Exception as err:
+            raise HTTPException(status_code=403, detail="Corrupted SSO session cookie.") from err
+
+        if not state_id or session_data.get("state_id") != state_id:
+            raise HTTPException(status_code=403, detail="SSO state does not match login session.")
+
+        # One-time state consumption check
+        if not _mark_sso_state_consumed(state_id):
+            raise HTTPException(status_code=403, detail="SSO state has already been consumed.")
+
+        expected_nonce = str(session_data.get("nonce") or "")
+
+        raw_redirect_url = str(state_data.get("redirect_url") or "")
+        target = raw_redirect_url if _is_safe_redirect_target(raw_redirect_url, settings.public_base_url) else "/healthz"
 
         base_url = settings.public_base_url or str(request.base_url).rstrip("/")
         callback_url = f"{base_url}/sources/auth/callback"
@@ -487,7 +574,13 @@ def create_web_app(
         token_exchanger = getattr(request.app.state, "oauth_token_exchanger", None)
         if token_exchanger is not None:
             token_data = await token_exchanger(code, callback_url)
-            subject = token_data.get("sub") or token_data.get("email") or token_data.get("oid")
+            # Entra Object ID (oid) takes highest priority to align with Teams entraObjectId
+            subject = (
+                token_data.get("oid")
+                or token_data.get("sub")
+                or token_data.get("preferred_username")
+                or token_data.get("email")
+            )
             groups = list(token_data.get("groups") or [])
             if token_data.get("tenant_id"):
                 tenant_id = token_data["tenant_id"]
@@ -513,7 +606,27 @@ def create_web_app(
                         if len(parts) >= 2:
                             padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
                             claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
-                            subject = claims.get("preferred_username") or claims.get("email") or claims.get("oid") or claims.get("sub")
+
+                            # Validate token claims (exp, aud, iss, nonce)
+                            now_ts = time.time()
+                            exp = claims.get("exp")
+                            if exp is not None and float(exp) < now_ts - 60:
+                                raise HTTPException(status_code=401, detail="ID token has expired.")
+                            aud = claims.get("aud")
+                            if aud and aud != client_id:
+                                raise HTTPException(status_code=401, detail="ID token audience mismatch.")
+                            token_nonce = claims.get("nonce")
+                            if expected_nonce and token_nonce and token_nonce != expected_nonce:
+                                raise HTTPException(status_code=401, detail="ID token nonce mismatch.")
+
+                            # Align subject: prefer Entra Object ID (oid) to match Teams entraObjectId
+                            subject = (
+                                claims.get("oid")
+                                or claims.get("sub")
+                                or claims.get("preferred_username")
+                                or claims.get("email")
+                            )
+                            groups = list(claims.get("groups") or [])
                             tid = claims.get("tid")
                             if tid:
                                 tenant_id = tid
@@ -522,6 +635,11 @@ def create_web_app(
             raise HTTPException(status_code=401, detail="Failed to resolve authenticated subject from SSO.")
 
         store = get_viewer_membership_store(settings)
+        # Do not overwrite existing valid membership groups with empty groups
+        existing_membership = store.resolve(subject)
+        if not groups and existing_membership and existing_membership.groups:
+            groups = list(existing_membership.groups)
+
         store.remember(subject, groups=groups, tenant_id=tenant_id)
 
         viewer_token = create_viewer_token(
@@ -537,6 +655,8 @@ def create_web_app(
             httponly=True,
             samesite="lax",
         )
+        # One-time consumption: delete SSO auth session cookie
+        resp.delete_cookie("sso_auth_session")
         return resp
 
     @app.post("/sources/login")

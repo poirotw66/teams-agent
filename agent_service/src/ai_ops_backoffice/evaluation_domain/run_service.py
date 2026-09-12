@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -13,6 +14,7 @@ from .errors import (
     EvaluationAuthorizationError,
     EvaluationNotFoundError,
     EvaluationValidationError,
+    EvaluationVersionConflictError,
 )
 from .job_models import ExecutionJob
 from .job_repository import JobRepository
@@ -158,12 +160,7 @@ class EvaluationRunService:
             else (self._job_repo is None)
         )
 
-        state = self._repo.load()
-        runs = list(state.runs)
-        runs.append(run)
-
         outbox_entry: dict[str, Any] | None = None
-        new_outbox = list(getattr(state, "outbox_jobs", ()))
         if not should_execute_inline and self._job_repo:
             job_id = str(uuid.uuid4())
             logical_key = f"run:{tenant_id}:{run_id}"
@@ -177,28 +174,44 @@ class EvaluationRunService:
                 "created_at": now.isoformat(),
                 "attempts": 0,
             }
-            new_outbox.append(outbox_entry)
 
-        new_state = state.model_copy(
-            update={"runs": tuple(runs), "outbox_jobs": tuple(new_outbox)}
-        )
+        max_retries = 5
+        for attempt in range(max_retries):
+            state = self._repo.load()
+            runs = list(state.runs)
+            runs.append(run)
 
-        audit = EvaluationAuditEvent(
-            audit_id=str(uuid.uuid4()),
-            entity_type="EVAL_RUN",
-            entity_id=run_id,
-            action="CREATE_RUN",
-            actor_id=actor.user_id if actor else "system",
-            actor_role=actor.role if actor else "SYSTEM",
-            owner_unit_id=owner_unit,
-            tenant_id=tenant_id,
-            before=None,
-            after={"run_id": run_id, "status": "QUEUED"},
-            reason="Queued new evaluation run",
-            occurred_at=now,
-            correlation_id=correlation_id,
-        )
-        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
+            new_outbox = list(getattr(state, "outbox_jobs", ()))
+            if outbox_entry is not None:
+                new_outbox.append(outbox_entry)
+
+            new_state = state.model_copy(
+                update={"runs": tuple(runs), "outbox_jobs": tuple(new_outbox)}
+            )
+
+            audit = EvaluationAuditEvent(
+                audit_id=str(uuid.uuid4()),
+                entity_type="EVAL_RUN",
+                entity_id=run_id,
+                action="CREATE_RUN",
+                actor_id=actor.user_id if actor else "system",
+                actor_role=actor.role if actor else "SYSTEM",
+                owner_unit_id=owner_unit,
+                tenant_id=tenant_id,
+                before=None,
+                after={"run_id": run_id, "status": "QUEUED"},
+                reason="Queued new evaluation run",
+                occurred_at=now,
+                correlation_id=correlation_id,
+            )
+            try:
+                self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
+                break
+            except EvaluationVersionConflictError:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+                continue
 
         if should_execute_inline:
             run = self._runner.execute_run(run_id)
@@ -247,17 +260,20 @@ class EvaluationRunService:
 
     def _remove_outbox_job(self, outbox_id: str) -> None:
         try:
-            cur_state = self._repo.load()
-            remaining = [
-                j for j in getattr(cur_state, "outbox_jobs", ())
-                if j.get("outbox_id") != outbox_id and j.get("job_id") != outbox_id
-            ]
-            if len(remaining) != len(getattr(cur_state, "outbox_jobs", ())):
+            if hasattr(self._repo, "delete_outbox_jobs"):
+                self._repo.delete_outbox_jobs([outbox_id])
+            else:
+                cur_state = self._repo.load()
+                remaining = [
+                    j for j in getattr(cur_state, "outbox_jobs", ())
+                    if j.get("outbox_id") != outbox_id and j.get("job_id") != outbox_id
+                ]
                 self._repo.commit_mutation(
-                    cur_state.model_copy(update={"outbox_jobs": tuple(remaining)})
+                    cur_state.model_copy(update={"outbox_jobs": tuple(remaining)}),
+                    expected_revision=cur_state.revision,
                 )
-        except Exception:
-            pass
+        except Exception as err:
+            logger.warning("Failed to remove dispatched outbox job %s: %s", outbox_id, err)
 
     def _mark_run_enqueue_failed(
         self,
@@ -302,16 +318,21 @@ class EvaluationRunService:
                 recovered += 1
 
         if dispatched_ids:
-            remaining_outbox = [
-                oj for oj in outbox_jobs
-                if str(oj.get("outbox_id", oj.get("job_id"))) not in dispatched_ids
-            ]
             try:
-                self._repo.commit_mutation(
-                    state.model_copy(update={"outbox_jobs": tuple(remaining_outbox)})
-                )
-            except Exception:
-                pass
+                if hasattr(self._repo, "delete_outbox_jobs"):
+                    self._repo.delete_outbox_jobs(dispatched_ids)
+                else:
+                    cur_state = self._repo.load()
+                    remaining = [
+                        oj for oj in getattr(cur_state, "outbox_jobs", ())
+                        if str(oj.get("outbox_id", oj.get("job_id"))) not in dispatched_ids
+                    ]
+                    self._repo.commit_mutation(
+                        cur_state.model_copy(update={"outbox_jobs": tuple(remaining)}),
+                        expected_revision=cur_state.revision,
+                    )
+            except Exception as err:
+                logger.warning("Failed to remove dispatched outbox jobs during recovery: %s", err)
 
         # Phase 2: Defense in depth for legacy runs without outbox entry
         for run in self._repo.list_runs():
