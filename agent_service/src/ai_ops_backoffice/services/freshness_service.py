@@ -217,16 +217,20 @@ class FreshnessTracker:
             worker_alive = self.is_worker_active(now_dt)
             if tenant_id:
                 lookup_key = f"{tenant_id}:{resource_type}"
-                last_sync = self._last_successful_sync.get(lookup_key)
+                last_sync = self._store.get_watermark(lookup_key)
+                if last_sync is None and self._firestore_client is not None:
+                    last_sync = self._store.get_watermark(lookup_key, fetch_remote=True)
             else:
                 lookup_key = resource_type
-                last_sync = self._last_successful_sync.get(lookup_key)
+                last_sync = self._store.get_watermark(lookup_key)
                 if last_sync is None:
                     norm_key = (resource_type or "").strip().lower()
                     for alt in (norm_key.replace("_", "-"), norm_key.replace("-", "_")):
                         if alt in self._last_successful_sync:
                             last_sync = self._last_successful_sync[alt]
                             break
+                if last_sync is None and self._firestore_client is not None:
+                    last_sync = self._store.get_watermark(lookup_key, fetch_remote=True)
 
             pipeline_watermark = self._latest_pipeline_watermark(resource_type, tenant_id=tenant_id)
 
@@ -254,9 +258,11 @@ class FreshnessTracker:
                 )
 
             # Resolve backlog state and freshness
-            stored_backlog = self._pending_backlog.get(lookup_key)
+            stored_backlog = self._store.get_backlog(lookup_key)
+            if stored_backlog is None and self._firestore_client is not None:
+                stored_backlog = self._store.get_backlog(lookup_key, fetch_remote=True)
             if stored_backlog is None and not tenant_id:
-                stored_backlog = self._pending_backlog.get(resource_type)
+                stored_backlog = self._store.get_backlog(resource_type)
 
             effective_backlog_count = backlog_count
             effective_oldest_pending = None

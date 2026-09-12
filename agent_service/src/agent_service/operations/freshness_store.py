@@ -287,9 +287,37 @@ class FreshnessStore:
             self._save_persistent()
             self._save_firestore_heartbeat(worker_id, at)
 
-    def get_heartbeat(self, worker_id: str) -> datetime | None:
+    def get_heartbeat(self, worker_id: str, *, fetch_remote: bool = False) -> datetime | None:
         with self._lock:
-            return self._worker_heartbeats.get(worker_id)
+            val = self._worker_heartbeats.get(worker_id)
+            if val is not None and not fetch_remote:
+                return val
+
+        if fetch_remote and self._firestore_client is not None:
+            remote_val = self._fetch_remote_heartbeat(worker_id)
+            if remote_val is not None:
+                with self._lock:
+                    cur = self._worker_heartbeats.get(worker_id)
+                    if cur is None or remote_val > cur:
+                        self._worker_heartbeats[worker_id] = remote_val
+                        return remote_val
+        return val
+
+    def _fetch_remote_heartbeat(self, worker_id: str) -> datetime | None:
+        """Perform O(1) single-document Firestore lookup for hb_{worker_id}."""
+        try:
+            col = self._firestore_client.collection(self._firestore_collection)
+            doc_id = f"hb_{worker_id}"
+            ref = col.document(doc_id)
+            snap = ref.get() if hasattr(ref, "get") else None
+            if snap and getattr(snap, "exists", False):
+                data = snap.to_dict() or {}
+                at_str = data.get("at")
+                if isinstance(at_str, str):
+                    return datetime.fromisoformat(at_str)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed remote heartbeat lookup for %s: %s", worker_id, exc)
+        return None
 
     def get_latest_heartbeat(self) -> datetime | None:
         with self._lock:
@@ -411,9 +439,42 @@ class FreshnessStore:
             self._save_persistent()
             self._save_firestore_backlog(key, max(0, count), oldest_pending_at, at)
 
-    def get_backlog(self, key: str) -> dict[str, Any] | None:
+    def get_backlog(self, key: str, *, fetch_remote: bool = False) -> dict[str, Any] | None:
         with self._lock:
-            return self._pending_backlog.get(key)
+            val = self._pending_backlog.get(key)
+            if val is not None and not fetch_remote:
+                return val
+
+        if fetch_remote and self._firestore_client is not None:
+            remote_val = self._fetch_remote_backlog(key)
+            if remote_val is not None:
+                with self._lock:
+                    self._pending_backlog[key] = remote_val
+                    return remote_val
+        return val
+
+    def _fetch_remote_backlog(self, key: str) -> dict[str, Any] | None:
+        """Perform O(1) single-document Firestore lookup for bl_{key}."""
+        try:
+            col = self._firestore_client.collection(self._firestore_collection)
+            doc_id = f"bl_{key.replace(':', '_')}"
+            ref = col.document(doc_id)
+            snap = ref.get() if hasattr(ref, "get") else None
+            if snap and getattr(snap, "exists", False):
+                data = snap.to_dict() or {}
+                count = data.get("count", 0)
+                oldest_raw = data.get("oldest_pending_at")
+                oldest_dt = datetime.fromisoformat(oldest_raw) if oldest_raw else None
+                rec_raw = data.get("recorded_at")
+                rec_dt = datetime.fromisoformat(rec_raw) if rec_raw else None
+                return {
+                    "count": count,
+                    "oldest_pending_at": oldest_dt,
+                    "recorded_at": rec_dt,
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed remote backlog lookup for %s: %s", key, exc)
+        return None
 
     def _save_firestore_backlog(
         self,
