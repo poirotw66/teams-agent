@@ -53,11 +53,8 @@ def _build_primary_store(settings: OpsSettings) -> MemoryOperationalStore | File
 
 
 def build_freshness_recorder(settings: OpsSettings) -> FreshnessRecorder | None:
-    """Instantiate the standard FreshnessTracker based on configured storage mode."""
-    try:
-        from ai_ops_backoffice.services.freshness_service import FreshnessTracker
-    except ImportError:
-        return None
+    """Instantiate the standard OperationsFreshnessRecorder based on configured storage mode."""
+    from .freshness_recorder import OperationsFreshnessRecorder
 
     firestore_client = None
     if settings.store_mode == "FIRESTORE":
@@ -85,7 +82,7 @@ def build_freshness_recorder(settings: OpsSettings) -> FreshnessRecorder | None:
         else "freshness_state"
     )
 
-    return FreshnessTracker(
+    return OperationsFreshnessRecorder(
         persistent_path=persistent_path,
         firestore_client=firestore_client,
         firestore_collection=collection,

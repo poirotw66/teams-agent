@@ -825,6 +825,7 @@ def create_app(
         require_capability=require_capability,
     )
 
+    app.state.settings = resolved_settings
     app.state.eval_harness_status = eval_harness_status
     app.state.governance_service = governance_service
     app.state.query_service = query_service

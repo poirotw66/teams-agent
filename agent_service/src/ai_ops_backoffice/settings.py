@@ -144,12 +144,49 @@ class BackofficeSettings:
         project_dir = Path(__file__).resolve().parents[2]
         data_dir = Path(os.environ.get("RAG_DATA_DIR", project_dir.parent / "data"))
         ops_dir = Path(os.environ.get("OPS_DATA_DIR", data_dir / "ops"))
+        primary_store_mode = (
+            os.environ.get("OPS_STORE_MODE")
+            or os.environ.get("AI_OPS_STORE_MODE")
+            or "FILE"
+        ).strip().upper()
+
+        def _resolve_store_mode(env_key: str, default: str = "FILE") -> str:
+            val = os.environ.get(env_key)
+            if val is not None and val.strip():
+                return val.strip().upper()
+            if primary_store_mode == "FIRESTORE":
+                return "FIRESTORE"
+            return default.upper()
+
+        resolved_gcp_project = (
+            os.environ.get("AI_OPS_GCP_PROJECT")
+            or os.environ.get("GCP_PROJECT_ID")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCP_PROJECT")
+        )
+
+        resolved_env = (
+            os.environ.get("AI_OPS_DEPLOYMENT_ENV")
+            or os.environ.get("ENVIRONMENT")
+            or os.environ.get("AGENT_DEPLOYMENT_ENV")
+            or os.environ.get("ENV")
+            or "dev"
+        ).strip().lower()
+
         return cls(
             host=os.environ.get("AI_OPS_BACKOFFICE_HOST", "0.0.0.0"),
             port=int(os.environ.get("AI_OPS_BACKOFFICE_PORT", "8092")),
-            service_token=os.environ.get("AI_OPS_BACKOFFICE_TOKEN", ""),
-            auth_mode=os.environ.get("AI_OPS_BACKOFFICE_AUTH_MODE", "HEADER").upper(),
-            ops_store_mode=(os.environ.get("OPS_STORE_MODE", "FILE") or "FILE").upper(),
+            service_token=(
+                os.environ.get("AI_OPS_BACKOFFICE_TOKEN")
+                or os.environ.get("SERVICE_TOKEN")
+                or ""
+            ),
+            auth_mode=(
+                os.environ.get("AI_OPS_BACKOFFICE_AUTH_MODE")
+                or os.environ.get("AUTH_MODE")
+                or "HEADER"
+            ).strip().upper(),
+            ops_store_mode=primary_store_mode,
             ops_store_path=Path(os.environ.get("OPS_STORE_PATH", ops_dir / "events")).expanduser().resolve(),
             ops_taxonomy_path=Path(
                 os.environ.get("OPS_TAXONOMY_PATH", ops_dir / "issue_taxonomy_v1.json")
@@ -160,9 +197,7 @@ class BackofficeSettings:
             ops_classification_rules_path=Path(
                 os.environ.get("OPS_CLASSIFICATION_RULES_PATH", ops_dir / "issue_classification_rules.json")
             ).expanduser().resolve(),
-            ops_audit_store_mode=(
-                os.environ.get("OPS_AUDIT_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            ops_audit_store_mode=_resolve_store_mode("OPS_AUDIT_STORE_MODE", "FILE"),
             knowledge_portal_url=os.environ.get(
                 "KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"
             ),
@@ -194,16 +229,12 @@ class BackofficeSettings:
             or os.environ.get("ENTRA_TENANT_ID"),
             entra_client_id=os.environ.get("AI_OPS_ENTRA_CLIENT_ID")
             or os.environ.get("ENTRA_CLIENT_ID"),
-            gcp_project_id=os.environ.get("AI_OPS_GCP_PROJECT")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or os.environ.get("GCP_PROJECT"),
+            gcp_project_id=resolved_gcp_project,
             simulate_health_anomalies=os.environ.get(
                 "AI_OPS_SIMULATE_HEALTH_ANOMALIES", ""
             ).lower()
             in {"1", "true", "yes"},
-            export_job_store_mode=(
-                os.environ.get("AI_OPS_EXPORT_JOB_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            export_job_store_mode=_resolve_store_mode("AI_OPS_EXPORT_JOB_STORE_MODE", "FILE"),
             export_job_collection=os.environ.get(
                 "AI_OPS_EXPORT_JOB_COLLECTION", "ai_ops_export_jobs"
             ),
@@ -224,9 +255,7 @@ class BackofficeSettings:
             export_worker_max_attempts=int(
                 os.environ.get("AI_OPS_EXPORT_WORKER_MAX_ATTEMPTS", "3")
             ),
-            faq_store_mode=(
-                os.environ.get("AI_OPS_FAQ_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            faq_store_mode=_resolve_store_mode("AI_OPS_FAQ_STORE_MODE", "FILE"),
             faq_store_path=Path(
                 os.environ.get("AI_OPS_FAQ_STORE_PATH", ops_dir / "phase2" / "faqs.json")
             ).expanduser().resolve(),
@@ -238,9 +267,7 @@ class BackofficeSettings:
             faq_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"
             ),
-            example_store_mode=(
-                os.environ.get("AI_OPS_EXAMPLE_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            example_store_mode=_resolve_store_mode("AI_OPS_EXAMPLE_STORE_MODE", "FILE"),
             example_store_path=Path(
                 os.environ.get(
                     "AI_OPS_EXAMPLE_STORE_PATH", ops_dir / "phase2" / "examples.json"
@@ -249,9 +276,7 @@ class BackofficeSettings:
             example_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_EXAMPLE_FIRESTORE_COLLECTION_PREFIX", "ai_ops_faq"
             ),
-            quality_store_mode=(
-                os.environ.get("AI_OPS_QUALITY_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            quality_store_mode=_resolve_store_mode("AI_OPS_QUALITY_STORE_MODE", "FILE"),
             quality_store_path=Path(
                 os.environ.get(
                     "AI_OPS_QUALITY_STORE_PATH", ops_dir / "phase2" / "quality.json"
@@ -260,9 +285,7 @@ class BackofficeSettings:
             quality_firestore_collection=os.environ.get(
                 "AI_OPS_QUALITY_FIRESTORE_COLLECTION", "ai_ops_quality_state"
             ),
-            sync_store_mode=(
-                os.environ.get("AI_OPS_SYNC_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            sync_store_mode=_resolve_store_mode("AI_OPS_SYNC_STORE_MODE", "FILE"),
             sync_store_path=Path(
                 os.environ.get(
                     "AI_OPS_SYNC_STORE_PATH", ops_dir / "phase2" / "sync_jobs.json"
@@ -277,9 +300,7 @@ class BackofficeSettings:
                 or os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL")
                 or "http://127.0.0.1:8091"
             ),
-            budget_store_mode=(
-                os.environ.get("AI_OPS_BUDGET_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            budget_store_mode=_resolve_store_mode("AI_OPS_BUDGET_STORE_MODE", "FILE"),
             budget_store_path=Path(
                 os.environ.get(
                     "AI_OPS_BUDGET_STORE_PATH", ops_dir / "phase2" / "budgets.json"
@@ -317,9 +338,7 @@ class BackofficeSettings:
             api_anomaly_check_enabled=os.environ.get(
                 "AI_OPS_API_ANOMALY_CHECK_ENABLED", "true"
             ).lower() in {"1", "true", "yes"},
-            prompt_poc_store_mode=(
-                os.environ.get("AI_OPS_PROMPT_POC_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            prompt_poc_store_mode=_resolve_store_mode("AI_OPS_PROMPT_POC_STORE_MODE", "FILE"),
             prompt_poc_store_path=Path(
                 os.environ.get(
                     "AI_OPS_PROMPT_POC_STORE_PATH",
@@ -333,9 +352,7 @@ class BackofficeSettings:
                 "AI_OPS_PROMPT_MASKING_POLICY_VERSION", "mask-v1"
             ),
             prompt_active_effective_at=os.environ.get("AI_OPS_PROMPT_ACTIVE_EFFECTIVE_AT") or None,
-            governance_store_mode=(
-                os.environ.get("AI_OPS_GOVERNANCE_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            governance_store_mode=_resolve_store_mode("AI_OPS_GOVERNANCE_STORE_MODE", "FILE"),
             governance_store_path=Path(
                 os.environ.get(
                     "AI_OPS_GOVERNANCE_STORE_PATH",
@@ -395,9 +412,7 @@ class BackofficeSettings:
             pricing_firestore_collection=os.environ.get(
                 "AIOPS_PRICING_FIRESTORE_COLLECTION", "ai_ops_pricing_state"
             ),
-            eval_store_mode=(
-                os.environ.get("AI_OPS_EVAL_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            eval_store_mode=_resolve_store_mode("AI_OPS_EVAL_STORE_MODE", "FILE"),
             eval_store_path=Path(
                 os.environ.get(
                     "AI_OPS_EVAL_STORE_PATH",
@@ -407,9 +422,7 @@ class BackofficeSettings:
             eval_firestore_collection=os.environ.get(
                 "AI_OPS_EVAL_FIRESTORE_COLLECTION", "ai_ops_evaluation_state"
             ),
-            gate_store_mode=(
-                os.environ.get("AI_OPS_GATE_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            gate_store_mode=_resolve_store_mode("AI_OPS_GATE_STORE_MODE", "FILE"),
             gate_store_path=Path(
                 os.environ.get(
                     "AI_OPS_GATE_STORE_PATH",
@@ -419,9 +432,7 @@ class BackofficeSettings:
             gate_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_GATE_FIRESTORE_COLLECTION_PREFIX", "ai_ops_gate"
             ),
-            fixture_store_mode=(
-                os.environ.get("AI_OPS_FIXTURE_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            fixture_store_mode=_resolve_store_mode("AI_OPS_FIXTURE_STORE_MODE", "FILE"),
             fixture_store_path=Path(
                 os.environ.get(
                     "AI_OPS_FIXTURE_STORE_PATH",
@@ -431,9 +442,7 @@ class BackofficeSettings:
             fixture_firestore_collection_prefix=os.environ.get(
                 "AI_OPS_FIXTURE_FIRESTORE_COLLECTION_PREFIX", "ai_ops_fixture"
             ),
-            job_store_mode=(
-                os.environ.get("AI_OPS_JOB_STORE_MODE", "FILE") or "FILE"
-            ).upper(),
+            job_store_mode=_resolve_store_mode("AI_OPS_JOB_STORE_MODE", "FILE"),
             job_store_path=Path(
                 os.environ.get(
                     "AI_OPS_JOB_STORE_PATH",
@@ -443,11 +452,9 @@ class BackofficeSettings:
             job_firestore_collection=os.environ.get(
                 "AI_OPS_JOB_FIRESTORE_COLLECTION", "ai_ops_execution_jobs"
             ),
-            source_store_mode=(
-                os.environ.get("AI_OPS_SOURCE_STORE_MODE")
-                or os.environ.get("OPS_STORE_MODE")
-                or "FILE"
-            ).upper(),
+            source_store_mode=_resolve_store_mode(
+                "AI_OPS_SOURCE_STORE_MODE", primary_store_mode
+            ),
             source_store_path=Path(
                 os.environ.get(
                     "AI_OPS_SOURCE_STORE_PATH",
@@ -466,12 +473,7 @@ class BackofficeSettings:
             artifact_gcs_bucket=os.environ.get("AI_OPS_ARTIFACT_GCS_BUCKET")
             or os.environ.get("AI_OPS_EXPORT_GCS_BUCKET")
             or None,
-            environment=(
-                os.environ.get("AI_OPS_DEPLOYMENT_ENV")
-                or os.environ.get("AGENT_DEPLOYMENT_ENV")
-                or os.environ.get("ENV")
-                or "dev"
-            ).lower(),
+            environment=resolved_env,
             workers_enabled=os.environ.get("AI_OPS_WORKERS_ENABLED", "true").lower()
             in {"1", "true", "yes", "on"},
         )

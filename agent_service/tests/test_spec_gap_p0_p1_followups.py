@@ -1806,3 +1806,239 @@ async def test_multi_instance_end_to_end_freshness_lifecycle(tmp_path: Path) -> 
     freshness_after_delayed = api_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=current_time)
     assert freshness_after_delayed.event_watermark == current_time
     assert freshness_after_delayed.event_watermark != t_delayed_turn
+
+
+def test_settings_cascading_and_config_validator(monkeypatch, tmp_path) -> None:
+    from ai_ops_backoffice.config_validator import validate_production_config
+    from ai_ops_backoffice.settings import BackofficeSettings
+
+    # 1. Primary FIRESTORE mode cascades to all domain stores
+    monkeypatch.setenv("AI_OPS_STORE_MODE", "FIRESTORE")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-gcp-project")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "dummy-key")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://test.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT_CHAT", "chat-model")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT_EMBED", "embed-model")
+    monkeypatch.setenv("AI_OPS_BACKOFFICE_TOKEN", "prod-secret-token")
+
+    settings = BackofficeSettings.from_env()
+    assert settings.ops_store_mode == "FIRESTORE"
+    assert settings.faq_store_mode == "FIRESTORE"
+    assert settings.example_store_mode == "FIRESTORE"
+    assert settings.quality_store_mode == "FIRESTORE"
+    assert settings.sync_store_mode == "FIRESTORE"
+    assert settings.budget_store_mode == "FIRESTORE"
+    assert settings.gcp_project_id == "test-gcp-project"
+
+    issues = validate_production_config(settings)
+    assert issues == []
+
+    # 2. Production with FILE mode or empty GCP project yields actionable errors
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("OPS_STORE_MODE", "FILE")
+    monkeypatch.delenv("AI_OPS_STORE_MODE", raising=False)
+    monkeypatch.setenv("GCP_PROJECT_ID", "")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("AI_OPS_GCP_PROJECT", raising=False)
+
+    bad_settings = BackofficeSettings.from_env()
+    bad_issues = validate_production_config(bad_settings)
+    assert len(bad_issues) > 0
+    assert any("FIRESTORE" in issue for issue in bad_issues)
+    assert any("GCP project ID" in issue for issue in bad_issues)
+
+
+def test_freshness_idle_pipeline_returns_realtime_with_zero_lag(tmp_path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    t0 = datetime(2026, 9, 12, 10, 0, 0, tzinfo=timezone.utc)
+    t_idle = t0 + timedelta(hours=3)
+    persist_file = tmp_path / "freshness_idle.json"
+
+    tracker = FreshnessTracker(persistent_path=persist_file)
+    tracker.record_worker_heartbeat("worker-1", at=t_idle)
+    tracker.record_sync_success("conversations", at=t0, tenant_id="tenant-corp")
+
+    # When backlog=0 is recorded, idle pipeline returns REALTIME with lag=0.0 while preserving watermark
+    tracker.record_backlog("conversations", backlog_count=0, tenant_id="tenant-corp", at=t_idle)
+    meta = tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=t_idle)
+    assert meta.status == "REALTIME"
+    assert meta.lag_seconds == 0.0
+    assert meta.event_watermark == t0
+
+    # Cross-process reload preserves backlog state
+    reloaded_tracker = FreshnessTracker(persistent_path=persist_file)
+    reloaded_tracker.record_worker_heartbeat("worker-1", at=t_idle)
+    reloaded_meta = reloaded_tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=t_idle)
+    assert reloaded_meta.status == "REALTIME"
+    assert reloaded_meta.lag_seconds == 0.0
+
+    # Explicit parameter has_pending_backlog=False returns REALTIME
+    meta_param = tracker.compute_freshness(
+        "conversations", tenant_id="tenant-corp", now=t_idle, has_pending_backlog=False
+    )
+    assert meta_param.status == "REALTIME"
+    assert meta_param.lag_seconds == 0.0
+
+    # Positive backlog > threshold returns DELAYED with oldest pending delay
+    t_backlog_old = t_idle - timedelta(seconds=180)
+    tracker.record_backlog(
+        "conversations",
+        backlog_count=5,
+        oldest_pending_at=t_backlog_old,
+        tenant_id="tenant-corp",
+        at=t_idle,
+    )
+    meta_backlog = tracker.compute_freshness("conversations", tenant_id="tenant-corp", now=t_idle)
+    assert meta_backlog.status == "DELAYED"
+    assert meta_backlog.lag_seconds == 180.0
+
+    # Pipeline with no prior sync or event returns UNKNOWN even if worker is active and backlog is 0
+    empty_meta = tracker.compute_freshness(
+        "conversations", tenant_id="tenant-nosync", now=t_idle, has_pending_backlog=False
+    )
+    assert empty_meta.status == "UNKNOWN"
+    assert empty_meta.lag_seconds is None
+
+
+def test_firestore_monotonic_cross_instance_writes() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    t0 = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=60)
+    t_older = t0 + timedelta(seconds=10)
+
+    class FakeDocRef:
+        def __init__(self, storage: dict[str, dict], key: str):
+            self._storage = storage
+            self._key = key
+
+        def get(self):
+            data = self._storage.get(self._key)
+            exists = data is not None
+            return type("Snap", (), {"exists": exists, "to_dict": lambda *a, **k: data or {}})()
+
+        def set(self, payload: dict, merge: bool = False):
+            if merge and self._key in self._storage:
+                self._storage[self._key].update(payload)
+            else:
+                self._storage[self._key] = dict(payload)
+
+    class FakeSharedFs:
+        def __init__(self):
+            self.storage: dict[str, dict] = {}
+
+        def collection(self, col_name: str):
+            client = self
+            class FakeCol:
+                def document(self, doc_id: str):
+                    return FakeDocRef(client.storage, f"{col_name}/{doc_id}")
+            return FakeCol()
+
+    fake_fs = FakeSharedFs()
+    tracker_a = FreshnessTracker(firestore_client=fake_fs)
+    tracker_b = FreshnessTracker(firestore_client=fake_fs)
+
+    # Instance A records newer sync
+    tracker_a.record_sync_success("conversations", at=t1, tenant_id="tenant-mon")
+    snap_a = fake_fs.collection("freshness_state").document("wm_tenant-mon_conversations").get()
+    assert snap_a.to_dict()["at"] == t1.isoformat()
+
+    # Instance B tries to write older sync -> Discarded, remote remains t1
+    tracker_b.record_sync_success("conversations", at=t_older, tenant_id="tenant-mon")
+    snap_after = fake_fs.collection("freshness_state").document("wm_tenant-mon_conversations").get()
+    assert snap_after.to_dict()["at"] == t1.isoformat()
+    # Instance B local cache advanced to remote t1
+    assert tracker_b._last_successful_sync["tenant-mon:conversations"] == t1
+
+    # Same monotonic protection for worker heartbeats
+    tracker_a.record_worker_heartbeat("worker-node-1", at=t1)
+    hb_snap = fake_fs.collection("freshness_state").document("hb_worker-node-1").get()
+    assert hb_snap.to_dict()["at"] == t1.isoformat()
+
+    tracker_b.record_worker_heartbeat("worker-node-1", at=t_older)
+    hb_snap_after = fake_fs.collection("freshness_state").document("hb_worker-node-1").get()
+    assert hb_snap_after.to_dict()["at"] == t1.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_worker_health_server_endpoint_returns_rich_status() -> None:
+    import asyncio
+
+    import httpx
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+    from ai_ops_backoffice.worker_main import _start_health_server
+
+    class DummyState:
+        def __init__(self) -> None:
+            self.freshness_tracker = FreshnessTracker()
+            self.freshness_tracker.record_worker_heartbeat("worker-1")
+            self.settings = type("DummySettings", (), {"ops_store_mode": "FIRESTORE"})()
+            self.job_worker = type("DummyJobWorker", (), {"_running": True})()
+
+    class DummyApp:
+        def __init__(self) -> None:
+            self.state = DummyState()
+
+    stop_server = asyncio.Event()
+    bound_ports: list[int] = []
+
+    server_task = asyncio.create_task(
+        _start_health_server(
+            "127.0.0.1",
+            0,
+            stop_server,
+            on_started=lambda p: bound_ports.append(p),
+            app=DummyApp(),
+        )
+    )
+
+    for _ in range(50):
+        if bound_ports:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(bound_ports) == 1
+    port = bound_ports[0]
+
+    async with httpx.AsyncClient() as client:
+        res = await client.get(f"http://127.0.0.1:{port}/healthz")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert data["worker"] == "ai_ops_worker"
+        assert data["process_alive"] is True
+        assert data["loop_running"] is True
+        assert isinstance(data["uptime_seconds"], (int, float))
+        assert data["last_heartbeat_at"] is not None
+        assert data["consecutive_errors"] == 0
+        assert data["dependencies"]["store_mode"] == "FIRESTORE"
+        assert data["dependencies"]["job_worker_running"] is True
+
+    stop_server.set()
+    await server_task
+
+
+def test_operations_freshness_recorder_decoupling(tmp_path) -> None:
+    from dataclasses import replace
+
+    from agent_service.operations.contracts import FreshnessRecorder
+    from agent_service.operations.freshness_recorder import OperationsFreshnessRecorder
+    from agent_service.operations.runtime import build_freshness_recorder
+    from agent_service.operations.settings import OpsSettings
+
+    recorder = OperationsFreshnessRecorder(persistent_path=tmp_path / "ops_freshness.json")
+    assert isinstance(recorder, FreshnessRecorder)
+    recorder.record_worker_heartbeat("worker-ops")
+    assert "worker-ops" in recorder._worker_heartbeats
+
+    settings = replace(OpsSettings.from_env(), store_mode="FILE", store_path=tmp_path / "events.jsonl")
+    built = build_freshness_recorder(settings)
+    assert isinstance(built, OperationsFreshnessRecorder)

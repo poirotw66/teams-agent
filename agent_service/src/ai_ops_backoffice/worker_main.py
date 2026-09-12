@@ -9,10 +9,12 @@ API HTTP server.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import signal
 import sys
+import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,23 +32,75 @@ async def _start_health_server(
     stop_event: asyncio.Event,
     *,
     on_started: Any = None,
+    app: Any = None,
+    health_provider: Any = None,
 ) -> None:
-    """Lightweight HTTP healthcheck server for container orchestrators."""
+    """Lightweight HTTP healthcheck server for container orchestrators.
+
+    Provides rich status at /healthz including liveness, loop status, uptime,
+    heartbeats, and dependency state (Spec 7.3, A05-T1).
+    """
+    start_time = time.time()
+    consecutive_errors = 0
+
     async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        nonlocal consecutive_errors
         try:
             line = await reader.readline()
             if line:
-                body = b'{"status":"ok","worker":"ai_ops_worker"}\n'
+                is_running = not stop_event.is_set()
+                status_code = 200
+                status_str = "OK"
+
+                last_hb_str: str | None = None
+                dependencies_status: dict[str, Any] = {}
+
+                if health_provider is not None:
+                    try:
+                        provider_data = health_provider()
+                        if isinstance(provider_data, dict):
+                            dependencies_status.update(provider_data)
+                    except Exception as ex:
+                        consecutive_errors += 1
+                        dependencies_status["provider_error"] = str(ex)
+                elif app is not None and hasattr(app, "state"):
+                    tracker = getattr(app.state, "freshness_tracker", None)
+                    if tracker is not None:
+                        last_hb = getattr(tracker, "_last_worker_heartbeat", None)
+                        if last_hb is not None:
+                            last_hb_str = last_hb.isoformat()
+                    settings = getattr(app.state, "settings", None)
+                    if settings is not None:
+                        dependencies_status["store_mode"] = getattr(settings, "ops_store_mode", "UNKNOWN")
+                    job_worker = getattr(app.state, "job_worker", None)
+                    if job_worker is not None:
+                        dependencies_status["job_worker_running"] = getattr(job_worker, "_running", False)
+
+                if not is_running or consecutive_errors >= 10:
+                    status_code = 503
+                    status_str = "Service Unavailable"
+
+                body_dict = {
+                    "status": "ok" if status_code == 200 else "degraded",
+                    "worker": "ai_ops_worker",
+                    "process_alive": True,
+                    "loop_running": is_running,
+                    "uptime_seconds": round(time.time() - start_time, 2),
+                    "last_heartbeat_at": last_hb_str,
+                    "consecutive_errors": consecutive_errors,
+                    "dependencies": dependencies_status,
+                }
+                body = json.dumps(body_dict).encode("utf-8") + b"\n"
                 response = (
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
-                    b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
-                    b"Connection: close\r\n\r\n" + body
-                )
+                    f"HTTP/1.1 {status_code} {status_str}\r\n"
+                    f"Content-Type: application/json\r\n"
+                    f"Content-Length: {len(body)}\r\n"
+                    f"Connection: close\r\n\r\n"
+                ).encode("ascii") + body
                 writer.write(response)
                 await writer.drain()
         except Exception:
-            pass
+            consecutive_errors += 1
         finally:
             writer.close()
             with suppress(Exception):
@@ -125,7 +179,11 @@ async def run_standalone_workers(
     async with app.router.lifespan_context(app):
         tasks: list[asyncio.Task] = []
         if resolved_port is not None:
-            tasks.append(asyncio.create_task(_start_health_server("0.0.0.0", resolved_port, stop_event)))
+            tasks.append(
+                asyncio.create_task(
+                    _start_health_server("0.0.0.0", resolved_port, stop_event, app=app)
+                )
+            )
         if resolved_file is not None:
             tasks.append(asyncio.create_task(_run_health_file_touch(resolved_file, stop_event)))
 

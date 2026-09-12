@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -133,6 +133,7 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+@runtime_checkable
 class FreshnessRecorder(Protocol):
     """Interface for recording stage latencies and synchronization watermarks."""
 
