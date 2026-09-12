@@ -78,6 +78,21 @@ class EvaluationRepository(Protocol):
         expected_revision: int | None = None,
     ) -> None: ...
 
+    def update_case(
+        self,
+        case: EvalCase,
+        revision: CaseRevision | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None: ...
+
+    def update_run(
+        self,
+        run: EvaluationRun,
+        executions: list[CaseExecution] | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None: ...
+
+
 
 class InMemoryEvaluationRepository:
     def __init__(self, initial_state: EvaluationState | None = None) -> None:
@@ -247,6 +262,58 @@ class InMemoryEvaluationRepository:
             )
             self._save(self._state)
 
+    def update_case(
+        self,
+        case: EvalCase,
+        revision: CaseRevision | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        with self._lock:
+            cases = [c for c in self._state.cases if c.case_id != case.case_id] + [case]
+            revisions = list(self._state.revisions)
+            if revision and not any(r.revision_id == revision.revision_id for r in revisions):
+                revisions.append(revision)
+            audits = list(self._state.audits)
+            if audit:
+                audits.append(audit)
+            next_rev = self._state.revision + 1 if hasattr(self._state, "revision") else 1
+            new_state = self._state.model_copy(
+                update={
+                    "cases": tuple(cases),
+                    "revisions": tuple(revisions),
+                    "audits": tuple(audits),
+                    "revision": next_rev,
+                }
+            )
+            self._save(new_state)
+
+    def update_run(
+        self,
+        run: EvaluationRun,
+        executions: list[CaseExecution] | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        with self._lock:
+            runs = [r for r in self._state.runs if r.run_id != run.run_id] + [run]
+            case_execs = list(self._state.case_executions)
+            if executions:
+                exec_ids = {e.execution_id for e in executions}
+                case_execs = [e for e in case_execs if e.execution_id not in exec_ids] + executions
+            audits = list(self._state.audits)
+            if audit:
+                audits.append(audit)
+            next_rev = self._state.revision + 1 if hasattr(self._state, "revision") else 1
+            new_state = self._state.model_copy(
+                update={
+                    "runs": tuple(runs),
+                    "case_executions": tuple(case_execs),
+                    "audits": tuple(audits),
+                    "revision": next_rev,
+                }
+            )
+            self._save(new_state)
+
+
 
 class FileEvaluationRepository(InMemoryEvaluationRepository):
     def __init__(self, path: Path) -> None:
@@ -331,6 +398,56 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
                     idempotency_record=idempotency_record,
                     expected_revision=expected_revision,
                 )
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def get_case(self, case_id: str) -> EvalCase | None:
+        case_file = self._cases_dir / f"{case_id}.json"
+        if case_file.exists():
+            try:
+                return EvalCase.model_validate_json(case_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return super().get_case(case_id)
+
+    def get_run(self, run_id: str) -> EvaluationRun | None:
+        run_file = self._runs_dir / f"{run_id}.json"
+        if run_file.exists():
+            try:
+                return EvaluationRun.model_validate_json(run_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return super().get_run(run_id)
+
+    def update_case(
+        self,
+        case: EvalCase,
+        revision: CaseRevision | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock, self._lock_path.open("a+") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                if self._path.exists():
+                    self._state = self._read_file()
+                super().update_case(case, revision=revision, audit=audit)
+            finally:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def update_run(
+        self,
+        run: EvaluationRun,
+        executions: list[CaseExecution] | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock, self._lock_path.open("a+") as lock_handle:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                if self._path.exists():
+                    self._state = self._read_file()
+                super().update_run(run, executions=executions, audit=audit)
             finally:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
@@ -749,4 +866,108 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
             ]
             self._state = self._state.model_copy(
                 update={"outbox_jobs": tuple(remaining), "revision": next_rev}
+            )
+
+    def update_case(
+        self,
+        case: EvalCase,
+        revision: CaseRevision | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        import json
+        meta_ref = self._col("meta").document("root")
+
+        def op(transaction: Any) -> int:
+            meta_snap = meta_ref.get(transaction=transaction) if hasattr(meta_ref, "get") else None
+            curr_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
+            next_rev = curr_rev + 1
+            transaction.set(meta_ref, {"revision": next_rev})
+
+            ref = self._col("cases").document(case.case_id)
+            data = json.loads(case.model_dump_json())
+            data["_revision"] = next_rev
+            transaction.set(ref, data)
+
+            if revision:
+                rref = self._col("revisions").document(revision.revision_id)
+                rdata = json.loads(revision.model_dump_json())
+                rdata["_revision"] = next_rev
+                transaction.set(rref, rdata)
+
+            if audit:
+                aref = self._col("audits").document(audit.audit_id)
+                adata = json.loads(audit.model_dump_json())
+                adata["_revision"] = next_rev
+                transaction.set(aref, adata)
+            return next_rev
+
+        next_rev = self._run_transaction(op)
+        with self._lock:
+            cases = [c for c in self._state.cases if c.case_id != case.case_id] + [case]
+            revisions = list(self._state.revisions)
+            if revision and not any(r.revision_id == revision.revision_id for r in revisions):
+                revisions.append(revision)
+            audits = list(self._state.audits)
+            if audit:
+                audits.append(audit)
+            self._state = self._state.model_copy(
+                update={
+                    "revision": next_rev,
+                    "cases": tuple(cases),
+                    "revisions": tuple(revisions),
+                    "audits": tuple(audits),
+                }
+            )
+
+    def update_run(
+        self,
+        run: EvaluationRun,
+        executions: list[CaseExecution] | None = None,
+        audit: EvaluationAuditEvent | None = None,
+    ) -> None:
+        import json
+        meta_ref = self._col("meta").document("root")
+
+        def op(transaction: Any) -> int:
+            meta_snap = meta_ref.get(transaction=transaction) if hasattr(meta_ref, "get") else None
+            curr_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
+            next_rev = curr_rev + 1
+            transaction.set(meta_ref, {"revision": next_rev})
+
+            ref = self._col("runs").document(run.run_id)
+            data = json.loads(run.model_dump_json())
+            data["_revision"] = next_rev
+            transaction.set(ref, data)
+
+            if executions:
+                for ex in executions:
+                    eref = self._col("executions").document(ex.execution_id)
+                    edata = json.loads(ex.model_dump_json())
+                    edata["_revision"] = next_rev
+                    transaction.set(eref, edata)
+
+            if audit:
+                aref = self._col("audits").document(audit.audit_id)
+                adata = json.loads(audit.model_dump_json())
+                adata["_revision"] = next_rev
+                transaction.set(aref, adata)
+            return next_rev
+
+        next_rev = self._run_transaction(op)
+        with self._lock:
+            runs = [r for r in self._state.runs if r.run_id != run.run_id] + [run]
+            case_execs = list(self._state.case_executions)
+            if executions:
+                exec_ids = {e.execution_id for e in executions}
+                case_execs = [e for e in case_execs if e.execution_id not in exec_ids] + executions
+            audits = list(self._state.audits)
+            if audit:
+                audits.append(audit)
+            self._state = self._state.model_copy(
+                update={
+                    "revision": next_rev,
+                    "runs": tuple(runs),
+                    "case_executions": tuple(case_execs),
+                    "audits": tuple(audits),
+                }
             )

@@ -42,6 +42,9 @@ function ensureWorkspaceForView(viewId) {
 
 function appendNavLink(container, viewId, label, active) {
   const link = el("a", active === viewId ? "active" : "", label);
+  if (!link.dataset) {
+    link.dataset = {};
+  }
   link.dataset.viewId = viewId;
   const workspace = ensureWorkspaceForView(viewId);
   link.href = buildLocationHash(workspace, viewId);

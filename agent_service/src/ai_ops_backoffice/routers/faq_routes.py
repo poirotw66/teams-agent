@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, Header
 
 from ..request_models import (
     FaqCreateRequest,
@@ -86,6 +88,7 @@ def register_faq_routes(
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        as_of: datetime | None = None,
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.faq.read")
@@ -99,6 +102,7 @@ def register_faq_routes(
             preset=preset,
             start_date=start_date,
             end_date=end_date,
+            as_of=as_of,
         )
 
     @app.post("/api/faqs")

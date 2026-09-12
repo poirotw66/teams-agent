@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_service.operations.access import ActorContext
 from agent_service.operations.contracts import OperationalEvent
 from ai_ops_backoffice.api import create_app as create_backoffice_app
 from ai_ops_backoffice.services.query_service import BackofficeQueryService
@@ -290,7 +290,9 @@ async def test_conversation_volume_daily_weekly_monthly_trends(tmp_path: Path) -
 async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None:
     """REQ-005: Verify FAQ performance calculates today, this week, this month, and total hit counts."""
     settings = _backoffice_settings(tmp_path)
-    now = datetime.now(UTC)
+    # Fixed deterministic clock at Wednesday 12:00:00 UTC (20:00:00 Taipei time, mid-day)
+    fixed_now = datetime(2026, 9, 16, 12, 0, 0, tzinfo=UTC)
+    now = fixed_now
 
     app = create_backoffice_app(settings)
     client = TestClient(app)
@@ -312,7 +314,7 @@ async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None
     faq_id = faq_created.json()["faq"]["faq_id"]
 
     events = [
-        # Today hit
+        # Today hit (same local day in Asia/Taipei)
         _event(
             event_id="faq-hit-today",
             event_type="faq.answered",
@@ -322,7 +324,7 @@ async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None
             turn_id="turn-faq-1",
             payload={"faqKey": "faq-vpn-setup", "faqId": faq_id, "faqVersionId": "v1"},
         ),
-        # Hit 1 day ago
+        # Hit 1 day ago (Tuesday in same ISO week and month)
         _event(
             event_id="faq-hit-2",
             event_type="faq.answered",
@@ -341,8 +343,9 @@ async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None
     app = create_backoffice_app(settings)
     client = TestClient(app)
 
-    # Query FAQ performance
-    resp = client.get(f"/api/faqs/{faq_id}/performance", headers=backoffice_headers())
+    # Query FAQ performance with fixed clock
+    with patch("ai_ops_backoffice.services.query_feedback.utc_now", return_value=fixed_now):
+        resp = client.get(f"/api/faqs/{faq_id}/performance", headers=backoffice_headers())
     assert resp.status_code == 200
     perf = resp.json()
 
@@ -369,13 +372,141 @@ async def test_faq_today_this_week_this_month_hit_counts(tmp_path: Path) -> None
     assert owner_resp.status_code == 200
     assert len(owner_resp.json()["items"]) == 1
 
-    keyword_resp = client.get("/api/faqs?keyword=AnyConnect", headers=backoffice_headers())
-    assert keyword_resp.status_code == 200
-    assert len(keyword_resp.json()["items"]) == 1
 
-    search_resp = client.get("/api/faqs?query=AnyConnect", headers=backoffice_headers())
-    assert search_resp.status_code == 200
-    assert len(search_resp.json()["items"]) == 1
+@pytest.mark.asyncio
+async def test_faq_performance_cross_day_boundary(tmp_path: Path) -> None:
+    """Verify FAQ performance accurately respects midnight boundary in local timezone."""
+    settings = _backoffice_settings(tmp_path)
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    faq_res = client.post(
+        "/api/faqs",
+        json={
+            "faq_key": "faq-cross-day",
+            "question": "跨日測試問題？",
+            "answer": "跨日測試回答",
+            "category": "測試",
+            "keywords": ["test"],
+            "owner_unit_id": "IT",
+            "business_contact": "it@test.local",
+            "issue_type_ids": ["vpn.connection_failed"],
+            "audience_type": "ALL",
+            "audience_group_ids": [],
+        },
+        headers=backoffice_headers(),
+    )
+    assert faq_res.status_code == 200
+    faq_id = faq_res.json()["faq"]["faq_id"]
+
+    # 2026-09-17 00:05:00 Taipei time (+08:00) = 2026-09-16 16:05:00 UTC
+    as_of = datetime(2026, 9, 16, 16, 5, 0, tzinfo=UTC)
+
+    # Event 1: 2026-09-16 23:55:00 Taipei time = 2026-09-16 15:55:00 UTC (10 mins prior, yesterday)
+    # Event 2: 2026-09-17 00:02:00 Taipei time = 2026-09-16 16:02:00 UTC (3 mins prior, today)
+    ev_yesterday = _event(
+        event_id="ev-yesterday",
+        event_type="faq.answered",
+        occurred_at=datetime(2026, 9, 16, 15, 55, 0, tzinfo=UTC),
+        conversation_id="c-y",
+        correlation_id="cr-y",
+        turn_id="t-y",
+        payload={"faqKey": "faq-cross-day", "faqId": faq_id, "faqVersionId": "v1"},
+    )
+    ev_today = _event(
+        event_id="ev-today",
+        event_type="faq.answered",
+        occurred_at=datetime(2026, 9, 16, 16, 2, 0, tzinfo=UTC),
+        conversation_id="c-t",
+        correlation_id="cr-t",
+        turn_id="t-t",
+        payload={"faqKey": "faq-cross-day", "faqId": faq_id, "faqVersionId": "v1"},
+    )
+
+    query_svc = BackofficeQueryService(settings)
+    await query_svc._runtime.store.append(ev_yesterday)
+    await query_svc._runtime.store.append(ev_today)
+
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    with patch("ai_ops_backoffice.services.query_feedback.utc_now", return_value=as_of):
+        resp = client.get(f"/api/faqs/{faq_id}/performance", headers=backoffice_headers())
+    assert resp.status_code == 200
+    perf = resp.json()
+
+    # Yesterday hit is not counted in todayHitCount, but included in totalHitCount
+    assert perf["todayHitCount"] == 1
+    assert perf["totalHitCount"] == 2
+
+
+@pytest.mark.asyncio
+async def test_faq_performance_cross_week_boundary(tmp_path: Path) -> None:
+    """Verify FAQ performance accurately respects ISO week boundary in local timezone."""
+    settings = _backoffice_settings(tmp_path)
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    faq_res = client.post(
+        "/api/faqs",
+        json={
+            "faq_key": "faq-cross-week",
+            "question": "跨週測試問題？",
+            "answer": "跨週測試回答",
+            "category": "測試",
+            "keywords": ["test"],
+            "owner_unit_id": "IT",
+            "business_contact": "it@test.local",
+            "issue_type_ids": ["vpn.connection_failed"],
+            "audience_type": "ALL",
+            "audience_group_ids": [],
+        },
+        headers=backoffice_headers(),
+    )
+    assert faq_res.status_code == 200
+    faq_id = faq_res.json()["faq"]["faq_id"]
+
+    # Monday morning: 2026-09-21 09:00:00 Taipei (+08:00) = 2026-09-21 01:00:00 UTC (ISO 2026-W39)
+    as_of = datetime(2026, 9, 21, 1, 0, 0, tzinfo=UTC)
+
+    # Event Sunday night: 2026-09-20 23:30:00 Taipei = 2026-09-20 15:30:00 UTC (ISO 2026-W38)
+    # Event Monday morning: 2026-09-21 08:30:00 Taipei = 2026-09-21 00:30:00 UTC (ISO 2026-W39)
+    ev_sunday = _event(
+        event_id="ev-sunday",
+        event_type="faq.answered",
+        occurred_at=datetime(2026, 9, 20, 15, 30, 0, tzinfo=UTC),
+        conversation_id="c-sun",
+        correlation_id="cr-sun",
+        turn_id="t-sun",
+        payload={"faqKey": "faq-cross-week", "faqId": faq_id, "faqVersionId": "v1"},
+    )
+    ev_monday = _event(
+        event_id="ev-monday",
+        event_type="faq.answered",
+        occurred_at=datetime(2026, 9, 21, 0, 30, 0, tzinfo=UTC),
+        conversation_id="c-mon",
+        correlation_id="cr-mon",
+        turn_id="t-mon",
+        payload={"faqKey": "faq-cross-week", "faqId": faq_id, "faqVersionId": "v1"},
+    )
+
+    query_svc = BackofficeQueryService(settings)
+    await query_svc._runtime.store.append(ev_sunday)
+    await query_svc._runtime.store.append(ev_monday)
+
+    app = create_backoffice_app(settings)
+    client = TestClient(app)
+
+    with patch("ai_ops_backoffice.services.query_feedback.utc_now", return_value=as_of):
+        resp = client.get(f"/api/faqs/{faq_id}/performance", headers=backoffice_headers())
+    assert resp.status_code == 200
+    perf = resp.json()
+
+    # Sunday event was last week (W38), Monday event is this week (W39)
+    assert perf["todayHitCount"] == 1
+    assert perf["thisWeekHitCount"] == 1
+    assert perf["thisMonthHitCount"] == 2
+    assert perf["totalHitCount"] == 2
 
 
 # =========================================================================

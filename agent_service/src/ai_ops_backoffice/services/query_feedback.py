@@ -14,7 +14,9 @@ from agent_service.operations.contracts import (
     utc_now,
 )
 from agent_service.operations.scope import filter_events_by_scope
+
 from .periods import event_in_period
+
 
 class FeedbackQueryMixin:
     async def faq_performance(
@@ -27,6 +29,7 @@ class FeedbackQueryMixin:
         preset: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        as_of: datetime | None = None,
     ) -> dict[str, Any]:
         events = filter_events_by_scope(await self._events(), actor, self.taxonomy)
         all_hits = [
@@ -35,7 +38,7 @@ class FeedbackQueryMixin:
             if event.event_type == "faq.answered" and event.payload.get("faqKey") == faq_key
         ]
         local_tz = ZoneInfo(DEFAULT_TIMEZONE)
-        local_now = utc_now().astimezone(local_tz)
+        local_now = (as_of or utc_now()).astimezone(local_tz)
         today_date = local_now.date().isoformat()
         current_iso = local_now.isocalendar()[:2]
         current_month = local_now.strftime("%Y-%m")
@@ -281,9 +284,9 @@ class FeedbackQueryMixin:
                 and event.issue_occurrence_id == issue_extracted.issue_occurrence_id
             ):
                 issue_classified = event
-            if event.event_type == "usage.recorded" and event.payload.get("model"):
-                detected_model = str(event.payload.get("model"))
-            elif "model" in event.payload and not detected_model:
+            if (event.event_type == "usage.recorded" and event.payload.get("model")) or (
+                "model" in event.payload and not detected_model
+            ):
                 detected_model = str(event.payload.get("model"))
             if event.event_type == "faq.answered":
                 faq_key = event.payload.get("faqKey") or faq_key

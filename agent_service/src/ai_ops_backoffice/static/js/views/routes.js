@@ -75,8 +75,8 @@ export async function renderRoutes(state = { preset: "30d" }) {
     const panel = el("section", "panel");
     panel.append(
       pageHeader(
-        "路由來源分析",
-        "查看 FAQ／RAG／Handoff 等處理分布，並追查實際命中的 FAQ ID 與 Document ID。",
+        "處理方式與回答依據",
+        "查看 FAQ、知識文件與轉派人工等處理分布，並追查實際命中的 FAQ 與文件內容。",
       ),
     );
 

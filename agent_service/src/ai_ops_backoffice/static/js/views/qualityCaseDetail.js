@@ -437,7 +437,10 @@ export async function showQualityCaseDetail(caseId, options = {}) {
     relBox.append(el("span", "metric-label", "關聯文件:"));
     if (qualityCase.document_ids && qualityCase.document_ids.length) {
       for (const did of qualityCase.document_ids) {
-        relBox.append(badge(did, "accent"));
+        const friendlyName = did.startsWith("doc--") ? did.slice(5) : did;
+        const b = badge(friendlyName, "accent");
+        b.title = did;
+        relBox.append(b);
       }
     } else {
       relBox.append(el("span", "muted", "無"));
@@ -445,15 +448,63 @@ export async function showQualityCaseDetail(caseId, options = {}) {
     infoPanel.append(relBox);
 
     const returnCtx = { caseId, tab: "cases" };
+
+    function createFixDocLink() {
+      const docIds = qualityCase.document_ids || [];
+      if (docIds.length === 1) {
+        return drillLink(
+          "修正文件",
+          "knowledgePortal",
+          withReturnTo(
+            { k: `/knowledge/${encodeURIComponent(docIds[0])}?caseId=${encodeURIComponent(caseId)}` },
+            "quality",
+            returnCtx,
+          ),
+        );
+      }
+      if (docIds.length > 1) {
+        const link = el("a", "drill-link", "修正文件");
+        link.href = "#";
+        link.addEventListener("click", (evt) => {
+          evt.preventDefault();
+          const modalBody = el("div");
+          modalBody.append(
+            el("p", "", `本案件關聯 ${docIds.length} 篇知識文件，請選擇要開啟修訂的文件：`),
+          );
+          const list = el("div", "filter-bar");
+          list.style.flexDirection = "column";
+          list.style.alignItems = "flex-start";
+          list.style.gap = "0.5rem";
+          for (const did of docIds) {
+            const friendlyName = did.startsWith("doc--") ? did.slice(5) : did;
+            const docBtn = drillLink(
+              `開啟文件：${friendlyName}`,
+              "knowledgePortal",
+              withReturnTo(
+                { k: `/knowledge/${encodeURIComponent(did)}?caseId=${encodeURIComponent(caseId)}` },
+                "quality",
+                returnCtx,
+              ),
+            );
+            list.append(docBtn);
+          }
+          modalBody.append(list);
+          showContentModal("選擇要修訂的關聯文件", modalBody);
+        });
+        return link;
+      }
+      return drillLink(
+        "修正文件",
+        "contentLists",
+        withReturnTo({ tab: "documents" }, "quality", returnCtx),
+      );
+    }
+
     const loopHints = el("div", "filter-bar");
     loopHints.style.marginBottom = "1rem";
     loopHints.append(
       el("span", "metric-label", "閉環捷徑："),
-      drillLink(
-        "修正文件",
-        "contentLists",
-        withReturnTo({ tab: "documents" }, "quality", returnCtx),
-      ),
+      createFixDocLink(),
       drillLink(
         "修正 FAQ",
         "contentLists",
@@ -477,13 +528,14 @@ export async function showQualityCaseDetail(caseId, options = {}) {
     );
     if (getCapabilities()?.knowledgeBridgeEnabled) {
       for (const documentId of qualityCase.document_ids || []) {
+        const friendlyName = documentId.startsWith("doc--") ? documentId.slice(5) : documentId;
         loopHints.append(
           drillLink(
-            "開啟關聯文件",
+            `開啟文件 (${friendlyName})`,
             "knowledgePortal",
             withReturnTo(
               {
-                k: `/knowledge/${documentId}?caseId=${encodeURIComponent(caseId)}`,
+                k: `/knowledge/${encodeURIComponent(documentId)}?caseId=${encodeURIComponent(caseId)}`,
               },
               "quality",
               returnCtx,
@@ -836,38 +888,147 @@ export async function showQualityCaseDetail(caseId, options = {}) {
         actions.append(refresh);
       }
     }
+    async function triggerTransition(targetStatus) {
+      const terminal = ["RESOLVED", "WONT_FIX", "DUPLICATE"].includes(targetStatus);
+      const capability = terminal ? "ops.quality.resolve" : "ops.quality.write";
+      if (!allowed.has(capability)) {
+        showToast("目前帳號沒有此狀態轉換權限", { tone: "error" });
+        return;
+      }
+      const label = transitionLabels[targetStatus] || targetStatus;
+      const reason = await showTextPrompt({
+        title: `案件狀態轉換：${label}`,
+        message: terminal
+          ? "請輸入狀態轉換原因（至少 3 個字元）。"
+          : "可選填狀態轉換原因。",
+        minLength: terminal ? 3 : 0,
+        required: terminal,
+      });
+      if (reason == null) return;
+      try {
+        await api(`/api/quality-cases/${caseId}/transition`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expected_etag: qualityCase.etag,
+            status: targetStatus,
+            reason: reason?.trim() || null,
+            resolution_type: terminal ? "MANUAL_REVIEW" : null,
+          }),
+        });
+        await refreshQuality();
+        await showQualityCaseDetail(caseId);
+      } catch (error) {
+        showContentModal("品質案件操作失敗", el("div", "error", error.message));
+      }
+    }
+
+    function buildNextRecommendedAction() {
+      const card = el("div", "content-box bu-next-action-card");
+      card.style.border = "1px solid var(--primary-border, #bfdbfe)";
+      card.style.backgroundColor = "var(--primary-subtle, #eff6ff)";
+      card.style.padding = "1rem 1.25rem";
+      card.style.borderRadius = "8px";
+      card.style.marginBottom = "1.25rem";
+
+      const header = el("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.gap = "0.5rem";
+      header.style.marginBottom = "0.5rem";
+      header.append(badge("主要下一步推薦", "accent"));
+
+      const title = el("h4");
+      title.style.margin = "0";
+      title.style.fontSize = "1.05rem";
+      title.style.fontWeight = "600";
+
+      const desc = el("p", "text-muted");
+      desc.style.margin = "0.25rem 0 0.75rem 0";
+      desc.style.fontSize = "0.9rem";
+
+      const btnRow = el("div", "filter-bar");
+      btnRow.style.gap = "0.75rem";
+
+      const st = qualityCase.status;
+      if (st === "NEW") {
+        title.textContent = "確認分派並開始改善";
+        desc.textContent = "本案件為新進待辦。建議確認問題類型並推進至處理中，開始修訂對應文件或 FAQ。";
+        if (allowed.has("ops.quality.write")) {
+          const startBtn = el("button", "button-primary", "開始處理 (進入處理中)");
+          startBtn.addEventListener("click", () => triggerTransition("IN_PROGRESS"));
+          btnRow.append(startBtn);
+          const triageBtn = el("button", "", "分派處理");
+          triageBtn.addEventListener("click", () => triggerTransition("TRIAGED"));
+          btnRow.append(triageBtn);
+        }
+      } else if (st === "TRIAGED") {
+        title.textContent = "開始修正知識內容";
+        desc.textContent = "本案件已完成分派。請開啟或建立關聯知識內容，並轉為「處理中」。";
+        if (allowed.has("ops.quality.write")) {
+          const startBtn = el("button", "button-primary", "開始處理 (進入處理中)");
+          startBtn.addEventListener("click", () => triggerTransition("IN_PROGRESS"));
+          btnRow.append(startBtn);
+        }
+      } else if (st === "IN_PROGRESS") {
+        title.textContent = "修訂知識內容並送審";
+        desc.textContent = "案件改善中。修訂文件或 FAQ 並驗證確認無誤後，請將案件送審待發布或進入觀察。";
+        const docIds = qualityCase.document_ids || [];
+        if (docIds.length) {
+          const fixDocBtn = el("button", "button-primary", "修正關聯文件");
+          fixDocBtn.addEventListener("click", (evt) => {
+            evt.preventDefault();
+            createFixDocLink().click();
+          });
+          btnRow.append(fixDocBtn);
+        }
+        if (allowed.has("ops.quality.write")) {
+          const reviewBtn = el("button", "", "送審／待發布");
+          reviewBtn.addEventListener("click", () => triggerTransition("WAITING_REVIEW"));
+          btnRow.append(reviewBtn);
+          const obsBtn = el("button", "", "進入觀察期");
+          obsBtn.addEventListener("click", () => triggerTransition("OBSERVING"));
+          btnRow.append(obsBtn);
+        }
+      } else if (st === "WAITING_REVIEW") {
+        title.textContent = "審核內容並完成結案";
+        desc.textContent = "修訂內容已就緒。審核發布確認無誤後，請執行結案。";
+        if (allowed.has("ops.quality.resolve")) {
+          const resolveBtn = el("button", "button-primary", "驗證通過並結案");
+          resolveBtn.addEventListener("click", () => triggerTransition("RESOLVED"));
+          btnRow.append(resolveBtn);
+        }
+        if (allowed.has("ops.quality.write")) {
+          const obsBtn = el("button", "", "轉入觀察期");
+          obsBtn.addEventListener("click", () => triggerTransition("OBSERVING"));
+          btnRow.append(obsBtn);
+        }
+      } else if (st === "OBSERVING") {
+        title.textContent = "觀察指標成效並正式結案";
+        desc.textContent = "案件已發布改善內容並正在觀察指標。確認各項品質達標後可正式結案。";
+        if (allowed.has("ops.quality.resolve")) {
+          const resolveBtn = el("button", "button-primary", "驗證通過並結案");
+          resolveBtn.addEventListener("click", () => triggerTransition("RESOLVED"));
+          btnRow.append(resolveBtn);
+        }
+      } else {
+        title.textContent = "案件處理完畢";
+        desc.textContent = `此案件目前狀態為「${statusLabels[st] || st}」，不需進一步動作。`;
+      }
+
+      card.append(header, title, desc);
+      if (btnRow.children.length) {
+        card.append(btnRow);
+      }
+      return card;
+    }
+
     for (const status of transitions[qualityCase.status] || []) {
       const terminal = ["RESOLVED", "WONT_FIX", "DUPLICATE"].includes(status);
       const capability = terminal ? "ops.quality.resolve" : "ops.quality.write";
       if (!allowed.has(capability)) continue;
       const button = el("button", "", transitionLabels[status] || status);
-      button.addEventListener("click", async () => {
-        const reason = await showTextPrompt({
-          title: `案件狀態轉換：${transitionLabels[status] || status}`,
-          message: terminal
-            ? "請輸入狀態轉換原因（至少 3 個字元）。"
-            : "可選填狀態轉換原因。",
-          minLength: terminal ? 3 : 0,
-          required: terminal,
-        });
-        if (reason == null) return;
-        try {
-          await api(`/api/quality-cases/${caseId}/transition`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              expected_etag: qualityCase.etag,
-              status,
-              reason: reason?.trim() || null,
-              resolution_type: terminal ? "MANUAL_REVIEW" : null,
-            }),
-          });
-          await refreshQuality();
-          await showQualityCaseDetail(caseId);
-        } catch (error) {
-          showContentModal("品質案件操作失敗", el("div", "error", error.message));
-        }
-      });
+      button.addEventListener("click", () => triggerTransition(status));
       actions.append(button);
     }
     if (qualityCase.observation_baseline) {
@@ -879,7 +1040,20 @@ export async function showQualityCaseDetail(caseId, options = {}) {
         }, null, 2)),
       );
     }
-    content.append(actions, el("h3", "", `操作紀錄（${detail.audit.length}）`));
+    const secondaryDetails = el("details", "bu-secondary-actions");
+    secondaryDetails.style.marginTop = "1rem";
+    secondaryDetails.style.marginBottom = "1rem";
+    const summary = el("summary", "", "次要動作與進階狀態切換...");
+    summary.style.cursor = "pointer";
+    summary.style.fontWeight = "500";
+    summary.style.color = "var(--subtle, #4b5563)";
+    secondaryDetails.append(summary, actions);
+
+    content.append(
+      buildNextRecommendedAction(),
+      secondaryDetails,
+      el("h3", "", `操作紀錄（${detail.audit.length}）`),
+    );
     if (detail.audit.length) {
       const aTable = el("table");
       aTable.innerHTML = "<thead><tr><th>時間</th><th>操作</th><th>執行人員</th></tr></thead>";

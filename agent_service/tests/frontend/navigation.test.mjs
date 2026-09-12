@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../../src/ai_ops_backoffice/static/js/', imp
 async function setup() {
   const storage = new Map();
   function el(tag, className = '', text = '') {
-    const node = { tag, className, text, children: [], handlers: {},
+    const node = { tag, className, text, children: [], handlers: {}, dataset: {},
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
       addEventListener(name, fn) { this.handlers[name] = fn; },

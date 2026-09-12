@@ -1,7 +1,7 @@
 import { api, el } from "../../api.js";
 import { showToast } from "../../components/modal.js";
-import { loadNavFilters } from "../../app/navigation.js";
-import { parseReturnTo } from "../../app/returnTo.js";
+import { loadNavFilters, navigateTo } from "../../app/navigation.js";
+import { parseReturnTo, withReturnTo } from "../../app/returnTo.js";
 import { escapeHtml } from "./shared.js";
 
 export async function renderRunsTab(container, allowed) {
@@ -47,6 +47,7 @@ export async function renderRunsTab(container, allowed) {
           <option value="" disabled selected>正在載入提示版本…</option>
         </select>
         <p id="candidate-prompt-meta" class="metric-label"></p>
+        <div id="candidate-prompt-alert" style="display: none;"></div>
       </div>
       <div class="form-group">
         <label for="target-model">模型</label>
@@ -114,7 +115,50 @@ export async function renderRunsTab(container, allowed) {
     selectionState.classList.toggle("is-valid", valid);
   }
 
+  function checkCandidateAvailability() {
+    const candidateAlert = box.querySelector("#candidate-prompt-alert");
+    if (!candidateAlert) return;
+    const baseVal = baselineSelect.value;
+    const candVal = candidateSelect.value;
+    const isMissingOrSame = !candVal || candVal === baseVal;
+
+    if (isMissingOrSame) {
+      candidateAlert.style.display = "block";
+      candidateAlert.replaceChildren();
+      const callout = el("div", "callout warning bu-no-candidate-callout");
+      callout.style.marginTop = "0.5rem";
+      callout.style.padding = "0.75rem 1rem";
+      callout.style.display = "flex";
+      callout.style.flexDirection = "column";
+      callout.style.gap = "0.4rem";
+
+      const title = el("div", "callout-title", "尚無可比較候選版（目前僅有正式版）");
+      title.style.fontWeight = "600";
+      const desc = el(
+        "div",
+        "callout-body",
+        "執行驗收評測需要有與基準不同的候選版 Prompt。請先建立候選版後再執行比較。",
+      );
+      const btn = el("button", "button-primary", "建立候選版");
+      btn.type = "button";
+      btn.style.alignSelf = "flex-start";
+      btn.style.marginTop = "0.25rem";
+      btn.addEventListener("click", () => {
+        navigateTo(
+          "prompts",
+          withReturnTo({}, "evaluations", { tab: "runs" }),
+        );
+      });
+      callout.append(title, desc, btn);
+      candidateAlert.append(callout);
+    } else {
+      candidateAlert.style.display = "none";
+      candidateAlert.replaceChildren();
+    }
+  }
+
   function validateSelectionState() {
+    checkCandidateAvailability();
     const problems = [];
     if (!select.value) problems.push("請先選擇評測題庫版本。");
     if (!baselineSelect.value) problems.push("請選擇基準正式版。");
@@ -231,6 +275,7 @@ export async function renderRunsTab(container, allowed) {
     }
     syncPromptMeta(baselineSelect, baselineMeta);
     syncPromptMeta(candidateSelect, candidateMeta);
+    checkCandidateAvailability();
     baselineSelect.addEventListener("change", () => {
       syncPromptMeta(baselineSelect, baselineMeta);
       invalidatePreflight();

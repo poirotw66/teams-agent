@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from ..contracts import OperationalEvent
 from ..delivery.file_journal import FileJournal
@@ -95,3 +95,13 @@ class CompositeOperationalStore:
     async def purge_expired(self) -> int:
         purge = getattr(self._primary, "purge_expired", None)
         return await purge() if purge else 0
+
+    async def get_backlog_stats(self) -> dict[str, Any]:
+        if hasattr(self, "delivery_stats"):
+            try:
+                stats = await self.delivery_stats()
+                pending = stats.get("pending", 0) if isinstance(stats, dict) else 0
+                return {"count": pending, "pending": pending, "oldest_pending_at": None}
+            except Exception:
+                pass
+        return {"count": 0, "pending": 0, "oldest_pending_at": None}

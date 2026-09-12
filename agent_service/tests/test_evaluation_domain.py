@@ -438,3 +438,118 @@ def test_ge1_a08_candidate_generator_lifecycle():
         assert rev["status"] == "DRAFT"
         assert rev["provenance"]["source_type"] == "SYNTHETIC"
         assert rev["provenance"]["generator_model"] == "gemini-3.8-flash"
+
+
+def test_evaluation_repository_resource_level_mutations(tmp_path):
+    """Resource-level mutation operations update individual cases and runs without state loss."""
+    from datetime import datetime, timezone
+
+    from ai_ops_backoffice.evaluation_domain.models import (
+        CaseRevision,
+        EvalCase,
+        EvaluationAuditEvent,
+    )
+    from ai_ops_backoffice.evaluation_domain.repository import FileEvaluationRepository
+    from ai_ops_backoffice.evaluation_domain.runner_models import (
+        CaseExecution,
+        EvaluationRun,
+        TargetManifest,
+    )
+
+    state_file = tmp_path / "evaluation_state.json"
+    repo = FileEvaluationRepository(state_file)
+
+    # Initial empty
+    assert repo.get_case("case_1") is None
+    assert repo.get_run("run_1") is None
+
+    now = datetime.now(timezone.utc)
+
+    # Update single case
+    case = EvalCase(
+        case_id="case_1",
+        tenant_id="tenant_1",
+        owner_unit_id="IT",
+        title="Password Reset",
+        current_revision_id="rev_1",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+    revision = CaseRevision(
+        revision_id="rev_1",
+        case_id="case_1",
+        revision_number=1,
+        query="Password reset?",
+        behavior="ANSWER_WITH_CITATION",
+        provenance=ProvenanceSpec(source_type="MANUAL", source_id="manual_1"),
+        etag=1,
+        content_hash="dummy_hash",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+    audit = EvaluationAuditEvent(
+        audit_id="aud_1",
+        tenant_id="tenant_1",
+        owner_unit_id="IT",
+        actor_id="tester",
+        actor_role="KNOWLEDGE_ADMIN",
+        entity_type="CASE",
+        entity_id="case_1",
+        action="UPDATE_CASE",
+        before=None,
+        after={"case_id": "case_1"},
+        reason="update",
+        occurred_at=now,
+    )
+    repo.update_case(case, revision=revision, audit=audit)
+
+    fetched_case = repo.get_case("case_1")
+    assert fetched_case is not None
+    assert fetched_case.case_id == "case_1"
+    assert repo.get_revision("rev_1") is not None
+    assert len(repo.list_audit("case_1")) == 1
+
+    # Verify per-resource file on disk
+    case_file = tmp_path / "evaluation_state_records" / "cases" / "case_1.json"
+    assert case_file.exists()
+
+    # Update single run with executions
+    manifest_base = TargetManifest(
+        target_id="tgt_base",
+        target_side="BASELINE",
+        manifest_hash="hash_base",
+    )
+    manifest_cand = TargetManifest(
+        target_id="tgt_cand",
+        target_side="CANDIDATE",
+        manifest_hash="hash_cand",
+    )
+    run = EvaluationRun(
+        run_id="run_1",
+        tenant_id="tenant_1",
+        owner_unit_id="IT",
+        set_version_id="sv_1",
+        baseline_manifest=manifest_base,
+        candidate_manifest=manifest_cand,
+        requested_by="tester",
+        created_at=now,
+    )
+    execution = CaseExecution(
+        execution_id="exec_1",
+        run_id="run_1",
+        case_id="case_1",
+        case_revision_id="rev_1",
+        target_side="BASELINE",
+    )
+    repo.update_run(run, executions=[execution])
+
+    fetched_run = repo.get_run("run_1")
+    assert fetched_run is not None
+    assert fetched_run.run_id == "run_1"
+    assert len(repo.list_case_executions("run_1")) == 1
+    run_file = tmp_path / "evaluation_state_records" / "runs" / "run_1.json"
+    assert run_file.exists()

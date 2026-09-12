@@ -145,7 +145,7 @@ async function setupBuShell() {
   const storage = new Map();
   function el(tag, className = '', text = '') {
     const node = {
-      tag, className, text, children: [], handlers: {},
+      tag, className, text, children: [], handlers: {}, dataset: {},
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
       addEventListener(name, fn) { this.handlers[name] = fn; },

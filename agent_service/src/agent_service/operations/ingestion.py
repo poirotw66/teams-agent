@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from .contracts import FreshnessRecorder, OperationalEvent, utc_now
 from .masking import redact_secrets
@@ -32,14 +34,36 @@ class EventIngestionService:
         store: OperationalStore,
         settings: OpsSettings,
         freshness_tracker: FreshnessRecorder | None = None,
+        backlog_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._store = store
         self._settings = settings
         self._freshness_tracker = freshness_tracker
+        self._backlog_provider = backlog_provider
 
     @property
     def freshness_recorder(self) -> FreshnessRecorder | None:
         return self._freshness_tracker
+
+    async def _resolve_backlog(self) -> tuple[int, datetime | None] | None:
+        """Resolve genuine backlog count and oldest timestamp from real queue or provider."""
+        if self._backlog_provider is not None:
+            res = self._backlog_provider()
+            if asyncio.iscoroutine(res):
+                res = await res
+            if isinstance(res, tuple) and len(res) == 2:
+                return (int(res[0]), res[1])
+            if isinstance(res, (int, float)):
+                return (int(res), None)
+            if isinstance(res, dict):
+                return (int(res.get("count", res.get("pending", 0))), res.get("oldest_pending_at"))
+        if hasattr(self._store, "get_backlog_stats"):
+            res = self._store.get_backlog_stats()
+            if asyncio.iscoroutine(res):
+                res = await res
+            if isinstance(res, dict):
+                return (int(res.get("count", res.get("pending", 0))), res.get("oldest_pending_at"))
+        return None
 
     async def ingest(self, event: OperationalEvent) -> bool:
         # This is the persistence boundary.  Emitters should mask at source, but
@@ -95,12 +119,16 @@ class EventIngestionService:
                     tenant_id=tenant_id,
                 )
             if hasattr(self._freshness_tracker, "record_backlog"):
-                self._freshness_tracker.record_backlog(
-                    resource_type="conversations",
-                    backlog_count=0,
-                    at=ingested_at,
-                    tenant_id=tenant_id,
-                )
+                real_backlog = await self._resolve_backlog()
+                if real_backlog is not None:
+                    count, oldest_at = real_backlog
+                    self._freshness_tracker.record_backlog(
+                        resource_type="conversations",
+                        backlog_count=count,
+                        oldest_pending_at=oldest_at,
+                        at=ingested_at,
+                        tenant_id=tenant_id,
+                    )
         return persisted
 
     async def ingest_many(self, events: list[OperationalEvent]) -> int:

@@ -193,29 +193,43 @@ class FreshnessStore:
                 and hasattr(self._firestore_client, "transaction")
                 and callable(self._firestore_client.transaction)
             ):
-                try:
-                    txn = self._firestore_client.transaction()
-                    committed, remote_dt = _atomic_firestore_set_watermark(
-                        txn, doc_ref, agg_ref, key, at_iso, now_iso, at
-                    )
-                    if not committed:
-                        with self._lock:
-                            cur = self._last_successful_sync.get(key)
-                            if cur is None or remote_dt > cur:
-                                self._last_successful_sync[key] = remote_dt
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        txn = self._firestore_client.transaction()
+                        committed, remote_dt = _atomic_firestore_set_watermark(
+                            txn, doc_ref, agg_ref, key, at_iso, now_iso, at
+                        )
+                        if not committed:
+                            with self._lock:
+                                cur = self._last_successful_sync.get(key)
+                                if cur is None or remote_dt > cur:
+                                    self._last_successful_sync[key] = remote_dt
+                            return
                         return
-                    return
-                except Exception as txn_exc:
-                    logger.debug(
-                        "Transaction attempt for watermark %s encountered: %s; falling back to direct update",
-                        key,
-                        txn_exc,
-                    )
+                    except Exception as txn_exc:
+                        if attempt < max_retries - 1:
+                            time.sleep(0.05 * (2 ** attempt))
+                            continue
+                        logger.error(
+                            "Firestore atomic transaction failed for watermark %s after %d attempts: %s; aborted without non-atomic downgrade",
+                            key,
+                            max_retries,
+                            txn_exc,
+                        )
+                        raise RuntimeError(
+                            f"Firestore watermark transaction failed for {key}: {txn_exc}"
+                        ) from txn_exc
 
-            # 2. Fallback direct update (supports mock and standard document clients)
+            # 2. Direct update ONLY when client does NOT support transactions (e.g. lightweight test mocks)
             self._save_watermark_direct(doc_ref, agg_ref, key, at, at_iso, now_iso)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to save Firestore watermark for %s: %s", key, exc)
+            if (
+                hasattr(self._firestore_client, "transaction")
+                and callable(self._firestore_client.transaction)
+            ):
+                raise
 
     def _save_watermark_direct(
         self,
@@ -341,28 +355,43 @@ class FreshnessStore:
                 and hasattr(self._firestore_client, "transaction")
                 and callable(self._firestore_client.transaction)
             ):
-                try:
-                    txn = self._firestore_client.transaction()
-                    committed, remote_dt = _atomic_firestore_set_heartbeat(
-                        txn, doc_ref, agg_ref, worker_id, at_iso, now_iso, at
-                    )
-                    if not committed:
-                        with self._lock:
-                            cur = self._worker_heartbeats.get(worker_id)
-                            if cur is None or remote_dt > cur:
-                                self._worker_heartbeats[worker_id] = remote_dt
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        txn = self._firestore_client.transaction()
+                        committed, remote_dt = _atomic_firestore_set_heartbeat(
+                            txn, doc_ref, agg_ref, worker_id, at_iso, now_iso, at
+                        )
+                        if not committed:
+                            with self._lock:
+                                cur = self._worker_heartbeats.get(worker_id)
+                                if cur is None or remote_dt > cur:
+                                    self._worker_heartbeats[worker_id] = remote_dt
+                            return
                         return
-                    return
-                except Exception as txn_exc:
-                    logger.debug(
-                        "Transaction attempt for heartbeat %s encountered: %s; falling back to direct update",
-                        worker_id,
-                        txn_exc,
-                    )
+                    except Exception as txn_exc:
+                        if attempt < max_retries - 1:
+                            time.sleep(0.05 * (2 ** attempt))
+                            continue
+                        logger.error(
+                            "Firestore atomic transaction failed for heartbeat %s after %d attempts: %s; aborted without non-atomic downgrade",
+                            worker_id,
+                            max_retries,
+                            txn_exc,
+                        )
+                        raise RuntimeError(
+                            f"Firestore heartbeat transaction failed for {worker_id}: {txn_exc}"
+                        ) from txn_exc
 
+            # Direct update ONLY when client does NOT support transactions (e.g. lightweight test mocks)
             self._save_heartbeat_direct(doc_ref, agg_ref, worker_id, at, at_iso, now_iso)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to save Firestore heartbeat for %s: %s", worker_id, exc)
+            if (
+                hasattr(self._firestore_client, "transaction")
+                and callable(self._firestore_client.transaction)
+            ):
+                raise
 
     def _save_heartbeat_direct(
         self,

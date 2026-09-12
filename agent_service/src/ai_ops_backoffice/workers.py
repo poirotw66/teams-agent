@@ -571,9 +571,50 @@ def install_background_runtime(
                 try:
                     freshness_tracker.record_worker_heartbeat()
                     now_val = freshness_tracker.now()
-                    freshness_tracker.record_backlog("conversations", backlog_count=0, at=now_val)
-                    freshness_tracker.record_backlog("reporting", backlog_count=0, at=now_val)
-                    freshness_tracker.record_backlog("operations_overview", backlog_count=0, at=now_val)
+
+                    # 1. Genuine conversation backlog from outbox journal / store
+                    conv_backlog = 0
+                    conv_oldest = None
+                    if hasattr(query_service, "_runtime") and hasattr(query_service._runtime, "store"):
+                        store = query_service._runtime.store
+                        if hasattr(store, "get_backlog_stats"):
+                            stats = await store.get_backlog_stats()
+                            conv_backlog = stats.get("count", stats.get("pending", 0))
+                            conv_oldest = stats.get("oldest_pending_at")
+
+                    # 2. Genuine reporting backlog from export jobs
+                    export_backlog = 0
+                    if hasattr(query_service, "export_jobs") and hasattr(query_service.export_jobs, "list_jobs"):
+                        try:
+                            queued_exports = await query_service.export_jobs.list_jobs(status="QUEUED")
+                            export_backlog = len(queued_exports) if queued_exports else 0
+                        except Exception:
+                            export_backlog = 0
+
+                    # 3. Genuine sync backlog
+                    sync_backlog = 0
+                    if sync_service is not None and hasattr(sync_service, "get_pending_job_count"):
+                        try:
+                            sync_backlog = await sync_service.get_pending_job_count()
+                        except Exception:
+                            sync_backlog = 0
+
+                    freshness_tracker.record_backlog(
+                        "conversations",
+                        backlog_count=conv_backlog,
+                        oldest_pending_at=conv_oldest,
+                        at=now_val,
+                    )
+                    freshness_tracker.record_backlog(
+                        "reporting",
+                        backlog_count=export_backlog,
+                        at=now_val,
+                    )
+                    freshness_tracker.record_backlog(
+                        "operations_overview",
+                        backlog_count=max(conv_backlog, sync_backlog),
+                        at=now_val,
+                    )
                 except Exception:
                     logger.exception("Failed to record worker heartbeat and backlog for freshness.")
                 try:

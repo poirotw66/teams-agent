@@ -81,13 +81,19 @@ export function isBuShellEnabled() {
   if (window.__AI_OPS_BU_SHELL_V1__ === true) {
     return true;
   }
+  if (window.__AI_OPS_BU_SHELL_V1__ === false) {
+    return false;
+  }
   if (window.__AI_OPS_FLAGS__ && typeof window.__AI_OPS_FLAGS__ === "object") {
     const flag = window.__AI_OPS_FLAGS__[BU_SHELL_FLAG_ID];
+    if (flag === false || flag === "0" || flag === "false" || flag === "DISABLED") {
+      return false;
+    }
     if (flag === true || flag === "true" || flag === "ENABLED") {
       return true;
     }
   }
-  return false;
+  return true;
 }
 
 export function setBuShellEnabled(enabled) {

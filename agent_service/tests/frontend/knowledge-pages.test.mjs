@@ -5,7 +5,7 @@ import test from 'node:test';
 
 async function setup() {
   function el(tag, className = '', text = '') {
-    return { tag, className, text, value: '', style: {}, children: [],
+    return { tag, className, text, value: '', style: {}, dataset: {}, children: [],
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
       addEventListener() {}, setAttribute() {},

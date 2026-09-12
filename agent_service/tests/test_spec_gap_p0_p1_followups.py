@@ -2235,3 +2235,38 @@ def test_freshness_store_concurrency_and_single_doc_lookups(tmp_path: Path) -> N
     store_reloaded = FreshnessStore(persistent_path=tmp_path / "freshness_test.json")
     assert store_reloaded.get_watermark("tenant-conc:conversations") == max_ts
     assert store_reloaded.get_heartbeat("worker-conc-1") == max_ts
+
+
+def test_freshness_store_transaction_failure_aborts_without_direct_downgrade(tmp_path: Path) -> None:
+    """Verify that when Firestore transactions are supported, transaction failure does NOT downgrade to direct write."""
+    from agent_service.operations.freshness_store import FreshnessStore
+
+    direct_write_called = False
+
+    class FailingTxClient:
+        def collection(self, name: str):
+            class DummyCol:
+                def document(self, doc_id: str):
+                    class DummyDoc:
+                        def get(self, *args, **kwargs):
+                            return None
+                        def set(self, *args, **kwargs):
+                            nonlocal direct_write_called
+                            direct_write_called = True
+                    return DummyDoc()
+            return DummyCol()
+
+        def transaction(self):
+            raise ConnectionError("Firestore transaction conflict/timeout")
+
+    store = FreshnessStore(
+        persistent_path=tmp_path / "freshness_tx.json",
+        firestore_client=FailingTxClient(),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        store.save_watermark("tenant:conv", datetime.now(timezone.utc))
+
+    assert "Firestore watermark transaction failed" in str(exc_info.value)
+    # Direct write was NOT called on transaction-capable client
+    assert not direct_write_called

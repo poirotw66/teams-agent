@@ -63,21 +63,59 @@ export function attributionCell(attribution = {}, extras = {}) {
   return cell;
 }
 
+export const STATUS_LABELS_ZH = {
+  ACTIVE: "正式生效",
+  PUBLISHED: "已發布",
+  REALTIME: "即時更新",
+  RESOLVED: "已結案",
+  NEW: "新進待辦",
+  TRIAGED: "已分派",
+  IN_PROGRESS: "處理中",
+  WAITING_REVIEW: "待審核",
+  OBSERVING: "觀察中",
+  WONT_FIX: "不修復",
+  DUPLICATE: "重複案件",
+  DRAFT: "草稿",
+  ARCHIVED: "已封存",
+  DEPRECATED: "已停用",
+  REJECTED: "已駁回",
+  APPROVED: "已核准",
+  CANDIDATE: "候選版",
+  HEALTHY: "健康正常",
+  DEGRADED: "服務降級",
+  CRITICAL: "嚴重異常",
+  QUALITY_CASE_CREATED: "建立改善案件",
+  QUALITY_CASE_UPDATED: "更新改善案件",
+  QUALITY_CASE_TRANSITIONED: "變更案件狀態",
+  QUALITY_CASE_DELETED: "刪除改善案件",
+  TRANSITION_STATUS: "變更案件狀態",
+  ASSOCIATE_CONTENT: "關聯內容",
+  CREATE_DOCUMENT_DRAFT: "建立文件草稿",
+  CREATE_FAQ_DRAFT: "建立 FAQ 草稿",
+  REFRESH_OBSERVATION: "刷新觀察指標",
+};
+
 export function badge(text, variant = "neutral") {
   return el("span", `badge badge-${variant}`, String(text ?? ""));
 }
 
 export function statusBadge(status) {
-  const s = String(status || "").toUpperCase();
+  const raw = String(status || "").trim();
+  const s = raw.toUpperCase();
   let variant = "neutral";
-  if (["ACTIVE", "APPROVED", "RESOLVED", "OK", "HEALTHY", "ENABLED", "SUCCESS", "TRUE"].includes(s)) {
+  if (["ACTIVE", "APPROVED", "RESOLVED", "OK", "HEALTHY", "ENABLED", "SUCCESS", "TRUE", "PUBLISHED"].includes(s)) {
     variant = "success";
-  } else if (["REQUESTED", "CANDIDATE", "OBSERVING", "IN_PROGRESS", "TRIAGED", "WAITING_REVIEW", "DEGRADED", "WARNING"].includes(s)) {
+  } else if (["REQUESTED", "CANDIDATE", "OBSERVING", "IN_PROGRESS", "TRIAGED", "WAITING_REVIEW", "DEGRADED", "WARNING", "REALTIME"].includes(s)) {
     variant = "warning";
   } else if (["FAILED", "ERROR", "CRITICAL", "REJECTED", "WONT_FIX", "LOCKED", "YES"].includes(s)) {
     variant = "danger";
-  } else if (["NEW", "DISABLED", "DUPLICATE", "FALSE", "UNLOCKED", "NO"].includes(s)) {
+  } else if (["NEW", "DISABLED", "DUPLICATE", "FALSE", "UNLOCKED", "NO", "DRAFT", "ARCHIVED", "DEPRECATED"].includes(s)) {
     variant = "neutral";
   }
-  return badge(status, variant);
+  const label = STATUS_LABELS_ZH[s] || STATUS_LABELS_ZH[raw] || raw;
+  const pill = badge(label, variant);
+  if (raw && label !== raw) {
+    pill.title = raw;
+  }
+  return pill;
 }

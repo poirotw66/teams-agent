@@ -544,6 +544,7 @@ export function buildHeroKpiGrid(data, metrics) {
       <div class="hero-card-body">
         <div class="hero-main-stat">${(kAns + fAns).toLocaleString()}</div>
         <div class="hero-stat-caption">自主成功解答 (Knowledge & FAQ)</div>
+        <div class="hero-stat-subnote" style="font-size: 0.75rem; color: var(--subtle, #6b7280); margin-top: 2px;">分母：總對話數 (${convCount.toLocaleString()})</div>
       </div>
       <div class="hero-card-subgrid">
         <div class="hero-subitem">
@@ -570,6 +571,7 @@ export function buildHeroKpiGrid(data, metrics) {
       <div class="hero-card-body">
         <div class="hero-main-stat">${hCount.toLocaleString()}</div>
         <div class="hero-stat-caption">轉接真人客服處理 (Handoffs)</div>
+        <div class="hero-stat-subnote" style="font-size: 0.75rem; color: var(--subtle, #6b7280); margin-top: 2px;">分母：總對話數 (${convCount.toLocaleString()})</div>
       </div>
       <div class="hero-card-subgrid">
         <div class="hero-subitem">
@@ -735,24 +737,26 @@ export function buildTrendChartPanel({
 
 export function buildSplitAnalyticsGrid(data, metrics) {
   const { convCount, kAns, fAns, clarCount, hCount, noAnsCount, totalIssues } = metrics;
+  const container = el("div", "split-analytics-container");
   const splitGrid = el("div", "split-analytics-grid");
+
+  const stageSum = kAns + fAns + hCount + noAnsCount + clarCount;
+  const pctBase = stageSum > 0 ? stageSum : 1;
 
   const funnelCard = el("div", "analytics-card");
   const funnelHeader = el("div", "analytics-card-header");
   const funnelTitleGroup = el("div");
-  const stageSum = kAns + fAns + hCount + noAnsCount + clarCount;
-  const pctBase = stageSum > 0 ? stageSum : 1;
   funnelTitleGroup.append(
     el("h3", "analytics-card-title", isBuShellEnabled() ? "服務處置分布" : "服務處置分流 (Resolution Breakdown)"),
     el(
       "p",
       "analytics-card-subtitle",
-      "各處置依事件獨立累計，同一問題可能出現多種處置；百分比分母為處置事件加總，非問題提取總數。",
+      `各處置依事件獨立累計；百分比分母為處置事件總數（${stageSum.toLocaleString()} 次），非對話總數。`,
     ),
   );
   funnelHeader.append(
     funnelTitleGroup,
-    badge(`處置事件合計 ${stageSum.toLocaleString()}（可重複計數）`, "neutral"),
+    badge(`處置事件合計 ${stageSum.toLocaleString()}（分母）`, "neutral"),
   );
 
   const funnelBars = el("div", "funnel-bars-container");
@@ -790,7 +794,7 @@ export function buildSplitAnalyticsGrid(data, metrics) {
     stageRow.innerHTML = `
         <div class="funnel-stage-meta">
           <span class="funnel-stage-title">${stage.title}</span>
-          <span class="funnel-stage-stat">${stage.count.toLocaleString()} 次 (${pct}%)</span>
+          <span class="funnel-stage-stat">${stage.count.toLocaleString()} 次 (${pct}%，分母：處置事件總數)</span>
         </div>
         <div class="funnel-bar-track">
           <div class="funnel-bar-fill ${stage.color}" style="width: ${Math.min(100, Math.max(stage.count > 0 ? 3 : 0, Number(pct)))}%;"></div>
@@ -803,7 +807,7 @@ export function buildSplitAnalyticsGrid(data, metrics) {
       el(
         "p",
         "metric-label",
-        `問題提取總數 ${Number(data.issueOccurrenceCount).toLocaleString()}（另一口徑，不可與上方百分比直接對照）。`,
+        `問題提取總數 ${Number(data.issueOccurrenceCount).toLocaleString()}（獨立統計口徑，不可與上方百分比直接對照）。`,
       ),
     );
   }
@@ -814,7 +818,7 @@ export function buildSplitAnalyticsGrid(data, metrics) {
   const issuesTitleGroup = el("div");
   issuesTitleGroup.append(
     el("h3", "analytics-card-title", isBuShellEnabled() ? "高頻問題排行" : "Top 問題類型排行 (Top Issues)"),
-    el("p", "analytics-card-subtitle", "進線高頻問題統計，點選可直接進入鑽取診斷"),
+    el("p", "analytics-card-subtitle", `進線高頻問題統計（百分比分母：問題提取總數 ${totalIssues.toLocaleString()} 件），點選可直接進入鑽取診斷`),
   );
   const issuesAllLink = drillLink("查看全部問題 →", "issues");
   issuesHeader.append(issuesTitleGroup, issuesAllLink);
@@ -834,6 +838,7 @@ export function buildSplitAnalyticsGrid(data, metrics) {
       const titleWrap = el("div", "issue-rank-title-group");
       titleWrap.append(el("span", `issue-rank-badge ${rankClass}`, `#${idx + 1}`), el("span", "issue-rank-name", friendlyName));
       const valSpan = el("span", "issue-rank-val", `${item.count.toLocaleString()} 件 (${sharePct}%)`);
+      valSpan.title = `分母：問題提取總數 ${totalIssues.toLocaleString()} 件`;
       head.append(titleWrap, valSpan);
 
       const barWrap = el("div", "issue-rank-bar-wrap");
@@ -855,8 +860,57 @@ export function buildSplitAnalyticsGrid(data, metrics) {
   }
   issuesCard.append(issuesHeader, issuesList);
 
+  // Tab switching between all view, funnel only, and issues only
+  const tabRow = el("div", "filter-bar bu-split-tabs");
+  tabRow.style.marginBottom = "0.75rem";
+  tabRow.style.display = "flex";
+  tabRow.style.gap = "0.5rem";
+
+  const tabs = [
+    { id: "all", label: "全部指標" },
+    { id: "funnel", label: `處置分流 (分母：處置事件總數 ${stageSum.toLocaleString()})` },
+    { id: "issues", label: `高頻問題 (分母：問題提取總數 ${totalIssues.toLocaleString()})` },
+  ];
+
+  let currentTab = "all";
+  const tabButtons = [];
+
+  function updateTabVisibility() {
+    for (const btn of tabButtons) {
+      const active = btn.dataset.tabId === currentTab;
+      btn.className = active ? "button-primary" : "button-secondary";
+    }
+    if (currentTab === "all") {
+      funnelCard.style.display = "";
+      issuesCard.style.display = "";
+      splitGrid.className = "split-analytics-grid";
+    } else if (currentTab === "funnel") {
+      funnelCard.style.display = "";
+      issuesCard.style.display = "none";
+      splitGrid.className = "split-analytics-single";
+    } else {
+      funnelCard.style.display = "none";
+      issuesCard.style.display = "";
+      splitGrid.className = "split-analytics-single";
+    }
+  }
+
+  for (const t of tabs) {
+    const btn = el("button", t.id === "all" ? "button-primary" : "button-secondary", t.label);
+    btn.type = "button";
+    btn.dataset.tabId = t.id;
+    btn.style.fontSize = "0.85rem";
+    btn.addEventListener("click", () => {
+      currentTab = t.id;
+      updateTabVisibility();
+    });
+    tabButtons.push(btn);
+    tabRow.append(btn);
+  }
+
   splitGrid.append(funnelCard, issuesCard);
-  return splitGrid;
+  container.append(tabRow, splitGrid);
+  return container;
 }
 
 export function buildQuickNavPanel() {
@@ -874,8 +928,8 @@ export function buildQuickNavPanel() {
     },
     {
       icon: "分",
-      title: "路由來源管理",
-      desc: "檢查與配置各業務分類的 AI / 人工轉派分流策略",
+      title: "處理方式與回答依據",
+      desc: "查看 FAQ、知識文件與轉派人工等分流分布與實際命中依據",
       view: "routes",
       filters: {},
     },
