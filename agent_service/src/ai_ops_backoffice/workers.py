@@ -419,6 +419,14 @@ def install_background_runtime(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         resolved_settings.ops_store_path.mkdir(parents=True, exist_ok=True)
+        if not getattr(resolved_settings, "workers_enabled", True):
+            logger.info(
+                "AI Ops background workers are disabled (workers_enabled=False). "
+                "API server running without background worker tasks."
+            )
+            yield
+            return
+
         stop_sweeper = asyncio.Event()
         query_service.export_jobs.configure_execution_backend(query_service)
         try:

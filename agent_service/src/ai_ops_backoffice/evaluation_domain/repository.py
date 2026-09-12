@@ -307,9 +307,9 @@ class FileEvaluationRepository(InMemoryEvaluationRepository):
                 # Reload under lock before committing
                 fresh = self._read_file()
                 if expected_revision is not None and hasattr(fresh, "revision"):
-                    if getattr(fresh, "revision") != expected_revision:
+                    if fresh.revision != expected_revision:
                         raise EvaluationVersionConflictError(
-                            f"Revision conflict: expected {expected_revision}, got {getattr(fresh, 'revision')}"
+                            f"Revision conflict: expected {expected_revision}, got {fresh.revision}"
                         )
                 self._state = fresh
                 super().commit_mutation(
@@ -367,16 +367,22 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
         meta_snap = meta_ref.get() if hasattr(meta_ref, "get") else None
         current_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
 
-        cases = [EvalCase.model_validate(d.to_dict()) for d in self._col("cases").stream()]
-        revisions = [CaseRevision.model_validate(d.to_dict()) for d in self._col("revisions").stream()]
-        sets = [EvalSet.model_validate(d.to_dict()) for d in self._col("sets").stream()]
-        set_versions = [EvalSetVersion.model_validate(d.to_dict()) for d in self._col("set_versions").stream()]
-        candidate_jobs = [CandidateGenerationJob.model_validate(d.to_dict()) for d in self._col("candidate_jobs").stream()]
-        runs = [EvaluationRun.model_validate(d.to_dict()) for d in self._col("runs").stream()]
-        case_executions = [CaseExecution.model_validate(d.to_dict()) for d in self._col("executions").stream()]
-        review_decisions = [ReviewDecision.model_validate(d.to_dict()) for d in self._col("reviews").stream()]
-        audits = [EvaluationAuditEvent.model_validate(d.to_dict()) for d in self._col("audits").stream()]
-        idempotency = [EvaluationIdempotencyRecord.model_validate(d.to_dict()) for d in self._col("idempotency").stream()]
+        def _clean(d: Any) -> dict[str, Any]:
+            raw = dict(d.to_dict() or {})
+            raw.pop("_revision", None)
+            return raw
+
+        cases = [EvalCase.model_validate(_clean(d)) for d in self._col("cases").stream()]
+        revisions = [CaseRevision.model_validate(_clean(d)) for d in self._col("revisions").stream()]
+        sets = [EvalSet.model_validate(_clean(d)) for d in self._col("sets").stream()]
+        set_versions = [EvalSetVersion.model_validate(_clean(d)) for d in self._col("set_versions").stream()]
+        candidate_jobs = [CandidateGenerationJob.model_validate(_clean(d)) for d in self._col("candidate_jobs").stream()]
+        runs = [EvaluationRun.model_validate(_clean(d)) for d in self._col("runs").stream()]
+        case_executions = [CaseExecution.model_validate(_clean(d)) for d in self._col("executions").stream()]
+        review_decisions = [ReviewDecision.model_validate(_clean(d)) for d in self._col("reviews").stream()]
+        audits = [EvaluationAuditEvent.model_validate(_clean(d)) for d in self._col("audits").stream()]
+        idempotency = [EvaluationIdempotencyRecord.model_validate(_clean(d)) for d in self._col("idempotency").stream()]
+        outbox_jobs = [_clean(d) for d in self._col("outbox_jobs").stream()]
 
         loaded = EvaluationState(
             revision=current_rev,
@@ -390,10 +396,133 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
             review_decisions=tuple(review_decisions),
             audits=tuple(audits),
             idempotency=tuple(idempotency),
+            outbox_jobs=tuple(outbox_jobs),
         )
         with self._lock:
             self._state = loaded
         return loaded
+
+    def get_case(self, case_id: str) -> EvalCase | None:
+        with self._lock:
+            cached = next((c for c in self._state.cases if c.case_id == case_id), None)
+        if cached is not None:
+            return cached
+        doc = self._col("cases").document(case_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            case = EvalCase.model_validate(data)
+            with self._lock:
+                if not any(c.case_id == case_id for c in self._state.cases):
+                    self._state = self._state.model_copy(update={"cases": self._state.cases + (case,)})
+            return case
+        return None
+
+    def get_revision(self, revision_id: str) -> CaseRevision | None:
+        with self._lock:
+            cached = next((r for r in self._state.revisions if r.revision_id == revision_id), None)
+        if cached is not None:
+            return cached
+        doc = self._col("revisions").document(revision_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            rev = CaseRevision.model_validate(data)
+            with self._lock:
+                if not any(r.revision_id == revision_id for r in self._state.revisions):
+                    self._state = self._state.model_copy(update={"revisions": self._state.revisions + (rev,)})
+            return rev
+        return None
+
+    def get_run(self, run_id: str) -> EvaluationRun | None:
+        with self._lock:
+            cached = next((r for r in self._state.runs if r.run_id == run_id), None)
+        if cached is not None:
+            return cached
+        doc = self._col("runs").document(run_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            run = EvaluationRun.model_validate(data)
+            with self._lock:
+                if not any(r.run_id == run_id for r in self._state.runs):
+                    self._state = self._state.model_copy(update={"runs": self._state.runs + (run,)})
+            return run
+        return None
+
+    def get_case_execution(self, execution_id: str) -> CaseExecution | None:
+        with self._lock:
+            cached = next(
+                (e for e in self._state.case_executions if e.execution_id == execution_id), None
+            )
+        if cached is not None:
+            return cached
+        doc = self._col("executions").document(execution_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            exec_item = CaseExecution.model_validate(data)
+            with self._lock:
+                if not any(e.execution_id == execution_id for e in self._state.case_executions):
+                    self._state = self._state.model_copy(
+                        update={"case_executions": self._state.case_executions + (exec_item,)}
+                    )
+            return exec_item
+        return None
+
+    def get_set(self, set_id: str) -> EvalSet | None:
+        with self._lock:
+            cached = next((s for s in self._state.sets if s.set_id == set_id), None)
+        if cached is not None:
+            return cached
+        doc = self._col("sets").document(set_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            eval_set = EvalSet.model_validate(data)
+            with self._lock:
+                if not any(s.set_id == set_id for s in self._state.sets):
+                    self._state = self._state.model_copy(update={"sets": self._state.sets + (eval_set,)})
+            return eval_set
+        return None
+
+    def get_set_version(self, set_version_id: str) -> EvalSetVersion | None:
+        with self._lock:
+            cached = next(
+                (v for v in self._state.set_versions if v.set_version_id == set_version_id), None
+            )
+        if cached is not None:
+            return cached
+        doc = self._col("set_versions").document(set_version_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            version = EvalSetVersion.model_validate(data)
+            with self._lock:
+                if not any(v.set_version_id == set_version_id for v in self._state.set_versions):
+                    self._state = self._state.model_copy(
+                        update={"set_versions": self._state.set_versions + (version,)}
+                    )
+            return version
+        return None
+
+    def get_candidate_job(self, job_id: str) -> CandidateGenerationJob | None:
+        with self._lock:
+            cached = next((j for j in self._state.candidate_jobs if j.job_id == job_id), None)
+        if cached is not None:
+            return cached
+        doc = self._col("candidate_jobs").document(job_id).get()
+        if getattr(doc, "exists", False) and doc.to_dict():
+            data = dict(doc.to_dict())
+            data.pop("_revision", None)
+            job = CandidateGenerationJob.model_validate(data)
+            with self._lock:
+                if not any(j.job_id == job_id for j in self._state.candidate_jobs):
+                    self._state = self._state.model_copy(
+                        update={"candidate_jobs": self._state.candidate_jobs + (job,)}
+                    )
+            return job
+        return None
 
     def commit_mutation(
         self,
@@ -405,6 +534,64 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
         import json
         meta_ref = self._col("meta").document("root")
 
+        with self._lock:
+            prev_state = self._state
+
+        # Compute diffs to only write modified/added documents
+        prev_cases = {c.case_id: c for c in prev_state.cases}
+        changed_cases = [c for c in new_state.cases if prev_cases.get(c.case_id) != c]
+        deleted_case_ids = set(prev_cases.keys()) - {c.case_id for c in new_state.cases}
+
+        prev_revs = {r.revision_id: r for r in prev_state.revisions}
+        changed_revs = [r for r in new_state.revisions if prev_revs.get(r.revision_id) != r]
+        deleted_rev_ids = set(prev_revs.keys()) - {r.revision_id for r in new_state.revisions}
+
+        prev_sets = {s.set_id: s for s in prev_state.sets}
+        changed_sets = [s for s in new_state.sets if prev_sets.get(s.set_id) != s]
+        deleted_set_ids = set(prev_sets.keys()) - {s.set_id for s in new_state.sets}
+
+        prev_svs = {sv.set_version_id: sv for sv in prev_state.set_versions}
+        changed_svs = [sv for sv in new_state.set_versions if prev_svs.get(sv.set_version_id) != sv]
+        deleted_sv_ids = set(prev_svs.keys()) - {sv.set_version_id for sv in new_state.set_versions}
+
+        prev_cjobs = {j.job_id: j for j in prev_state.candidate_jobs}
+        changed_cjobs = [j for j in new_state.candidate_jobs if prev_cjobs.get(j.job_id) != j]
+        deleted_cjob_ids = set(prev_cjobs.keys()) - {j.job_id for j in new_state.candidate_jobs}
+
+        prev_runs = {r.run_id: r for r in prev_state.runs}
+        changed_runs = [r for r in new_state.runs if prev_runs.get(r.run_id) != r]
+        deleted_run_ids = set(prev_runs.keys()) - {r.run_id for r in new_state.runs}
+
+        prev_execs = {e.execution_id: e for e in prev_state.case_executions}
+        changed_execs = [e for e in new_state.case_executions if prev_execs.get(e.execution_id) != e]
+        deleted_exec_ids = set(prev_execs.keys()) - {e.execution_id for e in new_state.case_executions}
+
+        prev_rev_decs = {d.decision_id: d for d in prev_state.review_decisions}
+        changed_rev_decs = [d for d in new_state.review_decisions if prev_rev_decs.get(d.decision_id) != d]
+        deleted_rev_dec_ids = set(prev_rev_decs.keys()) - {d.decision_id for d in new_state.review_decisions}
+
+        prev_outbox = {str(j.get("outbox_id", j.get("job_id"))): j for j in getattr(prev_state, "outbox_jobs", ())}
+        new_outbox = {str(j.get("outbox_id", j.get("job_id"))): j for j in getattr(new_state, "outbox_jobs", ())}
+        changed_outbox = [j for k, j in new_outbox.items() if prev_outbox.get(k) != j]
+        deleted_outbox_ids = set(prev_outbox.keys()) - set(new_outbox.keys())
+
+        def _safe_delete(tx: Any, col_name: str, doc_id: str) -> None:
+            ref = self._col(col_name).document(doc_id)
+            if hasattr(tx, "delete"):
+                try:
+                    tx.delete(ref)
+                    return
+                except Exception:
+                    pass
+            if hasattr(ref, "delete"):
+                try:
+                    ref.delete()
+                    return
+                except Exception:
+                    pass
+            if hasattr(ref, "coll") and hasattr(ref.coll, "store"):
+                ref.coll.store.pop((ref.coll.name, ref.key), None)
+
         def op(transaction: Any) -> int:
             meta_snap = meta_ref.get(transaction=transaction) if hasattr(meta_ref, "get") else None
             curr_rev = meta_snap.to_dict().get("revision", 1) if (meta_snap and getattr(meta_snap, "exists", False)) else 1
@@ -415,37 +602,88 @@ class FirestoreEvaluationRepository(InMemoryEvaluationRepository):
             next_rev = curr_rev + 1
             transaction.set(meta_ref, {"revision": next_rev})
 
-            for c in new_state.cases:
+            for c in changed_cases:
                 ref = self._col("cases").document(c.case_id)
-                transaction.set(ref, json.loads(c.model_dump_json()))
-            for r in new_state.revisions:
+                data = json.loads(c.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for cid in deleted_case_ids:
+                _safe_delete(transaction, "cases", cid)
+
+            for r in changed_revs:
                 ref = self._col("revisions").document(r.revision_id)
-                transaction.set(ref, json.loads(r.model_dump_json()))
-            for s in new_state.sets:
+                data = json.loads(r.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for rid in deleted_rev_ids:
+                _safe_delete(transaction, "revisions", rid)
+
+            for s in changed_sets:
                 ref = self._col("sets").document(s.set_id)
-                transaction.set(ref, json.loads(s.model_dump_json()))
-            for sv in new_state.set_versions:
+                data = json.loads(s.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for sid in deleted_set_ids:
+                _safe_delete(transaction, "sets", sid)
+
+            for sv in changed_svs:
                 ref = self._col("set_versions").document(sv.set_version_id)
-                transaction.set(ref, json.loads(sv.model_dump_json()))
-            for j in new_state.candidate_jobs:
+                data = json.loads(sv.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for svid in deleted_sv_ids:
+                _safe_delete(transaction, "set_versions", svid)
+
+            for j in changed_cjobs:
                 ref = self._col("candidate_jobs").document(j.job_id)
-                transaction.set(ref, json.loads(j.model_dump_json()))
-            for run in new_state.runs:
+                data = json.loads(j.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for jid in deleted_cjob_ids:
+                _safe_delete(transaction, "candidate_jobs", jid)
+
+            for run in changed_runs:
                 ref = self._col("runs").document(run.run_id)
-                transaction.set(ref, json.loads(run.model_dump_json()))
-            for ex in new_state.case_executions:
+                data = json.loads(run.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for rid in deleted_run_ids:
+                _safe_delete(transaction, "runs", rid)
+
+            for ex in changed_execs:
                 ref = self._col("executions").document(ex.execution_id)
-                transaction.set(ref, json.loads(ex.model_dump_json()))
-            for rev in new_state.review_decisions:
+                data = json.loads(ex.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for eid in deleted_exec_ids:
+                _safe_delete(transaction, "executions", eid)
+
+            for rev in changed_rev_decs:
                 ref = self._col("reviews").document(rev.decision_id)
-                transaction.set(ref, json.loads(rev.model_dump_json()))
+                data = json.loads(rev.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
+            for rdid in deleted_rev_dec_ids:
+                _safe_delete(transaction, "reviews", rdid)
+
+            for oj in changed_outbox:
+                oid = str(oj.get("outbox_id", oj.get("job_id")))
+                ref = self._col("outbox_jobs").document(oid)
+                data = {**oj, "_revision": next_rev}
+                transaction.set(ref, data)
+            for oid in deleted_outbox_ids:
+                _safe_delete(transaction, "outbox_jobs", oid)
 
             if audit:
                 ref = self._col("audits").document(audit.audit_id)
-                transaction.set(ref, json.loads(audit.model_dump_json()))
+                data = json.loads(audit.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
             if idempotency_record:
                 ref = self._col("idempotency").document(idempotency_record.key)
-                transaction.set(ref, json.loads(idempotency_record.model_dump_json()))
+                data = json.loads(idempotency_record.model_dump_json())
+                data["_revision"] = next_rev
+                transaction.set(ref, data)
             return next_rev
 
         next_rev = self._run_transaction(op)

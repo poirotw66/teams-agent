@@ -276,3 +276,4 @@ class EvaluationState(StrictModel):
     review_decisions: tuple[ReviewDecision, ...] = ()
     audits: tuple[EvaluationAuditEvent, ...] = ()
     idempotency: tuple[EvaluationIdempotencyRecord, ...] = ()
+    outbox_jobs: tuple[dict[str, Any], ...] = ()

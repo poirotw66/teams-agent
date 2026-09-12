@@ -15,8 +15,14 @@ These extra routes are deliberately unauthenticated:
   without any bearer token.
 """
 
+import base64
+import hashlib
+import hmac
 import html
+import json
 import logging
+import time
+import uuid
 from typing import Any
 from urllib.parse import quote
 
@@ -28,11 +34,13 @@ from microsoft_teams.apps.auth import TokenValidator
 from .media import render_teams_image, resolve_asset
 from .settings import AgentSettings
 from .source_links import (
+    create_viewer_token,
     resolve_source_file,
     source_media_type,
     verify_viewer_token,
 )
 from .source_viewer import render_source_document_html
+from .viewer_sessions import get_viewer_membership_store
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +220,7 @@ def create_web_app(
                 content_type = source_media_type(resolved)
         except PermissionError as error:
             accept = request.headers.get("accept", "").lower()
-            if "text/html" in accept:
+            if "text/html" in accept and not auth_subject:
                 redirect_target = f"/sources/login?redirect_url={quote(str(request.url))}"
                 return Response(
                     status_code=302,
@@ -222,7 +230,7 @@ def create_web_app(
         except FileNotFoundError as error:
             raise HTTPException(status_code=404, detail="Not Found") from error
 
-        response = Response(
+        return Response(
             content=content,
             media_type=content_type,
             headers={
@@ -234,26 +242,21 @@ def create_web_app(
                 ),
             },
         )
-        # Establish or refresh browser session cookie when token is verified
-        token_param = request.query_params.get("token") or request.query_params.get("viewer_token")
-        if token_param and auth_subject:
-            response.set_cookie(
-                "teams_viewer_token",
-                token_param.strip(),
-                max_age=settings.asset_url_ttl_seconds,
-                httponly=True,
-                samesite="lax",
-            )
-        return response
 
     @app.get("/sources/login")
     async def viewer_login_page(request: Request) -> Response:
-        token = request.query_params.get("token") or request.query_params.get("viewer_token")
         redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        # If user is already authenticated through gateway headers or existing valid cookie
+        auth_subject = _authenticated_viewer_subject(request, settings)
+        if auth_subject:
+            target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+            return Response(status_code=302, headers={"Location": target})
+
+        token = request.query_params.get("token") or request.query_params.get("viewer_token")
         if token and str(token).strip():
             payload = verify_viewer_token(str(token).strip(), settings)
             if payload and payload.get("sub"):
-                target = redirect_url if redirect_url.startswith("/") else "/healthz"
+                target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
                 resp = Response(status_code=302, headers={"Location": target})
                 resp.set_cookie(
                     "teams_viewer_token",
@@ -264,7 +267,7 @@ def create_web_app(
                 )
                 return resp
 
-        # Traditional Chinese viewer login / verification page
+        # Traditional Chinese viewer login / SSO landing page
         escaped_redirect = html.escape(redirect_url)
         page = f"""<!DOCTYPE html>
 <html lang="zh-Hant">
@@ -311,6 +314,44 @@ def create_web_app(
       margin: 20px 0;
       line-height: 1.5;
     }}
+    .sso-btn {{
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      text-align: center;
+      text-decoration: none;
+      background: #0078d4;
+      color: #ffffff;
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      margin-bottom: 20px;
+    }}
+    .sso-btn:hover {{
+      background: #106ebe;
+    }}
+    .divider {{
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 20px 0;
+      color: #8a8886;
+      font-size: 12px;
+    }}
+    .divider::before, .divider::after {{
+      content: "";
+      flex: 1;
+      border-bottom: 1px solid #e0e0e0;
+    }}
+    .divider:not(:empty)::before {{
+      margin-right: .75em;
+    }}
+    .divider:not(:empty)::after {{
+      margin-left: .75em;
+    }}
     label {{
       display: block;
       font-size: 13px;
@@ -352,11 +393,13 @@ def create_web_app(
 <body>
   <div class="card">
     <h2>知識庫來源文件存取驗證</h2>
-    <p>為了維護企業資訊安全，存取引用來源文件需具備有效的 Teams 使用者檢視憑證。</p>
+    <p>為了維護企業資訊安全，存取引用來源文件需透過企業單一登入 (SSO) 或經由授權閘道完成身分確認。</p>
     <div class="callout">
-      <strong>如何取得憑證？</strong><br />
-      在 Teams 中向智慧助理提問時，系統會自動在參考來源連結中附帶一次性安全檢視憑證。直接點擊 Teams 回應中的來源連結即可完成驗證與瀏覽。
+      <strong>存取說明</strong><br />
+      引用來源文件受企業授權與存取控制保護。請使用您的 Microsoft 365 / 公司帳號完成登入，或使用經授權核發的檢視憑證。
     </div>
+    <a href="/sources/auth/login?redirect_url={escaped_redirect}" class="sso-btn">使用 Microsoft 365 / 公司帳號登入 (SSO)</a>
+    <div class="divider">或使用檢視憑證驗證</div>
     <form method="POST" action="/sources/login">
       <input type="hidden" name="redirect_url" value="{escaped_redirect}" />
       <label for="token">檢視憑證 (Viewer Token)：</label>
@@ -367,6 +410,134 @@ def create_web_app(
 </body>
 </html>"""
         return Response(content=page.encode("utf-8"), media_type="text/html; charset=utf-8")
+
+    @app.get("/sources/auth/login")
+    async def viewer_auth_login(request: Request) -> Response:
+        redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        auth_subject = _authenticated_viewer_subject(request, settings)
+        if auth_subject:
+            target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+            return Response(status_code=302, headers={"Location": target})
+
+        tenant_id = settings.tenant_id or "common"
+        client_id = settings.client_id
+        if not client_id:
+            # When SSO is unconfigured in local dev/mock without client_id, fallback to login page with prompt
+            return Response(
+                status_code=302,
+                headers={"Location": f"/sources/login?redirect_url={quote(redirect_url)}&error=sso_unconfigured"},
+            )
+
+        base_url = settings.public_base_url or str(request.base_url).rstrip("/")
+        callback_url = f"{base_url}/sources/auth/callback"
+
+        state_payload = {
+            "redirect_url": redirect_url,
+            "ts": time.time(),
+            "nonce": uuid.uuid4().hex,
+        }
+        secret = settings.asset_signing_key or settings.api_token or "viewer-state-secret"
+        state_bytes = json.dumps(state_payload, sort_keys=True).encode("utf-8")
+        sig = hmac.new(secret.encode("utf-8"), state_bytes, hashlib.sha256).hexdigest()
+        state_param = f"{base64.urlsafe_b64encode(state_bytes).decode('ascii')}.{sig}"
+
+        auth_url = (
+            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
+            f"?client_id={quote(client_id)}"
+            f"&response_type=code"
+            f"&redirect_uri={quote(callback_url)}"
+            f"&response_mode=query"
+            f"&scope=openid%20profile%20email"
+            f"&state={quote(state_param)}"
+        )
+        return Response(status_code=302, headers={"Location": auth_url})
+
+    @app.get("/sources/auth/callback")
+    async def viewer_auth_callback(request: Request) -> Response:
+        code = request.query_params.get("code")
+        state_param = request.query_params.get("state") or ""
+        if not code or not state_param:
+            raise HTTPException(status_code=400, detail="Missing authorization code or state.")
+
+        secret = settings.asset_signing_key or settings.api_token or "viewer-state-secret"
+        raw_state, _, sig = state_param.partition(".")
+        try:
+            state_bytes = base64.urlsafe_b64decode(raw_state.encode("ascii"))
+            expected_sig = hmac.new(secret.encode("utf-8"), state_bytes, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, expected_sig):
+                raise HTTPException(status_code=403, detail="Invalid state signature.")
+            state_data = json.loads(state_bytes.decode("utf-8"))
+            if time.time() - float(state_data.get("ts", 0)) > 600:
+                raise HTTPException(status_code=403, detail="State has expired.")
+        except Exception as err:
+            raise HTTPException(status_code=403, detail="Invalid or expired SSO state.") from err
+
+        redirect_url = str(state_data.get("redirect_url") or "")
+        target = redirect_url if redirect_url.startswith(("/", settings.public_base_url or "/")) else "/healthz"
+
+        base_url = settings.public_base_url or str(request.base_url).rstrip("/")
+        callback_url = f"{base_url}/sources/auth/callback"
+        tenant_id = settings.tenant_id or "common"
+        client_id = settings.client_id
+        client_secret = settings.client_secret
+
+        subject: str | None = None
+        groups: list[str] = []
+
+        token_exchanger = getattr(request.app.state, "oauth_token_exchanger", None)
+        if token_exchanger is not None:
+            token_data = await token_exchanger(code, callback_url)
+            subject = token_data.get("sub") or token_data.get("email") or token_data.get("oid")
+            groups = list(token_data.get("groups") or [])
+            if token_data.get("tenant_id"):
+                tenant_id = token_data["tenant_id"]
+        elif client_id and client_secret:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                token_resp = await http_client.post(
+                    f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "grant_type": "authorization_code",
+                        "code": code,
+                        "redirect_uri": callback_url,
+                    },
+                )
+                if token_resp.status_code == 200:
+                    token_json = token_resp.json()
+                    id_token = token_json.get("id_token")
+                    if id_token:
+                        parts = id_token.split(".")
+                        if len(parts) >= 2:
+                            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+                            claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+                            subject = claims.get("preferred_username") or claims.get("email") or claims.get("oid") or claims.get("sub")
+                            tid = claims.get("tid")
+                            if tid:
+                                tenant_id = tid
+
+        if not subject:
+            raise HTTPException(status_code=401, detail="Failed to resolve authenticated subject from SSO.")
+
+        store = get_viewer_membership_store(settings)
+        store.remember(subject, groups=groups, tenant_id=tenant_id)
+
+        viewer_token = create_viewer_token(
+            subject,
+            settings,
+            tenant_id=tenant_id,
+        )
+        resp = Response(status_code=302, headers={"Location": target})
+        resp.set_cookie(
+            "teams_viewer_token",
+            viewer_token,
+            max_age=settings.asset_url_ttl_seconds,
+            httponly=True,
+            samesite="lax",
+        )
+        return resp
 
     @app.post("/sources/login")
     async def viewer_login_submit(request: Request) -> Response:
@@ -441,17 +612,7 @@ def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> 
                 return str(value).strip()
             # If secret is missing or mismatched, header is untrusted and ignored
 
-    # 2. Direct Teams citation click token in query params
-    query_token = request.query_params.get("token") or request.query_params.get("viewer_token")
-    if query_token and str(query_token).strip():
-        payload = verify_viewer_token(str(query_token).strip(), settings)
-        if payload and isinstance(payload.get("sub"), str) and payload["sub"].strip():
-            query_tenant = request.query_params.get("tenantId")
-            token_tenant = payload.get("tid")
-            if not query_tenant or not token_tenant or str(query_tenant).strip() == str(token_tenant).strip():
-                return payload["sub"].strip()
-
-    # 3. Browser session cookie from previous authenticated click or /sources/login
+    # 2. Browser session cookie from authenticated login (/sources/login or SSO)
     cookie_token = request.cookies.get("teams_viewer_token") or request.cookies.get("viewer_token")
     if cookie_token and str(cookie_token).strip():
         payload = verify_viewer_token(str(cookie_token).strip(), settings)
@@ -461,7 +622,7 @@ def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> 
             if not query_tenant or not token_tenant or str(query_tenant).strip() == str(token_tenant).strip():
                 return payload["sub"].strip()
 
-    # 4. Bearer token in Authorization header
+    # 3. Bearer token in Authorization header
     authorization = request.headers.get("authorization") or request.headers.get(
         "Authorization"
     )

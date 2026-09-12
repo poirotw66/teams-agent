@@ -249,18 +249,6 @@ def build_source_url(
         query += f"&sourceRefId={quote(source_ref_id, safe='')}"
     if viewer.tenant_id:
         query += f"&tenantId={quote(str(viewer.tenant_id), safe='')}"
-    if settings.asset_signing_key:
-        try:
-            viewer_token = create_viewer_token(
-                subject,
-                settings,
-                tenant_id=viewer.tenant_id,
-                expires_in=settings.asset_url_ttl_seconds,
-                now=float(issued_at),
-            )
-            query += f"&token={quote(viewer_token, safe='')}"
-        except (ValueError, TypeError, KeyError) as exc:
-            logger.debug("Failed to create viewer token: %s", exc)
     return f"{settings.public_base_url}/rag-sources/{encoded_path}?{query}"
 
 

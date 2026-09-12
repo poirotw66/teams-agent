@@ -548,3 +548,101 @@ def test_authoritative_revocation_source_blocks_resolution() -> None:
     assert authoritative_revoked.groups == ()
 
 
+def test_gcs_viewer_membership_fails_fast_in_production_without_client() -> None:
+    from teams_agent.viewer_sessions import (
+        GcsViewerMembershipStore,
+        get_viewer_membership_store,
+    )
+
+    class DummySettings:
+        viewer_membership_backend = "gcs"
+        viewer_membership_gcs_bucket = "prod-bucket-test"
+        viewer_membership_store_path = None
+        viewer_membership_allow_memory_fallback = False
+
+    with pytest.raises(ValueError, match="requires a real GCS client"):
+        GcsViewerMembershipStore("prod-bucket-fail-test", allow_memory_fallback=False)
+
+    with pytest.raises(ValueError, match="requires a real GCS client"):
+        get_viewer_membership_store(DummySettings())
+
+
+def test_gcs_concurrent_interleaved_write_and_revocation_cas_retry() -> None:
+    from teams_agent.viewer_sessions import GcsViewerMembershipStore
+
+    bucket = "concurrent-cas-test-bucket"
+    instance1 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
+    instance2 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
+
+    # 1. Instance 1 writes Alice, Instance 2 writes Bob
+    instance1.remember("alice", groups=("eng",), tenant_id="t1", now=1000, ttl_seconds=300)
+    instance2.remember("bob", groups=("sales",), tenant_id="t1", now=1000, ttl_seconds=300)
+
+    # Independent subject blobs ensure no collision between Alice and Bob
+    res_alice = instance2.resolve("alice", now=1010)
+    res_bob = instance1.resolve("bob", now=1010)
+    assert res_alice is not None and res_alice.groups == ("eng",)
+    assert res_bob is not None and res_bob.groups == ("sales",)
+
+    # 2. Interleaved concurrent update and revocation on Alice
+    # Instance 1 prepares an update, while Instance 2 concurrently revokes Alice
+    instance2.revoke("alice")
+    # Instance 1 updates Alice's groups; CAS retry ensures revocation is preserved
+    instance1.remember("alice", groups=("eng", "admin"), tenant_id="t1", now=1020, ttl_seconds=300)
+
+    # Both instances must see Alice as revoked, and Bob completely intact
+    after_alice1 = instance1.resolve("alice", now=1030)
+    after_alice2 = instance2.resolve("alice", now=1030)
+    after_bob = instance1.resolve("bob", now=1030)
+
+    assert after_alice1 is not None
+    assert after_alice1.revoked is True
+    assert after_alice1.groups == ()
+
+    assert after_alice2 is not None
+    assert after_alice2.revoked is True
+    assert after_alice2.groups == ()
+
+    assert after_bob is not None
+    assert after_bob.revoked is False
+    assert after_bob.groups == ("sales",)
+
+
+def test_gcs_revocation_failure_fails_closed_and_raises() -> None:
+    from unittest.mock import MagicMock
+
+    from teams_agent.viewer_sessions import (
+        GcsViewerMembershipStore,
+        PreconditionConflictError,
+        RevocationStorageError,
+    )
+
+    store = GcsViewerMembershipStore("test-fail-bucket", allow_memory_fallback=True)
+
+    # 1. When revocation check encounters storage error, resolve() fails closed
+    mock_client = MagicMock()
+    mock_bucket = MagicMock()
+    mock_blob = MagicMock()
+    mock_blob.exists.side_effect = RuntimeError("GCS network timeout")
+    mock_bucket.blob.return_value = mock_blob
+    mock_client.bucket.return_value = mock_bucket
+
+    store.client = mock_client
+    # Even if subject had valid data, failing revocation check MUST fail closed
+    resolved = store.resolve("alice")
+    assert resolved is not None
+    assert resolved.revoked is True
+    assert resolved.groups == ()
+
+    # 2. When writing revocation marker fails, revoke() raises RevocationStorageError
+    mock_blob.upload_from_string.side_effect = RuntimeError("GCS write permission denied")
+    with pytest.raises(RevocationStorageError, match="Failed to write revocation marker"):
+        store.revoke("alice")
+
+    # 3. When CAS retries in revoke() are exhausted, it raises PreconditionConflictError
+    store.client = None  # in-memory store
+    store.remember("bob", groups=("dev",), tenant_id="t1")
+    # Force mock _write_subject_blob to always raise PreconditionConflictError
+    store._write_subject_blob = MagicMock(side_effect=PreconditionConflictError("conflict"))
+    with pytest.raises(PreconditionConflictError, match="CAS retry exhausted for revoke"):
+        store.revoke("bob")

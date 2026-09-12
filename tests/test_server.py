@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -344,47 +345,68 @@ def test_signed_source_document_is_served(tmp_path: Path) -> None:
     assert denied.status_code == 403
 
 
-def test_direct_teams_click_establishes_cookie_session(tmp_path: Path) -> None:
-    from teams_agent.source_links import CitationViewerContext, build_source_url
+def test_citation_url_decouples_token_and_blocks_forwarded_links(tmp_path: Path) -> None:
+    from teams_agent.source_links import (
+        CitationViewerContext,
+        build_source_url,
+        create_viewer_token,
+    )
 
     data_dir = tmp_path / "data"
     sources = data_dir / "sources"
     sources.mkdir(parents=True)
     (sources / "manual.md").write_text("# manual\n\n員工使用手冊內容\n", encoding="utf-8")
     settings = make_settings(tmp_path, source_dir=data_dir)
-    client = TestClient(create_web_app(settings))
+    app = create_web_app(settings)
+    alice_client = TestClient(app)
 
-    # Build URL clicked by Teams user: contains token parameter
+    # 1. Build citation URL for Alice: must NOT contain token parameter
     full_url = build_source_url(
         "sources/manual.md",
         settings,
-        viewer=CitationViewerContext(subject="user-teams-1", groups=("all",)),
+        viewer=CitationViewerContext(subject="user-alice", groups=("all",)),
     )
     assert full_url is not None
-    assert "token=" in full_url
+    assert "token=" not in full_url
+    assert "subject=user-alice" in full_url
 
     parsed = urlparse(full_url)
     query = parse_qs(parsed.query)
+    citation_params = {k: v[0] for k, v in query.items()}
 
-    # 1. Direct browser click with query param token succeeds without Authorization header
-    resp = client.get(parsed.path, params={k: v[0] for k, v in query.items()})
-    assert resp.status_code == 200
-    assert "員工使用手冊內容" in resp.text
-    # Verifies session cookie was set
-    assert "teams_viewer_token" in resp.cookies
-
-    # 2. Subsequent requests in browser session use cookie without token in query
-    subsequent_params = {
-        "expires": query["expires"][0],
-        "signature": query["signature"][0],
-        "subject": query["subject"][0],
-    }
-    cookie_resp = client.get(
+    # 2. Unauthenticated request without session redirects to login page
+    unauth_resp = alice_client.get(
         parsed.path,
-        params=subsequent_params,
+        params=citation_params,
+        headers={"Accept": "text/html"},
+        follow_redirects=False,
     )
-    assert cookie_resp.status_code == 200
-    assert "員工使用手冊內容" in cookie_resp.text
+    assert unauth_resp.status_code == 302
+    assert "/sources/login" in unauth_resp.headers["location"]
+
+    # 3. Alice authenticates via /sources/login, receiving teams_viewer_token session cookie
+    alice_token = create_viewer_token("user-alice", settings)
+    login_resp = alice_client.post(
+        "/sources/login",
+        data={"token": alice_token, "redirect_url": parsed.path},
+        follow_redirects=False,
+    )
+    assert login_resp.status_code == 302
+    assert "teams_viewer_token" in login_resp.cookies
+
+    # 4. Authenticated Alice opens the citation link: 200 OK
+    alice_resp = alice_client.get(parsed.path, params=citation_params)
+    assert alice_resp.status_code == 200
+    assert "員工使用手冊內容" in alice_resp.text
+
+    # 5. Forwarded link protection: Bob opens Alice's citation link with Bob's active session
+    bob_client = TestClient(app)
+    bob_token = create_viewer_token("user-bob", settings)
+    bob_client.cookies.set("teams_viewer_token", bob_token)
+
+    bob_resp = bob_client.get(parsed.path, params=citation_params)
+    assert bob_resp.status_code == 403
+    assert "Viewer identity does not match the signed citation subject" in bob_resp.text
 
 
 def test_unauthenticated_browser_redirects_to_login_and_submits(tmp_path: Path) -> None:
@@ -438,5 +460,76 @@ def test_unauthenticated_browser_redirects_to_login_and_submits(tmp_path: Path) 
     )
     assert login_post.status_code == 302
     assert "teams_viewer_token" in login_post.cookies
+
+
+def test_sources_sso_login_and_callback_flow(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "corp_guide.md").write_text("# Guide\n\n企業內網指南內容\n", encoding="utf-8")
+
+    settings = make_settings(
+        tmp_path,
+        source_dir=data_dir,
+        client_id="entra-client-123",
+        client_secret="entra-secret-xyz",
+        tenant_id="entra-tenant-789",
+    )
+    app = create_web_app(settings)
+
+    # Mock OAuth token exchanger on app.state
+    async def mock_exchanger(code: str, redirect_uri: str) -> dict[str, Any]:
+        assert code == "mock-auth-code-1"
+        assert "/sources/auth/callback" in redirect_uri
+        return {
+            "sub": "user-sso-alice",
+            "email": "alice@company.com",
+            "tenant_id": "entra-tenant-789",
+            "groups": ["all", "finance"],
+        }
+
+    app.state.oauth_token_exchanger = mock_exchanger
+    client = TestClient(app)
+
+    # 1. Login page does NOT contain obsolete claim about one-time citation credentials
+    login_page = client.get("/sources/login?redirect_url=/rag-sources/sources/corp_guide.md")
+    assert login_page.status_code == 200
+    assert "系統會自動在參考來源連結中附帶一次性安全檢視憑證" not in login_page.text
+    assert "使用 Microsoft 365 / 公司帳號登入 (SSO)" in login_page.text
+
+    # 2. GET /sources/auth/login redirects to Entra ID OAuth authorize endpoint
+    auth_login = client.get(
+        "/sources/auth/login?redirect_url=/rag-sources/sources/corp_guide.md",
+        follow_redirects=False,
+    )
+    assert auth_login.status_code == 302
+    auth_loc = auth_login.headers["location"]
+    assert "login.microsoftonline.com/entra-tenant-789/oauth2/v2.0/authorize" in auth_loc
+    assert "client_id=entra-client-123" in auth_loc
+    assert "state=" in auth_loc
+
+    # Extract state param from redirect location
+    parsed_auth = urlparse(auth_loc)
+    auth_params = parse_qs(parsed_auth.query)
+    state = auth_params["state"][0]
+
+    # 3. GET /sources/auth/callback completes login, sets session cookie, and redirects to target
+    callback_resp = client.get(
+        "/sources/auth/callback",
+        params={"code": "mock-auth-code-1", "state": state},
+        follow_redirects=False,
+    )
+    assert callback_resp.status_code == 302
+    assert callback_resp.headers["location"] == "/rag-sources/sources/corp_guide.md"
+    assert "teams_viewer_token" in callback_resp.cookies
+
+    # 4. Already authenticated browser revisiting /sources/login auto-redirects
+    auto_redirect = client.get(
+        "/sources/login?redirect_url=/rag-sources/sources/corp_guide.md",
+        follow_redirects=False,
+    )
+    assert auto_redirect.status_code == 302
+    assert auto_redirect.headers["location"] == "/rag-sources/sources/corp_guide.md"
+
 
 

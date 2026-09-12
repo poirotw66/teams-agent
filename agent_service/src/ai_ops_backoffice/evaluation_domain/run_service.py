@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from agent_service.operations.access import ActorContext
 
@@ -149,10 +152,36 @@ class EvaluationRunService:
             is_eval_eligible=preflight.is_eval_eligible,
         )
 
+        should_execute_inline = (
+            execute_inline
+            if execute_inline is not None
+            else (self._job_repo is None)
+        )
+
         state = self._repo.load()
         runs = list(state.runs)
         runs.append(run)
-        new_state = state.model_copy(update={"runs": tuple(runs)})
+
+        outbox_entry: dict[str, Any] | None = None
+        new_outbox = list(getattr(state, "outbox_jobs", ()))
+        if not should_execute_inline and self._job_repo:
+            job_id = str(uuid.uuid4())
+            logical_key = f"run:{tenant_id}:{run_id}"
+            outbox_entry = {
+                "outbox_id": f"outbox_{job_id}",
+                "job_id": job_id,
+                "run_id": run_id,
+                "tenant_id": tenant_id,
+                "logical_key": logical_key,
+                "state": "QUEUED",
+                "created_at": now.isoformat(),
+                "attempts": 0,
+            }
+            new_outbox.append(outbox_entry)
+
+        new_state = state.model_copy(
+            update={"runs": tuple(runs), "outbox_jobs": tuple(new_outbox)}
+        )
 
         audit = EvaluationAuditEvent(
             audit_id=str(uuid.uuid4()),
@@ -171,38 +200,64 @@ class EvaluationRunService:
         )
         self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
 
-        should_execute_inline = (
-            execute_inline
-            if execute_inline is not None
-            else (self._job_repo is None)
-        )
-
         if should_execute_inline:
             run = self._runner.execute_run(run_id)
-        elif self._job_repo:
-            job = ExecutionJob(
-                tenant_id=tenant_id,
-                job_id=str(uuid.uuid4()),
-                run_id=run_id,
-                logical_key=f"run:{tenant_id}:{run_id}",
-                state="QUEUED",
-                created_at=now,
-                updated_at=now,
-            )
+        elif self._job_repo and outbox_entry:
             try:
-                self._job_repo.enqueue_job(job)
-            except Exception as enqueue_err:
-                # Compensation: do not leave an undispatched QUEUED run.
-                self._mark_run_enqueue_failed(run_id, str(enqueue_err), actor=actor)
-                raise EvaluationValidationError(
-                    f"Failed to enqueue execution job for run {run_id}: {enqueue_err}"
-                ) from enqueue_err
+                dispatched = self._dispatch_outbox_job(outbox_entry)
+                if dispatched:
+                    self._remove_outbox_job(outbox_entry["outbox_id"])
+            except Exception as err:
+                logger.debug("Immediate outbox dispatch failed: %s", err)
 
         return {
             "run": run.model_dump(mode="json"),
             "runId": run_id,
             "statusUrl": f"/api/evaluations/runs/{run_id}",
         }
+
+    def _dispatch_outbox_job(self, outbox_entry: dict[str, Any]) -> bool:
+        if not self._job_repo:
+            return False
+        raw_created = outbox_entry.get("created_at")
+        if isinstance(raw_created, str):
+            try:
+                created_dt = datetime.fromisoformat(raw_created)
+            except Exception:
+                created_dt = datetime.now(timezone.utc)
+        elif isinstance(raw_created, datetime):
+            created_dt = raw_created
+        else:
+            created_dt = datetime.now(timezone.utc)
+
+        job = ExecutionJob(
+            tenant_id=str(outbox_entry.get("tenant_id", "default")),
+            job_id=str(outbox_entry["job_id"]),
+            run_id=str(outbox_entry["run_id"]),
+            logical_key=str(outbox_entry.get("logical_key", f"run:{outbox_entry['run_id']}")),
+            state="QUEUED",
+            created_at=created_dt,
+            updated_at=datetime.now(timezone.utc),
+        )
+        try:
+            self._job_repo.enqueue_job(job)
+            return True
+        except Exception:
+            return False
+
+    def _remove_outbox_job(self, outbox_id: str) -> None:
+        try:
+            cur_state = self._repo.load()
+            remaining = [
+                j for j in getattr(cur_state, "outbox_jobs", ())
+                if j.get("outbox_id") != outbox_id and j.get("job_id") != outbox_id
+            ]
+            if len(remaining) != len(getattr(cur_state, "outbox_jobs", ())):
+                self._repo.commit_mutation(
+                    cur_state.model_copy(update={"outbox_jobs": tuple(remaining)})
+                )
+        except Exception:
+            pass
 
     def _mark_run_enqueue_failed(
         self,
@@ -229,11 +284,36 @@ class EvaluationRunService:
         )
 
     def recover_undispatched_runs(self, *, older_than_seconds: float = 30.0) -> int:
-        """Enqueue jobs for QUEUED runs that never received a durable job (outbox recovery)."""
+        """Process pending outbox jobs and recover queued runs missing durable jobs."""
         if not self._job_repo:
             return 0
         now = datetime.now(timezone.utc)
         recovered = 0
+
+        # Phase 1: Drain pending transactional outbox jobs
+        state = self._repo.load()
+        outbox_jobs = list(getattr(state, "outbox_jobs", ()))
+        dispatched_ids: set[str] = set()
+
+        for oj in outbox_jobs:
+            oid = str(oj.get("outbox_id", oj.get("job_id")))
+            if self._dispatch_outbox_job(oj):
+                dispatched_ids.add(oid)
+                recovered += 1
+
+        if dispatched_ids:
+            remaining_outbox = [
+                oj for oj in outbox_jobs
+                if str(oj.get("outbox_id", oj.get("job_id"))) not in dispatched_ids
+            ]
+            try:
+                self._repo.commit_mutation(
+                    state.model_copy(update={"outbox_jobs": tuple(remaining_outbox)})
+                )
+            except Exception:
+                pass
+
+        # Phase 2: Defense in depth for legacy runs without outbox entry
         for run in self._repo.list_runs():
             if run.status != "QUEUED":
                 continue
@@ -255,9 +335,10 @@ class EvaluationRunService:
             )
             try:
                 self._job_repo.enqueue_job(job)
-            except Exception:
+                recovered += 1
+            except Exception as err:
+                logger.debug("Failed to recover job for run %s: %s", run.run_id, err)
                 continue
-            recovered += 1
         return recovered
 
     def get_run(self, run_id: str, actor: ActorContext | None = None) -> dict[str, Any]:

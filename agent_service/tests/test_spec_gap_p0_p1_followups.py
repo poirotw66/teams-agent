@@ -416,8 +416,8 @@ def test_freshness_tracker_isolates_stages_by_resource_type() -> None:
     t_conv = now - timedelta(minutes=10)
     t_agg = now - timedelta(seconds=15)
 
-    # Conversation rendered at t_conv (10 min ago)
-    tracker.record_stage_event("c-1", "CONVERSATION_LIST_RENDERED", at=t_conv)
+    # Conversation ingested at t_conv (10 min ago)
+    tracker.record_stage_event("c-1", "EVENT_INGESTED", at=t_conv)
     # Aggregation completed at t_agg (15 sec ago)
     tracker.record_stage_event("c-2", "AGGREGATION_COMPLETED", at=t_agg)
 
@@ -432,6 +432,33 @@ def test_freshness_tracker_isolates_stages_by_resource_type() -> None:
     assert rep_freshness.materialized_at == t_agg
     assert rep_freshness.lag_seconds == 15.0
     assert rep_freshness.status == "REALTIME"
+
+
+def test_freshness_without_sync_returns_unknown_even_with_heartbeat_and_render(tmp_path) -> None:
+    from datetime import datetime, timezone
+
+    from ai_ops_backoffice.services.freshness_service import FreshnessTracker
+
+    now = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    persist_file = tmp_path / "sync_watermarks.json"
+    tracker = FreshnessTracker(persistent_path=persist_file)
+    tracker.record_worker_heartbeat(at=now)
+    # Only heartbeat and page render event recorded, no ingestion or sync
+    tracker.record_stage_event("c-render", "CONVERSATION_LIST_RENDERED", at=now)
+
+    freshness = tracker.compute_freshness(resource_type="conversations", now=now)
+    # Must NOT claim REALTIME with lag=0 without sync evidence!
+    assert freshness.status == "UNKNOWN"
+    assert freshness.lag_seconds is None
+    assert freshness.event_watermark is None
+
+    # When persistent sync success is recorded, it reflects across instances sharing the path
+    tracker.record_sync_success("conversations", at=now, tenant_id="t-corp")
+    instance2 = FreshnessTracker(persistent_path=persist_file)
+    instance2.record_worker_heartbeat(at=now)
+    freshness2 = instance2.compute_freshness(resource_type="conversations", now=now, tenant_id="t-corp")
+    assert freshness2.status == "REALTIME"
+    assert freshness2.lag_seconds == 0.0
 
 
 def test_eval_runtime_injects_persona_context_and_release_chunks(tmp_path) -> None:
@@ -610,8 +637,8 @@ def test_freshness_tracker_operations_overview_aliases() -> None:
     assert meta.status == "REALTIME"
 
 
-def test_query_conversations_records_stage_events_and_watermark() -> None:
-    from datetime import datetime, timezone
+def test_query_conversations_decouples_event_time_and_keeps_idle_stream_realtime() -> None:
+    from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
     from agent_service.operations.access import ActorContext
@@ -631,17 +658,22 @@ def test_query_conversations_records_stage_events_and_watermark() -> None:
             return self._events
 
     tracker = FreshnessTracker()
-    tracker.record_worker_heartbeat()
+    now = datetime(2026, 9, 12, 12, 0, 0, tzinfo=timezone.utc)
+    tracker.record_worker_heartbeat(worker_id="w1", at=now)
+    # Healthy pipeline sync ran 10 seconds ago
+    t_sync = now - timedelta(seconds=10)
+    tracker.record_sync_success("conversations", at=t_sync)
 
-    t_event = datetime(2026, 9, 12, 12, 30, 0, tzinfo=timezone.utc)
+    # Business event occurred 3 days ago (idle / historical conversation)
+    t_ancient_event = now - timedelta(days=3)
     ev = OperationalEvent(
         event_id="ev-1",
         event_type="turn.received",
         correlation_id="corr-turn-1",
         conversation_id="conv-1",
         turn_id="turn-1",
-        occurred_at=t_event,
-        payload={"messageMasked": "test message"},
+        occurred_at=t_ancient_event,
+        payload={"messageMasked": "old question"},
     )
     service = MockService(tracker, [ev])
     actor = ActorContext(
@@ -655,11 +687,362 @@ def test_query_conversations_records_stage_events_and_watermark() -> None:
     import asyncio
     res = asyncio.run(service.list_conversations(actor))
     assert res["freshness"] is not None
-    watermark_val = res["freshness"].get("event_watermark") or res["freshness"].get("eventWatermark")
-    assert datetime.fromisoformat(watermark_val.replace("Z", "+00:00")) == t_event
-    # Check that stage events were recorded
-    assert tracker._stage_events["conversations"]["EVENT_INGESTED"] == t_event
+    freshness = res["freshness"]
+
+    # 1. Pipeline watermark must reflect healthy sync (10s ago), NOT ancient business event
+    watermark_val = freshness.get("event_watermark") or freshness.get("eventWatermark")
+    assert datetime.fromisoformat(watermark_val.replace("Z", "+00:00")) == t_sync
+
+    # 2. Idle stream remains REALTIME when sync is healthy
+    assert freshness["status"] == "REALTIME"
+
+    # 3. UI render stage is recorded without corrupting EVENT_INGESTED
     assert "CONVERSATION_LIST_RENDERED" in tracker._stage_events["conversations"]
-    assert tracker._stage_events["corr-turn-1"]["EVENT_INGESTED"] == t_event
-    assert "CONVERSATION_LIST_RENDERED" in tracker._stage_events["corr-turn-1"]
+    assert "EVENT_INGESTED" not in tracker._stage_events["conversations"]
+
+    # 4. Zero new conversations test: empty events list also remains REALTIME
+    empty_service = MockService(tracker, [])
+    empty_res = asyncio.run(empty_service.list_conversations(actor))
+    assert empty_res["freshness"]["status"] == "REALTIME"
+
+
+def test_eval_prompt_resolver_rejects_ambiguous_bare_version() -> None:
+    from unittest.mock import MagicMock
+
+    from ai_ops_backoffice.api import build_eval_prompt_resolver
+
+    # Governance repository with two prompts sharing version "v1"
+    item1 = MagicMock()
+    item1.prompt_id = "it-helpdesk"
+    item1.version = "v1"
+    item1.version_id = "pv-1"
+    item1.template = "Template 1"
+
+    item2 = MagicMock()
+    item2.prompt_id = "hr-assistant"
+    item2.version = "v1"
+    item2.version_id = "pv-2"
+    item2.template = "Template 2"
+
+    item3 = MagicMock()
+    item3.prompt_id = "it-helpdesk"
+    item3.version = "v2"
+    item3.version_id = "pv-3"
+    item3.template = "Template 3 Unique"
+
+    gov_repo = MagicMock()
+    state = MagicMock()
+    state.prompt_versions = [item1, item2, item3]
+    gov_repo.load.return_value = state
+
+    resolver = build_eval_prompt_resolver(governance_repository=gov_repo)
+
+    # 1. Bare "v1" is ambiguous (matches it-helpdesk and hr-assistant) -> Must reject (return None)
+    assert resolver("v1") is None
+
+    # 2. Qualified prompt_id:version succeeds deterministically
+    assert resolver("it-helpdesk:v1") == "Template 1"
+    assert resolver("hr-assistant:v1") == "Template 2"
+
+    # 3. Immutable version_id succeeds
+    assert resolver("pv-1") == "Template 1"
+    assert resolver("pv-2") == "Template 2"
+
+    # 4. Globally unique bare version "v2" succeeds
+    assert resolver("v2") == "Template 3 Unique"
+
+
+def test_sandbox_real_faq_repository_binding_and_content_field(tmp_path) -> None:
+    import pytest
+
+    from agent_service.operations.access import ActorContext
+    from ai_ops_backoffice.evaluation_domain.runner_models import TargetManifest
+    from ai_ops_backoffice.faq_domain import FaqContent, FaqDomainService
+    from ai_ops_backoffice.faq_domain.repository import FileFaqRepository
+    from ai_ops_backoffice.governance_domain.eval_runtime import (
+        EvalBindingError,
+        build_isolated_eval_runtime,
+    )
+
+    class _AllowTaxonomy:
+        def require_active(self, issue_type_id: str) -> None:
+            pass
+
+    faq_file = tmp_path / "faqs.json"
+    faq_repo = FileFaqRepository(faq_file)
+    faq_service = FaqDomainService(faq_repo, taxonomy=_AllowTaxonomy())
+    admin_actor = ActorContext("netadmin", "Net Admin", "SYSTEM_ADMIN", ())
+
+    created = faq_service.create(
+        content=FaqContent(
+            faq_key="vpn.client_setup",
+            question="如何設定 VPN？",
+            answer="請依照 IT 連線指示安裝官方 VPN 用戶端軟體並登入。",
+            category="NETWORK",
+            keywords=("vpn",),
+            owner_unit_id="NET_OPS",
+            business_contact="IT Service Desk",
+            issue_type_ids=("it.network",),
+            audience_type="ALL",
+        ),
+        actor=admin_actor,
+    )
+    version_id = created["version"]["version_id"]
+
+    manifest = TargetManifest(
+        target_id="cand-eval-1",
+        target_side="CANDIDATE",
+        manifest_hash="hash-cand-1",
+        faq_version_id=version_id,
+    )
+
+    # 1. Isolated eval runtime with real faq_repository injected resolves the FAQ version
+    runtime = build_isolated_eval_runtime(manifest=manifest, faq_repository=faq_repo)
+    resolved_faq = runtime.faq_service.get("vpn.client_setup")
+    assert resolved_faq is not None
+    assert resolved_faq.answer == "請依照 IT 連線指示安裝官方 VPN 用戶端軟體並登入。"
+    assert resolved_faq.id == version_id
+
+    # 2. Non-existent version fails closed with EvalBindingError without guessing file paths
+    bad_manifest = TargetManifest(
+        target_id="cand-eval-2",
+        target_side="CANDIDATE",
+        manifest_hash="hash-cand-2",
+        faq_version_id="ver-missing-999",
+    )
+    with pytest.raises(EvalBindingError, match="faq_version_not_found:ver-missing-999"):
+        build_isolated_eval_runtime(manifest=bad_manifest, faq_repository=faq_repo)
+
+
+def test_firestore_evaluation_repo_diff_based_writes_and_targeted_lookups() -> None:
+    from typing import Any
+
+    from ai_ops_backoffice.evaluation_domain.models import EvalCase, EvaluationState
+    from ai_ops_backoffice.evaluation_domain.repository import FirestoreEvaluationRepository
+
+    class MockSnap:
+        def __init__(self, key: str, val: dict | None) -> None:
+            self.id = key
+            self.exists = val is not None
+            self._val = val
+        def to_dict(self) -> dict | None:
+            return dict(self._val) if self._val is not None else None
+
+    class MockDoc:
+        def __init__(self, key: str, coll: MockColl) -> None:
+            self.key = key
+            self.coll = coll
+        def get(self, transaction: Any = None) -> MockSnap:
+            data = self.coll.store.get((self.coll.name, self.key))
+            return MockSnap(self.key, data)
+        def set(self, data: dict, merge: bool = False) -> None:
+            self.coll.store[(self.coll.name, self.key)] = dict(data)
+        def delete(self) -> None:
+            self.coll.store.pop((self.coll.name, self.key), None)
+
+    class MockColl:
+        def __init__(self, name: str, store: dict) -> None:
+            self.name = name
+            self.store = store
+        def document(self, key: str) -> MockDoc:
+            return MockDoc(key, self)
+        def stream(self) -> list[MockSnap]:
+            return [MockDoc(k, self).get() for (c, k) in self.store if c == self.name]
+
+    class MockClient:
+        def __init__(self) -> None:
+            self.store: dict[tuple[str, str], dict] = {}
+        def collection(self, name: str) -> MockColl:
+            return MockColl(name, self.store)
+        def transaction(self) -> Any:
+            class Tx:
+                def __init__(self, c: MockClient) -> None:
+                    self.c = c
+                    self.pending: dict[tuple[str, str], dict] = {}
+                def get(self, ref: MockDoc) -> MockSnap:
+                    if (ref.coll.name, ref.key) in self.pending:
+                        return MockSnap(ref.key, self.pending[(ref.coll.name, ref.key)])
+                    return ref.get()
+                def set(self, ref: MockDoc, data: dict, merge: bool = False) -> None:
+                    self.pending[(ref.coll.name, ref.key)] = dict(data)
+                def delete(self, ref: MockDoc) -> None:
+                    self.pending.pop((ref.coll.name, ref.key), None)
+                    self.c.store.pop((ref.coll.name, ref.key), None)
+                def commit(self) -> None:
+                    for k, v in self.pending.items():
+                        self.c.store[k] = v
+            return Tx(self)
+
+    def _run_tx(op: Any, tx: Any) -> Any:
+        res = op(tx)
+        tx.commit()
+        return res
+
+    client = MockClient()
+    repo = FirestoreEvaluationRepository(client, transaction_runner=_run_tx)
+    now = datetime.now(timezone.utc)
+
+    case1 = EvalCase(
+        case_id="case-diff-1",
+        tenant_id="tenant-1",
+        owner_unit_id="IT",
+        title="Diff Test 1",
+        current_revision_id="rev-1",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+    case2 = EvalCase(
+        case_id="case-diff-2",
+        tenant_id="tenant-1",
+        owner_unit_id="IT",
+        title="Diff Test 2",
+        current_revision_id="rev-2",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+
+    # Initial write of case 1 and case 2
+    state1 = EvaluationState(cases=(case1, case2))
+    repo.commit_mutation(state1, expected_revision=1)
+
+    # Verify both have _revision: 2 in storage
+    doc1 = client.store[("ai_ops_eval_cases", "case-diff-1")]
+    doc2 = client.store[("ai_ops_eval_cases", "case-diff-2")]
+    assert doc1["_revision"] == 2
+    assert doc2["_revision"] == 2
+
+    # Second mutation: only update case1 title; case2 remains unchanged
+    updated_case1 = case1.model_copy(update={"title": "Diff Test 1 Modified"})
+    state2 = state1.model_copy(update={"cases": (updated_case1, case2)})
+    repo.commit_mutation(state2, expected_revision=2)
+
+    # case1 was written with new revision 3; case2 was NOT rewritten
+    doc1_after = client.store[("ai_ops_eval_cases", "case-diff-1")]
+    doc2_after = client.store[("ai_ops_eval_cases", "case-diff-2")]
+    assert doc1_after["_revision"] == 3
+    assert doc1_after["title"] == "Diff Test 1 Modified"
+    assert doc2_after["_revision"] == 2  # Untouched!
+
+    # Test targeted lookup for an entity not in memory of a fresh instance
+    repo2 = FirestoreEvaluationRepository(client, transaction_runner=_run_tx)
+    assert len(repo2._state.cases) == 0
+    # Targeted get_case fetches directly from client store without calling full load()
+    fetched = repo2.get_case("case-diff-1")
+    assert fetched is not None
+    assert fetched.case_id == "case-diff-1"
+    assert fetched.title == "Diff Test 1 Modified"
+
+
+def test_eval_run_and_job_transactional_outbox_flow() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from ai_ops_backoffice.evaluation_domain.job_repository import InMemoryJobRepository
+    from ai_ops_backoffice.evaluation_domain.models import EvalSet, EvalSetVersion
+    from ai_ops_backoffice.evaluation_domain.repository import InMemoryEvaluationRepository
+    from ai_ops_backoffice.evaluation_domain.run_service import EvaluationRunService
+    from ai_ops_backoffice.evaluation_domain.runner_models import RunPreflightResult, TargetManifest
+
+    repo = InMemoryEvaluationRepository()
+    job_repo = InMemoryJobRepository()
+    now = datetime.now(timezone.utc)
+
+    eval_set = EvalSet(
+        set_id="set-outbox-1",
+        tenant_id="tenant-outbox",
+        owner_unit_ids=("IT",),
+        name="Outbox Set",
+        lead_owner="tester",
+        created_by="tester",
+        created_at=now,
+        updated_by="tester",
+        updated_at=now,
+    )
+    set_ver = EvalSetVersion(
+        set_version_id="sv-outbox-1",
+        set_id="set-outbox-1",
+        version=1,
+        case_revision_ids=(),
+        manifest_hash="hash-outbox",
+        created_by="tester",
+        created_at=now,
+        etag=1,
+    )
+    repo.commit_mutation(repo.load().model_copy(update={"sets": (eval_set,), "set_versions": (set_ver,)}))
+
+    manifest = TargetManifest(target_id="tgt-1", target_side="BASELINE", manifest_hash="h1")
+    preflight = RunPreflightResult(
+        is_valid=True,
+        resolved_baseline_manifest=manifest,
+        resolved_candidate_manifest=manifest,
+        blocking_errors=(),
+        is_eval_eligible=True,
+    )
+    resolver = MagicMock()
+    resolver.preflight_run.return_value = preflight
+
+    service = EvaluationRunService(
+        repository=repo,
+        manifest_resolver=resolver,
+        job_repository=job_repo,
+    )
+
+    # 1. Normal create_run: Outbox job is written atomically, immediately dispatched to job_repo, and removed from outbox
+    res = service.create_run(
+        set_version_id="sv-outbox-1",
+        baseline_target={"manifest_hash": "h1"},
+        candidate_target={"manifest_hash": "h1"},
+    )
+    run_id = res["runId"]
+    assert job_repo.get_job_by_run_id(run_id) is not None
+    # Outbox should be empty after successful immediate dispatch
+    assert len(repo.load().outbox_jobs) == 0
+
+    # 2. Compensation scenario: dispatch fails (e.g. temporary network / contention)
+    # The outbox job remains safely persisted in repo state!
+    with patch.object(job_repo, "enqueue_job", side_effect=RuntimeError("queue offline")):
+        res2 = service.create_run(
+            set_version_id="sv-outbox-1",
+            baseline_target={"manifest_hash": "h1"},
+            candidate_target={"manifest_hash": "h1"},
+        )
+        run_id2 = res2["runId"]
+
+    # The run exists in QUEUED state, and the outbox contains the pending job!
+    assert repo.get_run(run_id2).status == "QUEUED"
+    pending_outbox = repo.load().outbox_jobs
+    assert len(pending_outbox) == 1
+    assert pending_outbox[0]["run_id"] == run_id2
+
+    # 3. Outbox scanner recovery: recover_undispatched_runs dispatches the pending outbox job
+    recovered_count = service.recover_undispatched_runs()
+    assert recovered_count == 1
+    assert job_repo.get_job_by_run_id(run_id2) is not None
+    # Outbox is drained and cleared
+    assert len(repo.load().outbox_jobs) == 0
+
+
+@pytest.mark.asyncio
+async def test_background_workers_enabled_flag_and_decoupled_execution(tmp_path, monkeypatch) -> None:
+    from ai_ops_backoffice.api import create_app
+    from ai_ops_backoffice.settings import BackofficeSettings
+
+    # 1. Test from_env parsing of AI_OPS_WORKERS_ENABLED
+    monkeypatch.setenv("AI_OPS_WORKERS_ENABLED", "false")
+    settings_disabled = BackofficeSettings.from_env()
+    assert settings_disabled.workers_enabled is False
+
+    monkeypatch.setenv("AI_OPS_WORKERS_ENABLED", "true")
+    settings_enabled = BackofficeSettings.from_env()
+    assert settings_enabled.workers_enabled is True
+
+    # 2. Test that app lifespan with workers_enabled=False enters and exits without starting background loops
+    app_disabled = create_app(settings_disabled)
+    async with app_disabled.router.lifespan_context(app_disabled):
+        # Successfully in context without errors; background tasks are not running
+        pass
+
 

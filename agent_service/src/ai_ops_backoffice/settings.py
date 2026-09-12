@@ -105,6 +105,7 @@ class BackofficeSettings:
     artifact_storage_path: Path | None = None
     artifact_gcs_bucket: str | None = None
     environment: str = "dev"
+    workers_enabled: bool = True
 
     def validate_for_production(self) -> list[str]:
         """Validate settings for production deployment to prevent ephemeral data loss."""
@@ -471,4 +472,6 @@ class BackofficeSettings:
                 or os.environ.get("ENV")
                 or "dev"
             ).lower(),
+            workers_enabled=os.environ.get("AI_OPS_WORKERS_ENABLED", "true").lower()
+            in {"1", "true", "yes", "on"},
         )

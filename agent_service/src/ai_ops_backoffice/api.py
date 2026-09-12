@@ -222,7 +222,11 @@ def build_eval_prompt_resolver(
         if version.startswith(("pv-", "cand-", "prompt-")):
             return None
 
-        # 3. Fallback: match generic version label only when no prompt identity was specified
+        # 3. Fallback: match generic version label only when no prompt identity was specified.
+        # If the version label matches multiple prompts across repositories, reject as ambiguous (return None).
+        matches: list[tuple[str, str]] = []
+        seen_prompts: set[str] = set()
+
         if governance_repository is not None:
             try:
                 state = governance_repository.load()
@@ -230,7 +234,8 @@ def build_eval_prompt_resolver(
                     if item.version == target_version:
                         template = str(item.template or "").strip()
                         if template:
-                            return template
+                            matches.append((item.prompt_id, template))
+                            seen_prompts.add(item.prompt_id)
             except Exception:
                 logger.debug(
                     "governance prompt lookup failed for version=%s", version, exc_info=True
@@ -240,12 +245,23 @@ def build_eval_prompt_resolver(
                 for candidate in prompt_repository.load().candidates:
                     if candidate.version == target_version:
                         content = str(candidate.content or "").strip()
-                        if content:
-                            return content
+                        if content and candidate.prompt_id not in seen_prompts:
+                            matches.append((candidate.prompt_id, content))
+                            seen_prompts.add(candidate.prompt_id)
             except Exception:
                 logger.debug(
                     "prompt repository lookup failed for version=%s", version, exc_info=True
                 )
+
+        if len(seen_prompts) > 1:
+            logger.warning(
+                "Ambiguous prompt version '%s' matches multiple prompts: %s. Rejecting; specify qualified 'prompt_id:version'.",
+                target_version,
+                sorted(seen_prompts),
+            )
+            return None
+        if len(matches) == 1:
+            return matches[0][1]
         return None
 
     return resolver
@@ -582,6 +598,7 @@ def create_app(
             workflow_executor=build_agent_sandbox_workflow_executor(
                 model_factory=_eval_model_factory,
                 prompt_resolver=_eval_prompt_resolver,
+                faq_repository=faq_repository,
             ),
         )
     except Exception as sandbox_err:  # pragma: no cover - optional live model deps
