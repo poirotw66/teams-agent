@@ -360,7 +360,7 @@ def register_governance_routes(
     @app.get("/api/governance/models")
     async def list_governance_models(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.models.read")
-        from .model_catalog import component_catalog_payload
+        from .governance_domain.model_catalog import component_catalog_payload
         from .services.runtime_models import load_agent_runtime_models
 
         agent_api_url = getattr(getattr(query_service, "_settings", None), "agent_api_url", None)
