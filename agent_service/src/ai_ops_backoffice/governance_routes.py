@@ -354,7 +354,11 @@ def register_governance_routes(
     @app.get("/api/governance/models")
     async def list_governance_models(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.models.read")
-        return {"items": governance.list_models(actor=actor)}
+        from .services.runtime_models import load_agent_runtime_models
+
+        agent_api_url = getattr(getattr(query_service, "_settings", None), "agent_api_url", None)
+        runtime = await load_agent_runtime_models(agent_api_url)
+        return {"items": governance.list_models(actor=actor), "runtime": runtime}
 
     @app.post("/api/governance/models/candidates")
     async def create_governance_model(payload: ModelCandidateBody, actor=Depends(current_actor)) -> dict[str, object]:

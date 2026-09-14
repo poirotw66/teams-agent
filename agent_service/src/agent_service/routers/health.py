@@ -34,6 +34,9 @@ def register_health_routes(
                 or resolved_settings.model
                 or "extractive-local"
             ),
+            "embeddingModel": resolved_settings.embedding_model,
+            "fileSearchModel": resolved_settings.gemini_file_search_model,
+            "knowledgeMode": resolved_settings.knowledge_service_mode,
             "retrieval": (
                 "hybrid"
                 if resolved_settings.embedding_model

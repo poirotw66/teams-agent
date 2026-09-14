@@ -10,6 +10,54 @@ import {
 } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
 
+const COMPONENT_LABELS = {
+  "issue-extractor": "主代理／議題拆解",
+  "rag-answer": "回答生成",
+  embedding: "向量檢索 Embedding",
+  "file-search": "Gemini File Search",
+};
+
+function componentLabel(component) {
+  return COMPONENT_LABELS[component] || component || "未命名組件";
+}
+
+function renderRuntimeModels(runtime) {
+  const section = el("section", "panel");
+  section.style.marginBottom = "1.25rem";
+  section.append(el("h3", "", "目前專案使用的模型"));
+  if (!runtime?.available) {
+    section.append(
+      el(
+        "p",
+        "warning",
+        runtime?.reason || "目前無法讀取 Agent 執行中的模型設定。",
+      ),
+    );
+    return section;
+  }
+  section.append(
+    el(
+      "p",
+      "metric-label",
+      "以下來自正在執行的 Agent，會隨 RAG_MODEL、AGENT_MODEL、RAG_EMBEDDING_MODEL、GEMINI_FILE_SEARCH_MODEL 改變。",
+    ),
+  );
+  const grid = el("div", "stats");
+  for (const item of runtime.items || []) {
+    const card = el("div", "stat");
+    card.append(
+      el("span", "", item.label || item.role),
+      el("b", "", item.model || "未設定"),
+    );
+    grid.append(card);
+  }
+  section.append(grid);
+  if (runtime.knowledgeMode) {
+    section.append(el("p", "metric-label", `知識模式：${runtime.knowledgeMode}`));
+  }
+  return section;
+}
+
 export async function renderModels() {
   const app = document.getElementById("app");
   app.replaceChildren(el("div", "empty", "載入中…"));
@@ -23,17 +71,19 @@ export async function renderModels() {
     headerRow.style.alignItems = "center";
     headerRow.style.marginBottom = "1rem";
 
-    const titleH2 = el("h2", "", "模型與 Provider 治理 (Model Governance)");
+    const titleH2 = el("h2", "", "模型與 Provider 治理");
     titleH2.style.margin = "0";
     headerRow.append(titleH2);
     panel.append(headerRow);
+    panel.append(renderRuntimeModels(data.runtime));
+    panel.append(el("h3", "", "治理紀錄"));
 
     const items = data.items || [];
     if (!items.length) {
       panel.append(el("p", "empty", "目前無模型配置。"));
       presentSystemPage(
         "模型治理",
-        "管理模型與 Provider 的生效設定。",
+        "上方是目前專案實際使用的模型；下方治理紀錄不會自動覆蓋執行中設定。",
         panel,
       );
       return;
@@ -60,7 +110,7 @@ export async function renderModels() {
       const titleGroup = el("div");
       titleGroup.append(
         el("strong", "", configId),
-        el("span", "metric-label", ` ｜ 組件：${config.component || "issue-extractor"}`),
+        el("span", "metric-label", ` ｜ ${componentLabel(config.component)}`),
       );
 
       const headActions = el("div", "filter-bar");
@@ -251,7 +301,7 @@ export async function renderModels() {
     }
     presentSystemPage(
       "模型治理",
-      "管理模型與 Provider 的生效設定。",
+      "上方是目前專案實際使用的模型；下方治理紀錄不會自動覆蓋執行中設定。",
       panel,
     );
   } catch (error) {
@@ -283,7 +333,7 @@ function showModelCandidateModal(configId, component, onRefresh) {
   const providerGroup = el("div");
   providerGroup.append(el("label", "metric-label", "Provider："));
   const providerSelect = el("select");
-  ["google", "azure", "openai", "anthropic"].forEach((p) => {
+  ["google_genai"].forEach((p) => {
     const opt = el("option", "", p);
     opt.value = p;
     providerSelect.append(opt);
@@ -295,7 +345,7 @@ function showModelCandidateModal(configId, component, onRefresh) {
   modelIdGroup.append(el("label", "metric-label", "Model ID："));
   const modelIdInput = el("input");
   modelIdInput.required = true;
-  modelIdInput.value = "gemini-2.5-flash";
+  modelIdInput.value = "gemini-3.8-flash";
   modelIdGroup.append(modelIdInput);
   form.append(modelIdGroup);
 
@@ -345,7 +395,7 @@ function showModelCandidateModal(configId, component, onRefresh) {
   const fallbackGroup = el("div");
   fallbackGroup.append(el("label", "metric-label", "Fallback Model ID (可選)："));
   const fallbackInput = el("input");
-  fallbackInput.placeholder = "例：gemini-2.5-flash";
+  fallbackInput.placeholder = "例：gemini-3.1-flash-lite";
   fallbackGroup.append(fallbackInput);
   form.append(fallbackGroup);
 
