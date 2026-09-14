@@ -10,6 +10,10 @@ import { labelStatus } from "../app/labels.js";
 import { drillLink, navigateTo, saveNavFilters, syncLocationHash } from "../app/navigation.js";
 import { withReturnTo } from "../app/returnTo.js";
 import { loadingState } from "../components/state.js";
+import {
+  assignWorkHubBuckets,
+  partitionQualityCases,
+} from "./workHubBuckets.js";
 
 function currentUserId() {
   const caps = getCapabilities() || {};
@@ -237,84 +241,79 @@ async function loadPendingReviews() {
   }
 }
 
+function qualityCaseRow(item, tab) {
+  return {
+    title: item.title || item.case_id,
+    type: "改善案件",
+    nextStep: item.status === "OBSERVING" ? "觀察成效" : "查證並處理",
+    owner: item.assignee_id || item.owner_unit_id || "—",
+    status: item.status,
+    kind: "item",
+    actionLabel: "處理案件",
+    open: () => {
+      navigateTo(
+        "quality",
+        withReturnTo(
+          { caseId: item.case_id, tab: "cases" },
+          "workHub",
+          { tab },
+        ),
+      );
+    },
+  };
+}
+
+function qualityCaseRows(items, tab) {
+  const rows = items.slice(0, 12).map((item) => qualityCaseRow(item, tab));
+  const remaining = items.length - rows.length;
+  if (remaining > 0) {
+    rows.push({
+      title: "改善案件",
+      type: "改善案件（彙總）",
+      nextStep: `其餘 ${remaining} 件請開啟改善案件清單`,
+      owner: "—",
+      status: `${remaining} 件其餘`,
+      kind: "aggregate",
+      actionLabel: `查看其餘案件（共 ${items.length} 件）`,
+      open: () =>
+        navigateTo(
+          "quality",
+          withReturnTo({ tab: "cases" }, "workHub", { tab }),
+        ),
+    });
+  }
+  return rows;
+}
+
 async function loadQualityTasks(tab) {
   const allowed = actorCapabilities();
   if (!allowed.has("ops.quality.read") && !allowed.has("ops.feedback.read")) {
-    return { ok: false, skipped: true, rows: [], itemCount: 0, scopeNote: "" };
+    return { ok: false, skipped: true, mine: { rows: [] }, tracking: { rows: [] } };
   }
   try {
     const data = await api("/api/quality-cases?limit=50");
     const items = data.items || data.cases || [];
-    const userId = currentUserId().toLowerCase();
-    const openStatuses = new Set([
-      "NEW",
-      "TRIAGED",
-      "IN_PROGRESS",
-      "WAITING_REVIEW",
-      "OBSERVING",
-    ]);
-    let filtered = items.filter((item) => openStatuses.has(item.status));
-    let scopeNote = "單位／可見範圍內進行中案件";
-    if (tab === "mine" && userId) {
-      const mine = filtered.filter((item) =>
-        String(item.assignee_id || "").toLowerCase() === userId,
-      );
-      if (mine.length) {
-        filtered = mine;
-        scopeNote = "指派給我的進行中案件";
-      } else {
-        filtered = [];
-        scopeNote = "目前沒有指派給我的案件；單位可見待辦請到改善案件查看";
-      }
-    }
-    if (tab === "tracking") {
-      filtered = filtered.filter((item) => item.status === "OBSERVING");
-      scopeNote = "觀察中案件";
-    }
-    const rows = filtered.slice(0, 12).map((item) => ({
-      title: item.title || item.case_id,
-      type: "改善案件",
-      nextStep: item.status === "OBSERVING" ? "觀察成效" : "查證並處理",
-      owner: item.assignee_id || item.owner_unit_id || "—",
-      status: item.status,
-      kind: "item",
-      actionLabel: "處理案件",
-      open: () => {
-        navigateTo(
-          "quality",
-          withReturnTo(
-            { caseId: item.case_id, tab: "cases" },
-            "workHub",
-            { tab },
-          ),
-        );
-      },
-    }));
-    const remaining = filtered.length - rows.length;
-    if (remaining > 0) {
-      rows.push({
-        title: "改善案件",
-        type: "改善案件（彙總）",
-        nextStep: `其餘 ${remaining} 件請開啟改善案件清單`,
-        owner: "—",
-        status: `${remaining} 件其餘`,
-        kind: "aggregate",
-        actionLabel: `查看其餘案件（共 ${filtered.length} 件）`,
-        open: () =>
-          navigateTo(
-            "quality",
-            withReturnTo({ tab: "cases" }, "workHub", { tab }),
-          ),
-      });
-    }
+    const partitioned = partitionQualityCases(items, currentUserId());
     return {
       ok: true,
-      itemCount: filtered.length,
-      scopeNote,
-      rows,
+      mine: {
+        itemCount: partitioned.mineItems.length,
+        scopeNote: partitioned.mineScopeNote,
+        rows: qualityCaseRows(partitioned.mineItems, tab),
+      },
+      tracking: {
+        itemCount: partitioned.trackingItems.length,
+        scopeNote: "觀察中案件",
+        rows: qualityCaseRows(partitioned.trackingItems, tab),
+      },
     };
   } catch (error) {
-    return { ok: false, error, rows: [], itemCount: 0, scopeNote: "" };
+    return {
+      ok: false,
+      error,
+      mine: { rows: [] },
+      tracking: { rows: [] },
+    };
   }
 }
 
@@ -423,7 +422,7 @@ async function renderWorkHub(state = {}) {
     el(
       "p",
       "metric-label",
-      "依照目前角色與可見範圍，先處理需要你下一步的工作。每個數字都只計入目前分頁可處理的項目。",
+      "依照目前角色與可見範圍，先處理需要你下一步的工作。每個數字只計算該分類的待辦，切換分頁不會改變數字。",
     ),
   );
 
@@ -439,27 +438,21 @@ async function renderWorkHub(state = {}) {
   const trackingRows = [];
   const errors = [];
 
-  if (docs.ok) mineRows.push(...docs.rows.filter((r) => r.status !== "無急迫項目"));
-  else if (!docs.skipped) errors.push(sectionError("文件待辦", docs.error));
+  if (!docs.ok && !docs.skipped) errors.push(sectionError("文件待辦", docs.error));
+  if (!cases.ok && !cases.skipped) errors.push(sectionError("改善案件", cases.error));
+  if (!reviews.ok && !reviews.skipped) errors.push(sectionError("文件待審", reviews.error));
+  if (!evals.ok && !evals.skipped) errors.push(sectionError("驗收待審", evals.error));
 
-  if (cases.ok) {
-    if (tab === "tracking") trackingRows.push(...cases.rows);
-    else mineRows.push(...cases.rows);
-  } else if (!cases.skipped) {
-    errors.push(sectionError("改善案件", cases.error));
-  }
-
-  if (reviews.ok) reviewRows.push(...reviews.rows);
-  else if (!reviews.skipped) errors.push(sectionError("文件待審", reviews.error));
-
-  if (evals.ok) reviewRows.push(...evals.rows);
-  else if (!evals.skipped) errors.push(sectionError("驗收待審", evals.error));
-
-  if (docs.ok && tab === "tracking") {
-    trackingRows.push(
-      ...docs.rows.filter((r) => /觀察|發布|同步/.test(String(r.nextStep || r.status || ""))),
-    );
-  }
+  const buckets = assignWorkHubBuckets({
+    documentRows: docs.ok ? docs.rows : [],
+    pendingReviewRows: reviews.ok ? reviews.rows : [],
+    evaluationRows: evals.ok ? evals.rows : [],
+    mineCaseRows: cases.ok ? cases.mine.rows : [],
+    trackingCaseRows: cases.ok ? cases.tracking.rows : [],
+  });
+  mineRows.push(...buckets.mineRows);
+  reviewRows.push(...buckets.reviewRows);
+  trackingRows.push(...buckets.trackingRows);
 
   const mineCount = countUnits(mineRows);
   const reviewCount = countUnits(reviewRows);
@@ -494,12 +487,7 @@ async function renderWorkHub(state = {}) {
     [
       "tracking",
       "追蹤中",
-      String(
-        trackingCount.display ||
-          (cases.ok
-            ? cases.rows.filter((r) => r.status === "OBSERVING").length
-            : 0),
-      ),
+      String(trackingCount.display),
       "觀察中案件",
     ],
   ]) {

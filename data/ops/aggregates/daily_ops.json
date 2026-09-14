@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-12T16:10:13.561828+00:00",
+  "updatedAt": "2026-09-14T02:12:04.500989+00:00",
   "items": [
     {
       "day": "2026-08-08",
@@ -1465,14 +1465,14 @@
       "day": "2026-09-12",
       "tenantId": "tenant-1",
       "environment": "dev",
-      "turnCount": 540,
-      "issueCount": 420,
-      "handoffCount": 210,
-      "feedbackCount": 30,
-      "noAnswerCount": 90,
+      "turnCount": 576,
+      "issueCount": 448,
+      "handoffCount": 224,
+      "feedbackCount": 32,
+      "noAnswerCount": 96,
       "issueTypeCounts": {
-        "vpn.connection_failed": 330,
-        "other.unclassified": 90
+        "vpn.connection_failed": 352,
+        "other.unclassified": 96
       },
       "modelTokenCounts": {
         "unknown": 0
@@ -1483,6 +1483,95 @@
     {
       "day": "2026-09-12",
       "tenantId": "local-development",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-13",
+      "tenantId": "",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-13",
+      "tenantId": "local-development",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-13",
+      "tenantId": "tenant-1",
+      "environment": "dev",
+      "turnCount": 18,
+      "issueCount": 14,
+      "handoffCount": 7,
+      "feedbackCount": 1,
+      "noAnswerCount": 3,
+      "issueTypeCounts": {
+        "vpn.connection_failed": 11,
+        "other.unclassified": 3
+      },
+      "modelTokenCounts": {
+        "unknown": 0
+      },
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-14",
+      "tenantId": "",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-14",
+      "tenantId": "local-development",
+      "environment": "dev",
+      "turnCount": 0,
+      "issueCount": 0,
+      "handoffCount": 0,
+      "feedbackCount": 0,
+      "noAnswerCount": 0,
+      "issueTypeCounts": {},
+      "modelTokenCounts": {},
+      "estimatedCostUsd": 0.0,
+      "schemaVersion": "daily-ops-aggregate-v1"
+    },
+    {
+      "day": "2026-09-14",
+      "tenantId": "tenant-1",
       "environment": "dev",
       "turnCount": 0,
       "issueCount": 0,
