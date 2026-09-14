@@ -68,6 +68,43 @@ def test_release_hydration_carries_version_into_citation(tmp_path: Path) -> None
     assert citation.evidence == "## 解鎖\n\n請聯繫服務台。"
 
 
+def test_release_hydration_attaches_images_missing_from_index(tmp_path: Path) -> None:
+    data_dir = tmp_path
+    releases = data_dir / "releases"
+    release_id = "release-images"
+    release = releases / release_id
+    source_path = "sources/phone.md"
+    (release / "sources").mkdir(parents=True)
+    (release / "index").mkdir()
+    (release / source_path).write_text(
+        "請按 [0]。\n\n![話機面板](assets/總公司IP話機操作/p02.png)\n",
+        encoding="utf-8",
+    )
+    image_dir = data_dir / "sources" / "assets" / "總公司IP話機操作"
+    image_dir.mkdir(parents=True)
+    (image_dir / "p02.png").write_bytes(b"png")
+    HybridIndex(
+        [
+            DocumentChunk(
+                chunk_id="chunk-phone",
+                title="總公司IP話機操作",
+                source_path=source_path,
+                content="請按 [0]。\n\n話機面板",
+                images=[],
+            )
+        ]
+    ).save(release / "index" / "chunks.json")
+
+    index = HybridIndex.load(release / "index" / "chunks.json")
+    assert not index.chunks[0].images
+    hydrate_index_sources(index.chunks, release_dir=releases, release_id=release_id)
+
+    assert index.chunks[0].images is not None
+    assert index.chunks[0].images[0].path == "總公司IP話機操作/p02.png"
+    assert index.chunks[0].images[0].alt_text == "話機面板"
+    assert index.chunks[0].content == "請按 [0]。\n\n話機面板"
+
+
 def test_backoffice_resolves_legacy_chunk_to_versioned_source(tmp_path: Path) -> None:
     releases, release_id = _write_release(tmp_path)
     resolver = SourceTraceResolver(releases)

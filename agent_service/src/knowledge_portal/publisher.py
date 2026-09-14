@@ -112,10 +112,11 @@ class ReleasePublisher:
                 temp_root = Path(temp_dir)
                 temp_sources = temp_root / "sources"
                 temp_sources.mkdir(parents=True, exist_ok=True)
-                temp_assets = temp_root / "assets"
+                # Match the corpus layout expected by extract_images:
+                # sources/*.md next to sources/assets/<slug>/.
                 release_assets = release_dir / "assets"
                 if release_assets.is_dir():
-                    shutil.copytree(release_assets, temp_assets)
+                    shutil.copytree(release_assets, temp_sources / "assets")
                 for source_file in sources_dir.glob("*.md"):
                     shutil.copy2(source_file, temp_sources / source_file.name)
                 chunks = load_source_chunks(

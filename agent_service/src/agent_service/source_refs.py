@@ -17,7 +17,7 @@ from typing import Any, Iterable
 
 from urllib.parse import quote
 
-from .documents import DocumentChunk
+from .documents import DocumentChunk, DocumentImage, extract_images
 
 _SAFE_RELEASE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -205,6 +205,85 @@ def hydrate_index_sources(
         if original:
             chunk.original_asset_available = True
             chunk.original_asset_name = original.name
+    _attach_missing_release_images(
+        chunks,
+        release_root=release_root,
+        corpus_assets=release_dir.parent / "sources" / "assets",
+    )
+
+
+def _attach_missing_release_images(
+    chunks: Iterable[DocumentChunk],
+    *,
+    release_root: Path,
+    corpus_assets: Path,
+) -> None:
+    """Fill images missing from an already published index.
+
+    Publishing used to look for images next to the wrong directory, so older
+    releases have empty image lists even when the Markdown still cites them.
+    Loading reattaches those images without rewriting chunk text or embeddings.
+    """
+
+    grouped: dict[str, list[DocumentChunk]] = {}
+    for chunk in chunks:
+        if not chunk.source_path:
+            continue
+        grouped.setdefault(chunk.source_path, []).append(chunk)
+    asset_roots = [release_root / "assets", corpus_assets]
+    for source_path, source_chunks in grouped.items():
+        if any(chunk.images for chunk in source_chunks):
+            continue
+        markdown_path = _safe_release_file(release_root, source_path)
+        if markdown_path is None or not markdown_path.is_file():
+            continue
+        try:
+            markdown = markdown_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        images = extract_images(markdown, markdown_path, asset_roots=asset_roots)
+        if images:
+            _assign_images_to_chunks(source_chunks, images)
+
+
+def _assign_images_to_chunks(
+    chunks: list[DocumentChunk],
+    images: list[DocumentImage],
+) -> None:
+    assigned: dict[str, list[DocumentImage]] = {}
+    unmatched: list[DocumentImage] = []
+    for image in images:
+        target = _chunk_matching_image(chunks, image)
+        if target is None:
+            unmatched.append(image)
+            continue
+        assigned.setdefault(target.chunk_id, []).append(image)
+    if unmatched:
+        assigned.setdefault(chunks[0].chunk_id, []).extend(unmatched)
+    by_id = {chunk.chunk_id: chunk for chunk in chunks}
+    for chunk_id, chunk_images in assigned.items():
+        by_id[chunk_id].images = chunk_images
+
+
+def _chunk_matching_image(
+    chunks: list[DocumentChunk],
+    image: DocumentImage,
+) -> DocumentChunk | None:
+    label = image.alt_text.strip()
+    if not label:
+        return None
+    return next((chunk for chunk in chunks if label in chunk.content), None)
+
+
+def _safe_release_file(release_root: Path, source_path: str) -> Path | None:
+    if not source_path or Path(source_path).is_absolute() or ".." in Path(source_path).parts:
+        return None
+    candidate = (release_root / source_path).resolve()
+    try:
+        candidate.relative_to(release_root.resolve())
+    except ValueError:
+        return None
+    return candidate
 
 
 @dataclass(frozen=True)

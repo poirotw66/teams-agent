@@ -265,18 +265,35 @@ class DraftAssetStore:
         slug = version.asset_slug or slug_from_title(version.title)
         target_dir = release_dir / "assets" / slug
         source_dir = self.asset_dir(version.document_id, version.version_id, slug)
-        if source_dir.is_dir():
-            target_dir.parent.mkdir(parents=True, exist_ok=True)
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            shutil.copytree(source_dir, target_dir)
+        if not _copy_image_dir(source_dir, target_dir):
+            legacy_dir = self.settings.data_dir / "assets" / slug
+            if not _copy_image_dir(legacy_dir, target_dir):
+                _copy_image_dir(
+                    self.settings.data_dir / "sources" / "assets" / slug,
+                    target_dir,
+                )
+        self._supplement_corpus_assets(
+            target_dir,
+            slug,
+            getattr(version, "canonical_content", ""),
+        )
+
+    def _supplement_corpus_assets(
+        self,
+        target_dir: Path,
+        slug: str,
+        markdown_content: str,
+    ) -> None:
+        corpus_dir = self.settings.data_dir / "sources" / "assets" / slug
+        if not corpus_dir.is_dir() or not markdown_content:
             return
-        legacy_dir = self.settings.data_dir / "assets" / slug
-        if legacy_dir.is_dir():
-            target_dir.parent.mkdir(parents=True, exist_ok=True)
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            shutil.copytree(legacy_dir, target_dir)
+        for filename in referenced_asset_filenames(markdown_content, slug):
+            destination = target_dir / filename
+            source = corpus_dir / filename
+            if destination.is_file() or not source.is_file():
+                continue
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
 
     def next_filename(
         self,
@@ -294,6 +311,23 @@ class DraftAssetStore:
             if candidate not in existing:
                 return candidate
             index += 1
+
+
+def _copy_image_dir(source: Path, target: Path) -> bool:
+    if not source.is_dir() or not _directory_has_images(source):
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    return True
+
+
+def _directory_has_images(path: Path) -> bool:
+    return any(
+        item.is_file() and item.suffix.lower() in ALLOWED_IMAGE_SUFFIXES
+        for item in path.rglob("*")
+    )
 
 
 def asset_content_type(suffix: str) -> str:

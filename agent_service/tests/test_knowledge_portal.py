@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
+from agent_service.retrieval import HybridIndex
 from knowledge_portal.api import create_app
 from knowledge_portal.models import KnowledgeVersionRecord
 from knowledge_portal.publisher import ReleasePublisher
@@ -208,6 +212,47 @@ def test_imported_pdf_original_is_bound_to_version_and_release(tmp_path) -> None
         / version["version_id"]
         / "vpn-guide.pdf"
     ).is_file()
+
+
+def test_release_index_includes_corpus_images(tmp_path: Path) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "data_dir", tmp_path)
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "portal_drafts")
+    object.__setattr__(settings, "embedding_model", None)
+    slug = "總公司IP話機操作"
+    image_dir = tmp_path / "sources" / "assets" / slug
+    image_dir.mkdir(parents=True)
+    (image_dir / "p02.png").write_bytes(b"png")
+    version = KnowledgeVersionRecord(
+        version_id="ver-phone",
+        document_id="doc-phone",
+        version_number=1,
+        content_hash="hash",
+        canonical_content=f"取聽筒後按 0。\n\n![話機面板](assets/{slug}/p02.png)\n",
+        effective_at="2026-01-01",
+        review_due_at="2026-12-31",
+        owner_unit_id="IT Service Desk",
+        title=slug,
+        asset_slug=slug,
+        etag="etag-1",
+        created_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        created_by="author.one",
+    )
+
+    ReleasePublisher(settings).build_release(
+        release_id="release-corpus-images",
+        published_versions=[version],
+        created_by="author.one",
+        previous_release_id=None,
+    )
+
+    index = HybridIndex.load(
+        tmp_path / "releases" / "release-corpus-images" / "index" / "chunks.json"
+    )
+    images = [image for chunk in index.chunks for image in (chunk.images or [])]
+    assert [image.path for image in images] == [f"{slug}/p02.png"]
+    assert (tmp_path / "releases" / "release-corpus-images" / "assets" / slug / "p02.png").is_file()
 
 
 def test_import_scanned_pdf_is_rejected(portal_client: TestClient) -> None:

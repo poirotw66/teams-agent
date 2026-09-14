@@ -2,7 +2,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field, fields
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -196,25 +196,32 @@ def clean_markdown(raw_text: str) -> str:
 def extract_images(
     markdown: str,
     source_path: Path,
+    *,
+    asset_roots: list[Path] | None = None,
 ) -> list[DocumentImage]:
-    # Corpus layout: data/sources/*.md with images under data/sources/assets/.
-    assets_dir = (source_path.parent / "assets").resolve()
+    """Collect local images referenced by Markdown.
+
+    The corpus layout is ``sources/*.md`` beside ``sources/assets/<slug>/``.
+    Release builds and older indexes may keep the same files under a sibling
+    ``assets/`` directory, so extra roots are checked after the source-relative
+    path misses.
+    """
+    roots = [(source_path.parent / "assets").resolve()]
+    for root in asset_roots or []:
+        resolved_root = root.resolve()
+        if resolved_root not in roots:
+            roots.append(resolved_root)
     images: list[DocumentImage] = []
     seen: set[str] = set()
     for alt_text, target in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):
         target_path = target.strip().split(maxsplit=1)[0].strip("<>")
         if "://" in target_path or target_path.startswith("data:"):
             continue
-        resolved = (source_path.parent / target_path).resolve()
-        try:
-            relative_path = resolved.relative_to(assets_dir).as_posix()
-        except ValueError:
+        located = _locate_image(source_path, target_path, roots)
+        if located is None:
             continue
-        if (
-            relative_path in seen
-            or not resolved.is_file()
-            or resolved.suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif"}
-        ):
+        resolved, relative_path = located
+        if relative_path in seen:
             continue
         seen.add(relative_path)
         label = alt_text.strip() or resolved.stem
@@ -226,6 +233,43 @@ def extract_images(
             )
         )
     return images
+
+
+def _locate_image(
+    source_path: Path,
+    target_path: str,
+    asset_roots: list[Path],
+) -> tuple[Path, str] | None:
+    relative_ref = target_path.replace("\\", "/")
+    while relative_ref.startswith("./"):
+        relative_ref = relative_ref[2:]
+    relative_ref = relative_ref.removeprefix("assets/")
+    if not _is_safe_relative_asset(relative_ref):
+        return None
+    candidates = [(source_path.parent / target_path).resolve()]
+    if relative_ref:
+        candidates.extend((root / relative_ref).resolve() for root in asset_roots)
+    for resolved in candidates:
+        if not resolved.is_file() or resolved.suffix.lower() not in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+        }:
+            continue
+        for root in asset_roots:
+            try:
+                return resolved, resolved.relative_to(root).as_posix()
+            except ValueError:
+                continue
+    return None
+
+
+def _is_safe_relative_asset(relative_ref: str) -> bool:
+    if not relative_ref or relative_ref.startswith(("/", "\\")):
+        return False
+    parts = PurePosixPath(relative_ref.replace("\\", "/")).parts
+    return bool(parts) and ".." not in parts
 
 
 def _split_long_text(text: str, chunk_size: int, overlap: int) -> list[str]:
