@@ -6,18 +6,18 @@
 export const BU_SHELL_STORAGE_KEY = "ai_ops_bu_shell_v1";
 export const BU_SHELL_FLAG_ID = "bu_ui_shell_v1";
 
-/** Primary BU nav: [viewId, label, capability, group]. */
+/** Daily operations. Overview is first; the demo story stays the other three. */
 export const BU_PRIMARY_NAV = [
-  ["workHub", "我的工作", "bu.work.ui", "daily"],
-  ["quality", "改善案件", "bu.quality.nav", "daily"],
-  ["contentLists", "知識內容", "content.hub", "daily"],
-  ["conversations", "對話紀錄", "ops.conversations.read", "daily"],
-  ["evaluations", "品質驗收", "ops.evals.read", "daily"],
   ["overview", "營運分析", "ops.summary.read", "daily"],
+  ["workHub", "待處理問題", "bu.work.ui", "daily"],
+  ["conversations", "對話紀錄", "ops.conversations.read", "daily"],
+  ["contentLists", "知識內容", "content.hub", "daily"],
 ];
 
-/** Secondary system admin entries (collapsed group). */
+/** Kept available, but not on the first-demo path. */
 export const BU_SYSTEM_NAV = [
+  ["quality", "改善案件", "bu.quality.nav"],
+  ["evaluations", "品質驗收", "ops.evals.read"],
   ["examples", "分類正反例", "ops.examples.read"],
   ["sync", "同步工作", "ops.sync.read"],
   ["prompts", "Prompt", "ops.prompts.read"],

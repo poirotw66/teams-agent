@@ -52,6 +52,9 @@ const ALLOWED_FILTER_KEYS = new Set([
   "source",
   "actorRef",
   "hasFeedback",
+  "story",
+  "demoDoc",
+  "compare",
 ]);
 
 function sanitizeFilters(filters = {}) {

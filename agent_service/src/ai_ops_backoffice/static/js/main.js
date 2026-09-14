@@ -35,7 +35,7 @@ import {
 } from "./app/navigation.js";
 import { bindShellRoutes, firstVisibleView, registerBuNavRenderer, renderNav, visibleWorkspaces } from "./app/shell.js";
 import { applyBuShellBodyClass, isBuShellEnabled } from "./app/buShellConfig.js";
-import { mountBuShellToggle, renderBuNav } from "./app/buShell.js";
+import { renderBuNav } from "./app/buShell.js";
 import { auditPage } from "./views/audit.js";
 import { budgetsPage } from "./views/budgets.js";
 import { conversationsPage } from "./views/conversations.js";
@@ -196,11 +196,17 @@ async function boot() {
 }
 
 function openConsoleHome() {
-  // The workbench home is the platform overview, not the last workspace or work hub.
+  // Bare entry lands on 營運總覽 when the actor can read it.
   if (actorHasCapability("ops.summary.read")) {
     sessionStorage.setItem(WORKSPACE_KEY, "platform");
     saveNavFilters({ view: "overview" });
     renderNav("overview");
+    return;
+  }
+  if (isBuShellEnabled() && actorHasCapability("bu.work.ui")) {
+    sessionStorage.setItem(WORKSPACE_KEY, "knowledge_ops");
+    saveNavFilters({ view: "workHub" });
+    renderNav("workHub");
     return;
   }
   const fallback = isBuShellEnabled()
@@ -236,16 +242,6 @@ function renderTopbarActions() {
   }
   meta.replaceChildren();
   const bu = isBuShellEnabled();
-  const envHost = bu ? el("details", "bu-env-menu") : meta;
-  if (bu) {
-    const summary = document.createElement("summary");
-    summary.textContent = "環境";
-    summary.title = "開發與介面切換";
-    envHost.append(summary);
-    meta.append(envHost);
-  } else {
-    mountBuShellToggle(meta);
-  }
 
   if (canUseKnowledgeUi() && !bu) {
     const knowledgeLink = el("a", "topbar-action", "知識文件庫");
@@ -318,36 +314,7 @@ function renderTopbarActions() {
     }
   }
 
-  if (bu) {
-    mountBuShellToggle(envHost, { prepend: false });
-    if (canUseKnowledgeUi()) {
-      const knowledgeLink = el("a", "topbar-action", "知識文件庫（進階）");
-      knowledgeLink.href = buildLocationHash("knowledge_ops", "knowledgePortal");
-      knowledgeLink.title = "開啟知識編輯／審核／發布";
-      knowledgeLink.addEventListener("click", (event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-          return;
-        }
-        event.preventDefault();
-        navigateTo("knowledgePortal");
-      });
-      envHost.append(knowledgeLink);
-    }
-    if (capabilities.authMode !== "ENTRA") {
-      const logoutBtn = el("button", "meta-chip is-button", "重設身分");
-      logoutBtn.type = "button";
-      logoutBtn.title = "清除目前暫存身分";
-      logoutBtn.addEventListener("click", () => {
-        clearAuthHeaders();
-        window.location.reload();
-      });
-      envHost.append(logoutBtn);
-    }
-    envHost.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
-    if (capabilities.knowledgeBridgeEnabled) {
-      envHost.append(el("span", "meta-chip is-ok", "知識整合已啟用"));
-    }
-  } else {
+  if (!bu) {
     meta.append(el("span", "meta-chip", `驗證 ${capabilities.authMode}`));
     if (capabilities.knowledgeBridgeEnabled) {
       meta.append(el("span", "meta-chip is-ok", "知識整合已啟用"));

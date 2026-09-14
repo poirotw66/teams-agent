@@ -230,7 +230,7 @@ test('BU shell primary nav hides classic workspace switcher and respects min cap
   const labels = collectNavLinkLabels(s.nav);
   assert.ok(labels.includes('對話紀錄'));
   assert.ok(labels.includes('營運分析'));
-  assert.ok(!labels.includes('我的工作'));
+  assert.ok(!labels.includes('待處理問題'));
   assert.ok(!labels.includes('內容維護'));
   assert.ok(!s.nav.children.some((child) => child.className === 'workspace-switcher'));
   assert.equal(s.context.location.hash, '#/knowledge_ops/conversations');
@@ -244,7 +244,7 @@ test('BU shell quality capability unlocks work hub and improve-cases aliases', a
   });
   s.shell.renderNav('workHub');
   const labels = collectNavLinkLabels(s.nav);
-  assert.ok(labels.includes('我的工作'));
+  assert.ok(labels.includes('待處理問題'));
   assert.ok(labels.includes('改善案件'));
   s.context.location.hash = '#/knowledge_ops/improve?caseId=Q-2&returnTo=workHub';
   const parsed = s.navigation.parseLocationHash();

@@ -12,13 +12,14 @@ import {
   renderKnowledgePortalEntry,
 } from "./knowledge.js";
 import { loadingState } from "../components/state.js";
+import { renderVpnDocument } from "../demo/vpnStory.js";
 
 let contentListsGeneration = 0;
 
 function returnLabel(view) {
   if (view === "quality") return "← 返回改善案件";
   if (view === "conversations") return "← 返回對話紀錄";
-  if (view === "workHub") return "← 返回我的工作";
+  if (view === "workHub") return "← 返回待處理問題";
   if (view === "evaluations") return "← 返回品質驗收";
   return "← 返回上一頁";
 }
@@ -53,6 +54,10 @@ async function renderContentLists(state = {}) {
   const app = document.getElementById("app");
   const navFilters = loadNavFilters();
   const tab = state.tab || navFilters.tab || "documents";
+  if (navFilters.demoDoc === "vpn" || state.demoDoc === "vpn") {
+    renderVpnDocument(app);
+    return;
+  }
   const allowed = actorCapabilities();
 
   const header = el("div", "bu-page-header");
@@ -70,9 +75,6 @@ async function renderContentLists(state = {}) {
   if (canUseKnowledgeUi()) {
     secondary.append(drillLink("待審核", "knowledgeReviews"));
     secondary.append(drillLink("發布紀錄", "knowledgeReleases"));
-  }
-  if (allowed.has("ops.sync.read") || allowed.has("ops.knowledge.read")) {
-    secondary.append(drillLink("同步狀態", "sync"));
   }
   header.append(secondary);
 

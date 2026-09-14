@@ -414,7 +414,9 @@ export function renderDocumentPerformance(data, controls = {}) {
   container.append(el("h3", "ov-panel-title", "版本歸因"), releaseTable);
 
   const recentTable = el("table");
-  recentTable.innerHTML = "<thead><tr><th>時間</th><th>對話</th><th>問題</th><th>發布版本</th><th>片段</th></tr></thead>";
+  recentTable.innerHTML = isBuShellEnabled()
+    ? "<thead><tr><th>時間</th><th>對話</th><th>問題</th><th>發布版本</th></tr></thead>"
+    : "<thead><tr><th>時間</th><th>對話</th><th>問題</th><th>發布版本</th><th>片段</th></tr></thead>";
   const recentBody = el("tbody");
   const hitRows = data.hits || data.recentHits || [];
   for (const item of hitRows) {
@@ -432,7 +434,9 @@ export function renderDocumentPerformance(data, controls = {}) {
     row.append(conversationCell);
     row.append(el("td", "", item.issueTypeDisplayName || item.issueTypeId || "-"));
     row.append(el("td", "", item.releaseId || "-"));
-    row.append(el("td", "", item.chunkId || "-"));
+    if (!isBuShellEnabled()) {
+      row.append(el("td", "", item.chunkId || "-"));
+    }
     recentBody.append(row);
   }
   recentTable.append(recentBody);

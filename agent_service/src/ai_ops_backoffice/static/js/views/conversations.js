@@ -3,6 +3,12 @@ import { periodParams, createPeriodControls } from "../components/period.js";
 import { badge } from "../components/badges.js";
 import { showContentModal, showTextPrompt } from "../components/modal.js";
 import { showConversationModal, showConversationPage } from "../components/conversationModal.js";
+import {
+  isVpnDemoConversation,
+  openVpnConversation,
+  renderVpnConversation,
+  VPN_STORY,
+} from "../demo/vpnStory.js";
 import { runExport } from "../services/export.js";
 import { getCurrentActiveView } from "../app/activeView.js";
 import { loadNavFilters, saveNavFilters, syncLocationHash, buildLocationHash, workspaceForView } from "../app/navigation.js";
@@ -205,6 +211,14 @@ export async function renderConversations(state = {}) {
     if (handoff) filters.set("handoff", handoff);
     if (channelScope) filters.set("channel_scope", channelScope);
     let detailError = null;
+    if (
+      isBuShellEnabled() &&
+      isVpnDemoConversation(conversationId) &&
+      !state.isPolling
+    ) {
+      renderVpnConversation(app);
+      return;
+    }
     if (
       isBuShellEnabled() &&
       conversationId &&
@@ -624,6 +638,20 @@ export async function renderConversations(state = {}) {
       panel.append(resultSummary);
     }
 
+    if (isBuShellEnabled()) {
+      const demoEntry = el("article", "demo-task");
+      demoEntry.append(
+        el("h3", "", VPN_STORY.question),
+        el("p", "", VPN_STORY.conversationNote),
+        el("p", "ov-lead", `來源：${VPN_STORY.documentTitle}，${VPN_STORY.publishedVersion}`),
+      );
+      const openDemo = el("button", "button-primary", "查看這則回答");
+      openDemo.type = "button";
+      openDemo.addEventListener("click", () => openVpnConversation());
+      demoEntry.append(openDemo);
+      panel.append(demoEntry);
+    }
+
     if (!data.items.length) {
       if (detailError) {
         panel.append(
@@ -642,7 +670,7 @@ export async function renderConversations(state = {}) {
     const table = el("table");
     if (isBuShellEnabled()) {
       table.innerHTML =
-        "<thead><tr><th>提問摘要</th><th>時間</th><th>回合</th><th>使用者</th><th>通道</th><th>處理方式</th><th>派工／工單</th></tr></thead>";
+        "<thead><tr><th>提問摘要</th><th>時間</th><th>回合</th><th>使用者</th><th>通道</th><th>回饋／派工</th></tr></thead>";
     } else {
       table.innerHTML =
         "<thead><tr><th>時間／對話</th><th>回合</th><th>使用者</th><th>頻道</th><th>處理方式</th><th>派工／工單</th><th>最近更新</th></tr></thead>";
@@ -776,13 +804,15 @@ export async function renderConversations(state = {}) {
       channelCell.append(channelTag);
       row.append(channelCell);
 
-      row.append(
-        el(
-          "td",
-          "",
-          (item.routes || []).map((code) => labelRoute(code)).join("、") || "-",
-        ),
-      );
+      if (!isBuShellEnabled()) {
+        row.append(
+          el(
+            "td",
+            "",
+            (item.routes || []).map((code) => labelRoute(code)).join("、") || "-",
+          ),
+        );
+      }
 
       const dispatchCell = el("td");
       const badges = [];

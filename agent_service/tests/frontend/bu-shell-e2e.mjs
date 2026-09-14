@@ -87,7 +87,7 @@ test("BU shell live E2E: primary nav, five task pages, no classic switcher", asy
     const navLabels = await page.$$eval("#nav a", (nodes) =>
       nodes.map((n) => n.textContent.trim()).filter(Boolean),
     );
-    for (const label of ["我的工作", "改善案件", "知識內容", "對話紀錄", "品質驗收", "營運分析"]) {
+    for (const label of ["待處理問題", "改善案件", "知識內容", "對話紀錄", "品質驗收", "營運分析"]) {
       assert.ok(navLabels.includes(label), `missing nav ${label}; got ${navLabels.join(",")}`);
     }
     assert.equal(await page.$(".workspace-switcher"), null, "classic workspace switcher must be hidden");

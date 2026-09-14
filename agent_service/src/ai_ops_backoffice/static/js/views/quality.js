@@ -9,6 +9,7 @@ import { withReturnTo } from "../app/returnTo.js";
 import { showQualityCaseDetail } from "./qualityCaseDetail.js";
 import { buildGapPanel, buildQualityLoopPanel } from "./qualityPanels.js";
 import { loadingState } from "../components/state.js";
+import { isVpnDemoCase, renderVpnCase, renderVpnComparison } from "../demo/vpnStory.js";
 
 export { showQualityCaseDetail };
 
@@ -20,6 +21,14 @@ export async function renderQuality(state = {}) {
     const navFilters = loadNavFilters();
     const buShell = isBuShellEnabled();
     const activeTab = state.tab || navFilters.tab || "cases";
+    if (navFilters.view === "quality" && navFilters.caseId && isVpnDemoCase(navFilters.caseId)) {
+      if (navFilters.compare === "1") {
+        renderVpnComparison(app);
+      } else {
+        renderVpnCase(app);
+      }
+      return;
+    }
     if (navFilters.view === "quality" && navFilters.caseId) {
       await showQualityCaseDetail(navFilters.caseId, { pageMode: buShell });
       if (buShell) {

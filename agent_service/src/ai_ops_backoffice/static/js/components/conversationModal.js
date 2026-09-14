@@ -22,23 +22,26 @@ function sourceTraceStatusLabel(status) {
 
 function sourcePreviewContent(source) {
   const content = el("div", "source-preview");
-  const identity = el("div", "metric-label");
-  identity.textContent = [
-    source.documentId ? `文件：${source.documentId}` : "文件：—",
-    source.versionId ? `版本：${source.versionId}` : "版本：—",
-    source.releaseId ? `發布：${source.releaseId}` : "發布：—",
-  ].join("｜");
-  content.append(identity);
-  content.append(
+  const identity = el("div");
+  identity.append(el("p", "", source.title || "未命名文件"));
+  identity.append(el("p", "ov-lead", source.versionId ? "已附版本，編號收在技術細節" : "版本資訊不足"));
+  const technical = el("details");
+  technical.append(el("summary", "", "技術細節"));
+  technical.append(
     el(
       "p",
-      "metric-label",
-      `chunk：${source.chunkId || "—"}｜追溯狀態：${sourceTraceStatusLabel(source.traceStatus)}`,
+      "ov-lead",
+      [
+        source.versionId ? `版本編號 ${source.versionId}` : "",
+        source.documentId ? `文件編號 ${source.documentId}` : "",
+        source.chunkId ? `片段 ${source.chunkId}` : "",
+        source.releaseId ? `發布 ${source.releaseId}` : "",
+        source.traceStatus ? `追溯 ${sourceTraceStatusLabel(source.traceStatus)}` : "",
+        source.sourcePath ? `路徑 ${source.sourcePath}` : "",
+      ].filter(Boolean).join("，") || "沒有額外技術編號。",
     ),
   );
-  if (source.sourcePath) {
-    content.append(el("p", "metric-label", `轉換來源：${source.sourcePath}`));
-  }
+  content.append(identity, technical);
   const locator = source.locator || {};
   const locatorBits = [];
   if (locator.locator_type || locator.locatorType) {
@@ -236,11 +239,13 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
       side.append(el("p", "muted", "尚無回合資料。"));
       return;
     }
-    side.append(el("p", "metric-label", `已選取回合：${turn.turnId || turn.occurredAt || "—"}`));
-    side.append(el("p", "", "處理方式 "));
-    side.append(badge(routeLabel(turn.route), "accent"));
-    if (turn.faqKey) {
-      side.append(el("p", "metric-label", `FAQ：${turn.faqKey}`));
+    if (!isBuShellEnabled()) {
+      side.append(el("p", "metric-label", `已選取回合：${turn.turnId || turn.occurredAt || "—"}`));
+      side.append(el("p", "", "處理方式 "));
+      side.append(badge(routeLabel(turn.route), "accent"));
+      if (turn.faqKey) {
+        side.append(el("p", "metric-label", `FAQ：${turn.faqKey}`));
+      }
     }
     const docs = turn.documentIds || [];
     const paths = turn.sourcePaths || [];
@@ -258,13 +263,17 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
             `${source.title || "未命名文件"}${source.traceStatus === "LEGACY_BACKFILLED" ? "（歷史回填）" : ""}`,
           ),
         );
-        item.append(
-          el(
-            "div",
-            "metric-label",
-            [source.documentId, source.versionId, source.releaseId].filter(Boolean).join("｜") || "版本資訊不足",
-          ),
-        );
+        if (isBuShellEnabled()) {
+          item.append(el("div", "metric-label", source.title ? "已附版本" : "版本資訊不足"));
+        } else {
+          item.append(
+            el(
+              "div",
+              "metric-label",
+              [source.documentId, source.versionId, source.releaseId].filter(Boolean).join("｜") || "版本資訊不足",
+            ),
+          );
+        }
         const button = el("button", "drill-link", "查看來源段落");
         button.type = "button";
         button.addEventListener("click", () => void openSourcePreview(source, button));
@@ -326,6 +335,8 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
           {
             conversationId,
             turnId: turn.turnId || turn.occurredAt,
+            route: turn.route,
+            faqKey: turn.faqKey,
             model: turn.model,
             resultType: turn.resultType,
             events: turn.events,
@@ -371,13 +382,15 @@ function buildConversationBody(detail, conversationId, { onRefresh, onUnmask, se
         answer.innerHTML = formatAssistantHtml(answerText);
         assistant.append(answer);
       }
-      assistant.append(
-        el(
-          "small",
-          "muted",
-          `處理方式：${routeLabel(turn.route)}${turn.faqKey ? `｜FAQ ${turn.faqKey}` : ""}`,
-        ),
-      );
+      if (!isBuShellEnabled()) {
+        assistant.append(
+          el(
+            "small",
+            "muted",
+            `處理方式：${routeLabel(turn.route)}${turn.faqKey ? `｜FAQ ${turn.faqKey}` : ""}`,
+          ),
+        );
+      }
       block.append(assistant);
     } else if (userText) {
       const missingAnswer = el("div", "bu-turn-assistant is-missing");
@@ -435,7 +448,10 @@ export function showConversationPage(detail, conversationId = detail.conversatio
     delete listFilters.returnTo;
     void navigateTo("conversations", listFilters);
   });
-  crumb.append(back, document.createTextNode(` / ${conversationId}`));
+  crumb.append(
+    back,
+    document.createTextNode(isBuShellEnabled() ? " / 這一則對話" : ` / ${conversationId}`),
+  );
   page.append(crumb);
   page.append(el("h2", "", "對話紀錄"));
   page.append(

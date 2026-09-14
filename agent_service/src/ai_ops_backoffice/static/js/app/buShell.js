@@ -90,7 +90,7 @@ export function renderBuNav(active, options = {}, routeRefs = {}) {
   if (systemItems.length) {
     const system = el("details", "bu-nav-system");
     const summary = document.createElement("summary");
-    summary.textContent = "系統管理";
+    summary.textContent = "更多";
     system.append(summary);
     const systemList = el("div", "bu-nav-items");
     for (const [id, label] of systemItems) {
