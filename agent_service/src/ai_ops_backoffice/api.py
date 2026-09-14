@@ -488,7 +488,7 @@ def create_app(
     if eval_store_mode == "MEMORY":
         eval_repository: EvaluationRepository = InMemoryEvaluationRepository()
     elif eval_store_mode == "FIRESTORE":
-        from agent_service.operations.firestore import build_firestore_client
+        from agent_service.operations.stores.firestore_store import build_firestore_client
         eval_repository = FirestoreEvaluationRepository(
             build_firestore_client(resolved_settings.gcp_project_id, None),
             collection_prefix=resolved_settings.eval_firestore_collection,
@@ -505,7 +505,7 @@ def create_app(
     if fixture_store_mode == "MEMORY":
         fixture_repository: ToolFixtureRepository = ToolFixtureRepository()
     elif fixture_store_mode == "FIRESTORE":
-        from agent_service.operations.firestore import build_firestore_client
+        from agent_service.operations.stores.firestore_store import build_firestore_client
         fixture_repository = FirestoreToolFixtureRepository(
             build_firestore_client(resolved_settings.gcp_project_id, None),
             prefix=resolved_settings.fixture_firestore_collection_prefix,
@@ -524,7 +524,7 @@ def create_app(
     if gate_store_mode == "MEMORY":
         gate_repository: QualityGateRepository = InMemoryQualityGateRepository()
     elif gate_store_mode == "FIRESTORE":
-        from agent_service.operations.firestore import build_firestore_client
+        from agent_service.operations.stores.firestore_store import build_firestore_client
         gate_repository = FirestoreQualityGateRepository(
             build_firestore_client(resolved_settings.gcp_project_id, None),
             prefix=resolved_settings.gate_firestore_collection_prefix,
@@ -541,7 +541,7 @@ def create_app(
     if job_store_mode == "MEMORY":
         job_repository: JobRepository = InMemoryJobRepository()
     elif job_store_mode == "FIRESTORE":
-        from agent_service.operations.firestore import build_firestore_client
+        from agent_service.operations.stores.firestore_store import build_firestore_client
         job_repository = FirestoreJobRepository(
             build_firestore_client(resolved_settings.gcp_project_id, None),
             collection=resolved_settings.job_firestore_collection,

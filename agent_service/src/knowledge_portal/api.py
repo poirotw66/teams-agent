@@ -81,7 +81,7 @@ def create_app(
 
                 gate_mode = (os.environ.get("AI_OPS_GATE_STORE_MODE") or "FILE").upper()
                 if gate_mode == "FIRESTORE":
-                    from agent_service.operations.firestore import build_firestore_client
+                    from agent_service.operations.stores.firestore_store import build_firestore_client
 
                     gate_repo = FirestoreQualityGateRepository(
                         build_firestore_client(
