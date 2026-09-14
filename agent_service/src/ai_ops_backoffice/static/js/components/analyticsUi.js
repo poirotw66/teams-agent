@@ -1,4 +1,5 @@
-import { el, metric } from "../api.js";
+import { el } from "../api.js";
+import { labelRoute } from "../app/labels.js";
 import { badge } from "./badges.js";
 
 const SERIES_COLORS = ["#2563eb", "#d97706", "#059669", "#7c3aed", "#dc2626", "#0891b2"];
@@ -27,16 +28,20 @@ export function pageHeader(title, subtitle, trailing = null) {
   const header = el("div", "analytics-page-header");
   const text = el("div", "analytics-page-header-text");
   text.append(el("h2", "", title));
-  if (subtitle) text.append(el("p", "metric-label", subtitle));
+  if (subtitle) text.append(el("p", "ov-lead", subtitle));
   header.append(text);
   if (trailing) header.append(trailing);
   return header;
 }
 
 export function kpiStrip(items = []) {
-  const grid = el("div", "metrics analytics-kpi-strip");
+  const grid = el("div", "ov-kpis");
   for (const item of items) {
-    grid.append(metric(item.label, item.value));
+    const card = el("article", item.attention ? "ov-kpi is-attention" : "ov-kpi");
+    card.append(el("p", "ov-kpi-label", item.label));
+    card.append(el("p", "ov-kpi-value", String(item.value)));
+    if (item.detail) card.append(el("p", "ov-kpi-detail", item.detail));
+    grid.append(card);
   }
   return grid;
 }
@@ -82,7 +87,9 @@ export function shareBarCell(share) {
 
 export function routeBadge(route) {
   const key = String(route || "UNKNOWN").toUpperCase();
-  return badge(key, ROUTE_BADGE[key] || "neutral");
+  const node = badge(labelRoute(key), ROUTE_BADGE[key] || "neutral");
+  node.title = key;
+  return node;
 }
 
 export function distributionBars(items, { labelKey = "label", valueKey = "count", max = null } = {}) {

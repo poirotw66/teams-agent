@@ -15,7 +15,7 @@ export function finishIssuesPage(panel) {
     presentAnalyticsPage(
       "issues",
       "問題分析",
-      "以排名找出需改善的問題，並追到處理方式、依據與案件。",
+      "這段期間最常出現的問題，以及還沒被解答的部分。",
       panel,
     );
     return;

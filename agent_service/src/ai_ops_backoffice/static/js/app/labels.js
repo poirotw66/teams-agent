@@ -36,6 +36,11 @@ const STATUS_LABELS = {
   DISABLED: "已停用",
   PUBLISHED: "已發布",
   ARCHIVED: "已封存",
+  INDEXED: "已索引",
+  PENDING_INDEX: "待索引",
+  NOT_PARSED: "尚未解析",
+  NOT_INDEXED: "尚未索引",
+  UNKNOWN: "未知",
   MEDIUM: "中",
   HIGH: "高",
   LOW: "低",
@@ -69,26 +74,26 @@ const SOURCE_HEALTH_LABELS = {
 
 export function labelRoute(code) {
   const key = String(code || "").trim();
-  return ROUTE_LABELS[key] || key || "—";
+  return ROUTE_LABELS[key] || key || "-";
 }
 
 export function labelStatus(code) {
   const key = String(code || "").trim();
-  return STATUS_LABELS[key] || key || "—";
+  return STATUS_LABELS[key] || key || "-";
 }
 
 export function labelBehavior(code) {
   const key = String(code || "").trim();
-  return BEHAVIOR_LABELS[key] || key || "—";
+  return BEHAVIOR_LABELS[key] || key || "-";
 }
 
 export function labelSourceHealth(code) {
   const key = String(code || "").trim();
-  return SOURCE_HEALTH_LABELS[key] || key || "—";
+  return SOURCE_HEALTH_LABELS[key] || key || "-";
 }
 
 export function formatTaipeiDateTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     return new Date(iso).toLocaleString("zh-TW", {
       timeZone: "Asia/Taipei",
@@ -106,7 +111,7 @@ export function formatTaipeiDateTime(iso) {
 
 /** Compact calendar+clock for freshness chips, e.g. 昨天 17:01 / 今天 09:12. */
 export function formatTaipeiEventStamp(iso, now = new Date()) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     const then = new Date(iso);
     const tz = "Asia/Taipei";
@@ -126,7 +131,7 @@ export function formatTaipeiEventStamp(iso, now = new Date()) {
 }
 
 export function formatTaipeiRelative(iso, now = new Date()) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   try {
     const then = new Date(iso);
     const diffMs = now.getTime() - then.getTime();

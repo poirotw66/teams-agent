@@ -15,6 +15,7 @@ import { createExportButton } from "../services/export.js";
 import { clearNavFilters, drillLink, loadNavFilters, saveNavFilters } from "../app/navigation.js";
 import { createPageController } from "../app/lifecycle.js";
 import { presentAnalyticsPage } from "../app/analyticsChrome.js";
+import { labelRoute } from "../app/labels.js";
 import { isBuShellEnabled } from "../app/buShellConfig.js";
 
 function stillOnRoutes() {
@@ -76,7 +77,7 @@ export async function renderRoutes(state = { preset: "30d" }) {
     panel.append(
       pageHeader(
         "處理方式與回答依據",
-        "查看 FAQ、知識文件與轉派人工等處理分布，並追查實際命中的 FAQ 與文件內容。",
+        "固定答案、知識文件和轉人工各占多少，以及實際命中了什麼。",
       ),
     );
 
@@ -90,13 +91,17 @@ export async function renderRoutes(state = { preset: "30d" }) {
     const filterBar = el("div", "filter-bar");
     const issueInput = el("input");
     issueInput.type = "search";
-    issueInput.placeholder = "Issue Type ID";
+    issueInput.placeholder = "問題代碼";
     issueInput.value = issueTypeId;
-    issueInput.setAttribute("aria-label", "Issue Type");
+    issueInput.setAttribute("aria-label", "問題代碼");
     const routeSelect = el("select", "");
-    routeSelect.setAttribute("aria-label", "Route Type");
+    routeSelect.setAttribute("aria-label", "處理方式");
     for (const optionValue of ROUTE_OPTIONS) {
-      const option = el("option", "", optionValue || "全部 Route");
+      const option = el(
+        "option",
+        "",
+        optionValue ? labelRoute(optionValue) : "全部處理方式",
+      );
       option.value = optionValue;
       if (optionValue === route) option.selected = true;
       routeSelect.append(option);
@@ -134,13 +139,13 @@ export async function renderRoutes(state = { preset: "30d" }) {
       filterChipBar(
         [
           {
-            label: "Issue",
+            label: "問題",
             value: issueTypeId,
             onClear: () => renderRoutes({ ...period, issueTypeId: "", route }),
           },
           {
-            label: "Route",
-            value: route,
+            label: "處理方式",
+            value: route ? labelRoute(route) : "",
             onClear: () => renderRoutes({ ...period, issueTypeId, route: "" }),
           },
         ],
@@ -155,17 +160,14 @@ export async function renderRoutes(state = { preset: "30d" }) {
     const issueCount = (data.byIssueType || []).length;
     panel.append(
       kpiStrip([
-        { label: isBuShellEnabled() ? "處理總次數" : "路由總次數", value: formatCount(routeTotal) },
-        { label: isBuShellEnabled() ? "處理方式數" : "Route 類型數", value: formatCount((data.routeDistribution || []).length) },
-        { label: isBuShellEnabled() ? "涉及問題數" : "涉及 Issue 數", value: formatCount(issueCount) },
+        { label: "處理次數", value: formatCount(routeTotal) },
+        { label: "處理方式", value: formatCount((data.routeDistribution || []).length) },
+        { label: "涉及問題", value: formatCount(issueCount) },
       ]),
     );
 
     const distTitle = el("div", "analytics-section-title");
-    distTitle.append(
-      el("h3", "", isBuShellEnabled() ? "處理方式分布" : "Route 分布"),
-      el("span", "metric-label", isBuShellEnabled() ? "FAQ、知識檢索、轉人工等處置比例" : "FAQ vs RAG 等處理比例一目了然"),
-    );
+    distTitle.append(el("h3", "ov-panel-title", "處理方式分布"));
     panel.append(distTitle);
     panel.append(
       distributionBars(
@@ -177,20 +179,20 @@ export async function renderRoutes(state = { preset: "30d" }) {
     );
 
     const tableTitle = el("div", "analytics-section-title");
-    tableTitle.append(el("h3", "", "Route 與實際來源"), el("span", "metric-label", "可點擊 FAQ／Document 下鑽"));
+    tableTitle.append(el("h3", "ov-panel-title", "實際命中來源"));
     panel.append(tableTitle);
 
     if (!(data.routeDistribution || []).length) {
       panel.append(
         emptyState(
-          "此條件尚無路由資料",
-          "試著清除 Issue／Route 篩選，或改用較長期間。",
+          "此條件沒有處理紀錄",
+          "試著清除問題或處理方式篩選，或改用較長期間。",
         ),
       );
     } else {
       const table = el("table");
       table.innerHTML =
-        "<thead><tr><th>Route</th><th>Count</th><th>實際來源</th></tr></thead>";
+        "<thead><tr><th>處理方式</th><th>次數</th><th>實際來源</th></tr></thead>";
       const body = el("tbody");
       for (const item of data.routeDistribution || []) {
         const row = el("tr");
@@ -208,18 +210,15 @@ export async function renderRoutes(state = { preset: "30d" }) {
     }
 
     const byIssueTitle = el("div", "analytics-section-title");
-    byIssueTitle.append(
-      el("h3", "", "依 Issue 追查來源"),
-      el("span", "metric-label", "Issue → Route → FAQ／Document → 對話"),
-    );
+    byIssueTitle.append(el("h3", "ov-panel-title", "依問題追查來源"));
     panel.append(byIssueTitle);
 
     if (!(data.byIssueType || []).length) {
-      panel.append(emptyState("此條件尚無 Issue 路由資料", "可先從 Issue 分析頁下鑽，或放寬篩選條件。"));
+      panel.append(emptyState("此條件沒有問題分流資料", "可先從問題分析頁查看，或放寬篩選條件。"));
     } else {
       const byIssue = el("table");
       byIssue.innerHTML =
-        "<thead><tr><th>Issue</th><th>Route</th><th>Count</th><th>FAQ／Document</th><th>動作</th></tr></thead>";
+        "<thead><tr><th>問題</th><th>處理方式</th><th>次數</th><th>依據</th><th>動作</th></tr></thead>";
       const byIssueBody = el("tbody");
       for (const issue of data.byIssueType || []) {
         for (const routeItem of issue.routes || []) {
@@ -237,7 +236,7 @@ export async function renderRoutes(state = { preset: "30d" }) {
           row.append(attributionCell(routeItem.attribution));
           row.append(
             actionCell(
-              drillLink("Issue 路由", "issues", { issueTypeId: issue.issueTypeId }),
+              drillLink("問題分析", "issues", { issueTypeId: issue.issueTypeId }),
               drillLink("對話", "conversations", { issueTypeId: issue.issueTypeId }),
               drillLink("回饋", "quality", { issueTypeId: issue.issueTypeId }),
             ),
@@ -258,7 +257,7 @@ export async function renderRoutes(state = { preset: "30d" }) {
       presentAnalyticsPage(
         "routes",
         "處理方式與回答依據",
-        "查看全體分布、原查詢條件與匯出能力。",
+        "固定答案、知識文件和轉人工各占多少，以及實際命中了什麼。",
         panel,
       );
     } else {

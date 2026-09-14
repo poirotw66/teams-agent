@@ -1,4 +1,4 @@
-import { api, el, metric } from "../../api.js";
+import { api, el } from "../../api.js";
 import { showContentModal } from "../../components/modal.js";
 import { showConversationModal } from "../../components/conversationModal.js";
 import { renderContentPolicyBanner } from "../../components/contentGuide.js";
@@ -6,8 +6,10 @@ import { runExport } from "../../services/export.js";
 import { getCapabilities } from "../../app/capabilities.js";
 import { buildLocationHash, navigateTo } from "../../app/navigation.js";
 import { isBuShellEnabled } from "../../app/buShellConfig.js";
+import { presentAnalyticsPage } from "../../app/analyticsChrome.js";
 import { loadingState } from "../../components/state.js";
-import { formatUserFacingError } from "../../app/labels.js";
+import { formatUserFacingError, labelStatus } from "../../app/labels.js";
+import { kpiStrip } from "../../components/analyticsUi.js";
 
 export async function renderKnowledge() {
   const app = document.getElementById("app");
@@ -15,15 +17,9 @@ export async function renderKnowledge() {
   if (!isBuShellEnabled()) {
     panel.append(el("h2", "", "內容成效"));
   }
-  panel.append(renderContentPolicyBanner());
+  panel.append(renderContentPolicyBanner({ compact: true }));
+  const toolbar = el("div", "analytics-toolbar");
   if (getCapabilities()?.knowledgeBridgeEnabled) {
-    panel.append(
-      el(
-        "p",
-        "",
-        "查看文件使用情況與回答成效；編輯內容請前往知識內容。",
-      ),
-    );
     const openPortal = el("a", "button-link", isBuShellEnabled() ? "開啟知識內容" : "開啟知識文件庫");
     openPortal.href = buildLocationHash(
       "knowledge_ops",
@@ -37,25 +33,18 @@ export async function renderKnowledge() {
       navigateTo(isBuShellEnabled() ? "contentLists" : "knowledgePortal");
     });
     openPortal.style.marginRight = "0.5rem";
-    panel.append(openPortal);
+    toolbar.append(openPortal);
   } else {
-    panel.append(
-      el(
-        "p",
-        "",
-        "文件維護、審核、發布與測試仍由 Knowledge Portal 提供。下方可查看文件成效。",
-      ),
-    );
     const link = el("a", "button-link", "開啟 Knowledge Portal");
     link.href = getCapabilities()?.knowledgePortalUrl || "http://127.0.0.1:8091";
     link.target = "_blank";
-    panel.append(link);
+    toolbar.append(link);
   }
   const exportButton = el("button", "", "匯出 CSV");
-  exportButton.style.marginLeft = "0.5rem";
-  panel.append(exportButton);
+  toolbar.append(exportButton);
+  panel.append(toolbar);
 
-  const filters = el("form", "filter-bar knowledge-filters");
+  const filters = el("form", "filter-bar knowledge-filters ov-controls");
   filters.style.marginTop = "1rem";
   const query = el("input");
   query.style.minWidth = "220px";
@@ -148,7 +137,16 @@ export async function renderKnowledge() {
     });
   });
 
-  app.replaceChildren(panel);
+  if (isBuShellEnabled()) {
+    presentAnalyticsPage(
+      "knowledge",
+      "內容成效",
+      "文件有沒有被用到，以及使用者是否覺得有幫助。",
+      panel,
+    );
+  } else {
+    app.replaceChildren(panel);
+  }
   await loadDocuments();
 }
 
@@ -159,8 +157,8 @@ export function renderKnowledgeInventory(data, loadDocuments, options = {}) {
   const summary = el(
     "p",
     "",
-    `共 ${data.total || 0} 份文件｜績效期間 ${data.periodDays || days} 天` +
-      (data.filterFormatType ? `｜格式 ${data.filterFormatType}` : ""),
+    `共 ${data.total || 0} 份文件，統計 ${data.periodDays || days} 天` +
+      (data.filterFormatType ? `，格式 ${data.filterFormatType}` : ""),
   );
   container.append(summary);
   if (!(data.items || []).length) {
@@ -214,8 +212,8 @@ export function renderKnowledgeInventory(data, loadDocuments, options = {}) {
       documentCell,
       el("td", "", item.formatFamily || item.formatType || "-"),
       el("td", "", item.ownerUnitId || "-"),
-      el("td", "", item.lifecycleStatus || "UNKNOWN"),
-      el("td", "", `${item.parseStatus || "UNKNOWN"} / ${item.indexStatus || "UNKNOWN"}`),
+      el("td", "", labelStatus(item.lifecycleStatus)),
+      el("td", "", `${labelStatus(item.parseStatus)} / ${labelStatus(item.indexStatus)}`),
       hitCell,
       convCell,
       posCell,
@@ -297,8 +295,8 @@ export function renderDocumentPerformance(data, controls = {}) {
     period.append(option);
   }
   const issueFilter = el("select");
-  issueFilter.setAttribute("aria-label", "Issue 類型");
-  const allIssues = el("option", "", "全部 Issue");
+  issueFilter.setAttribute("aria-label", "問題類型");
+  const allIssues = el("option", "", "全部問題");
   allIssues.value = "";
   issueFilter.append(allIssues);
   for (const item of data.issueTypeDistribution || []) {
@@ -317,7 +315,7 @@ export function renderDocumentPerformance(data, controls = {}) {
     option.selected = true;
     issueFilter.append(option);
   }
-  const apply = el("button", "", "套用 Issue／期間");
+  const apply = el("button", "", "套用");
   apply.addEventListener("click", () => {
     if (typeof controls.onFilter === "function") {
       controls.onFilter({
@@ -326,22 +324,17 @@ export function renderDocumentPerformance(data, controls = {}) {
       });
     }
   });
-  filterBar.append(
-    el("span", "metric-label", "REQ-009 篩選："),
-    period,
-    issueFilter,
-    apply,
-  );
+  filterBar.append(period, issueFilter, apply);
   container.append(filterBar);
 
-  const grid = el("div", "grid");
-  grid.append(
-    metric("命中次數", data.hitCount),
-    metric("對話數", data.conversationCount),
-    metric("正面回饋", data.positiveFeedbackCount),
-    metric("負面回饋", data.negativeFeedbackCount),
+  container.append(
+    kpiStrip([
+      { label: "命中", value: String(data.hitCount ?? 0) },
+      { label: "對話", value: String(data.conversationCount ?? 0) },
+      { label: "正面回饋", value: String(data.positiveFeedbackCount ?? 0) },
+      { label: "負面回饋", value: String(data.negativeFeedbackCount ?? 0) },
+    ]),
   );
-  container.append(grid);
 
   if (data.governance) {
     const governance = data.governance;
@@ -352,12 +345,7 @@ export function renderDocumentPerformance(data, controls = {}) {
         el(
           "p",
           "",
-          `生命週期：${governance.lifecycleStatus}｜格式：${governance.formatType}｜解析：${governance.parseStatus}｜索引：${governance.indexStatus}`,
-        ),
-        el(
-          "p",
-          "metric-label",
-          "索引狀態獨立於生命週期：INDEXED＝已在 ACTIVE release；PENDING_INDEX＝已發布待入索引；NOT_PARSED／NOT_INDEXED＝尚未可檢索。",
+          `生命週期 ${labelStatus(governance.lifecycleStatus)}，格式 ${governance.formatType || "-"}，解析 ${labelStatus(governance.parseStatus)}，索引 ${labelStatus(governance.indexStatus)}`,
         ),
       );
       if (governance.portalUrl) {
@@ -390,7 +378,7 @@ export function renderDocumentPerformance(data, controls = {}) {
 
   const issueTable = el("table");
   issueTable.innerHTML =
-    "<thead><tr><th>Issue Type</th><th>Display Name</th><th>Count</th></tr></thead>";
+    "<thead><tr><th>問題代碼</th><th>問題名稱</th><th>次數</th></tr></thead>";
   const issueBody = el("tbody");
   for (const item of data.issueTypeDistribution || []) {
     const row = el("tr");
@@ -411,10 +399,10 @@ export function renderDocumentPerformance(data, controls = {}) {
     issueBody.append(row);
   }
   issueTable.append(issueBody);
-  container.append(el("h3", "", "Issue 分布"), issueTable);
+  container.append(el("h3", "ov-panel-title", "相關問題"), issueTable);
 
   const releaseTable = el("table");
-  releaseTable.innerHTML = "<thead><tr><th>Release</th><th>Hits</th></tr></thead>";
+  releaseTable.innerHTML = "<thead><tr><th>發布版本</th><th>命中</th></tr></thead>";
   const releaseBody = el("tbody");
   for (const item of data.releaseAttribution || []) {
     const row = el("tr");
@@ -423,10 +411,10 @@ export function renderDocumentPerformance(data, controls = {}) {
     releaseBody.append(row);
   }
   releaseTable.append(releaseBody);
-  container.append(el("h3", "", "版本歸因"), releaseTable);
+  container.append(el("h3", "ov-panel-title", "版本歸因"), releaseTable);
 
   const recentTable = el("table");
-  recentTable.innerHTML = "<thead><tr><th>時間</th><th>Conversation</th><th>Issue</th><th>Release</th><th>Chunk</th></tr></thead>";
+  recentTable.innerHTML = "<thead><tr><th>時間</th><th>對話</th><th>問題</th><th>發布版本</th><th>片段</th></tr></thead>";
   const recentBody = el("tbody");
   const hitRows = data.hits || data.recentHits || [];
   for (const item of hitRows) {
@@ -448,7 +436,7 @@ export function renderDocumentPerformance(data, controls = {}) {
     recentBody.append(row);
   }
   recentTable.append(recentBody);
-  container.append(el("h3", "", "命中紀錄（可追溯對話）"), recentTable);
+  container.append(el("h3", "ov-panel-title", "最近命中"), recentTable);
   if (data.nextCursor && typeof controls.onPage === "function") {
     const next = el("button", "", "下一頁命中");
     next.addEventListener("click", () => controls.onPage(data.nextCursor));

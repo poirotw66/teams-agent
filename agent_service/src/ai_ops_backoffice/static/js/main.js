@@ -191,17 +191,24 @@ async function boot() {
     applyLocationRoute();
   });
   if (!applyLocationRoute()) {
-    if (isBuShellEnabled()) {
-      const home =
-        (actorHasCapability("bu.work.ui") && "workHub") ||
-        firstVisibleView(activeWorkspaceId()) ||
-        "overview";
-      renderNav(home);
-    } else {
-      const firstView = firstVisibleView(activeWorkspaceId()) || "overview";
-      renderNav(firstView);
-    }
+    openConsoleHome();
   }
+}
+
+function openConsoleHome() {
+  // The workbench home is the platform overview, not the last workspace or work hub.
+  if (actorHasCapability("ops.summary.read")) {
+    sessionStorage.setItem(WORKSPACE_KEY, "platform");
+    saveNavFilters({ view: "overview" });
+    renderNav("overview");
+    return;
+  }
+  const fallback = isBuShellEnabled()
+    ? (actorHasCapability("bu.work.ui") && "workHub") ||
+      firstVisibleView(activeWorkspaceId()) ||
+      "overview"
+    : firstVisibleView(activeWorkspaceId()) || "overview";
+  renderNav(fallback);
 }
 
 function applyLocationRoute() {

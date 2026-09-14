@@ -56,13 +56,13 @@ export function presentAnalyticsPage(activeView, title, subtitle, ...nodes) {
     app.replaceChildren(...nodes);
     return;
   }
-  const header = el("div");
-  header.append(el("h2", "", title || "營運分析"));
+  const header = el("div", "ov-toolbar-lead");
+  header.append(el("h2", "ov-title", title || "營運分析"));
   if (subtitle) {
-    header.append(el("p", "metric-label", subtitle));
+    header.append(el("p", "ov-lead", subtitle));
   }
   const tabs = buildAnalyticsTabs(activeView);
-  const body = el("div", "bu-analytics-body");
+  const body = el("div", "bu-analytics-body ops-page");
   for (const node of nodes) {
     if (node) body.append(node);
   }

@@ -81,7 +81,7 @@ export async function renderIssues(state = { preset: "30d" }) {
     panel.append(
       pageHeader(
         "問題分析",
-        "統計各類問題的發生頻率、處置方式、品質指標與負評；深入排查知識缺口並推進改善閉環。",
+        "這段期間最常出現的問題，以及還沒被解答的部分。",
         versionBadge,
       ),
     );
@@ -111,7 +111,7 @@ export async function renderIssues(state = { preset: "30d" }) {
     }
     const unclassOpt = el("option");
     unclassOpt.value = "other.unclassified";
-    unclassOpt.textContent = "未分類 (Unclassified)";
+    unclassOpt.textContent = "未分類";
     if (ownerUnitId === "other.unclassified") unclassOpt.selected = true;
     unitSelect.append(unclassOpt);
 
@@ -124,7 +124,7 @@ export async function renderIssues(state = { preset: "30d" }) {
     queryInput.type = "search";
     queryInput.placeholder = "搜尋問題名稱或代碼";
     queryInput.value = query;
-    queryInput.setAttribute("aria-label", "Issue 關鍵字");
+    queryInput.setAttribute("aria-label", "問題關鍵字");
     const applyFilter = el("button", "", "套用篩選");
     const reload = () =>
       renderIssues({
@@ -179,73 +179,50 @@ export async function renderIssues(state = { preset: "30d" }) {
     const totalNoAnswer = data.totalNoAnswerCount ?? 0;
     const unclassCount = data.unclassifiedCount ?? 0;
 
-    let totalChangeText = "";
+    let totalDetail = "";
     if (data.totalChangeCount != null && data.previousTotalCount != null) {
       if (data.totalChangeCount > 0) {
-        totalChangeText = ` (較前期 +${formatCount(data.totalChangeCount)} / +${formatPercent(data.totalChangeRate)})`;
+        totalDetail = `較前期 +${formatCount(data.totalChangeCount)}`;
       } else if (data.totalChangeCount < 0) {
-        totalChangeText = ` (較前期 ${formatCount(data.totalChangeCount)} / ${formatPercent(data.totalChangeRate)})`;
+        totalDetail = `較前期 ${formatCount(data.totalChangeCount)}`;
       } else {
-        totalChangeText = " (較前期 持平)";
+        totalDetail = "與前期相同";
       }
     }
 
     panel.append(
       kpiStrip([
         {
-          label: "Issue 總量",
-          value: `${formatCount(totalCount)}${totalChangeText}`,
+          label: "問題次數",
+          value: formatCount(totalCount),
+          detail: totalDetail,
         },
         {
-          label: "負評總數",
-          value: `${formatCount(totalNegFeedback)} 筆`,
+          label: "負評",
+          value: formatCount(totalNegFeedback),
         },
         {
-          label: "轉人工客服",
-          value: `${formatCount(totalHandoff)} 次`,
+          label: "轉人工",
+          value: formatCount(totalHandoff),
         },
         {
           label: "未能回答",
-          value: `${formatCount(totalNoAnswer)} 次`,
+          value: formatCount(totalNoAnswer),
+          attention: totalNoAnswer > 0,
         },
         {
-          label: "未分類數量",
-          value: `${formatCount(unclassCount)} 筆`,
+          label: "未分類",
+          value: formatCount(unclassCount),
+          attention: unclassCount > 0,
         },
       ]),
     );
 
-    // 3. Info Banner
-    const infoBanner = el("div", "content-guide");
-    infoBanner.style.marginBottom = "1.25rem";
-    infoBanner.innerHTML = `
-      <strong class="content-guide-title">💡 指標計算與解讀說明</strong>
-      <div class="content-guide-grid">
-        <div class="content-guide-col">
-          <h4>出現次數</h4>
-          <p>依據對話中 Agent 辨識出的問題事件（<code>issue.extracted</code>）統計，非對話對局數（同一對話可能諮詢多個不同問題）。</p>
-        </div>
-        <div class="content-guide-col">
-          <h4>負評率</h4>
-          <p>負評數 ÷ 總回饋數（僅計算已表達意見者）。<strong>若無人填寫回饋則明確顯示「尚無回饋」</strong>，避免誤判為 100% 滿意。</p>
-        </div>
-        <div class="content-guide-col">
-          <h4>轉人工率</h4>
-          <p>處置方式為轉真人客服（<code>HANDOFF</code>）的次數 ÷ 該問題總出現次數。高轉人工率代表知識庫或 FAQ 覆蓋不足。</p>
-        </div>
-        <div class="content-guide-col">
-          <h4>改善閉環行動</h4>
-          <p>透過排行榜排序快速鎖定「負評最多」或「轉人工最多」的問題，點擊「查看詳情」排查依據文件並派案修訂。</p>
-        </div>
-      </div>
-    `;
-    panel.append(infoBanner);
-
     if (!(data.items || []).length) {
       panel.append(
         emptyState(
-          "選定期間沒有 Issue 資料",
-          "請切換篩選條件、拉長期間，或至對話驗證確認是否已記錄 Issue 事件。",
+          "選定期間沒有問題資料",
+          "請切換篩選條件、拉長期間，或到對話紀錄確認是否已記錄問題。",
         ),
       );
       finishIssuesPage(panel);
@@ -269,22 +246,19 @@ export async function renderIssues(state = { preset: "30d" }) {
     boardHeader.style.gap = "0.5rem";
 
     const boardLeft = el("div");
-    boardLeft.append(
-      el("h3", "", "Issue 排行榜"),
-      el("span", "metric-label", "按指標排名快速找出痛點，並可進一步查看處理方式、負評詳情與相關對話"),
-    );
+    boardLeft.append(el("h3", "ov-panel-title", "問題排名"));
     boardHeader.append(boardLeft);
 
-    const sortTabsWrap = el("div", "filter-bar");
+    const sortTabsWrap = el("div", "ops-sort");
     sortTabsWrap.style.margin = "0";
     const sortButtons = new Map();
     const sortConfigs = [
-      { key: "count", label: "🔥 總量最多", title: "依問題出現次數排序" },
-      { key: "negative", label: "👎 負評最多", title: "依負評絕對筆數排序" },
-      { key: "negative_rate", label: "⚠️ 負評率最高", title: "依負評率排序（僅排有回饋資料者）" },
-      { key: "handoff", label: "轉人工最多", title: "依轉人工次數排序" },
-      { key: "no_answer", label: "未能回答最多", title: "依未能回答次數排序" },
-      { key: "increase", label: "📈 增加最多", title: "較前期絕對增加量排序" },
+      { key: "count", label: "次數", title: "依問題出現次數排序" },
+      { key: "negative", label: "負評", title: "依負評筆數排序" },
+      { key: "negative_rate", label: "負評率", title: "依負評率排序，沒有回饋的不排前面" },
+      { key: "handoff", label: "轉人工", title: "依轉人工次數排序" },
+      { key: "no_answer", label: "未能回答", title: "依未能回答次數排序" },
+      { key: "increase", label: "增幅", title: "依較前期增加量排序" },
     ];
 
     const table = el("table");
@@ -301,7 +275,7 @@ export async function renderIssues(state = { preset: "30d" }) {
           <th>轉人工次數 (轉人工率)</th>
           <th>未能回答</th>
           <th>主要處置方式</th>
-          <th>操作 / 改善閉環</th>
+          <th>操作</th>
         </tr>
       </thead>
     `;
@@ -404,7 +378,7 @@ export async function renderIssues(state = { preset: "30d" }) {
         let negDrillNode;
         if (item.negativeFeedbackCount > 0) {
           negDrillNode = drillLink(
-            `👎 ${formatCount(item.negativeFeedbackCount)}`,
+            `${formatCount(item.negativeFeedbackCount)} 則負評`,
             "conversations",
             withReturnTo(
               {
@@ -416,7 +390,7 @@ export async function renderIssues(state = { preset: "30d" }) {
               periodToNavFilters(period),
             ),
           );
-          negDrillNode.title = "直接前往查看此 Issue 的負評對話明細";
+          negDrillNode.title = "查看這題的負評對話";
         } else {
           negDrillNode = el("span", "metric-label", "尚無負評");
           negDrillNode.style.display = "inline-flex";
@@ -431,11 +405,9 @@ export async function renderIssues(state = { preset: "30d" }) {
     };
 
     for (const conf of sortConfigs) {
-      const btn = el("button", "button-link", conf.label);
+      const btn = el("button", "", conf.label);
       btn.type = "button";
-      btn.style.fontSize = "0.78rem";
-      btn.style.padding = "0.3rem 0.65rem";
-      btn.style.margin = "0";
+      btn.title = conf.title;
       btn.addEventListener("click", () => renderRows(conf.key));
       sortButtons.set(conf.key, btn);
       sortTabsWrap.append(btn);
@@ -467,7 +439,7 @@ export async function renderIssues(state = { preset: "30d" }) {
       summary.style.fontWeight = "700";
       summary.style.fontSize = "0.95rem";
       summary.style.color = "var(--text, #0f172a)";
-      summary.innerHTML = "🗂️ 展開問題分類階層結構 (Taxonomy 階層與彙總) <span class=\"metric-label\" style=\"margin-left:0.5rem;\">點擊展開／收合</span>";
+      summary.textContent = "問題分類階層";
       details.append(summary);
 
       const tree = el("ul", "issue-tree");
