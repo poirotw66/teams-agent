@@ -194,6 +194,29 @@ class IssueProcessingWorkflowMixin:
         # point (Filter IT Issues node), so this should be unreachable.
         return IssueResult(issueId=issue.id, resultType="FAILED", error="unexpected_route")
 
+    def _governed_answer_model(self) -> object | None:
+        runtime = getattr(self, "governance_runtime", None)
+        resolve = getattr(runtime, "resolve_model", None)
+        cache = getattr(runtime, "chat_model_for", None)
+        if resolve is None or cache is None:
+            return None
+        try:
+            resolved = resolve(config_id="rag-answer-model")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Answer model lookup failed (%s); using startup model",
+                type(exc).__name__,
+            )
+            return None
+        try:
+            return cache(resolved)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Answer model build failed (%s); using startup model",
+                type(exc).__name__,
+            )
+            return None
+
     async def _handle_knowledge(
         self,
         issue: Issue,
@@ -234,23 +257,29 @@ class IssueProcessingWorkflowMixin:
                 backend,
                 correlation_id,
             )
-            return IssueResult(
-                issueId=issue.id, resultType="NO_KNOWLEDGE", backend=backend
-            )
+            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE", backend=backend)
 
         search_kwargs: dict[str, object] = {
             "correlation_id": correlation_id,
         }
         if self._knowledge_supports_counter:
             search_kwargs["call_counter"] = counter
-        if execution_context is not None and "execution_context" in inspect.signature(
-            self.knowledge_service.search
-        ).parameters:
+        if (
+            execution_context is not None
+            and "execution_context" in inspect.signature(self.knowledge_service.search).parameters
+        ):
             search_kwargs["execution_context"] = execution_context
-        if agent_request is not None and "request" in inspect.signature(
-            self.knowledge_service.search
-        ).parameters:
+        if (
+            agent_request is not None
+            and "request" in inspect.signature(self.knowledge_service.search).parameters
+        ):
             search_kwargs["request"] = agent_request
+        answer_model = self._governed_answer_model()
+        if (
+            answer_model is not None
+            and "answer_model" in inspect.signature(self.knowledge_service.search).parameters
+        ):
+            search_kwargs["answer_model"] = answer_model
         result = await self.knowledge_service.search(
             issue.description,
             user,
@@ -331,9 +360,7 @@ class IssueProcessingWorkflowMixin:
                 issue.id,
                 correlation_id,
             )
-            return IssueResult(
-                issueId=issue.id, resultType="FAILED", error="ticket_limit_per_turn"
-            )
+            return IssueResult(issueId=issue.id, resultType="FAILED", error="ticket_limit_per_turn")
 
         try:
             items = await self.ticket_service.get_ticket_items(correlation_id=correlation_id)
@@ -360,16 +387,14 @@ class IssueProcessingWorkflowMixin:
             selection_reason = selection.reason
         if selected_item is not None and selection_reason == "handoff_fallback":
             logger.info(
-                "Handoff ticket creation used catalog fallback: item_id=%s "
-                "correlation_id=%s",
+                "Handoff ticket creation used catalog fallback: item_id=%s correlation_id=%s",
                 selected_item.id,
                 correlation_id,
             )
         if selected_item is None:
             if selection_reason in {"model_unavailable", "model_error"}:
                 question = (
-                    "目前無法判定適用的派工單類別；已保留案件內容，"
-                    "請稍後重試或聯絡線上客服。"
+                    "目前無法判定適用的派工單類別；已保留案件內容，請稍後重試或聯絡線上客服。"
                 )
             else:
                 question = (

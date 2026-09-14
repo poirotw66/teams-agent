@@ -113,9 +113,7 @@ _INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
     "找不到相關資訊",
     "找不到相關信息",
 )
-_KNOWLEDGE_GAP_PATTERN = re.compile(
-    r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)"
-)
+_KNOWLEDGE_GAP_PATTERN = re.compile(r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)")
 # ponytail: without an LLM grader, BM25 alone over-matches the sample corpus.
 # Require distinctive query tokens to overlap the retrieved text before accepting
 # a hit; upgrade path is enabling RAG_MODEL relevance grading.
@@ -246,9 +244,7 @@ def _primary_distinctive_tokens(query: str) -> set[str]:
     return primary
 
 
-def query_lexically_matches_results(
-    query: str, results: list[SearchResult]
-) -> bool:
+def query_lexically_matches_results(query: str, results: list[SearchResult]) -> bool:
     """Conservative offline relevance guard when no LLM grader is configured."""
     if not results:
         return False
@@ -260,9 +256,7 @@ def query_lexically_matches_results(
 
     document_tokens: set[str] = set()
     for result in results[:3]:
-        document_tokens.update(
-            tokenize(f"{result.chunk.title}\n{result.chunk.content}")
-        )
+        document_tokens.update(tokenize(f"{result.chunk.title}\n{result.chunk.content}"))
     if not primary & document_tokens:
         return False
 
@@ -344,6 +338,7 @@ class HybridKnowledgeService:
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
         execution_context: ExecutionContext | None = None,
+        answer_model: BaseChatModel | None = None,
     ) -> KnowledgeResult:
         counter = (
             execution_context.llm_calls
@@ -351,6 +346,7 @@ class HybridKnowledgeService:
             else (call_counter or LlmCallCounter())
         )
         groups = set(user_context.groups)
+        model = self.model if answer_model is None else answer_model
 
         state = _RetrievalState(query=query)
         state = await self._retrieve(state, groups)
@@ -358,24 +354,22 @@ class HybridKnowledgeService:
         try:
             while True:
                 if await self._documents_are_relevant(
-                    state, counter, execution_context=execution_context
+                    state, counter, execution_context=execution_context, model=model
                 ):
                     result = await self._generate(
-                        state, counter, execution_context=execution_context
+                        state, counter, execution_context=execution_context, model=model
                     )
                     self.last_llm_call_count = counter.count
                     return result
-                if state.attempt < self.settings.max_retrieval_rewrites and self.model:
+                if state.attempt < self.settings.max_retrieval_rewrites and model:
                     if execution_context is not None:
                         try:
-                            execution_context.ensure_budget_slots(
-                                _KNOWLEDGE_REWRITE_PATH_SLOTS
-                            )
+                            execution_context.ensure_budget_slots(_KNOWLEDGE_REWRITE_PATH_SLOTS)
                         except RequestModelBudgetExceeded:
                             self.last_llm_call_count = counter.count
                             return self._limit_result("BUDGET_EXCEEDED")
                     state = await self._rewrite(
-                        state, counter, execution_context=execution_context
+                        state, counter, execution_context=execution_context, model=model
                     )
                     state = await self._retrieve(state, groups)
                     continue
@@ -405,9 +399,7 @@ class HybridKnowledgeService:
 
     # --- retrieval -----------------------------------------------------
 
-    async def _retrieve(
-        self, state: _RetrievalState, groups: set[str]
-    ) -> _RetrievalState:
+    async def _retrieve(self, state: _RetrievalState, groups: set[str]) -> _RetrievalState:
         results = await asyncio.to_thread(
             self.index.search,
             state.query,
@@ -422,29 +414,22 @@ class HybridKnowledgeService:
         counter: LlmCallCounter,
         *,
         execution_context: ExecutionContext | None = None,
+        model: BaseChatModel | None = None,
     ) -> bool:
         results = state.results
+        answer_model = self.model if model is None else model
         if not results or results[0].score < self.settings.min_score:
             return False
-        if not self.model:
+        if not answer_model:
             return query_lexically_matches_results(state.query, results)
 
         context = "\n\n".join(
-            f"[{result.chunk.title}]\n{result.chunk.content}"
-            for result in results[:3]
+            f"[{result.chunk.title}]\n{result.chunk.content}" for result in results[:3]
         )
 
         async def _grade() -> RelevanceDecision:
-            return await self.model.with_structured_output(
-                RelevanceDecision
-            ).ainvoke(
-                [
-                    HumanMessage(
-                        content=GRADE_PROMPT.format(
-                            question=state.query, context=context
-                        )
-                    )
-                ]
+            return await answer_model.with_structured_output(RelevanceDecision).ainvoke(
+                [HumanMessage(content=GRADE_PROMPT.format(question=state.query, context=context))]
             )
 
         decision = await self._invoke_llm(
@@ -461,9 +446,12 @@ class HybridKnowledgeService:
         counter: LlmCallCounter,
         *,
         execution_context: ExecutionContext | None = None,
+        model: BaseChatModel | None = None,
     ) -> _RetrievalState:
+        answer_model = self.model if model is None else model
+
         async def _invoke_rewrite() -> RewrittenQuery:
-            return await self.model.with_structured_output(RewrittenQuery).ainvoke(
+            return await answer_model.with_structured_output(RewrittenQuery).ainvoke(
                 [HumanMessage(content=REWRITE_PROMPT.format(question=state.query))]
             )
 
@@ -581,8 +569,10 @@ class HybridKnowledgeService:
         counter: LlmCallCounter,
         *,
         execution_context: ExecutionContext | None = None,
+        model: BaseChatModel | None = None,
     ) -> KnowledgeResult:
         results = state.results
+        answer_model = self.model if model is None else model
         if not results:
             return self._no_answer()
 
@@ -594,7 +584,7 @@ class HybridKnowledgeService:
                 unique_doc_keys.append(key)
             chunk_to_doc_idx.append(unique_doc_keys.index(key) + 1)
 
-        if not self.model:
+        if not answer_model:
             selected_results = results[:2]
             citations = self._unique_citations(selected_results)
             excerpts = "\n\n".join(
@@ -617,17 +607,14 @@ class HybridKnowledgeService:
         )
 
         async def _invoke_answer() -> BaseMessage:
-            return await self.model.ainvoke(
+            return await answer_model.ainvoke(
                 [
                     SystemMessage(
-                        content=ANSWER_PROMPT.format(
-                            question=state.query, context=context
-                        )
+                        content=ANSWER_PROMPT.format(question=state.query, context=context)
                     ),
                     HumanMessage(
                         content=(
-                            f"使用者原始問題：{state.query}\n"
-                            "請根據上述已授權知識內容直接回答。"
+                            f"使用者原始問題：{state.query}\n請根據上述已授權知識內容直接回答。"
                         )
                     ),
                 ]

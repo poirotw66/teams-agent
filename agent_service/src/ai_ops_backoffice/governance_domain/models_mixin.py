@@ -29,6 +29,13 @@ from .errors import (
 )
 from .eval_flow import PromptFlowHarness
 from .eval_runner import evaluate_model, evaluate_prompt_async
+from .model_catalog import assert_component_models, component_effect
+from .model_schedule import (
+    complete_model_schedule,
+    fail_model_schedule,
+    mark_model_schedule_running,
+    schedule_model_version,
+)
 from .helpers import (
     content_hash,
     fingerprint,
@@ -132,6 +139,13 @@ class GovernanceModelsMixin:
         change_reason: str,
     ) -> dict[str, Any]:
         self._require(actor, WRITE["model_write"])
+        assert_component_models(
+            config_id=config_id,
+            component=component,
+            provider=provider,
+            model_id=model_id,
+            fallback_model_id=fallback_model_id,
+        )
         _validate_model(provider, model_id, fallback_model_id, fallback_on)
         secret_ref = require_secret_ref(secret_ref)
 
@@ -211,11 +225,92 @@ class GovernanceModelsMixin:
 
     def activate_model(self, *, config_id: str, version_id: str, reason: str, actor: ActorContext) -> dict[str, Any]:
         self._require(actor, WRITE["model_activate"])
+        if component_effect(config_id) != "next_request":
+            raise GovernanceTransitionError(
+                "this component must be scheduled; activation does not switch it immediately"
+            )
         return self._mutate(lambda state: _activate_model(
             state, config_id, version_id, reason, actor, self._clock(),
             self._audit(
                 action="MODEL_ACTIVATED", actor=actor, target_type="MODEL",
                 target_id=config_id, version_id=version_id, reason=reason,
+            ),
+        ))
+
+    def schedule_model(
+        self, *, config_id: str, version_id: str, reason: str, actor: ActorContext
+    ) -> dict[str, Any]:
+        self._require(actor, WRITE["model_activate"])
+        return self._mutate(lambda state: schedule_model_version(
+            state,
+            config_id=config_id,
+            version_id=version_id,
+            reason=reason,
+            actor=actor,
+            now=self._clock(),
+            audit=self._audit(
+                action="MODEL_SCHEDULED",
+                actor=actor,
+                target_type="MODEL",
+                target_id=config_id,
+                version_id=version_id,
+                reason=reason,
+            ),
+        ))
+
+    def mark_schedule_running(
+        self, *, config_id: str, version_id: str, actor: ActorContext
+    ) -> dict[str, Any]:
+        self._require(actor, WRITE["model_activate"])
+        return self._mutate(lambda state: mark_model_schedule_running(
+            state,
+            config_id=config_id,
+            version_id=version_id,
+            audit=self._audit(
+                action="MODEL_SCHEDULE_RUNNING",
+                actor=actor,
+                target_type="MODEL",
+                target_id=config_id,
+                version_id=version_id,
+            ),
+        ))
+
+    def complete_schedule(
+        self, *, config_id: str, version_id: str, actor: ActorContext, reason: str
+    ) -> dict[str, Any]:
+        self._require(actor, WRITE["model_activate"])
+        return self._mutate(lambda state: complete_model_schedule(
+            state,
+            config_id=config_id,
+            version_id=version_id,
+            actor=actor,
+            now=self._clock(),
+            audit=self._audit(
+                action="MODEL_SCHEDULE_APPLIED",
+                actor=actor,
+                target_type="MODEL",
+                target_id=config_id,
+                version_id=version_id,
+                reason=reason,
+            ),
+        ))
+
+    def fail_schedule(
+        self, *, config_id: str, version_id: str, reason: str, actor: ActorContext
+    ) -> dict[str, Any]:
+        self._require(actor, WRITE["model_activate"])
+        return self._mutate(lambda state: fail_model_schedule(
+            state,
+            config_id=config_id,
+            version_id=version_id,
+            reason=reason,
+            audit=self._audit(
+                action="MODEL_SCHEDULE_FAILED",
+                actor=actor,
+                target_type="MODEL",
+                target_id=config_id,
+                version_id=version_id,
+                reason=reason,
             ),
         ))
 
@@ -226,6 +321,24 @@ class GovernanceModelsMixin:
             config = _find_model(state, config_id)
             if not config.previous_healthy_version_id:
                 raise GovernanceTransitionError("no healthy model version is available to rollback")
+            if component_effect(config_id) != "next_request":
+                return schedule_model_version(
+                    state,
+                    config_id=config_id,
+                    version_id=config.previous_healthy_version_id,
+                    reason=reason,
+                    actor=actor,
+                    now=self._clock(),
+                    allow_retired=True,
+                    audit=self._audit(
+                        action="MODEL_ROLLBACK_SCHEDULED",
+                        actor=actor,
+                        target_type="MODEL",
+                        target_id=config_id,
+                        version_id=config.previous_healthy_version_id,
+                        reason=reason,
+                    ),
+                )
             previous = _find_model_version(state, config.previous_healthy_version_id)
             current = _find_model_version(state, config.active_version_id or "")
             now = self._clock()
@@ -275,6 +388,21 @@ class GovernanceModelsMixin:
             return replace_model(current, audits=(*current.audits, audit)), result
         return self._mutate(operation)
 
+    def peek_model_schedule(self, config_id: str) -> dict[str, Any] | None:
+        """Read-only schedule pointer. Does not change the active version."""
+        state = self._repository.load()
+        config = next((item for item in state.model_configs if item.config_id == config_id), None)
+        if config is None or not config.scheduled_version_id:
+            return None
+        version = _find_model_version(state, config.scheduled_version_id)
+        return {
+            "scheduledVersionId": config.scheduled_version_id,
+            "scheduleKind": config.schedule_kind,
+            "scheduleStatus": config.schedule_status,
+            "scheduledModelId": version.model_id,
+            "provider": version.provider,
+        }
+
     def list_models(self, *, actor: ActorContext) -> list[dict[str, Any]]:
         self._require(actor, READ["model"])
         state = self._ensured()
@@ -284,6 +412,16 @@ class GovernanceModelsMixin:
                 "active": _public_model(_find_model_version(state, item.active_version_id))
                 if item.active_version_id
                 else None,
+                "schedule": {
+                    "scheduledVersionId": item.scheduled_version_id,
+                    "scheduleKind": item.schedule_kind,
+                    "scheduleStatus": item.schedule_status,
+                    "scheduledModelId": (
+                        _find_model_version(state, item.scheduled_version_id).model_id
+                        if item.scheduled_version_id
+                        else None
+                    ),
+                },
                 "versions": [
                     _public_model(v)
                     for v in state.model_versions

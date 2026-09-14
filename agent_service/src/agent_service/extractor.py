@@ -554,6 +554,8 @@ class IssueExtractor:
         if resolve_fn is None:
             return self.model, None
         try:
+            resolved = resolve_fn(config_id="issue-extractor-model")
+        except TypeError:
             resolved = resolve_fn()
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -561,6 +563,16 @@ class IssueExtractor:
                 type(exc).__name__,
             )
             return self.model, None
+        cache_fn = getattr(runtime, "chat_model_for", None)
+        if cache_fn is not None:
+            try:
+                return cache_fn(resolved, self.model), resolved
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "IssueExtractor failed to build governed model (%s); using startup model",
+                    type(exc).__name__,
+                )
+                return self.model, resolved
         if getattr(resolved, "source", None) != "governance" or not getattr(resolved, "model_name", None):
             return self.model, resolved
         try:

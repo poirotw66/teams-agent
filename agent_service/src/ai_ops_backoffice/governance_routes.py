@@ -161,7 +161,9 @@ def register_governance_routes(
     eval_harness_status=None,
 ) -> None:
     @app.exception_handler(GovernanceAuthorizationError)
-    async def governance_authorization_handler(_request, exc: GovernanceAuthorizationError) -> JSONResponse:
+    async def governance_authorization_handler(
+        _request, exc: GovernanceAuthorizationError
+    ) -> JSONResponse:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.exception_handler(GovernanceNotFoundError)
@@ -174,7 +176,9 @@ def register_governance_routes(
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(GovernanceValidationError)
-    async def governance_validation_handler(_request, exc: GovernanceValidationError) -> JSONResponse:
+    async def governance_validation_handler(
+        _request, exc: GovernanceValidationError
+    ) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     def _reject_client_approval(payload: PromptApproveBody) -> None:
@@ -205,7 +209,9 @@ def register_governance_routes(
         return {"items": governance.list_prompts(actor=actor)}
 
     @app.get("/api/governance/prompts/{prompt_id}")
-    async def governance_prompt_detail(prompt_id: str, actor=Depends(current_actor)) -> dict[str, object]:
+    async def governance_prompt_detail(
+        prompt_id: str, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.prompts.read")
         return governance.prompt_detail(prompt_id, actor=actor)
 
@@ -354,14 +360,21 @@ def register_governance_routes(
     @app.get("/api/governance/models")
     async def list_governance_models(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.models.read")
+        from .model_catalog import component_catalog_payload
         from .services.runtime_models import load_agent_runtime_models
 
         agent_api_url = getattr(getattr(query_service, "_settings", None), "agent_api_url", None)
         runtime = await load_agent_runtime_models(agent_api_url)
-        return {"items": governance.list_models(actor=actor), "runtime": runtime}
+        return {
+            "items": governance.list_models(actor=actor),
+            "runtime": runtime,
+            "components": component_catalog_payload(),
+        }
 
     @app.post("/api/governance/models/candidates")
-    async def create_governance_model(payload: ModelCandidateBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def create_governance_model(
+        payload: ModelCandidateBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.models.write")
         return governance.create_model_candidate(**payload.model_dump(), actor=actor)
 
@@ -390,12 +403,41 @@ def register_governance_routes(
             config_id=config_id, version_id=version_id, reason=payload.reason, actor=actor
         )
 
+    @app.post("/api/governance/models/{config_id}/versions/{version_id}/schedule")
+    async def schedule_governance_model(
+        config_id: str, version_id: str, payload: ReasonBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.models.activate")
+        return await _run_model_schedule(
+            governance,
+            query_service,
+            actor=actor,
+            config_id=config_id,
+            version_id=version_id,
+            reason=payload.reason,
+        )
+
     @app.post("/api/governance/models/{config_id}/rollback")
     async def rollback_governance_model(
         config_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.models.activate")
-        return governance.rollback_model(config_id=config_id, reason=payload.reason, actor=actor)
+        rolled = governance.rollback_model(config_id=config_id, reason=payload.reason, actor=actor)
+        if not rolled.get("scheduled"):
+            return rolled
+        version = rolled.get("version") or {}
+        version_id = str(version.get("version_id") or "")
+        if not version_id:
+            return rolled
+        return await _run_model_schedule(
+            governance,
+            query_service,
+            actor=actor,
+            config_id=config_id,
+            version_id=version_id,
+            reason=payload.reason,
+            already_scheduled=True,
+        )
 
     @app.post("/api/governance/models/{config_id}/simulate-fallback")
     async def simulate_model_fallback(
@@ -410,7 +452,9 @@ def register_governance_routes(
         return {"items": governance.list_flags(actor=actor)}
 
     @app.post("/api/governance/flags/candidates")
-    async def create_governance_flag(payload: FlagCandidateBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def create_governance_flag(
+        payload: FlagCandidateBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.flags.write")
         return governance.create_flag_candidate(**payload.model_dump(), actor=actor)
 
@@ -447,7 +491,9 @@ def register_governance_routes(
         return {"items": governance.list_role_changes(actor=actor)}
 
     @app.post("/api/governance/roles/requests")
-    async def request_role_change(payload: RoleRequestBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def request_role_change(
+        payload: RoleRequestBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.roles.request")
         return governance.request_role_change(**payload.model_dump(), actor=actor)
 
@@ -456,15 +502,23 @@ def register_governance_routes(
         change_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.roles.approve")
-        return governance.approve_role_change(change_id=change_id, reason=payload.reason, actor=actor)
+        return governance.approve_role_change(
+            change_id=change_id, reason=payload.reason, actor=actor
+        )
 
     @app.post("/api/governance/roles/revoke")
-    async def revoke_principal(payload: RevokeBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def revoke_principal(
+        payload: RevokeBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.roles.revoke")
-        return governance.revoke_principal(principal=payload.principal, reason=payload.reason, actor=actor)
+        return governance.revoke_principal(
+            principal=payload.principal, reason=payload.reason, actor=actor
+        )
 
     @app.post("/api/governance/retention/candidates")
-    async def create_retention(payload: RetentionBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def create_retention(
+        payload: RetentionBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
         return governance.create_retention_candidate(**payload.model_dump(), actor=actor)
 
@@ -478,14 +532,18 @@ def register_governance_routes(
         version_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
-        return governance.approve_retention(version_id=version_id, reason=payload.reason, actor=actor)
+        return governance.approve_retention(
+            version_id=version_id, reason=payload.reason, actor=actor
+        )
 
     @app.post("/api/governance/retention/{version_id}/activate")
     async def activate_retention(
         version_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
-        return governance.activate_retention(version_id=version_id, reason=payload.reason, actor=actor)
+        return governance.activate_retention(
+            version_id=version_id, reason=payload.reason, actor=actor
+        )
 
     @app.get("/api/governance/masking")
     async def list_masking(actor=Depends(current_actor)) -> dict[str, object]:
@@ -493,7 +551,9 @@ def register_governance_routes(
         return {"items": governance.list_masking_policies(actor=actor)}
 
     @app.post("/api/governance/masking/candidates")
-    async def create_masking(payload: MaskingBody, actor=Depends(current_actor)) -> dict[str, object]:
+    async def create_masking(
+        payload: MaskingBody, actor=Depends(current_actor)
+    ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
         return governance.create_masking_candidate(**payload.model_dump(), actor=actor)
 
@@ -509,7 +569,9 @@ def register_governance_routes(
         version_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.retention.write")
-        return governance.activate_masking(version_id=version_id, reason=payload.reason, actor=actor)
+        return governance.activate_masking(
+            version_id=version_id, reason=payload.reason, actor=actor
+        )
 
     @app.get("/api/governance/search")
     async def governance_search(
@@ -534,7 +596,9 @@ def register_governance_routes(
                             "type": "FAQ",
                             "id": str(faq.get("faq_id") or ""),
                             "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
-                            "snippet": str(content.get("question") or version.get("status") or "")[:160],
+                            "snippet": str(content.get("question") or version.get("status") or "")[
+                                :160
+                            ],
                             "owner_unit_id": str(faq.get("owner_unit_id") or ""),
                             "status": faq_status,
                             "requiredCapability": "ops.faq.read",
@@ -550,7 +614,9 @@ def register_governance_routes(
                         {
                             "type": "EXAMPLE",
                             "id": str(item.get("example_id") or ""),
-                            "title": str(item.get("expected_issue_type_id") or item.get("label") or ""),
+                            "title": str(
+                                item.get("expected_issue_type_id") or item.get("label") or ""
+                            ),
                             "snippet": str(item.get("text") or "")[:160],
                             "owner_unit_id": str(item.get("owner_unit_id") or ""),
                             "status": example_status,
@@ -565,8 +631,14 @@ def register_governance_routes(
                 if taxonomy is not None:
                     for issue in taxonomy.list_active():
                         issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
-                        display = getattr(issue, "display_name", None) or getattr(issue, "name", issue_id)
-                        desc = getattr(issue, "description", "") or getattr(issue, "category", "") or ""
+                        display = getattr(issue, "display_name", None) or getattr(
+                            issue, "name", issue_id
+                        )
+                        desc = (
+                            getattr(issue, "description", "")
+                            or getattr(issue, "category", "")
+                            or ""
+                        )
                         extras.append(
                             {
                                 "type": "ISSUE_TYPE",
@@ -586,7 +658,12 @@ def register_governance_routes(
                 for doc in doc_inv.get("items", []):
                     doc_id = str(doc.get("document_id") or "")
                     title = str(doc.get("title") or doc.get("filename") or doc_id)
-                    desc = str(doc.get("description") or doc.get("category") or doc.get("owner_unit_id") or "")
+                    desc = str(
+                        doc.get("description")
+                        or doc.get("category")
+                        or doc.get("owner_unit_id")
+                        or ""
+                    )
                     doc_status = str(doc.get("status") or "PUBLISHED")
                     extras.append(
                         {
@@ -613,7 +690,9 @@ def register_governance_routes(
                             turn_texts.append(str(t["userMessage"]))
                         if t.get("aiReply"):
                             turn_texts.append(str(t["aiReply"]))
-                    matched_snippet = " ".join(turn_texts) if turn_texts else f"{item.get('actorRef') or ''} {q}"
+                    matched_snippet = (
+                        " ".join(turn_texts) if turn_texts else f"{item.get('actorRef') or ''} {q}"
+                    )
                     conv_status = str(item.get("status") or "CLOSED")
                     extras.append(
                         {
@@ -637,9 +716,9 @@ def register_governance_routes(
                             "type": "QUALITY_CASE",
                             "id": str(case.get("case_id") or ""),
                             "title": str(case.get("title") or case.get("status") or ""),
-                            "snippet": str(case.get("description") or case.get("issue_type_id") or "")[
-                                :160
-                            ],
+                            "snippet": str(
+                                case.get("description") or case.get("issue_type_id") or ""
+                            )[:160],
                             "owner_unit_id": str(case.get("owner_unit_id") or ""),
                             "status": case_status,
                             "requiredCapability": "ops.quality.read",
@@ -699,3 +778,67 @@ def register_governance_routes(
             start_date=start_date,
             end_date=end_date,
         )
+
+
+async def _run_model_schedule(
+    governance: GovernanceService,
+    query_service: object,
+    *,
+    actor: object,
+    config_id: str,
+    version_id: str,
+    reason: str,
+    already_scheduled: bool = False,
+) -> dict[str, object]:
+    from .governance_domain.model_catalog import model_component
+    from .services.model_effect import ModelEffectError, run_scheduled_effect
+    from .services.runtime_models import load_agent_runtime_models
+
+    settings = getattr(query_service, "_settings", None)
+    agent_api_url = getattr(settings, "agent_api_url", None)
+    runtime = await load_agent_runtime_models(agent_api_url)
+    if not runtime.get("controlPlaneReady"):
+        raise GovernanceTransitionError("model control plane is not connected")
+    spec = model_component(config_id=config_id)
+    if spec.effect == "next_request":
+        raise GovernanceTransitionError("this component activates on the next request")
+    listed = governance.list_models(actor=actor)
+    model_id = _scheduled_model_id(listed, config_id=config_id, version_id=version_id)
+    portal_url = getattr(settings, "knowledge_internal_url", None) or getattr(
+        settings, "knowledge_portal_url", None
+    )
+    token = getattr(settings, "service_token", "") or getattr(
+        settings, "knowledge_service_token", ""
+    )
+    try:
+        return await run_scheduled_effect(
+            governance=governance,
+            actor=actor,
+            config_id=config_id,
+            version_id=version_id,
+            reason=reason,
+            effect=spec.effect,
+            model_id=model_id,
+            agent_api_url=agent_api_url,
+            portal_url=portal_url,
+            service_token=token,
+            already_scheduled=already_scheduled,
+        )
+    except ModelEffectError as exc:
+        raise GovernanceTransitionError(exc.message) from exc
+
+
+def _scheduled_model_id(items: list[dict[str, object]], *, config_id: str, version_id: str) -> str:
+    for item in items:
+        config = item.get("config") or {}
+        if not isinstance(config, dict) or config.get("config_id") != config_id:
+            continue
+        versions = item.get("versions") or []
+        if not isinstance(versions, list):
+            continue
+        for version in versions:
+            if isinstance(version, dict) and version.get("version_id") == version_id:
+                model_id = str(version.get("model_id") or "")
+                if model_id:
+                    return model_id
+    raise GovernanceNotFoundError(version_id)

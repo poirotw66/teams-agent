@@ -37,6 +37,7 @@ class ReleasePublisher:
         created_by: str,
         previous_release_id: str | None,
         bundled_index_path: Path | None = None,
+        embedding_model: str | None = None,
     ) -> ReleaseRecord:
         self._settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
         release_dir = self._settings.release_artifact_dir / release_id
@@ -96,7 +97,13 @@ class ReleasePublisher:
 
         index_path = release_dir / "index" / "chunks.json"
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        if bundled_index_path is not None and bundled_index_path.is_file():
+        selected_embedding = embedding_model or self._settings.embedding_model
+        copy_bundled = (
+            embedding_model is None
+            and bundled_index_path is not None
+            and bundled_index_path.is_file()
+        )
+        if copy_bundled:
             shutil.copy2(bundled_index_path, index_path)
             logger.info(
                 "Copied bundled knowledge index into release %s from %s",
@@ -104,7 +111,7 @@ class ReleasePublisher:
                 bundled_index_path,
             )
         elif not published_versions:
-            index = HybridIndex([], self._settings.embedding_model)
+            index = HybridIndex([], selected_embedding)
             index.save(index_path)
             logger.info("Built empty knowledge release %s with 0 chunks", release_id)
         else:
@@ -126,8 +133,8 @@ class ReleasePublisher:
                 )
                 if not chunks:
                     raise ReleaseBuildError("Release build produced zero searchable segments.")
-                index = HybridIndex(chunks, self._settings.embedding_model)
-                if self._settings.embedding_model:
+                index = HybridIndex(chunks, selected_embedding)
+                if selected_embedding:
                     index.add_embeddings()
                 index.save(index_path)
 
@@ -152,13 +159,11 @@ class ReleasePublisher:
             status="READY",
             manifest=manifest,
             corpus_hash=corpus_hash,
-            target_manifest_hash=knowledge_release_target_manifest_hash(
-                release_id=release_id
-            ),
+            target_manifest_hash=knowledge_release_target_manifest_hash(release_id=release_id),
             index_artifact_uri=str(index_path),
             index_setting_version=(
                 f"chunk={self._settings.chunk_size};overlap={self._settings.chunk_overlap};"
-                f"embedding={self._settings.embedding_model or 'bm25-only'}"
+                f"embedding={selected_embedding or 'bm25-only'}"
             ),
             created_at=utc_now(),
             previous_release_id=previous_release_id,

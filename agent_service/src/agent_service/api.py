@@ -11,6 +11,7 @@ from .routers import (
     register_feedback_routes,
     register_health_routes,
     register_knowledge_admin_routes,
+    register_model_control_routes,
     register_ops_health_routes,
     register_retrieval_routes,
 )
@@ -29,6 +30,9 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
 
     register_health_routes(app, resolved_settings=resolved_settings)
     register_knowledge_admin_routes(
+        app, resolved_settings=resolved_settings, authorize=authorize
+    )
+    register_model_control_routes(
         app, resolved_settings=resolved_settings, authorize=authorize
     )
     register_chat_routes(

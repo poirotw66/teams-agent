@@ -17,6 +17,7 @@ from ..knowledge_release import (
     resolve_knowledge_index,
 )
 from ..retrieval import HybridIndex
+from ..model_control import embedding_model_for_load
 from ..settings import RagSettings
 from ..source_refs import hydrate_index_sources
 from ..workflow import build_knowledge_service
@@ -128,7 +129,7 @@ def register_knowledge_admin_routes(
 
         new_index = HybridIndex.load(
             target_index_path,
-            resolved_settings.embedding_model,
+            embedding_model_for_load(request.app, resolved_settings),
         )
         hydrate_index_sources(
             new_index.chunks,

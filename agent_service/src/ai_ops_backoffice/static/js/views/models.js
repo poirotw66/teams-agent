@@ -10,52 +10,30 @@ import {
 } from "../components/modal.js";
 import { createPageController } from "../app/lifecycle.js";
 
-const COMPONENT_LABELS = {
-  "issue-extractor": "主代理／議題拆解",
-  "rag-answer": "回答生成",
-  embedding: "向量檢索 Embedding",
-  "file-search": "Gemini File Search",
+const EFFECT_LABELS = {
+  next_request: "下一則請求生效",
+  reindex: "排入重建後生效",
+  service_refresh: "排入套用後生效",
 };
 
-function componentLabel(component) {
-  return COMPONENT_LABELS[component] || component || "未命名組件";
+const SOURCE_LABELS = {
+  governance: "治理生效版",
+  settings_baseline: "環境變數退路",
+};
+
+const SCHEDULE_LABELS = {
+  queued: "已排入，尚未切換",
+  running: "執行中，尚未切換",
+  failed: "失敗，仍使用目前生效模型",
+  applied: "已套用",
+};
+
+function effectLabel(effect) {
+  return EFFECT_LABELS[effect] || effect || "未定義";
 }
 
-function renderRuntimeModels(runtime) {
-  const section = el("section", "panel");
-  section.style.marginBottom = "1.25rem";
-  section.append(el("h3", "", "目前專案使用的模型"));
-  if (!runtime?.available) {
-    section.append(
-      el(
-        "p",
-        "warning",
-        runtime?.reason || "目前無法讀取 Agent 執行中的模型設定。",
-      ),
-    );
-    return section;
-  }
-  section.append(
-    el(
-      "p",
-      "metric-label",
-      "以下來自正在執行的 Agent，會隨 RAG_MODEL、AGENT_MODEL、RAG_EMBEDDING_MODEL、GEMINI_FILE_SEARCH_MODEL 改變。",
-    ),
-  );
-  const grid = el("div", "stats");
-  for (const item of runtime.items || []) {
-    const card = el("div", "stat");
-    card.append(
-      el("span", "", item.label || item.role),
-      el("b", "", item.model || "未設定"),
-    );
-    grid.append(card);
-  }
-  section.append(grid);
-  if (runtime.knowledgeMode) {
-    section.append(el("p", "metric-label", `知識模式：${runtime.knowledgeMode}`));
-  }
-  return section;
+function sourceLabel(source) {
+  return SOURCE_LABELS[source] || source || "未知來源";
 }
 
 export async function renderModels() {
@@ -64,244 +42,22 @@ export async function renderModels() {
   try {
     const allowed = actorCapabilities();
     const data = await api("/api/governance/models");
+    const runtime = data.runtime || { available: false, items: [] };
+    const ready = Boolean(runtime.controlPlaneReady);
     const panel = el("section", "panel");
-
-    const headerRow = el("div", "filter-bar");
-    headerRow.style.justifyContent = "space-between";
-    headerRow.style.alignItems = "center";
-    headerRow.style.marginBottom = "1rem";
-
-    const titleH2 = el("h2", "", "模型與 Provider 治理");
-    titleH2.style.margin = "0";
-    headerRow.append(titleH2);
-    panel.append(headerRow);
-    panel.append(renderRuntimeModels(data.runtime));
-    panel.append(el("h3", "", "治理紀錄"));
-
-    const items = data.items || [];
-    if (!items.length) {
-      panel.append(el("p", "empty", "目前無模型配置。"));
-      presentSystemPage(
-        "模型治理",
-        "上方是目前專案實際使用的模型；下方治理紀錄不會自動覆蓋執行中設定。",
-        panel,
-      );
-      return;
+    panel.append(renderIntro(runtime, ready));
+    const ledger = indexLedger(data.items || []);
+    const components = indexComponents(data.components || []);
+    const rows = runtime.items?.length ? runtime.items : fallbackRows(data.components || []);
+    if (!rows.length) {
+      panel.append(el("p", "empty", "目前沒有模型元件。"));
     }
-
-    for (const item of items) {
-      const config = item.config || {};
-      const active = item.active || {};
-      const configId = config.config_id || "default-model-config";
-      const versions = item.versions || [];
-
-      const card = el("div", "panel");
-      card.style.marginBottom = "1.5rem";
-      card.style.border = "1px solid var(--border-subtle, #e2e8f0)";
-      card.style.borderRadius = "8px";
-      card.style.padding = "1rem";
-
-      // Card Header
-      const cardHead = el("div", "filter-bar");
-      cardHead.style.justifyContent = "space-between";
-      cardHead.style.alignItems = "center";
-      cardHead.style.marginBottom = "0.75rem";
-
-      const titleGroup = el("div");
-      titleGroup.append(
-        el("strong", "", configId),
-        el("span", "metric-label", ` ｜ ${componentLabel(config.component)}`),
-      );
-
-      const headActions = el("div", "filter-bar");
-      headActions.style.gap = "0.4rem";
-
-      if (allowed.has("ops.models.write")) {
-        const newCandidateBtn = el("button", "", "新增模型候選");
-        newCandidateBtn.addEventListener("click", () => showModelCandidateModal(configId, config.component, renderModels));
-        headActions.append(newCandidateBtn);
-      }
-
-      if (allowed.has("ops.models.read") && configId) {
-        const simulate = el("button", "secondary", "模擬 Fallback");
-        simulate.addEventListener("click", async () => {
-          const error = await showTextPrompt({
-            title: "模擬 Fallback",
-            message: "請輸入要觸發的錯誤代碼（TIMEOUT／RATE_LIMIT／UNAVAILABLE）。",
-            defaultValue: "TIMEOUT",
-            required: true,
-          });
-          if (error == null || !error.trim()) return;
-          try {
-            const result = await api(`/api/governance/models/${configId}/simulate-fallback`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ error: error.trim() }),
-            });
-            showContentModal("Fallback 模擬結果", el("pre", "json-block", JSON.stringify(result, null, 2)));
-          } catch (err) {
-            showToast(`模擬失敗：${err.message || err}`, { tone: "error" });
-          }
-        });
-        headActions.append(simulate);
-      }
-
-      if (allowed.has("ops.models.activate") && configId) {
-        const rollback = el("button", "secondary", "回復上一模型");
-        rollback.addEventListener("click", async () => {
-          const reason = await showTextPrompt({
-            title: "回復上一模型",
-            message: "請輸入回復原因（至少 3 個字元）。",
-            minLength: 3,
-            required: true,
-          });
-          if (reason == null) return;
-          try {
-            await api(`/api/governance/models/${configId}/rollback`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ reason: reason.trim() }),
-            });
-            await renderModels();
-          } catch (err) {
-            showToast(`回復失敗：${err.message || err}`, { tone: "error" });
-          }
-        });
-        headActions.append(rollback);
-      }
-
-      cardHead.append(titleGroup, headActions);
-      card.append(cardHead);
-
-      // Active Model Details
-      const activeDetails = el("div", "metric-bar");
-      activeDetails.style.display = "grid";
-      activeDetails.style.gridTemplateColumns = "repeat(auto-fit, minmax(180px, 1fr))";
-      activeDetails.style.gap = "0.75rem";
-      activeDetails.style.padding = "0.75rem";
-      activeDetails.style.backgroundColor = "var(--bg-subtle, #f8fafc)";
-      activeDetails.style.borderRadius = "6px";
-      activeDetails.style.marginBottom = "1rem";
-
-      activeDetails.append(
-        createMetricBox("當前正式模型", `${active.provider || "-"} / ${active.model_id || "-"}`),
-        createMetricBox("正式版狀態", active.status || "無正式版", active.status ? "success" : "neutral"),
-        createMetricBox("參數配置", `Temp: ${active.temperature ?? "-"} | MaxTokens: ${active.max_output_tokens ?? "-"}`),
-        createMetricBox("逾時與重試", `Timeout: ${active.timeout_seconds ?? "-"}s | Retry: ${active.retry ?? "-"}`),
-        createMetricBox("密鑰與備援", `Secret: ${active.secret_ref || "-"} | Fallback: ${active.fallback_model_id || "無"}`),
-      );
-      card.append(activeDetails);
-
-      // Versions History Table
-      const verH3 = el("h3", "", `版本清單 (${versions.length})`);
-      verH3.style.fontSize = "0.95rem";
-      verH3.style.margin = "0.75rem 0 0.5rem 0";
-      card.append(verH3);
-
-      if (!versions.length) {
-        card.append(el("p", "empty", "尚無版本紀錄。"));
-      } else {
-        const table = el("table");
-        table.innerHTML =
-          "<thead><tr><th>版本 ID</th><th>Provider / 模型</th><th>狀態</th><th>參數</th><th>建立者</th><th>操作</th></tr></thead>";
-        const body = el("tbody");
-
-        for (const v of versions) {
-          const row = el("tr");
-          const actions = el("td");
-          actions.style.display = "flex";
-          actions.style.gap = "0.4rem";
-
-          if (v.status === "CANDIDATE" && allowed.has("ops.models.write")) {
-            const evalBtn = el("button", "", "評測 (Eval)");
-            evalBtn.addEventListener("click", async () => {
-              try {
-                evalBtn.disabled = true;
-                evalBtn.textContent = "評測中…";
-                const res = await api(`/api/governance/models/${configId}/versions/${v.version_id}/eval`, {
-                  method: "POST",
-                });
-                showContentModal("模型安全評測結果", el("pre", "json-block", JSON.stringify(res, null, 2)));
-                await renderModels();
-              } catch (err) {
-                showToast(`評測失敗：${err.message || err}`, { tone: "error" });
-                evalBtn.disabled = false;
-                evalBtn.textContent = "評測 (Eval)";
-              }
-            });
-            actions.append(evalBtn);
-          }
-
-          if (v.status === "EVALUATED" && allowed.has("ops.models.approve")) {
-            const approveBtn = el("button", "", "核准 (Approve)");
-            approveBtn.addEventListener("click", async () => {
-              const reason = await showTextPrompt({
-                title: "核准模型版本",
-                message: "請輸入核准原因（至少 3 個字元）。",
-                defaultValue: "模型評測指標通過基準",
-                minLength: 3,
-                required: true,
-              });
-              if (reason == null) return;
-              try {
-                await api(`/api/governance/models/${configId}/versions/${v.version_id}/approve`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ reason: reason.trim() }),
-                });
-                await renderModels();
-              } catch (err) {
-                showToast(`核准失敗：${err.message || err}`, { tone: "error" });
-              }
-            });
-            actions.append(approveBtn);
-          }
-
-          if (v.status === "APPROVED" && allowed.has("ops.models.activate")) {
-            const activateBtn = el("button", "", "啟用 (Activate)");
-            activateBtn.addEventListener("click", async () => {
-              const reason = await showTextPrompt({
-                title: "啟用模型版本",
-                message: "請輸入啟用原因（至少 3 個字元）。",
-                defaultValue: "核准後正式切換線上模型",
-                minLength: 3,
-                required: true,
-              });
-              if (reason == null) return;
-              try {
-                await api(`/api/governance/models/${configId}/versions/${v.version_id}/activate`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ reason: reason.trim() }),
-                });
-                await renderModels();
-              } catch (err) {
-                showToast(`啟用失敗：${err.message || err}`, { tone: "error" });
-              }
-            });
-            actions.append(activateBtn);
-          }
-
-          row.append(
-            el("td", "metric-label", v.version_id.slice(0, 8)),
-            el("td", "strong", `${v.provider} / ${v.model_id}`),
-            el("td", "", statusBadge(v.status)),
-            el("td", "metric-label", `T:${v.temperature} Max:${v.max_output_tokens} To:${v.timeout_seconds}s`),
-            el("td", "", v.created_by || "-"),
-            actions,
-          );
-          body.append(row);
-        }
-        table.append(body);
-        const scroll = el("div", "table-responsive");
-        scroll.append(table);
-        card.append(scroll);
-      }
-      panel.append(card);
+    for (const row of rows) {
+      panel.append(renderComponentCard(row, ledger.get(row.configId), components.get(row.configId), allowed, ready));
     }
     presentSystemPage(
       "模型治理",
-      "上方是目前專案實際使用的模型；下方治理紀錄不會自動覆蓋執行中設定。",
+      "每個元件只顯示現在生效的模型。聊天模型啟用後下一則請求生效；Embedding 與 File Search 要等重建或套用完成。",
       panel,
     );
   } catch (error) {
@@ -309,118 +65,299 @@ export async function renderModels() {
   }
 }
 
-function createMetricBox(label, value, badgeVariant = null) {
-  const box = el("div");
-  box.append(el("div", "metric-label", label));
-  if (badgeVariant) {
-    box.append(statusBadge(value));
-  } else {
-    const valDiv = el("div", "strong", value);
-    valDiv.style.fontSize = "0.9rem";
-    box.append(valDiv);
+function renderIntro(runtime, ready) {
+  const section = el("section", "panel");
+  section.style.marginBottom = "1.25rem";
+  if (!runtime.available) {
+    section.append(el("p", "warning", runtime.reason || "目前無法讀取 Agent 執行中的模型。切換按鈕已停用。"));
+    return section;
+  }
+  if (!ready) {
+    section.append(el("p", "warning", "治理未接上執行中 Agent。可以登記候選，但不能啟用或排入切換。"));
+  }
+  if (runtime.knowledgeMode) {
+    section.append(el("p", "metric-label", `知識模式：${runtime.knowledgeMode}`));
+  }
+  return section;
+}
+
+function renderComponentCard(row, ledgerItem, component, allowed, ready) {
+  const config = ledgerItem?.config || {};
+  const versions = ledgerItem?.versions || [];
+  const configId = row.configId || config.config_id;
+  const card = el("div", "panel");
+  card.style.marginBottom = "1.5rem";
+  card.style.border = "1px solid var(--border-subtle, #e2e8f0)";
+  card.style.borderRadius = "8px";
+  card.style.padding = "1rem";
+
+  const head = el("div", "filter-bar");
+  head.style.justifyContent = "space-between";
+  head.style.alignItems = "center";
+  head.style.marginBottom = "0.75rem";
+  const title = el("div");
+  title.append(
+    el("strong", "", row.label || configId),
+    el("span", "metric-label", ` ｜ ${effectLabel(row.effect)}`),
+  );
+  const actions = el("div", "filter-bar");
+  actions.style.gap = "0.4rem";
+  appendHeaderActions(actions, { row, config, configId, component, allowed, ready });
+  head.append(title, actions);
+  card.append(head);
+  card.append(renderEffective(row));
+  card.append(renderVersionTable(versions, configId, row.effect, allowed, ready));
+  return card;
+}
+
+function renderEffective(row) {
+  const box = el("div", "metric-bar");
+  box.style.display = "grid";
+  box.style.gridTemplateColumns = "repeat(auto-fit, minmax(180px, 1fr))";
+  box.style.gap = "0.75rem";
+  box.style.padding = "0.75rem";
+  box.style.backgroundColor = "var(--bg-subtle, #f8fafc)";
+  box.style.borderRadius = "6px";
+  box.style.marginBottom = "1rem";
+  box.append(
+    createMetricBox("現在生效", row.model || "未設定"),
+    createMetricBox("來源", sourceLabel(row.source), row.source === "governance" ? "success" : "neutral"),
+    createMetricBox("版本", row.versionId ? String(row.versionId).slice(0, 8) : "無"),
+  );
+  if (row.fallbackModel) {
+    box.append(createMetricBox("環境變數退路", row.fallbackModel));
+  }
+  if (row.scheduleStatus && row.scheduleStatus !== "applied") {
+    const label = SCHEDULE_LABELS[row.scheduleStatus] || row.scheduleStatus;
+    const extra = row.scheduledModel ? `${label}：${row.scheduledModel}` : label;
+    box.append(createMetricBox("排程", extra, row.scheduleStatus === "failed" ? "warning" : "neutral"));
   }
   return box;
 }
 
-function showModelCandidateModal(configId, component, onRefresh) {
+function appendHeaderActions(actions, context) {
+  const { row, config, configId, component, allowed, ready } = context;
+  if (allowed.has("ops.models.write") && configId) {
+    const add = el("button", "", "新增模型候選");
+    add.addEventListener("click", () => showModelCandidateModal(configId, row.component || config.component, component, renderModels));
+    actions.append(add);
+  }
+  if (row.effect === "next_request" && allowed.has("ops.models.read") && configId) {
+    actions.append(simulateButton(configId));
+  }
+  if (!ready || !allowed.has("ops.models.activate") || !configId) return;
+  if (row.effect === "next_request") {
+    actions.append(rollbackButton(configId));
+    return;
+  }
+  const verb = row.effect === "reindex" ? "排入重建並回復" : "排入套用並回復";
+  actions.append(rollbackButton(configId, verb));
+}
+
+function renderVersionTable(versions, configId, effect, allowed, ready) {
+  const wrap = el("div");
+  const heading = el("h3", "", `版本清單 (${versions.length})`);
+  heading.style.fontSize = "0.95rem";
+  heading.style.margin = "0.75rem 0 0.5rem 0";
+  wrap.append(heading);
+  if (!versions.length) {
+    wrap.append(el("p", "empty", "尚無版本紀錄。"));
+    return wrap;
+  }
+  const table = el("table");
+  table.innerHTML = "<thead><tr><th>版本 ID</th><th>Provider / 模型</th><th>狀態</th><th>參數</th><th>建立者</th><th>操作</th></tr></thead>";
+  const body = el("tbody");
+  for (const version of versions) {
+    const row = el("tr");
+    const actions = el("td");
+    actions.style.display = "flex";
+    actions.style.gap = "0.4rem";
+    appendVersionActions(actions, version, configId, effect, allowed, ready);
+    row.append(
+      el("td", "metric-label", String(version.version_id || "").slice(0, 8)),
+      el("td", "strong", `${version.provider} / ${version.model_id}`),
+      el("td", "", statusBadge(version.status)),
+      el("td", "metric-label", `T:${version.temperature} Max:${version.max_output_tokens}`),
+      el("td", "", version.created_by || "-"),
+      actions,
+    );
+    body.append(row);
+  }
+  table.append(body);
+  const scroll = el("div", "table-responsive");
+  scroll.append(table);
+  wrap.append(scroll);
+  return wrap;
+}
+
+function appendVersionActions(actions, version, configId, effect, allowed, ready) {
+  if (version.status === "CANDIDATE" && allowed.has("ops.models.write")) {
+    actions.append(staticCheckButton(configId, version.version_id));
+  }
+  if (version.status === "EVALUATED" && allowed.has("ops.models.approve")) {
+    actions.append(approveButton(configId, version.version_id));
+  }
+  if (version.status !== "APPROVED" || !allowed.has("ops.models.activate") || !ready) return;
+  if (effect === "next_request") {
+    actions.append(activateButton(configId, version.version_id));
+    return;
+  }
+  const label = effect === "reindex" ? "排入重建" : "排入套用";
+  actions.append(scheduleButton(configId, version.version_id, label));
+}
+
+function staticCheckButton(configId, versionId) {
+  const button = el("button", "", "靜態檢查");
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "檢查中…";
+    try {
+      const result = await api(`/api/governance/models/${configId}/versions/${versionId}/eval`, { method: "POST" });
+      showContentModal("模型靜態檢查結果", el("pre", "json-block", JSON.stringify(result, null, 2)));
+      await renderModels();
+    } catch (error) {
+      showToast(`靜態檢查失敗：${error.message || error}`, { tone: "error" });
+      button.disabled = false;
+      button.textContent = "靜態檢查";
+    }
+  });
+  return button;
+}
+
+function approveButton(configId, versionId) {
+  const button = el("button", "", "核准");
+  button.addEventListener("click", async () => {
+    const reason = await promptReason("核准模型版本", "請輸入核准原因（至少 3 個字元）。", "靜態檢查通過");
+    if (reason == null) return;
+    try {
+      await api(`/api/governance/models/${configId}/versions/${versionId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      await renderModels();
+    } catch (error) {
+      showToast(`核准失敗：${error.message || error}`, { tone: "error" });
+    }
+  });
+  return button;
+}
+
+function activateButton(configId, versionId) {
+  const button = el("button", "", "啟用");
+  button.addEventListener("click", async () => {
+    const reason = await promptReason("啟用模型版本", "啟用後下一則請求改用這個版本。請輸入原因（至少 3 個字元）。", "核准後切換下一則請求");
+    if (reason == null) return;
+    try {
+      await api(`/api/governance/models/${configId}/versions/${versionId}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      await renderModels();
+    } catch (error) {
+      showToast(`啟用失敗：${error.message || error}`, { tone: "error" });
+    }
+  });
+  return button;
+}
+
+function scheduleButton(configId, versionId, label) {
+  const button = el("button", "", label);
+  button.addEventListener("click", async () => {
+    const reason = await promptReason(label, "完成前仍使用目前生效模型。請輸入原因（至少 3 個字元）。", label);
+    if (reason == null) return;
+    button.disabled = true;
+    try {
+      await api(`/api/governance/models/${configId}/versions/${versionId}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      await renderModels();
+    } catch (error) {
+      showToast(`${label}失敗：${error.message || error}`, { tone: "error" });
+      button.disabled = false;
+    }
+  });
+  return button;
+}
+
+function rollbackButton(configId, label = "回復上一模型") {
+  const button = el("button", "secondary", label);
+  button.addEventListener("click", async () => {
+    const reason = await promptReason(label, "請輸入回復原因（至少 3 個字元）。");
+    if (reason == null) return;
+    try {
+      await api(`/api/governance/models/${configId}/rollback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      await renderModels();
+    } catch (error) {
+      showToast(`回復失敗：${error.message || error}`, { tone: "error" });
+    }
+  });
+  return button;
+}
+
+function simulateButton(configId) {
+  const button = el("button", "secondary", "模擬 Fallback");
+  button.addEventListener("click", async () => {
+    const error = await showTextPrompt({
+      title: "模擬 Fallback",
+      message: "這只是模擬，不會呼叫模型。請輸入錯誤代碼（TIMEOUT／RATE_LIMIT／UNAVAILABLE）。",
+      defaultValue: "TIMEOUT",
+      required: true,
+    });
+    if (error == null || !error.trim()) return;
+    try {
+      const result = await api(`/api/governance/models/${configId}/simulate-fallback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: error.trim() }),
+      });
+      showContentModal("Fallback 模擬結果", el("pre", "json-block", JSON.stringify(result, null, 2)));
+    } catch (err) {
+      showToast(`模擬失敗：${err.message || err}`, { tone: "error" });
+    }
+  });
+  return button;
+}
+
+function showModelCandidateModal(configId, component, spec, onRefresh) {
+  const providers = spec?.providers || { google_genai: [] };
   const form = el("form", "form-grid");
   form.style.display = "flex";
   form.style.flexDirection = "column";
   form.style.gap = "0.6rem";
-
   form.append(el("label", "metric-label", `Config ID: ${configId}`));
 
-  const providerGroup = el("div");
-  providerGroup.append(el("label", "metric-label", "Provider："));
-  const providerSelect = el("select");
-  ["google_genai"].forEach((p) => {
-    const opt = el("option", "", p);
-    opt.value = p;
-    providerSelect.append(opt);
+  const providerSelect = labeledSelect(form, "Provider", Object.keys(providers));
+  const modelSelect = labeledSelect(form, "Model ID", providers[providerSelect.value] || []);
+  providerSelect.addEventListener("change", () => {
+    replaceOptions(modelSelect, providers[providerSelect.value] || []);
   });
-  providerGroup.append(providerSelect);
-  form.append(providerGroup);
-
-  const modelIdGroup = el("div");
-  modelIdGroup.append(el("label", "metric-label", "Model ID："));
-  const modelIdInput = el("input");
-  modelIdInput.required = true;
-  modelIdInput.value = "gemini-3.8-flash";
-  modelIdGroup.append(modelIdInput);
-  form.append(modelIdGroup);
-
-  const tempGroup = el("div");
-  tempGroup.append(el("label", "metric-label", "Temperature (0.0 ~ 1.0)："));
-  const tempInput = el("input");
-  tempInput.type = "number";
-  tempInput.step = "0.1";
-  tempInput.min = "0";
-  tempInput.max = "1";
-  tempInput.value = "0.0";
-  tempGroup.append(tempInput);
-  form.append(tempGroup);
-
-  const maxTokensGroup = el("div");
-  maxTokensGroup.append(el("label", "metric-label", "Max Output Tokens："));
-  const maxTokensInput = el("input");
-  maxTokensInput.type = "number";
-  maxTokensInput.value = "2048";
-  maxTokensGroup.append(maxTokensInput);
-  form.append(maxTokensGroup);
-
-  const timeoutGroup = el("div");
-  timeoutGroup.append(el("label", "metric-label", "Timeout Seconds (1 ~ 120)："));
-  const timeoutInput = el("input");
-  timeoutInput.type = "number";
-  timeoutInput.value = "30";
-  timeoutGroup.append(timeoutInput);
-  form.append(timeoutGroup);
-
-  const retryGroup = el("div");
-  retryGroup.append(el("label", "metric-label", "Retry (0 ~ 3)："));
-  const retryInput = el("input");
-  retryInput.type = "number";
-  retryInput.value = "1";
-  retryGroup.append(retryInput);
-  form.append(retryGroup);
-
-  const secretGroup = el("div");
-  secretGroup.append(el("label", "metric-label", "Secret Ref："));
-  const secretInput = el("input");
-  secretInput.required = true;
-  secretInput.value = "gemini-api-key";
-  secretGroup.append(secretInput);
-  form.append(secretGroup);
-
-  const fallbackGroup = el("div");
-  fallbackGroup.append(el("label", "metric-label", "Fallback Model ID (可選)："));
-  const fallbackInput = el("input");
-  fallbackInput.placeholder = "例：gemini-3.1-flash-lite";
-  fallbackGroup.append(fallbackInput);
-  form.append(fallbackGroup);
-
-  const reasonGroup = el("div");
-  reasonGroup.append(el("label", "metric-label", "變更原因 (至少 3 字)："));
-  const reasonInput = el("input");
-  reasonInput.required = true;
-  reasonInput.placeholder = "請輸入變更原因";
-  reasonGroup.append(reasonInput);
-  form.append(reasonGroup);
-
-  const submitBtn = el("button", "", "建立模型候選 (Submit Candidate)");
-  submitBtn.type = "submit";
-  form.append(submitBtn);
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const reason = reasonInput.value.trim();
-    if (reason.length < 3) {
+  const temperature = labeledInput(form, "Temperature (0.0 ~ 1.0)", "0.0", "number");
+  const maxTokens = labeledInput(form, "Max Output Tokens", "2048", "number");
+  const timeout = labeledInput(form, "Timeout Seconds (1 ~ 120)", "30", "number");
+  const retry = labeledInput(form, "Retry (0 ~ 3)", "1", "number");
+  const secret = labeledInput(form, "Secret Ref", "secret://gemini-api-key");
+  const fallback = labeledInput(form, "Fallback Model ID（可選）", "");
+  const reason = labeledInput(form, "變更原因 (至少 3 字)", "");
+  reason.required = true;
+  const submit = el("button", "", "建立模型候選");
+  submit.type = "submit";
+  form.append(submit);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const changeReason = reason.value.trim();
+    if (changeReason.length < 3) {
       showToast("變更原因至少需 3 個字元", { tone: "error" });
-      reasonInput.focus();
       return;
     }
-    const fallbackId = fallbackInput.value.trim() || null;
-    const fallbackOn = fallbackId ? ["TIMEOUT", "RATE_LIMIT", "UNAVAILABLE"] : [];
+    const fallbackId = fallback.value.trim() || null;
     try {
       await api("/api/governance/models/candidates", {
         method: "POST",
@@ -428,28 +365,101 @@ function showModelCandidateModal(configId, component, onRefresh) {
         body: JSON.stringify({
           config_id: configId,
           provider: providerSelect.value,
-          model_id: modelIdInput.value.trim(),
+          model_id: modelSelect.value,
           component: component || "issue-extractor",
-          temperature: parseFloat(tempInput.value) || 0.0,
-          max_output_tokens: parseInt(maxTokensInput.value, 10) || 2048,
-          timeout_seconds: parseInt(timeoutInput.value, 10) || 30,
-          retry: parseInt(retryInput.value, 10) || 1,
-          secret_ref: secretInput.value.trim(),
+          temperature: Number(temperature.value) || 0,
+          max_output_tokens: Number(maxTokens.value) || 2048,
+          timeout_seconds: Number(timeout.value) || 30,
+          retry: Number(retry.value) || 1,
+          secret_ref: secret.value.trim(),
           region: "asia-east1",
           pricing_version: "v1",
           fallback_model_id: fallbackId,
-          fallback_on: fallbackOn,
-          change_reason: reason,
+          fallback_on: fallbackId ? ["TIMEOUT", "RATE_LIMIT", "UNAVAILABLE"] : [],
+          change_reason: changeReason,
         }),
       });
       closeContentModal();
       await onRefresh();
-    } catch (err) {
-      showToast(`建立失敗：${err.message || err}`, { tone: "error" });
+    } catch (error) {
+      showToast(`建立失敗：${error.message || error}`, { tone: "error" });
     }
   });
-
   showContentModal(`新增模型候選：${configId}`, form);
+}
+
+function labeledSelect(form, label, values) {
+  const group = el("div");
+  group.append(el("label", "metric-label", `${label}：`));
+  const select = el("select");
+  replaceOptions(select, values);
+  select.required = true;
+  group.append(select);
+  form.append(group);
+  return select;
+}
+
+function replaceOptions(select, values) {
+  select.replaceChildren();
+  for (const value of values) {
+    const option = el("option", "", value);
+    option.value = value;
+    select.append(option);
+  }
+}
+
+function labeledInput(form, label, value, type = "text") {
+  const group = el("div");
+  group.append(el("label", "metric-label", `${label}：`));
+  const input = el("input");
+  input.type = type;
+  input.value = value;
+  group.append(input);
+  form.append(group);
+  return input;
+}
+
+function createMetricBox(label, value, badgeVariant = null) {
+  const box = el("div");
+  box.append(el("div", "metric-label", label));
+  if (badgeVariant) {
+    box.append(badge(value, badgeVariant));
+  } else {
+    const val = el("div", "strong", value);
+    val.style.fontSize = "0.9rem";
+    box.append(val);
+  }
+  return box;
+}
+
+function indexLedger(items) {
+  return new Map(items.map((item) => [item.config?.config_id, item]));
+}
+
+function indexComponents(components) {
+  return new Map(components.map((item) => [item.configId, item]));
+}
+
+function fallbackRows(components) {
+  return components.map((item) => ({
+    configId: item.configId,
+    label: item.label,
+    effect: item.effect,
+    component: item.component,
+    model: null,
+    source: null,
+  }));
+}
+
+async function promptReason(title, message, defaultValue) {
+  const reason = await showTextPrompt({
+    title,
+    message,
+    defaultValue,
+    minLength: 3,
+    required: true,
+  });
+  return reason == null ? null : reason.trim();
 }
 
 export const modelsPage = createPageController({

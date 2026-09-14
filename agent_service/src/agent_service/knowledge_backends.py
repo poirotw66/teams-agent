@@ -110,6 +110,9 @@ class KnowledgeBackendRouter:
         backend = await self._state_store.get()
         return backend if backend in self._services else next(iter(self._services))
 
+    def get_service(self, backend: str) -> KnowledgeService | None:
+        return self._services.get(backend)
+
     def update_service(self, backend: str, service: KnowledgeService) -> None:
         self._services[backend] = service
 
@@ -149,6 +152,7 @@ class KnowledgeBackendRouter:
         call_counter: LlmCallCounter | None = None,
         execution_context: ExecutionContext | None = None,
         request: AgentRequest | None = None,
+        answer_model: object | None = None,
     ) -> KnowledgeResult:
         service = self._services[await self.resolve_backend(request)]
         parameters = inspect.signature(service.search).parameters
@@ -157,4 +161,6 @@ class KnowledgeBackendRouter:
             kwargs["call_counter"] = call_counter
         if "execution_context" in parameters:
             kwargs["execution_context"] = execution_context
+        if answer_model is not None and "answer_model" in parameters:
+            kwargs["answer_model"] = answer_model
         return await service.search(query, user_context, **kwargs)

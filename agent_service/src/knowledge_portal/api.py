@@ -659,6 +659,7 @@ def create_app(
                 scope_ids=scope_ids,
                 correlation_id=corr,
                 reason="Backoffice sync job triggered reindex",
+                embedding_model=(payload or {}).get("embeddingModel") or None,
             )
             return {
                 "targetRelease": release.release_id,

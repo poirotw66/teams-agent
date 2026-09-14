@@ -79,8 +79,12 @@ class ReleaseService:
         idempotency_key: str | None = None,
     ) -> ReleaseRecord:
         if idempotency_key:
-            scope_key = f"publish::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            payload_hash = hashlib.sha256(f"{document_id}::{request.model_dump_json()}".encode()).hexdigest()
+            scope_key = (
+                f"publish::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
+            )
+            payload_hash = hashlib.sha256(
+                f"{document_id}::{request.model_dump_json()}".encode()
+            ).hexdigest()
             status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
             if status == "CACHED" and cached is not None:
                 if isinstance(cached, dict):
@@ -141,8 +145,15 @@ class ReleaseService:
                 target_id=document_id,
                 correlation_id=correlation_id,
                 reason=request.reason,
-                before={"status": document.status, "currentPublishedVersionId": document.current_published_version_id},
-                after={"status": "PUBLISHED", "currentPublishedVersionId": version.version_id, "releaseId": release.release_id},
+                before={
+                    "status": document.status,
+                    "currentPublishedVersionId": document.current_published_version_id,
+                },
+                after={
+                    "status": "PUBLISHED",
+                    "currentPublishedVersionId": version.version_id,
+                    "releaseId": release.release_id,
+                },
                 metadata={"versionId": version.version_id, "releaseId": release.release_id},
             )
             if idempotency_key:
@@ -210,12 +221,8 @@ class ReleaseService:
         detail = await self._documents.get_document(actor, document_id)
         document = detail.document
         if document.current_published_version_id and document.status == "PUBLISHED":
-            return await self.unpublish_document(
-                actor, document_id, request, correlation_id
-            )
-        return await self._documents.discard_draft(
-            actor, document_id, request, correlation_id
-        )
+            return await self.unpublish_document(actor, document_id, request, correlation_id)
+        return await self._documents.discard_draft(actor, document_id, request, correlation_id)
 
     async def rollback_release(
         self,
@@ -225,8 +232,12 @@ class ReleaseService:
         idempotency_key: str | None = None,
     ) -> ReleaseRecord:
         if idempotency_key:
-            scope_key = f"rollback::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
-            payload_hash = hashlib.sha256(f"{request.release_id}::{request.reason}".encode()).hexdigest()
+            scope_key = (
+                f"rollback::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
+            )
+            payload_hash = hashlib.sha256(
+                f"{request.release_id}::{request.reason}".encode()
+            ).hexdigest()
             status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
             if status == "CACHED" and cached is not None:
                 if isinstance(cached, dict):
@@ -269,9 +280,7 @@ class ReleaseService:
                         getattr(self._ctx, "release_gate_checker", None),
                         target_manifest_hash=(
                             target.target_manifest_hash
-                            or knowledge_release_target_manifest_hash(
-                                release_id=target.release_id
-                            )
+                            or knowledge_release_target_manifest_hash(release_id=target.release_id)
                         ),
                         target_type="KNOWLEDGE",
                         tenant_id=getattr(actor, "tenant_id", None),
@@ -385,9 +394,7 @@ class ReleaseService:
                 f"Cannot sync release '{release_id}' because it is not the current active release ('{active_id}'). Use rollback to switch versions."
             )
 
-        reload_success, reload_error = await self._notify_agent_reload(
-            release_id, correlation_id
-        )
+        reload_success, reload_error = await self._notify_agent_reload(release_id, correlation_id)
         async with self._coordination_lock("sync_agent"):
             current_active = await self._ctx.repository.get_active_release_id()
             if current_active != release_id:
@@ -471,9 +478,7 @@ class ReleaseService:
                         correlation_id,
                     )
                     return True, None
-                err_msg = (
-                    f"Agent reload returned HTTP {resp.status_code}: {resp.text[:200]}"
-                )
+                err_msg = f"Agent reload returned HTTP {resp.status_code}: {resp.text[:200]}"
                 logger.warning(
                     "Agent reload failed for release %s: %s",
                     release_id,
@@ -488,7 +493,6 @@ class ReleaseService:
                 err_msg,
             )
             return False, err_msg
-
 
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
         ensure_can_list_releases(actor)
@@ -509,9 +513,7 @@ class ReleaseService:
                     sanitized_manifest.append(
                         entry.model_copy(update={"title": "[Restricted Document]"})
                     )
-            sanitized_releases.append(
-                release.model_copy(update={"manifest": sanitized_manifest})
-            )
+            sanitized_releases.append(release.model_copy(update={"manifest": sanitized_manifest}))
         return sanitized_releases
 
     async def compare_releases(
@@ -611,9 +613,7 @@ class ReleaseService:
 
         active_release_id = await self._ctx.repository.get_active_release_id()
         active_release = (
-            await self._ctx.repository.get_release(active_release_id)
-            if active_release_id
-            else None
+            await self._ctx.repository.get_release(active_release_id) if active_release_id else None
         )
 
         if active_release and active_release.manifest:
@@ -658,6 +658,7 @@ class ReleaseService:
         correlation_id: str,
         reason: str,
         metadata: dict[str, Any] | None = None,
+        embedding_model: str | None = None,
     ) -> ReleaseRecord:
         previous_release_id = await self._ctx.repository.get_active_release_id()
         release_id = new_id("release")
@@ -667,6 +668,7 @@ class ReleaseService:
                 published_versions=published_versions,
                 created_by=actor.user_id,
                 previous_release_id=previous_release_id,
+                embedding_model=embedding_model,
             )
         except ReleaseBuildError as exc:
             await self._ctx.audit(
@@ -689,9 +691,8 @@ class ReleaseService:
                 or knowledge_release_target_manifest_hash(release_id=release.release_id),
             }
         )
-        gate_hash = (
-            release.target_manifest_hash
-            or knowledge_release_target_manifest_hash(release_id=release.release_id)
+        gate_hash = release.target_manifest_hash or knowledge_release_target_manifest_hash(
+            release_id=release.release_id
         )
         # Gate must run before mutating other release statuses or the active pointer.
         try:
@@ -798,9 +799,8 @@ class ReleaseService:
             )
 
         corr = correlation_id or new_id("corr")
-        gate_hash = (
-            target.target_manifest_hash
-            or knowledge_release_target_manifest_hash(release_id=target.release_id)
+        gate_hash = target.target_manifest_hash or knowledge_release_target_manifest_hash(
+            release_id=target.release_id
         )
         try:
             require_release_gate(
@@ -848,9 +848,7 @@ class ReleaseService:
                 release.release_id,
             )
 
-            reload_success, reload_error = await self._notify_agent_reload(
-                release.release_id, corr
-            )
+            reload_success, reload_error = await self._notify_agent_reload(release.release_id, corr)
             current_active = await self._ctx.repository.get_active_release_id()
             if current_active == release.release_id:
                 if reload_success:
@@ -901,18 +899,17 @@ class ReleaseService:
         scope_ids: list[str] | None = None,
         correlation_id: str | None = None,
         reason: str = "Manual knowledge reindex and synchronization",
+        embedding_model: str | None = None,
     ) -> ReleaseRecord:
         async with self._coordination_lock("reindex_knowledge"):
             published_versions = await self._collect_active_published_versions(actor)
             if scope_type == "DOCUMENTS" and scope_ids:
-                published_versions = [
-                    v for v in published_versions if v.document_id in scope_ids
-                ]
+                published_versions = [v for v in published_versions if v.document_id in scope_ids]
             release = await self._activate_release(
                 actor=actor,
                 published_versions=published_versions,
                 correlation_id=correlation_id or new_id("corr"),
                 reason=reason,
+                embedding_model=embedding_model,
             )
             return release
-

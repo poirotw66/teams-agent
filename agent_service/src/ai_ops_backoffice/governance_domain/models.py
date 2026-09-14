@@ -124,11 +124,18 @@ class EvalRun(StrictModel):
     reproducibility: dict[str, Any] = Field(default_factory=dict)
 
 
+ScheduleKind = Literal["reindex", "service_refresh"]
+ScheduleStatus = Literal["queued", "running", "failed", "applied"]
+
+
 class ModelConfigRecord(StrictModel):
     config_id: str
     component: str
     active_version_id: str | None = None
     previous_healthy_version_id: str | None = None
+    scheduled_version_id: str | None = None
+    schedule_kind: ScheduleKind | None = None
+    schedule_status: ScheduleStatus | None = None
     etag: int = Field(ge=1)
 
 

@@ -17,6 +17,16 @@ RUNTIME_MODEL_ROLES: tuple[tuple[str, str, str], ...] = (
 def runtime_models_from_ready(payload: dict[str, Any]) -> dict[str, Any]:
     """Translate Agent readiness into the models page catalog."""
 
+    catalog = payload.get("modelCatalog")
+    if isinstance(catalog, dict) and isinstance(catalog.get("items"), list):
+        return {
+            "available": True,
+            "knowledgeMode": payload.get("knowledgeMode"),
+            "runtimeMode": catalog.get("runtimeMode"),
+            "governed": bool(catalog.get("governed")),
+            "controlPlaneReady": bool(catalog.get("controlPlaneReady")),
+            "items": catalog["items"],
+        }
     items = []
     for role, label, field in RUNTIME_MODEL_ROLES:
         model = str(payload.get(field) or "").strip()
@@ -25,11 +35,16 @@ def runtime_models_from_ready(payload: dict[str, Any]) -> dict[str, Any]:
                 "role": role,
                 "label": label,
                 "model": model or None,
+                "source": "settings_baseline",
+                "effect": "next_request" if role in {"agent", "answer"} else None,
             }
         )
     return {
         "available": True,
         "knowledgeMode": payload.get("knowledgeMode"),
+        "runtimeMode": None,
+        "governed": False,
+        "controlPlaneReady": False,
         "items": items,
     }
 

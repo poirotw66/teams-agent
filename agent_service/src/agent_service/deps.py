@@ -58,9 +58,11 @@ def sync_knowledge_to_active_pointer(
         return False
 
     try:
+        from .model_control import embedding_model_for_load
+
         new_index = HybridIndex.load(
             target_index_path,
-            resolved_settings.embedding_model,
+            embedding_model_for_load(target_app, resolved_settings),
         )
         hydrate_index_sources(
             new_index.chunks,
