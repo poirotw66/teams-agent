@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e10e08949ba22c3916436f2923ecbc7765810474af2b23ce51a7d914dabebb5b",
+  "claims": [
+    {
+      "id": "claim_3beddc0294a14b959cbfc24de66b24a4",
+      "statement": "The knowledge router selects HYBRID or GEMINI_FILE_SEARCH. An evaluation backend override applies only on an allowed evaluation channel. An unavailable select raises. A missing stored backend falls back to a registered service.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_backends.py#L101-L121",
+          "version": "repo-lines-v1:sha256:d0c6be5c875851a04cf0735d5488ca4d5a9c261a8f4b303518de4c91fe8b1533:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMDA0OGJmNTlmNTA1MzliNmM4Nzk3MmM5MjBiZGI2Yzk1ZDFkZjI1NDc5YThlZDk1NDQ1YzIzMjNmY2YyY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMmIyNjViOWUzZjIyZjEwNmM4YzY4MmMxNzdjNzYwZDVmODZmNmI2ZjZlYzcwOTU5NDBmNjg5NDRkZWZkOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMzI3ODJhNDkxMWQ5MTI1ODA3YjM2YTYwMzQ3OTRjZDcwMTkyMGNjNzA3ZjFkN2NiNmYxZmVhMDk4ZDk4MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNzgxNzg5ZmYwNWE5ZTllYWU2OGNhZWVhZTQzMjQ2MzZjYjZmNmMwMDI0OTBkNzY0ZTYxNmQyZGU1Mzg3ODcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_401f839d9f9144cda726cb51efdeeb49",
+      "statement": "Hybrid search scores chunks with BM25 and, when embeddings exist, cosine similarity. Chunks with allowed groups are skipped unless the caller shares a group.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/retrieval.py#L134-L159",
+          "version": "repo-lines-v1:sha256:683569858ec9d2b3ee0f7ae59401c454b7a1fdf5495df1cb015306650a96b947:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZjI3MGJjOGViMzlhMGZhYjQwYThhYTJjMzFjNjBjOGZhZGM1MWUxYTQxYjA3YzU1MjE4YjAzZDRmMWNjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1MDJkNjJkNmFiNDk2MjUyYzY1OTEyOWE4YWYxNTg1MjY3OGE1ZThlMzUyY2ZhMDVmZmZhY2RkNDFjYTM5OGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwOWU1MzdjNjNmZjg3ZGU4NDBmNGJkZTA1MzBhODc3NmNmYjk1MWMzZGY5YjVmMDYzZDkyYmIzMGYxOTRhMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NjZlNTlkYzNlNDNhZDkzMDk3YTViOWIwMTM3NDNhMTgwNjYzM2Q3YmRkNDM1Mzk5ZmZhOGY4MzgxY2I4YTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c28f91b5028d4062b47e42c91c8d8497",
+      "statement": "The hybrid RAG graph answers a small set of greetings without retrieval. Other queries retrieve when no model is configured.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/graph.py#L146-L176",
+          "version": "repo-lines-v1:sha256:3ef26d08e27f771c98db0f04b0feb7f8cd8782d67468aad892f2bf06a3689721:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYmQyYjMyNzIyNjI1MzFjYzNlMTA2YWE5ODEyNGM4YzYxZjU0MjNkNzdkNjAwMzliZDc4ZjBhMjc5ODgzYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYThiOGEzYzZjODA2MDYzZjE4N2E3NzhmNTFjZTAxMDY0ZGRlN2VjZTg0MDIwYzk4ZGNmNGZjZGU3OWQ0Y2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwMzQ2OTU0MDYyNmRhYWQ1ZDExMzllODZlNmM1MDRiNWFlYzA5OThjODhhNmQ4NzE1MTE5MTZiYjNkOGY5NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxMzdkMTMyZTY3NmNiZWE5YThjMzFhYjk4NGY5Yzk2NzMyNGQ0YWY4OWQzNDc2MzMyODJmMTQzZTNmZGEyNDAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_491e9842811046a8ba42cc0706f40aea",
+      "statement": "Gemini File Search derives its metadata filter from the caller groups when ACL enforcement is on. A caller-supplied metadata filter is rejected rather than combined, because that combination is unverified.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/gemini_file_search.py#L167-L198",
+          "version": "repo-lines-v1:sha256:dfcb840e947430005811770a6d2606b85adb58d82dca56208264ba163de78544:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmU1ODYyMDEyNTFlNzNlZTk5MjBlNDc3NWE2NzMxODY4OGE0ODFkNzM5MGEzZWE3OGQwODQyNTRjZDAxMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NTYyMjJjMDQ1MDljMjVkNTM5ODY2OTRmMzM2ODE3N2I3YjcxMTgyNTQwMzE0YzViNTQxYzY3OGNkY2I5OWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxMTllMzI3NjY1NTk5OTczM2QzN2JhNWEwNDk1NzdmZGIxOGQxZWYyZWU1Y2Y3ZDc1ZTNjZjIwNWNiZmY5ZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYTdhNDc4M2QzMzBhM2I1NjQ1ZTA4ZjVmYTYwYzgzYTJiZmEwOWRmMWE4ODVkOWFmZTcwOTgyOWM3YzhjNmMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

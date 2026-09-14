@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:625aa230acd1fcd08dca94655dfa9e6bef7b46238d2142906db5060dd667ed73",
+  "claims": [
+    {
+      "id": "claim_a2ed1b599a3e41cdb1095b9283279a25",
+      "statement": "The production turn graph loads conversation, routes handoff, then extracts, filters, processes, evaluates handoff, builds a response, and saves. There is no default checkpointer, so an interrupted turn restarts from START.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L85-L114",
+          "version": "repo-lines-v1:sha256:9239835ccc60328b8a94e926ee873c33fd2d63c89d80045ec3b06e109b5e6ab9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyODZmNDk4ZDFiMjgzZWZiMDU2YTliYzAyZGYzNjg5NTdmMTQ3MGI5M2U3ZTNlNjRjMDcyNGQ0MTY2NDk5M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiODlmZTdlMjZhYzFlYjEwN2M3MzFhYzljYmEyNzAwZTgwODM3YjEyOWUxMTY5MDg3MzYxYjU1NTVlMmUwOWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg0NjczY2IyZjI3NGE4OGVjODFlMThmZDM0OWY3MTY3NDRhY2YzNTQwMGFmZmU4YTUwYzQwMjY4ZDJlNzg4ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L9-L15",
+          "version": "repo-lines-v1:sha256:c4b6849935d04bfbcfc02632f0d4991b5352330f4f54829018807bf2e8fe296e:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjZkMzVjNGFjNDRiY2Q1MWNjZWY5NzRiYTA2OWEzZWM4N2ViNTk0ZGI5Yjk1MTE5NmJlZjgzMzI1MDdhMDc1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzM5YzZjYTMzZGY1MzI3OGUwMjgxMGZiMDFkZWZhZGJmZWY4OWI2Nzk5YWQ3ZWFlNDU3MmEzZmE0NjBlOTI2ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzM1YjBkMmQ0MGZlNzRiY2YxZjAzZDM5OWMzM2UzNzk1YzFhMzJhY2VkNjEwMzA4YTYyNzlmNTAwNjliOTQyNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2IzYmE0ZTAyZThiYjcxNjU0ZDY4N2FhZDQ5OGUwMDU5MjBjYmY1Y2IwNjM4NmFkZTk4MzhjYTNiMWFjOWQzNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_633d9ceeaf5d4a2f9a9f7364b1fd83b9",
+      "statement": "A turn is limited to 3 issues by default. Ticket, handoff, and operational-event side effects must stay idempotent before interrupt/resume is enabled.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/settings.py#L54-L54",
+          "version": "repo-lines-v1:sha256:1892dc00ad24a0a41e6d071dceaf64000a60aa34e0e5d52867ef2af9f467e854:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5MmRjMDBhZDI0YTBhNDFlNmQwNzFkY2VhZjY0MDAwYTYwYWEzNGUwZTVkNTI4NjdlZjJhZjlmNDY3ZTg1NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5MmRjMDBhZDI0YTBhNDFlNmQwNzFkY2VhZjY0MDAwYTYwYWEzNGUwZTVkNTI4NjdlZjJhZjlmNDY3ZTg1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2MyOTVmNTY4OTZjMjIzOWViY2ZkOTAyMGFkNTM0NzdkNzgzMzY2Y2ZlOGMxNzI4YTVlOGU2ZmFiZDE1MzFlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWY4NjExM2Y5NjAyY2FlYjFhOTM1ODdlYzNjMTFiMWRkNjE3ZjdiMzNhYzhiYzkzZDNkODJlYjNmMDNmOGY1OSJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L36-L42",
+          "version": "repo-lines-v1:sha256:154766ddc910ec2bef8e5ca23c54d8fb74530f05165731e067b719295937f578:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFkNmY3YWFlMmQ2MDU4MmM2NjViOGVjYTc0MzRkNjY0NTg1NjFmYjMzNWI4YzdhMzEzYWI2MGFmMDZiMTJiYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzOWUwMjJlMGQ4NTQxMjAwMDNkNzkwYzI4Yjc1OTYyZWRkMzAzNzU2ZDUxMzMzZGY3NDVjZmI4NmVhMTFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ5MTQ0YzQ1NTBiMjJmN2VlMDkzNjlkMThlMjQxYTc1ODliZjQwMmNmOWQxOTUwZWU1MGU3NDg2NDY1ZTFiZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Q0MzFjNzg4YjRkYTI0YTk2Y2I4YjE4YTJkYWEyN2MwMjM5MDNiNWI5ZGMwNTdhMGZlZGQ4ZDZiMTFlMzVkOSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_bdb192e1556646709478c10cf21f8b80",
+      "statement": "An FAQ hit returns the stored answer verbatim and does not call the model. A miss or disabled entry falls through to knowledge search instead of failing the turn.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L145-L166",
+          "version": "repo-lines-v1:sha256:ba332d4128910f6a0170aba08a1070c0c8acd571a4f13b30bcc375d90519c74d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1MWEwOGY4OGYwMzM1YmQxNTk3ZDJjN2Q4M2M2MjRhN2I5MDIwOTU1ZDZhYjk5ZDQ4NWYyMzE4YWQzZTk5ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjZjhlNmYwMDQzZTdjZTEyNjQxYmVhYzM0YTYxNGUxMjYyNGFhNGJkY2Y2YTdlNjRhNzM2NDcxNDNjZjJiN2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NzU4ZjNkNjg2OTdlNWQ0OWNjNGQzYjRkNDI4NDczNjRhOTZjNDhhZjY3YmEzOTNjNzI1ZDRiN2M4MjAyN2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMjRjZmNiMjhiN2VjOGFjOGI5YzdiM2RmNzNiZGRjZGZkY2ZlODAzYjY0NGJlYzZiMDFhMGY3NTdmOGY0MTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_342028870d524c2d848d095a41c63b7a",
+      "statement": "NEED_MORE_INFO returns questions and does not search. A TICKET route without a deterministic CREATE or QUERY intent does not call the ticket API.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L138-L191",
+          "version": "repo-lines-v1:sha256:9f227ffc4b6054029f3ef7c7b8a635dbb39e27fa547b4748fe7682f0103d943e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YWM2NWM3YjJmMGMzMTc0MzY1NmVjNDQ5ODdhYmViYmFjNWNmM2JjM2FlZDgwYjk3NDA1ZmJkMGRhNDgyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNDUzYjI4OWU1MDhhZWE0MDJkMjA4NjM2ZDcxMzc0MWRkYTIxYzQyMjVmODMxYjVlZjIwNjI2YzkzNTkzYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZWY0NWUzM2FjNWI1MmFiNjRjMGY0ZGZlZjlhODBiMGM1NWIyNmI0YWEwMTRkMjIwMzQ0OTgyNDczN2Q1NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5ZTFiMzEwZjg5ZDE2YWIwNzhiZjFiY2MyNDk0OWFlNDA1ZWI2M2VhMjg4OWMzZTM1YWY0M2JmM2U2YTFjMGMifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

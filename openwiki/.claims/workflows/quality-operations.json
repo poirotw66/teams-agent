@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:cd5cf9025a66b355797a34cff847833818bf4b159ea255f6e8957a326c9f4788",
+  "claims": [
+    {
+      "id": "claim_8e750834e59b450fb38141dfb18263e3",
+      "statement": "Quality case transitions are closed. RESOLVED, WONT_FIX, and DUPLICATE are terminal. Linking an FAQ from IN_PROGRESS or WAITING_REVIEW moves the case to OBSERVING, and observation metrics require OBSERVING.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/service.py#L494-L542",
+          "version": "repo-lines-v1:sha256:1b1be53b8581410f37d2ed42be37ea1ece5d743cb6a1ff462c60a16cd166b8bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjM2EyYzE2YTRjYmRmY2E4MTMxN2VhOWEyYTg2MDA5NzRhMjc0NGFmZDEyNmFjNDhiYzliM2YzZTBjMzdmNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMjAxODk4MjE0YmE1NDZhMjRiZGIyMGUwNGJiODMxYjYxZmQxMDM1NTliODVkYTJkYjVkMTRkMzljNWY1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwZjFjNzExOTg5ZmQ5YTliOTk1Y2FjMzlkZTFmNWU0OTc3NmUxY2NmOWE5MjRjM2QzMmY1ZWE4NGFiOWQ5ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyNThlMzE1YTlmYmQ4ODMwNTBjYTg4NmE0YjFjODlkODEyMzY1ZjM3NTQ3NjgyNTNiZjE3M2JmMTBmMzZjNzQifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/service.py#L70-L78",
+          "version": "repo-lines-v1:sha256:374e96261cdba4ca76a4c2732f9b95fe202f39f0244b951975baa3deb9a34347:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2VkY2RlOWUxZTI3ZmMxZjY5Y2QyMTk1MzQ4ZGEwODYwZThjYWRmNDkyMGUwNTQwMTQ3ODk4ODZkMzRjNzdjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTgzNTdjOTZkOTU5YWZjMWZkZDJiNGVkMzQwMzViOWIyYzJkNjE0MjgyYzk5M2RiYzFhMDk3OWRmZWQ1M2NmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjBhOWJiZjkzODE4MzAxY2QyYmE0YTczYmM2ZWFhOWMwMmU3NjZhOGNjNWQwNjIxMjY5ZTYzNWM2MjgxYjNmMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDk2NWJmNzdjNmIzNzVmN2UxNzAzNjQxZDU1NDNhYzM4MDVjNDBjNDQyM2Y0MGFjMzEzOWFlNjVlYTAwOGUzMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1fe1951f553f4c828bc56a21652ab5b7",
+      "statement": "A gate blocks activation when the manifest hash mismatches, the set version is not required, the run has no summary, coverage or pass rate is below the policy, a zero-tolerance policy has a critical failure, or regressions exceed the maximum.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_evaluator.py#L23-L71",
+          "version": "repo-lines-v1:sha256:1e22327209e34b5b15391dcff642ed5c919722eab49eb98315f105426d60a30c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNTM2NjQ2ZmI3ZWJlMzVkNjE2M2UxNjExMzZiMjUwZWJkNDQ3NjMyYWY2MzI2MmYxMDFiOGM3YWI5Mzg3MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MzA2MGI5NDdjYTI2ZGJkMmU0MzU3OWRhY2E0YzA0NzAyNmJiMDg5NmJjYmIzZjJjOWQ0MTJiNDAzZjk3N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiYmE1M2RhOTY5ODdkNTNmZjY5NGUzZjE0MmY1YTMzYTQ2NTM5ODJhYTdhNDZiZDE3MzMwZmQ4NTNjZDA2YjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a210b305b76427a81ede98c45d5b59d",
+      "statement": "A missing release-gate checker allows activation for tests that do not wire the gate. When a checker is injected, ENFORCE mode fails closed.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/release_gate.py#L63-L80",
+          "version": "repo-lines-v1:sha256:1a153fccf986a46c764434ae8f39bd35e95e0aa8e3d3e6dc7c49987eb7cc0a54:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNmZkMGM3NmQ2ZTUzOTRlNjlmZTY4N2ZkM2U5OTZmMzZiNGZmMjVlZGMxN2MyOWI0NTE4ODgwYjA1OTViNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllYzk0OTUwZmIwY2E3NTVhYTdiOWNlZDg2OGZhMzdkZmEyMzNiNzk5OTcyMzM0NjhkNjY0ZjYzZDYxOTA5OWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4YTRhNThlZWFkY2QwY2UwZGJiMGRhNTEwNjc3YzE3YTliOTY0MGM1Zjc0NDJmMGJjMTE5NTFjYmYzZDY0OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNTMxYjkzMmFmODQ4ODZhY2Q0YzQyYWVmNjcxMWFmNDk4OGEzZWU4YTJmODc2YmMyMWNiZmU2MWVjNmI2OGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d92f7ea5deb14e1f88a16a6482fa52ba",
+      "statement": "Governance rejects prompt candidates and datasets that contain secret material or injection markers.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py#L229-L269",
+          "version": "repo-lines-v1:sha256:bc788a480df108e04ec73a75c1ce6dd612b9f7c44980faeb77bf869c11f4fd4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZjFlODI3ODljMDA3ZmFiODViNDYzNWMzYjQ2Y2QzMGFmMjRkZTA3ZTIxYzk1NTgxY2Y3NDBhYjFlMDhlMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMTZkOTkzZDQxZDQ0Y2I1ZGY5ODE1MzYyYTc2ZTA3ZjE0NjcxZjZiNzAxYzc5ZTkwYjA3ODQ4ZWI3NDQ5OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkOGQ2MGYwYjY1MzA0YmZjOGU1MGFhNWQ3OWVlYzEzNTNkYWY5NzdkNWE2NTNjZGIzNGMzZjI1NDZjNzRmYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZjczOWQ0YjY4NjkyOTQxY2E2MzI3ZDIxOGJlZDk2ODIzNGMzYWNmNWEyOGViOWJhODMxZDhiNGNlM2Q2OGUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

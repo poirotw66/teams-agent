@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:9a1432023d71f0cf5c2e762bcb807622d4979a11f273a425688eee47ebfa6c71",
+  "claims": [
+    {
+      "id": "claim_c1c39bbdf3264ebc8e85184650fa3496",
+      "statement": "A review can be decided only once. APPROVED sets the version and document to APPROVED. CHANGES_REQUESTED sets both to CHANGES_REQUESTED. Any other decision rejects the version and returns the document to DRAFT.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/services/review_service.py#L149-L187",
+          "version": "repo-lines-v1:sha256:68d0d7da3812d64420d0996322f80b3de8cda49446ff8c28313eba9f02e464c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5ODFlOTA0YjY2OTUzM2RkZGYyYzZmYTU2OGI1NGM1YmNjM2Q1NzYwMzM1MzM3OTgzZjFmYzViMzYzY2FjZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmQ2Yjc1ZmRmNjExMGYxMTY2ZmFhMjMyMDA4NzIwZmRjYjVkYzJkMmFlMmRmNDlmNDBjZTRhYTI1YzQ0MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlMWYxMmUwYzExYjdhNDUxODI1NGVkOWUxM2Q3Yjg5NzRhZWQ4NzgzY2YxMDFiNTg5ZWM3MGU0YjA1MzU0ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4ZmMwNjFkZTk0NWM5MTk4YWE0NGQ2YjY1MDY3ODhiZGUyZWI0MmUxMGU1YTc0ZjNiYTlhNmMyNGMxMTAzNWIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a7d6c59bb5fd491bb5f11e198a8c89e8",
+      "statement": "Only an APPROVED version can be published, and only by a publish role. Dual approval blocks the version creator from publishing their own content unless the actor is PLATFORM.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/services/release_service.py#L91-L106",
+          "version": "repo-lines-v1:sha256:784a5345f512bfa1648e0c5cb2d6e5868aa7e25f29a7685510e8706395be9ecb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwNjdkOTliNDY0ZTBmMjhmMDM3ODg5ZDBhMTZmZjI5NGM5M2MxNjExZDEwMTU2MmU5MDE4NjQwMTYzNTAzMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZTMyODdhZTRhNjljMTc4YjBkNDNiZDFjOWZlMTU3OTQyMWY1YjM5YWIyYzBlZjE2ZmU4NTU1YWJjZTVjZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMjYyN2QyNTE5MzY1ZDJiZGJmOWFmYzM4NmUxZTdjODBhODYxZjViMGRmMjFlMGZiMjQ2NWU0YzBhZDFlMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlOGU5ZGU2Y2ZiMzdmNjE3MmUyNTQ3NWU5OTIxZDVjNjZkY2QzNDYyNmVkMzlkMGJmMzZiZjE3YWQ1MzIxMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cad4304daa824c92939eea6dc44572a7",
+      "statement": "Publish holds a coordination lock, rebuilds the active published set, and activates a release artifact containing index/chunks.json before marking the document PUBLISHED.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/publisher.py#L41-L46",
+          "version": "repo-lines-v1:sha256:f76fc32a6edc0798f86c5f272b461cb750bea6f9c741c8a7674429f85e2e0df4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTY5YTg5NTMwNTBkM2E1NzdiZjRkOGQ1ODAxNjVkMDEwMmQzYTU1ZmY3MGM1OWQ3YzA1YzI1ZTAwZGJkZGIxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjZlNzdhNWRlY2U2MDI5YTk3ODAwNjU1MjY2NzJkOTg3MTA3ZDU1ZmMzNzI4MjkwNDk0NmE5YzQ0YTA2YWJiYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U0NjE3NjkxZWQ1Y2RkZmU5MDNjODUzNGE1YjgwMWFlZjJkMzAwYTQyODhkZTAzMjIxNDVkYzBjOTM1OGZjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmE5MjM4NWRiNTRmNWUyZDkzM2FjNTRlZjQ3NWY5ZDllYzJlNGViNzIxZDJhNmU0ZWJiNTNmYmVlMzBmNTA3ZiJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/publisher.py#L97-L100",
+          "version": "repo-lines-v1:sha256:89378e33ae961addf598e2dd6b6fee963eb3b00a55b6e220f35053a3bf573753:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI1N2EyYWVjNzA4MDgwYmZiMWUyMTE4NTBmYjhkNDZlMTg0MWQ3NGE5MmNjZWNiMzVjNjI4ZDQ4NzQzOTU2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjdlNTdjYmUxMjEyZmJkYjUzN2JiNDI3OGZiN2U2YjY4Yzc3MGVmY2I5MDM5ODdhNDczZDZlYzBjZmEyM2M1ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQzNzllY2ZhYTBjZjZjN2ViOGFiMGNjMzBhOTZjNzAwMWFkNDBlMzkyZWY4NjBhNjBjZTg5ODY1YTYyN2UzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmFhYTNhMGZkMDY5M2RjYjU5ZmUxODkzMGNlOWY2MDdjMzAwNDZhOWFhMDlkZjNhYWFlMzI4YzUwZjI3MzM1OCJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/services/release_service.py#L108-L132",
+          "version": "repo-lines-v1:sha256:fb269b378cff40ea26f6c7f90da872c69861f3744162b3c3cba53dc4c1cba841:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjZTYwNzhhYjViNDc3YTY0ZmYyZjdmZGQ0ODYzNDUzMzU1OGRiZTNkNjljZWUzN2JmMDczOTVhMDhkZTg3ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYWMzMDcyMjk1Y2EzMTkwZWU5MjMyNjc5YjgzY2NiMTI4MTI5NGZiZGM1OWMyZGMyMzEwZmIwMTRmNjU4MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczZjFlZGZjODM4ODdlM2M2ZWNmM2IzOTYzNTZjN2FhYjk4YmE2N2Y0NTEwOGNhOTRjMWU2ZmNkMWZlMjM4N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNWMwNTU4NGQxZTk4ZDQ0MmVhNTI1YmY0YjhiY2EyNDFiZjRhZmExM2ViYzIwMTI1YzE5NGE3NzlhYjg1YzQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e8d3915ec39546b4a4e7b280ba8b6b96",
+      "statement": "The console calls the portal with a signed delegation envelope. A missing secret, a bad signature, a bad issuer or audience, or an expired envelope is rejected.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/knowledge_bridge/delegation.py#L38-L109",
+          "version": "repo-lines-v1:sha256:8f3d76a26c8550329725c1a0235d5000110e506d6b943491f8d4eb00c1ca4f3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4OGM4ODZhNjU3MGZkNDFjOGY5NThlYTJhYTc1MjhmZjhkY2U0N2U5Nzk4ZGZlNThiMmM5ZGY2ZTVkYTY4MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWNhMzllMjk1MDMwMzQ1YjRmNDM1M2FjOWM1M2U3Y2VmMGY4M2NkM2M4NjQ4YjZlZjBkOGU3ZWIyYjcxOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiYThmMzFjNWFiNGQ0MzJhZTE5MWUyZDQyOWRjM2FiMjg2ZThjODk4NTAyNmQzOTBlZTE3NTFjZThhYzVmMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjNGFkYzc4ZjQ2MDdjZjY3M2VlYTFlZDhlNGY5NTJlMTAwNzE4MzlmYjE4ZDkxNmRiODczOTI5ZTAyY2ZkMTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_df2c4726f4f847aba4095c9925b5f597",
+      "statement": "Agent Service reloads the hybrid index when the active release pointer changes and the release index exists. A missing index leaves the previous index in place.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/deps.py#L36-L57",
+          "version": "repo-lines-v1:sha256:43d09ebdce208cfefdfcaa96ba2be19f9f40de57df86e4625f68cbd863ccb013:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0OWY3NTJmYTlmMmU2MWQ5ZWQ2M2VhMDcxZGZjMGEzNGRhOTY3ZmZhNmQzYzFlYjUzYjU2NzAwZWMwOGQwMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyM2UwN2JlMDYyMGYxMjg0MTgwOGU3Y2RmNTBhZDQxMjNhMDg3YjUyOTE4M2ZlOTdiZTNjMWQ1Yjk2ZWM3NjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhOWVhZjMyOWYzNzMzZWQ1MzFiN2Q1MTg1ZWUyZmVlMzFkY2I5NjQ4MmU4NDQ1YjMzMGNhNWQwZDcxYTAxNjQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

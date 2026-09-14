@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:9263697e9cff4cb5806441dda49121cab3581b723fa12d302ce204ee7f0acc89",
+  "claims": [
+    {
+      "id": "claim_4432edef5941441a8b38936fad3fc0c8",
+      "statement": "start.sh is the local composer. It starts the adapter in API mode against the local Agent Service and treats the console on 8092 as the operations entry.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L27-L28",
+          "version": "repo-lines-v1:sha256:4d702c6ed81e09834a8877c3311b958122555d13ad763d756302e8f2ebe5d07d:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNlZjlkNTBiMDFjNDIzMTNjODUzMjJhNjEwMmFlNzczMTNkMTc5MmJlNjNkMzlhZGIyMDUwZjRiMWNhMDI5NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTc2ZjI5NWExZDQ3ZmFhM2ViMGUyZjE2MzMyMzk3NGIzMzk1NjQ3YTNhNTZhMzZiNDlmYTJkYWEzOWE2MGEzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjIzOTAxYTI0NDg5OWVkYjZhZmRlMWMyNGIwNTEyYjcyMDQ1MjNiYTc2YzdmYzgzY2Q1ZTJmYzRlOWIzZjRmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmYyMjYyODIxNTY1MDE4YTZiNTk0MDhlYWJlODA2YTI4OGM0NDNiMWI0ZTg4MGUxODY3Mzk3Zjg1YzgxY2ZiYSJ9"
+        },
+        {
+          "resource": "repo://start.sh#L543-L552",
+          "version": "repo-lines-v1:sha256:95da927fb4863175577320a0a6745ad1691ea34d8fab128339cf8cb47f54cbfb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NDg2ZWUwNDljNTdhMWMwZTYyMzc0NjNiZDhmNmY1OWFkYTNhZTFmYjk3OWU5NTA2MzYxNWEwMGU4NWU2YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1ZWQ3YjliMWMzMjQzN2QyYzg3ZTAyOTdmMDEzYmI1ZWZkNjFjNmI2YmIzMjg1ZTBkOTNkOGE4NGExZTAxMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2OTEyMWQxNDBjMGJkYmJmZTRhOWFhNTU4M2Q4ZTdiMzkzZjlmYTZlMDNjN2IzYzdlZjkwMjdiMDcxMTRmNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1ODBhMmY3YmNiYjRmNWY4MjA2Y2VlNWY0NWNmZDVmZTMzOGY0MjMxMmFhOGM1ZjUxOTNlYTkzMDE4Y2RhYWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3567638b91d740f3b2d2490ee1c9ecdf",
+      "statement": "The adapter process defaults to port 3978 and echo mode unless PORT and AGENT_MODE are set.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/main.py#L16-L22",
+          "version": "repo-lines-v1:sha256:560dca99c43776054cb3b3ddb3d51ae039224d7a540a8a1a5d5c43106c88cec1:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ4M2VmYWQ3NGI4OTliMTJjZmRmMDUwYjgyMDAwZTQ2MzQ2NDkwNWUxN2IwYzJkMjEzNGI5MDRhMDY4NTYwNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDY0ZTU0MmEzODM4OTY4ZmE2ZmVlOTAyYWQwOWUwMDlkZDBiMzQ4ZThkZDc3YWRlNmY1NTg5YmZiNTYzYTFmOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI5NzRkYTQwODYzMmE0YWE3ZTJhZTgwYjg2MDM5MWEzZGNkODIxMWM3OWVjYWQ3Y2E4ZTk1MTI4YjAwMTgzMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmUwZGQ4NzIyYjliMDQ3YmU4Mjg3MDRjMmI2YTljNjEwZWIwYTRkN2IzYWMwNjIyZTdjOTMzYTJiOTBjODM5NSJ9"
+        },
+        {
+          "resource": "repo://src/teams_agent/settings.py#L56-L57",
+          "version": "repo-lines-v1:sha256:ab32a10bb547d14095b11e72396ca6cd456168aac2a1f899bf63493c55f42551:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDgxMzEzYWM4YTcyMjEwOTdmOGNkNmRjZGE2NjIyZTI5ZGZjZjkwOWVkMzdlNGEyNGYyN2FiYzAxZTI1YTU2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTlkMGY1MWU2YzBkMjVhMTFiMzRiYzUxMzkwYmQyNGEwNDUzZWRlMzJhZjkyMmUzMmE5MjcyNWJmN2UxMDdiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWU5OTVlYTgwZGQ5MjQyNzc2NWFhNWUzYzFjZjYxZTU0NDk5NzcxNmE5ZmRhZmQyYjk0OTUzNDk4MjcxZGZhNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDI2Yzg4ZjJhOTU4YjFhZGVhMjc2ODdhYTY0N2NhMTFjNDA0MTgwM2UwOGNlY2E3NjM2YjU1YmE1MTI2Y2M2OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3d2ce9f5f14246c5b4c9c50577910592",
+      "statement": "The production turn is one LangGraph invocation that loads conversation state at the start and saves it at the end. It does not resume a mid-turn checkpointer by default.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L63-L73",
+          "version": "repo-lines-v1:sha256:096610e7e814572eeea3a94ea000e3a699cddc000983824dabb3d76373a77c08:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMTFmY2U2NzU3NzcyMWUxNjUwOWZjN2ViM2QwNTk1YWNlYjAzODRhYTUwOTE4YWZkZjUxYmRlNzFkZjk0MWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMWJkODhkODUzYTIyNzYwY2RjMWY1MTc4NzU5MDkwZGZjNTE0YzM3YTIwNjkwNmRmMTNhZTBjYTNlYWVjOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNhYTg4ODYyMjY4NzVmNGZjZDdiMmE3ZTZlYmYyNDMxZDkyZTZiZjhjYWJhZDk5MWNmMTE5NjQ2ODI0Zjc4NWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiMDU4Y2YzMTg3OGU0ZDc1MzdiNWI5YTE3NGFkZTk5ODA1MzVmMzI0M2M5Y2M1N2I1OTE4ZDYzZGFkOTU0YTIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

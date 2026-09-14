@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:7eb401f3af7abb8e34f6a63dc805cf05880f3c5ec9b5b024432d13434f965d5b",
+  "claims": [
+    {
+      "id": "claim_18384fd4c323424599e63f83b09edea3",
+      "statement": "start.sh refuses to launch unless uv, lsof, curl, awk, and ps exist, and both the repo .env and agent_service/.env are present.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L334-L343",
+          "version": "repo-lines-v1:sha256:9ff82314586a193763fd8ece5761d9224f60781ba5f31b4f278747a45812cf32:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlYjBhMTRkZDc4MGNmOTVhMGFiNjJlZWZjYTE2MmUzNjRiODlkMzFkMDRhYjNlOTgxZDE3NDc2NDU1YTAxNGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjM2E3NTYyMmFiOGZmOGRmZGNkMDdkZjBkYzE0MWNhOWFhOTQ5YThhMGIzNWMxZjEzZjllYWE0OWU4Y2IzMjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1NGZmYTE2ZTZkMWVkNzU3NTMwOTkyYjVjOThjNGZiZmRkOWI2MGNkMjFhYmMyYTMyMjgxNWYzYjBiZWYyMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkMDg2MTA5MTAzMWRlNmIyOTY1Y2FiMTJlMzRhZjVlZDQ2YjM5NGVjNmZhNWJkOTBlMTQ1NTQyZTkxODkyNTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c8eb1f0ebc064bec94f1449090e18cb9",
+      "statement": "A local start requires a knowledge corpus at RAG_SOURCES_DIR, default data/sources. A missing directory fails the start.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L348-L352",
+          "version": "repo-lines-v1:sha256:3d28356e4ec90f24b4dfc96cb1495c7f3f77fe940bf96f9417c856a49a93b29f:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWY4ZTY0MTRhM2Q4OTg1MThmMDc2MjUzMDMwMTQ2MGI5NGY1ZWI1M2Q3OTEzNjA2NjFhMDEwMzljMGU1OWQxMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzc2OWQyMzdjZDQyMGI5ZDM4Yjk4MWEwYTRmNjc3MDE5MGE0YTgzZGNhMWZlNTZjNGY1YmExZTJjYmMwZWY3NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmFhOTgzMjQ2MTM1MmVkZWViNGEzMzQ0ZWU1YTI3MGU0NTQ0MjkyNTBiYmQ4NWIwYjJhN2RiNTI5MzVmOTgwZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTk4MGMwYWU4MThjNTMwNzMyNmU1ZGRhZDQ5MDBhODVjYjU0ZDFhOTNmNTZjNzE2Y2I4M2M0MTU4M2I0NDQ2OSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_20f52a227a62423694be626e3b5f58eb",
+      "statement": "start.sh starts the adapter in AGENT_MODE=api against the local Agent Service /agent/chat endpoint. The adapter binary defaults to echo.",
+      "evidence": [
+        {
+          "resource": "repo://.env.example#L39-L42",
+          "version": "repo-lines-v1:sha256:baefc3bceda34dab2c45c3eb2f8b4f23a2d81f8652fb8d43168fec0ce52e42d7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU5ZjVlZDNmOTU0YWFjMWE0MTZhMmQ4YTU4MDFmNTZmNTdlM2Q3ZDUyMDZkOTllZmRkMWQyOTRkY2E3MWVjNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTU2YjgyYjEwNTJhMTFkODM4ZDQ5OTY4MzExZmUwM2M2ODE0MWY0YzhjZmEyNjJhMDg4MGM2NDIzODVmZWY3OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGU1NjA0OGExZDVlNWQ1MzQxZmQ5ZGM5MjU1MWNkNDUyMjAwYjljMjFmZjc0NzM2NWMzMTRiNTFmYTMyNGEwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTk3ZTU0ODIzYjAxNGI1NmExZTRiYmI5YzcxNjNlZWIzOGY1Y2E2YmM2YTIwMWI1ZmU1MDk4MmJiNTVmYTJjZiJ9"
+        },
+        {
+          "resource": "repo://start.sh#L543-L552",
+          "version": "repo-lines-v1:sha256:95da927fb4863175577320a0a6745ad1691ea34d8fab128339cf8cb47f54cbfb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NDg2ZWUwNDljNTdhMWMwZTYyMzc0NjNiZDhmNmY1OWFkYTNhZTFmYjk3OWU5NTA2MzYxNWEwMGU4NWU2YzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1ZWQ3YjliMWMzMjQzN2QyYzg3ZTAyOTdmMDEzYmI1ZWZkNjFjNmI2YmIzMjg1ZTBkOTNkOGE4NGExZTAxMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2OTEyMWQxNDBjMGJkYmJmZTRhOWFhNTU4M2Q4ZTdiMzkzZjlmYTZlMDNjN2IzYzdlZjkwMjdiMDcxMTRmNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1ODBhMmY3YmNiYjRmNWY4MjA2Y2VlNWY0NWNmZDVmZTMzOGY0MjMxMmFhOGM1ZjUxOTNlYTkzMDE4Y2RhYWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c4bcf00fae5b4191b2a4c72c9935ad56",
+      "statement": "The local console is forced to HEADER auth and OPS_STORE_MODE=FILE. That is the local integration shape, not the Cloud Run contract.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L519-L537",
+          "version": "repo-lines-v1:sha256:7e5b712f76295a9b362bfd9cd8673c2bea9da75395133483beac3a4e5c1f7c52:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MWE4NTVmMWIxZGY3NTg0M2I5NTgyYTJhYjYyNTdlYjIzNWUzMzk0ZWY3ZDA3MTUxYzYyMDhmZjQ5OGY2ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNDgyZjgxNGEzNDRmZTk1NTNiNTY2YTdiMjYwNWM3ZTY5ZmE5MTdlYWJmODUwMzlmOTA4NmE1ODY2NjVmOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzYjViYjRmNGUxN2E4ZDFkYjFmNGJmNDliOTdjNjRiNGZlMDQ3ZmNjN2FhODE0MjIyNzE3YmFiMWUzOTBiZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiZjY2ZGZkZjU5N2NlNjBmOTNhMGU5MzVmYWM3NTkzYTM3ZjU4N2U5OWRlYTVkNzg2ZDAyNmZhMmExOGFhYjIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3f813f64e69645ed86dc141b38292f46",
+      "statement": "The script treats Agent /readyz and Adapter /readyz as the readiness gates. Playground login must use 127.0.0.1:3979, not the internal port or localhost.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L436-L436",
+          "version": "repo-lines-v1:sha256:471ed7880bc08c9a1a291a54245110331279df881aff0e1865391041ab39361f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcxZWQ3ODgwYmMwOGM5YTFhMjkxYTU0MjQ1MTEwMzMxMjc5ZGY4ODFhZmYwZTE4NjUzOTEwNDFhYjM5MzYxZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcxZWQ3ODgwYmMwOGM5YTFhMjkxYTU0MjQ1MTEwMzMxMjc5ZGY4ODFhZmYwZTE4NjUzOTEwNDFhYjM5MzYxZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2UxODQ5MWMwYTlhMWMwZThlZTE5N2FjY2Y2ZTk2Yzg2YjI4YmZhMjY5YmU4ODM5NmM1NjJjODkxMTc5NGFjNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTUwMDgzZjM2MTBjMzdhZDRiN2FmMmMwZjFlNTE0Mzc3MmU2OWRjNTU1Zjk3ZGUxNWQwNjYzNjE3YTFkMjZiYiJ9"
+        },
+        {
+          "resource": "repo://start.sh#L554-L554",
+          "version": "repo-lines-v1:sha256:9dcbfe72111e0d4dd710f07fd1f67b48808816fa9111f1dc7e653049f3dc453f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWRjYmZlNzIxMTFlMGQ0ZGQ3MTBmMDdmZDFmNjdiNDg4MDg4MTZmYTkxMTFmMWRjN2U2NTMwNDlmM2RjNDUzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWRjYmZlNzIxMTFlMGQ0ZGQ3MTBmMDdmZDFmNjdiNDg4MDg4MTZmYTkxMTFmMWRjN2U2NTMwNDlmM2RjNDUzZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTBjYWFlMmZlZWM1ODBjM2I3NTllOGFkODhmOTNhNDhkN2EzMmFhZGIzNDI4OGVkYzNlODg3YzczMDZiZGY0ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGUyNTk5NmEzNjU2YjQ4NWU2MzVlZmY1NWNlZDI0OTAzNzVlNDMxYTIzM2QzOWZmYTg3MzNkZjM2NTdiMmFhMiJ9"
+        },
+        {
+          "resource": "repo://start.sh#L583-L585",
+          "version": "repo-lines-v1:sha256:1d11da8b04dbb940f1bbb8f1dc793f0243db43bd1effe23870dfb6f6e8e65f38:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTVjMjE5NmM1NGUyMzc0MjczY2Q3YWI2YmMwZmM1YjQ4ZjNlMDNmNmI2MjM3MTc0NmEwZmRjYjlhMDRiOTFhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmRkNWIxNzNlM2RhNDk1YjJiYzkzMDRiNGU5NDU1ZDhlZGJkNTU1M2JjODEzMTYxZjk2MzM2NmFmYzhkNDU2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjEwZTU4ZDY0NjEzYTlhZTk5ZDNiZDkzZmE5YWRmYjhkMDBmZjEwNDM2NzQxOWQxZTljNDIzM2NlZmVjZjIxNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDVlZmQ4YjRhNWUzYThmYjk5MDk3NTkxZmZlOGM4ZGE0MDhkMmFkMjc2NzA2NWYxZmRkNWVmZGU2ZjQ2NGQxZiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

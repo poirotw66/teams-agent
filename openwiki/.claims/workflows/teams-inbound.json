@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:558d32ab6cab3e52d511e0cc475501d55ee974032990e38782713052a2865541",
+  "claims": [
+    {
+      "id": "claim_f07b07048a4a407fadb4d452ddf13275",
+      "statement": "The Teams SDK owns POST /api/messages and guards it with Bot Framework JWT validation. Other adapter routes share that FastAPI app but are not the messaging path.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/server.py#L1-L16",
+          "version": "repo-lines-v1:sha256:c117f01d3c59d8c58b4f598d6e6481e97e2709e5204e44be2dd3944a67f68f2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4YWZkNTRmOGJjNDgxYTQ2NWJkZmU4MThiY2Y0NDE0M2I0Nzc3YmVmZGYxZjJhOGMzZDA1ODE5NTAxZGUyN2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNGZlNTNkNmM2MGJmNTk1MDcwOGY3YTQ3ZWNmY2IzOTU4MzBhMjdhMjU3MzNjY2I3NTBkZjdmYTMyZWIzNjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFhYWY3NjM3Y2I2ZTdlNWRiODVkNjM0Mjc0NjAxNGRmMDQxY2NkNTU4YTkyMGIyOWViNmFjNzE5ZDdiYWY1YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5d3a2c01980c4766b071660873fb2283",
+      "statement": "A handler exception still sends the user a reply with a correlation id and no stack trace. The SDK does not send that reply itself.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/agent.py#L146-L172",
+          "version": "repo-lines-v1:sha256:a9bbf932ec21e7dce337d385371220a87f1d243e3b75d59d4e467db55dced740:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3YzJkMTczZjVkNjEyMDc0MGY4M2ZmMTAxY2I4MzFhZGI4Y2ViMWNiNGNlOTFjZmIzMTJjOWM3OWNkZmU4N2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1MjE0MDM3YzNlMTczMTQzZjExNzllZGI1MDI1MjQyZTAwYzAxODUwZGQ1ZWUxNTBjOWEwZjVhNzYzYmY0OGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlYTIyOTI4NGIyYTIwZThlM2ZlN2U0ZjExYzVlNDBjMTEyOTgyMzQxMzNhYjRkZWRkODAwNWM2MzY0ZDg5MjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhNjA2MWFhMWNjMzMxM2Q2MzBlNWJkNzhlYmY5MjJkMzk1YTc5NmVjNDcwMzBjYjdiMjgyN2U4OWJjNzg1ZDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_24001c00bcff47de9aaac4d9bf00e3e6",
+      "statement": "A user turn generates one correlation id used as both requestId and correlationId. Feedback submits are recognized by a marker and do not start a new issue turn.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/agent.py#L182-L214",
+          "version": "repo-lines-v1:sha256:dd4b26d34c909d4747ea21f2b2bdb86dddb3da76488624bea58f45af28be28b0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmZWUxNTJjMTQyNjFlMzEwNmFiNjI5OTQzOWY3OTI2MTBlNDU2OTYyMzk4YjNjMzhiNzdjMmZhYjUwZDZlYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzMDJlYmUwNjNiZGFlZGYzMmQ0MGIyMTg3NThmMGExZGU1YzZiNWU0YWVkNWE2ZGNhOTFkMzg3YTcyZjlkZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUzNjgzZTlkNzA0ZGE3ZmMzOTg1NDk3NTNlOGFkNDY1ZjdjZWZjMDQwMzM5OGIzMjk5ZmQwODU1NTQ0Njc5NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzMGU3MjNlZjk5MTY0MDRlZDdhNjk0MDQxMmM2ZTNhM2JlMGRhNTE4Mjg0YmYwZDJmMzcwMDFmMmRjM2IzMWIifQ"
+        },
+        {
+          "resource": "repo://src/teams_agent/settings.py#L280-L285",
+          "version": "repo-lines-v1:sha256:4ebe695014107b63ba9c7e361be1fb510186cdd8b24bec581d5a5ef8ee6e3855:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWUyNTczY2UzNDQ2NGQxMDYwZTA5NTAxZDA1OWNmYmQwNDAyNjg3ODUyMTQyMmJhY2NhM2JlY2EwNmM1ODA4ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWY2YzA0OWVkMWFhMzBiZDM4NGQ1Y2I2ODlmMTM2ZTMyYzIyMTlkYmJhNGU2YzJkYmE3NTBiZWE1OGM0NDZmOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWQ2MWZlODA3YTVkNGFkOWViNWU0NWM0MGNmY2IzOTk2ZjlkYzMzMzdkNjIyNTExMjMyZGNkYTI5NjZlM2ZmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjAxMDdiODAwNzFiZDgzMTc1MWYxNzBkYTM2Zjk5YTM1M2QzMTBiYzIwZTE4ODQ2NWZiZjg4YzEzYWEyNDFiYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_84c392e13a324df7909ba29d19c4be30",
+      "statement": "Cited images are served from signed, expiring /rag-assets URLs because the Teams client fetches them without a bearer token.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/server.py#L10-L14",
+          "version": "repo-lines-v1:sha256:901b664c171ab0a34a8c96eb8bfd25ae4d1c5f383ff0070022f2bce981ec55e2:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjYzNGRkMDJlNzUxMmFjZDA3MGZmYmQ0OGQ4YzgzMWE1NDlmM2U4YmQyMGY2NmU2N2M2NzcxZjI2ZjRiZjE5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmJhZTNlZDYzMmVhYzRkNWI5MmQ4ZDhhZjA3NmQ1YTNjZTkyNjA1N2I5NTg1OTMxYTQ5M2JiZDRkMGFhZGVkYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI2MWFmNDg4NzM0ODI1M2VmYmUwYmQ0MzRiZTFjZDA2NWE5MWVhZWU2NGU5NDgyYzc1NjNlYjA4OTFhOThhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2IyZWU3NzZkNjc2OTg4MzhmNWIwODZlZmUyZTg2NGI0Zjc2YWQwY2YyMWJkNTM2M2M4NmVjYTU2OTQxNjdiMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_17fd54e8124f46ba9f2e19ed18ae1daa",
+      "statement": "Feedback buttons are added only when the agent enabled feedback, a conversation id exists, and the issue result is feedback-eligible.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/cards.py#L140-L150",
+          "version": "repo-lines-v1:sha256:e37c84b8d0cb955323d1f248e4ce34551bcc84c96d06b9366d76d6ad8007af43:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ZDE1ZDQ3Y2Y4NGRiN2VhNTQ1OGYyMTI4YjYzN2U1Y2RmNGZkN2E0ZTE5MzM1ZGE2Y2Y3ZmEzOTFjNGY5M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjZGQ0NjE2ZTZmMTQ5OWRkY2VmNTE4MGIzMWZjZDU2Zjc3YjVhNWRjZTUwODY1MGJhZDk2OTFmNDYzNzJkMTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiOTc0ZGE0MDg2MzJhNGFhN2UyYWU4MGI4NjAzOTFhM2RjZDgyMTFjNzllY2FkN2NhOGU5NTEyOGIwMDE4MzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE4ZTE0Mzg0MDA4NDUxZWUyY2E0MDlkMDQwOTgwOGFkMmMxNTMwY2IzNTY4MDFlOTY2N2JhNWY2YzYzZGRkNjQifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

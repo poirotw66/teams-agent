@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:e421544066440ea6c5083052aabfd023e7dcc610c3ed6bba6ebda440f68f8599",
+  "claims": [
+    {
+      "id": "claim_7ffdad6ab72f451ca0d27a0b8ec1ee8f",
+      "statement": "The Teams bot is registered in the Teams Developer Portal against an Entra app registration. Azure Bot Service is not used because there is no Azure subscription. Required credential names are CLIENT_ID, CLIENT_SECRET, and TENANT_ID.",
+      "evidence": [
+        {
+          "resource": "repo://docs/teams-app-setup.md#L12-L17",
+          "version": "repo-lines-v1:sha256:6f57576784ab8720fdc411de9b36dde1531444e2d835cec53e04d9fb1ed70f47:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2FmZDA4Y2U0OGZiYzg1YzQ4ZDViZWViMDY3MDdlYTc0NjgxNmRiNmQyODU3MTZiMzNhYTEwNDI2MTJmMDM2YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWJjNTQxZjYwY2RmNGQ5NWI4Zjk2M2FlZmYwNGYyYTQ3ZDkwNDlmYjI3OTdiY2JkZjExNTBmYzI0NDJjMDZjMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTI3ODQxMjNlN2QzNGU1YzRlNjNkNzM3MjU1MjJhYjZkYmIzYTAzYWRkMjY1MzRmMzg5ZTRmMTYwOTdjOTgwNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTEyYWI3ZTE3N2RkNTAwYWM0YjA4OGM4YmI3MTMwYTczYzlkNDNlMDg3NTA1MzA2MmQ3ZDFlZTg2MTNhYjQ0OCJ9"
+        },
+        {
+          "resource": "repo://docs/teams-app-setup.md#L37-L47",
+          "version": "repo-lines-v1:sha256:871b59ac6f68399065f8c5908060bb74e2112bd79314222bfdb05e528983e408:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4YzczZWEyZTE1ZGE0YzAzOWVhOGE1ZjE2YWZjOTY2OGI0ZjU1Mzc2MTMzNTYzOTIzMjQ2ZDc4YTYxYzM1ZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxOGFmOTFhMWU0MmE0Y2MxZThjNjczYTQwODcyNTg0MGU2YzcyY2FkNWJjYTY2Zjg1ODNjODg4NDgyYzhhMmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0Mjc0Y2E5ZWJlNzJkMDQzYjM1MTJmYzBkYzhmMjZmY2E2ZTQzNzlkOTYwODk2MzMwYjY0YmE0NTM4Y2UyOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiODBkYjQ4Zjg1MWJjYjdkM2Q4MjY3MGI3YTY3YzhlNzgzYTNjYmU4NDdhY2M2NmQ1NjQ3Mzg1OTdjYWUxMDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e12a55b12d9470abccdac78fbe8240f",
+      "statement": "Inbound activity JWT mode is botframework, entra, or both. entra replaces the SDK validator; both keeps Bot Framework and falls back to Entra. Readiness reports teamsAuth from whether app credentials are present.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/server.py#L104-L127",
+          "version": "repo-lines-v1:sha256:d122003c086e0584329d6476f48b5d3367058565297fe80bda101db118a648ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMTNjZjk3ZDI1MjU4M2MyZmY1MThhODdmNDMyODM2Y2FjYjBlNzM2M2RkYTc3ZmYzZjkyOGUwYjkxNjliMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiMTMzMDZkNDU4ZWYwZGE2YzIzN2RhNGQzYjNiODBjMDQ5MWM1N2E0ZjU3MjQxZWJmZDcyZDI1ODhmNmI0OGQifQ"
+        },
+        {
+          "resource": "repo://src/teams_agent/server.py#L130-L142",
+          "version": "repo-lines-v1:sha256:e020de924cdb764ac25ef9c36c4f35fe4ac7889a39941d584f24a5b89d982034:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxODNjNTU4NWVhNTg4ZTJkOWM0MTBmYjU5NmU3MWMxY2QyOWNiNTIxNzFmNjczYTFmMjI4MWM5OWUxNWQ2NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwNmQ3NDhkNTJlNTBhZDVkZjk2NTIxMTZmOTZkODIxYzMxM2RjM2JjYzFhY2MxYTcwNjVmYWU4NGRhOTE4YTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_aed5bbd57cf14c2a91381c0efe5ca554",
+      "statement": "Console ENTRA auth requires a bearer token validated for tenant, client audience, and issuer. Actor id is oid or sub. Signature validation cannot be disabled outside dev, test, and poc.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L46-L75",
+          "version": "repo-lines-v1:sha256:0c0a765d5032655c181866ca0bb64bb86c15f11612e8535d83cd40ba1267514c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNmM4ZmU4YTg0NzBjN2ViNjE0Y2IxYzFjYWMzYzQzYjk0ZWNkMWQ5YjE3YmRkODU3MDE0MTdhMzJiNGQyNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MTg5NzYzM2YxNzY3NzkzODZkOGZhOTU4NjY1M2Q3OWJlYzZiYTVjMjZhNzE0ZDRhNDMwMzY3YjUxOGFjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNGM2OTMzMTc3YzhhMTg1ZmNkNzA0MzEyYjdhZmU2NTFkYTJjZjU0NmJjNzE5OTkyMGZlMmQ2NWFiZDMyNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NWU5MjBjNzc5YTVkNzY1ZmJlYzNjOGM5NmI1Njk0N2JmYmJmODE3YmUyN2RlMTk4YjI1YTA2YTkwOTUwYWQifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/entra_auth.py#L116-L155",
+          "version": "repo-lines-v1:sha256:76e98c28b459f1c5dc880c6131e69454381465e9138a41010f1228ba2d712b36:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MmNhY2M2ZDkwZWQ2YTM0YjZmN2RlOGEwOGExMDU0MDU1MTA1MDZiZTFiYWU5MDY4OGJkMWFhODhiNjVmOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZGViYzc0YjRjYmQ2YjZkY2VkMDZkZWNmODIxNDY4YTIyNmU4NGY0OTVmNDU4MmZmODc2ODI4ZmM1ZGMzMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZWVkMTE3YjJhM2ZiY2ZlNWVjOGUzMmJjOTVmNWVjZWE2MjM3MzkzNDUxMjFlMDM1YjE5MGMxMmM4M2JhZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4NzE4NzIwZDFlMzI0MzNkYTEzZDBmZjE5ZmZiY2VmNTIwMWU1ZWM4MmUwMmM0YzM5N2ZkYWUzZjM0NDNkOWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b4bc8489cd324ad9b4eff6bc181d2400",
+      "statement": "Header auth is a local shortcut. Outside dev and test it fails closed and requires ENTRA auth.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L77-L79",
+          "version": "repo-lines-v1:sha256:a1f3d27f9a3cd04db014c817df3ba387b9065b29525a0f2ff1e55cad3a2b5be5:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODdkMWEzMDRjMjBhN2EzMmU4YzE5MDRhMTUyMjZlZDQ2MGZhODQ2NWI4MjRlYmMzY2EzMzJmZmU3ZjNjODQ2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWZmZWY0M2RiMWNmZTg0NjBlMjJlNWRiYWU3ZDcyYzY2NTMxY2M3NWNlOTFkZmRjNmIxZGQ0M2Y4Y2U5NTgzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjk4ZmY4MjBlYjMwMjI2ZmJkMWIyZTIzMDIyMzlhOWE3MjFkMTAyNzM3ZDEzMTE0MDVlODYzNWRkYmY2MWJmMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjQzYWRjNTgxOTMzYzJiOWY5YTM4ZTc5YmVjODIzYjM1ZDU2OWE4N2VhYTRmMDgwNzg4OGIyY2E2YzFjYTQ0MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1dbf2eb354e54cf4b9f5742a2c5b501b",
+      "statement": "Portal review requires REVIEWER, MANAGER, or PLATFORM. Publish requires MANAGER or PLATFORM. A reviewer or manager cannot approve their own submission unless the workflow is relaxed or the actor is PLATFORM. AUDITOR is read-only.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L100-L116",
+          "version": "repo-lines-v1:sha256:0fadb2450fcd4abc802589ad87007d8b1e317149e6985de5098e0e805b7eaf4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYzk4N2NhMDkzN2RmOTE2YzYyNGRkMmQxY2U3Mjg3Zjk2MWUzZjc3MDFjZmMyNTk0YjJjZWM2NjU5ODg4YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTZjOTBhNGEyMTYyODIyNDYyZGVkMjQ0NmQ1NTU1NGJlMjc4MmVkODA1YzMxM2E5YjI1ODA0ZWMwNWNlMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxMzcwYTVlOTY3ZmEyMjNlYjEwMWE0NjQ3ZjQ5NjZjMmY1ZmUzNzcxNTcyNWNkZDAzODViYjg3N2FjMzM1NTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ZjkyM2E4YzFlZTMyODJkYWY5ODVjOGZmMGFhYmU1ZjExNGQzNzE4MmJkNjg2NDY0YTdmY2JhNWUzNmEyZmEifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L12-L37",
+          "version": "repo-lines-v1:sha256:c3b7057bbebad98e272fe7a239fcea5eab59822066b930c1b08c67d953dfe2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNTEwODk1OTcyMTU4Nzc4YTJiMzhhZmRmODRkNTg1NzFmMDQwNmEyNzRjZjk1YjEwOGEyZmQxNDE0NDAxNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0OTZjYWY1Mzk2NTI3OTYwZTVkZjMwOTI4NGUwZTQ0NzU5MDJmZDRhYmVlNmQ3NzdiOTkzMWRmMTdjNjY5YmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZWU1MTdjNjU5ZmQxMTQ1OGFkZTJiOTg1YTRkNGM5Y2JjN2Q1NWIzNDA5NTM1ZTc3YTUxMzM3ZjMyZjJiZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NmFhMjU3ZTI1NzBjNWRmNzMxYjExYzQ2ODQxNGJhMGRlN2M3MDUwOTljNWRkMzlkYTA1MmU3YTRmNzM2ZmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5154e490562f40bfbe7cb40f84514f84",
+      "statement": "Document access denies missing actors, tenant mismatches, deleted documents, and unauthorized archived documents as not found so existence is not leaked. A revoked actor is forbidden.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/document_authorization.py#L61-L119",
+          "version": "repo-lines-v1:sha256:db46c9a961228837ddd2ed9ddf3fb0bbb3da6db4230e1bbd9e445c5f922a1d99:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4NmU4NGJkZDY1YTE2MzJmMzhjZWQ2NTM0NDlkMDI2MGQwNTEyM2RhOTYyYmQ1YzBlZTFhMDliNTkxYmExZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwY2NmNTM4Y2YyNTU1MzBlZWZkM2I5N2MwMjFkMjk2ODIxNTgzNDFkY2RiY2E4ZWJjNjZmOWVkMWM4ZDU2ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMzNlMDhlOGVmZWJjYzg5Yjc5NjlkMTBiMTg2ZGU5NzE5OWQ3ODQyYzY5NGRmZjVhZWJlNThkYjljOGQ2MTcifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

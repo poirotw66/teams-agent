@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:efdc24b1a7e317d3680404df7c4015f165984ee1736bd5bbba27220bf60602d2",
+  "claims": [
+    {
+      "id": "claim_79851661503946039bd774537d8c2171",
+      "statement": "A conversation is isolated by the key tenantId::teamsConversationId::teamsUserId, with a missing tenant stored as '-'.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/conversation/helpers.py#L18-L29",
+          "version": "repo-lines-v1:sha256:73e00f4e00e5d4085a68bae1f7092ea2dc0dd69464feb83f69b2979cfece8282:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2NDhlNDkwNjExZjNjZmU1NjczNzRlNDM2YTc1MGFlM2Q4Njc3NzBlOGQ4ZDMzYTUyZmM1MWMxMzJiNzI5NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYzA0NGQ5MTM3MjY2NDJjOGVjZWE0ZjY4YjE5MzkwM2FlMjllYjQyMWFiNTI0YjBmMmRiYjNiMWY3ZjQ0NjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0NzlhODE3YmIzYTM1ZTc0ZDBmODc5ZjIxMjE2MmIxNGRkNjg1ZmZiYzk2ODNjMzBkOWM0MTg0M2JhY2NlZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3N2ZkNDliYzU1OGNiMDAzZDRiODY5MzM4OGFlNWYzMjI0NDE5MGZjMmY3ZjBiYzk3M2EzMmYzNGM3ZTUxNDkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_72e85411a6924da98066bc6eab824a02",
+      "statement": "CONVERSATION_REPOSITORY_MODE selects MEMORY, FILE, or FIRESTORE. MEMORY is the default and does not survive process recycle; FILE is local to one instance; FIRESTORE is the shared store for Cloud Run.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/conversation/factory.py#L52-L73",
+          "version": "repo-lines-v1:sha256:7869d993220eb0b96d1f2a8ca0969abbc554d39348ee4900d6d342dd23ec354a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwMzE3YTkxZGY4YWIyYmI2NzhjMzUwZGE2MTgxZTM5YzU4MTVmMGJhNzM3OTk5YWIyMDUzZWY2N2JhZTVmYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhMjE5ODMzYzQ3ZDQ0OGUwOWJlNmI1Y2M1YjE3NDY1YzM1NTUzZjFmZDI1NjZjYjk2ZTYxYTk1YzBlOWFhZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyM2EzZTM3MzJjMzk4Yjg4NzdhMzU2ZWIwMjQ0NjdiMzExYzRiMWYyNGFkZTg0ZjYyNmMyODk3Y2FkNTJlYjQifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/settings.py#L88-L88",
+          "version": "repo-lines-v1:sha256:4a3b65af2983abbc95a4df00441c9d233a11de89206029a2f40e64bc5e6c73b2:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGEzYjY1YWYyOTgzYWJiYzk1YTRkZjAwNDQxYzlkMjMzYTExZGU4OTIwNjAyOWEyZjQwZTY0YmM1ZTZjNzNiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGEzYjY1YWYyOTgzYWJiYzk1YTRkZjAwNDQxYzlkMjMzYTExZGU4OTIwNjAyOWEyZjQwZTY0YmM1ZTZjNzNiMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjk2ZTZmYzQ3NGIwOGE5Yjg4MTQ2MGFhMzc3ZmIwNGJmYzQzMTljYTA4YzRhMzg5NzhkYjhkYTZhN2ZjY2M5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODY0ZjliYTY2NjAxYTRhMGU3MjYwMTZmMTE5MzI2OGVkYzg5YmMyMTI5MWM5MDlmMmQ5ZjM1NmEyMzI3ZjQxYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f75ff7e388cc417680da797d37b57a71",
+      "statement": "Firestore conversations store metadata, one document per message, and a SHA-256 key index. A message append is a document create, so two instances cannot clobber each other's message.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/conversation/firestore_store.py#L34-L51",
+          "version": "repo-lines-v1:sha256:48f7f0a62cc4b126fc685823366ae6e55107e17ad4dec40304657abe78868ab3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMmNmYzQ5YWQyYWRhZWYwNDg4YmRjOWUzN2RhMjg1YmVlM2UxNmVhMjc4ZTU1NWRiNjc5YzFlMTBhYzkwMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjNWU4NGQxMDZmMjBjYTA0NzhlZGU5MTY0ZmQ5N2NhNWVhYTRlZTA0MWJmYWU2ZmRjMzU2YjU0Y2QyODM0MjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NDM3M2JiMTgyYzY2MWZmYzNiMGMwNjJlMjJlYmI3ZGMzMDRjMjQyN2QyMjQ4MWY0NTEwZWI2MDg5ODFkNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2ZTQwNzk1ZjRiZjI2ZjFmZWUxMTA3NWUyMjc4YWM0YmVkYWM5YmViODE4ZDNjNzM4ODg0ZjVjM2U2NWViZjMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_02bcb8a1a3a34d5faa5943dd1bb06bf9",
+      "statement": "Conversation timeout is decided by lastActivityAt, not by Firestore TTL. expiresAt is only deleted after an operator enables a TTL policy.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/conversation/firestore_store.py#L68-L75",
+          "version": "repo-lines-v1:sha256:c59d526b8c061e33732f4d5b619522a9709aa7becd7b49a61afcb2d07d1e2bcb:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhjZTk1YzVhMjY0YTc1NWJmNTU1YzMyZjg5MjM2ZDlkN2FkMWM3ZTRjNGVlNjYyOWY4MjJiODc1ZjIzYzc4ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTg3Y2M5ODhiNGNmMTI0NTQ2NzQwZWI5YTBiMDA2ZjEwZWY1ODQzZDc4NjRmODQ4OTNlYTYxMTczOTBmMTg3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGE3MzAxNWFmODFkMDExNWUzODhhZjFiNzNmMWJmZmU3ZGIyNmI1MGEwYWQyOTU1NTA5NTVlNzkxYWU4YWZkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmY3OGRmNDFlMDNiZTFjZWE3Y2JkN2RkOGUwN2E5YWQ2MTU2MmMwZDhkYWY4YjIxZWQyMTBkZTBmODUwODRlOCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8fa6c4b506cb4eb6a35ed90eef131106",
+      "statement": "OPS_STORE_MODE selects the operational-event primary store and defaults to FILE under data/ops/events. FIRESTORE appends are idempotent on event_id.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/operations/runtime.py#L46-L52",
+          "version": "repo-lines-v1:sha256:67edb816ffb4f58ae300b1d310ac407448f5c95ea8b098bad45aa9bb5f33b009:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjQyMWViZGY4NTBlYmUwZWNiOWM0OWYzZjg1YmY5NGY3OGFhZmZhY2U4NjMxOTc3Nzk0YTNlOWNkYjU4MmI0NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcxMzJlNDgyOTI1MTBmNDU4MDBkZTE4NTkxNmZjMzQ2NzUxMTgyNDAwMzYzNDYyNzRiYTY4YWVhNzY0NmE3MiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjNkZjJhY2YwNmU4YzNmMDNjNzEzNWM2ZThhYzVhOWNhNTQzMmFiZTA2YTc0YWNhMGZkZDlhNTNhMDA4Zjk4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzNmNzYyMjczZTFhZjAzYTBiMTczZTUwYjA2YjUwMmRjNWE4NmFhNzRjNDUyZjE1ZGFhYTNkMTBiODk4ZjZhNCJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/operations/settings.py#L54-L56",
+          "version": "repo-lines-v1:sha256:19a2d9a16f2d26d7e65c05cb94d04bc065602042eb16e4dd14a1026914fdb22c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTNmOTExZDM1YzhjODMwYTNhMGJhZmNjOWE1MDg3MzdhOWZiZDliMjc3MTI4ZGQ3NmI5YWNiNzAyNTNiNjI5MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzg4Mzg5MGQyMGIzMzUyNWI3MTA0YjdmYjAzYTllODlhYzZlM2VkZmIwNTRmMjBkMWVjMTk5MGI2ODNhMzFkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTgzMDE2MTRhNjIyYTEwZTA2NTM0YzQyZWUyZDkyYWEyODJmNmI4NmI5ODhhZWQ1YTA4MTJhZmFlYzExZWU4YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzUxOGJkN2VjOTYxOGJjYWE2MzA3MTRjYTFiYjdjZDg3OTljZGI2Y2U4ZTkxNTNmNzg0YTRlMjdhMDg2YjE1YiJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/operations/stores/firestore_store.py#L22-L33",
+          "version": "repo-lines-v1:sha256:ed6644125c999146733660ac14dca10a32a6ab7223d11d104a4a46ec2fa07027:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3M2M1NDQzZDEzYzk1MDc5OTUxNGUyYjFhNWQ2MWYwY2MxMTRiN2MxYmU4NjNmZjllNjcwMjQzZGM0YTc0ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMThkZGNmYTc5MDNlZTA0OGVjNjg4MmU1NTBjZDg3NGIxMDM1ZGRjMmY5MjRkZDI1YjYwYmJiY2YwOTc2YWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEzZjhlMjg5ZmZlZDFmYTI4Y2Y1MThhMjljM2Q3M2ZkMDQ1MzdjMjU3NTIyOTVlOTc3NzUwMTYwMWUzNDZhNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFlODJkMjhkZWI3YTFiMjUxMDA2M2FlYTZjZDZiMzBhYWQ0ZDllODZhMWE1YzY5OWIwODUzNGJhYmQwNTQyYzUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cf00481ace6d49dbbe1238554d8258fd",
+      "statement": "BigQuery is an optional sink, not the primary operational store. Production delivery to a sink requires OPS_STORE_MODE=FIRESTORE.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/operations/runtime.py#L101-L115",
+          "version": "repo-lines-v1:sha256:4463fa8f235b109baea5ea64d71ffe89c9c89d7eeadc91cda614ff7f746fcdbe:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxZWNkMDc5NjhmYWQwYjU5Mjg5NjMwYzYwZTExMWNiYmFmYzhkYTk5MjNiOTQ3NDUwMDAwMDJiMGNmODQ0MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyMzdlMjFmNWY5ZmNmZjJhY2ZiNmEzYjNmM2FhOTg5NzkxMWU2ZWYzMWY2Zjg4MGFmMjYwMzdiODFlMjc2MTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk4NWRjZTM3NTEyMmRmZjE5Yjc5NWI1YjNmNTc5ZGM4OGZlZTE5Yzc1ZjYxNjI2ZmVkZGY0MTZmYThlM2ExYmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyOWRmNTYwZjFiMjAyMWU1ZDA3MzRjYzc1MDM3MjYzMWM4NTNhNzQ5ZjYyZTVmODBkMGJkYzBiMDRkN2IyMTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dd51eb76879f4518854e02d71966690b",
+      "statement": "The AI Ops Console's working datasets default to data/ops via OPS_DATA_DIR and are separate from the conversation transcript and operational-event log.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/settings.py#L124-L125",
+          "version": "repo-lines-v1:sha256:d1ab864a85366174ef3de1a9398f0546c466097a02cb4756845401161311ea63:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzNmZmJkZGVmMzg2MmM1MTc0YTQwNmZjNmQxNjMwNzc1NGYxNmQwNGY5MDUxMTBlNjgzYzA0MGI0YzU4MTIwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDM3MzgzNDAyZjFjMmI1Nzk4MjA2ZDIxMTU2NmY5ODNmYTFlNjE1NTk5NDliMzQ2M2NjMDhkNWRmNGJiMjFkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWYyY2M5MDU1ZjA1NDJlNzcxZWJkOTdjZDAzNTdiYWIxZDQyZGE2N2E0MGMzNTc3YWNhNGYzZGU1YmFiY2VhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDgyNzM3MjkzMWU0OGY0Njc3N2QxOTAwNWRlN2YxMDQ4N2U5ZDI1NzRmZjhiOWFkODg1MDU4NGNkM2NiNGM3OCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_55fb8aa654f74815a15aecd1b4953807",
+      "statement": "Mock tickets stay in process memory unless MOCK_TICKET_STORE_MODE=FIRESTORE, which writes one document per ticket so they survive instance recycle.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/mock_ticket_service.py#L38-L76",
+          "version": "repo-lines-v1:sha256:c75744a91e652865d5d1eb3e27702665e4fb00098e75c062d21d7aa914a2baf1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0ZTVhMThiOTA4NGU1ZTYwYmFmZTZhYTYyYmRkNjc5ZDk0N2JhOThhYTI5N2YxYTBhYTNjZDM1OTU0MzlhYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDM1YzcyZDZhMjQ1OWUzZTljYmZlZjBlZDVmNjRkMmZmZjk1MDYwYjY5Yjk4NzczMDE5NDJkYTU1MjNmZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkyNGI4ZjNkM2MyMGMwZjhlOWNkMzIxMzM4NzE0MjQ0MzM2YzM5NDY2MDkzZmIyNTM1MTE3MTRhODFkOWQ1MzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxOGZjOTIyYjNhOGEzNzc5NzkwZjk3MTYwMDc5OWQ0ODU3MjQ0ZTgwZTI2YzczYWE3YWQ0Nzg5YjllZTRhMjkifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

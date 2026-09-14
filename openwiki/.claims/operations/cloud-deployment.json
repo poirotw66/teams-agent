@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1ef0f1adb55b15058f9cacce333e8fc19e4fde36604541bd5907a61a841882fa",
+  "claims": [
+    {
+      "id": "claim_7c27a7cc40314d33ae059ec8a426138f",
+      "statement": "The Teams Adapter and Agent Service are separate Cloud Run services. The adapter is public so Teams can reach it. The agent is private and only the adapter service account has roles/run.invoker.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/README.md#L81-L98",
+          "version": "repo-lines-v1:sha256:42f04be260ec4c647ce9d57e8fef952003301ee76c602937ea59327cc69dd417:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMzNkNzRiMDhlZDg4Njg4YzUyMWUyMzA4OGZkYTM1MTE4ODNmMDAxMDc4YmY1YWU0MzZjZmI4MDQyYjk0MmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiYjVkNGNlMTg5ODFlMzU0MGU1YjY2YzE5MzMyOGMwMjc3OWJkYzJhNGY4OTVkMzg2OWZhNDU3ZWM3NjAyZjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4MjZkMDU5MTNmNTAwMTA4NjAyZTVkNTUyMzAzYWJkMjFmNTFhODIxODI0NDg3MjM1OGVjNzljZWRiMzM1MmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjZTEzYzY4MmZiNTFkYmQyMGU4MGI4M2VkYjBiYTdlZWNkNzYwZGJhZmQ5NTE0MzA0YWU4NDk1YmY3OWEyYjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b745feef6a7e4816aa3c1f6c349058d6",
+      "statement": "The adapter calls the agent with a Google identity token whose audience is the agent URL. Deploy sets AGENT_API_AUTH_MODE=google_id_token and AGENT_API_AUDIENCE to that URL.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/deploy-gcp.sh#L299-L316",
+          "version": "repo-lines-v1:sha256:9cd4ec88e49d93de05249a30617a4af6285a023f7c700c6d9f9ce0bbff3c0fee:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY4Mjc2YTViMWMwYTEzY2M0ZDU3NmJkYmZmYTc1NDIwNjIzMGIyY2VkNDljY2UwNDNmY2IzYzY3MzRkNWJjZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiNzkwZjQwZmY2YmQ0Y2U5ODI2OGIxNGM5MzczY2NiMTQxZjM5Mjc2ZmMwYWJhMmM4ODRjODYzN2NmOGFlNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyYWIwOTczZDhiYzBjNjdkY2NiMmNlMmVkZGIwNGYxMmM0YjYxYzllOTU3N2UxYTNjM2Q0M2MyMjFmZDk0ZjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFkNGI5OTM4YWY0ZWVjYjM5ZGI3ZDAzYWYwYjRkMjA3YjRhYTJkZTkxNzdjNmZkNDQ2NWM3MWRmOGVlMzI1MDkifQ"
+        },
+        {
+          "resource": "repo://src/teams_agent/agent_gateway.py#L38-L43",
+          "version": "repo-lines-v1:sha256:e1a8fde5aaa73356f107a0dc45b963282548c0dec3a631c94c5d9564298f846d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM1MDFhNzFlYTI1YTk1YzU1MmQwOTU5NjBkNTg5NGVjMjczYTZkZGNhYmQ4ZTFhZjJkMGUzMTJjZDYwNmJmYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzkyMjA0YzY1ZjUwMmRjMTY0NTRiNjI0MDg1NmE5YWI3YWRlMDAzYThlOWY4NjMzM2VjMGI3YzllNDA5NDkxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDQzZDE5ODRmODkxZDU3N2M4OGQzNWJmN2E0Y2NiNWNlMmEwZGFlOGJiZDk3NjJlNmFjOGJmMmZhMTU3MmE3NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWEzODBjMzJjYWI3MzVmZTY5Y2Y3NzYyZjk4ODIxNWMwNTZmNWJjOTJjNzg1ZDQ4OGJmODE2OGNlZjNkYmJjMiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6913b36624a547708dc835661abaefe3",
+      "statement": "Secrets are written to Secret Manager and bound per service account. The Gemini key goes to the agent as GOOGLE_API_KEY. The bot client secret and asset signing key go to the adapter. They are not passed as plain env vars.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/README.md#L100-L109",
+          "version": "repo-lines-v1:sha256:a287334d25cfa475748f145881840ff3034ee6566ee40b0fc7bd250207e7354a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2NWRjYmNhNWVlNDJjZWEwMzFkYzljNjczNmY1MDNlMmQwZDJlN2U1ODIwYzliYWYyNTg0NDc5MmRmNDFiNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5OWMyMTQ2NTgzODcxMGNlZTA0OTIzZTg1ZWZiODI2OGE0NjBhNmE3MjA5ZmM4NzU1ZDk1NzIyNjA4MTUzN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwOWQ2YThlMzY1ZjhmOWQxYjc1YjlmYjA0OTQwOTQ2MjUxZDRmNGNkYzRiNDM2Y2E1OTU2YzkxNDM0YjhlMDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM0MjIwZGU0MGQ0NGMxMjEzZDJlYWFmMWYyNTE2YTYzZjc5YzY4OTM0OTY4YmI2NWFkNzYwMGIxMjYxMjJmYzMifQ"
+        },
+        {
+          "resource": "repo://deploy/deploy-gcp.sh#L248-L264",
+          "version": "repo-lines-v1:sha256:80b656b80460430614f6cfefad75b78dce19e038b641dbaa53d74527690c8a58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY0NGQwYWQ1ZDc0NmRhOGM4NzUwZjhlOWZmYjY2MWM3Y2YwOTZiMzczZWJiM2U5MzQzYTQ3ZjE0MmUwMGViNDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzM2M0OWFhY2JmZDUzNzFjYWZjMjJjYzY2YjViYmRkNTE5OWEzODhlZDc5ZmFlNWYwOGUzNDQ2YTE1M2NkYzciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkOWZjYjc5YmE4ODY3YjI0NmMzOWRjOGY5N2MzNjIyYjg4ZGVjMWQzNWFkMDBkYTFkNzkwZTIzYTc2ZmFmOWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwYjkyZjI2MGM0YzZmYjU3ZGFiMzcxYjU4MDNmNmMxYzkwMDk0M2U1YjVjNDhkMGJlY2ViMDJhOGExZTZmODQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8513e55c8f48412f9a3b307f12cf6910",
+      "statement": "Cloud Run conversation and operational stores are Firestore, not the local MEMORY or FILE defaults, because instances scale to zero and are not shared.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/deploy-gcp.sh#L261-L272",
+          "version": "repo-lines-v1:sha256:b6b6597eb86d3b10e0577b134f67588dafd674d595be420f16ca5324fc4c6442:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjM2QxZGIyYjdhYjc4YmQ1MGFjODFjZGUzZWVjMWM3OTkzNzZkMzA4NjVmYzcyM2Q4ZTQ4MzI5NzQ3OTk3MDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZTgwY2ViOTFiOWMyYmQyNThhOWZjNDU3M2U2ZjdhY2M0ZjBjMWQzYmZhOGJkYzg1MmZlM2FkN2ZiMDQ3MzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY0ZDNhMWU1ZDk4MDJkNWMxZTlhYzdmZjE4ZWY5NzMyZGJhNTBmMjc1ODA5NDRmZDg4MjI4NmY5ZTEwNTM1YzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5MTU5ODExYzJjMmMxNTZiNzA2NDM5YTc0MGY1Yjg0Mzg3YWMzNDgwNDdlNzczMzU5ZTYxZDBhMTU0MTcxYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75c34d8287cb420a89f3d0b1ebd230d9",
+      "statement": "After deploy, verify /readyz rather than /healthz. Corporate network requests to /healthz can be intercepted before Cloud Run. /readyz reports chunk count and returns 503 when the index is missing.",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L77-L83",
+          "version": "repo-lines-v1:sha256:3db29bcfe02cff20854ff4c0fce40aabdc9b5fcd569350f40fafeb726cb15f82:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzdmY2VjYjQ1ODFmYTY1OGU3ZDRiNmZiMmQ3OGFjMzZhOTg0MmY0M2UxY2RhNjY1YWZmN2IxNDhlZmRiZTkxOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWNjN2Y2MDlmNWJhMWQ3ZGVlZmFhMTliYzM0Y2IwNTBmOGQ2Y2Y0NWU2OWY3ZjUwZDNmZDc3ZGE1ZDRmMjYxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjgzMWEwMTgxZTZjN2EyNDc5ZmNlMTg4ZTkzNDBiNTMzZjM0ZDY1ZWZkN2YyMDIwYmVmMTE1ZjhiNWRjOWUzNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDJiOTNmYWM3N2UzMjRhYzZkNjBhNzgzNGViNTUyZmNiYmViNzg3NDYxMTg2MjRkNzFlNzQzZTA1OGVkNzNlOCJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/routers/health.py#L21-L30",
+          "version": "repo-lines-v1:sha256:5d438ef41bf9e532437441d955d1c01a7cffbbc4603c752f50effed486ebac0a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4ODJmNWQ4ZTE1N2ZkOWRmMjYxMGJkNWJkMjVhZmI5NDg0Njk4MmMwNWRlYmIyNTMxYTkzNDcwYmM2MGE3OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkZTNjZDA2NDk0Y2ZmMTcxYjMzNDZkZDg1MDgyNGE3ZDlhNjlhMmNhODIxNGUyNWJlNmRkYzk5Nzc1Njk2OWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4YWJjYWJiYzkzMzRmNjJmMzYzMTIyMTM0OGJlMzlkNGYzNjFjZjY1ODcxYTYzNjhiNmQ1MmE3OGEyMmJhNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA2Yzk3OTM2NTA1NDhiMTdmYjc5MzQ0NzlmZDgyMWQzMTNjZWE3MmY4N2FjMGJkNDk1ZGI2OWJlYzM4YWQwMmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a74d5371c8ec4694a2abe6cd5cab20d1",
+      "statement": "A Terraform-managed project must not use deploy-gcp.sh as a full legacy deploy. Shape comes from Terraform, and release-gcp.sh updates images only.",
+      "evidence": [
+        {
+          "resource": "repo://deploy/deploy-gcp.sh#L55-L60",
+          "version": "repo-lines-v1:sha256:fec00e46a11c3dff2cc6fed3d0cd89847a4d25002f52eef32f3c3a65e31d7d0c:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGJlMjdhM2EyMDZjOTRhMjNjZWJhMmNiYTAwMTQ5ODIzMzhlMjcxNDVkODQwMGVhNDY2MDE4NDExMzA0MmU3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjBhMmRkNjczMjI3MmYwZmQ2OWU5NGJhNGE3ZWUwMWFlYzhiNzJiN2Y5YzkwOGNjODY5MmM3ZjVhNjcyNzg3OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWNhMzI3NWMzNGY3OWVhN2RlNGFmOWQ4MjBhNjUzNzI5YTc0MTFlN2NhMmIyMjIxNWE2YWJiM2E2MTQxNzc4YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjY3MGZjYzJiYjViNWI1NTMyZmQxNTMwNzQyY2I0YTU5YzBmNmYyOWY4NzFhMWYyY2I5ODIxNTRlM2MzODg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

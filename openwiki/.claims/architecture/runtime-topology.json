@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:593523e81506819ea9e0a732baad48f8f925bfd614581f3f59a493646e82b8ac",
+  "claims": [
+    {
+      "id": "claim_cf4fe2e4326a4d469c416746fcd29577",
+      "statement": "start.sh composes seven processes with distinct default ports: Teams Adapter 3978, Agent Service 8000, Mock Ticket 8090, Knowledge Portal 8091, AI Ops Console 8092, PDF converter 8095, and Playground 3979.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L9-L15",
+          "version": "repo-lines-v1:sha256:039ba9b1bbcf49e1e1068a6f2bb46c570e5f6c061c50d01c3e419c458ce5f863:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjc2ZWY1OGQ0M2M1ZjYwNjRhMzYzNjhiNmYxN2ZhZDExODY5OGZkMGM1YTA0ZWQyOTNmMzhlYmU5OTdmZWY2MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzZhNzE4OTczNzExNWFiOGUxZjlhMzVjOTcwN2VhNzI0MzVkZTM3MmJiMGRjNTUyOGVlNWIyODE4NzAxMjVhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2Y1YjlmMzU3ZDIzMDYyNTVhMjE5ZmU2NWRiNDBjNmIzY2EzZjYxNjBiNWY0ZDU2ZTVmYTYzMjExNWYyZmE5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTE4NjUzYWI4NzIzZWRlYWQ4NTAzMmExZWRkMTBlODFmOWNkZGEwYmY4YmJiZDE2MGUxOGE1MTRlY2NlZDBlNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1a05cb1f06664cdaa589d37dfc458bb2",
+      "statement": "The AI Ops Console on 8092 is the operations product entry. Knowledge Portal is bound to loopback under start.sh and is not a browser entry.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L27-L33",
+          "version": "repo-lines-v1:sha256:785885189815d404115d4baee0614868318dadd2b718fd83bf6ef0ab58522c72:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNlZjlkNTBiMDFjNDIzMTNjODUzMjJhNjEwMmFlNzczMTNkMTc5MmJlNjNkMzlhZGIyMDUwZjRiMWNhMDI5NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWI0OTBkNmExNzE5ZjkwMDZkOTgxMDUxZTFhZTA2NDQ4MzQ5N2FjYWM3MjFkNjUyNGM2YTJiZTMzMTM2Y2ZhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjIzOTAxYTI0NDg5OWVkYjZhZmRlMWMyNGIwNTEyYjcyMDQ1MjNiYTc2YzdmYzgzY2Q1ZTJmYzRlOWIzZjRmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODQyZTQwNWJlZjNjN2U4M2JkNWUwNTdiMzVkNGRlOWQzNTVmZDA0NDU0MDc5ZDY4Njc2NjM2MmQ5YWY3NmEzMyJ9"
+        },
+        {
+          "resource": "repo://start.sh#L494-L499",
+          "version": "repo-lines-v1:sha256:fef9b1eb85d5d9cf38660adfad425ea5f0f878a4052827dc441b48c5bc10864f:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjM2Yzk3YTNiYjA4NDcxOWE3MGZkZDc5ODZjMTQyMjkxODhjMDBiNzY1YjEzZWU5N2I3MzcyNjY1N2E3YzE2MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWU3MjU2M2QwYmQwYTM4MmEzZjMzMTE4OThlY2E1MGMxNDBkNmViOTZhMTYwNWFmZjMyZDcwZWUyZTNlMDM3ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjE5NGIwNzA3YzA3MjYxMTYxMDgzYWEwYjM5OTIzZjkzNjY5ODI3MjY3N2Y1ZmQ0ZWM5NTMwYzUwMjRkMjdlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjY3YjE0MTk4NGJlZDZmYmE1MDBkOWI1OTM0NTcwMTQwNDJlYWFjNmI4YzBkZjQwYzIyMjA0ZTA0M2E5MjdiYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a9194501b2a4fa0aa52054e287f17bc",
+      "statement": "start.sh refuses to start when Knowledge Portal and Mock Ticket share a port. The portal binary's own default port is 8090, so an orchestrated run must keep 8091.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/main.py#L12-L17",
+          "version": "repo-lines-v1:sha256:af81fffd415a31b04de320e0514d7485587b66b92041a4ddbe76e54cf576c750:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGQ3ZDlhN2I1ZTFkMTkwYmFkYmM3YzY2MTJhYzI3NDQ5MmQxMDkxYTU3ZDMxNjU0ZWRjNjJjYzUzMmE5MWZiMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzkyMjA0YzY1ZjUwMmRjMTY0NTRiNjI0MDg1NmE5YWI3YWRlMDAzYThlOWY4NjMzM2VjMGI3YzllNDA5NDkxZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWUyNmJhZTFlNzQ5MzkxMGU1YjdiOTkzZjU3NzhkM2RmYTEyNTZmODEwYzQ2OTFhYTczMDcxODljNDZmYWQxZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTlmN2Y3YWExNjMwNTY3YzFiNWU2NjQ0ZTIxY2JlYzgzYTQzOTMzZGM1YjBkYTBkOTBjZDUzYmE0OGU5MTBkMiJ9"
+        },
+        {
+          "resource": "repo://start.sh#L357-L360",
+          "version": "repo-lines-v1:sha256:c03976dc5015f7ce62060593e5d28723df238f1179fada8208fce8e77aa3078d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmUxM2JlOGZlZGM4ODJkMDk1ZmM1MjIxMGUyYWNkOWI1NmUwNDY3OGYwZDlkYWZhNzVhYTdiYzUwNzhhNmVhZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWU2MjZjZTZjODBjZDQ0NmNkYmIxNzU0ZDlmOGU2MzlmNjAyYmIzM2Q4MzBhNGZmNjY3NzUxNGUzMzgwNzkzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzNiMDQ4MTdmZjc1OWJkNmFhZThmMzRlYWE0ZjBjOTA2MjRlNTU2YjgyODA1ZjUxYjlkYjYzMGFiYjM4NGVlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDEzYmE5ZmIzODRiODg0MWM2ZTU5MDNkYTFhOGYyZjc4ZjA5ZWFmNzM0M2MwNTc2YWYzMTU3ZjUxODYwOWFmYyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_6d17ef847e4a45779117d433f2d2f0fc",
+      "statement": "The adapter calls Agent Service only when AGENT_MODE=api and AGENT_API_URL is set. The adapter defaults to echo mode; start.sh sets api mode and points AGENT_API_URL at /agent/chat.",
+      "evidence": [
+        {
+          "resource": "repo://src/teams_agent/settings.py#L153-L154",
+          "version": "repo-lines-v1:sha256:d2f22ac494225bf8b36c1885e49d582b312157750aa493d9d8f12f4b0faef568:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzA4MTFjMmYwNDQ2ZjU5MmQ2NWMwMzU3M2E4NDk0YTE1NDQyZTczODk1NzJhZmU3NDgxNDViNmI5YTFkYzQ1MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2MyZTAxMTZkMWYxN2QwYTcyMTg1OTcwY2FkYTU0YjQ5ZWY0YmRjOGJjOWQxNTM3OTgwOGZlYzBmMTY4MDZhYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDY5ODBlNWM0MTc2OWM0YjJmMzc1Y2M0ZGY3M2ZiN2U2ZDk3YzA3ZDY1ZGQxNTNkM2RhZTA0OGQ2MDcxODU5MCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2U1OTBlYzA5ZTkwNWUwMGVkNjJkYzVkMzJkNDA2YmRkZDQxZmJhNDY5MDRiZWUxZWM5NDAzOGQxMjRlOTMyNCJ9"
+        },
+        {
+          "resource": "repo://src/teams_agent/settings.py#L56-L57",
+          "version": "repo-lines-v1:sha256:ab32a10bb547d14095b11e72396ca6cd456168aac2a1f899bf63493c55f42551:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDgxMzEzYWM4YTcyMjEwOTdmOGNkNmRjZGE2NjIyZTI5ZGZjZjkwOWVkMzdlNGEyNGYyN2FiYzAxZTI1YTU2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTlkMGY1MWU2YzBkMjVhMTFiMzRiYzUxMzkwYmQyNGEwNDUzZWRlMzJhZjkyMmUzMmE5MjcyNWJmN2UxMDdiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWU5OTVlYTgwZGQ5MjQyNzc2NWFhNWUzYzFjZjYxZTU0NDk5NzcxNmE5ZmRhZmQyYjk0OTUzNDk4MjcxZGZhNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDI2Yzg4ZjJhOTU4YjFhZGVhMjc2ODdhYTY0N2NhMTFjNDA0MTgwM2UwOGNlY2E3NjM2YjU1YmE1MTI2Y2M2OCJ9"
+        },
+        {
+          "resource": "repo://start.sh#L543-L548",
+          "version": "repo-lines-v1:sha256:25e5e885fa9ae769634bc3d91c9dfb2b91cf641a9e51c2c0930ba463aadbc82d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTg0ODZlZTA0OWM1N2ExYzBlNjIzNzQ2M2JkOGY2ZjU5YWRhM2FlMWZiOTc5ZTk1MDYzNjE1YTAwZTg1ZTZjMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTI1MjM3M2NkNzBiMWFiNzgwMTM0MjZkZWVlNjk3MTNhYjliMmU3ZDgyODc5ZmJhZGYwMmMxZWI4NjVlMDY4MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTY5MTIxZDE0MGMwYmRiYmZlNGE5YWE1NTgzZDhlN2IzOTNmOWZhNmUwM2M3YjNjN2VmOTAyN2IwNzExNGY1YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjgyMjc2N2VmNTNhM2JjNDc4YzVlMzI1NzgxYzU5MzhiOTA1NTY5N2U4NjQ3MmYyNDlmOWQzYWQ0OTgwMmY3NyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8ecb33a1f6f140b38e7b26705012c886",
+      "statement": "The Playground forwards chat to the Teams Adapter through ADAPTER_TARGET_URL. It is a test client, not a second agent runtime.",
+      "evidence": [
+        {
+          "resource": "repo://start.sh#L566-L567",
+          "version": "repo-lines-v1:sha256:0635b11ecfb7c73819caa74fb4366f19067d5f68237f5812cf5b424cc55368be:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjhkZWFiNDUxYzg2NzQ1OTg2MWVhN2VhNjQwZDdiOGZmM2E5YmYxYjY4NWMwNzdkNmE2NjE4NzA4NjFkOWIxNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2QzNmQyZDhhZmZjNzEwNDI1ODQwM2RkMGE3NmUyNjRlZGM2MTM0MTIyNzIzZTBhMGI2M2VmOGIyNDYwYmVmYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTkzMTY5ODZiNDQ1ZWU2NDJjYTFhNTYyNDNiZmViMjVmY2Y1N2Y2NDQwYTgyZDgxYWQyNjE4M2VkZGFjMTk4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGUxZmYzY2UyNWFjNTZkYjg3YzBmZDgxMDIwZTVhNmUzYWY3NDQ4MmI5NmY3Y2ViY2IxY2YyYmRjNmEzM2ExYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f2bc5d5d522481b98918f2b7980382c",
+      "statement": "The console's knowledge bridge is enabled by default and talks to the portal on the internal URL. The PDF converter is called by the portal, not by the Teams message path.",
+      "evidence": [
+        {
+          "resource": "repo://services/pdf_converter/app/main.py#L1-L9",
+          "version": "repo-lines-v1:sha256:8df3969d626774b0e74e257a1e31025c60bb3ee90a12aac5f595e2ca8a83f7d8:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZlOGI2MWVlNWQwOWE0ZDgwYjRhMTg5NTYyMWJjOTBhMzhjNjNjMDhmNWFjODE3MTA4MWUyMGIyYThlODFmYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQzMmQ2Yjc3YWM3NzViNDEyNDliOTBhZGZiY2NjZjBhNGEzODM3NTM4NjkwMjdhNzQzMzY0MjdmOGNhZjZiYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTNiOWU1ZTA1OGM1YzlmNDFkOGU3ZGNkZGQwMTFhNjJjMmNkM2YxYzU2Yzg4NDJlZjVmMTNlYTM0ZGY1ZWYxYSJ9"
+        },
+        {
+          "resource": "repo://start.sh#L27-L29",
+          "version": "repo-lines-v1:sha256:acea0ec33d0f24a26a9af83f35df9959fde63202519f02698eb2c82b88ad1c30:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODNlZjlkNTBiMDFjNDIzMTNjODUzMjJhNjEwMmFlNzczMTNkMTc5MmJlNjNkMzlhZGIyMDUwZjRiMWNhMDI5NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRiMTY2ZThiNmQ2YzMzYmJmNWM4MTQyOWVmNTJhMmQ5OGQ0YTIyOTBkOWM2MDJiMzg1MzJhZjdmYTBlNTljNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjIzOTAxYTI0NDg5OWVkYjZhZmRlMWMyNGIwNTEyYjcyMDQ1MjNiYTc2YzdmYzgzY2Q1ZTJmYzRlOWIzZjRmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmM3NjZkNmIwOWNlM2QxYmExNjlhNTdhYzhkOGMxNzA5YWQxMjdlYzdjNDFjNWQ1NDY4MzdlMzMzMjM4NWFmYyJ9"
+        },
+        {
+          "resource": "repo://start.sh#L519-L527",
+          "version": "repo-lines-v1:sha256:ed9b843454e7fbcd91b5880b84899660ba7cccb3b292b900cf4f3acb7e6ce1f4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODkxYTg1NWYxYjFkZjc1ODQzYjk1ODJhMmFiNjI1N2ViMjM1ZTMzOTRlZjdkMDcxNTFjNjIwOGZmNDk4ZjZmOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTVkMzNiNzdhMDJkYjEzN2Q4YmI5OWZiNWY2OGM4Yjc4MzhmZjBhN2ZhYmIxM2FlMzcxMDA0NWJlZjQ2MzJjMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTNiNWJiNGY0ZTE3YThkMWRiMWY0YmY0OWI5N2M2NGI0ZmUwNDdmY2M3YWE4MTQyMjI3MTdiYWIxZTM5MGJlOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTdhZWM4YTM1ZTY2NWVhNTMzNDMxZWI0YzEyNmI2MjdhODI1NjQzODViZTQ0NjJiMmQ1OWFhOTZmYTc3MjhkMSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}

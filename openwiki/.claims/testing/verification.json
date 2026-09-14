@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:6320bc26dca7e31371b24392737f419fd720e1dba96cc84954aa0a28273ebed7",
+  "claims": [
+    {
+      "id": "claim_228c94f1da1443b3ae06cbaaddd7affb",
+      "statement": "Adapter tests and Agent Service tests are separate pytest projects. The documented commands run agent_service/tests and then the root tests.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/pyproject.toml#L63-L65",
+          "version": "repo-lines-v1:sha256:05de825dad5b281756059b817c02cbceee859227c8f4550d4ef455a100b87937:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTBiYjUyNzdiM2M1ZDgyOGQxM2UxMDg4M2E4NTE0NmNiMmZiOGEwYzJjMDAwZjBjNTRjYzk2YmEwZGY3MDA1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZjMTkxYjNmM2NjM2M4ZjJmMmEwZTk1MWY1ZDU0NWVlYzE5OTk0MzZmNGNmY2U4NmRjZmU1ODU2ODBkMzdkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI0NWQ1Yzc5ZjE4Njg2OGNmMTg0M2Y4ZjRhZDNiMGIxYmEyZDI3MDZmMDA5MTcwMTliMjk5NmY4MGRiYmI0NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2U3NmIzZTliNjkzMDk2MWIwNjdkNjYwYTFiZmZmNjcyOGY4N2JjMjVhZDYyNmJkMDg3NjJkYmY4Y2EyZGFjYSJ9"
+        },
+        {
+          "resource": "repo://docs/poc-acceptance-checklist.md#L8-L12",
+          "version": "repo-lines-v1:sha256:067305a995ed0dae05e8f52497ce781780194d876aadf92deb0143ddca249089:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ2YzQ1ODRlZDg2YTI1ZDU2ZjkyOWMwYzcwYjcyODM4YjY3MmZkNzNmNjFhNzYxYmE2NzdkNjllMTMyMzRlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFkNmQ3YjRiNjg2YTEzYzVkMGM3NmJiMWIyYTJkZTRlYWU3OWIwMzQ2Y2ZhNzYwMmRlMzEyYzA3NDhiZTMzZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY0NzkyNjhjODcyMGIxYjAwYzc0ZWVlYjkyMzlmNTQwZjg0MTY4MDUyN2YxYWEyNmMyMjI0YTc3MzllOTFkYyJ9"
+        },
+        {
+          "resource": "repo://pyproject.toml#L38-L40",
+          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjU1MTBkNjBjZjVkZGJkOWY1ZGJlNDNmZGUwYTg1NWY0OWFkMGNlODY3ZjBhYWFiOWYyOTUyNDU1MjQwNTMwMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDNhMzY2OTNlNzRlZGJmOTk2M2I5NTM0MTk2ODI0NGFhYmRiYTcwNzE3MmU5YmJhNjg0ZGY5NzkwN2JhMzk1NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_da8969bd54844209b24d2df6d3ca771b",
+      "statement": "Echo mode does not call the agent transport. API mode sends the chat contract with a bearer token or a Google identity token, and streaming refuses when disabled or in echo mode.",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_agent_gateway.py#L294-L302",
+          "version": "repo-lines-v1:sha256:03a311c9c9725a6c53eaa1a63aff6246649a3880cce69b6c10dc7e38aeb67efe:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTdiZDRjZWQ0NDE2ZWZhNWE5M2NmOWNjNGNmMmVlOGZjMDQzMDNlMmFlNDRhMTNkYWM1ZmU0M2I2MmQ1NDAzMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDgwZWVkMWRiYjU0ZjQ1MTViM2I3NGRiOWQ5NTg2NDczZTZhMmU5MzYyYmZhOWNmZmQzODJlYzZkMDU2Nzk1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTViMDljMGI3M2FiYjY4NDFlMTgwOGI4NTQyODM5YTY1ODU4OTAwYTZhY2NkMWI4ZGEyNzJiYjA4NmY3NjBlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTEzMTVlODk2OTQzYjE3MzE3OGJlZjljNDFlZTI3MjVjODUyMjEyZDdmNjViMzhmNzZlNTZmMGY2Y2MwMDRjMSJ9"
+        },
+        {
+          "resource": "repo://tests/test_agent_gateway.py#L35-L83",
+          "version": "repo-lines-v1:sha256:9327e0d95cb26355da1e88b277ba4cc6d0c5a471ef67d4619f7abafa96046199:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3NzUwMGQ2ZWEwYzBlMjRmNjc1OWY3MmVjNGNiOGY2MTIzMTRlYzZkMGIxNDlkZTM5NzUwNmQ1NGZmYTZiYmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMWQ2NWJjZWM0NWUxYWZkZmU3MmM4MWQ2MmIyN2U4ZjY1NTg1NzZhMzVmZmY0MjUwMzZhOWNlZjQ3Y2ZiY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1YjA5YzBiNzNhYmI2ODQxZTE4MDhiODU0MjgzOWE2NTg1ODkwMGE2YWNjZDFiOGRhMjcyYmIwODZmNzYwZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2YWIwNWM1NTQ4NzRkODk3NDgyOGUxMGZlODdhZTExNTNhZjNmNjM4YTQ1ZWU3NTVkMDZiYjJkYTRkYjg5NjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d1f5e0cf8c95499887463899b6496e8e",
+      "statement": "Acceptance items are mapped to named tests in agent_service/tests/test_integration_acceptance.py. The pass counts in the checklist are a dated snapshot, not a live gate.",
+      "evidence": [
+        {
+          "resource": "repo://docs/poc-acceptance-checklist.md#L26-L27",
+          "version": "repo-lines-v1:sha256:ff73933adff74ae062d142044c9d90aec7bf6921085a3671638457cb3cbcf69d:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmQ2OWMzMzA0NDA0Y2Q3N2FkZDljODRjZWJiN2FiN2JiYmY5NjZkMDdkY2YxOTAyMWQyNTllMWJiYzZjNDE4NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVmNDBhNWYxNTUwM2NiMWMzNzgzOTA5MWJjODFmNzJiNzE4OTAzNGFmZTJiYTAwMjNlZTExMjg3ZjgyYjlhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTcxNTRlYjhlMjU2NTY5Y2FiMjY1M2Y5ZTY5NGIxMDYwZDM0ZTVhOGFhZDI5YTg4MTUxOTIwMWJmYTI2NzNhYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODVkNTM4MDkyMmFlOWZlMGY0NTQ3ZjYyNTFhYTkwNWE2OTY0N2Q3NGYwM2UxOTcyYjA0YjBmYTczNmEwNDY3OCJ9"
+        },
+        {
+          "resource": "repo://docs/poc-acceptance-checklist.md#L5-L11",
+          "version": "repo-lines-v1:sha256:4c5fde87e00fc4ff00220a5c7756782e7a8f4ba977068696db880b26730393bf:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYThhMGFmOTVhODM4NDg1ZDA0NDYyNWQ2YThmMjFjOTkxYTVkMDE3NzBhN2M2ZDBlMmQ2OWVjNjU3MWYzMWRhNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjhkNDczMjVjOTg4Mjk4MTI2ODcwY2RhNzllNjcyZmNjODQ1YzQwNmZiZTA5MDJiYmU5NDQ0Y2UzMzZjZjMxMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDJjZjBmNTc3ZDkxYTU5NGIwODE1MTI1OTUyY2MwZWE0M2ZhMzAyMGY1YjRlNDE0YWQyNWVkYmYxZDM1YzU2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjhkMWMwMDJjYTY2NjA1NWYzMmFjZGFiZDYwNjRlNjljNjAwNTM0YmQ3ZDliY2RlOTU5YjE3ODVjZDMyZDJiMSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ec257e9c9dd24e14ac40ddd824af43f8",
+      "statement": "An FAQ hit returns the fixed answer without an LLM rewrite. A ticket is not created without explicit confirmation. HTTP ticket calls are tested, but cloud ticket mode stays disabled and no real ticket system is connected.",
+      "evidence": [
+        {
+          "resource": "repo://docs/poc-acceptance-checklist.md#L39-L47",
+          "version": "repo-lines-v1:sha256:d8cb62af22063eaae1d147cdd6c4b4840591f144023dd637f91b0ff45f14e1e4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQzYzQ1ZmRjMDc1YmY3M2U3NmM4NjU0YThhZmQwYTc3ZmRjYmZjNDA4NmEzOTM2NjAwOTcwMGEzNzVlN2UxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODlhOWZmYzc1MjAwNjFlOGE5YmRiMDg0YzA0ZjgyOTgxMTI2NTZiMjMxYjkwMmRmMmU4OTRlODk4MWRmNzhkZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDJhMjU0Y2RkYmFkYmU5NzE1ZmFlY2Y0MzQyNmI3NGUwNTVhYTAwNjE5YjdmYTFmZGM2OGEwMWJkMjBlOGI1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjFhNjg0YjM3NDllNGI5YjRjMTI5Nzg5NTY3Yzc2MjdjNzI5NjAyYmQyNDY4YzAzMGM1MjQ4N2U1Yzg0MDdiNCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-14T06:27:21.319Z"
+  }
+}
