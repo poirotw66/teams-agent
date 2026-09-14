@@ -60,6 +60,22 @@ class FirestoreOperationalStore:
         return [OperationalEvent.model_validate(item.to_dict()) for item in snapshots]
 
 
+def build_sync_firestore_client(project: str | None, database: str | None) -> Any:
+    """Sync client for repositories that call get/set/stream without await."""
+    try:
+        from google.cloud.firestore import Client
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "OPS_STORE_MODE=FIRESTORE requires google-cloud-firestore."
+        ) from exc
+    kwargs: dict[str, str] = {}
+    if project:
+        kwargs["project"] = project
+    if database:
+        kwargs["database"] = database
+    return Client(**kwargs)
+
+
 def build_firestore_client(project: str | None, database: str | None) -> Any:
     try:
         from google.cloud.firestore import AsyncClient
