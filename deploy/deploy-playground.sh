@@ -18,6 +18,7 @@ PLAYGROUND_IMAGE="${REGISTRY}/${PLAYGROUND_SERVICE}:latest"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 PLAYGROUND_PASSWORD_SECRET="teams-agent-playground-password"
 PLAYGROUND_SESSION_SECRET="teams-agent-playground-session-secret"
+ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
 
 log() {
   printf '[playground-deploy] %s\n' "$*"
@@ -102,7 +103,7 @@ gcloud secrets describe "${BOT_CLIENT_SECRET}" --project="${PROJECT_ID}" >/dev/n
 ensure_generated_secret "${PLAYGROUND_PASSWORD_SECRET}" 16
 ensure_generated_secret "${PLAYGROUND_SESSION_SECRET}" 32
 
-for secret in "${BOT_CLIENT_SECRET}" "${PLAYGROUND_PASSWORD_SECRET}" "${PLAYGROUND_SESSION_SECRET}"; do
+for secret in "${BOT_CLIENT_SECRET}" "${PLAYGROUND_PASSWORD_SECRET}" "${PLAYGROUND_SESSION_SECRET}" "${ASSET_SIGNING_SECRET}"; do
   gcloud secrets add-iam-policy-binding "${secret}" \
     --member="serviceAccount:${PLAYGROUND_SA}" \
     --role=roles/secretmanager.secretAccessor \
@@ -138,7 +139,7 @@ gcloud run deploy "${PLAYGROUND_SERVICE}" \
   --min=0 \
   --max=1 \
   --set-env-vars="ADAPTER_TARGET_URL=${ADAPTER_URL},DEFAULT_CHANNEL_ID=msteams,AUTH_CLIENT_ID=${BOT_CLIENT_ID},AUTH_TENANT_ID=${BOT_TENANT_ID},PLAYGROUND_PUBLIC_BASE_URL=${PLAYGROUND_PUBLIC_BASE_URL},GEMINI_FILE_SEARCH_AVAILABLE=true" \
-  --set-secrets="AUTH_CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,PLAYGROUND_PASSWORD=${PLAYGROUND_PASSWORD_SECRET}:latest,SESSION_SECRET=${PLAYGROUND_SESSION_SECRET}:latest"
+  --set-secrets="AUTH_CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,PLAYGROUND_PASSWORD=${PLAYGROUND_PASSWORD_SECRET}:latest,SESSION_SECRET=${PLAYGROUND_SESSION_SECRET}:latest,SOURCE_GATEWAY_SECRET=${ASSET_SIGNING_SECRET}:latest"
 
 PLAYGROUND_URL="$(gcloud run services describe "${PLAYGROUND_SERVICE}" \
   --region="${REGION}" \

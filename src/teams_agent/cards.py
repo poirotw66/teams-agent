@@ -112,6 +112,25 @@ def _feedback_action(
     }
 
 
+def _source_open_actions(response: AgentResponse) -> list[dict[str, object]]:
+    """Clickable source buttons.
+
+    Adaptive Card markdown links are not reliably clickable in Agents
+    Playground. ``Action.OpenUrl`` is rendered as a button the host actually
+    opens.
+    """
+
+    actions: list[dict[str, object]] = []
+    for citation in response.citations:
+        if not citation.url:
+            continue
+        title = citation.title.strip() or "開啟來源"
+        if len(title) > 40:
+            title = f"{title[:39]}…"
+        actions.append({"type": "Action.OpenUrl", "title": title, "url": citation.url})
+    return actions
+
+
 def _card_activity(
     response: AgentResponse, body: list[dict[str, object]]
 ) -> MessageActivityInput:
@@ -120,12 +139,15 @@ def _card_activity(
     # Agent Service response, and `Attachment.content` is passed through to
     # Teams verbatim. Keeping it as data avoids re-encoding every card
     # element as an SDK model for no behavioral gain.
-    card = {
+    card: dict[str, object] = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.5",
         "body": body,
     }
+    source_actions = _source_open_actions(response)
+    if source_actions:
+        card["actions"] = source_actions
     return MessageActivityInput(
         summary=response.answer[:200],
         attachments=[

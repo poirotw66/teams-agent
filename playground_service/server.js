@@ -22,6 +22,11 @@ const {
 const { requiredEnv, securityHeaders, clientAddress, readForm } = require("./lib/http");
 const { loginPage, knowledgeControlScript, proxyIndex } = require("./lib/pages");
 const {
+  isSourceAssetPath,
+  proxyConnector,
+  proxySourceAsset,
+} = require("./lib/source-proxy");
+const {
   createKnowledgeBackendState,
   buildKnowledgeBackendStatus,
   handleKnowledgeBackendRequest,
@@ -46,6 +51,8 @@ function createGateway({
   knowledgeControlToken,
   knowledgeControlAuthMode = "none",
   knowledgeControlAudience,
+  publicBaseUrl = "",
+  sourceGatewaySecret = "",
   secureCookie = true,
 }) {
   const proxy = httpProxy.createProxyServer({ target, ws: true, xfwd: true, changeOrigin: true });
@@ -126,7 +133,15 @@ function createGateway({
     // and therefore do not carry the browser session cookie. The Playground
     // connector validates the Bot JWT; expose only this callback namespace.
     if (url.pathname === "/_connector" || url.pathname.startsWith("/_connector/")) {
-      proxy.web(req, res);
+      try {
+        await proxyConnector(req, res, target, adapterTarget, publicBaseUrl);
+      } catch (error) {
+        const status = error && error.statusCode === 413 ? 413 : 502;
+        if (!res.headersSent) {
+          res.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+          res.end(status === 413 ? "Request body too large\n" : "Agents Playground 尚未就緒，請稍後重試。\n");
+        }
+      }
       return;
     }
 
@@ -199,6 +214,18 @@ function createGateway({
       return;
     }
 
+    if (isSourceAssetPath(url.pathname) && adapterTarget) {
+      try {
+        await proxySourceAsset(req, res, adapterTarget, sourceGatewaySecret);
+      } catch (_error) {
+        if (!res.headersSent) {
+          res.writeHead(502, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+          res.end("無法開啟來源文件，請稍後再試。\n");
+        }
+      }
+      return;
+    }
+
     if (url.pathname === "/" && req.method === "GET") {
       await proxyIndex(res, target);
       return;
@@ -251,6 +278,8 @@ function start() {
     knowledgeControlToken: process.env.KNOWLEDGE_CONTROL_TOKEN,
     knowledgeControlAuthMode: process.env.KNOWLEDGE_CONTROL_AUTH_MODE || "none",
     knowledgeControlAudience: process.env.KNOWLEDGE_CONTROL_AUDIENCE,
+    publicBaseUrl,
+    sourceGatewaySecret: process.env.SOURCE_GATEWAY_SECRET || "",
     secureCookie: publicBaseUrl.startsWith("https://"),
   });
 

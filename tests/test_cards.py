@@ -210,3 +210,25 @@ def test_response_with_citations_numbered_in_answer_prefixes_sources_with_matchi
     assert "- [S2] AD 帳號與系統解鎖 FAQ" in formatted
     assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in activity
     assert "- [S2] AD 帳號與系統解鎖 FAQ" in activity
+
+
+def test_card_adds_open_url_actions_for_citation_links() -> None:
+    response = AgentResponse(
+        answer="請調整安全性設定。",
+        traceId="trace-1",
+        citations=[Citation(title="大州系統_功能無法點選", url="https://bot.example.com/rag-sources/vpn.md")],
+        feedbackEnabled=True,
+    )
+
+    activity = build_agent_activity(
+        response, AgentSettings(), conversation_id="conversation-1", now=1_000
+    )
+
+    actions = activity.attachments[0].content["actions"]
+    assert actions == [
+        {
+            "type": "Action.OpenUrl",
+            "title": "大州系統_功能無法點選",
+            "url": "https://bot.example.com/rag-sources/vpn.md",
+        }
+    ]

@@ -1,5 +1,7 @@
 "use strict";
 
+const { linkOpenerScript } = require("./source-proxy");
+
 function loginPage(error = "") {
   const message = error ? `<p class="error">${error}</p>` : "";
   return `<!doctype html>
@@ -127,6 +129,12 @@ async function proxyIndex(res, target) {
   try {
     const response = await fetch(`${target}/`);
     let body = await response.text();
+    const opener = `<script>${linkOpenerScript()}</script>`;
+    if (body.includes("<head>")) {
+      body = body.replace("<head>", `<head>${opener}`);
+    } else if (body.includes("</body>")) {
+      body = body.replace("</body>", `${opener}</body>`);
+    }
     body = body.replace("</body>", '<script src="/_knowledge-control.js"></script></body>');
     const headers = { "content-type": response.headers.get("content-type") || "text/html; charset=utf-8", "cache-control": "no-store" };
     res.writeHead(response.status, headers);

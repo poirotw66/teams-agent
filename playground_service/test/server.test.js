@@ -11,6 +11,7 @@ const {
   verifySession,
   injectPlaygroundEvaluation,
 } = require("../server");
+const { rewriteAdapterAssetUrls } = require("../lib/source-proxy");
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
@@ -391,5 +392,115 @@ test("adapter proxy injects playgroundSessionId for logical conversation reset",
     await close(gateway);
     await close(upstream);
     await close(adapter);
+  }
+});
+
+test("rewrites adapter source links to the current page and leaves images on the adapter", () => {
+  const rewritten = rewriteAdapterAssetUrls(
+    "see https://adapter.example/rag-sources/vpn.md?signature=abc and https://adapter.example/rag-assets/a.png",
+    "https://adapter.example",
+  );
+  assert.match(rewritten, /\/rag-sources\/vpn\.md\?signature=abc/);
+  assert.doesNotMatch(rewritten, /https:\/\/adapter\.example\/rag-sources/);
+  assert.match(rewritten, /https:\/\/adapter\.example\/rag-assets\/a\.png/);
+});
+
+test("authenticated source links are proxied with the gateway viewer assertion", async () => {
+  let seen = null;
+  const adapter = http.createServer((req, res) => {
+    seen = {
+      url: req.url,
+      subject: req.headers["x-viewer-subject"],
+      secret: req.headers["x-gateway-secret"],
+    };
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end("<p>VPN policy</p>");
+  });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end("<html><head></head><body></body></html>");
+  });
+  const adapterPort = await listen(adapter);
+  const upstreamPort = await listen(upstream);
+  const gateway = createGateway({
+    password: "test-password",
+    sessionSecret: "a sufficiently long test session secret",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    adapterTarget: `http://127.0.0.1:${adapterPort}`,
+    publicBaseUrl: "https://playground.example",
+    sourceGatewaySecret: "gateway-secret-value",
+    secureCookie: false,
+  });
+  const gatewayPort = await listen(gateway);
+  const baseUrl = `http://127.0.0.1:${gatewayPort}`;
+
+  try {
+    const denied = await fetch(`${baseUrl}/rag-sources/vpn.md?subject=playground.user%40example.test`, { redirect: "manual" });
+    assert.equal(denied.status, 303);
+    assert.equal(denied.headers.get("location"), "/login");
+
+    const login = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "password=test-password",
+    });
+    const cookie = login.headers.get("set-cookie").split(";", 1)[0];
+    const opened = await fetch(`${baseUrl}/rag-sources/vpn.md?subject=playground.user%40example.test&signature=abc`, {
+      headers: { cookie, accept: "text/html" },
+    });
+    assert.equal(opened.status, 200);
+    assert.equal(await opened.text(), "<p>VPN policy</p>");
+    assert.equal(seen.subject, "playground.user@example.test");
+    assert.equal(seen.secret, "gateway-secret-value");
+    assert.equal(seen.url, "/rag-sources/vpn.md?subject=playground.user%40example.test&signature=abc");
+    assert.equal(opened.headers.get("x-gateway-secret"), null);
+
+    const index = await fetch(`${baseUrl}/`, { headers: { cookie } });
+    const html = await index.text();
+    assert.match(html, /assetUrl/);
+    assert.doesNotMatch(html, /gateway-secret-value/);
+  } finally {
+    await close(gateway);
+    await close(upstream);
+    await close(adapter);
+  }
+});
+
+test("connector activities rewrite private adapter source links before the playground stores them", async () => {
+  let stored = "";
+  const upstream = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    stored = body;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"id":"activity-1"}');
+  });
+  const upstreamPort = await listen(upstream);
+  const gateway = createGateway({
+    password: "test-password",
+    sessionSecret: "a sufficiently long test session secret",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    adapterTarget: "https://adapter.example",
+    publicBaseUrl: "https://playground.example",
+  });
+  const gatewayPort = await listen(gateway);
+  const baseUrl = `http://127.0.0.1:${gatewayPort}`;
+
+  try {
+    const posted = await fetch(`${baseUrl}/_connector/v3/conversations/chat/activities`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer bot-token" },
+      body: JSON.stringify({
+        type: "message",
+        text: "來源 [VPN](https://adapter.example/rag-sources/vpn.md?signature=abc)",
+      }),
+    });
+    assert.equal(posted.status, 200);
+    assert.match(stored, /\/rag-sources\/vpn\.md\?signature=abc/);
+    assert.doesNotMatch(stored, /adapter\.example\/rag-sources/);
+  } finally {
+    await close(gateway);
+    await close(upstream);
   }
 });
