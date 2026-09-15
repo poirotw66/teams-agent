@@ -154,10 +154,17 @@ class AgentSettings:
                 or environ.get("AI_OPS_BACKOFFICE_TOKEN", "").strip()
                 or None
             ),
+            # Local .env always carries RAG_ASSET_SIGNING_KEY for Adaptive Card
+            # assets. Reuse it for Source API only when BASE_URL is configured;
+            # otherwise Adapter startup treats Source API as disabled.
             source_delegation_secret=(
                 environ.get("SOURCE_DELEGATION_SECRET", "").strip()
                 or environ.get("AI_OPS_SOURCE_DELEGATION_SECRET", "").strip()
-                or asset_signing_key
+                or (
+                    asset_signing_key
+                    if (environ.get("SOURCE_API_BASE_URL", "").strip())
+                    else None
+                )
             ),
             source_api_timeout_seconds=source_api_timeout,
         )

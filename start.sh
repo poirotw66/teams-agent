@@ -345,6 +345,13 @@ require_command ps
 configure_gemini_file_search
 configure_agentic_models
 
+# Shared local Source API credentials (Adapter → Backoffice originals).
+LOCAL_SOURCE_TOKEN="${SOURCE_API_TOKEN:-${AI_OPS_BACKOFFICE_TOKEN:-local-dev-backoffice-token}}"
+LOCAL_SOURCE_DELEGATION="${SOURCE_DELEGATION_SECRET:-${AI_OPS_SOURCE_DELEGATION_SECRET:-$(env_value "${PROJECT_DIR}/.env" "RAG_ASSET_SIGNING_KEY")}}"
+if [[ -z "${LOCAL_SOURCE_DELEGATION}" ]]; then
+  LOCAL_SOURCE_DELEGATION="local-dev-source-delegation"
+fi
+
 RAG_SOURCES_DIR="${RAG_SOURCES_DIR:-${PROJECT_DIR}/data/sources}"
 if [[ ! -d "${RAG_SOURCES_DIR}" ]]; then
   fail "找不到知識語料目錄 ${RAG_SOURCES_DIR}。
@@ -530,6 +537,8 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
     export AI_OPS_KNOWLEDGE_BRIDGE_ENABLED="${KNOWLEDGE_BRIDGE_ENABLED}"
     export AI_OPS_DEPLOYMENT_TENANT_ID="${AI_OPS_DEPLOYMENT_TENANT_ID:-local-development}"
     export AI_OPS_BACKOFFICE_AUTH_MODE="${AI_OPS_BACKOFFICE_AUTH_MODE:-HEADER}"
+    export AI_OPS_BACKOFFICE_TOKEN="${LOCAL_SOURCE_TOKEN}"
+    export AI_OPS_SOURCE_DELEGATION_SECRET="${LOCAL_SOURCE_DELEGATION}"
     export RAG_DATA_DIR="${PROJECT_DIR}/data"
     export OPS_STORE_MODE=FILE
     export OPS_AUDIT_STORE_MODE=FILE
@@ -541,6 +550,12 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
 fi
 
 log "啟動 Teams Adapter：http://127.0.0.1:${TEAMS_PORT}"
+# When Backoffice is local, wire Adapter Source API to it so citation opens work.
+if [[ "${START_BACKOFFICE}" == "true" ]]; then
+  export SOURCE_API_BASE_URL="${SOURCE_API_BASE_URL:-http://127.0.0.1:${AI_OPS_PORT}}"
+  export SOURCE_API_TOKEN="${LOCAL_SOURCE_TOKEN}"
+  export SOURCE_DELEGATION_SECRET="${LOCAL_SOURCE_DELEGATION}"
+fi
 start_background bash -c "
   cd \"\$1\"
   export PORT=\"\$2\"
@@ -549,6 +564,11 @@ start_background bash -c "
   export BOT_PUBLIC_BASE_URL=\"http://127.0.0.1:\$2\"
   export DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
   export PLAYGROUND_TEST_USER_EMAIL=\"\$4\"
+  if [[ -n \"\${SOURCE_API_BASE_URL:-}\" ]]; then
+    export SOURCE_API_BASE_URL
+    export SOURCE_API_TOKEN
+    export SOURCE_DELEGATION_SECRET
+  fi
   exec uv run teams-agent
 " _ "${PROJECT_DIR}" "${TEAMS_PORT}" "${RAG_PORT}" "${PLAYGROUND_TEST_USER_EMAIL}"
 wait_for_url "Teams Adapter" "http://127.0.0.1:${TEAMS_PORT}/readyz" 45

@@ -29,6 +29,47 @@ def _viewer() -> CitationViewerContext:
     return CitationViewerContext(subject="user-1", groups=("it-helpdesk",), tenant_id="t1")
 
 
+def test_rag_asset_signing_key_alone_does_not_enable_source_api(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Local .env always has RAG_ASSET_SIGNING_KEY; that must not crash Adapter."""
+
+    source_dir = tmp_path / "data"
+    source_dir.mkdir(parents=True)
+    monkeypatch.setenv("AGENT_MODE", "echo")
+    monkeypatch.setenv("RAG_SOURCE_DIR", str(source_dir))
+    monkeypatch.setenv("RAG_ASSET_SIGNING_KEY", "local-signing-key-16+")
+    monkeypatch.delenv("SOURCE_API_BASE_URL", raising=False)
+    monkeypatch.delenv("SOURCE_API_TOKEN", raising=False)
+    monkeypatch.delenv("SOURCE_DELEGATION_SECRET", raising=False)
+    monkeypatch.delenv("AI_OPS_SOURCE_DELEGATION_SECRET", raising=False)
+    monkeypatch.delenv("AI_OPS_BACKOFFICE_TOKEN", raising=False)
+
+    settings = AgentSettings.from_env()
+    assert settings.source_api_base_url is None
+    assert settings.source_api_token is None
+    assert settings.source_delegation_secret is None
+    assert settings.asset_signing_key == "local-signing-key-16+"
+
+
+def test_source_api_reuses_rag_signing_key_when_base_url_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "data"
+    source_dir.mkdir(parents=True)
+    monkeypatch.setenv("AGENT_MODE", "echo")
+    monkeypatch.setenv("RAG_SOURCE_DIR", str(source_dir))
+    monkeypatch.setenv("RAG_ASSET_SIGNING_KEY", "local-signing-key-16+")
+    monkeypatch.setenv("SOURCE_API_BASE_URL", "http://127.0.0.1:8092")
+    monkeypatch.setenv("SOURCE_API_TOKEN", "service-token")
+    monkeypatch.delenv("SOURCE_DELEGATION_SECRET", raising=False)
+    monkeypatch.delenv("AI_OPS_SOURCE_DELEGATION_SECRET", raising=False)
+
+    settings = AgentSettings.from_env()
+    assert settings.source_api_base_url == "http://127.0.0.1:8092"
+    assert settings.source_delegation_secret == "local-signing-key-16+"
+
+
 def _settings(tmp_path: Path, *, with_source_api: bool = True) -> AgentSettings:
     source_dir = tmp_path / "data"
     sources = source_dir / "sources"
