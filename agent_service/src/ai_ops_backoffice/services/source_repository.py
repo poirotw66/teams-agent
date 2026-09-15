@@ -13,7 +13,29 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Protocol, runtime_checkable
 
-from .source_models import SourceRecord
+from .source_models import MappingStatus, SourceRecord
+
+
+def prefer_document_source_record(
+    records: list[SourceRecord],
+) -> SourceRecord | None:
+    """Pick a stable document-level SourceRecord when multiple chunks exist."""
+
+    if not records:
+        return None
+    available = [
+        record
+        for record in records
+        if record.mapping_status == MappingStatus.AVAILABLE and not record.is_deleted
+    ]
+    pool = available or [record for record in records if not record.is_deleted] or records
+    return sorted(
+        pool,
+        key=lambda record: (
+            0 if not record.chunk_id else 1,
+            record.source_ref_id,
+        ),
+    )[0]
 
 
 class BoundedSourceCache:
@@ -90,6 +112,11 @@ class SourceRecordRepository(Protocol):
     ) -> list[SourceRecord]:
         ...
 
+    async def list_source_records_for_document(
+        self, tenant_id: str, document_id: str
+    ) -> list[SourceRecord]:
+        ...
+
     async def list_source_records_for_release(
         self, tenant_id: str, release_id: str
     ) -> list[SourceRecord]:
@@ -137,6 +164,15 @@ class InMemorySourceRecordRepository:
             if t_id == tenant_id
             and rec.document_id == document_id
             and rec.version_id == version_id
+        ]
+
+    async def list_source_records_for_document(
+        self, tenant_id: str, document_id: str
+    ) -> list[SourceRecord]:
+        return [
+            rec
+            for (t_id, _), rec in self._records.items()
+            if t_id == tenant_id and rec.document_id == document_id
         ]
 
     async def list_source_records_for_release(
@@ -211,6 +247,22 @@ class FileSourceRecordRepository:
             try:
                 rec = SourceRecord.model_validate_json(file.read_text(encoding="utf-8"))
                 if rec.document_id == document_id and rec.version_id == version_id:
+                    matches.append(rec)
+            except (OSError, ValueError):
+                continue
+        return matches
+
+    async def list_source_records_for_document(
+        self, tenant_id: str, document_id: str
+    ) -> list[SourceRecord]:
+        tenant_dir = self.base_dir / tenant_id
+        if not tenant_dir.is_dir():
+            return []
+        matches: list[SourceRecord] = []
+        for file in tenant_dir.glob("*.json"):
+            try:
+                rec = SourceRecord.model_validate_json(file.read_text(encoding="utf-8"))
+                if rec.document_id == document_id:
                     matches.append(rec)
             except (OSError, ValueError):
                 continue
@@ -304,6 +356,21 @@ class FirestoreSourceRecordRepository:
             .where("version_id", "==", version_id)
             .stream()
         )
+        return [SourceRecord.model_validate(doc.to_dict()) for doc in query]
+
+    async def list_source_records_for_document(
+        self, tenant_id: str, document_id: str
+    ) -> list[SourceRecord]:
+        if self.client is None:
+            return await self._fallback.list_source_records_for_document(
+                tenant_id, document_id
+            )
+        coll = (
+            self.client.collection("tenants")
+            .document(tenant_id)
+            .collection("source_records")
+        )
+        query = coll.where("document_id", "==", document_id).stream()
         return [SourceRecord.model_validate(doc.to_dict()) for doc in query]
 
     async def list_source_records_for_release(

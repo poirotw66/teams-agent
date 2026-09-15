@@ -29,6 +29,7 @@ import {
 } from '@ant-design/icons';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '../../../shared/api/client';
+import { authRequestHeaders } from '../../../shared/auth/session';
 import {
   WorkflowDetailResponse,
   EvidenceRef,
@@ -37,6 +38,13 @@ import { StatusTag } from '../../../shared/ui/StatusTag';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
+
+type SourcePreview = {
+  sourceRefId?: string;
+  documentId?: string;
+  downloadUrl?: string;
+  title?: string;
+};
 
 export const CaseDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -51,7 +59,10 @@ export const CaseDetailPage: React.FC = () => {
   const [isDraftModalOpen, setIsDraftModalOpen] = useState<boolean>(false);
   const [isResolveModalOpen, setIsResolveModalOpen] = useState<boolean>(false);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState<boolean>(false);
+  const [isConversationModalOpen, setIsConversationModalOpen] = useState<boolean>(false);
+  const [conversationDetail, setConversationDetail] = useState<any>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [openingSource, setOpeningSource] = useState<boolean>(false);
 
   const [draftForm] = Form.useForm();
   const [resolveForm] = Form.useForm();
@@ -81,6 +92,70 @@ export const CaseDetailPage: React.FC = () => {
   }, [loadCaseDetail]);
 
   const currentEtag = caseData?.etag ?? 1;
+
+  const openAuthenticatedFile = async (downloadUrl: string) => {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(authRequestHeaders())) {
+      headers.set(name, value);
+    }
+    const response = await fetch(downloadUrl, {
+      headers,
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`開啟原檔失敗（HTTP ${response.status}）`);
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  };
+
+  const openOriginalByDocument = async (documentId: string) => {
+    setOpeningSource(true);
+    try {
+      const preview = await apiClient<SourcePreview>(
+        `/api/sources?documentId=${encodeURIComponent(documentId)}`
+      );
+      if (!preview.downloadUrl) {
+        throw new Error('此文件尚無可開啟的原檔');
+      }
+      await openAuthenticatedFile(preview.downloadUrl);
+      message.success(`已開啟原檔 ${preview.sourceRefId || documentId}`);
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : '開啟原檔失敗');
+    } finally {
+      setOpeningSource(false);
+    }
+  };
+
+  const openOriginalBySourceRef = async (sourceRefId: string) => {
+    setOpeningSource(true);
+    try {
+      const preview = await apiClient<SourcePreview>(`/api/sources/${encodeURIComponent(sourceRefId)}`);
+      if (!preview.downloadUrl) {
+        throw new Error('此來源尚無可開啟的原檔');
+      }
+      await openAuthenticatedFile(preview.downloadUrl);
+      message.success(`已開啟原檔 ${sourceRefId}`);
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : '開啟原檔失敗');
+    } finally {
+      setOpeningSource(false);
+    }
+  };
+
+  const openConversation = async (conversationId: string) => {
+    try {
+      const detail = await apiClient<any>(
+        `/api/conversations/${encodeURIComponent(conversationId)}`
+      );
+      setConversationDetail(detail);
+      setIsConversationModalOpen(true);
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : '載入對話失敗');
+    }
+  };
 
   // Handle Transition
   const handleTransition = async (
@@ -450,6 +525,52 @@ export const CaseDetailPage: React.FC = () => {
         </Col>
       </Row>
 
+      {/* Conversation / Source closed loop */}
+      <Card title="原對話與原檔追溯" style={{ borderRadius: 8 }}>
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <div>
+            <Text strong>關聯對話</Text>
+            <div style={{ marginTop: 8 }}>
+              {(caseData?.conversation_refs || []).length ? (
+                <Space wrap>
+                  {(caseData.conversation_refs as string[]).map((conversationId) => (
+                    <Button
+                      key={conversationId}
+                      onClick={() => void openConversation(conversationId)}
+                    >
+                      開啟對話 {conversationId}
+                    </Button>
+                  ))}
+                </Space>
+              ) : (
+                <Text type="secondary">尚無關聯對話</Text>
+              )}
+            </div>
+          </div>
+          <div>
+            <Text strong>關聯知識文件／原檔</Text>
+            <div style={{ marginTop: 8 }}>
+              {(caseData?.document_ids || []).length ? (
+                <Space wrap>
+                  {(caseData.document_ids as string[]).map((documentId) => (
+                    <Button
+                      key={documentId}
+                      type="primary"
+                      loading={openingSource}
+                      onClick={() => void openOriginalByDocument(documentId)}
+                    >
+                      開啟原檔 {documentId}
+                    </Button>
+                  ))}
+                </Space>
+              ) : (
+                <Text type="secondary">尚未關聯知識文件</Text>
+              )}
+            </div>
+          </div>
+        </Space>
+      </Card>
+
       {/* Evidence References Table Card */}
       <Card
         title="可追溯證據清單 (Evidence Trace)"
@@ -464,6 +585,57 @@ export const CaseDetailPage: React.FC = () => {
           locale={{ emptyText: '目前無關聯證據' }}
         />
       </Card>
+
+      <Modal
+        title={conversationDetail ? `對話 ${conversationDetail.conversationId || ''}` : '對話詳情'}
+        open={isConversationModalOpen}
+        onCancel={() => {
+          setIsConversationModalOpen(false);
+          setConversationDetail(null);
+        }}
+        footer={null}
+        width={720}
+      >
+        {conversationDetail?.turns?.length ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            {conversationDetail.turns.map((turn: any, index: number) => (
+              <Card
+                key={String(turn.turnId || index)}
+                size="small"
+                title={`回合 ${turn.turnId || index + 1}`}
+              >
+                <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+                  {turn.answerText || turn.questionText || '（無文字內容）'}
+                </Paragraph>
+                <Space wrap>
+                  {(turn.sourceRefs || []).map((source: any) => (
+                    <Button
+                      key={source.sourceRefId}
+                      type="link"
+                      loading={openingSource}
+                      onClick={() => void openOriginalBySourceRef(source.sourceRefId)}
+                    >
+                      開啟原檔 {source.sourceRefId || source.documentId}
+                    </Button>
+                  ))}
+                  {(turn.documentIds || []).map((documentId: string) => (
+                    <Button
+                      key={documentId}
+                      type="link"
+                      loading={openingSource}
+                      onClick={() => void openOriginalByDocument(documentId)}
+                    >
+                      依文件開啟 {documentId}
+                    </Button>
+                  ))}
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        ) : (
+          <Text type="secondary">此對話沒有可顯示的回合資料。</Text>
+        )}
+      </Modal>
 
       {/* Modal: Create Document Draft */}
       <Modal

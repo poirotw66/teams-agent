@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from agent_service.artifact_storage import sanitize_filename
@@ -10,6 +10,8 @@ from agent_service.document_authorization import (
     DocumentAccessDeniedError,
     ensure_document_access,
 )
+
+from ..services.source_repository import prefer_document_source_record
 
 
 def parse_range_header(range_header: str | None, total_size: int) -> tuple[int, int] | None:
@@ -51,6 +53,62 @@ def register_sources_routes(
     audit_read: Callable[..., Any],
 ) -> None:
     """Register HTTP read routes for source citation preview and file streaming."""
+
+    @app.get("/api/sources")
+    async def resolve_sources(
+        documentId: str | None = Query(default=None),
+        actor: Any = Depends(current_actor),
+    ) -> dict[str, object]:
+        """Resolve SourceRecords for a document without requiring Portal inventory."""
+
+        require_capability(actor, "ops.conversations.read")
+        document_id = (documentId or "").strip()
+        if not document_id:
+            raise HTTPException(
+                status_code=400,
+                detail="documentId query parameter is required.",
+            )
+        tenant_id = getattr(actor, "tenant_id", None) or "default"
+        records = await query_service._source_trace.source_repository.list_source_records_for_document(
+            tenant_id,
+            document_id,
+        )
+        preferred = prefer_document_source_record(records)
+        if preferred is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Source reference not found or access denied.",
+            )
+        source = query_service._source_trace.resolve_source_ref(
+            preferred.source_ref_id, tenant_id=tenant_id
+        )
+        if source is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Source reference not found or access denied.",
+            )
+        try:
+            ensure_document_access(actor, source, action="preview")
+        except DocumentAccessDeniedError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+        payload = query_service._source_trace.preview_payload(source)
+        payload["previewUrl"] = f"/api/sources/{source.source_ref_id}"
+        if source.original_asset_available and source.mapping_status != "LEGACY_UNVERIFIED":
+            payload["downloadUrl"] = f"/api/sources/{source.source_ref_id}/file"
+        await audit_read(
+            actor,
+            "query.source_resolve_by_document",
+            source.source_ref_id,
+            after={
+                "documentId": source.document_id,
+                "versionId": source.version_id,
+                "releaseId": source.release_id,
+                "mappingStatus": source.mapping_status,
+                "matchCount": len(records),
+            },
+        )
+        return payload
 
     @app.get("/api/sources/{source_ref_id}")
     async def source_preview(

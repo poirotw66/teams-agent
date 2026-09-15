@@ -19,6 +19,7 @@ from ..request_models import (
     QualityFaqDraftRequest,
     QuestionClusterCorrectionRequest,
 )
+from ..services.source_repository import prefer_document_source_record
 
 
 def register_quality_routes(
@@ -205,9 +206,20 @@ def register_quality_routes(
                     ),
                     None,
                 )
-                if document is None:
+                if document is not None:
+                    doc_owner_unit = document.get("ownerUnitId")
+            if doc_owner_unit is None:
+                # Shared source contract: Portal inventory may lag behind SourceRecord.
+                tenant_id = getattr(actor, "tenant_id", None) or "default"
+                source_repository = query_service._source_trace.source_repository
+                records = await source_repository.list_source_records_for_document(
+                    tenant_id,
+                    payload.document_id,
+                )
+                preferred = prefer_document_source_record(records)
+                if preferred is None:
                     raise FaqNotFoundError(payload.document_id)
-                doc_owner_unit = document.get("ownerUnitId")
+                doc_owner_unit = preferred.owner_unit_id or case["owner_unit_id"]
             if doc_owner_unit != case["owner_unit_id"]:
                 raise FaqValidationError("linked document must belong to the Quality Case owner unit")
         return quality_service.link_content(
