@@ -12,9 +12,9 @@ COPY src ./src
 # Citation delivery reads Markdown under data/sources (and images under assets).
 # Shipping only assets left Cloud Run /rag-sources 404 while local checkout worked.
 COPY data/sources ./data/sources
-# Portal-active Hybrid citations use releases/<id>/sources/doc--*.md paths.
-# Without the release tree, Adapter mints OpenUrl links that 404 on open.
-COPY data/releases ./data/releases
+# Release trees are optional for Adapter: originals are delivered via Backoffice
+# Source API. Keep an empty releases dir so RAG_SOURCE_DIR layout stays stable.
+RUN mkdir -p /app/data/releases
 
 ENV RAG_SOURCE_DIR=/app/data \
     RAG_ASSET_DIR=/app/data/sources/assets

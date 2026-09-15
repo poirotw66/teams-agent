@@ -8,19 +8,37 @@ so multi-instance preview/download can pin generation (F07).
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import json
 import mimetypes
 import re
 import secrets
 import shutil
+from collections.abc import Coroutine
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .draft_assets import normalize_upload_filename
 from .settings import PortalSettings
 
 _TOKEN_PATTERN = re.compile(r"^orig-[0-9a-f]{24}$")
+_T = TypeVar("_T")
+
+
+def _run_coroutine_sync(coroutine: Coroutine[Any, Any, _T]) -> _T:
+    """Run an async coroutine from sync code, including nested event loops.
+
+    Starlette/TestClient already own a running loop, so asyncio.run and a
+    sibling loop's run_until_complete both fail. Offload to a worker thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coroutine).result()
+
 
 
 def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
@@ -149,16 +167,7 @@ class OriginalAssetStore:
             )
             return str(record.artifact_id)
 
-        try:
-            return asyncio.run(_store())
-        except RuntimeError:
-            # Nested event loop (e.g. already inside FastAPI request). Use a
-            # dedicated loop instead of failing the local commit path.
-            loop = asyncio.new_event_loop()
-            try:
-                return loop.run_until_complete(_store())
-            finally:
-                loop.close()
+        return _run_coroutine_sync(_store())
 
     def commit_pending(
         self,

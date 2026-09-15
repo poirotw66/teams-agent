@@ -74,7 +74,9 @@ def test_enrich_without_viewer_does_not_mint_transferable_url(tmp_path: Path) ->
     assert enriched.citations[0].url is None
 
 
-def test_enrich_citation_urls_keeps_existing_formal_url(tmp_path: Path) -> None:
+def test_enrich_citation_urls_replaces_non_delivery_url_when_source_path_exists(
+    tmp_path: Path,
+) -> None:
     settings = _settings(tmp_path)
     response = AgentResponse(
         answer="ok",
@@ -83,7 +85,7 @@ def test_enrich_citation_urls_keeps_existing_formal_url(tmp_path: Path) -> None:
             Citation(
                 title="API Key",
                 url="https://internal.example/docs/api-key",
-                sourcePath="sources/api.md",
+                sourcePath="sources/大州系統_功能無法點選.md",
             )
         ],
     )
@@ -92,7 +94,35 @@ def test_enrich_citation_urls_keeps_existing_formal_url(tmp_path: Path) -> None:
         response, settings, now=1_000, viewer=_viewer()
     )
 
-    assert enriched.citations[0].url == "https://internal.example/docs/api-key"
+    assert enriched.citations[0].url is not None
+    assert enriched.citations[0].url.startswith(
+        "https://bot.example.com/rag-sources/sources/"
+    )
+
+
+def test_enrich_citation_urls_keeps_existing_adapter_delivery_url(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    existing = (
+        "https://bot.example.com/rag-sources/sources/大州系統_功能無法點選.md"
+        "?expires=1000&signature=abc&subject=user-1"
+    )
+    response = AgentResponse(
+        answer="ok",
+        traceId="trace-1",
+        citations=[
+            Citation(
+                title="大州系統_功能無法點選",
+                url=existing,
+                sourcePath="sources/大州系統_功能無法點選.md",
+            )
+        ],
+    )
+
+    enriched = enrich_citation_urls(
+        response, settings, now=1_000, viewer=_viewer()
+    )
+
+    assert enriched.citations[0].url == existing
 
 
 def test_build_agent_activity_renders_clickable_source_link(tmp_path: Path) -> None:
@@ -111,8 +141,14 @@ def test_build_agent_activity_renders_clickable_source_link(tmp_path: Path) -> N
     activity = build_agent_activity(
         response, settings, now=1_000, viewer=_viewer()
     )
-    assert isinstance(activity, str)
-    assert "[大州系統_功能無法點選](https://bot.example.com/rag-sources/" in activity
+    assert not isinstance(activity, str)
+    card = activity.attachments[0].content
+    assert isinstance(card, dict)
+    body_text = card["body"][0]["text"]
+    assert "[大州系統_功能無法點選](https://bot.example.com/rag-sources/" in body_text
+    actions = card["actions"]
+    assert actions[0]["type"] == "Action.OpenUrl"
+    assert actions[0]["url"].startswith("https://bot.example.com/rag-sources/")
 
 
 def test_resolve_source_file_serves_markdown(tmp_path: Path) -> None:
@@ -148,21 +184,24 @@ def test_resolve_source_file_raises_when_markdown_missing_from_source_dir(tmp_pa
     """Cloud Run failed the same way when the Adapter image omitted data/sources/*.md."""
 
     settings = _settings(tmp_path)
-    (settings.source_dir / "sources" / "大州系統_功能無法點選.md").unlink()
+    missing_name = "missing-source.md"
+    (settings.source_dir / "sources" / missing_name).write_text("# temp\n", encoding="utf-8")
+    # Keep sources_ready true via another markdown file, then delete the target.
     store = InMemoryViewerMembershipStore()
     url = build_source_url(
-        "sources/大州系統_功能無法點選.md",
+        f"sources/{missing_name}",
         settings,
         now=1_000,
         viewer=_viewer(),
         membership_store=store,
     )
     assert url is not None
+    (settings.source_dir / "sources" / missing_name).unlink()
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
     with pytest.raises(FileNotFoundError):
         resolve_source_file(
-            "sources/大州系統_功能無法點選.md",
+            f"sources/{missing_name}",
             params["expires"][0],
             params["signature"][0],
             settings,

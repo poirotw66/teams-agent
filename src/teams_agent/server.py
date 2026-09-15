@@ -12,7 +12,7 @@ These extra routes are guarded as follows:
 - `/rag-assets/{path}` is guarded by its own HMAC signature + expiry
   (`teams_agent.media`), because Teams itself fetches those image URLs
   without any bearer token.
-- `/rag-sources/` and `/sources/` are guarded by enterprise SSO, viewer tokens,
+- `/rag-sources/`, `/rag-originals/`, and `/sources/` are guarded by enterprise SSO, viewer tokens,
   and HMAC signatures (delegated to `teams_agent.source_routes`).
 """
 

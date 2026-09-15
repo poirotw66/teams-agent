@@ -97,7 +97,7 @@ def register_sources_routes(
         )
         return payload
 
-    @app.get("/api/sources/{source_ref_id}/file")
+    @app.api_route("/api/sources/{source_ref_id}/file", methods=["GET", "HEAD"])
     async def source_file(
         source_ref_id: str,
         request: Request,
@@ -140,29 +140,37 @@ def register_sources_routes(
                         detail="Source artifact not found or access denied.",
                     )
                 parsed_range = parse_range_header(range_header, rec.size)
-                if parsed_range:
-                    start, end = parsed_range
-                    _, data = await artifact_store.get_artifact_range(
-                        tenant_id, source.artifact_ref, start, end
-                    )
-                    await audit_read(
-                        actor,
-                        "query.source_file_range",
-                        source.source_ref_id,
-                        after={"start": start, "end": end, "documentId": source.document_id},
-                    )
+                if parsed_range is None:
                     return Response(
-                        content=data,
-                        status_code=206,
+                        status_code=416,
                         headers={
-                            "Content-Range": f"bytes {start}-{end}/{rec.size}",
+                            "Content-Range": f"bytes */{rec.size}",
                             "Accept-Ranges": "bytes",
-                            "Content-Length": str(len(data)),
-                            "Content-Type": rec.mime_type,
-                            "Content-Disposition": f'inline; filename="{safe_name}"',
                             "X-Content-Type-Options": "nosniff",
                         },
                     )
+                start, end = parsed_range
+                _, data = await artifact_store.get_artifact_range(
+                    tenant_id, source.artifact_ref, start, end
+                )
+                await audit_read(
+                    actor,
+                    "query.source_file_range",
+                    source.source_ref_id,
+                    after={"start": start, "end": end, "documentId": source.document_id},
+                )
+                return Response(
+                    content=data,
+                    status_code=206,
+                    headers={
+                        "Content-Range": f"bytes {start}-{end}/{rec.size}",
+                        "Accept-Ranges": "bytes",
+                        "Content-Length": str(len(data)),
+                        "Content-Type": rec.mime_type,
+                        "Content-Disposition": f'inline; filename="{safe_name}"',
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
 
             rec, stream = await artifact_store.get_artifact(tenant_id, source.artifact_ref)
             await audit_read(
@@ -171,16 +179,19 @@ def register_sources_routes(
                 source.source_ref_id,
                 after={"documentId": source.document_id, "versionId": source.version_id},
             )
+            headers = {
+                "Content-Length": str(rec.size),
+                "Accept-Ranges": "bytes",
+                "Content-Type": rec.mime_type,
+                "Content-Disposition": f'inline; filename="{safe_name}"',
+                "X-Content-Type-Options": "nosniff",
+            }
+            if request.method == "HEAD":
+                return Response(status_code=200, headers=headers)
             return StreamingResponse(
                 stream,
                 status_code=200,
-                headers={
-                    "Content-Length": str(rec.size),
-                    "Accept-Ranges": "bytes",
-                    "Content-Type": rec.mime_type,
-                    "Content-Disposition": f'inline; filename="{safe_name}"',
-                    "X-Content-Type-Options": "nosniff",
-                },
+                headers=headers,
             )
 
         # 2. Local filesystem file streaming fallback
@@ -188,33 +199,41 @@ def register_sources_routes(
             file_size = source.original_asset_path.stat().st_size
             if range_header:
                 parsed_range = parse_range_header(range_header, file_size)
-                if parsed_range:
-                    start, end = parsed_range
-                    with source.original_asset_path.open("rb") as f:
-                        f.seek(start)
-                        data = f.read(end - start + 1)
-                    await audit_read(
-                        actor,
-                        "query.source_file_range",
-                        source.source_ref_id,
-                        after={"start": start, "end": end, "documentId": source.document_id},
-                    )
+                if parsed_range is None:
                     return Response(
-                        content=data,
-                        status_code=206,
+                        status_code=416,
                         headers={
-                            "Content-Range": f"bytes {start}-{end}/{file_size}",
+                            "Content-Range": f"bytes */{file_size}",
                             "Accept-Ranges": "bytes",
-                            "Content-Length": str(len(data)),
-                            "Content-Type": (
-                                "application/pdf"
-                                if safe_name.lower().endswith(".pdf")
-                                else "application/octet-stream"
-                            ),
-                            "Content-Disposition": f'inline; filename="{safe_name}"',
                             "X-Content-Type-Options": "nosniff",
                         },
                     )
+                start, end = parsed_range
+                with source.original_asset_path.open("rb") as f:
+                    f.seek(start)
+                    data = f.read(end - start + 1)
+                await audit_read(
+                    actor,
+                    "query.source_file_range",
+                    source.source_ref_id,
+                    after={"start": start, "end": end, "documentId": source.document_id},
+                )
+                return Response(
+                    content=data,
+                    status_code=206,
+                    headers={
+                        "Content-Range": f"bytes {start}-{end}/{file_size}",
+                        "Accept-Ranges": "bytes",
+                        "Content-Length": str(len(data)),
+                        "Content-Type": (
+                            "application/pdf"
+                            if safe_name.lower().endswith(".pdf")
+                            else "application/octet-stream"
+                        ),
+                        "Content-Disposition": f'inline; filename="{safe_name}"',
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
             await audit_read(
                 actor,
                 "query.source_file",

@@ -397,11 +397,13 @@ test("adapter proxy injects playgroundSessionId for logical conversation reset",
 
 test("rewrites adapter source links to the current page and leaves images on the adapter", () => {
   const rewritten = rewriteAdapterAssetUrls(
-    "see https://adapter.example/rag-sources/vpn.md?signature=abc and https://adapter.example/rag-assets/a.png",
+    "see https://adapter.example/rag-sources/vpn.md?signature=abc and https://adapter.example/rag-assets/a.png and https://adapter.example/rag-originals/src-1?signature=xyz",
     "https://adapter.example",
   );
   assert.match(rewritten, /\/rag-sources\/vpn\.md\?signature=abc/);
   assert.doesNotMatch(rewritten, /https:\/\/adapter\.example\/rag-sources/);
+  assert.match(rewritten, /\/rag-originals\/src-1\?signature=xyz/);
+  assert.doesNotMatch(rewritten, /https:\/\/adapter\.example\/rag-originals/);
   assert.match(rewritten, /https:\/\/adapter\.example\/rag-assets\/a\.png/);
 });
 
@@ -455,6 +457,40 @@ test("authenticated source links are proxied with the gateway viewer assertion",
     assert.equal(seen.secret, "gateway-secret-value");
     assert.equal(seen.url, "/rag-sources/vpn.md?subject=playground.user%40example.test&signature=abc");
     assert.equal(opened.headers.get("x-gateway-secret"), null);
+
+    const rangedUpstream = http.createServer(async (req, res) => {
+      assert.equal(req.headers.range, "bytes=0-3");
+      res.writeHead(206, {
+        "content-type": "application/pdf",
+        "content-range": "bytes 0-3/12",
+        "accept-ranges": "bytes",
+        "content-length": "4",
+        "content-disposition": 'inline; filename="vpn.pdf"',
+      });
+      res.end("VPN-");
+    });
+    const rangedPort = await listen(rangedUpstream);
+    const rangedGateway = createGateway({
+      password: "test-password",
+      sessionSecret: "a sufficiently long test session secret",
+      target: `http://127.0.0.1:${upstreamPort}`,
+      adapterTarget: `http://127.0.0.1:${rangedPort}`,
+      publicBaseUrl: "https://playground.example",
+      sourceGatewaySecret: "gateway-secret-value",
+      secureCookie: false,
+    });
+    const rangedGatewayPort = await listen(rangedGateway);
+    const rangedBase = `http://127.0.0.1:${rangedGatewayPort}`;
+    const ranged = await fetch(`${rangedBase}/rag-sources/vpn.pdf?subject=playground.user%40example.test&signature=abc`, {
+      headers: { cookie, range: "bytes=0-3", accept: "application/pdf" },
+    });
+    assert.equal(ranged.status, 206);
+    assert.equal(ranged.headers.get("content-range"), "bytes 0-3/12");
+    assert.equal(ranged.headers.get("accept-ranges"), "bytes");
+    assert.equal(ranged.headers.get("content-length"), "4");
+    assert.equal(await ranged.text(), "VPN-");
+    await close(rangedGateway);
+    await close(rangedUpstream);
 
     const index = await fetch(`${baseUrl}/`, { headers: { cookie } });
     const html = await index.text();

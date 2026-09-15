@@ -58,6 +58,8 @@ class PortalSettings:
     artifact_gcs_bucket: str | None = None
     artifact_storage_path: Path | None = None
     default_tenant_id: str = "default"
+    source_store_mode: str = "NONE"
+    source_store_path: Path | None = None
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -244,7 +246,6 @@ class PortalSettings:
             artifact_gcs_bucket=(
                 os.environ.get("KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET")
                 or os.environ.get("AI_OPS_ARTIFACT_GCS_BUCKET")
-                or os.environ.get("AI_OPS_EXPORT_GCS_BUCKET")
                 or None
             ),
             artifact_storage_path=(
@@ -256,6 +257,18 @@ class PortalSettings:
             ),
             default_tenant_id=os.environ.get(
                 "KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID", "default"
+            ),
+            source_store_mode=(
+                os.environ.get("KNOWLEDGE_PORTAL_SOURCE_STORE_MODE")
+                or os.environ.get("AI_OPS_SOURCE_STORE_MODE")
+                or "NONE"
+            ).upper(),
+            source_store_path=(
+                Path(os.environ["KNOWLEDGE_PORTAL_SOURCE_STORE_PATH"])
+                .expanduser()
+                .resolve()
+                if os.environ.get("KNOWLEDGE_PORTAL_SOURCE_STORE_PATH")
+                else None
             ),
         )
 

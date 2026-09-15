@@ -729,6 +729,21 @@ class ReleaseService:
             self._ctx.settings.release_artifact_dir,
             release.release_id,
         )
+        try:
+            from ..source_record_publish import persist_release_source_records
+
+            saved = await persist_release_source_records(self._ctx.settings, release)
+            if saved:
+                logger.info(
+                    "Release %s SourceRecords persisted: %s",
+                    release.release_id,
+                    saved,
+                )
+        except Exception:
+            logger.exception(
+                "Failed persisting SourceRecords for release %s",
+                release.release_id,
+            )
 
         reload_success, reload_error = await self._notify_agent_reload(
             release.release_id, correlation_id

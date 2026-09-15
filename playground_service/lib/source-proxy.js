@@ -1,7 +1,28 @@
 "use strict";
 
-const ASSET_PREFIXES = ["/rag-sources/", "/rag-assets/"];
+const ASSET_PREFIXES = ["/rag-sources/", "/rag-assets/", "/rag-originals/"];
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const HOP_BY_HOP = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
+const PASSTHROUGH_RESPONSE_HEADERS = [
+  "content-type",
+  "content-length",
+  "content-range",
+  "accept-ranges",
+  "content-disposition",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "location",
+];
 
 function adapterOrigin(adapterTarget) {
   const value = String(adapterTarget || "").replace(/\/$/, "");
@@ -24,16 +45,19 @@ function rewriteAdapterAssetUrls(text, adapterTarget) {
   // hostname drops the session cookie and the picture fails to load.
   // Source links become root-relative so they open on whichever hostname the
   // tester is actually viewing.
-  const prefix = "/rag-sources/";
-  return text
-    .split(`${adapter}${prefix}`).join(prefix)
-    .split(`${adapter}${prefix}`.replaceAll("/", "\\/")).join(prefix.replaceAll("/", "\\/"));
+  let rewritten = text;
+  for (const prefix of ["/rag-sources/", "/rag-originals/"]) {
+    rewritten = rewritten
+      .split(`${adapter}${prefix}`).join(prefix)
+      .split(`${adapter}${prefix}`.replaceAll("/", "\\/")).join(prefix.replaceAll("/", "\\/"));
+  }
+  return rewritten;
 }
 
 function linkOpenerScript() {
   return `"use strict";
 (function () {
-  const prefixes = ["/rag-sources/", "/rag-assets/"];
+  const prefixes = ["/rag-sources/", "/rag-assets/", "/rag-originals/"];
   function assetUrl(raw) {
     if (!raw) return null;
     let url;
@@ -100,6 +124,23 @@ async function readLimitedBody(req) {
   return Buffer.concat(chunks);
 }
 
+function collectPassthroughHeaders(response) {
+  const headers = {
+    "x-content-type-options": "nosniff",
+  };
+  for (const name of PASSTHROUGH_RESPONSE_HEADERS) {
+    const value = response.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  if (!headers["cache-control"]) {
+    headers["cache-control"] = "private, no-store";
+  }
+  if (!headers["content-type"]) {
+    headers["content-type"] = "application/octet-stream";
+  }
+  return headers;
+}
+
 async function proxyConnector(req, res, playgroundTarget, adapterTarget, publicBaseUrl) {
   const destination = `${playgroundTarget.replace(/\/$/, "")}${req.url}`;
   const headers = {};
@@ -143,6 +184,9 @@ async function proxySourceAsset(req, res, adapterTarget, gatewaySecret) {
   }
   const destination = `${adapterTarget.replace(/\/$/, "")}${incoming.pathname}${incoming.search}`;
   const headers = { accept: req.headers.accept || "*/*" };
+  if (typeof req.headers.range === "string" && req.headers.range) {
+    headers.range = req.headers.range;
+  }
   const subject = incoming.searchParams.get("subject");
   if (gatewaySecret && subject) {
     headers["x-viewer-subject"] = subject;
@@ -154,19 +198,39 @@ async function proxySourceAsset(req, res, adapterTarget, gatewaySecret) {
     redirect: "manual",
     signal: AbortSignal.timeout(20000),
   });
-  const responseHeaders = {
-    "content-type": response.headers.get("content-type") || "application/octet-stream",
-    "cache-control": response.headers.get("cache-control") || "private, no-store",
-    "x-content-type-options": "nosniff",
-  };
-  const location = response.headers.get("location");
-  if (location) responseHeaders.location = location;
+  const responseHeaders = collectPassthroughHeaders(response);
+  for (const name of Object.keys(responseHeaders)) {
+    if (HOP_BY_HOP.has(name.toLowerCase())) {
+      delete responseHeaders[name];
+    }
+  }
   res.writeHead(response.status, responseHeaders);
-  if (req.method === "HEAD") {
+  if (req.method === "HEAD" || !response.body) {
     res.end();
     return;
   }
-  res.end(Buffer.from(await response.arrayBuffer()));
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once("drain", resolve));
+      }
+    }
+    res.end();
+  } catch (error) {
+    try {
+      await reader.cancel();
+    } catch (_cancelError) {
+      // Best-effort cancel when the client aborts mid-stream.
+    }
+    if (!res.headersSent) {
+      res.writeHead(502, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    }
+    res.end();
+    throw error;
+  }
 }
 
 module.exports = {

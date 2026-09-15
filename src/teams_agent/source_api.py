@@ -1,0 +1,166 @@
+"""Trusted Adapter → Backoffice original-source proxy client."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from aiohttp import ClientError, ClientSession, ClientTimeout
+
+from .settings import AgentSettings
+from .source_delegation import DELEGATION_HEADER, SourceDelegationError, issue_source_delegation
+
+logger = logging.getLogger(__name__)
+
+SERVICE_TOKEN_HEADER = "X-Backoffice-Service-Token"
+
+
+class SourceApiError(RuntimeError):
+    """Raised when the configured Source API cannot deliver an original."""
+
+
+@dataclass(frozen=True)
+class SourceApiResponse:
+    status: int
+    headers: dict[str, str]
+    body: bytes
+
+
+def source_api_ready(settings: AgentSettings) -> bool:
+    return settings.source_api_ready
+
+
+def _google_identity_token(audience: str) -> str | None:
+    """Mint a Cloud Run invoker ID token when ADC credentials are available."""
+
+    try:
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.oauth2.id_token import fetch_id_token
+    except ImportError:
+        return None
+    try:
+        return fetch_id_token(GoogleAuthRequest(), audience)
+    except Exception:
+        logger.debug("Unable to mint Google ID token for Source API", exc_info=True)
+        return None
+
+
+async def fetch_original_source_file(
+    settings: AgentSettings,
+    *,
+    source_ref_id: str,
+    subject: str,
+    tenant_id: str | None = None,
+    groups: tuple[str, ...] = (),
+    range_header: str | None = None,
+    accept: str | None = None,
+    method: str = "GET",
+) -> SourceApiResponse:
+    if not source_api_ready(settings):
+        raise SourceApiError("Source API is not configured.")
+    source_ref = str(source_ref_id or "").strip()
+    if not source_ref or "/" in source_ref or ".." in source_ref:
+        raise SourceApiError("Invalid source reference.")
+    try:
+        delegation = issue_source_delegation(
+            subject=subject,
+            secret=settings.source_delegation_secret or "",
+            tenant_id=tenant_id,
+            groups=groups,
+            display_name=subject,
+        )
+    except SourceDelegationError as error:
+        raise SourceApiError(str(error)) from error
+
+    base = str(settings.source_api_base_url or "").rstrip("/")
+    url = f"{base}/api/sources/{source_ref}/file"
+    headers = {
+        SERVICE_TOKEN_HEADER: str(settings.source_api_token or ""),
+        "Authorization": f"Bearer {settings.source_api_token}",
+        DELEGATION_HEADER: delegation,
+        "Accept": accept or "*/*",
+    }
+    identity = _google_identity_token(base)
+    if identity:
+        # Cloud Run private services require a Google ID token in Authorization.
+        # Keep the shared service token in a dedicated header for app auth.
+        headers["Authorization"] = f"Bearer {identity}"
+    if range_header:
+        headers["Range"] = range_header
+
+    request_method = str(method or "GET").upper()
+    if request_method not in {"GET", "HEAD"}:
+        raise SourceApiError(f"Unsupported Source API method: {request_method}")
+
+    timeout = ClientTimeout(total=float(settings.source_api_timeout_seconds))
+    session = ClientSession(timeout=timeout)
+    try:
+        async with session.request(request_method, url, headers=headers) as response:
+            body = b"" if request_method == "HEAD" else await response.read()
+            passthrough = _passthrough_headers(response.headers)
+            if response.status >= 400:
+                detail = body[:200].decode("utf-8", errors="replace") if body else response.reason
+                raise SourceApiError(
+                    f"Source API returned HTTP {response.status}: {detail}"
+                )
+            return SourceApiResponse(
+                status=response.status,
+                headers=passthrough,
+                body=body,
+            )
+    except ClientError as error:
+        raise SourceApiError(f"Source API request failed: {error}") from error
+    finally:
+        try:
+            await session.close()
+        except Exception:
+            logger.debug("Failed closing source API session", exc_info=True)
+
+
+def _passthrough_headers(headers: Mapping[str, Any]) -> dict[str, str]:
+    allowed = {
+        "content-type",
+        "content-length",
+        "content-range",
+        "accept-ranges",
+        "content-disposition",
+        "cache-control",
+        "etag",
+        "last-modified",
+    }
+    result: dict[str, str] = {"X-Content-Type-Options": "nosniff"}
+    for key, value in headers.items():
+        lower = str(key).lower()
+        if lower in allowed and value is not None:
+            result[str(key)] = str(value)
+    return result
+
+
+async def stream_original_source_file(
+    settings: AgentSettings,
+    *,
+    source_ref_id: str,
+    subject: str,
+    tenant_id: str | None = None,
+    groups: tuple[str, ...] = (),
+    range_header: str | None = None,
+    accept: str | None = None,
+) -> tuple[int, dict[str, str], AsyncIterator[bytes]]:
+    """Return status/headers plus an async byte iterator for large originals."""
+
+    response = await fetch_original_source_file(
+        settings,
+        source_ref_id=source_ref_id,
+        subject=subject,
+        tenant_id=tenant_id,
+        groups=groups,
+        range_header=range_header,
+        accept=accept,
+    )
+
+    async def _chunks() -> AsyncIterator[bytes]:
+        yield response.body
+
+    return response.status, response.headers, _chunks()

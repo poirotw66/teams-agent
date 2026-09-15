@@ -1825,6 +1825,9 @@ def test_settings_cascading_and_config_validator(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AI_OPS_BACKOFFICE_AUTH_MODE", "ENTRA")
     monkeypatch.setenv("AI_OPS_ENTRA_TENANT_ID", "test-tenant-id")
     monkeypatch.setenv("AI_OPS_ENTRA_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("AI_OPS_ARTIFACT_STORAGE_BACKEND", "GCS")
+    monkeypatch.setenv("AI_OPS_ARTIFACT_GCS_BUCKET", "test-originals-bucket")
+    monkeypatch.setenv("AI_OPS_EXPORT_GCS_BUCKET", "test-exports-bucket")
 
     settings = BackofficeSettings.from_env()
     assert settings.ops_store_mode == "FIRESTORE"

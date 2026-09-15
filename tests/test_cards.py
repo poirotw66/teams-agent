@@ -205,11 +205,16 @@ def test_response_with_citations_numbered_in_answer_prefixes_sources_with_matchi
 
     formatted = format_agent_response(response)
     activity = build_agent_activity(response, AgentSettings())
+    activity_text = (
+        activity
+        if isinstance(activity, str)
+        else activity.attachments[0].content["body"][0]["text"]
+    )
 
     assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in formatted
     assert "- [S2] AD 帳號與系統解鎖 FAQ" in formatted
-    assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in activity
-    assert "- [S2] AD 帳號與系統解鎖 FAQ" in activity
+    assert "- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in activity_text
+    assert "- [S2] AD 帳號與系統解鎖 FAQ" in activity_text
 
 
 def test_card_adds_open_url_actions_for_citation_links() -> None:

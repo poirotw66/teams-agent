@@ -20,23 +20,25 @@ export const Header: React.FC = () => {
 
   const menuItems = [
     {
-      key: '/console-v2/work',
+      key: '/work',
       icon: <CheckSquareOutlined />,
       label: '我的工作',
     },
     {
-      key: '/console-v2/improvements',
+      key: '/improvements/cases',
       icon: <AlertOutlined />,
       label: '問題改善',
     },
     {
-      key: '/console-v2/operations/health',
+      key: '/operations/health',
       icon: <HeartOutlined />,
       label: '系統健康',
     },
   ];
 
-  const selectedKey = menuItems.find((item) => location.pathname.startsWith(item.key))?.key || '/console-v2/work';
+  const selectedKey =
+    menuItems.find((item) => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`))
+      ?.key || '/work';
 
   return (
     <AntHeader
@@ -50,7 +52,7 @@ export const Header: React.FC = () => {
       }}
     >
       <Space size="large" align="center">
-        <Text strong style={{ color: '#fff', fontSize: '18px', cursor: 'pointer' }} onClick={() => navigate('/console-v2/work')}>
+        <Text strong style={{ color: '#fff', fontSize: '18px', cursor: 'pointer' }} onClick={() => navigate('/work')}>
           AI Ops 工作主控台
         </Text>
         <Menu

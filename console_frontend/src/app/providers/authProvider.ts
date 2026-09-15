@@ -1,5 +1,41 @@
 import { AuthProvider } from '@refinedev/core';
 import { apiClient } from '../../shared/api/client';
+import { logoutWithRedirect, type EntraPublicConfig } from '../../shared/auth/msal';
+import {
+  clearAuthSession,
+  loadAuthSession,
+  saveAuthSession,
+} from '../../shared/auth/session';
+
+let lastEntraConfig: EntraPublicConfig | null = null;
+
+async function loadEntraPublicConfig(): Promise<EntraPublicConfig | null> {
+  try {
+    const config = await apiClient<{
+      entraTenantId?: string | null;
+      entraClientId?: string | null;
+      entraScopes?: string[] | null;
+      loginRedirectUri?: string | null;
+    }>('/api/auth/config');
+    const tenantId = String(config.entraTenantId || '').trim();
+    const clientId = String(config.entraClientId || '').trim();
+    if (!tenantId || !clientId) {
+      return null;
+    }
+    const next: EntraPublicConfig = {
+      tenantId,
+      clientId,
+      scopes: Array.isArray(config.entraScopes)
+        ? config.entraScopes.filter((item): item is string => typeof item === 'string' && !!item)
+        : undefined,
+      redirectUri: config.loginRedirectUri || undefined,
+    };
+    lastEntraConfig = next;
+    return next;
+  } catch {
+    return lastEntraConfig;
+  }
+}
 
 export interface UserSession {
   userId: string;
@@ -30,18 +66,47 @@ export const authProvider: AuthProvider = {
     }
   },
 
-  login: async () => {
-    return {
-      success: true,
-      redirectTo: '/console-v2/work',
+  login: async (params) => {
+    const payload = (params || {}) as {
+      accessToken?: string;
+      redirectPath?: string;
     };
+    if (payload.accessToken) {
+      saveAuthSession({
+        ...loadAuthSession(),
+        bearerToken: payload.accessToken.trim(),
+      });
+    }
+    try {
+      cachedSession = await apiClient<UserSession>('/api/capabilities');
+      return {
+        success: true,
+        redirectTo: payload.redirectPath || '/console-v2/work',
+      };
+    } catch {
+      return {
+        success: false,
+        redirectTo: '/console-v2/login',
+        error: new Error('登入失敗，請確認憑證後再試'),
+      };
+    }
   },
 
   logout: async () => {
     cachedSession = null;
+    const entra = await loadEntraPublicConfig();
+    clearAuthSession();
+    if (entra) {
+      try {
+        await logoutWithRedirect(entra);
+        return { success: true };
+      } catch {
+        // Fall through to local redirect when MSAL logout is unavailable.
+      }
+    }
     return {
       success: true,
-      redirectTo: '/',
+      redirectTo: '/console-v2/login',
     };
   },
 

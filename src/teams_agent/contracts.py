@@ -161,6 +161,7 @@ class Citation:
     sourcePath: str | None = None
     sourceRefId: str | None = None
     releaseId: str | None = None
+    originalUrl: str | None = None
 
 
 @dataclass(frozen=True)
@@ -232,6 +233,7 @@ class AgentResponse:
                 source_path = item.get("sourcePath")
                 source_ref_id = item.get("sourceRefId")
                 release_id = item.get("releaseId")
+                original_url = item.get("originalUrl")
                 if isinstance(title, str) and (
                     isinstance(url, str) or url is None
                 ):
@@ -253,6 +255,11 @@ class AgentResponse:
                             releaseId=(
                                 release_id
                                 if isinstance(release_id, str) and release_id.strip()
+                                else None
+                            ),
+                            originalUrl=(
+                                original_url
+                                if isinstance(original_url, str) and original_url.strip()
                                 else None
                             ),
                         )

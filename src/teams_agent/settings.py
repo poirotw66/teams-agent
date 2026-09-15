@@ -50,6 +50,10 @@ class AgentSettings:
     viewer_membership_store_path: Path | None = None
     viewer_membership_backend: str = "memory"
     viewer_membership_gcs_bucket: str | None = None
+    source_api_base_url: str | None = None
+    source_api_token: str | None = None
+    source_delegation_secret: str | None = None
+    source_api_timeout_seconds: float = 20.0
 
     @classmethod
     def from_env(cls) -> "AgentSettings":
@@ -72,7 +76,12 @@ class AgentSettings:
             timeout = float(environ.get("AGENT_API_TIMEOUT_SECONDS", "10"))
         except ValueError as error:
             raise SettingsError("AGENT_API_TIMEOUT_SECONDS must be a number.") from error
+        try:
+            source_api_timeout = float(environ.get("SOURCE_API_TIMEOUT_SECONDS", "20"))
+        except ValueError as error:
+            raise SettingsError("SOURCE_API_TIMEOUT_SECONDS must be a number.") from error
 
+        asset_signing_key = environ.get("RAG_ASSET_SIGNING_KEY", "").strip() or None
         settings = cls(
             mode=mode,
             api_url=api_url,
@@ -86,9 +95,7 @@ class AgentSettings:
                 environ.get("BOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
                 or None
             ),
-            asset_signing_key=(
-                environ.get("RAG_ASSET_SIGNING_KEY", "").strip() or None
-            ),
+            asset_signing_key=asset_signing_key,
             asset_url_ttl_seconds=int(
                 environ.get("RAG_ASSET_URL_TTL_SECONDS", "3600")
             ),
@@ -139,6 +146,20 @@ class AgentSettings:
                 or environ.get("GCS_BUCKET", "").strip()
                 or None
             ),
+            source_api_base_url=(
+                environ.get("SOURCE_API_BASE_URL", "").strip().rstrip("/") or None
+            ),
+            source_api_token=(
+                environ.get("SOURCE_API_TOKEN", "").strip()
+                or environ.get("AI_OPS_BACKOFFICE_TOKEN", "").strip()
+                or None
+            ),
+            source_delegation_secret=(
+                environ.get("SOURCE_DELEGATION_SECRET", "").strip()
+                or environ.get("AI_OPS_SOURCE_DELEGATION_SECRET", "").strip()
+                or asset_signing_key
+            ),
+            source_api_timeout_seconds=source_api_timeout,
         )
         settings.validate()
         return settings
@@ -190,6 +211,19 @@ class AgentSettings:
             )
         if self.api_timeout_seconds <= 0:
             raise SettingsError("AGENT_API_TIMEOUT_SECONDS must be greater than zero.")
+        if self.source_api_timeout_seconds <= 0:
+            raise SettingsError("SOURCE_API_TIMEOUT_SECONDS must be greater than zero.")
+        source_api_fields = (
+            self.source_api_base_url,
+            self.source_api_token,
+            self.source_delegation_secret,
+        )
+        if any(source_api_fields) and not all(source_api_fields):
+            raise SettingsError(
+                "SOURCE_API_BASE_URL, SOURCE_API_TOKEN, and "
+                "SOURCE_DELEGATION_SECRET (or RAG_ASSET_SIGNING_KEY) must be "
+                "configured together for original-source delivery."
+            )
         if self.asset_url_ttl_seconds < 60 or self.asset_url_ttl_seconds > 86400:
             raise SettingsError(
                 "RAG_ASSET_URL_TTL_SECONDS must be between 60 and 86400."
@@ -335,9 +369,27 @@ class AgentSettings:
 
     @property
     def sources_ready(self) -> bool:
-        return bool(
+        if not (
             self.source_dir
             and self.source_dir.is_dir()
             and self.public_base_url
             and self.asset_signing_key
+        ):
+            return False
+        sources = self.source_dir / "sources"
+        releases = self.source_dir / "releases"
+        has_markdown = sources.is_dir() and any(sources.glob("*.md"))
+        has_release = releases.is_dir() and any(releases.glob("*/sources/*.md"))
+        return has_markdown or has_release
+
+    @property
+    def source_api_ready(self) -> bool:
+        """Whether Adapter can mint and proxy original-source delivery."""
+
+        return bool(
+            self.public_base_url
+            and self.asset_signing_key
+            and self.source_api_base_url
+            and self.source_api_token
+            and self.source_delegation_secret
         )

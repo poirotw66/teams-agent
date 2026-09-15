@@ -201,6 +201,7 @@ _GENERIC_LEXICAL_TOKENS = frozenset(
 _OFFLINE_RELEVANCE_MIN_OVERLAP = 2
 _OFFLINE_RELEVANCE_MIN_RATIO = 0.34
 _OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
+_HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE = 0.85
 _SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
 
 
@@ -242,6 +243,18 @@ def _primary_distinctive_tokens(query: str) -> set[str]:
         if len(token) >= 2 and not all(character in _SUBJECT_CHAR_STOP for character in token):
             primary.add(token)
     return primary
+
+
+def high_confidence_retrieval_hit(query: str, top: SearchResult) -> bool:
+    """Accept a strong top hit without LLM grading when terms clearly overlap."""
+
+    if top.score < _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE:
+        return False
+    document_tokens = set(tokenize(f"{top.chunk.title}\n{top.chunk.content}"))
+    primary = _primary_distinctive_tokens(query)
+    if not primary:
+        return False
+    return bool(primary & document_tokens)
 
 
 def query_lexically_matches_results(query: str, results: list[SearchResult]) -> bool:
@@ -420,8 +433,12 @@ class HybridKnowledgeService:
         answer_model = self.model if model is None else model
         if not results or results[0].score < self.settings.min_score:
             return False
+        if query_lexically_matches_results(state.query, results):
+            return True
+        if high_confidence_retrieval_hit(state.query, results[0]):
+            return True
         if not answer_model:
-            return query_lexically_matches_results(state.query, results)
+            return False
 
         context = "\n\n".join(
             f"[{result.chunk.title}]\n{result.chunk.content}" for result in results[:3]
@@ -486,6 +503,7 @@ class HybridKnowledgeService:
             source_path=source_path,
             source_ref_id=source_ref_id,
         )
+        page = result.chunk.page if (result.chunk.page or 0) >= 1 else None
         return Citation(
             title=result.chunk.title,
             url=url,
@@ -496,7 +514,7 @@ class HybridKnowledgeService:
             releaseId=release_id,
             sourcePath=source_path,
             section=result.chunk.section,
-            page=result.chunk.page,
+            page=page,
             evidence=result.chunk.content[:2400] if result.chunk.content else None,
             sourceType=(
                 result.chunk.source_type
@@ -520,6 +538,25 @@ class HybridKnowledgeService:
             seen.add(doc_key)
             citations.append(self._citation_for(result))
         return citations
+
+    def _deterministic_grounded_answer(
+        self, results: list[SearchResult]
+    ) -> KnowledgeResult:
+        selected_results = results[:2]
+        citations = self._unique_citations(selected_results)
+        excerpts = "\n\n".join(
+            f"[S{index}] {citation.title}\n{selected_results[index - 1].chunk.content}"
+            if index <= len(selected_results)
+            else f"[S{index}] {citation.title}"
+            for index, citation in enumerate(citations, start=1)
+        )
+        return KnowledgeResult(
+            found=True,
+            answer=f"根據內部知識庫找到以下資訊：\n\n{excerpts}",
+            sources=citations,
+            images=self._images_for(selected_results),
+            backend="HYBRID",
+        )
 
     def _collect_images(self, results: list[SearchResult]) -> list[AgentImage]:
         images: list[AgentImage] = []
@@ -585,21 +622,7 @@ class HybridKnowledgeService:
             chunk_to_doc_idx.append(unique_doc_keys.index(key) + 1)
 
         if not answer_model:
-            selected_results = results[:2]
-            citations = self._unique_citations(selected_results)
-            excerpts = "\n\n".join(
-                f"[S{index}] {citation.title}\n{selected_results[index - 1].chunk.content}"
-                if index <= len(selected_results)
-                else f"[S{index}] {citation.title}"
-                for index, citation in enumerate(citations, start=1)
-            )
-            return KnowledgeResult(
-                found=True,
-                answer=f"根據內部知識庫找到以下資訊：\n\n{excerpts}",
-                sources=citations,
-                images=self._images_for(selected_results),
-                backend="HYBRID",
-            )
+            return self._deterministic_grounded_answer(results)
 
         context = "\n\n".join(
             f"[S{chunk_to_doc_idx[index]}] {result.chunk.title}\n{result.chunk.content}"
@@ -647,6 +670,8 @@ class HybridKnowledgeService:
             # Do not fall back to every retrieved candidate.  The generated
             # answer either declared a miss or failed to ground itself in a
             # valid [Sx] marker, so candidate sources/images are misleading.
+            if high_confidence_retrieval_hit(state.query, results[0]):
+                return self._deterministic_grounded_answer(results)
             return self._no_answer()
 
         doc_key_to_final_idx: dict[str, int] = {

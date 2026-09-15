@@ -15,6 +15,7 @@ from agent_service.knowledge import (
     KnowledgeService,
     RelevanceDecision,
     RewrittenQuery,
+    high_confidence_retrieval_hit,
     query_lexically_matches_results,
 )
 from agent_service.llm_call_counter import LlmCallCounter
@@ -291,6 +292,88 @@ async def test_hybrid_search_with_model_uses_grounded_answer_and_citations(
     assert result.sources[0].chunkId == "vpn"
     assert result.images[0].path == "vpn/p01.png"
     assert "RelevanceDecision" in model.structured_output_calls
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_omits_invalid_zero_page_from_citation(tmp_path: Path) -> None:
+    portal_chunk = DocumentChunk(
+        chunk_id="ac3bdb99b036944fdb8e",
+        title="portal-e2e",
+        source_path="sources/doc-799a9a1efdb1.md",
+        content="Portal E2E Original Guide checksum verify steps",
+        classification="internal",
+        allowed_groups=[],
+        images=[],
+        vector=None,
+        page=0,
+        page_label="1",
+    )
+    index = HybridIndex([portal_chunk])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+
+    result = await service.search("portal-e2e checksum verify steps", make_user())
+
+    assert result.found is True
+    assert result.sources[0].page is None
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_uses_deterministic_answer_when_llm_omits_citation_markers(
+    tmp_path: Path,
+) -> None:
+    portal_chunk = DocumentChunk(
+        chunk_id="ac3bdb99b036944fdb8e",
+        title="portal-e2e",
+        source_path="sources/doc-799a9a1efdb1.md",
+        content="# portal-e2e\n\n\nPortal E2E Original Guide checksum verify steps",
+        classification="internal",
+        allowed_groups=[],
+        images=[],
+        vector=None,
+    )
+    index = HybridIndex([portal_chunk])
+    model = FakeChatModel(
+        relevant=True,
+        answer_text="Follow the checksum steps in the guide.",
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("portal-e2e checksum verify steps", make_user())
+
+    assert result.found is True
+    assert result.sources[0].chunkId == "ac3bdb99b036944fdb8e"
+    assert "[S1]" in result.answer
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_accepts_high_confidence_hit_when_grader_rejects(
+    tmp_path: Path,
+) -> None:
+    portal_chunk = DocumentChunk(
+        chunk_id="ac3bdb99b036944fdb8e",
+        title="portal-e2e",
+        source_path="sources/doc-799a9a1efdb1.md",
+        content="# portal-e2e\n\n\nPortal E2E Original Guide checksum verify steps",
+        classification="internal",
+        allowed_groups=[],
+        images=[],
+        vector=None,
+    )
+    index = HybridIndex([portal_chunk])
+    results = index.search("詢問 portal-e2e 的 checksum 驗證步驟", 4, set())
+    assert high_confidence_retrieval_hit("詢問 portal-e2e 的 checksum 驗證步驟", results[0])
+
+    model = FakeChatModel(
+        relevant=False,
+        answer_text="Portal E2E checksum steps are listed in the guide [S1]",
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("詢問 portal-e2e 的 checksum 驗證步驟", make_user())
+
+    assert result.found is True
+    assert result.sources[0].chunkId == "ac3bdb99b036944fdb8e"
+    assert "RelevanceDecision" not in model.structured_output_calls
 
 
 @pytest.mark.asyncio

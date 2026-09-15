@@ -1,5 +1,7 @@
 /** HTTP client for AI Ops Backoffice APIs */
 
+import { authRequestHeaders } from '../auth/session';
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -22,8 +24,13 @@ export async function apiClient<T>(
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
+  for (const [name, value] of Object.entries(authRequestHeaders())) {
+    if (!headers.has(name)) {
+      headers.set(name, value);
+    }
+  }
 
-  // Pass credentials for session cookies
+  // Same-origin cookies plus explicit Bearer / HEADER actor identity.
   const response = await fetch(url, {
     ...options,
     headers,

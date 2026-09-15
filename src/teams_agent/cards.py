@@ -117,17 +117,32 @@ def _source_open_actions(response: AgentResponse) -> list[dict[str, object]]:
 
     Adaptive Card markdown links are not reliably clickable in Agents
     Playground. ``Action.OpenUrl`` is rendered as a button the host actually
-    opens.
+    opens. Prefer original-file actions when present; keep citation-paragraph
+    actions as a secondary path.
     """
 
     actions: list[dict[str, object]] = []
     for citation in response.citations:
-        if not citation.url:
-            continue
-        title = citation.title.strip() or "開啟來源"
-        if len(title) > 40:
-            title = f"{title[:39]}…"
-        actions.append({"type": "Action.OpenUrl", "title": title, "url": citation.url})
+        title = citation.title.strip() or "來源"
+        if len(title) > 28:
+            title = f"{title[:27]}…"
+        if citation.originalUrl:
+            actions.append(
+                {
+                    "type": "Action.OpenUrl",
+                    "title": f"開啟原始檔案：{title}",
+                    "url": citation.originalUrl,
+                }
+            )
+        if citation.url:
+            label = (
+                f"查看引用段落：{title}"
+                if citation.originalUrl
+                else title or "開啟來源"
+            )
+            actions.append(
+                {"type": "Action.OpenUrl", "title": label, "url": citation.url}
+            )
     return actions
 
 
@@ -174,7 +189,8 @@ def build_agent_activity(
     )
 
     if not response.images or not settings.images_ready:
-        if not feedback_issue_ids:
+        has_source_actions = bool(_source_open_actions(response))
+        if not feedback_issue_ids and not has_source_actions:
             return format_agent_response(response)
         body: list[dict[str, object]] = [
             {
@@ -183,9 +199,10 @@ def build_agent_activity(
                 "wrap": True,
             }
         ]
-        body.extend(
-            _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
-        )
+        if feedback_issue_ids:
+            body.extend(
+                _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
+            )
         return _card_activity(response, body)
 
     body = [

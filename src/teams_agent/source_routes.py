@@ -23,11 +23,13 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from .oidc import verify_entra_id_token
 from .settings import AgentSettings
 from .source_links import (
+    authorize_original_open,
     create_viewer_token,
     resolve_source_file,
     source_media_type,
     verify_viewer_token,
 )
+from .source_api import SourceApiError, fetch_original_source_file
 from .source_viewer import render_source_document_html
 from .viewer_sessions import get_viewer_membership_store
 
@@ -76,6 +78,20 @@ def _mark_sso_state_consumed(state_id: str) -> bool:
         return True
 
 
+def _is_gateway_authenticated(request: Request, settings: AgentSettings) -> bool:
+    """True when Playground/gateway shared secret matches (trusted subject header)."""
+
+    gateway_secret = request.headers.get("x-gateway-secret") or request.headers.get(
+        "X-Gateway-Secret"
+    )
+    expected_secret = settings.asset_signing_key or settings.api_token
+    return bool(
+        expected_secret
+        and gateway_secret
+        and hmac.compare_digest(gateway_secret.strip(), expected_secret.strip())
+    )
+
+
 def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> str | None:
     """Extract and cryptographically verify login identity.
 
@@ -90,13 +106,7 @@ def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> 
     for header in ("x-viewer-subject", "X-Viewer-Subject"):
         value = request.headers.get(header)
         if value and str(value).strip():
-            gateway_secret = request.headers.get("x-gateway-secret") or request.headers.get("X-Gateway-Secret")
-            expected_secret = settings.asset_signing_key or settings.api_token
-            if (
-                expected_secret
-                and gateway_secret
-                and hmac.compare_digest(gateway_secret.strip(), expected_secret.strip())
-            ):
+            if _is_gateway_authenticated(request, settings):
                 return str(value).strip()
 
     # 2. Browser session cookie from authenticated login (/sources/login or SSO)
@@ -208,6 +218,80 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                     + quote(resolved.name)
                 ),
             },
+        )
+
+    @router.api_route("/rag-originals/{source_ref_id}", methods=["GET", "HEAD"])
+    async def original_source_document(source_ref_id: str, request: Request) -> Response:
+        auth_subject = _authenticated_viewer_subject(request, settings)
+        # Playground/gateway opens authenticate the subject via shared secret but
+        # may arrive before a chat turn refreshes viewer membership. Seed a
+        # short-lived public membership so lab testing does not require M365.
+        if auth_subject and _is_gateway_authenticated(request, settings):
+            store = get_viewer_membership_store(settings)
+            if store.resolve(auth_subject) is None:
+                store.remember(
+                    auth_subject,
+                    groups=("grp_public",),
+                    tenant_id=request.query_params.get("tenantId") or "default",
+                    revoked=False,
+                    ttl_seconds=float(settings.asset_url_ttl_seconds),
+                )
+        try:
+            viewer = authorize_original_open(
+                source_ref_id,
+                request.query_params.get("expires"),
+                request.query_params.get("signature"),
+                settings,
+                subject=request.query_params.get("subject"),
+                tenant_id=request.query_params.get("tenantId"),
+                authenticated_subject=auth_subject,
+            )
+            if request.method == "HEAD":
+                upstream = await fetch_original_source_file(
+                    settings,
+                    source_ref_id=source_ref_id,
+                    subject=viewer.subject,
+                    tenant_id=viewer.tenant_id,
+                    groups=viewer.groups,
+                    accept=request.headers.get("accept"),
+                    method="HEAD",
+                )
+                headers = dict(upstream.headers)
+                headers["Cache-Control"] = "private, no-store"
+                return Response(status_code=upstream.status, headers=headers)
+            upstream = await fetch_original_source_file(
+                settings,
+                source_ref_id=source_ref_id,
+                subject=viewer.subject,
+                tenant_id=viewer.tenant_id,
+                groups=viewer.groups,
+                range_header=request.headers.get("range"),
+                accept=request.headers.get("accept"),
+            )
+        except PermissionError as error:
+            accept = request.headers.get("accept", "").lower()
+            if "text/html" in accept and not auth_subject:
+                redirect_target = f"/sources/login?redirect_url={quote(str(request.url))}"
+                return Response(
+                    status_code=302,
+                    headers={"Location": redirect_target},
+                )
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except SourceApiError as error:
+            detail = str(error)
+            status = 502
+            if "HTTP 404" in detail:
+                status = 404
+            elif "HTTP 403" in detail or "HTTP 401" in detail:
+                status = 403
+            raise HTTPException(status_code=status, detail="Original source unavailable.") from error
+
+        headers = dict(upstream.headers)
+        headers.setdefault("Cache-Control", "private, no-store")
+        return Response(
+            content=upstream.body,
+            status_code=upstream.status,
+            headers=headers,
         )
 
     @router.get("/sources/login")

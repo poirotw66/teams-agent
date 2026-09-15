@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 from fastapi import Depends, FastAPI, Response
@@ -52,11 +53,25 @@ def register_ops_read_routes(
 
     @app.get("/api/auth/config")
     async def auth_config() -> dict[str, object]:
+        entra_scopes_raw = (
+            getattr(resolved_settings, "entra_scopes", None)
+            or os.environ.get("AI_OPS_ENTRA_SCOPES")
+            or ""
+        )
+        entra_scopes = [
+            part.strip()
+            for part in str(entra_scopes_raw).split(",")
+            if part.strip()
+        ]
         return {
             "authMode": resolved_settings.auth_mode,
             "headerAuthAllowed": (
                 resolved_settings.auth_mode != "ENTRA" and header_auth_allowed()
             ),
+            "entraTenantId": resolved_settings.entra_tenant_id,
+            "entraClientId": resolved_settings.entra_client_id,
+            "entraScopes": entra_scopes or None,
+            "loginRedirectUri": "/console-v2/login",
         }
 
     @app.get("/api/capabilities")

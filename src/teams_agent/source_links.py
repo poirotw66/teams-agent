@@ -252,6 +252,132 @@ def build_source_url(
     return f"{settings.public_base_url}/rag-sources/{encoded_path}?{query}"
 
 
+def _original_delivery_path(source_ref_id: str) -> str | None:
+    source_ref = str(source_ref_id or "").strip()
+    if not source_ref or "/" in source_ref or ".." in source_ref:
+        return None
+    return f"originals/{source_ref}"
+
+
+def build_original_url(
+    source_ref_id: str,
+    settings: AgentSettings,
+    now: int | None = None,
+    *,
+    viewer: CitationViewerContext | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
+) -> str | None:
+    """Mint a short-lived signed URL for Backoffice original-file delivery."""
+
+    if not settings.source_api_ready:
+        return None
+    if viewer is None or not str(viewer.subject or "").strip():
+        return None
+    delivery = _original_delivery_path(source_ref_id)
+    if delivery is None:
+        return None
+    subject = str(viewer.subject).strip()
+    issued_at = int(time()) if now is None else now
+    expires = issued_at + settings.asset_url_ttl_seconds
+    store = membership_store or get_viewer_membership_store(settings)
+    store.remember(
+        subject,
+        groups=viewer.groups,
+        tenant_id=viewer.tenant_id,
+        revoked=viewer.revoked,
+        ttl_seconds=float(settings.asset_url_ttl_seconds),
+        now=float(issued_at),
+    )
+    signature = sign_source_access(
+        delivery,
+        expires,
+        settings.asset_signing_key or "",
+        subject=subject,
+        source_ref_id=source_ref_id,
+        tenant_id=viewer.tenant_id,
+    )
+    query = (
+        f"expires={expires}&signature={signature}"
+        f"&subject={quote(subject, safe='')}"
+    )
+    if viewer.tenant_id:
+        query += f"&tenantId={quote(str(viewer.tenant_id), safe='')}"
+    encoded_ref = quote(str(source_ref_id).strip(), safe="")
+    return f"{settings.public_base_url}/rag-originals/{encoded_ref}?{query}"
+
+
+def authorize_original_open(
+    source_ref_id: str,
+    expires: str | None,
+    signature: str | None,
+    settings: AgentSettings,
+    now: int | None = None,
+    *,
+    subject: str | None = None,
+    tenant_id: str | None = None,
+    authenticated_subject: str | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
+) -> CitationViewerContext:
+    """Verify signature and resolve live viewer membership for original delivery."""
+
+    if not settings.source_api_ready:
+        raise PermissionError("Original source delivery is not configured.")
+    try:
+        expiry = int(expires or "")
+    except ValueError as error:
+        raise PermissionError("Invalid source expiry.") from error
+    current_time = int(time()) if now is None else now
+    if expiry < current_time or expiry > current_time + settings.asset_url_ttl_seconds:
+        raise PermissionError("Source URL has expired or has an invalid lifetime.")
+
+    delivery = _original_delivery_path(source_ref_id)
+    if delivery is None:
+        raise PermissionError("Invalid source reference.")
+    claimed_subject = str(subject or "").strip()
+    if not claimed_subject:
+        raise PermissionError("Viewer identity is required to open a source citation.")
+
+    auth_subject = str(authenticated_subject or "").strip()
+    if not settings.allow_unauthenticated_requests:
+        if not auth_subject:
+            raise PermissionError("Viewer authentication is required to open a source citation.")
+        if auth_subject != claimed_subject:
+            raise PermissionError("Viewer identity does not match the signed citation subject.")
+        viewer_subject = auth_subject
+    else:
+        if auth_subject and auth_subject != claimed_subject:
+            raise PermissionError("Viewer identity does not match the signed citation subject.")
+        viewer_subject = auth_subject or claimed_subject
+
+    expected = sign_source_access(
+        delivery,
+        expiry,
+        settings.asset_signing_key or "",
+        subject=claimed_subject,
+        source_ref_id=source_ref_id,
+        tenant_id=tenant_id,
+    )
+    if not signature or not hmac.compare_digest(str(signature), expected):
+        raise PermissionError("Invalid source signature.")
+
+    store = membership_store or get_viewer_membership_store(settings)
+    membership = store.resolve(viewer_subject, now=float(current_time))
+    if membership is None:
+        raise PermissionError("Viewer membership is required to open a source citation.")
+    if membership.revoked:
+        raise PermissionError("Viewer access has been revoked.")
+    claimed_tenant = str(tenant_id or "").strip() or None
+    if claimed_tenant and membership.tenant_id and claimed_tenant != membership.tenant_id:
+        raise PermissionError("Viewer tenant does not match the signed citation tenant.")
+
+    return CitationViewerContext(
+        subject=viewer_subject,
+        groups=membership.groups,
+        tenant_id=membership.tenant_id or claimed_tenant,
+        revoked=False,
+    )
+
+
 def resolve_source_file(
     path: str,
     expires: str | None,
@@ -561,33 +687,89 @@ def enrich_citation_urls(
     viewer: CitationViewerContext | None = None,
     membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
 ) -> AgentResponse:
-    """Fill missing citation URLs from ``sourcePath`` when delivery is ready."""
+    """Fill citation delivery URLs for markdown viewers and original files.
 
-    if not response.citations or not settings.sources_ready:
+    Prefer signed ``/rag-sources/`` delivery when a local ``sourcePath`` exists.
+    Prefer signed ``/rag-originals/`` when Source API is configured and a
+    ``sourceRefId`` is present. Agent-minted formal URLs that are not already
+    adapter delivery links are replaced so Playground/Teams open the shared
+    viewer instead of a dead path.
+    """
+
+    if not response.citations:
         return response
+    can_mint_markdown = settings.sources_ready
+    can_mint_original = settings.source_api_ready
+    if not can_mint_markdown and not can_mint_original:
+        return response
+
     enriched: list[Citation] = []
     changed = False
     for citation in response.citations:
-        if citation.url or not citation.sourcePath:
-            enriched.append(citation)
-            continue
-        url = build_source_url(
-            citation.sourcePath,
-            settings,
-            now=now,
-            release_id=citation.releaseId,
-            viewer=viewer,
-            source_ref_id=citation.sourceRefId,
-            membership_store=membership_store,
-        )
-        if not url:
-            enriched.append(citation)
-            continue
-        enriched.append(replace(citation, url=url))
-        changed = True
+        updated = citation
+        if (
+            can_mint_markdown
+            and citation.sourcePath
+            and not (
+                citation.url and _is_adapter_source_delivery_url(citation.url, settings)
+            )
+        ):
+            url = build_source_url(
+                citation.sourcePath,
+                settings,
+                now=now,
+                release_id=citation.releaseId,
+                viewer=viewer,
+                source_ref_id=citation.sourceRefId,
+                membership_store=membership_store,
+            )
+            if url:
+                updated = replace(updated, url=url)
+                changed = True
+
+        if (
+            can_mint_original
+            and citation.sourceRefId
+            and not (
+                updated.originalUrl
+                and _is_adapter_original_delivery_url(updated.originalUrl, settings)
+            )
+        ):
+            original_url = build_original_url(
+                citation.sourceRefId,
+                settings,
+                now=now,
+                viewer=viewer,
+                membership_store=membership_store,
+            )
+            if original_url:
+                updated = replace(updated, originalUrl=original_url)
+                changed = True
+
+        enriched.append(updated)
     if not changed:
         return response
     return replace(response, citations=enriched)
+
+
+def _is_adapter_source_delivery_url(url: str, settings: AgentSettings) -> bool:
+    candidate = str(url or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("/rag-sources/"):
+        return True
+    base = str(settings.public_base_url or "").rstrip("/")
+    return bool(base) and candidate.startswith(f"{base}/rag-sources/")
+
+
+def _is_adapter_original_delivery_url(url: str, settings: AgentSettings) -> bool:
+    candidate = str(url or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("/rag-originals/"):
+        return True
+    base = str(settings.public_base_url or "").rstrip("/")
+    return bool(base) and candidate.startswith(f"{base}/rag-originals/")
 
 
 def register_viewer_membership(

@@ -80,6 +80,7 @@ class BackofficeSettings:
     knowledge_internal_url: str = ""
     knowledge_service_token: str = ""
     knowledge_delegation_secret: str = ""
+    source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
     deployment_tenant_id: str = "local-development"
     relaxed_workflow: bool = False
@@ -189,6 +190,10 @@ class BackofficeSettings:
             knowledge_delegation_secret=os.environ.get(
                 "KNOWLEDGE_PORTAL_DELEGATION_SECRET",
                 os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),
+            ),
+            source_delegation_secret=os.environ.get(
+                "AI_OPS_SOURCE_DELEGATION_SECRET",
+                os.environ.get("RAG_ASSET_SIGNING_KEY", ""),
             ),
             knowledge_bridge_enabled=os.environ.get(
                 "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", "true"

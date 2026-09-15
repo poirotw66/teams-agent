@@ -17,7 +17,7 @@ This Route Ledger tabulates all legacy navigation views, aliases, workspaces, an
 | Legacy Workspace | Legacy View ID | Registered Aliases | Canonical Route (`/console-v2/`) | Capability Required | Current Owner (W0–W2) | Demo Isolation Status | Fallback / Handoff Target |
 |---|---|---|---|---|---|---|---|
 | `knowledge_ops` | `workHub` | `work`, `my-work`, `workHub` | `/console-v2/work` | *(authenticated actor)* | **v2** (W1 Spike) | **Live Only**. Legacy `vpnStory.js` mock isolated to legacy demo mode. | `/#knowledge_ops/workHub` |
-| `knowledge_ops` | `quality` | `cases`, `improve`, `improve-cases` | `/console-v2/improvements/cases` | `ops.feedback.read` | **v2** (W2 Closed Loop) | **Live Only**. Backed by `/api/quality-cases`. | `/#knowledge_ops/quality` |
+| `knowledge_ops` | `quality` | `cases`, `improve`, `improve-cases` | `/console-v2/improvements/cases` | `ops.feedback.read` | **v2** (W2 Closed Loop) | **Live Only**. List route registered in `App.tsx` (`CasesListPage`) and backed by `/api/quality-cases`. | `/#knowledge_ops/quality` |
 | `knowledge_ops` | `quality/:id` | `cases/:id`, `improve/:id` | `/console-v2/improvements/cases/:id` | `ops.feedback.read` | **v2** (W2 Closed Loop) | **Live Only**. Backed by `/api/quality-cases/{id}` and `/api/console/workflows/quality_case/{id}`. | `/#knowledge_ops/quality` |
 | `knowledge_ops` | `contentHub` | `content`, `content-lists`, `docs` | `/console-v2/knowledge/documents` | `content.hub`, `knowledge.ui` | legacy (W3 target) | Live. Managed in Knowledge Portal bridge. | `/#knowledge_ops/contentHub` |
 | `knowledge_ops` | `knowledgeWork` | - | `/console-v2/knowledge/work` | `knowledge.ui` | legacy (W3 target) | Live Knowledge Portal worklist. | `/#knowledge_ops/knowledgeWork` |

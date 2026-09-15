@@ -97,7 +97,9 @@ def resolve_actor(
         for item in (header_owner_units or default_owner_unit_id).split(",")
         if item.strip()
     ]
-    tenant_id = (header_tenant_id or "").strip() or "local-development"
+    # Align with Portal / Agent lab tenant ("default") so console HEADER login
+    # can resolve the same SourceRecords without a special local-development copy.
+    tenant_id = (header_tenant_id or "").strip() or "default"
     groups = tuple(
         item.strip() for item in (header_groups or "").split(",") if item.strip()
     )

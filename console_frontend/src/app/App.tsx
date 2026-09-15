@@ -3,7 +3,7 @@ import { Refine } from '@refinedev/core';
 import routerBindings, {
   UnsavedChangesNotifier,
 } from '@refinedev/react-router-v6';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { ConfigProvider, App as AntdApp, Result, Button } from 'antd';
 import zhTW from 'antd/locale/zh_TW';
 
@@ -15,6 +15,8 @@ import { AppLayout } from './shell/AppLayout';
 import { WorkPage } from '../features/work/pages/WorkPage';
 import { HealthPage } from '../features/operations/pages/HealthPage';
 import { CaseDetailPage } from '../features/improvements/pages/CaseDetailPage';
+import { CasesListPage } from '../features/improvements/pages/CasesListPage';
+import { LoginPage } from '../features/auth/pages/LoginPage';
 
 export const App: React.FC = () => {
   return (
@@ -44,7 +46,7 @@ export const App: React.FC = () => {
               },
               {
                 name: 'improvements',
-                list: '/work',
+                list: '/improvements/cases',
                 show: '/improvements/cases/:id',
                 meta: {
                   label: '問題改善',
@@ -63,12 +65,20 @@ export const App: React.FC = () => {
               warnWhenUnsavedChanges: true,
             }}
           >
-            <AppLayout>
-              <Routes>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                element={
+                  <AppLayout>
+                    <Outlet />
+                  </AppLayout>
+                }
+              >
                 <Route path="/" element={<Navigate to="/work" replace />} />
                 <Route path="/work" element={<WorkPage />} />
                 <Route path="/operations/health" element={<HealthPage />} />
-                <Route path="/improvements" element={<Navigate to="/work" replace />} />
+                <Route path="/improvements" element={<Navigate to="/improvements/cases" replace />} />
+                <Route path="/improvements/cases" element={<CasesListPage />} />
                 <Route path="/improvements/cases/:id" element={<CaseDetailPage />} />
                 <Route
                   path="*"
@@ -85,8 +95,8 @@ export const App: React.FC = () => {
                     />
                   }
                 />
-              </Routes>
-            </AppLayout>
+              </Route>
+            </Routes>
             <UnsavedChangesNotifier />
           </Refine>
         </BrowserRouter>

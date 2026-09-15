@@ -85,6 +85,28 @@ def validate_backoffice_settings(
                     f"{name} must not be {mode} in production; configure FIRESTORE."
                 )
 
+        artifact_backend = (settings.artifact_storage_backend or "FILE").upper()
+        if artifact_backend in {"FILE", "NONE", ""}:
+            errors.append(
+                "artifact_storage_backend must be GCS in production; "
+                f"configure AI_OPS_ARTIFACT_STORAGE_BACKEND (found '{artifact_backend}')."
+            )
+        elif artifact_backend == "GCS" and not settings.artifact_gcs_bucket:
+            errors.append(
+                "AI_OPS_ARTIFACT_GCS_BUCKET is required when artifact storage backend is GCS."
+            )
+        export_bucket = settings.export_gcs_bucket
+        if (
+            artifact_backend == "GCS"
+            and settings.artifact_gcs_bucket
+            and export_bucket
+            and settings.artifact_gcs_bucket == export_bucket
+        ):
+            errors.append(
+                "AI_OPS_ARTIFACT_GCS_BUCKET must differ from AI_OPS_EXPORT_GCS_BUCKET "
+                "so original assets are not mixed with short-lived exports."
+            )
+
     return errors
 
 

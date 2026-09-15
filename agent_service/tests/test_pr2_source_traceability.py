@@ -608,6 +608,18 @@ def test_f02_acl_and_revocation_deny_access() -> None:
     assert denied.allowed is False
     assert denied.safe_error_code == "ACL_DENIED"
 
+    admin = ActorContext(
+        user_id="admin-1",
+        display_name="Admin",
+        role="SYSTEM_ADMIN",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+        groups=(),
+        revoked=False,
+    )
+    allowed = authorize_document_access(admin, document, action="download")
+    assert allowed.allowed is True
+
     revoked_actor = ActorContext(
         user_id="u1",
         display_name="User",

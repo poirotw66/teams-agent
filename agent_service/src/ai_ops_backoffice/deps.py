@@ -67,24 +67,65 @@ def build_dependencies(
         x_backoffice_tenant_id: str | None = Header(default=None, alias="X-Backoffice-Tenant-Id"),
         x_backoffice_groups: str | None = Header(default="", alias="X-Backoffice-Groups"),
         x_backoffice_revoked: str | None = Header(default="false", alias="X-Backoffice-Revoked"),
+        x_source_delegation: str | None = Header(default=None, alias="X-Source-Delegation"),
+        x_backoffice_service_token: str | None = Header(
+            default=None, alias="X-Backoffice-Service-Token"
+        ),
     ) -> ActorContext:
-        try:
-            actor = resolve_actor(
-                auth_mode=resolved_settings.auth_mode,
-                authorization=authorization,
-                header_user_id=x_backoffice_user_id,
-                header_user_name=x_backoffice_user_name,
-                header_role=x_backoffice_role,
-                header_owner_units=x_backoffice_owner_units,
-                header_tenant_id=x_backoffice_tenant_id,
-                header_groups=x_backoffice_groups,
-                revoked=(x_backoffice_revoked or "").lower() in {"1", "true", "yes", "on"},
-                default_owner_unit_id=resolved_settings.default_owner_unit_id,
-                entra_tenant_id=resolved_settings.entra_tenant_id,
-                entra_client_id=resolved_settings.entra_client_id,
+        if x_source_delegation:
+            expected = resolved_settings.service_token
+            if not expected:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Service token is required for source delegation.",
+                )
+            scheme, _, token = (authorization or "").partition(" ")
+            bearer_ok = (
+                scheme.lower() == "bearer"
+                and bool(token)
+                and hmac.compare_digest(token, expected)
             )
-        except BackofficeAuthError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+            header_ok = bool(x_backoffice_service_token) and hmac.compare_digest(
+                x_backoffice_service_token, expected
+            )
+            # Cloud Run private invoke uses Authorization for the Google ID
+            # token; Adapter then sends the shared service token in
+            # X-Backoffice-Service-Token.
+            if not (bearer_ok or header_ok):
+                raise HTTPException(status_code=401, detail="Invalid service token.")
+            secret = (
+                resolved_settings.source_delegation_secret
+                or resolved_settings.service_token
+            )
+            try:
+                from .source_delegation import (
+                    SourceDelegationError,
+                    actor_from_source_delegation,
+                    verify_source_delegation,
+                )
+
+                payload = verify_source_delegation(x_source_delegation, secret=secret)
+                actor = actor_from_source_delegation(payload)
+            except SourceDelegationError as exc:
+                raise HTTPException(status_code=401, detail=str(exc)) from exc
+        else:
+            try:
+                actor = resolve_actor(
+                    auth_mode=resolved_settings.auth_mode,
+                    authorization=authorization,
+                    header_user_id=x_backoffice_user_id,
+                    header_user_name=x_backoffice_user_name,
+                    header_role=x_backoffice_role,
+                    header_owner_units=x_backoffice_owner_units,
+                    header_tenant_id=x_backoffice_tenant_id,
+                    header_groups=x_backoffice_groups,
+                    revoked=(x_backoffice_revoked or "").lower() in {"1", "true", "yes", "on"},
+                    default_owner_unit_id=resolved_settings.default_owner_unit_id,
+                    entra_tenant_id=resolved_settings.entra_tenant_id,
+                    entra_client_id=resolved_settings.entra_client_id,
+                )
+            except BackofficeAuthError as exc:
+                raise HTTPException(status_code=401, detail=str(exc)) from exc
         # Shared revoke check against governance when available (A04 / F02).
         revoked_checker = getattr(query_service, "is_principal_revoked", None)
         if callable(revoked_checker) and revoked_checker(actor.user_id, actor.tenant_id):

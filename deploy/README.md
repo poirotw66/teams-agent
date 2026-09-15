@@ -400,7 +400,7 @@ Firestore `mock_tickets` collection。此服務僅供驗收，不代表正式工
 
 | 服務實例 | 角色與配置 | 部署方式 |
 |---|---|---|
-| **Backoffice API** (`ai-ops-backoffice-api`) | 提供 HTTP API 與前端介面，設定 `AI_OPS_WORKERS_ENABLED=false`，允許水平擴展 (`min=0, max=10`)。 | `uvicorn ai_ops_backoffice.main:app` |
+| **Backoffice API** (`teams-ai-ops-backoffice`, override with `GCP_BACKOFFICE_API_SERVICE`) | 提供 HTTP API 與前端介面，設定 `AI_OPS_WORKERS_ENABLED=false`，允許水平擴展 (`min=0, max=10`)。原檔請設定獨立的 `AI_OPS_ARTIFACT_GCS_BUCKET`（勿與 export bucket 共用）。 | `uvicorn ai_ops_backoffice.main:app` |
 | **Backoffice Worker** (`ai-ops-backoffice-worker`) | 專責背景工作排程與執行，設定 `AI_OPS_WORKERS_ENABLED=true`，配置 `--no-cpu-throttling` 與單一實例 (`min=1, max=1`) 避免 CPU 限制或重複排程。 | `python -m ai_ops_backoffice.worker_main` |
 
 ### 本地 Docker Compose 測試

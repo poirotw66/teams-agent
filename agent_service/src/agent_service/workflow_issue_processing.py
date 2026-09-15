@@ -280,8 +280,13 @@ class IssueProcessingWorkflowMixin:
             and "answer_model" in inspect.signature(self.knowledge_service.search).parameters
         ):
             search_kwargs["answer_model"] = answer_model
+        search_query = issue.description
+        if agent_request is not None:
+            user_text = str(agent_request.message.text).strip()
+            if user_text:
+                search_query = user_text
         result = await self.knowledge_service.search(
-            issue.description,
+            search_query,
             user,
             **search_kwargs,
         )

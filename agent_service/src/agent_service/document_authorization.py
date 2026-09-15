@@ -149,12 +149,15 @@ def authorize_document_access(
                 safe_error_code="UNIT_MISMATCH",
             )
 
-    # Check ACL group restrictions
+    # Check ACL group restrictions. Admin/audit roles already bypass owner-unit
+    # boundaries and must also be able to open cited originals for ops review
+    # without requiring every console session to mint document ACL groups.
     doc_acl_groups = list(_extract_attr(document, "acl_groups", []))
     if doc_acl_groups:
         actor_groups = set(_extract_attr(actor, "groups", []))
         group_match = bool(actor_groups.intersection(doc_acl_groups))
-        if not (group_match or is_creator):
+        admin_bypass = actor_role in {"SYSTEM_ADMIN", "AI_ADMIN", "AUDITOR", "KNOWLEDGE_ADMIN"}
+        if not (group_match or is_creator or admin_bypass):
             return DocumentAccessDecision(
                 allowed=False,
                 reason="Actor is not a member of required ACL groups.",

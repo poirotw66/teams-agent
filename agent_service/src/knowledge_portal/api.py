@@ -246,6 +246,7 @@ def create_app(
         return HTTPException(status_code=500, detail="Internal portal error.")
 
     @app.get("/healthz")
+    @app.get("/health")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
