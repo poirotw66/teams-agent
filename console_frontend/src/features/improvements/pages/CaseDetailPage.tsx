@@ -191,8 +191,8 @@ export const CaseDetailPage: React.FC = () => {
         message="找不到或無法讀取品質案件"
         description={error}
         action={
-          <Button type="primary" onClick={() => navigate('/console-v2/work')}>
-            返回我的工作
+          <Button type="primary" onClick={() => navigate('/improvements/cases')}>
+            返回案件列表
           </Button>
         }
       />
@@ -272,8 +272,8 @@ export const CaseDetailPage: React.FC = () => {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Space size="middle" align="center">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/console-v2/work')}>
-            返回工作佇列
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/improvements/cases')}>
+            返回案件列表
           </Button>
           <div>
             <Space align="center" size="middle">

@@ -8,6 +8,8 @@ cannot be proven. Never guesses a newer version from a filename alone.
 Usage:
     uv run python scripts/migrate_historical_source_originals.py --dry-run
     uv run python scripts/migrate_historical_source_originals.py --apply --tenant default
+    uv run python scripts/migrate_historical_source_originals.py \\
+        --firestore-project itr-aimasteryhub-lab --tenant default --dry-run
 """
 
 from __future__ import annotations
@@ -216,23 +218,116 @@ def _apply_legacy_marker(path: Path, record: dict[str, Any]) -> None:
     )
 
 
+def _iter_firestore_source_records(
+    *,
+    project_id: str,
+    tenant_filter: str | None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Load SourceRecords from Firestore tenants/{tenant}/source_records.
+
+    Returns (doc_path, payload) tuples where doc_path is a logical identifier
+    used for apply logging (not a local filesystem path).
+    """
+
+    try:
+        from google.cloud import firestore
+    except ImportError as error:  # pragma: no cover - optional cloud dependency
+        raise RuntimeError(
+            "Firestore migration requires google-cloud-firestore. "
+            "Install agent_service[firestore] extras."
+        ) from error
+
+    client = firestore.Client(project=project_id)
+    tenants: list[str]
+    if tenant_filter:
+        tenants = [tenant_filter]
+    else:
+        tenants = [snap.id for snap in client.collection("tenants").stream()]
+
+    records: list[tuple[str, dict[str, Any]]] = []
+    for tenant_id in tenants:
+        collection = (
+            client.collection("tenants")
+            .document(tenant_id)
+            .collection("source_records")
+        )
+        for snap in collection.stream():
+            payload = snap.to_dict() or {}
+            if not isinstance(payload, dict):
+                continue
+            if not (payload.get("source_ref_id") or payload.get("sourceRefId")):
+                payload = {**payload, "source_ref_id": snap.id}
+            if not payload.get("tenant_id") and not payload.get("tenantId"):
+                payload = {**payload, "tenant_id": tenant_id}
+            records.append((f"firestore:{tenant_id}/{snap.id}", payload))
+    return records
+
+
+def _apply_legacy_marker_firestore(doc_path: str, record: dict[str, Any]) -> None:
+    """Mark a Firestore SourceRecord as LEGACY_UNVERIFIED without guessing versions."""
+
+    if not doc_path.startswith("firestore:"):
+        raise ValueError(f"Not a Firestore document path: {doc_path}")
+    _, remainder = doc_path.split(":", 1)
+    tenant_id, source_ref_id = remainder.split("/", 1)
+    try:
+        from google.cloud import firestore
+    except ImportError as error:  # pragma: no cover
+        raise RuntimeError(
+            "Firestore apply requires google-cloud-firestore."
+        ) from error
+
+    project_id = str(record.get("_project_id") or "").strip() or None
+    client = firestore.Client(project=project_id) if project_id else firestore.Client()
+    doc_ref = (
+        client.collection("tenants")
+        .document(tenant_id)
+        .collection("source_records")
+        .document(source_ref_id)
+    )
+    patch = {
+        "mapping_status": "LEGACY_UNVERIFIED",
+        "migrated_at": datetime.now(timezone.utc).isoformat(),
+        "migration_note": (
+            "Historical source lacked a proven original artifact pairing; "
+            "marked LEGACY_UNVERIFIED without guessing a newer version."
+        ),
+    }
+    doc_ref.set(patch, merge=True)
+
+
 def migrate(
     *,
     data_dir: Path,
     tenant_filter: str | None,
     dry_run: bool,
     apply: bool,
+    firestore_project: str | None = None,
 ) -> int:
     release_index = _release_index_entries(data_dir)
     rows: list[MigrationRow] = []
-    for path, record in _iter_source_records(data_dir):
+    if firestore_project:
+        source_records = _iter_firestore_source_records(
+            project_id=firestore_project,
+            tenant_filter=tenant_filter,
+        )
+    else:
+        source_records = [
+            (str(path), record) for path, record in _iter_source_records(data_dir)
+        ]
+
+    for path, record in source_records:
         tenant_id = str(record.get("tenant_id") or record.get("tenantId") or "default")
         if tenant_filter and tenant_id != tenant_filter:
             continue
         row = _classify_record(record, data_dir=data_dir, release_index=release_index)
         rows.append(row)
         if apply and not dry_run and row.action == "mark_legacy_unverified":
-            _apply_legacy_marker(path, record)
+            if str(path).startswith("firestore:"):
+                record_with_project = {**record, "_project_id": firestore_project}
+                _apply_legacy_marker_firestore(str(path), record_with_project)
+            else:
+                _apply_legacy_marker(Path(path), record)
 
     counts: dict[str, int] = {}
     for row in rows:
@@ -241,6 +336,7 @@ def migrate(
     report = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "dataDir": str(data_dir),
+        "firestoreProject": firestore_project,
         "dryRun": dry_run or not apply,
         "tenantFilter": tenant_filter,
         "counts": counts,
@@ -254,6 +350,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--tenant", default=None, help="Optional tenant filter.")
+    parser.add_argument(
+        "--firestore-project",
+        default=None,
+        help="When set, scan Firestore tenants/*/source_records instead of local files.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -272,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         tenant_filter=args.tenant,
         dry_run=dry_run,
         apply=args.apply,
+        firestore_project=args.firestore_project,
     )
 
 

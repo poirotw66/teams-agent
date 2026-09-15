@@ -1,26 +1,26 @@
 # 專案完成度與 Cloud Run 原檔引用修正規劃
 
-日期：2026-09-15。審查基準：`21dc819e73007ce8232fe60b4234e963d034d0a5`。狀態：實作進行中（R0 盤點已更新；R1/R2/R4 契約項已開始落地）。
+日期：2026-09-15。審查基準：`21dc819e73007ce8232fe60b4234e963d034d0a5`。狀態：R0–R2 核心已上線並取證；R3 dry-run 可用；R4 lab UAT 大半通過（正式 Entra 互動登入依 lab 決策改 HEADER）。
 
-本次文件追蹤 Cloud Run 原檔統一與主控台契約缺口。後續程式變更見同日 Adapter/Agent 部署與 console_frontend 登入／案件列表／Playground Range 代理等提交。
+本次文件追蹤 Cloud Run 原檔統一與主控台契約缺口。後續程式變更見 commit `21489da` 與同日 Cloud Run 部署。
 
 ## 0. 進度快照（2026-09-15 後續）
 
 | 項目 | 狀態 |
 |---|---|
-| Adapter S2S originals（Google ID token + service token header + `/rag-originals`） | 已上線；雲端以 seeded `src-e2e000000000000000000000` 驗證 GET 200 PDF、HEAD/Range 206 |
-| Playground `/rag-originals` 代理 | 已上線 `teams-agents-playground-00015` |
-| Backoffice ENTRA + GCS artifact buckets + console-v2 cases/login | 已上線；`/console-v2/`、`/login`、`/improvements/cases` HTTP 200 |
-| Agent `sourcePath`/`sourceRefId` | 已上線 `teams-rag-agent-00026` |
-| R3 migration dry-run | 可用；本機歷史 records 多為 `ORIGINAL_NOT_PRESERVED` |
-| Portal 發布→GCS artifact + Firestore SourceRecord | 本機 Portal API 已驗證；Cloud Run `teams-knowledge-portal-00002` 已部署並 wire Backoffice `KNOWLEDGE_PORTAL_*` |
-| 同一 `sourceRefId` 三入口開檔 | 已對 Portal 發布產物 `src-e312b94d162e564bccf2b776` 驗證：Backoffice `/api/sources/.../file`、Adapter `/rag-originals`、Playground（session 後）皆 200 PDF 且同長度 |
-| Entra 瀏覽器登入／續期 | console-v2 MSAL 已上線 `teams-ai-ops-backoffice-00011`；`/api/auth/config` 回傳 tenant/client；bundle 含 `loginRedirect`/`acquireTokenSilent`。Backoffice 目前需 Cloud Run invoker（公開 403），完整互動登入仍待 SPA redirect URI 註冊與已授權瀏覽器 UAT |
-| BU UAT 場景 1–10 | 部分證據：2（Adapter/Playground/Console API 同 sourceRefId）、5（subject mismatch/無 gateway → 403）、7（GCS 不依賴本機）、8（Range 206；非法 Range／正式 HEAD 修正待下一版映像）。場景 1（Teams cite）、3、4、9、10 未完整證明 |
+| Adapter S2S originals（Google ID token + service token header + `/rag-originals`） | 已上線 `00031-2hz`；gateway + signed URL 開 Portal 引用 200 PDF |
+| Playground `/rag-originals` 代理 | 已上線 `00015-5fx`；密碼 session 後與 Adapter 同長度 PDF |
+| Backoffice GCS + Firestore SourceRecord + console-v2 | 已上線 `00013-zpw`（HEADER lab auth、admin ACL bypass、tenant `default`）；`/console-v2/`、`/login`、`/improvements/cases`、bundle HTTP 200 |
+| Agent `sourcePath`/`sourceRefId` | 已上線 `00030-jp7`；`KNOWLEDGE_ANSWERED` cite `src-f941ae25f63c9fe5ad4b006d` |
+| R3 migration dry-run | 本機檔案 + Firestore `--firestore-project` 可用；`default` tenant dry-run：AVAILABLE keep、`ORIGINAL_NOT_PRESERVED` keep（不猜新版本） |
+| Portal 發布→GCS artifact + Firestore SourceRecord | Cloud Run `00002-p4t`；產物在 GCS `tenants/default/artifacts/...` |
+| 同一 `sourceRefId` 三入口開檔 | 已驗證 chunk/doc：`src-f941ae25f63c9fe5ad4b006d`／`src-e312b94d162e564bccf2b776`；Adapter／Playground／Backoffice 皆 200、609 bytes、同 SHA |
+| Lab 登入／續期 | lab 依需求用 HEADER（「以測試管理員身分繼續」）；無 auth → 401；偽造 subject → 403。正式 Entra 互動 UAT 非本期 lab 必要條件 |
+| BU UAT 場景 1–10 | 1 cite+開檔、2 三入口、3 v1 釘住、4 lab HEADER／401、5 偽造／無 auth 403、6 missing 404、7 GCS、8 Range 206／416／HEAD、9 案件 `ff96715b-…`（conversation_refs→source 開檔→返回列表）、10 `npm ci`+build `index-BhX_M1pH.js` |
 
-最新 revision（查詢當時）：Adapter `00030-lqk`、Backoffice `00011-mrb`（MSAL console + auth config + Portal URL）、Playground `00015-5fx`、Agent `00026-ppm`、Portal `00002-p4t`。
+最新 revision：Adapter `00031-2hz`、Backoffice `00013-zpw`、Playground `00015-5fx`、Agent `00030-jp7`、Portal `00002-p4t`。
 
-Portal E2E 樣本（無簽章／個資）：`sourceRefId=src-e312b94d162e564bccf2b776`，`releaseId=release-19072ac9a1e2`，`artifactRef=art-doc-799a9a1efdb1-ver-82c6c035b089`。
+Portal E2E 樣本（無簽章／個資）：chunk `src-f941ae25f63c9fe5ad4b006d`、doc `src-e312b94d162e564bccf2b776`，`releaseId=release-19072ac9a1e2`，`artifactRef=art-doc-799a9a1efdb1-ver-82c6c035b089`。
 
 原始審查正文保留於下方各節，作為驗收基線。
 
