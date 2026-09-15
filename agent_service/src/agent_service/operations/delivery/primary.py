@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -88,11 +89,12 @@ class FileDeliveryPrimary:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path / name)
-            directory = os.open(self.path, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            if sys.platform != "win32":
+                directory = os.open(self.path, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

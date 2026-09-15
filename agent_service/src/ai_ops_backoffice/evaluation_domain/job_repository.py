@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import sys
 import threading
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -304,11 +305,12 @@ class FileJobRepository(InMemoryJobRepository):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, target)
-        parent_fd = os.open(str(self._records_dir), os.O_RDONLY)
-        try:
-            os.fsync(parent_fd)
-        finally:
-            os.close(parent_fd)
+        if sys.platform != "win32":
+            parent_fd = os.open(str(self._records_dir), os.O_RDONLY)
+            try:
+                os.fsync(parent_fd)
+            finally:
+                os.close(parent_fd)
 
     def _with_file_lock(self, fn: Any) -> Any:
         self._lock_file.parent.mkdir(parents=True, exist_ok=True)

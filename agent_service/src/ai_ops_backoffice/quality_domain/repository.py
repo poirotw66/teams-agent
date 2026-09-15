@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import threading
 import uuid
 from collections.abc import Callable
@@ -71,11 +72,12 @@ class FileQualityRepository(InMemoryQualityRepository):
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self._path)
-            directory = os.open(self._path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            if sys.platform != "win32":
+                directory = os.open(self._path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 

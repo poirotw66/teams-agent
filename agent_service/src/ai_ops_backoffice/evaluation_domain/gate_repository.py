@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import sys
 import threading
 import uuid
 from pathlib import Path
@@ -433,11 +434,12 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, target)
-        pfd = os.open(str(target.parent), os.O_RDONLY)
-        try:
-            os.fsync(pfd)
-        finally:
-            os.close(pfd)
+        if sys.platform != "win32":
+            pfd = os.open(str(target.parent), os.O_RDONLY)
+            try:
+                os.fsync(pfd)
+            finally:
+                os.close(pfd)
 
     def _with_lock(self, fn: Any) -> Any:
         self._lock_file.parent.mkdir(parents=True, exist_ok=True)

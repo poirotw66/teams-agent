@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -103,11 +104,12 @@ class FileToolFixtureRepository(ToolFixtureRepository):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp, target)
-        pfd = os.open(str(target.parent), os.O_RDONLY)
-        try:
-            os.fsync(pfd)
-        finally:
-            os.close(pfd)
+        if sys.platform != "win32":
+            pfd = os.open(str(target.parent), os.O_RDONLY)
+            try:
+                os.fsync(pfd)
+            finally:
+                os.close(pfd)
 
     def _with_lock(self, fn: Any) -> Any:
         import fcntl

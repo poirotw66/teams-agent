@@ -27,6 +27,7 @@ dev = [
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.25,<1",
     "ruff>=0.16,<1",
+    "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 portal = [
     "PyJWT>=2.10,<3",
