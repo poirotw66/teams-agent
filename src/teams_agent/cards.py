@@ -112,14 +112,22 @@ def _feedback_action(
     }
 
 
-def _source_open_actions(response: AgentResponse) -> list[dict[str, object]]:
+def _source_open_actions(
+    response: AgentResponse, *, enabled: bool
+) -> list[dict[str, object]]:
     """Clickable source buttons.
 
     Adaptive Card markdown links are not reliably clickable in Agents
     Playground. ``Action.OpenUrl`` is rendered as a button the host actually
     opens. Prefer original-file actions when present; keep citation-paragraph
     actions as a secondary path.
+
+    Controlled by ``TEAMS_CITATION_OPEN_ACTIONS`` (default off while originals
+    delivery is being stabilized for local historical releases).
     """
+
+    if not enabled:
+        return []
 
     actions: list[dict[str, object]] = []
     for citation in response.citations:
@@ -147,7 +155,10 @@ def _source_open_actions(response: AgentResponse) -> list[dict[str, object]]:
 
 
 def _card_activity(
-    response: AgentResponse, body: list[dict[str, object]]
+    response: AgentResponse,
+    body: list[dict[str, object]],
+    *,
+    citation_open_actions_enabled: bool,
 ) -> MessageActivityInput:
     # The card stays a plain dict rather than a `microsoft_teams.cards`
     # model tree: the Adaptive Card JSON here is fully determined by the
@@ -160,7 +171,9 @@ def _card_activity(
         "version": "1.5",
         "body": body,
     }
-    source_actions = _source_open_actions(response)
+    source_actions = _source_open_actions(
+        response, enabled=citation_open_actions_enabled
+    )
     if source_actions:
         card["actions"] = source_actions
     return MessageActivityInput(
@@ -187,9 +200,12 @@ def build_agent_activity(
         if response.feedbackEnabled and conversation_id
         else []
     )
+    citation_actions_enabled = bool(settings.citation_open_actions_enabled)
 
     if not response.images or not settings.images_ready:
-        has_source_actions = bool(_source_open_actions(response))
+        has_source_actions = bool(
+            _source_open_actions(response, enabled=citation_actions_enabled)
+        )
         if not feedback_issue_ids and not has_source_actions:
             return format_agent_response(response)
         body: list[dict[str, object]] = [
@@ -203,7 +219,11 @@ def build_agent_activity(
             body.extend(
                 _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
             )
-        return _card_activity(response, body)
+        return _card_activity(
+            response,
+            body,
+            citation_open_actions_enabled=citation_actions_enabled,
+        )
 
     body = [
         {
@@ -269,4 +289,8 @@ def build_agent_activity(
     if cost_block is not None:
         body.append(cost_block)
 
-    return _card_activity(response, body)
+    return _card_activity(
+        response,
+        body,
+        citation_open_actions_enabled=citation_actions_enabled,
+    )

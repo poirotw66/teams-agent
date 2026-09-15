@@ -43,6 +43,23 @@ class SearchResult:
     dense_score: float | None = None
 
 
+
+def _normalize_embedding_model_id(model_id: str) -> str:
+    """Compare embedding ids with or without provider prefix."""
+
+    normalized = model_id.strip()
+    if ":" in normalized:
+        return normalized.split(":", 1)[1].strip()
+    return normalized
+
+
+def _embedding_models_compatible(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
+
+
+
 class HybridIndex:
     def __init__(
         self,
@@ -73,12 +90,23 @@ class HybridIndex:
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
         indexed_model = value.get("embeddingModel")
-        if indexed_model and embedding_model and indexed_model != embedding_model:
+        if indexed_model and embedding_model and not _embedding_models_compatible(
+            indexed_model, embedding_model
+        ):
             raise ValueError(
                 "Configured embedding model does not match the built index. "
                 "Run rag-index again."
             )
-        return cls(chunks, embedding_model if indexed_model else None)
+        # Prefer a provider-prefixed id so init_embeddings can resolve the client.
+        runtime_model = None
+        if indexed_model:
+            if embedding_model and ":" in embedding_model:
+                runtime_model = embedding_model
+            elif ":" in str(indexed_model):
+                runtime_model = str(indexed_model)
+            else:
+                runtime_model = embedding_model or str(indexed_model)
+        return cls(chunks, runtime_model)
 
     def save(self, index_path: Path) -> None:
         index_path.parent.mkdir(parents=True, exist_ok=True)

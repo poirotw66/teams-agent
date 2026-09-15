@@ -135,6 +135,12 @@ def test_enrich_mints_original_url_when_source_api_ready(tmp_path: Path) -> None
 
 def test_card_prefers_original_open_action(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
+    settings = AgentSettings(
+        **{
+            **settings.__dict__,
+            "citation_open_actions_enabled": True,
+        }
+    )
     store = InMemoryViewerMembershipStore()
     response = AgentResponse(
         answer="請參考來源。",
@@ -159,6 +165,37 @@ def test_card_prefers_original_open_action(tmp_path: Path) -> None:
     titles = [str(action.get("title")) for action in card.get("actions", [])]
     assert any(title.startswith("開啟原始檔案：") for title in titles)
     assert any(title.startswith("查看引用段落：") for title in titles)
+
+
+def test_card_hides_citation_open_actions_when_disabled(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    settings = AgentSettings(
+        **{
+            **settings.__dict__,
+            "citation_open_actions_enabled": False,
+        }
+    )
+    store = InMemoryViewerMembershipStore()
+    response = AgentResponse(
+        answer="請參考來源。",
+        traceId="t",
+        citations=[
+            Citation(
+                title="大州系統",
+                sourcePath="sources/doc.md",
+                sourceRefId="src-dazhou",
+            )
+        ],
+    )
+    enriched = enrich_citation_urls(
+        response, settings, now=1_000, viewer=_viewer(), membership_store=store
+    )
+    activity = build_agent_activity(
+        enriched, settings, now=1_000, viewer=_viewer()
+    )
+    # Without images/feedback, disabled actions fall back to plain text.
+    assert isinstance(activity, str)
+    assert "請參考來源。" in activity
 
 
 def test_authorize_original_open_rejects_bad_signature(tmp_path: Path) -> None:

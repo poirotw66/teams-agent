@@ -127,6 +127,9 @@ def test_enrich_citation_urls_keeps_existing_adapter_delivery_url(tmp_path: Path
 
 def test_build_agent_activity_renders_clickable_source_link(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
+    settings = AgentSettings(
+        **{**settings.__dict__, "citation_open_actions_enabled": True}
+    )
     response = AgentResponse(
         answer="請調整安全性設定。",
         traceId="trace-1",

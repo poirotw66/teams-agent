@@ -564,6 +564,7 @@ start_background bash -c "
   export BOT_PUBLIC_BASE_URL=\"http://127.0.0.1:\$2\"
   export DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
   export PLAYGROUND_TEST_USER_EMAIL=\"\$4\"
+  export TEAMS_CITATION_OPEN_ACTIONS=\"\${TEAMS_CITATION_OPEN_ACTIONS:-false}\"
   if [[ -n \"\${SOURCE_API_BASE_URL:-}\" ]]; then
     export SOURCE_API_BASE_URL
     export SOURCE_API_TOKEN

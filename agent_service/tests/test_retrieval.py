@@ -1,5 +1,9 @@
 from agent_service.documents import DocumentChunk
-from agent_service.retrieval import HybridIndex, tokenize
+from agent_service.retrieval import (
+    HybridIndex,
+    _embedding_models_compatible,
+    tokenize,
+)
 
 
 def test_chinese_tokenizer_creates_bigrams() -> None:
@@ -8,6 +12,18 @@ def test_chinese_tokenizer_creates_bigrams() -> None:
     assert "密碼" in tokens
     assert "問題" in tokens
     assert "vpn" in tokens
+
+
+def test_embedding_model_ids_compatible_with_or_without_provider() -> None:
+    assert _embedding_models_compatible(
+        "google_genai:gemini-embedding-2", "gemini-embedding-2"
+    )
+    assert _embedding_models_compatible(
+        "google_genai:gemini-embedding-2", "google_genai:gemini-embedding-2"
+    )
+    assert not _embedding_models_compatible(
+        "google_genai:gemini-embedding-2", "openai:text-embedding-3-small"
+    )
 
 
 def test_search_finds_relevant_chinese_document() -> None:
