@@ -9,9 +9,17 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-COPY data/sources/assets ./data/sources/assets
+# Citation delivery reads Markdown under data/sources (and images under assets).
+# Shipping only assets left Cloud Run /rag-sources 404 while local checkout worked.
+COPY data/sources ./data/sources
+# Portal-active Hybrid citations use releases/<id>/sources/doc--*.md paths.
+# Without the release tree, Adapter mints OpenUrl links that 404 on open.
+COPY data/releases ./data/releases
 
-RUN pip install --no-cache-dir .
+ENV RAG_SOURCE_DIR=/app/data \
+    RAG_ASSET_DIR=/app/data/sources/assets
+
+RUN pip install --no-cache-dir ".[gcs]"
 
 USER 65532:65532
 

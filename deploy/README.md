@@ -108,6 +108,14 @@ to the service account that needs them:
 | `teams-agent-bot-client-secret` | Adapter SA | `CLIENT_SECRET` |
 | `teams-agent-asset-signing-key` | Adapter SA | `RAG_ASSET_SIGNING_KEY` |
 
+Adapter citation delivery also needs:
+
+| Setting | Bound to | Purpose |
+|---|---|---|
+| `RAG_SOURCE_DIR=/app/data` | Adapter | Markdown under `data/sources/` baked into the image |
+| `VIEWER_MEMBERSHIP_BACKEND=gcs` | Adapter | Share viewer sessions across Cloud Run instances |
+| `VIEWER_MEMBERSHIP_GCS_BUCKET` | Adapter SA (`roles/storage.objectAdmin`) | Default `${PROJECT_ID}-viewer-memberships` |
+
 Not yet wired into `deploy-gcp.sh` (add them the same way, as
 `--set-secrets`, if/when the corresponding feature is turned on in
 production) — never pass these as plain `--set-env-vars`:

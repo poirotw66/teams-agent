@@ -144,6 +144,76 @@ def test_resolve_source_file_serves_markdown(tmp_path: Path) -> None:
     assert resolved.read_text(encoding="utf-8").startswith("# 大州")
 
 
+def test_resolve_source_file_raises_when_markdown_missing_from_source_dir(tmp_path: Path) -> None:
+    """Cloud Run failed the same way when the Adapter image omitted data/sources/*.md."""
+
+    settings = _settings(tmp_path)
+    (settings.source_dir / "sources" / "大州系統_功能無法點選.md").unlink()
+    store = InMemoryViewerMembershipStore()
+    url = build_source_url(
+        "sources/大州系統_功能無法點選.md",
+        settings,
+        now=1_000,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    with pytest.raises(FileNotFoundError):
+        resolve_source_file(
+            "sources/大州系統_功能無法點選.md",
+            params["expires"][0],
+            params["signature"][0],
+            settings,
+            now=1_000,
+            subject=params["subject"][0],
+            authenticated_subject=params["subject"][0],
+            tenant_id=(params.get("tenantId") or [None])[0],
+            membership_store=store,
+        )
+
+
+def test_resolve_source_file_serves_bundled_sources_layout_used_on_cloud_run(tmp_path: Path) -> None:
+    """Adapter image uses RAG_SOURCE_DIR=/app/data with Markdown next to assets."""
+
+    app_data = tmp_path / "app" / "data"
+    sources = app_data / "sources"
+    assets = sources / "assets"
+    assets.mkdir(parents=True)
+    (sources / "大州系統_功能無法點選.md").write_text("# 大州雲端\n步驟", encoding="utf-8")
+    settings = AgentSettings(
+        source_dir=app_data,
+        asset_dir=assets,
+        public_base_url="https://bot.example.com",
+        asset_signing_key="test-signing-key-long-enough",
+        asset_url_ttl_seconds=3600,
+    )
+    store = InMemoryViewerMembershipStore()
+    url = build_source_url(
+        "sources/大州系統_功能無法點選.md",
+        settings,
+        now=1_000,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    resolved = resolve_source_file(
+        "sources/大州系統_功能無法點選.md",
+        params["expires"][0],
+        params["signature"][0],
+        settings,
+        now=1_000,
+        subject=params["subject"][0],
+        authenticated_subject=params["subject"][0],
+        tenant_id=(params.get("tenantId") or [None])[0],
+        membership_store=store,
+    )
+    assert resolved.read_text(encoding="utf-8").startswith("# 大州雲端")
+
+
 def test_foreign_subject_cannot_open_signed_source(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     store = InMemoryViewerMembershipStore()
