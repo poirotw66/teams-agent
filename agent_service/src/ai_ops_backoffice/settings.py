@@ -107,6 +107,7 @@ class BackofficeSettings:
     environment: str = "dev"
     workers_enabled: bool = True
     freshness_firestore_collection: str = "freshness_state"
+    console_v2_enabled: bool = True
 
     def validate_for_production(self, *, require_gcp_project: bool = False) -> list[str]:
         """Validate settings for production deployment to prevent ephemeral data loss."""
@@ -460,4 +461,7 @@ class BackofficeSettings:
                 or os.environ.get("OPS_FRESHNESS_COLLECTION")
                 or "freshness_state"
             ).strip(),
+            console_v2_enabled=os.environ.get("BACKOFFICE_CONSOLE_V2_ENABLED", "true").lower()
+            in {"1", "true", "yes", "on"},
         )
+

@@ -1,5 +1,6 @@
 from .analytics_router import register_analytics_routes
 from .budget_routes import register_budget_routes
+from .console_routes import register_console_routes
 from .conversations_router import register_conversations_routes
 from .evaluation_routes import register_evaluation_routes
 from .evaluation_run_routes import register_evaluation_run_routes
@@ -16,6 +17,7 @@ from .tool_fixture_routes import register_tool_fixture_routes
 __all__ = [
     "register_analytics_routes",
     "register_budget_routes",
+    "register_console_routes",
     "register_conversations_routes",
     "register_evaluation_routes",
     "register_evaluation_run_routes",
@@ -29,3 +31,4 @@ __all__ = [
     "register_sync_routes",
     "register_tool_fixture_routes",
 ]
+

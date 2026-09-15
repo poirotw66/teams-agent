@@ -93,6 +93,7 @@ from .quality_domain import (
 )
 from .routers import (
     register_budget_routes,
+    register_console_routes,
     register_evaluation_routes,
     register_evaluation_run_routes,
     register_example_routes,
@@ -104,6 +105,7 @@ from .routers import (
     register_sync_routes,
     register_tool_fixture_routes,
 )
+
 from .services.periods import PeriodPolicyError
 from .services.query_service import BackofficeQueryService
 from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
@@ -879,6 +881,16 @@ def create_app(
         quality_service=quality_service,
         eval_harness_status=eval_harness_status,
     )
+    register_console_routes(
+        app,
+        quality_service=quality_service,
+        knowledge_client=knowledge_client,
+        evaluation_service=evaluation_service,
+        evaluation_run_service=evaluation_run_service,
+        quality_gate_service=quality_gate_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
 
     app.include_router(
         build_knowledge_router(
@@ -888,6 +900,7 @@ def create_app(
         ),
         prefix="/api/knowledge",
     )
+
 
     # Phase 3 feature-flag list remains available under the governed API.
     @app.get("/api/feature-flags")
@@ -919,7 +932,37 @@ def create_app(
             headers={"Cache-Control": "no-cache, must-revalidate"},
         )
 
+    console_v2_dir = STATIC_DIR / "console-v2"
+    if resolved_settings.console_v2_enabled:
+        @app.get("/console-v2")
+        @app.get("/console-v2/")
+        @app.get("/console-v2/{full_path:path}")
+        async def console_v2_spa(full_path: str = "") -> Response:
+            if full_path:
+                target = console_v2_dir / full_path
+                if target.is_file():
+                    return FileResponse(target)
+            index_file = console_v2_dir / "index.html"
+            if index_file.is_file():
+                return FileResponse(
+                    index_file,
+                    headers={"Cache-Control": "no-cache, must-revalidate"},
+                )
+            return HTMLResponse(
+                "<!doctype html><html><body><h1>AI Ops Console V2</h1><p>Initializing...</p></body></html>",
+                headers={"Cache-Control": "no-cache, must-revalidate"},
+            )
+    else:
+        @app.get("/console-v2")
+        @app.get("/console-v2/")
+        @app.get("/console-v2/{full_path:path}")
+        async def console_v2_disabled() -> Response:
+            from starlette.responses import RedirectResponse
+
+            return RedirectResponse(url="/", status_code=307)
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
     app.add_middleware(_NoStoreStaticCacheMiddleware)
     return app
 

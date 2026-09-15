@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
-import threading
 import uuid
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any, ClassVar, Literal, Protocol
+from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import mask_text, redact_secrets
@@ -22,8 +18,6 @@ from ..faq_domain.errors import (
     FaqValidationError,
     FaqVersionConflictError,
 )
-
-
 from .models import *  # noqa: F403
 from .repository import *  # noqa: F403
 
@@ -56,7 +50,7 @@ def _cluster_candidates_by_similarity(
             jaccard = len(intersection) / len(union) if union else 0.0
             if jaccard >= 0.3 or len(intersection) >= 2:
                 clusters[idx].append(candidate)
-                cluster_tokens[idx].update(cand_tokens)
+                c_tokens.update(cand_tokens)
                 assigned = True
                 break
         if not assigned:
@@ -580,12 +574,16 @@ class QualityService:
                 "updated_at": now,
             }
             if status is not None:
+                observation_started = current.observation_started_at
+                if status == "OBSERVING" and observation_started is None:
+                    observation_started = now
                 update.update(
                     {
                         "status": status,
                         "resolution_type": resolution_type,
                         "resolution_note": mask_text(reason).text if reason else None,
                         "resolved_at": now if status in {"RESOLVED", "WONT_FIX", "DUPLICATE"} else None,
+                        "observation_started_at": observation_started,
                     }
                 )
             updated = QualityCase.model_validate(
