@@ -12,7 +12,10 @@ from .models import DraftAssetRecord
 from .settings import PortalSettings
 
 ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif"}
-_IMAGE_REF_PATTERN = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+# Markdown destinations may contain balanced parentheses in document titles.
+# Supporting one nesting level covers generated asset paths without accepting
+# an unbounded expression that can backtrack on untrusted document content.
+_IMAGE_REF_PATTERN = re.compile(r"!\[([^\]]*)\]\(((?:[^()]|\([^()]*\))*)\)")
 _UNSAFE_SLUG_CHARS = re.compile(r'[\\/:*?"<>|]+')
 
 

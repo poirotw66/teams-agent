@@ -14,6 +14,8 @@ const STEPS = [
 ];
 
 const TOTAL_STEPS = STEPS.length;
+const PDF_IMPORT_REQUEST_TIMEOUT_MS = 150000;
+const PDF_CREATE_REQUEST_TIMEOUT_MS = 210000;
 
 function parseAudienceGroupIds(value) {
   return (value || "")
@@ -386,7 +388,7 @@ async function submitCreate(formValues) {
   const payload = buildCreatePayload(formValues);
   if (
     formValues.import_entry === "pdf"
-    && /!\[[^\]]*\]\((?:assets\/)?[^)]+\.(?:png|jpe?g|gif)\)/i.test(payload.markdown_content || "")
+    && /!\[[^\]]*\]\([^\r\n]*\.(?:png|jpe?g|gif)[^\r\n]*\)/i.test(payload.markdown_content || "")
     && !(payload.assets || []).length
   ) {
     showToast("PDF 轉換結果含圖片，但未取得圖檔資產；請重新匯入 PDF 後再建立草稿。", true);
@@ -397,6 +399,7 @@ async function submitCreate(formValues) {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(payload),
+    timeoutMs: PDF_CREATE_REQUEST_TIMEOUT_MS,
   });
   resetSubmissionKey();
   showToast("草稿已建立");
@@ -552,7 +555,12 @@ export async function renderCreateView(app) {
         progress.set(6, `正在上傳「${file.name}」…`);
         const formData = new FormData();
         formData.append("file", file);
-        let imported = await apiForm("/api/documents/import-pdf?async_mode=auto", formData);
+        let imported = await apiForm(
+          "/api/documents/import-pdf?async_mode=auto",
+          formData,
+          "POST",
+          { timeoutMs: PDF_IMPORT_REQUEST_TIMEOUT_MS },
+        );
         if (imported?.mode === "async" && imported.jobId) {
           progress.stopSoftProgress();
           progress.set(16, `已進入背景轉換（${imported.jobId}）…`);

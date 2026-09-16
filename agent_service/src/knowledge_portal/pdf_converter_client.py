@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import binascii
 import json
 import zipfile
 from dataclasses import dataclass, field
@@ -10,6 +12,8 @@ from io import BytesIO
 from typing import Any
 
 import httpx
+
+from .settings import PdfConverterAuthMode
 
 
 class PdfConverterError(RuntimeError):
@@ -38,11 +42,13 @@ class PdfConverterClient:
         self,
         *,
         base_url: str,
+        auth_mode: PdfConverterAuthMode = PdfConverterAuthMode.BEARER,
         token: str | None = None,
         timeout_seconds: float = 120.0,
         prompt_template: str = "slide",
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._auth_mode = auth_mode
         self._token = (token or "").strip() or None
         self._timeout = timeout_seconds
         self._prompt_template = prompt_template
@@ -53,9 +59,7 @@ class PdfConverterClient:
         *,
         filename: str = "document.pdf",
     ) -> PdfConversionResult:
-        headers: dict[str, str] = {}
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+        headers = await self._authorization_headers()
         files = {"file": (filename, payload, "application/pdf")}
         data = {"prompt_template": self._prompt_template}
         url = f"{self._base_url}/api/v1/convert-pdf"
@@ -66,10 +70,36 @@ class PdfConverterClient:
             raise PdfConverterError(f"PDF converter unreachable: {exc}") from exc
         if response.status_code >= 400:
             detail = response.text[:500]
-            raise PdfConverterError(
-                f"PDF converter returned HTTP {response.status_code}: {detail}"
-            )
+            raise PdfConverterError(f"PDF converter returned HTTP {response.status_code}: {detail}")
         return _parse_converter_response(response)
+
+    async def _authorization_headers(self) -> dict[str, str]:
+        if self._auth_mode is PdfConverterAuthMode.GOOGLE_ID_TOKEN:
+            try:
+                token = await asyncio.to_thread(
+                    _fetch_google_id_token,
+                    self._base_url,
+                )
+            except Exception as error:
+                raise PdfConverterError(
+                    "Failed to obtain Google ID token for PDF converter "
+                    f"audience {self._base_url}: {error}"
+                ) from error
+            return {"Authorization": f"Bearer {token}"}
+        if self._token:
+            return {"Authorization": f"Bearer {self._token}"}
+        return {}
+
+
+def _fetch_google_id_token(audience: str) -> str:
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.id_token import fetch_id_token
+    except ImportError as error:  # pragma: no cover - deployment dependency
+        raise RuntimeError(
+            "google-auth is required for Portal-to-PDF-Converter identity tokens."
+        ) from error
+    return fetch_id_token(Request(), audience)
 
 
 def _parse_converter_response(response: httpx.Response) -> PdfConversionResult:
@@ -115,7 +145,7 @@ def _parse_json_result(payload: dict[str, Any]) -> PdfConversionResult:
             continue
         try:
             content = base64.b64decode(raw)
-        except Exception:
+        except (binascii.Error, ValueError):
             continue
         assets.append(PdfAsset(filename=name, content=content))
     warnings = tuple(
@@ -146,9 +176,9 @@ def _parse_zip_result(payload: bytes) -> PdfConversionResult:
             lower = name.lower()
             if lower.endswith(".md") or name.endswith("/"):
                 continue
-            if "/assets/" in lower or lower.startswith("assets/"):
-                assets.append(PdfAsset(filename=Path_basename(name), content=archive.read(name)))
-            elif lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            is_asset = "/assets/" in lower or lower.startswith("assets/")
+            is_image = lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+            if is_asset or is_image:
                 assets.append(PdfAsset(filename=Path_basename(name), content=archive.read(name)))
     return PdfConversionResult(
         markdown=markdown if markdown.endswith("\n") else f"{markdown}\n",

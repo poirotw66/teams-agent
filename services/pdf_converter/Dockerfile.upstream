@@ -1,7 +1,8 @@
 # Full-capability image: build from poirotw66/pdf-to-markdown-converter.
 # Requires network at build time and GOOGLE_API_KEY at runtime.
-ARG UPSTREAM_REF=main
+ARG UPSTREAM_REF=5583699dd718fdacbfd5ca53845ef929e177aa98
 FROM python:3.11-slim
+ARG UPSTREAM_REF
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,8 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
-RUN git clone --depth 1 --branch "${UPSTREAM_REF}" \
-    https://github.com/poirotw66/pdf-to-markdown-converter.git /src \
+RUN printf '%s' "${UPSTREAM_REF}" | grep -Eq '^[0-9a-f]{40}$' \
+    && git init /src \
+    && git -C /src remote add origin \
+        https://github.com/poirotw66/pdf-to-markdown-converter.git \
+    && git -C /src fetch --depth 1 origin "${UPSTREAM_REF}" \
+    && git -C /src checkout --detach FETCH_HEAD \
     && cp -a /src/. /app/ \
     && rm -rf /src
 

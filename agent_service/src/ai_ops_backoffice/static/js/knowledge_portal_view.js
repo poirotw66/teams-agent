@@ -8,7 +8,7 @@ import { setCustomNavigator } from "/static/kp/js/router.js";
 import { installBeforeUnloadGuard } from "/static/kp/js/dirty-state.js";
 import { renderKnowledgeListView } from "/static/kp/js/views/knowledge-list.js";
 import { renderDocumentDetailView } from "/static/kp/js/views/document-detail.js?v=lifecycle-20260910b";
-import { renderCreateView } from "/static/kp/js/views/create.js?v=create-ux-20260910b";
+import { renderCreateView } from "/static/kp/js/views/create.js?v=pdf-cloud-20260916b";
 import { renderReviewsView } from "/static/kp/js/views/reviews.js";
 import { renderReleasesView } from "/static/kp/js/views/releases.js";
 import { renderAuditView } from "/static/kp/js/views/audit.js";

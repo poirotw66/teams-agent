@@ -37,9 +37,9 @@ from .models import (
     UpdateDraftRequest,
     ValidationSummary,
 )
-from .pdf_convert_jobs import PdfConvertJobStore
 from .pdf_converter_client import PdfConverterError
 from .pdf_text import ScannedPdfError
+from .persistent_pdf_jobs import build_pdf_convert_job_store
 from .rbac import PortalPermissionError
 from .repository import PortalNotFoundError, VersionConflictError, build_repository
 from .service import PortalService
@@ -121,18 +121,13 @@ def create_app(
         repository,
         release_gate_checker=resolved_checker,
     )
-    pdf_job_store = PdfConvertJobStore(resolved_settings)
+    pdf_job_store = build_pdf_convert_job_store(resolved_settings)
 
     def authorize(
         authorization: str | None = Header(default=None),
-        x_knowledge_delegation: str | None = Header(
-            default=None, alias="X-Knowledge-Delegation"
-        ),
+        x_knowledge_delegation: str | None = Header(default=None, alias="X-Knowledge-Delegation"),
     ) -> None:
-        if (
-            x_knowledge_delegation
-            and not resolved_settings.require_service_token_with_delegation
-        ):
+        if x_knowledge_delegation and not resolved_settings.require_service_token_with_delegation:
             return
         expected = resolved_settings.service_token
         if not expected:
@@ -147,9 +142,7 @@ def create_app(
         x_portal_user_name: str | None = Header(default=None, alias="X-Portal-User-Name"),
         x_portal_role: str | None = Header(default="CONTRIBUTOR", alias="X-Portal-Role"),
         x_portal_owner_units: str | None = Header(default="", alias="X-Portal-Owner-Units"),
-        x_knowledge_delegation: str | None = Header(
-            default=None, alias="X-Knowledge-Delegation"
-        ),
+        x_knowledge_delegation: str | None = Header(default=None, alias="X-Knowledge-Delegation"),
     ) -> PortalActor:
         try:
             return resolve_portal_actor(
@@ -312,17 +305,21 @@ def create_app(
     @app.get("/api/documents/pdf-jobs/{job_id}")
     async def get_pdf_job(
         job_id: str,
+        background_tasks: BackgroundTasks,
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        del actor  # auth already enforced
         job = pdf_job_store.get(job_id)
-        if job is None:
+        if job is None or (job.actor_id and job.actor_id != actor.user_id):
             raise HTTPException(
                 status_code=404,
                 detail={"code": "NOT_FOUND", "message": "PDF job not found"},
             )
+        resume = getattr(pdf_job_store, "resume", None)
+        if resume is not None:
+            resume(job, background_tasks)
         return pdf_job_store.to_public_dict(job)
+
     @app.post("/api/documents/import-markdown")
     async def import_markdown(
         file: UploadFile = File(...),
@@ -343,9 +340,7 @@ def create_app(
         correlation_id_value: str = Depends(correlation_id),
     ):
         try:
-            return await service.start_revision(
-                actor, document_id, correlation_id_value
-            )
+            return await service.start_revision(actor, document_id, correlation_id_value)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -409,9 +404,7 @@ def create_app(
         detail = await service.get_document(actor, document_id)
         if detail.draft_version is None:
             raise HTTPException(status_code=404, detail="Draft version not found.")
-        slug = detail.draft_version.asset_slug or slug_from_title(
-            detail.draft_version.title
-        )
+        slug = detail.draft_version.asset_slug or slug_from_title(detail.draft_version.title)
         try:
             path, media_type = service.read_draft_asset(
                 document_id,
@@ -432,9 +425,7 @@ def create_app(
         _: None = Depends(authorize),
     ):
         try:
-            return await service.suggest_asset_ref(
-                actor, document_id, filename, alt_text
-            )
+            return await service.suggest_asset_ref(actor, document_id, filename, alt_text)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -540,9 +531,7 @@ def create_app(
         correlation_id_value: str = Depends(correlation_id),
     ):
         try:
-            return await service.update_draft(
-                actor, document_id, request, correlation_id_value
-            )
+            return await service.update_draft(actor, document_id, request, correlation_id_value)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -581,9 +570,7 @@ def create_app(
         correlation_id_value: str = Depends(correlation_id),
     ):
         try:
-            return await service.decide_review(
-                actor, review_id, request, correlation_id_value
-            )
+            return await service.decide_review(actor, review_id, request, correlation_id_value)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -649,9 +636,7 @@ def create_app(
         correlation_id_value: str = Depends(correlation_id),
     ):
         try:
-            return await service.sync_agent_release(
-                actor, release_id, correlation_id_value
-            )
+            return await service.sync_agent_release(actor, release_id, correlation_id_value)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -700,9 +685,7 @@ def create_app(
         _: None = Depends(authorize),
     ):
         try:
-            return await service.compare_releases(
-                actor, target_release_id=target_release_id
-            )
+            return await service.compare_releases(actor, target_release_id=target_release_id)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -737,9 +720,7 @@ def create_app(
         correlation_id_value: str = Depends(correlation_id),
     ):
         try:
-            return await service.add_test_case(
-                actor, document_id, request, correlation_id_value
-            )
+            return await service.add_test_case(actor, document_id, request, correlation_id_value)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -751,9 +732,7 @@ def create_app(
         _: None = Depends(authorize),
     ):
         try:
-            return await service.list_test_runs(
-                actor, document_id, test_case_id=test_case_id
-            )
+            return await service.list_test_runs(actor, document_id, test_case_id=test_case_id)
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -783,8 +762,10 @@ def create_app(
         _: None = Depends(authorize),
         correlation_id_value: str = Depends(correlation_id),
     ):
-        sources_dir = Path(request.sources_dir) if request.sources_dir else (
-            resolved_settings.data_dir / "sources"
+        sources_dir = (
+            Path(request.sources_dir)
+            if request.sources_dir
+            else (resolved_settings.data_dir / "sources")
         )
         if not sources_dir.exists():
             sources_dir = resolved_settings.data_dir / "sources.sample"

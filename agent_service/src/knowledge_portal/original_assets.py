@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .draft_assets import normalize_upload_filename
+from .pdf_staging import OriginalStagingStore, build_gcs_pdf_staging_store
 from .settings import PortalSettings
 
 _TOKEN_PATTERN = re.compile(r"^orig-[0-9a-f]{24}$")
@@ -38,7 +39,6 @@ def _run_coroutine_sync(coroutine: Coroutine[Any, Any, _T]) -> _T:
         return asyncio.run(coroutine)
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coroutine).result()
-
 
 
 def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
@@ -62,8 +62,7 @@ def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
         from agent_service.artifact_storage import LocalFileArtifactStorage
 
         base = settings.artifact_storage_path or (
-            (settings.original_assets_dir or settings.data_dir / "portal_originals")
-            / "artifacts"
+            (settings.original_assets_dir or settings.data_dir / "portal_originals") / "artifacts"
         )
         return LocalFileArtifactStorage(base)
     if backend in {"NONE", "OFF", "DISABLED"}:
@@ -77,21 +76,24 @@ class OriginalAssetStore:
         settings: PortalSettings,
         *,
         artifact_storage: Any | None = None,
+        staging_store: OriginalStagingStore | None = None,
     ) -> None:
         self.root = (
-            settings.original_assets_dir
-            or (settings.data_dir / "portal_originals")
-        ).expanduser().resolve()
+            (settings.original_assets_dir or (settings.data_dir / "portal_originals"))
+            .expanduser()
+            .resolve()
+        )
         self.pending_root = self.root / "pending"
         self.versions_root = self.root / "versions"
         self._settings = settings
+        backend = (settings.artifact_storage_backend or "FILE").upper()
+        self._staging_store = staging_store
+        if self._staging_store is None and backend == "GCS":
+            self._staging_store = build_gcs_pdf_staging_store(settings)
         if artifact_storage is not None:
             self._artifact_storage = artifact_storage
         else:
-            try:
-                self._artifact_storage = build_portal_artifact_storage(settings)
-            except ValueError:
-                self._artifact_storage = None
+            self._artifact_storage = build_portal_artifact_storage(settings)
 
     def store_pending(
         self,
@@ -102,9 +104,6 @@ class OriginalAssetStore:
     ) -> dict[str, Any]:
         safe_name = normalize_upload_filename(filename or "document.pdf")
         token = f"orig-{secrets.token_hex(12)}"
-        pending_dir = self.pending_root / token
-        pending_dir.mkdir(parents=True, exist_ok=False)
-        (pending_dir / "payload").write_bytes(payload)
         metadata = {
             "token": token,
             "filename": safe_name,
@@ -113,21 +112,34 @@ class OriginalAssetStore:
             "sha256": hashlib.sha256(payload).hexdigest(),
             "size": len(payload),
         }
+        if self._staging_store is not None:
+            self._staging_store.store(token, payload, metadata)
+            return self._public_metadata(metadata)
+        pending_dir = self.pending_root / token
+        pending_dir.mkdir(parents=True, exist_ok=False)
+        (pending_dir / "payload").write_bytes(payload)
         (pending_dir / "metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        return self._public_metadata(metadata)
+
+    @staticmethod
+    def _public_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         return {
-            "original_asset_token": token,
-            "original_asset_name": safe_name,
+            "original_asset_token": metadata["token"],
+            "original_asset_name": metadata["filename"],
             "original_asset_sha256": metadata["sha256"],
             "original_asset_content_type": metadata["content_type"],
             "original_asset_size": metadata["size"],
         }
 
-    def _pending_metadata(self, token: str) -> tuple[Path, dict[str, Any]]:
+    def _pending_metadata(self, token: str) -> tuple[Path | None, dict[str, Any], bytes]:
         if not _TOKEN_PATTERN.fullmatch(token):
             raise ValueError("Invalid original asset token.")
+        if self._staging_store is not None:
+            staged = self._staging_store.load(token)
+            return None, staged.metadata, staged.payload
         pending_dir = (self.pending_root / token).resolve()
         try:
             pending_dir.relative_to(self.pending_root.resolve())
@@ -138,7 +150,7 @@ class OriginalAssetStore:
         if not metadata_path.is_file() or not payload_path.is_file():
             raise ValueError("Original asset upload has expired or is unavailable.")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        return pending_dir, metadata
+        return pending_dir, metadata, payload_path.read_bytes()
 
     def _dual_write_artifact(
         self,
@@ -177,7 +189,7 @@ class OriginalAssetStore:
         version_id: str,
         actor_id: str,
     ) -> dict[str, Any]:
-        pending_dir, metadata = self._pending_metadata(token)
+        pending_dir, metadata, payload = self._pending_metadata(token)
         if metadata.get("actor_id") and metadata["actor_id"] != actor_id:
             raise ValueError("Original asset belongs to another uploader.")
         target_dir = (self.versions_root / document_id / version_id).resolve()
@@ -187,11 +199,8 @@ class OriginalAssetStore:
             raise ValueError("Invalid document/version target.") from exc
         target_dir.mkdir(parents=True, exist_ok=True)
         filename = normalize_upload_filename(str(metadata.get("filename") or "document.pdf"))
-        payload_path = pending_dir / "payload"
-        payload = payload_path.read_bytes()
         target = target_dir / filename
         target.write_bytes(payload)
-        shutil.rmtree(pending_dir, ignore_errors=True)
         content_type = str(metadata.get("content_type") or "application/octet-stream")
         artifact_ref = self._dual_write_artifact(
             document_id=document_id,
@@ -200,6 +209,10 @@ class OriginalAssetStore:
             content_type=content_type,
             payload=payload,
         )
+        if self._staging_store is not None:
+            self._staging_store.delete(token)
+        elif pending_dir is not None:
+            shutil.rmtree(pending_dir, ignore_errors=True)
         return {
             "original_asset_name": filename,
             "original_asset_sha256": str(metadata.get("sha256") or ""),
@@ -212,6 +225,9 @@ class OriginalAssetStore:
         """Remove an upload that cannot become a knowledge version."""
 
         if not token or not _TOKEN_PATTERN.fullmatch(token):
+            return
+        if self._staging_store is not None:
+            self._staging_store.delete(token)
             return
         pending_dir = (self.pending_root / token).resolve()
         try:

@@ -169,6 +169,21 @@ resource "google_cloud_run_v2_service" "portal" {
       }
 
       env {
+        name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_URL"
+        value = local.deploy_pdf_converter ? google_cloud_run_v2_service.pdf_converter[0].uri : ""
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE"
+        value = local.deploy_pdf_converter ? "gemini_vision" : "legacy_text"
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE"
+        value = local.deploy_pdf_converter ? "GOOGLE_ID_TOKEN" : "BEARER"
+      }
+
+      env {
         name  = "KNOWLEDGE_PORTAL_SOURCE_STORE_MODE"
         value = "FIRESTORE"
       }

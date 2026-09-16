@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from typing import ClassVar
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pdf_test_helpers import build_text_pdf_bytes
 
 from knowledge_portal.api import create_app
-from knowledge_portal.pdf_convert_jobs import should_convert_async
+from knowledge_portal.pdf_convert_jobs import convert_pdf_bytes, should_convert_async
 from knowledge_portal.pdf_converter_client import PdfConverterClient, _parse_json_result
-from knowledge_portal.settings import PortalSettings
-from pdf_test_helpers import build_text_pdf_bytes
+from knowledge_portal.settings import PdfConverterAuthMode, PortalSettings
 
 
 def portal_headers(
@@ -61,7 +61,7 @@ async def test_pdf_converter_client_posts_multipart(monkeypatch: pytest.MonkeyPa
 
     class FakeResponse:
         status_code = 200
-        headers = {"content-type": "application/json"}
+        headers: ClassVar[dict[str, str]] = {"content-type": "application/json"}
         text = ""
 
         def json(self):
@@ -92,7 +92,107 @@ async def test_pdf_converter_client_posts_multipart(monkeypatch: pytest.MonkeyPa
     assert captured["headers"]["Authorization"] == "Bearer secret"
 
 
-def test_import_pdf_sync_uses_converter_when_configured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_pdf_converter_client_fetches_google_id_token_without_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status_code = 200
+        headers: ClassVar[dict[str, str]] = {"content-type": "application/json"}
+        text = ""
+
+        def json(self):
+            return {"markdown": "# Authenticated\n", "assets": []}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, headers=None, files=None, data=None):
+            captured["headers"] = headers
+            return FakeResponse()
+
+    async def fake_to_thread(function, *args):
+        captured["token_function"] = function
+        captured["audience"] = args[0]
+        return "google-id-token"
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(
+        "knowledge_portal.pdf_converter_client.asyncio.to_thread",
+        fake_to_thread,
+    )
+    client = PdfConverterClient(
+        base_url="https://converter.example.run.app/",
+        auth_mode=PdfConverterAuthMode.GOOGLE_ID_TOKEN,
+    )
+
+    await client.convert_pdf(b"%PDF-demo")
+
+    assert captured["audience"] == "https://converter.example.run.app"
+    assert captured["headers"]["Authorization"] == "Bearer google-id-token"
+
+
+def test_pdf_converter_auth_mode_rejects_invalid_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE", "unknown")
+
+    with pytest.raises(
+        ValueError,
+        match="KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE must be one of",
+    ):
+        PortalSettings.from_env()
+
+
+def test_google_id_token_auth_requires_converter_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE", "GOOGLE_ID_TOKEN")
+    monkeypatch.delenv("KNOWLEDGE_PORTAL_PDF_CONVERTER_URL", raising=False)
+    monkeypatch.delenv("PDF_CONVERTER_URL", raising=False)
+
+    with pytest.raises(
+        ValueError,
+        match="KNOWLEDGE_PORTAL_PDF_CONVERTER_URL is required",
+    ):
+        PortalSettings.from_env()
+
+
+@pytest.mark.asyncio
+async def test_configured_converter_failure_does_not_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "pdf_converter_url", "https://converter.example.run.app")
+
+    async def fail_conversion(*args, **kwargs):
+        raise RuntimeError("converter unavailable")
+
+    def fail_legacy_extraction(*args, **kwargs):
+        pytest.fail("legacy extraction must not run for a configured converter")
+
+    monkeypatch.setattr(PdfConverterClient, "convert_pdf", fail_conversion)
+    monkeypatch.setattr(
+        "knowledge_portal.pdf_convert_jobs.extract_text_pdf",
+        fail_legacy_extraction,
+    )
+
+    with pytest.raises(RuntimeError, match="converter unavailable"):
+        await convert_pdf_bytes(settings, b"%PDF-demo", filename="guide.pdf")
+
+
+def test_import_pdf_sync_uses_converter_when_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")
@@ -104,7 +204,7 @@ def test_import_pdf_sync_uses_converter_when_configured(tmp_path: Path, monkeypa
 
     class FakeResponse:
         status_code = 200
-        headers = {"content-type": "application/json"}
+        headers: ClassVar[dict[str, str]] = {"content-type": "application/json"}
         text = ""
 
         def json(self):
@@ -156,7 +256,13 @@ def test_import_pdf_async_job_completes(tmp_path: Path) -> None:
     # Force async regardless of size
     response = client.post(
         "/api/documents/import-pdf?async_mode=async",
-        files={"file": ("vpn.pdf", build_text_pdf_bytes("VPN login troubleshooting steps"), "application/pdf")},
+        files={
+            "file": (
+                "vpn.pdf",
+                build_text_pdf_bytes("VPN login troubleshooting steps"),
+                "application/pdf",
+            )
+        },
         headers=portal_headers(),
     )
     assert response.status_code == 200

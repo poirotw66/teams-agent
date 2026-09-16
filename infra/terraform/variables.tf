@@ -357,8 +357,14 @@ variable "pdf_converter_service_name" {
   default     = "teams-pdf-converter"
 }
 
+variable "pdf_converter_service_account_id" {
+  description = "Dedicated service account ID for the PDF converter."
+  type        = string
+  default     = "teams-pdf-converter"
+}
+
 variable "pdf_converter_image" {
-  description = "Container image for the PDF converter. Prefer building services/pdf_converter/Dockerfile.upstream for Gemini Vision."
+  description = "Immutable PDF converter image pinned by commit SHA tag or sha256 digest."
   type        = string
   default     = ""
 }

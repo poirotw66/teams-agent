@@ -8,7 +8,7 @@ import json
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -183,9 +183,7 @@ def should_convert_async(
         return False
     if byte_size > settings.pdf_sync_max_bytes:
         return True
-    if page_count is not None and page_count > settings.pdf_sync_max_pages:
-        return True
-    return False
+    return page_count is not None and page_count > settings.pdf_sync_max_pages
 
 
 async def convert_pdf_bytes(
@@ -197,6 +195,7 @@ async def convert_pdf_bytes(
     if settings.pdf_converter_url:
         client = PdfConverterClient(
             base_url=settings.pdf_converter_url,
+            auth_mode=settings.pdf_converter_auth_mode,
             token=settings.pdf_converter_token,
             timeout_seconds=settings.pdf_converter_timeout_seconds,
             prompt_template=settings.pdf_prompt_template,
@@ -243,7 +242,7 @@ def conversion_to_import_dict(
     original_asset: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     stem = Path(filename).stem.strip() or "PDF Document"
-    today = date.today().isoformat()
+    today = datetime.now(UTC).date().isoformat()
     assets = [
         {
             "filename": asset.filename,

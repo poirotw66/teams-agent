@@ -6,7 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from knowledge_portal.api import create_app
-from knowledge_portal.draft_assets import slug_from_title, validate_asset_bundle
+from knowledge_portal.draft_assets import (
+    rewrite_local_image_refs,
+    slug_from_title,
+    validate_asset_bundle,
+)
 from knowledge_portal.settings import PortalSettings
 
 
@@ -415,6 +419,27 @@ def test_validate_asset_bundle_accepts_canonical_path(tmp_path) -> None:
     issues = validate_asset_bundle(markdown, asset_slug=slug, assets_root=assets_root)
     assert not any(code == "ASSET_PATH_UNEXPECTED" for code, _, _ in issues)
     assert not any(code == "MISSING_ASSET" for code, _, _ in issues)
+
+
+def test_asset_paths_support_parentheses_in_document_title(tmp_path) -> None:
+    slug = "總公司IP話機操作(20241022)"
+    assets_root = tmp_path / "assets"
+    asset_dir = assets_root / slug
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "p01.png").write_bytes(b"png")
+    markdown = f"![page](assets/{slug}/p01.png)\n"
+
+    rewritten = rewrite_local_image_refs(markdown, asset_slug=slug)
+    issues = validate_asset_bundle(
+        rewritten,
+        asset_slug=slug,
+        assets_root=assets_root,
+    )
+
+    assert rewritten == markdown
+    assert not any(code == "ASSET_PATH_UNEXPECTED" for code, _, _ in issues)
+    assert not any(code == "MISSING_ASSET" for code, _, _ in issues)
+    assert not any(code == "ORPHAN_ASSET" for code, _, _ in issues)
 
 
 def test_validate_asset_bundle_warns_on_short_path(tmp_path) -> None:

@@ -81,6 +81,7 @@ class BackofficeSettings:
     knowledge_service_token: str = ""
     knowledge_delegation_secret: str = ""
     knowledge_auth_mode: str = "BEARER"
+    knowledge_timeout_seconds: float = 180.0
     source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
     deployment_tenant_id: str = "local-development"
@@ -192,6 +193,9 @@ class BackofficeSettings:
                 "KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE",
                 "BEARER",
             ).upper(),
+            knowledge_timeout_seconds=float(
+                os.environ.get("KNOWLEDGE_PORTAL_UPSTREAM_TIMEOUT_SECONDS", "180")
+            ),
             knowledge_delegation_secret=os.environ.get(
                 "KNOWLEDGE_PORTAL_DELEGATION_SECRET",
                 os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),

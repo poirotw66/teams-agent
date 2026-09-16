@@ -16,6 +16,7 @@ AGENT_SERVICE="${GCP_AGENT_SERVICE:-teams-rag-agent}"
 ADAPTER_SERVICE="${GCP_ADAPTER_SERVICE:-teams-agent-adapter}"
 BACKOFFICE_SERVICE="${GCP_BACKOFFICE_SERVICE:-teams-ai-ops-backoffice}"
 PORTAL_SERVICE="${GCP_PORTAL_SERVICE:-teams-knowledge-portal}"
+CONVERTER_SERVICE="${GCP_PDF_CONVERTER_SERVICE:-teams-pdf-converter}"
 
 GIT_SHA="${RELEASE_GIT_SHA:-$(git -C "${PROJECT_DIR}" rev-parse --short HEAD)}"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
@@ -23,10 +24,12 @@ AGENT_IMAGE="${REGISTRY}/${AGENT_SERVICE}:${GIT_SHA}"
 ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:${GIT_SHA}"
 BACKOFFICE_IMAGE="${REGISTRY}/${BACKOFFICE_SERVICE}:${GIT_SHA}"
 PORTAL_IMAGE="${REGISTRY}/${PORTAL_SERVICE}:${GIT_SHA}"
+CONVERTER_IMAGE="${REGISTRY}/${CONVERTER_SERVICE}:${GIT_SHA}"
 AGENT_CACHE_IMAGE="${REGISTRY}/${AGENT_SERVICE}:buildcache"
 ADAPTER_CACHE_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:buildcache"
 BACKOFFICE_CACHE_IMAGE="${REGISTRY}/${BACKOFFICE_SERVICE}:buildcache"
 PORTAL_CACHE_IMAGE="${REGISTRY}/${PORTAL_SERVICE}:buildcache"
+CONVERTER_CACHE_IMAGE="${REGISTRY}/${CONVERTER_SERVICE}:buildcache"
 
 log() {
   printf '[release] %s\n' "$*"
@@ -120,12 +123,14 @@ select_components() {
   BUILD_ADAPTER=0
   BUILD_BACKOFFICE=0
   BUILD_PORTAL=0
+  BUILD_CONVERTER=0
 
   if [[ "${requested}" != "auto" ]]; then
-    [[ ",${requested}," == *",agent,"* ]] && BUILD_AGENT=1
-    [[ ",${requested}," == *",adapter,"* ]] && BUILD_ADAPTER=1
-    [[ ",${requested}," == *",backoffice,"* ]] && BUILD_BACKOFFICE=1
-    [[ ",${requested}," == *",portal,"* ]] && BUILD_PORTAL=1
+    if [[ ",${requested}," == *",agent,"* ]]; then BUILD_AGENT=1; fi
+    if [[ ",${requested}," == *",adapter,"* ]]; then BUILD_ADAPTER=1; fi
+    if [[ ",${requested}," == *",backoffice,"* ]]; then BUILD_BACKOFFICE=1; fi
+    if [[ ",${requested}," == *",portal,"* ]]; then BUILD_PORTAL=1; fi
+    if [[ ",${requested}," == *",converter,"* ]]; then BUILD_CONVERTER=1; fi
     return
   fi
 
@@ -169,11 +174,15 @@ select_components() {
       agent_service/Dockerfile.portal)
         BUILD_PORTAL=1
         ;;
+      services/pdf_converter/Dockerfile.upstream)
+        BUILD_CONVERTER=1
+        ;;
       deploy/cloudbuild-release.yaml|deploy/release-gcp.sh)
         BUILD_AGENT=1
         BUILD_ADAPTER=1
         BUILD_BACKOFFICE=1
         BUILD_PORTAL=1
+        BUILD_CONVERTER=1
         ;;
     esac
   done <<<"${changed_files}"
@@ -181,12 +190,13 @@ select_components() {
 
 require_cmd git
 select_components
-if ((BUILD_AGENT + BUILD_ADAPTER + BUILD_BACKOFFICE + BUILD_PORTAL == 0)); then
+if ((BUILD_AGENT + BUILD_ADAPTER + BUILD_BACKOFFICE + BUILD_PORTAL + BUILD_CONVERTER == 0)); then
   fail "No application changes detected. Publish knowledge separately or set RELEASE_COMPONENTS."
 fi
 if [[ "${RELEASE_DRY_RUN:-0}" == "1" ]]; then
-  printf 'agent=%s adapter=%s backoffice=%s portal=%s\n' \
-    "${BUILD_AGENT}" "${BUILD_ADAPTER}" "${BUILD_BACKOFFICE}" "${BUILD_PORTAL}"
+  printf 'agent=%s adapter=%s backoffice=%s portal=%s converter=%s\n' \
+    "${BUILD_AGENT}" "${BUILD_ADAPTER}" "${BUILD_BACKOFFICE}" "${BUILD_PORTAL}" \
+    "${BUILD_CONVERTER}"
   exit 0
 fi
 [[ -n "${PROJECT_ID}" ]] || fail "Set GCP_PROJECT_ID"
@@ -200,6 +210,7 @@ if [[ "${BUILD_ONLY}" != "1" ]]; then
   PREVIOUS_ADAPTER_IMAGE=""
   PREVIOUS_BACKOFFICE_IMAGE=""
   PREVIOUS_PORTAL_IMAGE=""
+  PREVIOUS_CONVERTER_IMAGE=""
   if [[ "${BUILD_AGENT}" == "1" ]]; then
     PREVIOUS_AGENT_IMAGE="$(
       pin_image_reference "$(current_service_image "${AGENT_SERVICE}")"
@@ -220,12 +231,18 @@ if [[ "${BUILD_ONLY}" != "1" ]]; then
       pin_image_reference "$(current_service_image "${PORTAL_SERVICE}")"
     )"
   fi
+  if [[ "${BUILD_CONVERTER}" == "1" ]]; then
+    PREVIOUS_CONVERTER_IMAGE="$(
+      pin_image_reference "$(current_service_image "${CONVERTER_SERVICE}")"
+    )"
+  fi
 
   rollback_all() {
     rollback_service_image "${AGENT_SERVICE}" "${PREVIOUS_AGENT_IMAGE}"
     rollback_service_image "${ADAPTER_SERVICE}" "${PREVIOUS_ADAPTER_IMAGE}"
     rollback_service_image "${BACKOFFICE_SERVICE}" "${PREVIOUS_BACKOFFICE_IMAGE}"
     rollback_service_image "${PORTAL_SERVICE}" "${PREVIOUS_PORTAL_IMAGE}"
+    rollback_service_image "${CONVERTER_SERVICE}" "${PREVIOUS_CONVERTER_IMAGE}"
   }
 
   trap 'status=$?; if [[ ${status} -ne 0 ]]; then log "Release failed — attempting rollback"; rollback_all; fi; exit ${status}' ERR
@@ -236,13 +253,14 @@ gcloud config set project "${PROJECT_ID}" >/dev/null
 log "Submitting one parallel application build"
 gcloud builds submit "${PROJECT_DIR}" \
   --config="${PROJECT_DIR}/deploy/cloudbuild-release.yaml" \
-  --substitutions="_BUILD_AGENT=${BUILD_AGENT},_BUILD_ADAPTER=${BUILD_ADAPTER},_BUILD_BACKOFFICE=${BUILD_BACKOFFICE},_BUILD_PORTAL=${BUILD_PORTAL},_AGENT_IMAGE=${AGENT_IMAGE},_ADAPTER_IMAGE=${ADAPTER_IMAGE},_BACKOFFICE_IMAGE=${BACKOFFICE_IMAGE},_PORTAL_IMAGE=${PORTAL_IMAGE},_AGENT_CACHE_IMAGE=${AGENT_CACHE_IMAGE},_ADAPTER_CACHE_IMAGE=${ADAPTER_CACHE_IMAGE},_BACKOFFICE_CACHE_IMAGE=${BACKOFFICE_CACHE_IMAGE},_PORTAL_CACHE_IMAGE=${PORTAL_CACHE_IMAGE}" \
+  --substitutions="_BUILD_AGENT=${BUILD_AGENT},_BUILD_ADAPTER=${BUILD_ADAPTER},_BUILD_BACKOFFICE=${BUILD_BACKOFFICE},_BUILD_PORTAL=${BUILD_PORTAL},_BUILD_CONVERTER=${BUILD_CONVERTER},_AGENT_IMAGE=${AGENT_IMAGE},_ADAPTER_IMAGE=${ADAPTER_IMAGE},_BACKOFFICE_IMAGE=${BACKOFFICE_IMAGE},_PORTAL_IMAGE=${PORTAL_IMAGE},_CONVERTER_IMAGE=${CONVERTER_IMAGE},_AGENT_CACHE_IMAGE=${AGENT_CACHE_IMAGE},_ADAPTER_CACHE_IMAGE=${ADAPTER_CACHE_IMAGE},_BACKOFFICE_CACHE_IMAGE=${BACKOFFICE_CACHE_IMAGE},_PORTAL_CACHE_IMAGE=${PORTAL_CACHE_IMAGE},_CONVERTER_CACHE_IMAGE=${CONVERTER_CACHE_IMAGE}" \
   --project="${PROJECT_ID}"
 
 if [[ "${BUILD_AGENT}" == "1" ]]; then AGENT_IMAGE="$(resolve_image_digest "${AGENT_IMAGE}")"; fi
 if [[ "${BUILD_ADAPTER}" == "1" ]]; then ADAPTER_IMAGE="$(resolve_image_digest "${ADAPTER_IMAGE}")"; fi
 if [[ "${BUILD_BACKOFFICE}" == "1" ]]; then BACKOFFICE_IMAGE="$(resolve_image_digest "${BACKOFFICE_IMAGE}")"; fi
 if [[ "${BUILD_PORTAL}" == "1" ]]; then PORTAL_IMAGE="$(resolve_image_digest "${PORTAL_IMAGE}")"; fi
+if [[ "${BUILD_CONVERTER}" == "1" ]]; then CONVERTER_IMAGE="$(resolve_image_digest "${CONVERTER_IMAGE}")"; fi
 
 if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
   printf '\nBuild complete (BUILD_ONLY=1 — Cloud Run not updated).\n'
@@ -251,6 +269,7 @@ if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
   printf 'Adapter image: %s\n' "${ADAPTER_IMAGE}"
   printf 'Backoffice:    %s\n' "${BACKOFFICE_IMAGE}"
   printf 'Portal:        %s\n' "${PORTAL_IMAGE}"
+  printf 'Converter:     %s\n' "${CONVERTER_IMAGE}"
   exit 0
 fi
 
@@ -284,6 +303,10 @@ if [[ "${BUILD_PORTAL}" == "1" ]]; then
   deploy_service_image "${PORTAL_SERVICE}" "${PORTAL_IMAGE}" &
   DEPLOY_PIDS+=("$!")
 fi
+if [[ "${BUILD_CONVERTER}" == "1" ]]; then
+  deploy_service_image "${CONVERTER_SERVICE}" "${CONVERTER_IMAGE}" &
+  DEPLOY_PIDS+=("$!")
+fi
 DEPLOY_FAILED=0
 for pid in "${DEPLOY_PIDS[@]}"; do
   if ! wait "${pid}"; then
@@ -310,6 +333,7 @@ printf 'Agent image:   %s\n' "${AGENT_IMAGE}"
 printf 'Adapter image: %s\n' "${ADAPTER_IMAGE}"
 printf 'Backoffice:    %s\n' "${BACKOFFICE_IMAGE}"
 printf 'Portal:        %s\n' "${PORTAL_IMAGE}"
+printf 'Converter:     %s\n' "${CONVERTER_IMAGE}"
 if [[ -n "${ADAPTER_URL}" ]]; then
   printf 'Adapter URL:   %s\n' "${ADAPTER_URL}"
   printf 'Smoke:         curl -sS %s/readyz\n' "${ADAPTER_URL}"

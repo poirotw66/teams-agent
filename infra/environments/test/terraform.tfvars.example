@@ -19,6 +19,8 @@ deployment_phase = "prepare"
 # adapter_image    = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-agent-adapter:REPLACE_WITH_GIT_SHA"
 # backoffice_image = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-ai-ops-backoffice:REPLACE_WITH_GIT_SHA"
 # portal_image     = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-knowledge-portal:REPLACE_WITH_GIT_SHA"
+# enable_pdf_converter = true
+# pdf_converter_image  = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-pdf-converter:REPLACE_WITH_GIT_SHA"
 
 # Step 5 — set after activate once Adapter URL is known:
 # adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"

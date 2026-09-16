@@ -39,6 +39,9 @@ data/portal_originals/**
 data/portal_state/**
 data/index/**
 services/**
+!services/
+!services/pdf_converter/
+!services/pdf_converter/Dockerfile.upstream
 infra/**
 outputs/**
 devTools/**

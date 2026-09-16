@@ -151,6 +151,38 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertIn('if ! wait "${pid}"; then', release_script)
         self.assertIn('[[ "${DEPLOY_FAILED}" == "0" ]]', release_script)
 
+    def test_pdf_converter_release_and_cloud_run_are_private_and_pinned(self) -> None:
+        dockerfile = self.read("services/pdf_converter/Dockerfile.upstream")
+        cloudbuild = self.read("deploy/cloudbuild-release.yaml")
+        release_script = self.read("deploy/release-gcp.sh")
+        gcloudignore = self.read(".gcloudignore")
+        converter = self.read("infra/terraform/cloud_run_pdf_converter.tf")
+        portal = self.read("infra/terraform/knowledge_portal.tf")
+
+        self.assertRegex(dockerfile, r"ARG UPSTREAM_REF=[0-9a-f]{40}")
+        self.assertIn("id: converter", cloudbuild)
+        self.assertIn("_CONVERTER_CACHE_IMAGE", cloudbuild)
+        self.assertRegex(cloudbuild, r'_PDF_CONVERTER_UPSTREAM_REF: "[0-9a-f]{40}"')
+        self.assertIn("services/pdf_converter/Dockerfile.upstream", cloudbuild)
+        self.assertIn("!services/pdf_converter/Dockerfile.upstream", gcloudignore)
+        self.assertIn('*",converter,"*', release_script)
+        self.assertIn('ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"', converter)
+        self.assertIn('value = "gemini"', converter)
+        self.assertIn("pdf_converter_google_api_key", converter)
+        self.assertIn("google_service_account.pdf_converter[0].email", converter)
+        self.assertIn("google_service_account.portal.email", converter)
+        self.assertNotIn("google_service_account.agent.email", converter)
+        self.assertRegex(
+            portal,
+            r'KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE"\s+'
+            r'value = local\.deploy_pdf_converter \? "gemini_vision" : "legacy_text"',
+        )
+        self.assertRegex(
+            portal,
+            r'KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE"\s+'
+            r'value = local\.deploy_pdf_converter \? "GOOGLE_ID_TOKEN" : "BEARER"',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

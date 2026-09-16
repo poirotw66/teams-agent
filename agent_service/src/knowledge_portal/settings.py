@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+
+
+class PdfConverterAuthMode(str, Enum):
+    """Supported authentication modes for the PDF converter."""
+
+    BEARER = "BEARER"
+    GOOGLE_ID_TOKEN = "GOOGLE_ID_TOKEN"
 
 
 @dataclass(frozen=True)
@@ -47,6 +55,7 @@ class PortalSettings:
     require_service_token_with_delegation: bool = True
     pdf_converter_url: str | None = None
     pdf_converter_token: str | None = None
+    pdf_converter_auth_mode: PdfConverterAuthMode = PdfConverterAuthMode.BEARER
     pdf_converter_timeout_seconds: float = 120.0
     pdf_converter_engine: str = "legacy_text"
     pdf_sync_max_bytes: int = 5 * 1024 * 1024
@@ -67,6 +76,19 @@ class PortalSettings:
     release_purpose: str = "PRODUCTION"
 
     def __post_init__(self) -> None:
+        try:
+            auth_mode = PdfConverterAuthMode(self.pdf_converter_auth_mode)
+        except ValueError as error:
+            supported_modes = ", ".join(mode.value for mode in PdfConverterAuthMode)
+            raise ValueError(
+                f"KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE must be one of {supported_modes}."
+            ) from error
+        object.__setattr__(self, "pdf_converter_auth_mode", auth_mode)
+        if auth_mode is PdfConverterAuthMode.GOOGLE_ID_TOKEN and not self.pdf_converter_url:
+            raise ValueError(
+                "KNOWLEDGE_PORTAL_PDF_CONVERTER_URL is required when "
+                "KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE=GOOGLE_ID_TOKEN."
+            )
         if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
             raise ValueError("AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod.")
         if self.release_purpose not in {"PRODUCTION", "E2E", "SHADOW"}:
@@ -242,6 +264,13 @@ class PortalSettings:
                 or os.environ.get("PDF_CONVERTER_TOKEN")
                 or None
             ),
+            pdf_converter_auth_mode=(
+                os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE")
+                or os.environ.get("PDF_CONVERTER_AUTH_MODE")
+                or "BEARER"
+            )
+            .strip()
+            .upper(),
             pdf_converter_timeout_seconds=float(
                 os.environ.get("KNOWLEDGE_PORTAL_PDF_CONVERTER_TIMEOUT_SECONDS", "120")
             ),

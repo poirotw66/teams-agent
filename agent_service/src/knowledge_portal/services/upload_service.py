@@ -26,6 +26,7 @@ from ..models import (
     utc_now,
 )
 from ..original_assets import OriginalAssetStore
+from ..pdf_converter_client import PdfConverterError
 from ..pdf_text import extract_text_pdf, pdf_text_to_markdown
 from ..rbac import ensure_can_edit
 from ..repository import PortalNotFoundError
@@ -131,6 +132,13 @@ class UploadService:
         from ..pdf_text import count_pdf_pages
 
         ensure_can_import_markdown(actor)
+        if (
+            self._settings.deployment_environment == "prod"
+            and not self._settings.pdf_converter_url
+        ):
+            raise PdfConverterError(
+                "PDF converter is required in production but is not configured."
+            )
         safe_name = filename or "document.pdf"
         original_metadata = OriginalAssetStore(self._settings).store_pending(
             payload,

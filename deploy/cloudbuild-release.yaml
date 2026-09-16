@@ -79,11 +79,34 @@ steps:
         docker push "${_PORTAL_IMAGE}"
         docker push "${_PORTAL_CACHE_IMAGE}"
 
+  - id: converter
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    waitFor: ["-"]
+    args:
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        if [[ "${_BUILD_CONVERTER}" != "1" ]]; then exit 0; fi
+        docker pull "${_CONVERTER_CACHE_IMAGE}" || true
+        docker build \
+          --file services/pdf_converter/Dockerfile.upstream \
+          --build-arg "UPSTREAM_REF=${_PDF_CONVERTER_UPSTREAM_REF}" \
+          --cache-from "${_CONVERTER_CACHE_IMAGE}" \
+          --tag "${_CONVERTER_IMAGE}" \
+          --tag "${_CONVERTER_CACHE_IMAGE}" \
+          .
+        docker push "${_CONVERTER_IMAGE}"
+        docker push "${_CONVERTER_CACHE_IMAGE}"
+
 substitutions:
   _BUILD_AGENT: "1"
   _BUILD_ADAPTER: "1"
   _BUILD_BACKOFFICE: "1"
   _BUILD_PORTAL: "1"
+  _BUILD_CONVERTER: "1"
+  _PDF_CONVERTER_UPSTREAM_REF: "5583699dd718fdacbfd5ca53845ef929e177aa98"
 
 options:
   logging: CLOUD_LOGGING_ONLY

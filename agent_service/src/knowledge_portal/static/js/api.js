@@ -94,9 +94,10 @@ export async function api(path, options = {}) {
   return payload;
 }
 
-export async function apiForm(path, formData, method = "POST") {
+export async function apiForm(path, formData, method = "POST", options = {}) {
+  const timeoutMs = Number(options.timeoutMs || 10000);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(resolveApiUrl(path), {

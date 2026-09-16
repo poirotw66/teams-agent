@@ -114,7 +114,7 @@ from .workers import install_background_runtime
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_ASSET_VERSION = "ops-ui-20260915a"
+UI_ASSET_VERSION = "ops-ui-20260916b"
 
 
 def _js_import_map_script(version: str) -> str:
@@ -353,6 +353,7 @@ def create_app(
         service_token=resolved_settings.knowledge_service_token,
         delegation_secret=resolved_settings.knowledge_delegation_secret,
         auth_mode=resolved_settings.knowledge_auth_mode,
+        timeout_seconds=resolved_settings.knowledge_timeout_seconds,
         transport=knowledge_transport,
     )
 
