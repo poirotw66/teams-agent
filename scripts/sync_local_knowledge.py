@@ -41,20 +41,24 @@ async def _run(
     from knowledge_portal.settings import PortalSettings
 
     rag_settings = RagSettings.from_env()
-    if reindex or not rag_settings.index_path.is_file():
-        print("Building local rag-index…")
-        build_index(rag_settings)
-    elif bundled_index_path is None:
-        bundled_index_path = rag_settings.index_path
-
-    if bundled_index_path is None:
-        bundled_index_path = rag_settings.index_path
-    if not bundled_index_path.is_file():
-        raise SystemExit(
-            f"Bundled index not found: {bundled_index_path}. Run: cd agent_service && uv run rag-index"
-        )
-
     settings = PortalSettings.from_env()
+    uses_bundled_index = not (
+        settings.release_gcs_bucket and settings.release_purpose == "PRODUCTION"
+    )
+    if uses_bundled_index:
+        if reindex or not rag_settings.index_path.is_file():
+            print("Building local rag-index…")
+            build_index(rag_settings)
+        if bundled_index_path is None:
+            bundled_index_path = rag_settings.index_path
+        if not bundled_index_path.is_file():
+            raise SystemExit(
+                f"Bundled index not found: {bundled_index_path}. "
+                "Run: cd agent_service && uv run rag-index"
+            )
+    else:
+        bundled_index_path = None
+
     service = PortalService(settings, build_repository(settings))
     actor = PortalActor(
         user_id="platform.sync",
@@ -69,11 +73,10 @@ async def _run(
         bundled_index_path=bundled_index_path,
         release_id=release_id,
     )
-    chunk_payload = __import__("json").loads(bundled_index_path.read_text(encoding="utf-8"))
-    chunk_count = len(chunk_payload.get("chunks", []))
     print("Local knowledge sync complete.")
     print(f"Sources:        {sources_dir}")
-    print(f"Bundled index:  {bundled_index_path} ({chunk_count} chunks)")
+    print(f"Bundled index:  {bundled_index_path or 'rebuilt for governed release'}")
+    print(f"Release chunks: {release.chunk_count}")
     print(f"Release ID:     {release.release_id}")
     print(f"Portal docs:    {len(release.manifest)}")
     print(f"Active pointer: {settings.release_artifact_dir / 'active_release.json'}")
