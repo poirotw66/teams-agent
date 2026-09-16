@@ -144,17 +144,17 @@ variable "adapter_image" {
 
 variable "rag_model" {
   type    = string
-  default = "gemini-3.1-flash-lite"
+  default = "google_genai:gemini-3.1-flash-lite"
 }
 
 variable "agent_model" {
   type    = string
-  default = "gemini-3.8-flash"
+  default = "google_genai:gemini-3.8-flash"
 }
 
 variable "rag_embedding_model" {
   type    = string
-  default = "text-embedding-004"
+  default = "google_genai:gemini-embedding-2"
 }
 
 variable "rag_allowed_tenants" {
@@ -210,6 +210,41 @@ variable "knowledge_backend_admin_enabled" {
 variable "ticket_request_dedupe_mode" {
   type    = string
   default = "FIRESTORE"
+}
+
+variable "ticket_service_mode" {
+  description = "Agent ticket integration mode."
+  type        = string
+  default     = "DISABLED"
+
+  validation {
+    condition     = contains(["DISABLED", "HTTP"], var.ticket_service_mode)
+    error_message = "ticket_service_mode must be DISABLED or HTTP."
+  }
+}
+
+variable "ticket_service_base_url" {
+  description = "Ticket service base URL when ticket_service_mode is HTTP."
+  type        = string
+  default     = ""
+}
+
+variable "ticket_service_token_secret_id" {
+  description = "Existing Secret Manager secret ID for the ticket service token."
+  type        = string
+  default     = ""
+}
+
+variable "agent_ops_bigquery_enabled" {
+  description = "Whether the Agent writes operational events to BigQuery."
+  type        = bool
+  default     = true
+}
+
+variable "agent_ops_delivery_inline_sinks" {
+  description = "Whether Agent request handling writes operational sinks inline."
+  type        = bool
+  default     = true
 }
 
 variable "adapter_public_base_url" {

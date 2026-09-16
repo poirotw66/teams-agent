@@ -20,6 +20,32 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertRegex(locals_tf, r"AGENT_DEPLOYMENT_ENV\s+=\s+var\.environment_name")
         self.assertNotRegex(locals_tf, r"AGENT_DEPLOYMENT_ENV\s+=\s+var\.deployment_phase")
 
+    def test_agent_release_defaults_match_the_verified_embedding_contract(self) -> None:
+        variables = self.read("infra/terraform/variables.tf")
+        locals_tf = self.read("infra/terraform/locals.tf")
+        cloud_run = self.read("infra/terraform/cloud_run.tf")
+
+        self.assertIn('default = "google_genai:gemini-3.1-flash-lite"', variables)
+        self.assertIn('default = "google_genai:gemini-3.8-flash"', variables)
+        self.assertIn('default = "google_genai:gemini-embedding-2"', variables)
+        self.assertRegex(
+            locals_tf,
+            r"KNOWLEDGE_RELEASE_TENANT_ID\s+=\s+\"default\"",
+        )
+        self.assertRegex(
+            locals_tf,
+            r"OPS_FIRESTORE_PROJECT\s+=\s+var\.project_id",
+        )
+        self.assertRegex(
+            locals_tf,
+            r"TICKET_SERVICE_MODE\s+=\s+var\.ticket_service_mode",
+        )
+        self.assertRegex(
+            locals_tf,
+            r"OPS_BIGQUERY_ENABLED\s+=\s+tostring\(var\.agent_ops_bigquery_enabled\)",
+        )
+        self.assertIn('name = "TICKET_SERVICE_TOKEN"', cloud_run)
+
     def test_one_year_retention_is_the_default(self) -> None:
         variables = self.read("infra/terraform/variables.tf")
         locals_tf = self.read("infra/terraform/locals.tf")

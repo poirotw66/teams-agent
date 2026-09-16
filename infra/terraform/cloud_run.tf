@@ -53,6 +53,19 @@ resource "google_cloud_run_v2_service" "agent" {
           }
         }
       }
+
+      dynamic "env" {
+        for_each = var.ticket_service_token_secret_id == "" ? [] : [1]
+        content {
+          name = "TICKET_SERVICE_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = var.ticket_service_token_secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
     }
   }
 

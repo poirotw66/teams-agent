@@ -41,6 +41,7 @@ locals {
 
   agent_env = {
     LOG_LEVEL                            = "INFO"
+    GCP_PROJECT_ID                       = var.project_id
     RAG_DATA_DIR                         = "/app/data"
     RAG_INDEX_PATH                       = "/app/data/index/chunks.json"
     RAG_AUTO_BUILD_INDEX                 = "false"
@@ -59,7 +60,8 @@ locals {
     KNOWLEDGE_BACKEND_ADMIN_ENABLED      = tostring(var.knowledge_backend_admin_enabled)
     TICKET_REQUEST_DEDUPE_MODE           = var.ticket_request_dedupe_mode
     TICKET_REQUEST_DEDUPE_COLLECTION     = var.ticket_request_dedupe_collection
-    TICKET_SERVICE_MODE                  = "DISABLED"
+    TICKET_SERVICE_MODE                  = var.ticket_service_mode
+    TICKET_SERVICE_BASE_URL              = var.ticket_service_base_url
     CONVERSATION_REPOSITORY_MODE         = "FIRESTORE"
     CONVERSATION_FIRESTORE_COLLECTION    = var.firestore_conversations_collection
     AGENT_DEPLOYMENT_ENV                 = var.environment_name
@@ -73,6 +75,7 @@ locals {
     KNOWLEDGE_RELEASE_STORE_MODE         = "GCS"
     KNOWLEDGE_RELEASE_GCS_BUCKET         = local.knowledge_release_bucket_name
     KNOWLEDGE_RELEASE_GCS_PREFIX         = var.knowledge_release_object_prefix
+    KNOWLEDGE_RELEASE_TENANT_ID          = "default"
     KNOWLEDGE_RELEASE_FIRESTORE_PROJECT  = var.project_id
     KNOWLEDGE_RELEASE_FIRESTORE_DATABASE = google_firestore_database.default.name
     KNOWLEDGE_RELEASE_REQUIRE_MANIFEST   = "true"
@@ -83,12 +86,13 @@ locals {
     OPS_EVENTS_ENABLED                   = "true"
     OPS_STORE_MODE                       = "FIRESTORE"
     OPS_AUDIT_STORE_MODE                 = "FIRESTORE"
+    OPS_FIRESTORE_PROJECT                = var.project_id
     OPS_FIRESTORE_COLLECTION             = var.ops_events_collection
     OPS_AUDIT_FIRESTORE_COLLECTION       = var.ops_audit_collection
-    OPS_BIGQUERY_ENABLED                 = "true"
+    OPS_BIGQUERY_ENABLED                 = tostring(var.agent_ops_bigquery_enabled)
     OPS_BIGQUERY_DATASET                 = var.ops_bigquery_dataset
     OPS_BIGQUERY_TABLE                   = var.ops_bigquery_table
-    OPS_DELIVERY_INLINE_SINKS            = "true"
+    OPS_DELIVERY_INLINE_SINKS            = tostring(var.agent_ops_delivery_inline_sinks)
   }
 
   backoffice_env = {
