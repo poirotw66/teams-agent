@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -105,7 +105,6 @@ from .routers import (
     register_sync_routes,
     register_tool_fixture_routes,
 )
-
 from .services.periods import PeriodPolicyError
 from .services.query_service import BackofficeQueryService
 from .services.rate_limit import ExportRateLimiter, RateLimitExceeded
@@ -934,6 +933,11 @@ def create_app(
 
     console_v2_dir = STATIC_DIR / "console-v2"
     if resolved_settings.console_v2_enabled:
+        _STATIC_EXTENSIONS = {
+            ".js", ".css", ".map", ".json", ".png", ".jpg", ".jpeg",
+            ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".eot",
+        }
+
         @app.get("/console-v2")
         @app.get("/console-v2/")
         @app.get("/console-v2/{full_path:path}")
@@ -942,6 +946,9 @@ def create_app(
                 target = console_v2_dir / full_path
                 if target.is_file():
                     return FileResponse(target)
+                target_path = Path(full_path)
+                if full_path.startswith("assets/") or target_path.suffix.lower() in _STATIC_EXTENSIONS:
+                    raise HTTPException(status_code=404, detail="Asset not found")
             index_file = console_v2_dir / "index.html"
             if index_file.is_file():
                 return FileResponse(

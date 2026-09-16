@@ -97,9 +97,18 @@ def test_console_v2_spa_and_static_serving(tmp_path: Path) -> None:
     assert '<div id="root">' in res_case.text
 
     # 3. Static JS asset serves file correctly
-    res_asset = client.get("/console-v2/assets/index-B7P6jG0d.js")
+    static_assets_dir = Path(__file__).resolve().parents[1] / "src" / "ai_ops_backoffice" / "static" / "console-v2" / "assets"
+    js_files = list(static_assets_dir.glob("*.js"))
+    assert js_files, f"Expected at least one built JS asset in {static_assets_dir}"
+    asset_name = js_files[0].name
+    res_asset = client.get(f"/console-v2/assets/{asset_name}")
     assert res_asset.status_code == 200
     assert len(res_asset.content) > 1000
+
+    # 4. Nonexistent static asset returns 404 (does not serve index.html)
+    res_missing_asset = client.get("/console-v2/assets/nonexistent-bundle-12345.js")
+    assert res_missing_asset.status_code == 404
+
 
 
 def test_quality_case_end_to_end_closed_loop(tmp_path: Path) -> None:
