@@ -113,7 +113,15 @@ class GovernanceService(
         self._eval_flow_harness = eval_flow_harness
 
     def _require(self, actor: ActorContext, capability: str) -> None:
-        if actor.user_id in self._repository.load().revoked_principals:
+        self._require_state(actor, capability, self._repository.load())
+
+    @staticmethod
+    def _require_state(
+        actor: ActorContext,
+        capability: str,
+        state: GovernanceState,
+    ) -> None:
+        if actor.user_id in state.revoked_principals:
             raise GovernanceAuthorizationError("principal access has been revoked")
         if not actor.has_capability(capability):
             raise GovernanceAuthorizationError(f"missing capability {capability}")

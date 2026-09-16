@@ -200,7 +200,7 @@ resource "google_cloud_run_v2_service" "backoffice" {
 
     scaling {
       min_instance_count = 0
-      max_instance_count = 2
+      max_instance_count = 10
     }
 
     containers {
@@ -213,7 +213,7 @@ resource "google_cloud_run_v2_service" "backoffice" {
       resources {
         limits = {
           cpu    = "1"
-          memory = "512Mi"
+          memory = "1Gi"
         }
       }
 
@@ -254,4 +254,14 @@ resource "google_cloud_run_v2_service" "backoffice" {
       client_version,
     ]
   }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "backoffice_public" {
+  count = local.deploy_cloud_run ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.backoffice[0].name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }

@@ -2424,6 +2424,40 @@ def test_query_cache_key_stability_and_pruning(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_queries_share_one_event_store_scan(tmp_path: Path) -> None:
+    data_dir = Path(__file__).resolve().parents[2] / "data"
+    settings = BackofficeSettings(
+        host="127.0.0.1",
+        port=8092,
+        service_token="",
+        auth_mode="HEADER",
+        ops_store_mode="MEMORY",
+        ops_store_path=tmp_path / "events",
+        ops_taxonomy_path=data_dir / "ops" / "issue_taxonomy_v1.json",
+        ops_metrics_path=data_dir / "ops" / "metrics_definitions_v1.json",
+        ops_classification_rules_path=data_dir / "ops" / "issue_classification_rules.json",
+        ops_audit_store_mode="MEMORY",
+        knowledge_portal_url="http://127.0.0.1:8091",
+        agent_api_url=None,
+        adapter_api_url=None,
+        ticket_service_url=None,
+        default_owner_unit_id="IT Service Desk",
+        entra_tenant_id=None,
+        entra_client_id=None,
+    )
+    svc = BackofficeQueryService(settings)
+    svc._runtime.store.list_events = AsyncMock(return_value=([], None))
+    period = svc._resolve_period(preset="7d")
+
+    await asyncio.gather(
+        svc._events(period=period),
+        svc._events(period=period),
+    )
+
+    svc._runtime.store.list_events.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_export_job_supports_channel_scope(tmp_path: Path) -> None:
     from unittest.mock import AsyncMock
 

@@ -105,6 +105,8 @@ class BackofficeQueryService(
         freshness_tracker: FreshnessTracker | None = None,
     ) -> None:
         self._settings = settings
+        self._knowledge_identity_token: tuple[float, str] | None = None
+        self._knowledge_identity_token_lock = asyncio.Lock()
         ops_settings = replace(
             OpsSettings.from_env(),
             enabled=True,
@@ -200,6 +202,7 @@ class BackofficeQueryService(
         self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}
+        self._event_cache_lock = asyncio.Lock()
         export_store_path = settings.ops_store_path.parent / "exports"
         if settings.export_job_store_mode == "FILE":
             export_job_store = FileExportJobStore(export_store_path)
@@ -358,7 +361,8 @@ class BackofficeQueryService(
             since = period.start_at.isoformat() if period.start_at else ""
             until = period.end_at.isoformat() if period.end_at else ""
             return f"explicit:{since}|{until}"
-        window_bucket = int(utc_now().timestamp() // 30)
+        bucket_seconds = max(1, self._settings.query_cache_ttl_seconds)
+        window_bucket = int(utc_now().timestamp() // bucket_seconds)
         return f"rolling:{period.preset}:{period.days}d:{window_bucket}"
 
     def _prune_cache(self, now: datetime, cache_ttl: timedelta) -> None:
@@ -382,7 +386,7 @@ class BackofficeQueryService(
         period: ResolvedPeriod | None = None,
         force_refresh: bool = False,
     ) -> list[OperationalEvent]:
-        cache_ttl = timedelta(seconds=30)
+        cache_ttl = timedelta(seconds=self._settings.query_cache_ttl_seconds)
         now = utc_now()
         cache_key = self._cache_key(period)
         cached = self._event_caches.get(cache_key)
@@ -392,24 +396,32 @@ class BackofficeQueryService(
             and now - cached[0] < cache_ttl
         ):
             return list(cached[1])
-        if force_refresh:
-            self._event_caches.clear()
-        since, until = self._period_bounds(period)
-        events: list[OperationalEvent] = []
-        cursor: str | None = None
-        while True:
-            page, cursor = await self._runtime.store.list_events(
-                limit=500,
-                cursor=cursor,
-                since=since,
-                until=until,
-            )
-            events.extend(page)
-            if cursor is None:
-                break
-        self._prune_cache(now, cache_ttl)
-        self._event_caches[cache_key] = (now, events)
-        return events
+        async with self._event_cache_lock:
+            cached = self._event_caches.get(cache_key)
+            if (
+                not force_refresh
+                and cached is not None
+                and now - cached[0] < cache_ttl
+            ):
+                return list(cached[1])
+            if force_refresh:
+                self._event_caches.clear()
+            since, until = self._period_bounds(period)
+            events: list[OperationalEvent] = []
+            cursor: str | None = None
+            while True:
+                page, cursor = await self._runtime.store.list_events(
+                    limit=500,
+                    cursor=cursor,
+                    since=since,
+                    until=until,
+                )
+                events.extend(page)
+                if cursor is None:
+                    break
+            self._prune_cache(now, cache_ttl)
+            self._event_caches[cache_key] = (now, events)
+            return list(events)
 
     def _invalidate_cache(self) -> None:
         self._event_caches.clear()

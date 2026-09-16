@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,11 +23,40 @@ from ai_ops_backoffice.knowledge_bridge.delegation import (
     verify_delegation_envelope,
 )
 from ai_ops_backoffice.knowledge_bridge.errors import assert_allowlisted
+from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 from knowledge_portal.api import create_app as create_portal_app
 from knowledge_portal.settings import PortalSettings
 
 SECRET = "test-delegation-secret-m1"
+
+
+def test_legacy_knowledge_queries_reuse_cloud_run_identity_token(tmp_path: Path) -> None:
+    settings = replace(
+        _backoffice_settings(tmp_path),
+        knowledge_auth_mode="GOOGLE_ID_TOKEN",
+    )
+    query_service = BackofficeQueryService(settings)
+
+    async def request_headers_twice() -> tuple[dict[str, str], dict[str, str]]:
+        first = await query_service._portal_headers("https://knowledge.example")
+        second = await query_service._portal_headers("https://knowledge.example")
+        return first, second
+
+    with patch(
+        "ai_ops_backoffice.knowledge_bridge.client._fetch_google_id_token",
+        return_value="cloud-run-token",
+    ) as fetch_token:
+        first, second = asyncio.run(request_headers_twice())
+
+    assert first["Authorization"] == "Bearer cloud-run-token"
+    assert second["Authorization"] == "Bearer cloud-run-token"
+    delegated_actor = verify_delegation_envelope(
+        first["X-Knowledge-Delegation"],
+        secret=SECRET,
+    )
+    assert delegated_actor["sub"] == "ai-ops-backoffice"
+    fetch_token.assert_called_once_with("https://knowledge.example")
 
 
 def _backoffice_settings(tmp_path: Path, *, bridge: bool = True) -> BackofficeSettings:

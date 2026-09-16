@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import Counter
 from typing import Any
 
@@ -11,6 +12,7 @@ import httpx
 from agent_service.operations.access import ActorContext
 from agent_service.operations.contracts import OperationalEvent
 
+from ..knowledge_bridge.delegation import DELEGATION_HEADER, issue_delegation_envelope
 from .query_helpers import _is_published_knowledge_hit
 
 
@@ -47,6 +49,50 @@ def _derive_index_status(
 
 
 class KnowledgeQueryMixin:
+    async def _portal_identity_token(self, audience: str) -> str:
+        now = asyncio.get_running_loop().time()
+        cached = self._knowledge_identity_token
+        if cached is not None and cached[0] > now:
+            return cached[1]
+        async with self._knowledge_identity_token_lock:
+            cached = self._knowledge_identity_token
+            if cached is not None and cached[0] > now:
+                return cached[1]
+            from ..knowledge_bridge.client import _fetch_google_id_token
+
+            token = await asyncio.to_thread(_fetch_google_id_token, audience)
+            self._knowledge_identity_token = (now + 3000, token)
+            return token
+
+    async def _portal_headers(self, portal_url: str) -> dict[str, str]:
+        headers = {
+            "X-Portal-User-Id": "ai-ops-backoffice",
+            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
+            "X-Portal-Role": "PLATFORM",
+            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
+        }
+        if self._settings.knowledge_delegation_secret:
+            service_actor = ActorContext(
+                user_id="ai-ops-backoffice",
+                display_name="AI Ops Backoffice",
+                role="SYSTEM_ADMIN",
+                owner_unit_ids=(self._settings.default_owner_unit_id,),
+                tenant_id=self._settings.deployment_tenant_id,
+            )
+            headers[DELEGATION_HEADER] = issue_delegation_envelope(
+                service_actor,
+                secret=self._settings.knowledge_delegation_secret,
+                correlation_id=uuid.uuid4().hex,
+            )
+        if self._settings.knowledge_auth_mode == "GOOGLE_ID_TOKEN":
+            token = await self._portal_identity_token(portal_url)
+            headers["Authorization"] = f"Bearer {token}"
+        elif self._settings.knowledge_service_token:
+            headers["Authorization"] = (
+                f"Bearer {self._settings.knowledge_service_token}"
+            )
+        return headers
+
     async def document_performance(
         self,
         actor: ActorContext,
@@ -363,12 +409,7 @@ class KnowledgeQueryMixin:
         portal_url = (
             self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
         ).rstrip("/")
-        headers = {
-            "X-Portal-User-Id": "ai-ops-backoffice",
-            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
-            "X-Portal-Role": "PLATFORM",
-            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
-        }
+        headers = await self._portal_headers(portal_url)
         params = {
             key: value
             for key, value in {
@@ -405,12 +446,7 @@ class KnowledgeQueryMixin:
         portal_url = (
             self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
         ).rstrip("/")
-        headers = {
-            "X-Portal-User-Id": "ai-ops-backoffice",
-            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
-            "X-Portal-Role": "PLATFORM",
-            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
-        }
+        headers = await self._portal_headers(portal_url)
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 response = await client.get(
@@ -447,12 +483,7 @@ class KnowledgeQueryMixin:
         portal_url = (
             self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
         ).rstrip("/")
-        headers = {
-            "X-Portal-User-Id": "ai-ops-backoffice",
-            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
-            "X-Portal-Role": "PLATFORM",
-            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
-        }
+        headers = await self._portal_headers(portal_url)
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 response = await client.get(

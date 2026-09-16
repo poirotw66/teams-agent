@@ -109,6 +109,7 @@ class BackofficeSettings:
     artifact_gcs_bucket: str | None = None
     environment: str = "dev"
     workers_enabled: bool = True
+    query_cache_ttl_seconds: int = 120
     freshness_firestore_collection: str = "freshness_state"
     console_v2_enabled: bool = True
 
@@ -470,6 +471,10 @@ class BackofficeSettings:
             environment=resolved_env,
             workers_enabled=os.environ.get("AI_OPS_WORKERS_ENABLED", "true").lower()
             in {"1", "true", "yes", "on"},
+            query_cache_ttl_seconds=max(
+                0,
+                int(os.environ.get("AI_OPS_QUERY_CACHE_TTL_SECONDS", "120")),
+            ),
             freshness_firestore_collection=(
                 os.environ.get("AI_OPS_FRESHNESS_COLLECTION")
                 or os.environ.get("OPS_FRESHNESS_COLLECTION")

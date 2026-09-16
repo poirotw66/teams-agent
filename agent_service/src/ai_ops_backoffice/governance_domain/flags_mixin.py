@@ -202,9 +202,13 @@ class GovernanceFlagsMixin:
             ),
         ))
 
-    def effective_flag(self, flag_id: str, *, actor: ActorContext, environment: str = "lab") -> dict[str, Any]:
-        self._require(actor, READ["flag"])
-        state = self._ensured()
+    def _effective_flag_from_state(
+        self,
+        flag_id: str,
+        *,
+        state: GovernanceState,
+        environment: str,
+    ) -> dict[str, Any]:
         flag = next((item for item in state.flags if item.flag_id == flag_id), None)
         if flag is None:
             raise GovernanceNotFoundError(flag_id)
@@ -225,13 +229,26 @@ class GovernanceFlagsMixin:
             "version": version.model_dump(mode="json") if version else None,
         }
 
-    def list_flags(self, *, actor: ActorContext) -> list[dict[str, Any]]:
-        self._require(actor, READ["flag"])
+    def effective_flag(self, flag_id: str, *, actor: ActorContext, environment: str = "lab") -> dict[str, Any]:
         state = self._ensured()
+        self._require_state(actor, READ["flag"], state)
+        return self._effective_flag_from_state(
+            flag_id,
+            state=state,
+            environment=environment,
+        )
+
+    def list_flags(self, *, actor: ActorContext) -> list[dict[str, Any]]:
+        state = self._ensured()
+        self._require_state(actor, READ["flag"], state)
         return [
             {
                 "flag": item.model_dump(mode="json"),
-                "effective": self.effective_flag(item.flag_id, actor=actor)["value"],
+                "effective": self._effective_flag_from_state(
+                    item.flag_id,
+                    state=state,
+                    environment="lab",
+                )["value"],
                 "versions": [
                     v.model_dump(mode="json")
                     for v in state.flag_versions

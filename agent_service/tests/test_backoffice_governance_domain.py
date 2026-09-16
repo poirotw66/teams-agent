@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -272,6 +273,18 @@ def test_feature_flag_governance_and_expiry(tmp_path: Path) -> None:
     assert svc.effective_flag("ticket_mode", actor=AI, environment="lab")["value"] == "ENABLED"
     clock["value"] = now + timedelta(hours=2)
     assert svc.effective_flag("ticket_mode", actor=AI, environment="lab")["value"] == "ENABLED"
+
+
+def test_list_flags_loads_governance_state_once(tmp_path: Path) -> None:
+    repository = FileGovernanceRepository(tmp_path / "gov.json")
+    svc = GovernanceService(repository)
+    svc.list_flags(actor=AI)
+
+    with patch.object(repository, "load", wraps=repository.load) as load:
+        flags = svc.list_flags(actor=AI)
+
+    assert flags
+    load.assert_called_once_with()
 
 
 def test_role_mapping_blocks_self_elevation_and_supports_revoke(tmp_path: Path) -> None:

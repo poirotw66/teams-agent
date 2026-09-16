@@ -79,10 +79,11 @@ gcloud run deploy "${BACKOFFICE_API_SERVICE}" \
   --port=8080 \
   --cpu=1 \
   --memory=1Gi \
+  --concurrency=20 \
   --min-instances=0 \
   --max-instances=10 \
   --timeout=300 \
-  --no-allow-unauthenticated
+  --allow-unauthenticated
 
 # 4. Deploy Dedicated Background Worker Cloud Run Service (Workers Enabled, Dedicated Singleton)
 log "Deploying dedicated Worker instance ${BACKOFFICE_WORKER_SERVICE} (AI_OPS_WORKERS_ENABLED=true)..."

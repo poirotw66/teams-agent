@@ -97,7 +97,8 @@ gcloud run deploy "${PORTAL_SERVICE}" \
   --no-allow-unauthenticated \
   --port=8080 \
   --cpu=1 \
-  --memory=1Gi \
+  --memory=2Gi \
+  --concurrency=8 \
   --min-instances=0 \
   --max-instances=3 \
   --timeout=600 \

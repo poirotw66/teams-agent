@@ -143,11 +143,7 @@ registerBuNavRenderer(renderBuNav);
 
 let capabilities = null;
 
-async function boot() {
-  const authConfig = await fetch("/api/auth/config").then((response) => response.json());
-  await ensureAuth(authConfig);
-  capabilities = await api("/api/capabilities");
-  setCapabilities(capabilities);
+async function loadFeatureFlags() {
   try {
     const flagPayload = await api("/api/feature-flags");
     const flags = {};
@@ -163,6 +159,14 @@ async function boot() {
   } catch {
     /* Feature flags are optional for shell bootstrap. */
   }
+}
+
+async function boot() {
+  const authConfig = await fetch("/api/auth/config").then((response) => response.json());
+  await ensureAuth(authConfig);
+  capabilities = await api("/api/capabilities");
+  setCapabilities(capabilities);
+  const initialBuShellEnabled = isBuShellEnabled();
   applyBuShellBodyClass(isBuShellEnabled());
   const defaultWorkspace =
     ROLE_DEFAULT_WORKSPACE[capabilities.role] || visibleWorkspaces()[0]?.id || "platform";
@@ -193,6 +197,17 @@ async function boot() {
   if (!applyLocationRoute()) {
     openConsoleHome();
   }
+  void loadFeatureFlags().then(() => {
+    const resolvedBuShellEnabled = isBuShellEnabled();
+    if (resolvedBuShellEnabled === initialBuShellEnabled) {
+      return;
+    }
+    applyBuShellBodyClass(resolvedBuShellEnabled);
+    const currentView = loadNavFilters().view;
+    if (currentView && typeof routes[currentView] === "function") {
+      renderNav(currentView);
+    }
+  });
 }
 
 function openConsoleHome() {
