@@ -236,7 +236,11 @@ async def test_promote_candidate_release_reuses_same_id_and_hash(tmp_path) -> No
 
     class Ctx:
         repository = Repo()
-        settings = MagicMock(release_artifact_dir=tmp_path)
+        settings = MagicMock(
+            release_artifact_dir=tmp_path,
+            deployment_environment="dev",
+            release_gcs_bucket=None,
+        )
         release_gate_checker = None
         publisher = MagicMock()
 
