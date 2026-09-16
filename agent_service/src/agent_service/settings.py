@@ -58,6 +58,7 @@ class RagSettings:
     conversation_history_rounds: int = 5
     conversation_timeout_hours: int = 24
     conversation_retention_days: int = 365
+    supervisor_terminal_confidence: float = 0.9
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
 
@@ -193,6 +194,9 @@ class RagSettings:
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
             conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 365),
+            supervisor_terminal_confidence=float(
+                environ.get("SUPERVISOR_TERMINAL_CONFIDENCE", "0.9")
+            ),
             max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
             max_retrieval_rewrites=_int_env(
                 "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
@@ -390,6 +394,10 @@ class RagSettings:
             raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
         if not 1 <= self.conversation_retention_days <= 365:
             raise ValueError("CONVERSATION_RETENTION_DAYS must be between 1 and 365.")
+        if not 0.5 <= self.supervisor_terminal_confidence <= 1:
+            raise ValueError(
+                "SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1."
+            )
         if not 1 <= self.max_llm_calls_per_request <= 20:
             raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
         if not 0 <= self.max_retrieval_rewrites <= 3:

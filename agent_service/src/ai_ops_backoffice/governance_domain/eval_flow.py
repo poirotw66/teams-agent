@@ -36,6 +36,8 @@ class FlowObservation:
     reply_text: str = ""
     observed_behaviors: frozenset[str] = field(default_factory=frozenset)
     model_id_used: str | None = None
+    llm_call_count: int | None = None
+    latency_ms: float | None = None
 
 
 class PromptFlowHarness(Protocol):

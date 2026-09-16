@@ -1512,6 +1512,9 @@ async def test_agent_executor_runs_inside_event_loop() -> None:
         history=[],
     )
     assert observation.detail.startswith("agent_workflow")
+    assert observation.llm_call_count is not None
+    assert observation.latency_ms is not None
+    assert observation.latency_ms >= 0
     assert runtime.last_binding["model_id"] == "gemini-2.5-flash"
     assert "LOOP_SAFE_TEMPLATE" in runtime.last_binding["template"]
 

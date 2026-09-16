@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from .confirmation import TicketIntent, classify_ticket_intent
 from .execution_context import ExecutionContext
+from .extractor import _is_assistant_scope_question, _is_human_escalation_request
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +69,112 @@ When the assistant is waiting for clarification:
 Prefer explicit user meaning over keyword matching. Mixed IT and non-IT messages should use IT_SUPPORT
 so downstream issue extraction can split them."""
 
+_PURE_GREETING = re.compile(
+    r"^(?:你好|您好|嗨|哈囉|hello|hi|早安|午安|晚安|謝謝|感謝)(?:你|您)?[！!。.．]*$",
+    re.IGNORECASE,
+)
+_CONTEXTUAL_REPLY = re.compile(
+    r"^(?:是|不是|否|好|好的|可以|不可以|不知道|不清楚|沒有|有|它|這個|那個|上述|剛剛)[！!。.．]*$"
+)
+
 
 class ConversationSupervisor:
-    """Model-driven turn supervisor; degrades to UNKNOWN only when the model is unavailable."""
+    """Coordinate ambiguous turns after deterministic safety rules run."""
 
     def __init__(self, model: BaseChatModel | None = None) -> None:
         self._model = model
+
+    @staticmethod
+    def _deterministic_decision(
+        message: str,
+        *,
+        pending_clarification: bool,
+    ) -> ConversationSupervisorDecision | None:
+        if pending_clarification:
+            return None
+        ticket_intent = classify_ticket_intent(message)
+        if ticket_intent is TicketIntent.QUERY:
+            return ConversationSupervisorDecision(
+                intent="TICKET_QUERY",
+                requestedAction="QUERY_TICKETS",
+                confidence=1.0,
+            )
+        if ticket_intent is TicketIntent.CREATE:
+            return ConversationSupervisorDecision(
+                intent="TICKET_CREATE",
+                requestedAction="CREATE_TICKET",
+                confidence=1.0,
+            )
+        if _is_human_escalation_request(message):
+            return ConversationSupervisorDecision(
+                intent="HUMAN_ESCALATION",
+                requestedAction="CONTACT_HUMAN",
+                confidence=1.0,
+            )
+        if _is_assistant_scope_question(message):
+            return ConversationSupervisorDecision(
+                intent="ASSISTANT_META",
+                topicRelation="META",
+                requestedAction="ANSWER",
+                confidence=1.0,
+            )
+        if _PURE_GREETING.fullmatch(message.strip()):
+            return ConversationSupervisorDecision(intent="GREETING", confidence=1.0)
+        return None
+
+    @classmethod
+    def supports_terminal_intent(cls, message: str, intent: SupervisorIntent) -> bool:
+        """Return whether deterministic evidence supports a terminal intent."""
+        decision = cls._deterministic_decision(
+            message,
+            pending_clarification=False,
+        )
+        return decision is not None and decision.intent == intent
+
+    @staticmethod
+    def _needs_model_supervision(
+        message: str,
+        *,
+        pending_clarification: bool,
+        recent_turns: list[str] | None,
+    ) -> bool:
+        if pending_clarification:
+            return True
+        if not recent_turns:
+            return False
+        normalized = message.strip()
+        return bool(
+            _CONTEXTUAL_REPLY.fullmatch(normalized)
+            or len(re.sub(r"\s+", "", normalized)) <= 12
+        )
+
+    @staticmethod
+    def _constrain_model_decision(
+        decision: ConversationSupervisorDecision,
+        *,
+        message: str,
+    ) -> ConversationSupervisorDecision:
+        ticket_intent = classify_ticket_intent(message)
+        if decision.intent in {"TICKET_QUERY", "TICKET_CREATE"}:
+            expected = (
+                TicketIntent.QUERY
+                if decision.intent == "TICKET_QUERY"
+                else TicketIntent.CREATE
+            )
+            if ticket_intent is not expected:
+                return ConversationSupervisorDecision(
+                    intent="IT_SUPPORT",
+                    confidence=decision.confidence,
+                )
+        if (
+            decision.intent == "HUMAN_ESCALATION"
+            and not _is_human_escalation_request(message)
+        ):
+            return ConversationSupervisorDecision(
+                intent="IT_SUPPORT",
+                confidence=decision.confidence,
+            )
+        return decision
 
     async def decide(
         self,
@@ -84,16 +187,22 @@ class ConversationSupervisor:
         if not message.strip():
             return ConversationSupervisorDecision()
 
-        if not pending_clarification:
-            from .extractor import _is_assistant_scope_question
+        deterministic = self._deterministic_decision(
+            message,
+            pending_clarification=pending_clarification,
+        )
+        if deterministic is not None:
+            return deterministic
 
-            if _is_assistant_scope_question(message):
-                return ConversationSupervisorDecision(
-                    intent="ASSISTANT_META",
-                    topicRelation="META",
-                    requestedAction="ANSWER",
-                    confidence=1.0,
-                )
+        if not self._needs_model_supervision(
+            message,
+            pending_clarification=pending_clarification,
+            recent_turns=recent_turns,
+        ):
+            return ConversationSupervisorDecision(
+                intent="IT_SUPPORT",
+                confidence=1.0,
+            )
 
         if self._model is None:
             return ConversationSupervisorDecision()
@@ -116,8 +225,13 @@ class ConversationSupervisor:
                     ]
                 )
                 if isinstance(result, ConversationSupervisorDecision):
-                    return result
-                return ConversationSupervisorDecision.model_validate(result)
+                    decision = result
+                else:
+                    decision = ConversationSupervisorDecision.model_validate(result)
+                return self._constrain_model_decision(
+                    decision,
+                    message=message,
+                )
 
             if execution_context is not None:
                 return await execution_context.run_llm(

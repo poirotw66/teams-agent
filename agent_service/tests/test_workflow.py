@@ -706,8 +706,6 @@ async def test_cancel_clears_awaiting_supplement_for_next_question(
 
 @pytest.mark.asyncio
 async def test_greeting_skips_extractor_and_rag(tmp_path: Path) -> None:
-    from agent_service.supervisor import ConversationSupervisorDecision
-
     workflow, extractor_model, knowledge, *_ = build_workflow(
         tmp_path,
         issues_sequence=[[issue(description="不應被使用")]],
@@ -725,6 +723,142 @@ async def test_greeting_skips_extractor_and_rag(tmp_path: Path) -> None:
     assert extractor_model.calls == 0
     assert knowledge.calls == []
     assert "你好！我是 IT 助手" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_greeting_with_it_problem_continues_to_rag(tmp_path: Path) -> None:
+    vpn_issue = issue(description="VPN 連不上")
+    knowledge = FakeKnowledgeService(
+        responses={
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請重新連線 VPN。",
+                backend="HYBRID",
+            )
+        }
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[vpn_issue]],
+        knowledge=knowledge,
+    )
+
+    response = await workflow.respond(make_request("你好，VPN 連不上"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [vpn_issue.description]
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_terminal_decision_continues_to_extractor(
+    tmp_path: Path,
+) -> None:
+    first_issue = issue(description="VPN 無法登入")
+    second_issue = issue(description="Outlook 無法開啟")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue]],
+        extractor_by_message={"Outlook": [second_issue]},
+        supervisor_by_message={
+            "Outlook": ConversationSupervisorDecision(
+                intent="NON_IT",
+                confidence=0.89,
+            )
+        },
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request(first_issue.description))
+    response = await workflow.respond(make_request("Outlook"))
+
+    assert extractor_model.calls == 2
+    assert knowledge.calls == [first_issue.description, second_issue.description]
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_unsubstantiated_greeting_decision_continues_to_extractor(
+    tmp_path: Path,
+) -> None:
+    first_issue = issue(description="Outlook 無法寄信")
+    vpn_issue = issue(description="VPN 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue]],
+        extractor_by_message={"VPN": [vpn_issue]},
+        supervisor_by_message={
+            "VPN": ConversationSupervisorDecision(
+                intent="GREETING",
+                confidence=0.99,
+            )
+        },
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request(first_issue.description))
+    response = await workflow.respond(make_request("VPN"))
+
+    assert extractor_model.calls == 2
+    assert knowledge.calls == [first_issue.description, vpn_issue.description]
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_high_confidence_non_it_decision_can_terminate_ambiguous_turn(
+    tmp_path: Path,
+) -> None:
+    first_issue = issue(description="VPN 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue]],
+        supervisor_by_message={
+            "午餐呢": ConversationSupervisorDecision(
+                intent="NON_IT",
+                confidence=0.9,
+            )
+        },
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request(first_issue.description))
+    response = await workflow.respond(make_request("午餐呢"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [first_issue.description]
+    assert "不屬於公司 IT 支援範圍" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_ticket_mention_without_explicit_request_continues_to_rag(
+    tmp_path: Path,
+) -> None:
+    question = "這問題會產生 ticket 嗎"
+    ticket_question = issue(description=question)
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="不會自動建立工單。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, ticket, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[ticket_question]],
+        knowledge=knowledge,
+    )
+
+    response = await workflow.respond(make_request(question))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [question]
+    assert ticket.created == []
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
 
 
 @pytest.mark.asyncio
@@ -817,9 +951,10 @@ async def test_all_non_it_issues(tmp_path: Path) -> None:
 
     response = await workflow.respond(make_request("今天天氣如何？午餐吃什麼？"))
 
-    assert extractor_model.calls == 0
+    assert extractor_model.calls == 1
     assert "不屬於公司 IT 支援範圍" in response.answer
-    assert "今天天氣如何" in response.answer
+    assert "天氣" in response.answer
+    assert "午餐" in response.answer
     assert response.issueResults == []
 
 
@@ -1516,6 +1651,74 @@ async def test_non_it_aside_does_not_discard_pending_clarification(
     assert knowledge.calls == ["Webex 會議如何借用"]
     assert completed.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
     assert any("會議如何借用？" in prompt for prompt in extractor_model.human_messages[-2:])
+
+
+@pytest.mark.asyncio
+async def test_independent_it_turn_does_not_discard_pending_clarification(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="PortalX 無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    printer_issue = issue(description="印表機無法列印")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="請重新啟動印表機。", backend="HYBRID")
+    )
+    workflow, _extractor, _knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue], [printer_issue]],
+        knowledge=knowledge,
+        supervisor_by_message={
+            printer_issue.description: ConversationSupervisorDecision(
+                intent="IT_SUPPORT",
+                topicRelation="NEW",
+                confidence=0.95,
+            )
+        },
+    )
+
+    await workflow.respond(make_request("PortalX 無法使用"))
+    response = await workflow.respond(make_request(printer_issue.description))
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+    assert context.messages[-1].pendingIssues[0].description == pending_issue.description
+
+
+@pytest.mark.asyncio
+async def test_ticket_query_does_not_discard_pending_clarification(
+    tmp_path: Path,
+) -> None:
+    pending_issue = issue(
+        description="PortalX 無法使用",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["錯誤訊息或錯誤碼"],
+    )
+    ticket_service = FakeTicketService()
+    workflow, _extractor, _knowledge, _ticket, conv_service, _settings = build_workflow(
+        tmp_path,
+        issues_sequence=[[pending_issue]],
+        ticket_service=ticket_service,
+    )
+
+    await workflow.respond(make_request("PortalX 無法使用"))
+    response = await workflow.respond(make_request("查詢我的工單"))
+    context = await conv_service.load_or_create(
+        tenant_id="tenant-1",
+        teams_conversation_id="conv-1",
+        teams_user_id="user-1",
+    )
+
+    assert response.issueResults[0].resultType == "TICKET_FOUND"
+    assert context.messages[-1].followUpState == "AWAITING_CLARIFICATION"
+    assert context.messages[-1].pendingIssues[0].description == pending_issue.description
 
 
 @pytest.mark.asyncio

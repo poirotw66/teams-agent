@@ -200,7 +200,8 @@ _ESCALATION_PHRASES: tuple[str, ...] = (
 
 def _normalize_escalation_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text.strip().rstrip("。.!！?？"))
-    return compact.replace("聯繫", "聯絡").casefold()
+    normalized = compact.replace("聯繫", "聯絡")
+    return normalized.replace("流落線上客服", "聯絡線上客服").casefold()
 
 
 def _is_human_escalation_request(text: str) -> bool:

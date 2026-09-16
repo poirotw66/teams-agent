@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncio
 
-from .confirmation import TicketIntent, is_pending_ticket_offer_confirmation
+from .confirmation import (
+    TicketIntent,
+    classify_ticket_intent,
+    is_pending_ticket_offer_confirmation,
+)
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
@@ -33,25 +37,39 @@ class ClarificationWorkflowMixin:
     """LangGraph nodes owned by the clarification subgraph."""
 
     @staticmethod
-    def _ticket_intent_from_supervisor(
-        decision: ConversationSupervisorDecision,
+    def _deterministic_ticket_routing(
+        message: str,
     ) -> dict:
-        if decision.intent == "TICKET_QUERY" or decision.requestedAction == "QUERY_TICKETS":
+        deterministic_intent = classify_ticket_intent(message)
+        if deterministic_intent is TicketIntent.QUERY:
             return {"ticket_intent": TicketIntent.QUERY}
-        if decision.intent == "TICKET_CREATE" or decision.requestedAction == "CREATE_TICKET":
+        if deterministic_intent is TicketIntent.CREATE:
             return {"ticket_intent": TicketIntent.CREATE}
         return {}
 
-    @classmethod
     def _apply_supervisor_routing(
-        cls,
+        self,
         conversation: ConversationContext,
         request: AgentRequest,
         decision: ConversationSupervisorDecision,
     ) -> dict:
         """Apply the supervisor LLM decision to LangGraph routing state."""
-        routing = cls._ticket_intent_from_supervisor(decision)
+        routing = self._deterministic_ticket_routing(request.message.text)
         if _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation):
+            return routing
+
+        can_terminate = (
+            decision.confidence >= self.settings.supervisor_terminal_confidence
+        )
+        if not can_terminate:
+            return routing
+
+        if decision.intent in {"GREETING", "ASSISTANT_META"} and not (
+            self.supervisor.supports_terminal_intent(
+                request.message.text,
+                decision.intent,
+            )
+        ):
             return routing
 
         if decision.intent == "NON_IT":

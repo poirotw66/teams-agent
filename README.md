@@ -692,6 +692,18 @@ cd agent_service
 uv pip install '.[firestore]'
 ```
 
+### Workflow routing evaluation
+
+Run the 56-case routing matrix against either the local API or Cloud Run:
+
+```bash
+python3 scripts/workflow_e2e_eval.py \
+  --base-url http://127.0.0.1:8080 \
+  --output workflow-eval-report.json
+```
+
+For authenticated endpoints, put the bearer token in `AGENT_SERVICE_TOKEN`. The HTTP report covers route, issue count, ticket side effects, and latency. Retrieval-query integrity and LLM-call counts remain local instrumentation metrics because the public response intentionally does not expose them.
+
 ### Retrieval A/B Test: Hybrid vs. Gemini File Search (spec §18.7)
 
 Whether `KNOWLEDGE_SERVICE_MODE` should be `HYBRID` or `GEMINI_FILE_SEARCH` is not decided by impression; run the same
@@ -861,6 +873,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | Rounds treated as “recent conversation,” range 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | Start a new conversation after timeout, range 1–168 |
 | `CONVERSATION_RETENTION_DAYS` | `365` | Firestore message retention; separate from the 24-hour conversation timeout |
+| `SUPERVISOR_TERMINAL_CONFIDENCE` | `0.9` | Minimum confidence for Supervisor-only `NON_IT`, `GREETING`, or `ASSISTANT_META` termination; lower-confidence turns continue to issue extraction, range 0.5–1 |
 | `MAX_LLM_CALLS_PER_REQUEST` | `5` | Max LLM calls per request, range 1–20 |
 | `MAX_RETRIEVAL_REWRITES` | same as `RAG_MAX_REWRITES` (default 1) | Range 0–3; independent of `RAG_MAX_REWRITES` but defaults to it |
 | `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH` (spike-only; see above) |

@@ -158,3 +158,16 @@ def test_pending_offer_rejects_ambiguous_or_negative_replies(text: str) -> None:
 def test_dispatch_ticket_phrases_classify_as_create(text: str) -> None:
     assert classify_ticket_intent(text) == TicketIntent.CREATE
     assert is_explicit_ticket_confirmation(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "如果查不到會自動建立工單嗎",
+        "VPN 問題一定要開工單嗎",
+        "我只是想知道是否需要報修",
+        "請說明建立派工單的條件",
+    ],
+)
+def test_informational_ticket_mentions_do_not_create_ticket(text: str) -> None:
+    assert classify_ticket_intent(text) == TicketIntent.NONE

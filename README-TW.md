@@ -686,6 +686,18 @@ cd agent_service
 uv pip install '.[firestore]'
 ```
 
+### Workflow 路由評估
+
+可針對本機 API 或 Cloud Run 執行 56 案例路由矩陣：
+
+```bash
+python3 scripts/workflow_e2e_eval.py \
+  --base-url http://127.0.0.1:8080 \
+  --output workflow-eval-report.json
+```
+
+若端點需要驗證，請將 bearer token 放入 `AGENT_SERVICE_TOKEN`。HTTP 報告會檢查路由、issue 數量、工單副作用與延遲；retrieval query 完整性與 LLM 呼叫數仍由本機 instrumentation 評估，因為公開回應刻意不揭露這兩項內部資料。
+
 ### Retrieval A/B Test：Hybrid vs. Gemini File Search（spec §18.7）
 
 `KNOWLEDGE_SERVICE_MODE` 該用 `HYBRID` 還是 `GEMINI_FILE_SEARCH`，不是憑印象決定，而是跑同一組
@@ -856,6 +868,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `MAX_HISTORY_MESSAGES` | `10` | 載入 workflow context 的歷史訊息上限，範圍 0–50 |
 | `CONVERSATION_HISTORY_ROUNDS` | `5` | 視為「最近對話」的輪數，範圍 1–20 |
 | `CONVERSATION_TIMEOUT_HOURS` | `24` | 對話逾時後起新 conversation，範圍 1–168 |
+| `SUPERVISOR_TERMINAL_CONFIDENCE` | `0.9` | Supervisor 僅在 `NON_IT`、`GREETING` 或 `ASSISTANT_META` 達此信心門檻時終止流程；低信心回合繼續進入 Issue Extractor，範圍 0.5–1 |
 | `MAX_LLM_CALLS_PER_REQUEST` | `5` | 單次請求 LLM 呼叫次數上限，範圍 1–20 |
 | `MAX_RETRIEVAL_REWRITES` | 同 `RAG_MAX_REWRITES`（預設 1） | 範圍 0–3；獨立於 `RAG_MAX_REWRITES` 但預設沿用它 |
 | `KNOWLEDGE_SERVICE_MODE` | `HYBRID` | `HYBRID` \| `GEMINI_FILE_SEARCH`（spike-only，見上） |

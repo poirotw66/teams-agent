@@ -66,6 +66,7 @@ locals {
     CONVERSATION_FIRESTORE_COLLECTION    = var.firestore_conversations_collection
     AGENT_DEPLOYMENT_ENV                 = var.environment_name
     CONVERSATION_RETENTION_DAYS          = tostring(var.conversation_retention_days)
+    SUPERVISOR_TERMINAL_CONFIDENCE       = "0.9"
     HANDOFF_REPOSITORY_MODE              = "FIRESTORE"
     HANDOFF_FIRESTORE_COLLECTION         = var.firestore_handoffs_collection
     HANDOFF_DEMO_TIMEOUT_HOURS           = "24"

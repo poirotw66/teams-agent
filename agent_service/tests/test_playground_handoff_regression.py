@@ -534,6 +534,44 @@ async def test_handoff_create_ticket_is_idempotent_by_request_id(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_reused_request_id_without_create_language_does_not_replay_ticket(
+    tmp_path: Path,
+) -> None:
+    ticket_service = tw.FakeTicketService()
+    dedupe = InMemoryTicketRequestDedupeRepository()
+    vpn_issue = tw.issue(description="VPN 無法登入")
+    knowledge = tw.FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID")
+    )
+    workflow, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description=PUBLIC_PHONE_ISSUE)], [vpn_issue]],
+        knowledge=knowledge,
+        ticket_service=ticket_service,
+        handoff_repository=InMemoryHandoffRepository(
+            clock=lambda: datetime.now(timezone.utc)
+        ),
+        handoff_router=tw.FakeHandoffRouter([HandoffAction.CREATE_TICKET]),
+        ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
+        ticket_request_dedupe=dedupe,
+    )
+
+    await workflow.respond(tw.make_request(PUBLIC_PHONE_ISSUE))
+    await workflow.respond(
+        tw.make_request("請協助建立派工單", request_id="ticket-req-reused")
+    )
+    with pytest.raises(
+        ValueError,
+        match="request replay changed persisted conversation message",
+    ):
+        await workflow.respond(
+            tw.make_request(vpn_issue.description, request_id="ticket-req-reused")
+        )
+
+    assert len(ticket_service.created) == 1
+
+
+@pytest.mark.asyncio
 async def test_contact_human_typo_uses_pending_case_via_agentic_router(
     tmp_path: Path,
 ) -> None:

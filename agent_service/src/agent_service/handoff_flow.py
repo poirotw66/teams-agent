@@ -19,7 +19,9 @@ from typing import Any, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from .confirmation import TicketIntent, classify_ticket_intent
 from .execution_context import ExecutionContext
+from .extractor import _is_human_escalation_request
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +171,25 @@ def validate_handoff_action(case_status: str, action: HandoffAction) -> HandoffA
     }:
         return HandoffAction.UNKNOWN
     return action
+
+
+def authorize_handoff_action(
+    case_status: str,
+    action: HandoffAction,
+    *,
+    message: str,
+) -> HandoffAction:
+    """Require deterministic evidence before privileged handoff actions."""
+    validated = validate_handoff_action(case_status, action)
+    if validated is HandoffAction.CREATE_TICKET:
+        if classify_ticket_intent(message) is not TicketIntent.CREATE:
+            return HandoffAction.UNKNOWN
+    if validated is HandoffAction.CONTACT_HUMAN:
+        if not _is_human_escalation_request(message):
+            return HandoffAction.UNKNOWN
+    if validated is HandoffAction.CLOSE and not is_protocol_close_command(message):
+        return HandoffAction.UNKNOWN
+    return validated
 
 
 def is_protocol_close_command(message: str) -> bool:

@@ -10,7 +10,10 @@ from typing import Any
 
 from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import Citation, ConversationContext, Issue, IssueResult
-from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
+from .extractor import (
+    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
+    _is_human_escalation_request,
+)
 from .handoff import (
     ActiveHandoffCaseExistsError,
     ActorType,
@@ -28,11 +31,11 @@ from .handoff_flow import (
     HandoffAction,
     HandoffResumeReason,
     agentic_supplement_summary,
+    authorize_handoff_action,
     deterministic_summary,
     is_protocol_close_command,
     offer_message,
     offer_message_from_summary_text,
-    validate_handoff_action,
 )
 from .response_builder import build_response
 from .ticket import (
@@ -89,8 +92,7 @@ class HandoffWorkflowMixin:
 
     @staticmethod
     def _is_standalone_human_escalation(state: AgentState) -> bool:
-        decision = state.get("supervisor_decision")
-        return decision is not None and decision.intent == "HUMAN_ESCALATION"
+        return _is_human_escalation_request(state["request"].message.text)
 
     async def _promote_case_to_demo(
         self,
@@ -214,22 +216,10 @@ class HandoffWorkflowMixin:
         if deterministic in {
             TicketIntent.DELETE_DENIED,
             TicketIntent.CANCEL,
+            TicketIntent.QUERY,
             TicketIntent.CREATE,
         }:
             return deterministic
-
-        decision = state.get("supervisor_decision")
-        if decision is not None:
-            if (
-                decision.intent == "TICKET_QUERY"
-                or decision.requestedAction == "QUERY_TICKETS"
-            ):
-                return TicketIntent.QUERY
-            if (
-                decision.intent == "TICKET_CREATE"
-                or decision.requestedAction == "CREATE_TICKET"
-            ):
-                return TicketIntent.CREATE
 
         return TicketIntent.NONE
 
@@ -530,10 +520,11 @@ class HandoffWorkflowMixin:
         }
 
     async def _route_handoff(self, state: AgentState) -> dict:
-        replay = await self._replay_deduped_ticket(state)
-        if replay is not None:
-            return replay
         ticket_intent = await self._resolve_ticket_intent(state)
+        if ticket_intent is TicketIntent.CREATE:
+            replay = await self._replay_deduped_ticket(state)
+            if replay is not None:
+                return replay
         if hasattr(self, "_handoff_enabled") and not self._handoff_enabled():
             return {"handoff_handled": False, "ticket_intent": ticket_intent}
         if self.handoff_repository is None:
@@ -611,7 +602,11 @@ class HandoffWorkflowMixin:
             conversation_turns=self._handoff_conversation_turns(state["conversation"]),
             execution_context=state.get("execution_context"),
         )
-        action = validate_handoff_action(case.status.value, action)
+        action = authorize_handoff_action(
+            case.status.value,
+            action,
+            message=request.message.text,
+        )
 
         if case.status == HandoffStatus.DEMO_ACTIVE:
             if action is HandoffAction.CLOSE:

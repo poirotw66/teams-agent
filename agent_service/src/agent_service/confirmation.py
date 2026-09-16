@@ -219,6 +219,26 @@ _QUERY_MARKERS: tuple[str, ...] = (
     "追蹤",
 )
 
+_INFORMATIONAL_TICKET_MARKERS: tuple[str, ...] = (
+    "會不會",
+    "會產生",
+    "會建立",
+    "是否",
+    "一定要",
+    "自動建立",
+    "自動開",
+    "什麼用途",
+    "建立條件",
+    "建立工單的條件",
+    "建立派工單的條件",
+    "開工單的條件",
+    "開派工單的條件",
+    "報修條件",
+    "說明建立",
+    "說明開",
+    "想知道",
+)
+
 _PENDING_OFFER_CONFIRMATIONS: tuple[str, ...] = (
     "是",
     "好",
@@ -277,6 +297,8 @@ def classify_ticket_intent(text: str) -> TicketIntent:
         return TicketIntent.CANCEL
     if _is_ticket_list_query(normalized):
         return TicketIntent.QUERY
+    if any(marker in normalized for marker in _INFORMATIONAL_TICKET_MARKERS):
+        return TicketIntent.NONE
     if is_explicit_ticket_confirmation(normalized):
         return TicketIntent.CREATE
     return TicketIntent.NONE

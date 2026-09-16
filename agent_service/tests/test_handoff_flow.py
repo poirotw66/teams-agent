@@ -7,6 +7,7 @@ from agent_service.handoff_flow import (
     HandoffAction,
     HandoffRouteDecision,
     RoutingTarget,
+    authorize_handoff_action,
     deterministic_summary,
     generate_summary_with_fallback,
     offer_message,
@@ -57,6 +58,40 @@ def test_validate_handoff_action_rejects_supplement_outside_awaiting_phase() -> 
         validate_handoff_action("AWAITING_SUPPLEMENT", HandoffAction.SUPPLEMENT)
         is HandoffAction.SUPPLEMENT
     )
+
+
+@pytest.mark.parametrize(
+    ("action", "message"),
+    [
+        (HandoffAction.CREATE_TICKET, "這問題會建立工單嗎"),
+        (HandoffAction.CONTACT_HUMAN, "VPN 還是無法登入"),
+        (HandoffAction.CLOSE, "先這樣"),
+    ],
+)
+def test_privileged_handoff_action_requires_explicit_evidence(
+    action: HandoffAction,
+    message: str,
+) -> None:
+    assert (
+        authorize_handoff_action("SUMMARY_REVIEW", action, message=message)
+        is HandoffAction.UNKNOWN
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_status", "action", "message"),
+    [
+        ("SUMMARY_REVIEW", HandoffAction.CREATE_TICKET, "請建立工單"),
+        ("SUMMARY_REVIEW", HandoffAction.CONTACT_HUMAN, "聯絡線上客服"),
+        ("DEMO_ACTIVE", HandoffAction.CLOSE, "/close"),
+    ],
+)
+def test_privileged_handoff_action_accepts_explicit_evidence(
+    case_status: str,
+    action: HandoffAction,
+    message: str,
+) -> None:
+    assert authorize_handoff_action(case_status, action, message=message) is action
 
 
 def test_supplement_fallback_preserves_issue_and_marks_pending_confirmation() -> None:

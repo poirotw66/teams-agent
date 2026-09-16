@@ -363,17 +363,20 @@ def _complete_complementary_pending_issue(
 
 
 def _preserves_interrupted_clarification(state: AgentState) -> bool:
-    """Keep an unresolved IT question alive across a harmless non-IT aside."""
+    """Keep an unresolved question when the current turn does not answer it."""
     prior = state.get("prior_pending_issues", [])
     issues = state.get("issues", [])
-    request = state.get("request")
+    decision = state.get("supervisor_decision")
+    ticket_intent = state.get("ticket_intent")
     return bool(
         prior
-        and issues
-        and all(not issue.isIT for issue in issues)
-        and request is not None
-        and state.get("supervisor_decision") is not None
-        and state["supervisor_decision"].topicRelation != "ABANDON"
+        and decision is not None
+        and decision.topicRelation != "ABANDON"
+        and (
+            (issues and all(not issue.isIT for issue in issues))
+            or decision.topicRelation in {"NEW", "META"}
+            or ticket_intent is TicketIntent.QUERY
+        )
     )
 
 

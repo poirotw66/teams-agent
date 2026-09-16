@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from time import perf_counter
 from typing import Any, Protocol
 
 from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
@@ -118,13 +119,22 @@ class AgentWorkflowTurnExecutor:
         if self._prepare_case is not None:
             await self._prepare_case(history, setup=setup)
         request = self._request_factory(text, history)
-        response = await self._workflow.respond(request)
-        answer = str(getattr(response, "answer", "") or "")
-        issue_results = list(getattr(response, "issueResults", []) or [])
+        started_at = perf_counter()
+        run = getattr(self._workflow, "run", None)
+        state = await run(request) if callable(run) else None
+        if isinstance(state, Mapping):
+            answer = str(state.get("final_response", "") or "")
+            issue_results = list(state.get("issue_results", []) or [])
+        else:
+            response = await self._workflow.respond(request)
+            answer = str(getattr(response, "answer", "") or "")
+            issue_results = list(getattr(response, "issueResults", []) or [])
+        latency_ms = (perf_counter() - started_at) * 1000
         if self._note_turn_result is not None:
             self._note_turn_result(text=text, answer=answer, issue_results=issue_results)
         result_types = _issue_result_types(issue_results)
         effects = dict(self._side_effect_reader() or {})
+        llm_call_count = _llm_call_count(state, effects)
         route, behaviors = _infer_route_and_behaviors(
             text=text,
             history=history or [],
@@ -149,6 +159,7 @@ class AgentWorkflowTurnExecutor:
             refused_injection="refused_injection" in behaviors,
             detail=(
                 f"agent_workflow resultTypes={result_types} "
+                f"llm_calls={llm_call_count} latency_ms={latency_ms:.1f} "
                 f"injection={effects.get('injection_evidence')} "
                 f"effects={sorted(k for k, v in effects.items() if v)}"
             ),
@@ -156,6 +167,8 @@ class AgentWorkflowTurnExecutor:
             reply_text=answer,
             observed_behaviors=behaviors,
             model_id_used=model_id,
+            llm_call_count=llm_call_count,
+            latency_ms=latency_ms,
         )
 
     def execute(
@@ -183,6 +196,20 @@ class AgentWorkflowTurnExecutor:
             "AgentWorkflowTurnExecutor.execute() cannot run inside an event loop; "
             "await aexecute() instead"
         )
+
+
+def _llm_call_count(
+    state: Mapping[str, Any] | None,
+    side_effects: Mapping[str, Any],
+) -> int | None:
+    if state is not None:
+        execution_context = state.get("execution_context")
+        counter = getattr(execution_context, "llm_calls", None)
+        count = getattr(counter, "count", None)
+        if isinstance(count, int):
+            return count
+    observed = side_effects.get("llm_call_count")
+    return observed if isinstance(observed, int) else None
 
 
 def _issue_result_types(issue_results: Sequence[Any]) -> list[str]:

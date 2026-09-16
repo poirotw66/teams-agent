@@ -30,6 +30,7 @@ def _minimal_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "CONVERSATION_HISTORY_ROUNDS",
         "CONVERSATION_TIMEOUT_HOURS",
         "CONVERSATION_RETENTION_DAYS",
+        "SUPERVISOR_TERMINAL_CONFIDENCE",
         "MAX_LLM_CALLS_PER_REQUEST",
         "MAX_RETRIEVAL_REWRITES",
         "KNOWLEDGE_SERVICE_MODE",
@@ -95,6 +96,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.conversation_history_rounds == 5
     assert settings.conversation_timeout_hours == 24
     assert settings.conversation_retention_days == 365
+    assert settings.supervisor_terminal_confidence == 0.9
     assert settings.max_llm_calls_per_request == 6
     assert settings.max_retrieval_rewrites == 1
     assert settings.knowledge_service_mode == "HYBRID"
