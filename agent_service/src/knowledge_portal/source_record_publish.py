@@ -48,6 +48,7 @@ def build_source_records_for_release(
     manifest_by_doc = {entry.document_id: entry for entry in release.manifest}
     records: list[SourceRecord] = []
     seen: set[str] = set()
+    doc_chunk_acls: dict[str, list[str]] = {}
 
     for chunk in _load_chunks(release.index_artifact_uri):
         source_path = safe_source_path(str(chunk.get("source_path") or ""))
@@ -85,12 +86,26 @@ def build_source_records_for_release(
         seen.add(source_ref_id)
         artifact_ref = entry.artifact_ref if entry else None
         original_name = entry.original_asset_name if entry else None
-        if artifact_ref:
-            mapping_status = MappingStatus.AVAILABLE
-        elif entry and entry.original_asset_available:
+        if artifact_ref or (entry and entry.original_asset_available):
             mapping_status = MappingStatus.AVAILABLE
         else:
             mapping_status = MappingStatus.ORIGINAL_NOT_PRESERVED
+
+        # Authoritative ACL inheritance for chunk
+        raw_acl = chunk.get("acl_groups")
+        if raw_acl is None:
+            raw_acl = chunk.get("allowed_groups")
+        if raw_acl is not None:
+            cleaned = [str(g).strip() for g in raw_acl if str(g).strip()]
+            chunk_acl = cleaned if cleaned else ["grp_public"]
+        elif entry and getattr(entry, "acl_groups", None):
+            chunk_acl = [str(g).strip() for g in entry.acl_groups if str(g).strip()] or ["grp_restricted"]
+        else:
+            chunk_acl = ["grp_restricted"]
+
+        if document_id:
+            doc_chunk_acls.setdefault(document_id, []).extend(chunk_acl)
+
         records.append(
             SourceRecord(
                 source_ref_id=source_ref_id,
@@ -113,11 +128,7 @@ def build_source_records_for_release(
                 source_path=source_path or (entry.source_path if entry else None),
                 excerpt=str(chunk.get("text") or chunk.get("content") or "")[:500] or None,
                 original_asset_name=original_name,
-                acl_groups=list(
-                    chunk.get("acl_groups")
-                    or chunk.get("allowed_groups")
-                    or ["grp_public"]
-                ),
+                acl_groups=chunk_acl,
             )
         )
 
@@ -139,6 +150,17 @@ def build_source_records_for_release(
             if entry.artifact_ref or entry.original_asset_available
             else MappingStatus.ORIGINAL_NOT_PRESERVED
         )
+
+        # Document-level source MUST inherit authoritative document ACL
+        if getattr(entry, "acl_groups", None):
+            doc_acl = [str(g).strip() for g in entry.acl_groups if str(g).strip()] or ["grp_restricted"]
+        elif doc_chunk_acls.get(entry.document_id):
+            unique_groups = list(dict.fromkeys(doc_chunk_acls[entry.document_id]))
+            doc_acl = unique_groups if unique_groups else ["grp_restricted"]
+        else:
+            # Data missing: fail closed, do not default to grp_public
+            doc_acl = ["grp_restricted"]
+
         records.append(
             SourceRecord(
                 source_ref_id=source_ref_id,
@@ -153,7 +175,7 @@ def build_source_records_for_release(
                 title=entry.title,
                 source_path=entry.source_path,
                 original_asset_name=entry.original_asset_name,
-                acl_groups=["grp_public"],
+                acl_groups=doc_acl,
             )
         )
     return records

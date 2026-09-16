@@ -72,6 +72,11 @@ class ReleasePublisher:
                     release_dir,
                     version=version,
                 )
+                version_acl = (
+                    ["grp_public"]
+                    if version.audience_type == "ALL_EMPLOYEES"
+                    else [str(g).strip() for g in version.audience_group_ids if str(g).strip()] or ["grp_restricted"]
+                )
                 manifest.append(
                     ReleaseManifestEntry(
                         document_id=version.document_id,
@@ -85,6 +90,7 @@ class ReleasePublisher:
                             version.original_asset_name if original_available else None
                         ),
                         artifact_ref=getattr(version, "original_artifact_ref", None),
+                        acl_groups=version_acl,
                     )
                 )
 

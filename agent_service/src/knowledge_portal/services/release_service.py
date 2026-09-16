@@ -722,13 +722,8 @@ class ReleaseService:
             )
             raise PortalPermissionError(str(exc)) from exc
 
-        await self._deactivate_other_releases(release.release_id)
-        await self._ctx.repository.save_release(release)
-        await self._ctx.repository.set_active_release_id(release.release_id)
-        write_active_release_pointer(
-            self._ctx.settings.release_artifact_dir,
-            release.release_id,
-        )
+        # SourceRecords and originals must be verified and persisted before
+        # activating the release and deactivating older releases.
         try:
             from ..source_record_publish import persist_release_source_records
 
@@ -739,11 +734,37 @@ class ReleaseService:
                     release.release_id,
                     saved,
                 )
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Failed persisting SourceRecords for release %s",
                 release.release_id,
             )
+            failed = release.model_copy(
+                update={
+                    "status": "FAILED",
+                    "failure_summary": f"Failed persisting SourceRecords: {exc}",
+                    "activated_at": None,
+                }
+            )
+            await self._ctx.repository.save_release(failed)
+            await self._ctx.audit(
+                actor=actor,
+                action="release.source_records_failed",
+                target_type="release",
+                target_id=release.release_id,
+                correlation_id=correlation_id,
+                reason=str(exc),
+                result="FAILURE",
+            )
+            raise RuntimeError(f"Failed persisting SourceRecords for release: {exc}") from exc
+
+        await self._deactivate_other_releases(release.release_id)
+        await self._ctx.repository.save_release(release)
+        await self._ctx.repository.set_active_release_id(release.release_id)
+        write_active_release_pointer(
+            self._ctx.settings.release_artifact_dir,
+            release.release_id,
+        )
 
         reload_success, reload_error = await self._notify_agent_reload(
             release.release_id, correlation_id

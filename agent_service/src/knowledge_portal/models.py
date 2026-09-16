@@ -191,6 +191,7 @@ class ReleaseManifestEntry(StrictModel):
     original_asset_available: bool = False
     original_asset_name: str | None = None
     artifact_ref: str | None = None
+    acl_groups: list[str] | None = None
 
 
 class ReleaseRecord(StrictModel):
