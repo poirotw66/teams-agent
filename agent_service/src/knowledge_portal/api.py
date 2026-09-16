@@ -123,7 +123,17 @@ def create_app(
     )
     pdf_job_store = PdfConvertJobStore(resolved_settings)
 
-    def authorize(authorization: str | None = Header(default=None)) -> None:
+    def authorize(
+        authorization: str | None = Header(default=None),
+        x_knowledge_delegation: str | None = Header(
+            default=None, alias="X-Knowledge-Delegation"
+        ),
+    ) -> None:
+        if (
+            x_knowledge_delegation
+            and not resolved_settings.require_service_token_with_delegation
+        ):
+            return
         expected = resolved_settings.service_token
         if not expected:
             return

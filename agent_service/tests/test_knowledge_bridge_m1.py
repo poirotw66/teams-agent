@@ -128,6 +128,33 @@ def test_delegation_roundtrip_and_tamper_rejected() -> None:
         verify_delegation_envelope(f"{body}.deadbeef", secret=SECRET)
 
 
+def test_portal_accepts_cloud_identity_token_with_signed_delegation(tmp_path: Path) -> None:
+    settings = _portal_settings(tmp_path)
+    object.__setattr__(settings, "service_token", "legacy-service-token")
+    actor = ActorContext(
+        user_id="user-1",
+        display_name="Editor",
+        role="KNOWLEDGE_ADMIN",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="local-development",
+    )
+    delegation = issue_delegation_envelope(
+        actor,
+        secret=SECRET,
+        correlation_id="corr-cloud-run",
+    )
+
+    response = TestClient(create_portal_app(settings)).get(
+        "/api/dashboard",
+        headers={
+            "Authorization": "Bearer cloud-run-identity-token",
+            "X-Knowledge-Delegation": delegation,
+        },
+    )
+
+    assert response.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_bridge_uses_google_identity_token_for_private_cloud_run() -> None:
     from ai_ops_backoffice.knowledge_bridge.client import KnowledgePortalClient
