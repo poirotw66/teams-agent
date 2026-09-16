@@ -69,6 +69,7 @@ class FirestorePortalRepository:
         status: str | None = None,
         owner_unit_id: str | None = None,
         query: str | None = None,
+        format: str | None = None,
     ) -> list[KnowledgeDocumentRecord]:
         snapshots = self._documents().stream()
         items: list[KnowledgeDocumentRecord] = []
@@ -82,6 +83,7 @@ class FirestorePortalRepository:
             status=status,
             owner_unit_id=owner_unit_id,
             query=query,
+            format=format,
         )
 
     async def get_document(self, document_id: str) -> KnowledgeDocumentRecord | None:

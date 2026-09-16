@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+
 from agent_service.api import create_app
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_release import (
@@ -17,7 +19,6 @@ from agent_service.knowledge_release import (
 )
 from agent_service.retrieval import HybridIndex
 from agent_service.settings import RagSettings
-from fastapi.testclient import TestClient
 from knowledge_portal.firestore_repository import FirestorePortalRepository
 from knowledge_portal.models import (
     CreateDocumentRequest,
@@ -490,6 +491,31 @@ async def test_firestore_repository_list_pending_reviews_query() -> None:
     assert len(pending_items) == 1
     assert pending_items[0].review_id == "rev-1"
     assert pending_items[0].decision is None
+
+
+@pytest.mark.asyncio
+async def test_firestore_repository_accepts_document_format_filter() -> None:
+    settings = PortalSettings.from_env()
+    mock_db = MagicMock()
+    repo = FirestorePortalRepository(settings, client=mock_db)
+
+    async def empty_stream():
+        if False:
+            yield
+
+    mock_collection = MagicMock()
+    mock_collection.stream.side_effect = empty_stream
+    mock_db.collection.return_value = mock_collection
+    actor = PortalActor(
+        user_id="admin-1",
+        display_name="Platform Admin",
+        role="PLATFORM",
+        owner_unit_ids=[],
+    )
+
+    documents = await repo.list_documents(actor=actor, format="MARKDOWN")
+
+    assert documents == []
 
 
 # --------------------------------------------------------------------------
