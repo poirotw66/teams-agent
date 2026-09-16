@@ -156,3 +156,55 @@ def test_link_quality_case_content_falls_back_to_source_record(tmp_path: Path) -
     )
     assert link_res.status_code == 200
     assert "doc-799a9a1efdb1" in link_res.json()["case"]["document_ids"]
+
+
+def test_prefer_document_source_record_with_version_and_release() -> None:
+    rec_v1 = SourceRecord(
+        source_ref_id="src-111111111111111111111111",
+        tenant_id="local-development",
+        document_id="doc-1",
+        version_id="ver-1",
+        release_id="rel-1",
+        chunk_id=None,
+        created_at="2026-01-01T00:00:00Z",
+        mapping_status=MappingStatus.AVAILABLE,
+    )
+    rec_v2 = SourceRecord(
+        source_ref_id="src-000000000000000000000000",
+        tenant_id="local-development",
+        document_id="doc-1",
+        version_id="ver-2",
+        release_id="rel-2",
+        chunk_id=None,
+        created_at="2026-02-01T00:00:00Z",
+        mapping_status=MappingStatus.AVAILABLE,
+    )
+    rec_v2_chunk = SourceRecord(
+        source_ref_id="src-999999999999999999999999",
+        tenant_id="local-development",
+        document_id="doc-1",
+        version_id="ver-2",
+        release_id="rel-2",
+        chunk_id="chk-1",
+        created_at="2026-02-01T00:00:00Z",
+        mapping_status=MappingStatus.AVAILABLE,
+    )
+
+    records = [rec_v1, rec_v2, rec_v2_chunk]
+
+    # Without version/release: should prefer document-level and latest created_at (rec_v2)
+    latest = prefer_document_source_record(records)
+    assert latest is not None
+    assert latest.version_id == "ver-2"
+    assert latest.chunk_id is None
+
+    # Targeting version ver-1
+    targeted_v1 = prefer_document_source_record(records, version_id="ver-1")
+    assert targeted_v1 is not None
+    assert targeted_v1.version_id == "ver-1"
+
+    # Targeting release rel-1
+    targeted_rel1 = prefer_document_source_record(records, release_id="rel-1")
+    assert targeted_rel1 is not None
+    assert targeted_rel1.release_id == "rel-1"
+

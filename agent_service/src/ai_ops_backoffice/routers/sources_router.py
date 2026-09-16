@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -57,6 +58,8 @@ def register_sources_routes(
     @app.get("/api/sources")
     async def resolve_sources(
         documentId: str | None = Query(default=None),
+        versionId: str | None = Query(default=None),
+        releaseId: str | None = Query(default=None),
         actor: Any = Depends(current_actor),
     ) -> dict[str, object]:
         """Resolve SourceRecords for a document without requiring Portal inventory."""
@@ -73,7 +76,21 @@ def register_sources_routes(
             tenant_id,
             document_id,
         )
-        preferred = prefer_document_source_record(records)
+        target_release_id = (releaseId or "").strip() or None
+        if not target_release_id and hasattr(query_service, "_source_trace"):
+            trace = query_service._source_trace
+            if hasattr(trace, "_active_release_id"):
+                try:
+                    target_release_id = trace._active_release_id()
+                except Exception:
+                    pass
+
+        target_version_id = (versionId or "").strip() or None
+        preferred = prefer_document_source_record(
+            records,
+            version_id=target_version_id,
+            release_id=target_release_id,
+        )
         if preferred is None:
             raise HTTPException(
                 status_code=404,

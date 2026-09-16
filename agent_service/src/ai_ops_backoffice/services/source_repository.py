@@ -6,7 +6,6 @@ and bounds memory growth via LRU/TTL caching as required by A06 and F03.
 
 from __future__ import annotations
 
-import json
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -18,8 +17,14 @@ from .source_models import MappingStatus, SourceRecord
 
 def prefer_document_source_record(
     records: list[SourceRecord],
+    *,
+    version_id: str | None = None,
+    release_id: str | None = None,
 ) -> SourceRecord | None:
-    """Pick a stable document-level SourceRecord when multiple chunks exist."""
+    """Pick a stable document-level SourceRecord when multiple versions/chunks exist.
+
+    Prioritizes matching release_id, version_id, document-level records, and latest created_at.
+    """
 
     if not records:
         return None
@@ -29,13 +34,23 @@ def prefer_document_source_record(
         if record.mapping_status == MappingStatus.AVAILABLE and not record.is_deleted
     ]
     pool = available or [record for record in records if not record.is_deleted] or records
-    return sorted(
+
+    # First sort descending by created_at and version_id for recency
+    sorted_by_recency = sorted(
         pool,
-        key=lambda record: (
-            0 if not record.chunk_id else 1,
-            record.source_ref_id,
+        key=lambda r: (r.created_at or "", r.version_id or ""),
+        reverse=True,
+    )
+
+    # Stable pick by match priorities and document-level vs chunk-level
+    return min(
+        sorted_by_recency,
+        key=lambda r: (
+            0 if (release_id and r.release_id == release_id) else 1,
+            0 if (version_id and r.version_id == version_id) else 1,
+            0 if not r.chunk_id else 1,
         ),
-    )[0]
+    )
 
 
 class BoundedSourceCache:
