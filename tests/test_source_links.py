@@ -1,6 +1,7 @@
 """Tests for signed knowledge-source citation links."""
 
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
@@ -608,32 +609,33 @@ def test_file_backed_viewer_membership_store(tmp_path: Path) -> None:
 def test_gcs_viewer_membership_store() -> None:
     from teams_agent.viewer_sessions import GcsViewerMembershipStore
 
-    store1 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
-    store2 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
+    with patch("google.cloud.storage.Client", side_effect=RuntimeError("No ADC")):
+        store1 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
+        store2 = GcsViewerMembershipStore("test-bucket", allow_memory_fallback=True)
 
-    # Instance 1 remembers user across GCS shared store
-    entry = store1.remember(
-        "user-cloud-1",
-        groups=("finance",),
-        tenant_id="t-cloud",
-        now=1000,
-        ttl_seconds=60,
-    )
-    assert entry.subject == "user-cloud-1"
+        # Instance 1 remembers user across GCS shared store
+        entry = store1.remember(
+            "user-cloud-1",
+            groups=("finance",),
+            tenant_id="t-cloud",
+            now=1000,
+            ttl_seconds=60,
+        )
+        assert entry.subject == "user-cloud-1"
 
-    # Instance 2 resolves user-cloud-1
-    resolved = store2.resolve("user-cloud-1", now=1020)
-    assert resolved is not None
-    assert resolved.subject == "user-cloud-1"
-    assert resolved.groups == ("finance",)
-    assert resolved.tenant_id == "t-cloud"
+        # Instance 2 resolves user-cloud-1
+        resolved = store2.resolve("user-cloud-1", now=1020)
+        assert resolved is not None
+        assert resolved.subject == "user-cloud-1"
+        assert resolved.groups == ("finance",)
+        assert resolved.tenant_id == "t-cloud"
 
-    # Instance 1 revokes
-    store1.revoke("user-cloud-1")
-    revoked = store2.resolve("user-cloud-1", now=1030)
-    assert revoked is not None
-    assert revoked.revoked is True
-    assert revoked.groups == ()
+        # Instance 1 revokes
+        store1.revoke("user-cloud-1")
+        revoked = store2.resolve("user-cloud-1", now=1030)
+        assert revoked is not None
+        assert revoked.revoked is True
+        assert revoked.groups == ()
 
 
 def test_authoritative_revocation_source_blocks_resolution() -> None:
@@ -672,40 +674,42 @@ def test_gcs_viewer_membership_fails_fast_in_production_without_client() -> None
         viewer_membership_store_path = None
         viewer_membership_allow_memory_fallback = False
 
-    with pytest.raises(ValueError, match="requires a real GCS client"):
-        GcsViewerMembershipStore("prod-bucket-fail-test", allow_memory_fallback=False)
+    with patch("google.cloud.storage.Client", side_effect=RuntimeError("No ADC")):
+        with pytest.raises(ValueError, match="requires a real GCS client"):
+            GcsViewerMembershipStore("prod-bucket-fail-test", allow_memory_fallback=False)
 
-    with pytest.raises(ValueError, match="requires a real GCS client"):
-        get_viewer_membership_store(DummySettings())
+        with pytest.raises(ValueError, match="requires a real GCS client"):
+            get_viewer_membership_store(DummySettings())
 
 
 def test_gcs_concurrent_interleaved_write_and_revocation_cas_retry() -> None:
     from teams_agent.viewer_sessions import GcsViewerMembershipStore
 
     bucket = "concurrent-cas-test-bucket"
-    instance1 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
-    instance2 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
+    with patch("google.cloud.storage.Client", side_effect=RuntimeError("No ADC")):
+        instance1 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
+        instance2 = GcsViewerMembershipStore(bucket, allow_memory_fallback=True)
 
-    # 1. Instance 1 writes Alice, Instance 2 writes Bob
-    instance1.remember("alice", groups=("eng",), tenant_id="t1", now=1000, ttl_seconds=300)
-    instance2.remember("bob", groups=("sales",), tenant_id="t1", now=1000, ttl_seconds=300)
+        # 1. Instance 1 writes Alice, Instance 2 writes Bob
+        instance1.remember("alice", groups=("eng",), tenant_id="t1", now=1000, ttl_seconds=300)
+        instance2.remember("bob", groups=("sales",), tenant_id="t1", now=1000, ttl_seconds=300)
 
-    # Independent subject blobs ensure no collision between Alice and Bob
-    res_alice = instance2.resolve("alice", now=1010)
-    res_bob = instance1.resolve("bob", now=1010)
-    assert res_alice is not None and res_alice.groups == ("eng",)
-    assert res_bob is not None and res_bob.groups == ("sales",)
+        # Independent subject blobs ensure no collision between Alice and Bob
+        res_alice = instance2.resolve("alice", now=1010)
+        res_bob = instance1.resolve("bob", now=1010)
+        assert res_alice is not None and res_alice.groups == ("eng",)
+        assert res_bob is not None and res_bob.groups == ("sales",)
 
-    # 2. Interleaved concurrent update and revocation on Alice
-    # Instance 1 prepares an update, while Instance 2 concurrently revokes Alice
-    instance2.revoke("alice")
-    # Instance 1 updates Alice's groups; CAS retry ensures revocation is preserved
-    instance1.remember("alice", groups=("eng", "admin"), tenant_id="t1", now=1020, ttl_seconds=300)
+        # 2. Interleaved concurrent update and revocation on Alice
+        # Instance 1 prepares an update, while Instance 2 concurrently revokes Alice
+        instance2.revoke("alice")
+        # Instance 1 updates Alice's groups; CAS retry ensures revocation is preserved
+        instance1.remember("alice", groups=("eng", "admin"), tenant_id="t1", now=1020, ttl_seconds=300)
 
-    # Both instances must see Alice as revoked, and Bob completely intact
-    after_alice1 = instance1.resolve("alice", now=1030)
-    after_alice2 = instance2.resolve("alice", now=1030)
-    after_bob = instance1.resolve("bob", now=1030)
+        # Both instances must see Alice as revoked, and Bob completely intact
+        after_alice1 = instance1.resolve("alice", now=1030)
+        after_alice2 = instance2.resolve("alice", now=1030)
+        after_bob = instance1.resolve("bob", now=1030)
 
     assert after_alice1 is not None
     assert after_alice1.revoked is True

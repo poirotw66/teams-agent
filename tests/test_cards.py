@@ -226,7 +226,10 @@ def test_card_adds_open_url_actions_for_citation_links() -> None:
     )
 
     activity = build_agent_activity(
-        response, AgentSettings(), conversation_id="conversation-1", now=1_000
+        response,
+        AgentSettings(citation_open_actions_enabled=True),
+        conversation_id="conversation-1",
+        now=1_000,
     )
 
     actions = activity.attachments[0].content["actions"]
