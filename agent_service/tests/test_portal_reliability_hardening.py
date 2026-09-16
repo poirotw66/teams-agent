@@ -3,13 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
-
 from agent_service.api import create_app
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_release import (
@@ -18,15 +17,19 @@ from agent_service.knowledge_release import (
 )
 from agent_service.retrieval import HybridIndex
 from agent_service.settings import RagSettings
+from fastapi.testclient import TestClient
 from knowledge_portal.firestore_repository import FirestorePortalRepository
 from knowledge_portal.models import (
     CreateDocumentRequest,
     PortalActor,
     PublishRequest,
+    ReleasePurpose,
+    ReleaseRecord,
     RemoveDocumentRequest,
     ReviewDecisionRequest,
     RollbackRequest,
     SubmitReviewRequest,
+    utc_now,
 )
 from knowledge_portal.publisher import ReleaseBuildError
 from knowledge_portal.rbac import PortalPermissionError, ensure_can_review
@@ -176,14 +179,20 @@ async def test_cross_unit_rollback_blocked_and_title_masked(tmp_path: Path) -> N
         # Verification 1: Manager A listing releases sees Doc B title masked as [Restricted Document]
         releases_seen_by_a = await service.list_releases(manager_a)
         rel_2_seen = next(r for r in releases_seen_by_a if r.release_id == rel_2.release_id)
-        entry_b = next(e for e in rel_2_seen.manifest if e.document_id == doc_b.document.document_id)
+        entry_b = next(
+            e for e in rel_2_seen.manifest if e.document_id == doc_b.document.document_id
+        )
         assert entry_b.title == "[Restricted Document]"
 
-        entry_a = next(e for e in rel_2_seen.manifest if e.document_id == doc_a.document.document_id)
+        entry_a = next(
+            e for e in rel_2_seen.manifest if e.document_id == doc_a.document.document_id
+        )
         assert entry_a.title == "Confidential Doc A"
 
         # Verification 2: Manager A cannot rollback release 2 to release 1 (affects Doc B from UNIT-B)
-        with pytest.raises(PortalPermissionError, match="Global rollback affects documents from other units"):
+        with pytest.raises(
+            PortalPermissionError, match="Global rollback affects documents from other units"
+        ):
             await service.rollback_release(
                 manager_a,
                 RollbackRequest(release_id=rel_1.release_id, reason="A trying rollback"),
@@ -197,6 +206,114 @@ async def test_cross_unit_rollback_blocked_and_title_masked(tmp_path: Path) -> N
             correlation_id="c-10",
         )
         assert rolled.status == "ACTIVE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("purpose", ["E2E", "UNKNOWN"])
+async def test_production_portal_cannot_activate_nonproduction_release(
+    tmp_path: Path,
+    purpose: ReleasePurpose,
+) -> None:
+    service, settings = _setup_test_portal(tmp_path)
+    object.__setattr__(settings, "deployment_environment", "prod")
+    release = ReleaseRecord(
+        release_id="release-e2e",
+        status="READY",
+        purpose=purpose,
+        corpus_hash="hash",
+        index_artifact_uri="gs://knowledge/release-e2e/chunks.json",
+        index_setting_version="test",
+        created_at=utc_now(),
+        created_by="e2e-runner",
+    )
+    await service._ctx.repository.save_release(release)
+    actor = PortalActor(
+        user_id="platform-admin",
+        display_name="Platform Admin",
+        role="PLATFORM",
+    )
+
+    with pytest.raises(PortalPermissionError, match=f"cannot activate {purpose}"):
+        await service.rollback_release(
+            actor,
+            RollbackRequest(release_id=release.release_id, reason="Invalid promotion"),
+            correlation_id="corr-e2e",
+        )
+
+    assert await service._ctx.repository.get_active_release_id() is None
+
+
+@pytest.mark.asyncio
+async def test_gcs_rollback_requires_previously_verified_release(
+    tmp_path: Path,
+) -> None:
+    service, settings = _setup_test_portal(tmp_path)
+    object.__setattr__(settings, "release_gcs_bucket", "knowledge-releases")
+    release = ReleaseRecord(
+        release_id="release-unverified",
+        status="READY",
+        purpose="PRODUCTION",
+        corpus_hash="hash",
+        index_artifact_uri="gs://knowledge/release-unverified/chunks.json",
+        index_setting_version="test",
+        created_at=utc_now(),
+        created_by="publisher",
+        artifact_bucket="knowledge-releases",
+        manifest_generation=10,
+        index_generation=11,
+        index_sha256="abc123",
+        chunk_count=1,
+        vector_count=1,
+        embedding_model="model-a",
+        embedding_dimensions=2,
+    )
+    await service._ctx.repository.save_release(release)
+    actor = PortalActor(
+        user_id="platform-admin",
+        display_name="Platform Admin",
+        role="PLATFORM",
+    )
+
+    with pytest.raises(PortalPermissionError, match="has not been verified"):
+        await service.rollback_release(
+            actor,
+            RollbackRequest(release_id=release.release_id, reason="Unsafe rollback"),
+            correlation_id="corr-unverified",
+        )
+
+    assert await service._ctx.repository.get_active_release_id() is None
+
+
+@pytest.mark.asyncio
+async def test_incomplete_gcs_release_is_recorded_as_failed(
+    tmp_path: Path,
+) -> None:
+    service, settings = _setup_test_portal(tmp_path)
+    object.__setattr__(settings, "release_gcs_bucket", "knowledge-releases")
+    incomplete = ReleaseRecord(
+        release_id="release-incomplete",
+        status="READY",
+        purpose="PRODUCTION",
+        corpus_hash="hash",
+        index_artifact_uri="gs://knowledge/release-incomplete/chunks.json",
+        index_setting_version="test",
+        created_at=utc_now(),
+        created_by="publisher",
+    )
+    service._ctx.publisher.build_release = MagicMock(return_value=incomplete)
+    actor = PortalActor(
+        user_id="platform-admin",
+        display_name="Platform Admin",
+        role="PLATFORM",
+    )
+
+    with pytest.raises(PortalPermissionError, match="lacks immutable GCS metadata"):
+        await service.reindex_all_published(actor)
+
+    saved = await service._ctx.repository.get_release(incomplete.release_id)
+    assert saved is not None
+    assert saved.status == "FAILED"
+    assert await service._ctx.repository.get_active_release_id() is None
 
 
 # --------------------------------------------------------------------------
@@ -213,6 +330,7 @@ async def test_concurrent_publishing_serialization(tmp_path: Path) -> None:
     )
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+
         async def delayed_post(*args, **kwargs):
             await asyncio.sleep(0.05)
             return httpx.Response(status_code=200, json={"status": "reloaded"})
@@ -320,7 +438,7 @@ async def test_firestore_repository_list_pending_reviews_query() -> None:
     mock_db = MagicMock()
     repo = FirestorePortalRepository(settings, client=mock_db)
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     review_pending = {
         "review_id": "rev-1",
@@ -328,7 +446,7 @@ async def test_firestore_repository_list_pending_reviews_query() -> None:
         "version_id": "ver-1",
         "snapshot_hash": "hash-1",
         "submitted_by": "user-1",
-        "submitted_at": datetime.now(timezone.utc),
+        "submitted_at": datetime.now(UTC),
         "decision": None,
         "reviewer_id": None,
         "decided_at": None,
@@ -341,10 +459,10 @@ async def test_firestore_repository_list_pending_reviews_query() -> None:
         "version_id": "ver-2",
         "snapshot_hash": "hash-2",
         "submitted_by": "user-2",
-        "submitted_at": datetime.now(timezone.utc),
+        "submitted_at": datetime.now(UTC),
         "decision": "APPROVED",
         "reviewer_id": "mgr-1",
-        "decided_at": datetime.now(timezone.utc),
+        "decided_at": datetime.now(UTC),
         "comment": "Approved",
         "policy_exceptions": [],
     }
@@ -445,7 +563,9 @@ async def test_unpublish_last_document_clears_agent_knowledge(tmp_path: Path) ->
         assert unpub_rel.status == "ACTIVE"
 
         mock_post.assert_called_once()
-        called_payload = mock_post.call_args[1].get("json") or mock_post.call_args.kwargs.get("json")
+        called_payload = mock_post.call_args[1].get("json") or mock_post.call_args.kwargs.get(
+            "json"
+        )
         assert called_payload["releaseId"] == unpub_rel.release_id
 
 
@@ -487,7 +607,10 @@ async def test_sync_agent_release_only_allows_active_release(tmp_path: Path) -> 
         )
         rev1 = (await service.list_pending_reviews(platform_admin)).items[0].review_id
         await service.decide_review(
-            platform_admin, rev1, ReviewDecisionRequest(decision="APPROVED", comment="OK"), correlation_id="c-3"
+            platform_admin,
+            rev1,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK"),
+            correlation_id="c-3",
         )
         rel_1 = await service.publish_version(
             platform_admin,
@@ -522,7 +645,10 @@ async def test_sync_agent_release_only_allows_active_release(tmp_path: Path) -> 
             if i.document_id == doc2.document.document_id
         )
         await service.decide_review(
-            platform_admin, rev2, ReviewDecisionRequest(decision="APPROVED", comment="OK"), correlation_id="c-7"
+            platform_admin,
+            rev2,
+            ReviewDecisionRequest(decision="APPROVED", comment="OK"),
+            correlation_id="c-7",
         )
         rel_2 = await service.publish_version(
             platform_admin,
@@ -534,7 +660,9 @@ async def test_sync_agent_release_only_allows_active_release(tmp_path: Path) -> 
 
         # Active is rel_2. Trying to sync rel_1 MUST raise ValueError
         with pytest.raises(ValueError, match="is not the current active release"):
-            await service.sync_agent_release(platform_admin, rel_1.release_id, correlation_id="c-sync-err")
+            await service.sync_agent_release(
+                platform_admin, rel_1.release_id, correlation_id="c-sync-err"
+            )
 
 
 def test_agent_rejects_stale_reload_request(tmp_path: Path) -> None:
@@ -542,9 +670,18 @@ def test_agent_rejects_stale_reload_request(tmp_path: Path) -> None:
     releases_dir = tmp_path / "releases"
     bundled_index_path = data_dir / "index" / "chunks.json"
 
-    _create_test_index(bundled_index_path, [{"chunk_id": "c1", "source_path": "d.md", "title": "T", "content": "C"}])
-    _create_test_index(release_index_path(releases_dir, "release-active"), [{"chunk_id": "c2", "source_path": "d.md", "title": "Active", "content": "C"}])
-    _create_test_index(release_index_path(releases_dir, "release-stale"), [{"chunk_id": "c3", "source_path": "d.md", "title": "Stale", "content": "C"}])
+    _create_test_index(
+        bundled_index_path,
+        [{"chunk_id": "c1", "source_path": "d.md", "title": "T", "content": "C"}],
+    )
+    _create_test_index(
+        release_index_path(releases_dir, "release-active"),
+        [{"chunk_id": "c2", "source_path": "d.md", "title": "Active", "content": "C"}],
+    )
+    _create_test_index(
+        release_index_path(releases_dir, "release-stale"),
+        [{"chunk_id": "c3", "source_path": "d.md", "title": "Stale", "content": "C"}],
+    )
 
     write_active_release_pointer(releases_dir, "release-active")
 
@@ -589,9 +726,18 @@ def test_multi_replica_auto_sync_on_request(tmp_path: Path) -> None:
     releases_dir = tmp_path / "releases"
     bundled_index_path = data_dir / "index" / "chunks.json"
 
-    _create_test_index(bundled_index_path, [{"chunk_id": "c1", "source_path": "d.md", "title": "Bundled", "content": "Initial"}])
-    _create_test_index(release_index_path(releases_dir, "release-v1"), [{"chunk_id": "c2", "source_path": "d.md", "title": "V1", "content": "V1 content"}])
-    _create_test_index(release_index_path(releases_dir, "release-v2"), [{"chunk_id": "c3", "source_path": "d.md", "title": "V2", "content": "V2 content"}])
+    _create_test_index(
+        bundled_index_path,
+        [{"chunk_id": "c1", "source_path": "d.md", "title": "Bundled", "content": "Initial"}],
+    )
+    _create_test_index(
+        release_index_path(releases_dir, "release-v1"),
+        [{"chunk_id": "c2", "source_path": "d.md", "title": "V1", "content": "V1 content"}],
+    )
+    _create_test_index(
+        release_index_path(releases_dir, "release-v2"),
+        [{"chunk_id": "c3", "source_path": "d.md", "title": "V2", "content": "V2 content"}],
+    )
 
     write_active_release_pointer(releases_dir, "release-v1")
 
@@ -715,10 +861,14 @@ def test_rbac_strictly_forbids_self_review() -> None:
         owner_unit_ids=[],
     )
 
-    with pytest.raises(PortalPermissionError, match="Reviewers and managers cannot approve their own submissions"):
+    with pytest.raises(
+        PortalPermissionError, match="Reviewers and managers cannot approve their own submissions"
+    ):
         ensure_can_review(reviewer, submitted_by="reviewer-1", relaxed_workflow=False)
 
-    with pytest.raises(PortalPermissionError, match="Reviewers and managers cannot approve their own submissions"):
+    with pytest.raises(
+        PortalPermissionError, match="Reviewers and managers cannot approve their own submissions"
+    ):
         ensure_can_review(manager, submitted_by="mgr-1", relaxed_workflow=False)
 
     ensure_can_review(reviewer, submitted_by="other-user", relaxed_workflow=False)
@@ -891,11 +1041,14 @@ async def test_unpublish_failure_leaves_document_published(tmp_path: Path) -> No
         assert published_doc.document.current_published_version_id is not None
 
         # Inject build release failure
-        with patch.object(
-            service._ctx.publisher,
-            "build_release",
-            side_effect=ReleaseBuildError("Injected build error"),
-        ), pytest.raises(ReleaseBuildError):
+        with (
+            patch.object(
+                service._ctx.publisher,
+                "build_release",
+                side_effect=ReleaseBuildError("Injected build error"),
+            ),
+            pytest.raises(ReleaseBuildError),
+        ):
             await service.unpublish_document(
                 platform_admin,
                 doc.document.document_id,
@@ -1013,7 +1166,9 @@ async def test_stale_sync_response_does_not_overwrite_active_release(tmp_path: P
 
         # Attempt to call sync_agent_release for rel1 (which is NOT active)
         with pytest.raises(ValueError, match="not the current active release"):
-            await service.sync_agent_release(platform_admin, rel1.release_id, correlation_id="c-sync")
+            await service.sync_agent_release(
+                platform_admin, rel1.release_id, correlation_id="c-sync"
+            )
 
 
 # --------------------------------------------------------------------------
@@ -1173,4 +1328,3 @@ def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
     assert data["validDetails"]["name"] == "Valid User"
     assert "Bearer " in data["bearerHeader"]
     assert data["hasFallback"] is True
-

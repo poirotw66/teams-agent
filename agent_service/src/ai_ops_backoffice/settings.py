@@ -80,6 +80,7 @@ class BackofficeSettings:
     knowledge_internal_url: str = ""
     knowledge_service_token: str = ""
     knowledge_delegation_secret: str = ""
+    knowledge_auth_mode: str = "BEARER"
     source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
     deployment_tenant_id: str = "local-development"
@@ -187,6 +188,10 @@ class BackofficeSettings:
                 os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"),
             ),
             knowledge_service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", ""),
+            knowledge_auth_mode=os.environ.get(
+                "KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE",
+                "BEARER",
+            ).upper(),
             knowledge_delegation_secret=os.environ.get(
                 "KNOWLEDGE_PORTAL_DELEGATION_SECRET",
                 os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),

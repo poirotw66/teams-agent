@@ -3,23 +3,28 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/app/.venv \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_NO_CACHE=1 \
+    PATH=/app/.venv/bin:$PATH \
     PORT=8080
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+RUN pip install --no-cache-dir uv==0.8.15
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project --extra gcs
+
 COPY src ./src
-# Citation delivery reads Markdown under data/sources (and images under assets).
-# Shipping only assets left Cloud Run /rag-sources 404 while local checkout worked.
-COPY data/sources ./data/sources
-# Release trees are optional for Adapter: originals are delivered via Backoffice
-# Source API. Keep an empty releases dir so RAG_SOURCE_DIR layout stays stable.
-RUN mkdir -p /app/data/releases
+RUN uv sync --frozen --no-dev --extra gcs
+
+# Citation originals are served through the governed Source API. The Adapter
+# image contains no knowledge corpus or mutable release tree.
+RUN mkdir -p /app/data/releases /app/data/sources/assets \
+    && chown -R 65532:65532 /app/data
 
 ENV RAG_SOURCE_DIR=/app/data \
     RAG_ASSET_DIR=/app/data/sources/assets
-
-RUN pip install --no-cache-dir ".[gcs]"
 
 USER 65532:65532
 

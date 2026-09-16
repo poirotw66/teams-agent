@@ -49,7 +49,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -302,6 +302,27 @@ def aggregate(
     }
 
 
+def infrastructure_cost_report(
+    monthly_cost_usd: float | None,
+    monthly_query_volume: int | None,
+) -> dict[str, float | int | bool | None]:
+    if monthly_cost_usd is not None and monthly_cost_usd < 0:
+        raise ValueError("Monthly backend cost cannot be negative.")
+    if monthly_query_volume is not None and monthly_query_volume <= 0:
+        raise ValueError("Monthly query volume must be greater than zero.")
+    amortized_cost = (
+        monthly_cost_usd / monthly_query_volume
+        if monthly_cost_usd is not None and monthly_query_volume is not None
+        else None
+    )
+    return {
+        "monthly_cost_usd": monthly_cost_usd,
+        "monthly_query_volume": monthly_query_volume,
+        "amortized_cost_usd_per_query": amortized_cost,
+        "assumption_configured": monthly_cost_usd is not None,
+    }
+
+
 def load_eval_set(path: Path) -> list[EvalCase]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return [EvalCase.from_dict(item) for item in payload["cases"]]
@@ -340,9 +361,7 @@ async def _run_hybrid_case(
     try:
         if get_usage_metadata_callback is not None:
             with get_usage_metadata_callback() as usage_callback:
-                result = await service.search(
-                    case.query, user_context, call_counter=counter
-                )
+                result = await service.search(case.query, user_context, call_counter=counter)
             usage = build_usage_report(usage_callback.usage_metadata)
             cost = usage.estimated_cost_usd
         else:  # pragma: no cover
@@ -480,6 +499,36 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
     return service, None
 
 
+def _try_build_mongodb_index(
+    settings: Any,
+    source_index: Any,
+) -> tuple[Any | None, str | None]:
+    from agent_service.mongodb_vector_spike import (
+        MongoVectorShadowIndex,
+        MongoVectorSpikeSettings,
+    )
+
+    mongo_settings = MongoVectorSpikeSettings.from_env()
+    if mongo_settings is None:
+        return None, "MONGODB_URI is not configured."
+    release_id = os.environ.get("MONGODB_VECTOR_RELEASE_ID", "").strip()
+    if not release_id:
+        return None, "MONGODB_VECTOR_RELEASE_ID is not configured."
+    tenant_id = os.environ.get("MONGODB_VECTOR_TENANT_ID", "default").strip()
+    try:
+        return (
+            MongoVectorShadowIndex(
+                source_index,
+                mongo_settings,
+                tenant_id=tenant_id,
+                release_id=release_id,
+            ),
+            None,
+        )
+    except (RuntimeError, ValueError) as exc:
+        return None, str(exc)
+
+
 async def run_backend(
     backend: str,
     cases: list[EvalCase],
@@ -504,6 +553,35 @@ async def run_backend(
             print(f"  [gemini] {case.id}: {case.query[:40]}...", flush=True)
             runs[case.id] = await _run_gemini_case(service, case)
         return runs, None
+
+    if backend == "mongodb":
+        mongo_index, skip_reason = _try_build_mongodb_index(settings, index)
+        if mongo_index is None:
+            return {}, skip_reason
+        service = _build_hybrid_service(settings, mongo_index)
+        runs = {}
+        for case in cases:
+            print(f"  [mongodb] {case.id}: {case.query[:40]}...", flush=True)
+            runs[case.id] = await _run_hybrid_case(
+                service,
+                mongo_index,
+                settings,
+                case,
+            )
+        return runs, None
+
+    if backend == "firestore":
+        dimensions = {len(chunk.vector) for chunk in index.chunks if chunk.vector}
+        dimension = next(iter(dimensions), None)
+        if dimension and dimension > 2048:
+            return (
+                {},
+                (
+                    "Firestore vector search supports at most 2048 dimensions; "
+                    f"this release uses {dimension}."
+                ),
+            )
+        return {}, "No Firestore vector shadow collection is configured."
 
     raise ValueError(f"Unknown backend: {backend!r}")
 
@@ -534,6 +612,11 @@ def _format_summary(backend: str, report: dict[str, Any]) -> str:
             f"Total cost (USD):        {report['total_cost_usd']} "
             f"(complete: {report['cost_complete']})"
         ),
+        (f"Backend monthly cost:     {report['infrastructure_cost']['monthly_cost_usd']} USD"),
+        (
+            "Backend amortized/query:  "
+            f"{report['infrastructure_cost']['amortized_cost_usd_per_query']} USD"
+        ),
     ]
     return "\n".join(lines)
 
@@ -548,8 +631,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--backends",
         default="hybrid,gemini",
-        help="Comma-separated subset of {hybrid,gemini}. gemini is skipped "
-        "automatically (not an error) if it is not configured.",
+        help="Comma-separated subset of {hybrid,gemini,mongodb,firestore}. "
+        "External backends are skipped automatically when not configured.",
     )
     parser.add_argument(
         "--output-dir",
@@ -562,11 +645,46 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Only run the first N cases (cost control while iterating).",
     )
+    parser.add_argument(
+        "--backend-monthly-cost-usd",
+        action="append",
+        default=[],
+        metavar="BACKEND=USD",
+        help=(
+            "Repeatable fixed monthly infrastructure cost assumption, for example "
+            "hybrid=0 or mongodb=57. Values are recorded in the result artifact."
+        ),
+    )
+    parser.add_argument(
+        "--monthly-query-volume",
+        type=int,
+        default=None,
+        help="Expected monthly queries used to amortize backend infrastructure cost.",
+    )
     return parser.parse_args(argv)
+
+
+def _parse_backend_monthly_costs(values: list[str]) -> dict[str, float]:
+    parsed: dict[str, float] = {}
+    for value in values:
+        backend, separator, raw_cost = value.partition("=")
+        if not separator or not backend.strip():
+            raise ValueError(f"Invalid backend cost '{value}'; expected BACKEND=USD.")
+        cost = float(raw_cost)
+        if cost < 0:
+            raise ValueError("Monthly backend cost cannot be negative.")
+        parsed[backend.strip().lower()] = cost
+    return parsed
 
 
 async def _main_async(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    try:
+        backend_monthly_costs = _parse_backend_monthly_costs(args.backend_monthly_cost_usd)
+        infrastructure_cost_report(0.0, args.monthly_query_volume)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
 
     # agent_service must be importable. If this script is invoked with the
     # repo-root .venv instead of agent_service/.venv, `agent_service` is a
@@ -610,11 +728,15 @@ async def _main_async(argv: list[str] | None = None) -> int:
             continue
         raw_runs[backend] = runs
         report = aggregate(cases, runs, known_titles)
+        report["infrastructure_cost"] = infrastructure_cost_report(
+            backend_monthly_costs.get(backend),
+            args.monthly_query_volume,
+        )
         reports[backend] = report
         print(_format_summary(backend, report))
         print()
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output_dir = args.output_dir / f"retrieval-ab-test-{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -626,6 +748,8 @@ async def _main_async(argv: list[str] | None = None) -> int:
         "embedding_model": settings.embedding_model,
         "top_k": settings.top_k,
         "min_score": settings.min_score,
+        "backend_monthly_cost_assumptions_usd": backend_monthly_costs,
+        "monthly_query_volume_assumption": args.monthly_query_volume,
         "reports": reports,
         "case_runs": {
             backend: {
@@ -646,9 +770,7 @@ async def _main_async(argv: list[str] | None = None) -> int:
         },
     }
     results_path = output_dir / "results.json"
-    results_path.write_text(
-        json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    results_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {results_path}")
     return 0
 

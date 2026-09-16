@@ -352,6 +352,7 @@ def create_app(
         or resolved_settings.knowledge_portal_url,
         service_token=resolved_settings.knowledge_service_token,
         delegation_secret=resolved_settings.knowledge_delegation_secret,
+        auth_mode=resolved_settings.knowledge_auth_mode,
         transport=knowledge_transport,
     )
 

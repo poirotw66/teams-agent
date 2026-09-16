@@ -10,9 +10,11 @@ backoffice_auth_mode    = "ENTRA"
 allow_latest_image_tags = false
 deployment_phase        = "prepare"
 
+# Set immutable Agent, Adapter, Backoffice, and Portal images before activate.
+
 # Production policy defaults: keep explicit values in the reviewed tfvars.
 conversation_retention_days = 365
 handoff_retention_days      = 365
 
-# Set only after the separately deployed Portal has an approved HTTPS endpoint.
+# Optional approved external Portal URL override.
 # knowledge_portal_public_url = "https://knowledge-portal.example.com"

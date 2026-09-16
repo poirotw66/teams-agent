@@ -219,7 +219,7 @@ variable "adapter_public_base_url" {
 }
 
 variable "knowledge_portal_public_url" {
-  description = "Optional public HTTPS URL of the separately deployed Knowledge Portal. Leave empty when no portal URL has been configured; it is never inferred from the Teams Adapter URL."
+  description = "Optional approved external Portal URL override. The internal Terraform-managed Portal URL is never inferred from the Teams Adapter URL."
   type        = string
   default     = ""
 
@@ -255,6 +255,24 @@ variable "knowledge_release_dir" {
   description = "Directory for portal release artifacts and active_release.json. Portal and Agent must share this path (or a GCS volume mount at the same mount point)."
   type        = string
   default     = "/app/data/releases"
+}
+
+variable "knowledge_release_bucket_name" {
+  description = "GCS bucket for immutable tenant knowledge releases. Defaults to <project>-knowledge-releases."
+  type        = string
+  default     = ""
+}
+
+variable "knowledge_release_object_prefix" {
+  description = "Object prefix containing tenants/<tenant>/releases/<release>."
+  type        = string
+  default     = "knowledge-releases"
+}
+
+variable "knowledge_release_writer_members" {
+  description = "Additional IAM members allowed to create immutable knowledge release objects, normally the Portal service account."
+  type        = set(string)
+  default     = []
 }
 
 variable "backoffice_auth_mode" {

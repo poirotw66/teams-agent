@@ -41,7 +41,7 @@ audience:
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_release_0001_creates_active_release(
+async def test_bootstrap_release_0001_creates_deploying_release(
     portal_service: tuple[PortalService, PortalSettings],
 ) -> None:
     service, settings = portal_service
@@ -59,7 +59,8 @@ async def test_bootstrap_release_0001_creates_active_release(
         release_id="release-0001",
     )
     assert release.release_id == "release-0001"
-    assert release.status == "ACTIVE"
+    assert release.status == "DEPLOYING"
+    assert release.verified_at is None
     assert len(release.manifest) == 1
     assert (settings.release_artifact_dir / "release-0001" / "manifest.json").exists()
     assert (settings.release_artifact_dir / "active_release.json").exists()

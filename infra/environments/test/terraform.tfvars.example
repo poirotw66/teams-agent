@@ -15,12 +15,13 @@ deployment_phase = "prepare"
 
 # Step 4 — Activate Services (after secrets + BUILD_ONLY=1 release-gcp.sh):
 # deployment_phase = "activate"
-# agent_image   = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-rag-agent:REPLACE_WITH_GIT_SHA"
-# adapter_image = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-agent-adapter:REPLACE_WITH_GIT_SHA"
+# agent_image      = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-rag-agent:REPLACE_WITH_GIT_SHA"
+# adapter_image    = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-agent-adapter:REPLACE_WITH_GIT_SHA"
+# backoffice_image = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-ai-ops-backoffice:REPLACE_WITH_GIT_SHA"
+# portal_image     = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-knowledge-portal:REPLACE_WITH_GIT_SHA"
 
 # Step 5 — set after activate once Adapter URL is known:
 # adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"
 
-# Optional separately deployed Knowledge Portal URL; empty explicitly means
-# the backoffice must present Portal as unconfigured.
+# Optional external Portal URL override. Terraform deploys the internal Portal.
 # knowledge_portal_public_url = "https://knowledge-portal.test.example.com"

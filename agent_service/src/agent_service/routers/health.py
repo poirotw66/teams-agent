@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import FastAPI, HTTPException, Request
 
 from ..deps import sync_knowledge_to_active_pointer
+from ..knowledge_release import read_active_release_id
+from ..knowledge_release_control import FirestoreKnowledgeReleaseControl
+from ..release_artifacts import KnowledgeIndexArtifact
 from ..retrieval import HybridIndex
 from ..settings import RagSettings
 
@@ -25,8 +30,12 @@ def register_health_routes(
         is_ready = bool(index is not None)
         if not is_ready:
             raise HTTPException(status_code=503, detail="RAG index is not ready.")
+        await _require_active_release_alignment(request, resolved_settings)
         catalog = _model_catalog(request, resolved_settings, index)
         by_role = {item["role"]: item for item in catalog["items"]}
+        artifact: KnowledgeIndexArtifact | None = getattr(
+            request.app.state, "knowledge_index_artifact", None
+        )
         return {
             "status": "ready",
             "chunks": len(index.chunks),
@@ -36,11 +45,7 @@ def register_health_routes(
             "fileSearchModel": by_role["file_search"]["model"],
             "modelCatalog": catalog,
             "knowledgeMode": resolved_settings.knowledge_service_mode,
-            "retrieval": (
-                "hybrid"
-                if by_role["embedding"]["model"]
-                else "chinese-bm25"
-            ),
+            "retrieval": ("hybrid" if by_role["embedding"]["model"] else "chinese-bm25"),
             "knowledgeBackend": await request.app.state.knowledge_router.active_backend(),
             "knowledgeIndexSource": getattr(
                 request.app.state, "knowledge_index_source", "bundled_index"
@@ -49,10 +54,16 @@ def register_health_routes(
             "knowledgeIndexPath": str(
                 getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
             ),
+            "knowledgeIndexVerified": artifact is not None,
+            "knowledgeVectorCount": artifact.vector_count if artifact else None,
+            "knowledgeEmbeddingDimensions": (artifact.embedding_dimensions if artifact else None),
+            "knowledgeIndexSha256": artifact.sha256 if artifact else None,
         }
 
 
-def _model_catalog(request: Request, settings: RagSettings, index: HybridIndex) -> dict[str, object]:
+def _model_catalog(
+    request: Request, settings: RagSettings, index: HybridIndex
+) -> dict[str, object]:
     runtime = getattr(request.app.state, "governance_runtime", None)
     file_search_model = _file_search_model(request)
     if runtime is None or not hasattr(runtime, "effective_model_catalog"):
@@ -73,3 +84,48 @@ def _file_search_model(request: Request) -> str | None:
     service = getter("GEMINI_FILE_SEARCH")
     model = getattr(service, "model", None)
     return str(model) if model else None
+
+
+async def _require_active_release_alignment(
+    request: Request,
+    settings: RagSettings,
+) -> None:
+    if not (
+        settings.knowledge_release_require_manifest or settings.knowledge_release_require_vectors
+    ):
+        return
+    loaded_release_id = getattr(request.app.state, "knowledge_release_id", None)
+    if settings.knowledge_release_store_mode == "GCS":
+        artifact = getattr(request.app.state, "knowledge_index_artifact", None)
+        control: FirestoreKnowledgeReleaseControl | None = getattr(
+            request.app.state,
+            "knowledge_release_control",
+            None,
+        )
+        if control is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge release control plane is unavailable.",
+            )
+        try:
+            expected_release_id = await asyncio.to_thread(control.read_active_release_id)
+        except Exception as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge release control plane is unavailable.",
+            ) from error
+        if not loaded_release_id or artifact is None or expected_release_id != loaded_release_id:
+            raise HTTPException(
+                status_code=503,
+                detail="Loaded GCS knowledge release is not the active verified release.",
+            )
+        return
+    release_dir = settings.knowledge_release_dir or (settings.data_dir / "releases")
+    expected_release_id = settings.knowledge_active_release_id or read_active_release_id(
+        release_dir
+    )
+    if expected_release_id != loaded_release_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Loaded knowledge release does not match the active release pointer.",
+        )

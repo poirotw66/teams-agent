@@ -8,6 +8,13 @@ import tempfile
 from pathlib import Path
 
 from agent_service.documents import load_source_chunks
+from agent_service.knowledge_release_gcs import publish_release_directory
+from agent_service.release_artifacts import (
+    INDEX_RELATIVE_PATH,
+    KnowledgeReleaseValidationError,
+    inspect_index_artifact,
+    validate_release_artifacts,
+)
 from agent_service.retrieval import HybridIndex
 from agent_service.target_manifest import knowledge_release_target_manifest_hash
 
@@ -38,6 +45,7 @@ class ReleasePublisher:
         previous_release_id: str | None,
         bundled_index_path: Path | None = None,
         embedding_model: str | None = None,
+        tenant_id: str | None = None,
     ) -> ReleaseRecord:
         self._settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
         release_dir = self._settings.release_artifact_dir / release_id
@@ -75,7 +83,8 @@ class ReleasePublisher:
                 version_acl = (
                     ["grp_public"]
                     if version.audience_type == "ALL_EMPLOYEES"
-                    else [str(g).strip() for g in version.audience_group_ids if str(g).strip()] or ["grp_restricted"]
+                    else [str(g).strip() for g in version.audience_group_ids if str(g).strip()]
+                    or ["grp_restricted"]
                 )
                 manifest.append(
                     ReleaseManifestEntry(
@@ -144,15 +153,24 @@ class ReleasePublisher:
                     index.add_embeddings()
                 index.save(index_path)
 
+        index_artifact = inspect_index_artifact(index_path)
+        resolved_tenant_id = tenant_id or self._settings.default_tenant_id
+        created_at = utc_now()
         manifest_path = release_dir / "manifest.json"
         manifest_path.write_text(
             json.dumps(
                 {
+                    "schemaVersion": 1,
                     "releaseId": release_id,
+                    "purpose": self._settings.release_purpose,
+                    "tenantId": resolved_tenant_id,
+                    "createdAt": created_at.isoformat(),
+                    "createdBy": created_by,
                     "corpusHash": corpus_hash,
                     "documents": [entry.model_dump(mode="json") for entry in manifest],
                     "sourceMap": [entry.model_dump(mode="json") for entry in manifest],
-                    "indexArtifact": str(index_path),
+                    "indexArtifact": INDEX_RELATIVE_PATH,
+                    "index": index_artifact.to_manifest_dict(),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -160,9 +178,32 @@ class ReleasePublisher:
             encoding="utf-8",
         )
 
+        if self._settings.release_gcs_bucket and self._settings.release_purpose == "PRODUCTION":
+            try:
+                validate_release_artifacts(
+                    self._settings.release_artifact_dir,
+                    release_id,
+                    require_vectors=True,
+                    expected_tenant_id=resolved_tenant_id,
+                    expected_purpose="PRODUCTION",
+                )
+            except KnowledgeReleaseValidationError as error:
+                raise ReleaseBuildError(f"Production release validation failed: {error}") from error
+
+        published_release = None
+        if self._settings.release_gcs_bucket:
+            published_release = publish_release_directory(
+                release_dir,
+                bucket_name=self._settings.release_gcs_bucket,
+                object_prefix=self._settings.release_gcs_prefix,
+                tenant_id=resolved_tenant_id,
+                release_id=release_id,
+            )
+
         return ReleaseRecord(
             release_id=release_id,
             status="READY",
+            purpose=self._settings.release_purpose,
             manifest=manifest,
             corpus_hash=corpus_hash,
             target_manifest_hash=knowledge_release_target_manifest_hash(release_id=release_id),
@@ -171,7 +212,23 @@ class ReleasePublisher:
                 f"chunk={self._settings.chunk_size};overlap={self._settings.chunk_overlap};"
                 f"embedding={selected_embedding or 'bm25-only'}"
             ),
-            created_at=utc_now(),
+            created_at=created_at,
             previous_release_id=previous_release_id,
             created_by=created_by,
+            tenant_id=resolved_tenant_id,
+            artifact_bucket=(published_release.bucket if published_release is not None else None),
+            artifact_object_prefix=(
+                published_release.object_prefix if published_release is not None else None
+            ),
+            manifest_generation=(
+                published_release.manifest_generation if published_release is not None else None
+            ),
+            index_generation=(
+                published_release.index_generation if published_release is not None else None
+            ),
+            index_sha256=index_artifact.sha256,
+            chunk_count=index_artifact.chunk_count,
+            vector_count=index_artifact.vector_count,
+            embedding_model=index_artifact.embedding_model,
+            embedding_dimensions=index_artifact.embedding_dimensions,
         )

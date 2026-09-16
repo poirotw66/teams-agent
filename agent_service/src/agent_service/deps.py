@@ -11,6 +11,7 @@ from fastapi import FastAPI, Header, HTTPException
 from .graph import RagAgent
 from .knowledge_backends import KnowledgeBackendRouter
 from .knowledge_release import read_active_release_id, release_index_path
+from .release_artifacts import MANIFEST_FILENAME, validate_release_artifacts
 from .retrieval import HybridIndex
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
@@ -37,6 +38,8 @@ def sync_knowledge_to_active_pointer(
     target_app: FastAPI, resolved_settings: RagSettings
 ) -> bool:
     """Reload the in-memory index when the portal active-release pointer moves."""
+    if resolved_settings.knowledge_release_store_mode == "GCS":
+        return False
     release_dir = (
         resolved_settings.knowledge_release_dir
         or (resolved_settings.data_dir / "releases")
@@ -58,6 +61,18 @@ def sync_knowledge_to_active_pointer(
         return False
 
     try:
+        release_path = target_index_path.parents[1]
+        artifact = None
+        if (
+            (release_path / MANIFEST_FILENAME).is_file()
+            or resolved_settings.knowledge_release_require_manifest
+            or resolved_settings.knowledge_release_require_vectors
+        ):
+            artifact = validate_release_artifacts(
+                release_dir,
+                active_release_id,
+                require_vectors=resolved_settings.knowledge_release_require_vectors,
+            )
         from .model_control import embedding_model_for_load
 
         new_index = HybridIndex.load(
@@ -83,6 +98,7 @@ def sync_knowledge_to_active_pointer(
         target_app.state.knowledge_index_path = target_index_path
         target_app.state.knowledge_release_id = active_release_id
         target_app.state.knowledge_index_source = "portal_release"
+        target_app.state.knowledge_index_artifact = artifact
         target_app.state.agent = new_agent
         logger.info(
             "Auto-synced knowledge index to active pointer: release_id=%s chunks=%d",

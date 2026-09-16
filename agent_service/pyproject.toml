@@ -41,10 +41,14 @@ portal = [
 spike = [
     "google-genai>=1.0",
 ]
+mongodb-spike = [
+    "pymongo>=4.10,<5",
+]
 # Spec §10.3: the persistent Conversation Repository backend. Only needed
 # when CONVERSATION_REPOSITORY_MODE=FIRESTORE, so MEMORY/FILE deployments
 # and the test suite (which drives a Fake client) install nothing extra.
 firestore = [
+    "google-auth[requests]>=2.40,<3",
     "google-cloud-firestore>=2.20,<3",
     "google-cloud-storage>=2.19,<4",
 ]

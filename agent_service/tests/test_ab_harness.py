@@ -323,8 +323,13 @@ def test_aggregate_computes_accuracy_and_latency_across_cases():
             cost_usd=0.001,
         ),
         "b": make_run(
-            case_id="b", found=False, answer="", citation_titles=(), latency_seconds=0.2,
-            llm_calls=1, cost_usd=0.0002,
+            case_id="b",
+            found=False,
+            answer="",
+            citation_titles=(),
+            latency_seconds=0.2,
+            llm_calls=1,
+            cost_usd=0.0002,
         ),
     }
     report = ab.aggregate(cases, runs, frozenset({"Doc1"}))
@@ -353,6 +358,22 @@ def test_aggregate_skips_cases_with_no_matching_run():
     report = ab.aggregate(cases, runs, frozenset({"VPN常見Q&A問答"}))
     assert report["total_cases"] == 2
     assert report["answer_accuracy"]["applicable_cases"] == 1
+
+
+def test_infrastructure_cost_report_amortizes_explicit_assumption():
+    report = ab.infrastructure_cost_report(57.0, 100_000)
+
+    assert report["monthly_cost_usd"] == 57.0
+    assert report["amortized_cost_usd_per_query"] == pytest.approx(0.00057)
+    assert report["assumption_configured"] is True
+
+
+def test_infrastructure_cost_report_does_not_fabricate_missing_cost():
+    report = ab.infrastructure_cost_report(None, 100_000)
+
+    assert report["monthly_cost_usd"] is None
+    assert report["amortized_cost_usd_per_query"] is None
+    assert report["assumption_configured"] is False
 
 
 # --- EvalCase.from_dict / load_eval_set ------------------------------------------

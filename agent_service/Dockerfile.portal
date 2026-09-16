@@ -3,6 +3,10 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/app/.venv \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_NO_CACHE=1 \
+    PATH=/app/.venv/bin:$PATH \
     KNOWLEDGE_PORTAL_HOST=0.0.0.0 \
     KNOWLEDGE_PORTAL_PORT=8080 \
     KNOWLEDGE_PORTAL_DATA_DIR=/app/data \
@@ -10,12 +14,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY agent_service/pyproject.toml agent_service/README.md ./agent_service/
-COPY agent_service/src ./agent_service/src
-COPY data ./data
+RUN pip install --no-cache-dir uv==0.8.15
+COPY agent_service/pyproject.toml agent_service/uv.lock agent_service/README.md ./agent_service/
+RUN uv sync \
+    --project agent_service \
+    --frozen \
+    --no-dev \
+    --no-install-project \
+    --extra firestore \
+    --extra portal
 
-RUN pip install --no-cache-dir "./agent_service[firestore,portal]" \
-    && mkdir -p /app/data/releases /app/data/portal_state /app/data/portal_drafts \
+COPY agent_service/src ./agent_service/src
+RUN uv sync \
+    --project agent_service \
+    --frozen \
+    --no-dev \
+    --extra firestore \
+    --extra portal
+
+RUN mkdir -p /app/data/releases /app/data/portal_state /app/data/portal_drafts \
     && chown -R 65532:65532 /app/data
 
 USER 65532:65532

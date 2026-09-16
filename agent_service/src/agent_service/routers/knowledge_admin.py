@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 
@@ -16,8 +17,9 @@ from ..knowledge_release import (
     release_index_path,
     resolve_knowledge_index,
 )
-from ..retrieval import HybridIndex
+from ..knowledge_release_control import FirestoreKnowledgeReleaseControl
 from ..model_control import embedding_model_for_load
+from ..retrieval import HybridIndex
 from ..settings import RagSettings
 from ..source_refs import hydrate_index_sources
 from ..workflow import build_knowledge_service
@@ -64,12 +66,30 @@ def register_knowledge_admin_routes(
         dependencies=[Depends(authorize)],
     )
     async def get_knowledge_status(request: Request) -> dict[str, object]:
-        sync_knowledge_to_active_pointer(request.app, resolved_settings)
-        release_dir = (
-            resolved_settings.knowledge_release_dir
-            or (resolved_settings.data_dir / "releases")
+        release_dir = resolved_settings.knowledge_release_dir or (
+            resolved_settings.data_dir / "releases"
         )
-        active_id = read_active_release_id(release_dir)
+        if resolved_settings.knowledge_release_store_mode == "GCS":
+            control: FirestoreKnowledgeReleaseControl | None = getattr(
+                request.app.state,
+                "knowledge_release_control",
+                None,
+            )
+            if control is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Knowledge release control plane is unavailable.",
+                )
+            try:
+                active_id = await asyncio.to_thread(control.read_active_release_id)
+            except Exception as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Knowledge release control plane is unavailable.",
+                ) from error
+        else:
+            sync_knowledge_to_active_pointer(request.app, resolved_settings)
+            active_id = read_active_release_id(release_dir)
         current_id = getattr(request.app.state, "knowledge_release_id", None)
         index: HybridIndex | None = getattr(request.app.state, "index", None)
         return {
@@ -92,14 +112,26 @@ def register_knowledge_admin_routes(
         payload: ReloadKnowledgeRequest | None = None,
     ) -> dict[str, object]:
         target_release_id: str | None = None
-        release_dir = (
-            resolved_settings.knowledge_release_dir
-            or (resolved_settings.data_dir / "releases")
+        release_dir = resolved_settings.knowledge_release_dir or (
+            resolved_settings.data_dir / "releases"
         )
         active_release_id = read_active_release_id(release_dir)
         requested_release_id = payload.target_release_id if payload else None
+        resolved_artifact = None
 
-        if requested_release_id:
+        if resolved_settings.knowledge_release_store_mode == "GCS":
+            try:
+                resolved_index = resolve_knowledge_index(
+                    resolved_settings,
+                    release_id_override=requested_release_id,
+                )
+            except (FileNotFoundError, ValueError) as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            target_release_id = resolved_index.release_id
+            target_index_path = resolved_index.index_path
+            source = resolved_index.source
+            resolved_artifact = resolved_index.artifact
+        elif requested_release_id:
             if active_release_id and requested_release_id != active_release_id:
                 raise HTTPException(
                     status_code=409,
@@ -108,9 +140,19 @@ def register_knowledge_admin_routes(
                         f"does not match active release '{active_release_id}'."
                     ),
                 )
-            target_release_id = requested_release_id
-            target_index_path = release_index_path(release_dir, target_release_id)
-            source = "portal_release"
+            resolved_index = resolve_knowledge_index(
+                resolved_settings,
+                release_id_override=requested_release_id,
+            )
+            if resolved_index.release_id != requested_release_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Knowledge release not found: {requested_release_id}",
+                )
+            target_release_id = resolved_index.release_id
+            target_index_path = resolved_index.index_path
+            source = resolved_index.source
+            resolved_artifact = resolved_index.artifact
         elif active_release_id:
             target_release_id = active_release_id
             target_index_path = release_index_path(release_dir, target_release_id)
@@ -120,6 +162,7 @@ def register_knowledge_admin_routes(
             target_release_id = resolved_index.release_id
             target_index_path = resolved_index.index_path
             source = resolved_index.source
+            resolved_artifact = resolved_index.artifact
 
         if not target_index_path.exists():
             raise HTTPException(
@@ -150,6 +193,7 @@ def register_knowledge_admin_routes(
         request.app.state.knowledge_index_path = target_index_path
         request.app.state.knowledge_release_id = target_release_id
         request.app.state.knowledge_index_source = source
+        request.app.state.knowledge_index_artifact = resolved_artifact
         request.app.state.agent = new_agent
 
         logger.info(

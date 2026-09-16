@@ -9,6 +9,8 @@ bot_tenant_id = "00000000-0000-0000-0000-000000000000"
 allow_latest_image_tags = false
 deployment_phase        = "prepare"
 
+# Set immutable Agent, Adapter, Backoffice, and Portal images before activate.
+
 # For a retention-TTL exercise only, a dev value may be shorter than 365 days.
 # conversation_retention_days = 30
 # handoff_retention_days      = 30

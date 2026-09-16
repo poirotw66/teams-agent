@@ -59,15 +59,19 @@ def _parse_source_file(
     else:
         audience_type = "RESTRICTED_GROUPS"
         audience_group_ids = audience_values
-    canonical = raw if raw.lstrip().startswith("---") else build_front_matter_markdown(
-        title=title,
-        owner_unit_id=owner,
-        effective_at=effective_at,
-        review_due_at=review_due_at,
-        audience_type=audience_type,
-        audience_group_ids=audience_group_ids,
-        version_number=1,
-        body=body or raw,
+    canonical = (
+        raw
+        if raw.lstrip().startswith("---")
+        else build_front_matter_markdown(
+            title=title,
+            owner_unit_id=owner,
+            effective_at=effective_at,
+            review_due_at=review_due_at,
+            audience_type=audience_type,
+            audience_group_ids=audience_group_ids,
+            version_number=1,
+            body=body or raw,
+        )
     )
     return title, owner, effective_at, review_due_at, audience_type, audience_group_ids, canonical
 
@@ -101,9 +105,7 @@ class KnowledgeMigrationService:
             raise FileNotFoundError(f"Sources directory not found: {sources_dir}")
 
         source_files = sorted(
-            path
-            for path in sources_dir.glob("*.md")
-            if not path.name.upper().startswith("README")
+            path for path in sources_dir.glob("*.md") if not path.name.upper().startswith("README")
         )
         if not source_files:
             raise ValueError(f"No Markdown sources found in {sources_dir}")
@@ -135,8 +137,7 @@ class KnowledgeMigrationService:
             )
             if validation.has_blocking:
                 raise ValueError(
-                    f"Source {source_path.name} failed validation: "
-                    f"{validation.issues[0].message}"
+                    f"Source {source_path.name} failed validation: {validation.issues[0].message}"
                 )
 
             document_id = _stable_document_id(source_path)
@@ -191,6 +192,7 @@ class KnowledgeMigrationService:
                 created_by=actor.user_id,
                 previous_release_id=await self._repository.get_active_release_id(),
                 bundled_index_path=bundled_index_path,
+                tenant_id=actor.tenant_id,
             )
         except ReleaseBuildError as exc:
             raise ValueError(str(exc)) from exc
@@ -220,19 +222,20 @@ class KnowledgeMigrationService:
 
         release = release.model_copy(
             update={
-                "status": "ACTIVE",
+                "status": "DEPLOYING",
                 "activated_at": now,
-                "verified_at": now,
+                "verified_at": None,
                 "approved_by": actor.user_id,
                 "target_manifest_hash": gate_hash,
             }
         )
         await self._repository.save_release(release)
         await self._repository.set_active_release_id(release.release_id)
-        write_active_release_pointer(
-            self._settings.release_artifact_dir,
-            release.release_id,
-        )
+        if not self._settings.release_gcs_bucket:
+            write_active_release_pointer(
+                self._settings.release_artifact_dir,
+                release.release_id,
+            )
         await self._repository.append_audit(
             AuditEventRecord(
                 event_id=new_id("audit"),

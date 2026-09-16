@@ -5,6 +5,13 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from .knowledge_release_control import read_firestore_release_reference
+from .knowledge_release_gcs import download_release_metadata
+from .release_artifacts import (
+    MANIFEST_FILENAME,
+    KnowledgeIndexArtifact,
+    validate_release_artifacts,
+)
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -17,6 +24,7 @@ class ResolvedKnowledgeIndex:
     index_path: Path
     release_id: str | None
     source: str
+    artifact: KnowledgeIndexArtifact | None = None
 
 
 def read_active_release_id(release_dir: Path) -> str | None:
@@ -45,19 +53,41 @@ def release_index_path(release_dir: Path, release_id: str) -> Path:
     return release_dir / release_id / "index" / "chunks.json"
 
 
-def resolve_knowledge_index(settings: RagSettings) -> ResolvedKnowledgeIndex:
+def resolve_knowledge_index(
+    settings: RagSettings,
+    *,
+    release_id_override: str | None = None,
+) -> ResolvedKnowledgeIndex:
     mode = settings.knowledge_release_mode.upper()
     if mode not in {"BUNDLED", "PORTAL", "AUTO"}:
         raise ValueError("KNOWLEDGE_RELEASE_MODE must be BUNDLED, PORTAL, or AUTO.")
 
     release_dir = settings.knowledge_release_dir or (settings.data_dir / "releases")
-    explicit_release_id = settings.knowledge_active_release_id
+    if settings.knowledge_release_store_mode == "GCS":
+        return _resolve_gcs_knowledge_index(
+            settings,
+            release_id=release_id_override or settings.knowledge_active_release_id,
+        )
+
+    explicit_release_id = release_id_override or settings.knowledge_active_release_id
     pointer_release_id = read_active_release_id(release_dir)
     release_id = explicit_release_id or pointer_release_id
 
     if release_id:
         candidate = release_index_path(release_dir, release_id)
         if candidate.is_file():
+            manifest_exists = (candidate.parents[1] / MANIFEST_FILENAME).is_file()
+            artifact = None
+            if (
+                manifest_exists
+                or settings.knowledge_release_require_manifest
+                or settings.knowledge_release_require_vectors
+            ):
+                artifact = validate_release_artifacts(
+                    release_dir,
+                    release_id,
+                    require_vectors=settings.knowledge_release_require_vectors,
+                )
             logger.info(
                 "Loading knowledge index from portal release %s at %s",
                 release_id,
@@ -67,6 +97,7 @@ def resolve_knowledge_index(settings: RagSettings) -> ResolvedKnowledgeIndex:
                 index_path=candidate,
                 release_id=release_id,
                 source="portal_release",
+                artifact=artifact,
             )
         if mode == "PORTAL":
             raise FileNotFoundError(
@@ -98,4 +129,55 @@ def resolve_knowledge_index(settings: RagSettings) -> ResolvedKnowledgeIndex:
         index_path=bundled,
         release_id=None,
         source="auto_build",
+    )
+
+
+def _resolve_gcs_knowledge_index(
+    settings: RagSettings,
+    *,
+    release_id: str | None,
+) -> ResolvedKnowledgeIndex:
+    reference = read_firestore_release_reference(settings, release_id=release_id)
+    cache_dir = settings.knowledge_release_cache_dir or (
+        settings.data_dir / "knowledge_cache"
+    )
+    index_path = download_release_metadata(
+        cache_dir,
+        bucket_name=reference.bucket,
+        object_prefix=settings.knowledge_release_gcs_prefix,
+        tenant_id=reference.tenant_id,
+        release_id=reference.release_id,
+        manifest_generation=reference.manifest_generation,
+        index_generation=reference.index_generation,
+    )
+    artifact = validate_release_artifacts(
+        cache_dir,
+        reference.release_id,
+        require_vectors=settings.knowledge_release_require_vectors,
+        expected_tenant_id=reference.tenant_id,
+        expected_purpose=reference.purpose,
+    )
+    expected_metadata = {
+        "sha256": reference.index_sha256,
+        "chunk_count": reference.chunk_count,
+        "vector_count": reference.vector_count,
+        "embedding_model": reference.embedding_model,
+        "embedding_dimensions": reference.embedding_dimensions,
+    }
+    actual_metadata = {
+        "sha256": artifact.sha256,
+        "chunk_count": artifact.chunk_count,
+        "vector_count": artifact.vector_count,
+        "embedding_model": artifact.embedding_model,
+        "embedding_dimensions": artifact.embedding_dimensions,
+    }
+    if actual_metadata != expected_metadata:
+        raise ValueError(
+            "Downloaded knowledge index does not match its Firestore release record."
+        )
+    return ResolvedKnowledgeIndex(
+        index_path=index_path,
+        release_id=reference.release_id,
+        source="gcs_release",
+        artifact=artifact,
     )

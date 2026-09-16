@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -125,6 +126,43 @@ def test_delegation_roundtrip_and_tamper_rejected() -> None:
     body, signature = token.split(".", 1)
     with pytest.raises(Exception):
         verify_delegation_envelope(f"{body}.deadbeef", secret=SECRET)
+
+
+@pytest.mark.asyncio
+async def test_bridge_uses_google_identity_token_for_private_cloud_run() -> None:
+    from ai_ops_backoffice.knowledge_bridge.client import KnowledgePortalClient
+
+    actor = ActorContext(
+        user_id="user-1",
+        display_name="Editor",
+        role="KNOWLEDGE_ADMIN",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="tenant-a",
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.headers["Authorization"] == "Bearer cloud-run-token"
+        return httpx.Response(200, json={"ok": True})
+
+    client = KnowledgePortalClient(
+        base_url="https://knowledge-portal.example",
+        service_token="legacy-token",
+        delegation_secret=SECRET,
+        auth_mode="GOOGLE_ID_TOKEN",
+        transport=httpx.MockTransport(respond),
+    )
+    with patch(
+        "ai_ops_backoffice.knowledge_bridge.client._fetch_google_id_token",
+        return_value="cloud-run-token",
+    ):
+        response = await client.request(
+            method="GET",
+            relative_path="documents",
+            actor=actor,
+            correlation_id="corr-identity",
+        )
+
+    assert response.status_code == 200
 
 
 def test_knowledge_bridge_document_read_via_asgi(tmp_path: Path) -> None:

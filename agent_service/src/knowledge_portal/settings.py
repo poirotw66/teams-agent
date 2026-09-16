@@ -60,6 +60,19 @@ class PortalSettings:
     default_tenant_id: str = "default"
     source_store_mode: str = "NONE"
     source_store_path: Path | None = None
+    release_gcs_bucket: str | None = None
+    release_gcs_prefix: str = "knowledge-releases"
+    agent_api_auth_mode: str = "BEARER"
+    deployment_environment: str = "dev"
+    release_purpose: str = "PRODUCTION"
+
+    def __post_init__(self) -> None:
+        if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
+            raise ValueError("AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod.")
+        if self.release_purpose not in {"PRODUCTION", "E2E", "SHADOW"}:
+            raise ValueError("KNOWLEDGE_PORTAL_RELEASE_PURPOSE must be PRODUCTION, E2E, or SHADOW.")
+        if self.deployment_environment == "prod" and self.release_purpose != "PRODUCTION":
+            raise ValueError("Production Portal deployments may only publish PRODUCTION releases.")
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -68,12 +81,16 @@ class PortalSettings:
         default_owner_unit_id = os.environ.get(
             "KNOWLEDGE_PORTAL_DEFAULT_OWNER_UNIT", "IT Service Desk"
         )
-        state_path = Path(
-            os.environ.get(
-                "KNOWLEDGE_PORTAL_STATE_PATH",
-                data_dir / "portal_state" / "portal_state.json",
+        state_path = (
+            Path(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_STATE_PATH",
+                    data_dir / "portal_state" / "portal_state.json",
+                )
             )
-        ).expanduser().resolve()
+            .expanduser()
+            .resolve()
+        )
         repository_mode_raw = os.environ.get("KNOWLEDGE_PORTAL_REPOSITORY_MODE")
         if repository_mode_raw:
             repository_mode = repository_mode_raw.upper()
@@ -81,12 +98,16 @@ class PortalSettings:
             repository_mode = "FILE"
         else:
             repository_mode = "MEMORY"
-        pdf_jobs_dir = Path(
-            os.environ.get(
-                "KNOWLEDGE_PORTAL_PDF_JOBS_DIR",
-                data_dir / "portal_pdf_jobs",
+        pdf_jobs_dir = (
+            Path(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_PDF_JOBS_DIR",
+                    data_dir / "portal_pdf_jobs",
+                )
             )
-        ).expanduser().resolve()
+            .expanduser()
+            .resolve()
+        )
         return cls(
             host=os.environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
             port=int(os.environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
@@ -138,9 +159,7 @@ class PortalSettings:
                 "KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL", "false"
             ).lower()
             in {"1", "true", "yes"},
-            relaxed_workflow=os.environ.get(
-                "KNOWLEDGE_PORTAL_RELAXED_WORKFLOW", "true"
-            ).lower()
+            relaxed_workflow=os.environ.get("KNOWLEDGE_PORTAL_RELAXED_WORKFLOW", "true").lower()
             in {"1", "true", "yes"},
             demo_mode=os.environ.get("KNOWLEDGE_PORTAL_DEMO_MODE", "true").lower()
             in {"1", "true", "yes"},
@@ -157,30 +176,37 @@ class PortalSettings:
             entra_platform_roles=set(
                 filter(
                     None,
-                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_PLATFORM_ROLES", "Knowledge.PlatformAdmin").split(","),
+                    os.environ.get(
+                        "KNOWLEDGE_PORTAL_ENTRA_PLATFORM_ROLES", "Knowledge.PlatformAdmin"
+                    ).split(","),
                 )
             ),
             entra_manager_roles=set(
                 filter(
                     None,
-                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_MANAGER_ROLES", "Knowledge.Manager").split(","),
+                    os.environ.get(
+                        "KNOWLEDGE_PORTAL_ENTRA_MANAGER_ROLES", "Knowledge.Manager"
+                    ).split(","),
                 )
             ),
             entra_reviewer_roles=set(
                 filter(
                     None,
-                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_REVIEWER_ROLES", "Knowledge.Reviewer").split(","),
+                    os.environ.get(
+                        "KNOWLEDGE_PORTAL_ENTRA_REVIEWER_ROLES", "Knowledge.Reviewer"
+                    ).split(","),
                 )
             ),
             entra_auditor_roles=set(
                 filter(
                     None,
-                    os.environ.get("KNOWLEDGE_PORTAL_ENTRA_AUDITOR_ROLES", "Knowledge.Auditor").split(","),
+                    os.environ.get(
+                        "KNOWLEDGE_PORTAL_ENTRA_AUDITOR_ROLES", "Knowledge.Auditor"
+                    ).split(","),
                 )
             ),
             agent_api_url=(
-                os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL")
-                or os.environ.get("AGENT_API_URL")
+                os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_URL") or os.environ.get("AGENT_API_URL")
             ),
             agent_api_token=(
                 os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_TOKEN")
@@ -194,7 +220,9 @@ class PortalSettings:
                     "KNOWLEDGE_PORTAL_DRAFTS_DIR",
                     data_dir / "portal_drafts",
                 )
-            ).expanduser().resolve(),
+            )
+            .expanduser()
+            .resolve(),
             max_asset_bytes=int(os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSET_BYTES", "2000000")),
             max_assets_per_version=int(
                 os.environ.get("KNOWLEDGE_PORTAL_MAX_ASSETS_PER_VERSION", "20")
@@ -228,13 +256,9 @@ class PortalSettings:
             ),
             pdf_sync_max_pages=int(os.environ.get("KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES", "20")),
             pdf_jobs_dir=pdf_jobs_dir,
-            pdf_prompt_template=os.environ.get(
-                "KNOWLEDGE_PORTAL_PDF_PROMPT_TEMPLATE", "slide"
-            ),
+            pdf_prompt_template=os.environ.get("KNOWLEDGE_PORTAL_PDF_PROMPT_TEMPLATE", "slide"),
             original_assets_dir=(
-                Path(os.environ["KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR"])
-                .expanduser()
-                .resolve()
+                Path(os.environ["KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR"]).expanduser().resolve()
                 if os.environ.get("KNOWLEDGE_PORTAL_ORIGINAL_ASSETS_DIR")
                 else None
             ),
@@ -249,27 +273,44 @@ class PortalSettings:
                 or None
             ),
             artifact_storage_path=(
-                Path(os.environ["KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_PATH"])
-                .expanduser()
-                .resolve()
+                Path(os.environ["KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_PATH"]).expanduser().resolve()
                 if os.environ.get("KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_PATH")
                 else None
             ),
-            default_tenant_id=os.environ.get(
-                "KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID", "default"
-            ),
+            default_tenant_id=os.environ.get("KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID", "default"),
             source_store_mode=(
                 os.environ.get("KNOWLEDGE_PORTAL_SOURCE_STORE_MODE")
                 or os.environ.get("AI_OPS_SOURCE_STORE_MODE")
                 or "NONE"
             ).upper(),
             source_store_path=(
-                Path(os.environ["KNOWLEDGE_PORTAL_SOURCE_STORE_PATH"])
-                .expanduser()
-                .resolve()
+                Path(os.environ["KNOWLEDGE_PORTAL_SOURCE_STORE_PATH"]).expanduser().resolve()
                 if os.environ.get("KNOWLEDGE_PORTAL_SOURCE_STORE_PATH")
                 else None
             ),
+            release_gcs_bucket=(os.environ.get("KNOWLEDGE_PORTAL_RELEASE_GCS_BUCKET") or None),
+            release_gcs_prefix=(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_RELEASE_GCS_PREFIX",
+                    "knowledge-releases",
+                ).strip("/")
+            ),
+            agent_api_auth_mode=os.environ.get(
+                "KNOWLEDGE_PORTAL_AGENT_API_AUTH_MODE",
+                "BEARER",
+            ).upper(),
+            deployment_environment=os.environ.get(
+                "AGENT_DEPLOYMENT_ENV",
+                "dev",
+            )
+            .strip()
+            .lower(),
+            release_purpose=os.environ.get(
+                "KNOWLEDGE_PORTAL_RELEASE_PURPOSE",
+                "PRODUCTION",
+            )
+            .strip()
+            .upper(),
         )
 
     def effective_relaxed_workflow(self) -> bool:

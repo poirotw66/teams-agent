@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 
@@ -17,6 +17,7 @@ from .handoff_repository import build_handoff_repository
 from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .knowledge_release import resolve_knowledge_index
+from .knowledge_release_control import build_firestore_release_control
 from .operations.runtime import build_ops_runtime
 from .retrieval import HybridIndex
 from .settings import RagSettings
@@ -37,18 +38,15 @@ def build_lifespan(resolved_settings: RagSettings):
         if resolved_index.source == "auto_build" and not resolved_index.index_path.exists():
             index = build_index(resolved_settings)
         elif not resolved_index.index_path.exists():
-            raise FileNotFoundError(
-                f"Knowledge index not found: {resolved_index.index_path}"
-            )
+            raise FileNotFoundError(f"Knowledge index not found: {resolved_index.index_path}")
         else:
             index = HybridIndex.load(
                 resolved_index.index_path,
                 resolved_settings.embedding_model,
             )
 
-        release_dir = (
-            resolved_settings.knowledge_release_dir
-            or (resolved_settings.data_dir / "releases")
+        release_dir = resolved_settings.knowledge_release_dir or (
+            resolved_settings.data_dir / "releases"
         )
         hydrate_index_sources(
             index.chunks,
@@ -62,9 +60,7 @@ def build_lifespan(resolved_settings: RagSettings):
         agent = RagAgent(resolved_settings, index)
 
         rag_model = build_chat_model(resolved_settings.model)
-        agent_model = build_chat_model(
-            resolved_settings.agent_model or resolved_settings.model
-        )
+        agent_model = build_chat_model(resolved_settings.agent_model or resolved_settings.model)
 
         # Build every §5 collaborator ONCE here (not per request):
         # FAQ / Conversation / Ticket / Knowledge services + the Issue
@@ -96,9 +92,7 @@ def build_lifespan(resolved_settings: RagSettings):
                 release_id=resolved_index.release_id,
             )
         else:
-            unavailable_backends["GEMINI_FILE_SEARCH"] = (
-                "尚未設定 GEMINI_FILE_SEARCH_STORE"
-            )
+            unavailable_backends["GEMINI_FILE_SEARCH"] = "尚未設定 GEMINI_FILE_SEARCH_STORE"
         knowledge_router = KnowledgeBackendRouter(
             knowledge_services,
             resolved_settings.knowledge_service_mode,
@@ -140,6 +134,12 @@ def build_lifespan(resolved_settings: RagSettings):
         app.state.knowledge_index_path = resolved_index.index_path
         app.state.knowledge_release_id = resolved_index.release_id
         app.state.knowledge_index_source = resolved_index.source
+        app.state.knowledge_index_artifact = resolved_index.artifact
+        app.state.knowledge_release_control = (
+            build_firestore_release_control(resolved_settings)
+            if resolved_settings.knowledge_release_store_mode == "GCS"
+            else None
+        )
         app.state.agent = agent
         app.state.knowledge_router = knowledge_router
         app.state.workflow = workflow
@@ -173,9 +173,7 @@ def build_lifespan(resolved_settings: RagSettings):
             "Agentic RAG ready: chunks=%s agent_model=%s rag_model=%s embeddings=%s "
             "knowledge_mode=%s ticket_mode=%s",
             len(index.chunks),
-            resolved_settings.agent_model
-            or resolved_settings.model
-            or "extractive-local",
+            resolved_settings.agent_model or resolved_settings.model or "extractive-local",
             resolved_settings.model or "extractive-local",
             resolved_settings.embedding_model or "sparse-only",
             resolved_settings.knowledge_service_mode,

@@ -32,12 +32,8 @@ data/ops/**/*.lock
 agent_service/.venv/**
 agent_service/.env
 agent_service/.tmp-knowledge-portal-embed.png
-# Keep Adapter lean; Agent needs only the portal E2E active release.
+# Knowledge is published independently to GCS, never inside an app image.
 data/releases/**
-!data/releases/
-!data/releases/active_release.json
-!data/releases/release-19072ac9a1e2/
-!data/releases/release-19072ac9a1e2/**
 data/portal_drafts/**
 data/portal_originals/**
 data/portal_state/**

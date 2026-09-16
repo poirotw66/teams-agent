@@ -1,0 +1,90 @@
+steps:
+  - id: agent
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    waitFor: ["-"]
+    args:
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        if [[ "${_BUILD_AGENT}" != "1" ]]; then exit 0; fi
+        docker pull "${_AGENT_CACHE_IMAGE}" || true
+        docker build \
+          --file agent_service/Dockerfile \
+          --cache-from "${_AGENT_CACHE_IMAGE}" \
+          --tag "${_AGENT_IMAGE}" \
+          --tag "${_AGENT_CACHE_IMAGE}" \
+          .
+        docker push "${_AGENT_IMAGE}"
+        docker push "${_AGENT_CACHE_IMAGE}"
+
+  - id: adapter
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    waitFor: ["-"]
+    args:
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        if [[ "${_BUILD_ADAPTER}" != "1" ]]; then exit 0; fi
+        docker pull "${_ADAPTER_CACHE_IMAGE}" || true
+        docker build \
+          --file Dockerfile \
+          --cache-from "${_ADAPTER_CACHE_IMAGE}" \
+          --tag "${_ADAPTER_IMAGE}" \
+          --tag "${_ADAPTER_CACHE_IMAGE}" \
+          .
+        docker push "${_ADAPTER_IMAGE}"
+        docker push "${_ADAPTER_CACHE_IMAGE}"
+
+  - id: backoffice
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    waitFor: ["-"]
+    args:
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        if [[ "${_BUILD_BACKOFFICE}" != "1" ]]; then exit 0; fi
+        docker pull "${_BACKOFFICE_CACHE_IMAGE}" || true
+        docker build \
+          --file agent_service/Dockerfile.backoffice \
+          --cache-from "${_BACKOFFICE_CACHE_IMAGE}" \
+          --tag "${_BACKOFFICE_IMAGE}" \
+          --tag "${_BACKOFFICE_CACHE_IMAGE}" \
+          .
+        docker push "${_BACKOFFICE_IMAGE}"
+        docker push "${_BACKOFFICE_CACHE_IMAGE}"
+
+  - id: portal
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    waitFor: ["-"]
+    args:
+      - -Eeuo
+      - pipefail
+      - -c
+      - |
+        if [[ "${_BUILD_PORTAL}" != "1" ]]; then exit 0; fi
+        docker pull "${_PORTAL_CACHE_IMAGE}" || true
+        docker build \
+          --file agent_service/Dockerfile.portal \
+          --cache-from "${_PORTAL_CACHE_IMAGE}" \
+          --tag "${_PORTAL_IMAGE}" \
+          --tag "${_PORTAL_CACHE_IMAGE}" \
+          .
+        docker push "${_PORTAL_IMAGE}"
+        docker push "${_PORTAL_CACHE_IMAGE}"
+
+substitutions:
+  _BUILD_AGENT: "1"
+  _BUILD_ADAPTER: "1"
+  _BUILD_BACKOFFICE: "1"
+  _BUILD_PORTAL: "1"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true

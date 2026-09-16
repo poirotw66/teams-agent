@@ -28,8 +28,14 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertIn('variable "conversation_retention_days"', variables)
         self.assertIn('variable "handoff_retention_days"', variables)
         self.assertGreaterEqual(variables.count("default     = 365"), 2)
-        self.assertIn("CONVERSATION_RETENTION_DAYS        = tostring(var.conversation_retention_days)", locals_tf)
-        self.assertIn("HANDOFF_RETENTION_DAYS             = tostring(var.handoff_retention_days)", locals_tf)
+        self.assertRegex(
+            locals_tf,
+            r"CONVERSATION_RETENTION_DAYS\s+=\s+tostring\(var\.conversation_retention_days\)",
+        )
+        self.assertRegex(
+            locals_tf,
+            r"HANDOFF_RETENTION_DAYS\s+=\s+tostring\(var\.handoff_retention_days\)",
+        )
         self.assertIn("expiration_ms = 31536000000", ai_ops)
 
     def test_event_table_has_full_scope_and_deduplication_contract(self) -> None:
@@ -79,14 +85,26 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         locals_tf = self.read("infra/terraform/locals.tf")
         cloud_run = self.read("infra/terraform/cloud_run.tf")
         backoffice = self.read("infra/terraform/ai_ops.tf")
+        portal = self.read("infra/terraform/knowledge_portal.tf")
 
         self.assertRegex(locals_tf, r"KNOWLEDGE_PORTAL_PUBLIC_URL\s+=\s+var\.knowledge_portal_public_url")
-        self.assertRegex(locals_tf, r'KNOWLEDGE_PORTAL_URL_CONFIGURED\s+=\s+tostring\(var\.knowledge_portal_public_url != ""\)')
+        self.assertRegex(
+            locals_tf,
+            r'KNOWLEDGE_PORTAL_URL_CONFIGURED\s+=\s+tostring\(local\.deploy_cloud_run \|\| var\.knowledge_portal_public_url != ""\)',
+        )
         self.assertNotRegex(locals_tf, r"KNOWLEDGE_PORTAL_PUBLIC_URL\s+=\s+var\.adapter_public_base_url")
         self.assertNotIn("      template,", cloud_run)
         self.assertNotIn("      scaling,", cloud_run)
         self.assertNotIn("      template,", backoffice)
         self.assertNotIn("      scaling,", backoffice)
+        self.assertRegex(
+            portal,
+            r'AGENT_DEPLOYMENT_ENV"\s+value\s+=\s+var\.environment_name',
+        )
+        self.assertRegex(
+            portal,
+            r'KNOWLEDGE_PORTAL_RELEASE_PURPOSE"\s+value\s+=\s+"PRODUCTION"',
+        )
 
     def test_environment_templates_and_inventory_do_not_claim_current_verification(self) -> None:
         for environment in ("dev", "test", "poc", "prod"):
@@ -95,6 +113,17 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         inventory = self.read("infra/ai-ops-environment-inventory.json")
         self.assertIn('"verificationStatus": "historical-record-only"', inventory)
         self.assertIn('"historicalPlanEvidence"', inventory)
+
+    def test_release_pipeline_pins_rollback_images_and_waits_for_parallel_updates(self) -> None:
+        release_script = self.read("deploy/release-gcp.sh")
+
+        self.assertIn("pin_image_reference()", release_script)
+        self.assertGreaterEqual(
+            release_script.count('pin_image_reference "$(current_service_image'),
+            4,
+        )
+        self.assertIn('if ! wait "${pid}"; then', release_script)
+        self.assertIn('[[ "${DEPLOY_FAILED}" == "0" ]]', release_script)
 
 
 if __name__ == "__main__":

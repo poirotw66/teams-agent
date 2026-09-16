@@ -16,10 +16,12 @@ backoffice_auth_mode    = "HEADER"  # LAB import; use ENTRA for production
 # Required for zero-diff import against the existing Adapter deployment:
 # adapter_public_base_url = "https://teams-agent-adapter-jt7pjdeeoa-de.a.run.app"
 
-# This is a separately deployed Knowledge Portal URL. It is deliberately not
-# inferred from the Teams Adapter URL. Leave empty until a real portal exists.
+# Optional external Portal URL override. It is deliberately not inferred from
+# the Teams Adapter URL.
 # knowledge_portal_public_url = "https://knowledge-portal.example.com"
 
 # Optional explicit pins during import (otherwise :latest via allow_latest_image_tags):
-# agent_image   = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-rag-agent:latest"
-# adapter_image = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-agent-adapter:latest"
+# agent_image      = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-rag-agent:latest"
+# adapter_image    = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-agent-adapter:latest"
+# backoffice_image = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-ai-ops-backoffice:latest"
+# portal_image     = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-knowledge-portal:latest"

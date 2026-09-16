@@ -10,7 +10,7 @@ output "environment_name" {
 
 output "knowledge_portal_public_url" {
   description = "Configured Knowledge Portal URL, or null when the Portal has not been deployed/configured."
-  value       = var.knowledge_portal_public_url != "" ? var.knowledge_portal_public_url : null
+  value       = var.knowledge_portal_public_url != "" ? var.knowledge_portal_public_url : try(google_cloud_run_v2_service.portal[0].uri, null)
 }
 
 output "agent_url" {
@@ -65,9 +65,14 @@ output "secret_names" {
 
 output "knowledge_portal_internal_url" {
   description = "Internal URL of the Knowledge Portal service for Backoffice BFF."
-  value       = var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : null
+  value       = try(google_cloud_run_v2_service.portal[0].uri, var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : null)
 }
 
 output "firestore_database_id" {
   value = google_firestore_database.default.name
+}
+
+output "knowledge_release_bucket" {
+  description = "Private bucket containing immutable knowledge releases."
+  value       = google_storage_bucket.knowledge_releases.name
 }

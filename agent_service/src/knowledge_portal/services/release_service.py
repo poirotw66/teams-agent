@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-
 from agent_service.knowledge_release import write_active_release_pointer
 from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
 from agent_service.target_manifest import knowledge_release_target_manifest_hash
@@ -40,6 +40,17 @@ from ..repository import new_id
 from ..role_capabilities import ensure_can_list_releases
 from .context import PortalServiceContext
 from .document_service import DocumentService
+
+
+def _fetch_google_id_token(audience: str) -> str:
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.id_token import fetch_id_token
+    except ImportError as error:  # pragma: no cover - deployment dependency
+        raise RuntimeError(
+            "google-auth is required for Portal-to-Agent identity tokens."
+        ) from error
+    return fetch_id_token(Request(), audience)
 
 
 class ReleaseService:
@@ -248,6 +259,7 @@ class ReleaseService:
             ensure_can_publish(actor)
             target = await self._ctx.repository.get_release(request.release_id)
             ensure_not_found("release", request.release_id, target)
+            self._require_release_allowed(target, require_verified=True)
             previous_active_id = await self._ctx.repository.get_active_release_id()
             previous_release = (
                 await self._ctx.repository.get_release(previous_active_id)
@@ -289,10 +301,7 @@ class ReleaseService:
                     raise PortalPermissionError(str(exc)) from exc
                 await self._deactivate_other_releases(target.release_id)
                 await self._ctx.repository.set_active_release_id(target.release_id)
-                write_active_release_pointer(
-                    self._ctx.settings.release_artifact_dir,
-                    target.release_id,
-                )
+                self._write_local_active_pointer(target.release_id)
                 rolled_back = target.model_copy(
                     update={"status": "DEPLOYING", "activated_at": utc_now()}
                 )
@@ -388,6 +397,7 @@ class ReleaseService:
         ensure_can_publish(actor)
         release = await self._ctx.repository.get_release(release_id)
         ensure_not_found("release", release_id, release)
+        self._require_release_allowed(release)
         active_id = await self._ctx.repository.get_active_release_id()
         if release_id != active_id:
             raise ValueError(
@@ -449,7 +459,13 @@ class ReleaseService:
             "Content-Type": "application/json",
             "X-Correlation-ID": correlation_id,
         }
-        if self._ctx.settings.agent_api_token:
+        if self._ctx.settings.agent_api_auth_mode == "GOOGLE_ID_TOKEN":
+            identity_token = await asyncio.to_thread(
+                _fetch_google_id_token,
+                agent_url,
+            )
+            headers["Authorization"] = f"Bearer {identity_token}"
+        elif self._ctx.settings.agent_api_token:
             headers["Authorization"] = f"Bearer {self._ctx.settings.agent_api_token}"
 
         try:
@@ -470,7 +486,7 @@ class ReleaseService:
                             )
                             logger.warning(err_msg)
                             return False, err_msg
-                    except Exception:  # noqa: S110
+                    except (json.JSONDecodeError, UnicodeDecodeError):
                         pass
                     logger.info(
                         "Agent reload acknowledged for release %s (correlation_id=%s)",
@@ -669,6 +685,7 @@ class ReleaseService:
                 created_by=actor.user_id,
                 previous_release_id=previous_release_id,
                 embedding_model=embedding_model,
+                tenant_id=actor.tenant_id,
             )
         except ReleaseBuildError as exc:
             await self._ctx.audit(
@@ -691,6 +708,27 @@ class ReleaseService:
                 or knowledge_release_target_manifest_hash(release_id=release.release_id),
             }
         )
+        try:
+            self._require_release_allowed(release)
+        except PortalPermissionError as exc:
+            failed = release.model_copy(
+                update={
+                    "status": "FAILED",
+                    "failure_summary": str(exc),
+                    "activated_at": None,
+                }
+            )
+            await self._ctx.repository.save_release(failed)
+            await self._ctx.audit(
+                actor=actor,
+                action="release.failed",
+                target_type="release",
+                target_id=release.release_id,
+                correlation_id=correlation_id,
+                reason=str(exc),
+                result="FAILURE",
+            )
+            raise
         gate_hash = release.target_manifest_hash or knowledge_release_target_manifest_hash(
             release_id=release.release_id
         )
@@ -761,10 +799,7 @@ class ReleaseService:
         await self._deactivate_other_releases(release.release_id)
         await self._ctx.repository.save_release(release)
         await self._ctx.repository.set_active_release_id(release.release_id)
-        write_active_release_pointer(
-            self._ctx.settings.release_artifact_dir,
-            release.release_id,
-        )
+        self._write_local_active_pointer(release.release_id)
 
         reload_success, reload_error = await self._notify_agent_reload(
             release.release_id, correlation_id
@@ -828,6 +863,7 @@ class ReleaseService:
         ensure_can_publish(actor)
         target = await self._ctx.repository.get_release(release_id)
         ensure_not_found("release", release_id, target)
+        self._require_release_allowed(target)
         if target.status not in {"GATE_BLOCKED", "READY", "RELOAD_FAILED", "ROLLED_BACK"}:
             raise PortalPermissionError(
                 f"Release '{release_id}' status {target.status} cannot be promoted; "
@@ -879,10 +915,7 @@ class ReleaseService:
             await self._deactivate_other_releases(release.release_id)
             await self._ctx.repository.save_release(release)
             await self._ctx.repository.set_active_release_id(release.release_id)
-            write_active_release_pointer(
-                self._ctx.settings.release_artifact_dir,
-                release.release_id,
-            )
+            self._write_local_active_pointer(release.release_id)
 
             reload_success, reload_error = await self._notify_agent_reload(release.release_id, corr)
             current_active = await self._ctx.repository.get_active_release_id()
@@ -926,6 +959,49 @@ class ReleaseService:
                 await self._ctx.repository.save_release(
                     item.model_copy(update={"status": "ROLLED_BACK"})
                 )
+
+    def _require_release_allowed(
+        self,
+        release: ReleaseRecord,
+        *,
+        require_verified: bool = False,
+    ) -> None:
+        if self._ctx.settings.deployment_environment == "prod" and release.purpose != "PRODUCTION":
+            raise PortalPermissionError(
+                f"Production cannot activate {release.purpose} release '{release.release_id}'."
+            )
+        if not self._ctx.settings.release_gcs_bucket:
+            return
+        if (
+            not release.artifact_bucket
+            or release.manifest_generation is None
+            or release.index_generation is None
+            or not release.index_sha256
+        ):
+            raise PortalPermissionError(
+                f"Release '{release.release_id}' lacks immutable GCS metadata."
+            )
+        if release.purpose == "PRODUCTION" and (
+            release.chunk_count <= 0
+            or release.vector_count != release.chunk_count
+            or not release.embedding_model
+            or not release.embedding_dimensions
+        ):
+            raise PortalPermissionError(
+                f"Production release '{release.release_id}' lacks a complete vector index."
+            )
+        if require_verified and release.verified_at is None:
+            raise PortalPermissionError(
+                f"Release '{release.release_id}' has not been verified by the Agent."
+            )
+
+    def _write_local_active_pointer(self, release_id: str) -> None:
+        if self._ctx.settings.release_gcs_bucket:
+            return
+        write_active_release_pointer(
+            self._ctx.settings.release_artifact_dir,
+            release_id,
+        )
 
     async def reindex_all_published(
         self,

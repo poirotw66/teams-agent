@@ -124,6 +124,17 @@ class RagSettings:
     knowledge_release_mode: str = "AUTO"
     knowledge_release_dir: Path | None = None
     knowledge_active_release_id: str | None = None
+    knowledge_release_require_manifest: bool = False
+    knowledge_release_require_vectors: bool = False
+    knowledge_release_store_mode: str = "FILE"
+    knowledge_release_gcs_bucket: str | None = None
+    knowledge_release_gcs_prefix: str = "knowledge-releases"
+    knowledge_release_tenant_id: str = "default"
+    knowledge_release_cache_dir: Path | None = None
+    knowledge_release_firestore_project: str | None = None
+    knowledge_release_firestore_database: str | None = None
+    knowledge_release_firestore_config_collection: str = "knowledge_portal_config"
+    knowledge_release_firestore_releases_collection: str = "knowledge_releases"
 
     # --- Phase 3 Prompt governance runtime ---
     prompt_runtime_mode: str = "GOVERNED"
@@ -283,6 +294,44 @@ class RagSettings:
                 )
             ).expanduser().resolve(),
             knowledge_active_release_id=_str_env("KNOWLEDGE_ACTIVE_RELEASE_ID"),
+            knowledge_release_require_manifest=_bool_env(
+                "KNOWLEDGE_RELEASE_REQUIRE_MANIFEST",
+                environ.get("AGENT_DEPLOYMENT_ENV", "dev").strip().lower() == "prod",
+            ),
+            knowledge_release_require_vectors=_bool_env(
+                "KNOWLEDGE_RELEASE_REQUIRE_VECTORS",
+                environ.get("AGENT_DEPLOYMENT_ENV", "dev").strip().lower() == "prod",
+            ),
+            knowledge_release_store_mode=(
+                _str_env("KNOWLEDGE_RELEASE_STORE_MODE") or "FILE"
+            ).upper(),
+            knowledge_release_gcs_bucket=_str_env("KNOWLEDGE_RELEASE_GCS_BUCKET"),
+            knowledge_release_gcs_prefix=(
+                _str_env("KNOWLEDGE_RELEASE_GCS_PREFIX") or "knowledge-releases"
+            ).strip("/"),
+            knowledge_release_tenant_id=(
+                _str_env("KNOWLEDGE_RELEASE_TENANT_ID") or "default"
+            ),
+            knowledge_release_cache_dir=Path(
+                environ.get(
+                    "KNOWLEDGE_RELEASE_CACHE_DIR",
+                    data_dir / "knowledge_cache",
+                )
+            ).expanduser().resolve(),
+            knowledge_release_firestore_project=_str_env(
+                "KNOWLEDGE_RELEASE_FIRESTORE_PROJECT"
+            ),
+            knowledge_release_firestore_database=_str_env(
+                "KNOWLEDGE_RELEASE_FIRESTORE_DATABASE"
+            ),
+            knowledge_release_firestore_config_collection=(
+                _str_env("KNOWLEDGE_RELEASE_FIRESTORE_CONFIG_COLLECTION")
+                or "knowledge_portal_config"
+            ),
+            knowledge_release_firestore_releases_collection=(
+                _str_env("KNOWLEDGE_RELEASE_FIRESTORE_RELEASES_COLLECTION")
+                or "knowledge_releases"
+            ),
             prompt_runtime_mode=(_str_env("PROMPT_RUNTIME_MODE") or "GOVERNED").upper(),
             prompt_governance_store_mode=(
                 _str_env("AI_OPS_GOVERNANCE_STORE_MODE") or "FILE"
@@ -457,6 +506,18 @@ class RagSettings:
         if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
             raise ValueError(
                 "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."
+            )
+        if self.knowledge_release_store_mode not in {"FILE", "GCS"}:
+            raise ValueError(
+                "KNOWLEDGE_RELEASE_STORE_MODE must be one of FILE or GCS."
+            )
+        if (
+            self.knowledge_release_store_mode == "GCS"
+            and not self.knowledge_release_gcs_bucket
+        ):
+            raise ValueError(
+                "KNOWLEDGE_RELEASE_GCS_BUCKET is required when "
+                "KNOWLEDGE_RELEASE_STORE_MODE=GCS."
             )
         if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
             raise ValueError(

@@ -35,11 +35,12 @@ Wrapper scripts (no manual `-target`):
 |---|---|
 | Required GCP APIs | Secret **values** (API keys, client secrets) |
 | Artifact Registry repository | Teams Developer Portal settings |
-| Agent / Adapter service accounts | Knowledge bundle contents (`data/sources`, `data/index`) |
+| Agent / Adapter / Portal service accounts | Knowledge release contents |
 | IAM (Firestore, Secret Accessor, Run invoker, scoped BigQuery access) | Playground / Mock Ticket (optional UAT) |
 | Secret Manager secret **containers** + IAM | Entra client secret value |
 | Firestore database + TTL field policies | Production HA / VPC / WAF / DR |
 | Cloud Run service **shape** (CPU, memory, env, SA, IAM) | Cloud Build job definitions (in `deploy/`) |
+| Private immutable knowledge-release bucket | Published release objects and active pointer |
 | AI Ops BigQuery dataset/table/view, one-year partition expiry | Application event delivery/outbox implementation |
 
 ## Ownership boundary
@@ -58,6 +59,7 @@ Terraform owns the Cloud Run service shape: service account, timeout, concurrenc
 ## Phase 0 data and isolation contract
 
 - The Agent, Adapter and Backoffice receive the same `AGENT_DEPLOYMENT_ENV` from `environment_name`; `prepare`, `activate` and `full` never appear as analytics environments.
+- The Portal publishes immutable GCS release objects. Firestore owns the active pointer and object generations; the Agent has read-only bucket access and validates every index before readiness.
 - Raw conversation and handoff runtime defaults are 365 days. Firestore TTL policies delete documents only when the application writes `expiresAt` / `retentionExpiresAt`; the TTL index is not a backfill or legal-hold implementation. Shorter values are allowed only for controlled non-production TTL tests.
 - `ai_ops_analytics.operational_events` is day-partitioned with a one-year expiration, required partition filters, and clustering by environment, tenant, event type and correlation ID. `operational_events_deduplicated` keeps the latest ingest for each immutable `event_id`.
 - The Agent gets BigQuery job creation plus writer permission on the operational-events table only. The Backoffice gets job creation plus read access to the AI Ops dataset. Neither receives project-wide BigQuery `dataEditor`.
@@ -83,6 +85,8 @@ export GCP_PROJECT_ID=your-test-project-id
 printf '%s' "$GOOGLE_API_KEY" | gcloud secrets versions add teams-agent-google-api-key --data-file=-
 printf '%s' "$CLIENT_SECRET" | gcloud secrets versions add teams-agent-bot-client-secret --data-file=-
 printf '%s' "$RAG_ASSET_SIGNING_KEY" | gcloud secrets versions add teams-agent-asset-signing-key --data-file=-
+printf '%s' "$KNOWLEDGE_DELEGATION_SECRET" | gcloud secrets versions add teams-agent-knowledge-delegation-secret --data-file=-
+printf '%s' "$KNOWLEDGE_PORTAL_TOKEN" | gcloud secrets versions add teams-knowledge-portal-token --data-file=-
 ```
 
 Build and push pinned images (Artifact Registry now exists; Cloud Run not required):
@@ -91,7 +95,8 @@ Build and push pinned images (Artifact Registry now exists; Cloud Run not requir
 BUILD_ONLY=1 ./deploy/release-gcp.sh
 ```
 
-Activate Cloud Run (set pinned images + `deployment_phase = "activate"` in tfvars):
+Activate Cloud Run (set pinned Agent, Adapter, Backoffice, and Portal images plus
+`deployment_phase = "activate"` in tfvars):
 
 ```bash
 ./infra/scripts/terraform-activate.sh infra/environments/test/backend.hcl

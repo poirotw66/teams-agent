@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -46,6 +46,7 @@ ReleaseStatus = Literal[
     "ROLLED_BACK",
     "RELOAD_FAILED",
 ]
+ReleasePurpose = Literal["PRODUCTION", "E2E", "SHADOW", "UNKNOWN"]
 ValidationSeverity = Literal["BLOCKING", "WARNING", "INFO"]
 TestResultStatus = Literal["PASS", "NEEDS_REVIEW", "FAIL"]
 
@@ -197,6 +198,7 @@ class ReleaseManifestEntry(StrictModel):
 class ReleaseRecord(StrictModel):
     release_id: str
     status: ReleaseStatus
+    purpose: ReleasePurpose = "UNKNOWN"
     manifest: list[ReleaseManifestEntry] = Field(default_factory=list)
     corpus_hash: str
     target_manifest_hash: str | None = None
@@ -209,6 +211,16 @@ class ReleaseRecord(StrictModel):
     created_by: str
     approved_by: str | None = None
     failure_summary: str = ""
+    tenant_id: str = "default"
+    artifact_bucket: str | None = None
+    artifact_object_prefix: str | None = None
+    manifest_generation: int | None = None
+    index_generation: int | None = None
+    index_sha256: str | None = None
+    chunk_count: int = 0
+    vector_count: int = 0
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = None
 
 
 class AuditEventRecord(StrictModel):
@@ -496,7 +508,7 @@ class DashboardSummary(StrictModel):
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def new_etag(content_hash: str, version: int = 1) -> str:
