@@ -10,6 +10,7 @@ from .knowledge_release_gcs import download_release_metadata
 from .release_artifacts import (
     MANIFEST_FILENAME,
     KnowledgeIndexArtifact,
+    KnowledgeReleaseValidationError,
     validate_release_artifacts,
 )
 from .settings import RagSettings
@@ -78,16 +79,29 @@ def resolve_knowledge_index(
         if candidate.is_file():
             manifest_exists = (candidate.parents[1] / MANIFEST_FILENAME).is_file()
             artifact = None
-            if (
-                manifest_exists
-                or settings.knowledge_release_require_manifest
+            requires_validation = (
+                settings.knowledge_release_require_manifest
                 or settings.knowledge_release_require_vectors
-            ):
+            )
+            if requires_validation:
                 artifact = validate_release_artifacts(
                     release_dir,
                     release_id,
                     require_vectors=settings.knowledge_release_require_vectors,
                 )
+            elif manifest_exists:
+                try:
+                    artifact = validate_release_artifacts(
+                        release_dir,
+                        release_id,
+                        require_vectors=False,
+                    )
+                except KnowledgeReleaseValidationError as error:
+                    logger.warning(
+                        "Loading release %s without optional manifest validation: %s",
+                        release_id,
+                        error,
+                    )
             logger.info(
                 "Loading knowledge index from portal release %s at %s",
                 release_id,

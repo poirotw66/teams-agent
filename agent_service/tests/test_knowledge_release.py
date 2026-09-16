@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from agent_service.knowledge_release import (
     read_active_release_id,
     release_index_path,
@@ -60,6 +61,56 @@ def test_resolve_knowledge_index_prefers_portal_release(tmp_path: Path) -> None:
     assert resolved.release_id == release_id
     assert resolved.source == "portal_release"
     assert resolved.index_path == index_path
+
+
+def test_resolve_allows_legacy_manifest_when_validation_is_optional(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = _settings(tmp_path)
+    release_id = "release-legacy"
+    index_path = release_index_path(settings.knowledge_release_dir, release_id)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        '{"version":1,"embeddingModel":null,"chunks":[{"chunk_id":"1"}]}',
+        encoding="utf-8",
+    )
+    manifest_path = index_path.parents[1] / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({"releaseId": release_id, "indexArtifact": str(index_path)}),
+        encoding="utf-8",
+    )
+    write_active_release_pointer(settings.knowledge_release_dir, release_id)
+
+    resolved = resolve_knowledge_index(settings)
+
+    assert resolved.index_path == index_path
+    assert resolved.artifact is None
+    assert "without optional manifest validation" in caplog.text
+
+
+def test_resolve_rejects_legacy_manifest_when_validation_is_required(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path, require_manifest=True)
+    release_id = "release-legacy"
+    index_path = release_index_path(settings.knowledge_release_dir, release_id)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        '{"version":1,"embeddingModel":null,"chunks":[{"chunk_id":"1"}]}',
+        encoding="utf-8",
+    )
+    (index_path.parents[1] / "manifest.json").write_text(
+        json.dumps({"releaseId": release_id, "indexArtifact": str(index_path)}),
+        encoding="utf-8",
+    )
+    write_active_release_pointer(settings.knowledge_release_dir, release_id)
+
+    with pytest.raises(
+        KnowledgeReleaseValidationError,
+        match="missing index metadata",
+    ):
+        resolve_knowledge_index(settings)
 
 
 def test_resolve_knowledge_index_falls_back_to_bundled_in_auto_mode(tmp_path: Path) -> None:
