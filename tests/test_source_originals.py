@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from teams_agent.cards import build_agent_activity
 from teams_agent.contracts import AgentResponse, Citation
 from teams_agent.settings import AgentSettings, SettingsError
-from teams_agent.source_api import SourceApiResponse
+from teams_agent.source_api import SourceApiError
 from teams_agent.source_delegation import issue_source_delegation
 from teams_agent.source_links import (
     CitationViewerContext,
@@ -239,17 +239,20 @@ def test_rag_originals_route_proxies_backoffice_bytes(tmp_path: Path) -> None:
     app = FastAPI()
     app.include_router(create_source_router(settings))
 
+    async def _mock_stream():
+        yield b"%PDF-1.4 mock"
+
     with patch(
-        "teams_agent.source_routes.fetch_original_source_file",
+        "teams_agent.source_routes.stream_original_source_file",
         new=AsyncMock(
-            return_value=SourceApiResponse(
-                status=200,
-                headers={
+            return_value=(
+                200,
+                {
                     "Content-Type": "application/pdf",
                     "Content-Disposition": 'inline; filename="guide.pdf"',
                     "X-Content-Type-Options": "nosniff",
                 },
-                body=b"%PDF-1.4 mock",
+                _mock_stream(),
             )
         ),
     ) as mocked:
@@ -273,6 +276,7 @@ def test_rag_originals_route_proxies_backoffice_bytes(tmp_path: Path) -> None:
     assert "it-helpdesk" in kwargs["groups"]
 
 
+
 def test_issue_source_delegation_round_trips() -> None:
     from teams_agent.source_delegation import verify_source_delegation
 
@@ -290,3 +294,95 @@ def test_issue_source_delegation_round_trips() -> None:
     assert payload["tenantId"] == "tenant-a"
     assert payload["role"] == "VIEWER"
     assert payload["groups"] == ["grp_public"]
+
+
+def test_rag_originals_route_handles_416_range_not_satisfiable(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    from teams_agent.viewer_sessions import get_viewer_membership_store
+
+    store = get_viewer_membership_store(settings)
+    url = build_original_url(
+        "src-file-1",
+        settings,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    path = urlparse(url).path
+    query = urlparse(url).query
+
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    with patch(
+        "teams_agent.source_routes.stream_original_source_file",
+        new=AsyncMock(
+            side_effect=SourceApiError(
+                "Source API returned HTTP 416: Range Not Satisfiable",
+                status=416,
+                headers={
+                    "Content-Range": "bytes */1000",
+                    "Accept-Ranges": "bytes",
+                    "X-Content-Type-Options": "nosniff",
+                },
+                body=b"Range Not Satisfiable",
+            )
+        ),
+    ):
+        client = TestClient(app)
+        response = client.get(
+            f"{path}?{query}",
+            headers={
+                "X-Viewer-Subject": "user-1",
+                "X-Gateway-Secret": "test-signing-key-long-enough",
+                "Range": "bytes=2000-3000",
+            },
+        )
+
+    assert response.status_code == 416
+    assert response.headers["content-range"] == "bytes */1000"
+    assert response.headers["accept-ranges"] == "bytes"
+    assert response.content == b"Range Not Satisfiable"
+
+
+@pytest.mark.asyncio
+async def test_stream_original_source_file_chunks_content(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from teams_agent.source_api import stream_original_source_file
+
+    settings = _settings(tmp_path)
+
+    async def _mock_iter_chunked(chunk_size):
+        yield b"chunk-1"
+        yield b"chunk-2"
+
+    mock_content = MagicMock()
+    mock_content.iter_chunked = _mock_iter_chunked
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+    mock_resp.headers = {"Content-Type": "application/pdf", "Content-Length": "14"}
+    mock_resp.content = mock_content
+    mock_resp.release = AsyncMock()
+
+    mock_session = AsyncMock()
+    mock_session.request = AsyncMock(return_value=mock_resp)
+    mock_session.close = AsyncMock()
+
+    with patch("teams_agent.source_api.ClientSession", return_value=mock_session):
+        status, headers, stream = await stream_original_source_file(
+            settings,
+            source_ref_id="src-1",
+            subject="user-1",
+            tenant_id="t1",
+            groups=("grp_public",),
+        )
+        assert status == 200
+        assert headers["Content-Type"] == "application/pdf"
+        chunks = [chunk async for chunk in stream]
+        assert chunks == [b"chunk-1", b"chunk-2"]
+        mock_resp.release.assert_awaited_once()
+        mock_session.close.assert_awaited_once()
+
+

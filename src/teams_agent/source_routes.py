@@ -19,9 +19,15 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 from .oidc import verify_entra_id_token
 from .settings import AgentSettings
+from .source_api import (
+    SourceApiError,
+    fetch_original_source_file,
+    stream_original_source_file,
+)
 from .source_links import (
     authorize_original_open,
     create_viewer_token,
@@ -29,7 +35,6 @@ from .source_links import (
     source_media_type,
     verify_viewer_token,
 )
-from .source_api import SourceApiError, fetch_original_source_file
 from .source_viewer import render_source_document_html
 from .viewer_sessions import get_viewer_membership_store
 
@@ -105,9 +110,8 @@ def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> 
     # 1. Gateway header forwarding (only trusted when gateway secret matches)
     for header in ("x-viewer-subject", "X-Viewer-Subject"):
         value = request.headers.get(header)
-        if value and str(value).strip():
-            if _is_gateway_authenticated(request, settings):
-                return str(value).strip()
+        if value and str(value).strip() and _is_gateway_authenticated(request, settings):
+            return str(value).strip()
 
     # 2. Browser session cookie from authenticated login (/sources/login or SSO)
     cookie_token = request.cookies.get("teams_viewer_token") or request.cookies.get("viewer_token")
@@ -259,7 +263,7 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 headers = dict(upstream.headers)
                 headers["Cache-Control"] = "private, no-store"
                 return Response(status_code=upstream.status, headers=headers)
-            upstream = await fetch_original_source_file(
+            upstream_status, upstream_headers, upstream_stream = await stream_original_source_file(
                 settings,
                 source_ref_id=source_ref_id,
                 subject=viewer.subject,
@@ -278,19 +282,29 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 )
             raise HTTPException(status_code=403, detail=str(error)) from error
         except SourceApiError as error:
+            if error.status == 416:
+                headers = dict(error.headers)
+                headers.setdefault("Cache-Control", "private, no-store")
+                return Response(
+                    content=error.body,
+                    status_code=416,
+                    headers=headers,
+                )
             detail = str(error)
             status = 502
-            if "HTTP 404" in detail:
-                status = 404
-            elif "HTTP 403" in detail or "HTTP 401" in detail:
+            if error.status in (401, 403) or "HTTP 403" in detail or "HTTP 401" in detail:
                 status = 403
+            elif error.status == 404 or "HTTP 404" in detail:
+                status = 404
+            elif 400 <= error.status < 500:
+                status = error.status
             raise HTTPException(status_code=status, detail="Original source unavailable.") from error
 
-        headers = dict(upstream.headers)
+        headers = dict(upstream_headers)
         headers.setdefault("Cache-Control", "private, no-store")
-        return Response(
-            content=upstream.body,
-            status_code=upstream.status,
+        return StreamingResponse(
+            upstream_stream,
+            status_code=upstream_status,
             headers=headers,
         )
 

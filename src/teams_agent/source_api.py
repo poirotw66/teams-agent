@@ -20,6 +20,19 @@ SERVICE_TOKEN_HEADER = "X-Backoffice-Service-Token"
 class SourceApiError(RuntimeError):
     """Raised when the configured Source API cannot deliver an original."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int = 502,
+        headers: Mapping[str, str] | None = None,
+        body: bytes = b"",
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.headers = dict(headers or {})
+        self.body = body
+
 
 @dataclass(frozen=True)
 class SourceApiResponse:
@@ -103,7 +116,10 @@ async def fetch_original_source_file(
             if response.status >= 400:
                 detail = body[:200].decode("utf-8", errors="replace") if body else response.reason
                 raise SourceApiError(
-                    f"Source API returned HTTP {response.status}: {detail}"
+                    f"Source API returned HTTP {response.status}: {detail}",
+                    status=response.status,
+                    headers=passthrough,
+                    body=body,
                 )
             return SourceApiResponse(
                 status=response.status,
@@ -147,20 +163,82 @@ async def stream_original_source_file(
     groups: tuple[str, ...] = (),
     range_header: str | None = None,
     accept: str | None = None,
+    chunk_size: int = 64 * 1024,
 ) -> tuple[int, dict[str, str], AsyncIterator[bytes]]:
-    """Return status/headers plus an async byte iterator for large originals."""
+    """Return status/headers plus an async byte iterator for large originals with bounded memory."""
 
-    response = await fetch_original_source_file(
-        settings,
-        source_ref_id=source_ref_id,
-        subject=subject,
-        tenant_id=tenant_id,
-        groups=groups,
-        range_header=range_header,
-        accept=accept,
-    )
+    if not source_api_ready(settings):
+        raise SourceApiError("Source API is not configured.")
+    source_ref = str(source_ref_id or "").strip()
+    if not source_ref or "/" in source_ref or ".." in source_ref:
+        raise SourceApiError("Invalid source reference.")
+    try:
+        delegation = issue_source_delegation(
+            subject=subject,
+            secret=settings.source_delegation_secret or "",
+            tenant_id=tenant_id,
+            groups=groups,
+            display_name=subject,
+        )
+    except SourceDelegationError as error:
+        raise SourceApiError(str(error)) from error
 
-    async def _chunks() -> AsyncIterator[bytes]:
-        yield response.body
+    base = str(settings.source_api_base_url or "").rstrip("/")
+    url = f"{base}/api/sources/{source_ref}/file"
+    headers = {
+        SERVICE_TOKEN_HEADER: str(settings.source_api_token or ""),
+        "Authorization": f"Bearer {settings.source_api_token}",
+        DELEGATION_HEADER: delegation,
+        "Accept": accept or "*/*",
+    }
+    identity = _google_identity_token(base)
+    if identity:
+        headers["Authorization"] = f"Bearer {identity}"
+    if range_header:
+        headers["Range"] = range_header
 
-    return response.status, response.headers, _chunks()
+    timeout = ClientTimeout(total=float(settings.source_api_timeout_seconds))
+    session = ClientSession(timeout=timeout)
+    response = None
+    try:
+        response = await session.request("GET", url, headers=headers)
+        passthrough = _passthrough_headers(response.headers)
+        if response.status >= 400:
+            body = await response.read()
+            detail = body[:200].decode("utf-8", errors="replace") if body else response.reason
+            await response.release()
+            await session.close()
+            raise SourceApiError(
+                f"Source API returned HTTP {response.status}: {detail}",
+                status=response.status,
+                headers=passthrough,
+                body=body,
+            )
+
+        async def _chunks() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in response.content.iter_chunked(chunk_size):
+                    yield chunk
+            finally:
+                try:
+                    await response.release()
+                except Exception:
+                    logger.debug("Failed releasing source API response", exc_info=True)
+                try:
+                    await session.close()
+                except Exception:
+                    logger.debug("Failed closing source API session", exc_info=True)
+
+        return response.status, passthrough, _chunks()
+    except Exception:
+        if response is not None:
+            try:
+                await response.release()
+            except Exception:
+                logger.debug("Failed releasing source response on error", exc_info=True)
+        try:
+            await session.close()
+        except Exception:
+            logger.debug("Failed closing source session on error", exc_info=True)
+        raise
+
