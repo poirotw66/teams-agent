@@ -67,6 +67,7 @@ class FakeChatModel:
         self.answer_text = answer_text
         self.structured_output_calls: list[str] = []
         self.ainvoke_calls = 0
+        self.ainvoke_messages: list[object] = []
 
     def with_structured_output(self, schema):
         self.structured_output_calls.append(schema.__name__)
@@ -76,8 +77,9 @@ class FakeChatModel:
             return _FakeStructuredModel(RewrittenQuery(query=self.rewritten_query))
         raise AssertionError(f"unexpected schema: {schema}")
 
-    async def ainvoke(self, _messages):
+    async def ainvoke(self, messages):
         self.ainvoke_calls += 1
+        self.ainvoke_messages.append(messages)
         return AIMessage(content=self.answer_text)
 
 
@@ -91,6 +93,22 @@ class CountingIndex(HybridIndex):
     def search(self, query, limit, groups=None):
         self.search_calls += 1
         return super().search(query, limit, groups)
+
+
+class FixedResultIndex(HybridIndex):
+    """Return controlled scores for candidate-selection regression tests."""
+
+    def __init__(self, results: list[SearchResult]) -> None:
+        super().__init__([result.chunk for result in results])
+        self._results = results
+
+    def search(
+        self,
+        query: str,
+        limit: int,
+        groups: set[str] | None = None,
+    ) -> list[SearchResult]:
+        return self._results[:limit]
 
 
 def vpn_chunk(**overrides) -> DocumentChunk:
@@ -154,6 +172,52 @@ async def test_cited_text_chunk_supplements_images_from_same_document(
     assert result.images[0].path == "總公司IP話機操作/p02.png"
     assert result.images[0].sourceChunkId == "phone-panel"
     assert result.images[0].releaseId == "release-phone"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_excludes_uncompetitive_document_from_answer_context(
+    tmp_path: Path,
+) -> None:
+    phone_primary = vpn_chunk(
+        chunk_id="phone-primary",
+        title="總公司IP話機操作",
+        source_path="sources/phone.md",
+        content="總公司 IP 話機撥號、保留、轉接與會談操作說明。",
+        images=[],
+    )
+    phone_panel = vpn_chunk(
+        chunk_id="phone-panel",
+        title="總公司IP話機操作",
+        source_path="sources/phone.md",
+        content="總公司 IP 話機面板按鍵配置說明。",
+        images=[],
+    )
+    unrelated = vpn_chunk(
+        chunk_id="external-support",
+        title="外部客戶線上問題",
+        source_path="sources/external-support.md",
+        content="外部客戶回報問題時，請寄送資料至服務信箱。",
+        images=[],
+    )
+    index = FixedResultIndex(
+        [
+            SearchResult(phone_primary, score=0.826, sparse_score=1.0),
+            SearchResult(phone_panel, score=0.732, sparse_score=0.664),
+            SearchResult(unrelated, score=0.483, sparse_score=0.357),
+        ]
+    )
+    model = FakeChatModel(answer_text="請依照話機操作說明設定 [S1]")
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=3),
+        index,
+        model=model,
+    )
+
+    result = await service.search("公司話機操作說明", make_user())
+
+    assert [source.title for source in result.sources] == ["總公司IP話機操作"]
+    answer_context = str(model.ainvoke_messages[0])
+    assert "外部客戶線上問題" not in answer_context
 
 
 @pytest.mark.asyncio

@@ -202,6 +202,9 @@ _OFFLINE_RELEVANCE_MIN_OVERLAP = 2
 _OFFLINE_RELEVANCE_MIN_RATIO = 0.34
 _OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
 _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE = 0.85
+_DOCUMENT_DOMINANCE_SECOND_SCORE_RATIO = 0.75
+_DOCUMENT_DOMINANCE_TAIL_SCORE_RATIO = 0.8
+_DOCUMENT_QUERY_OVERLAP_RATIO = 0.5
 _SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
 
 
@@ -283,6 +286,26 @@ def query_lexically_matches_results(query: str, results: list[SearchResult]) -> 
     return (
         overlap_count >= _OFFLINE_RELEVANCE_MIN_OVERLAP
         and overlap_ratio >= _OFFLINE_RELEVANCE_MIN_RATIO
+    )
+
+
+def _has_competitive_query_overlap(
+    query: str,
+    leader: SearchResult,
+    candidate: SearchResult,
+) -> bool:
+    query_tokens = _primary_distinctive_tokens(query)
+    leader_tokens = set(tokenize(f"{leader.chunk.title}\n{leader.chunk.content}"))
+    candidate_tokens = set(
+        tokenize(f"{candidate.chunk.title}\n{candidate.chunk.content}")
+    )
+    leader_overlap_count = len(query_tokens & leader_tokens)
+    if not leader_overlap_count:
+        return False
+    candidate_overlap_count = len(query_tokens & candidate_tokens)
+    return (
+        candidate_overlap_count / leader_overlap_count
+        >= _DOCUMENT_QUERY_OVERLAP_RATIO
     )
 
 
@@ -419,7 +442,37 @@ class HybridKnowledgeService:
             self.settings.top_k,
             groups,
         )
-        return _RetrievalState(query=state.query, results=results, attempt=state.attempt)
+        return _RetrievalState(
+            query=state.query,
+            results=self._competitive_results(state.query, results),
+            attempt=state.attempt,
+        )
+
+    def _competitive_results(
+        self,
+        query: str,
+        results: list[SearchResult],
+    ) -> list[SearchResult]:
+        """Drop the low-score tail when one document owns both leading hits."""
+        if len(results) < 2:
+            return results
+        top_document = self._document_key(results[0])
+        second_result = results[1]
+        has_dominant_document = (
+            self._document_key(second_result) == top_document
+            and second_result.score
+            >= results[0].score * _DOCUMENT_DOMINANCE_SECOND_SCORE_RATIO
+        )
+        if not has_dominant_document:
+            return results
+        score_floor = second_result.score * _DOCUMENT_DOMINANCE_TAIL_SCORE_RATIO
+        return [
+            result
+            for result in results
+            if self._document_key(result) == top_document
+            or result.score >= score_floor
+            or _has_competitive_query_overlap(query, results[0], result)
+        ]
 
     async def _documents_are_relevant(
         self,
