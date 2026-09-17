@@ -56,10 +56,20 @@ _LEGACY_FILE_SEARCH_ALIASES: dict[str, str] = {
 
 
 @dataclass(frozen=True)
+class FileSearchSourceIdentity:
+    source_path: str
+    chunk_id: str
+    document_id: str | None
+    version_id: str | None
+    release_id: str | None
+
+
+@dataclass(frozen=True)
 class _DocumentRecord:
     source_path: str
     title: str
     images: tuple[AgentImage, ...]
+    identity: FileSearchSourceIdentity
 
 
 class FileSearchDocumentRegistry:
@@ -104,6 +114,7 @@ class FileSearchDocumentRegistry:
                 source_path=source_path,
                 title=title,
                 images=tuple(_collect_images(doc_chunks)),
+                identity=_source_identity(doc_chunks[0]),
             )
             registry._by_slug[slug] = record
             records_by_filename[Path(source_path).name] = record
@@ -144,6 +155,10 @@ class FileSearchDocumentRegistry:
         record = self._by_slug.get(slug)
         return record.source_path if record is not None else None
 
+    def source_identity_for(self, slug: str) -> FileSearchSourceIdentity | None:
+        record = self._by_slug.get(slug)
+        return record.identity if record is not None else None
+
 
 def _collect_images(doc_chunks: list[DocumentChunk]) -> list[AgentImage]:
     """De-duplicated, order-stable union of images across a document's chunks.
@@ -169,6 +184,16 @@ def _collect_images(doc_chunks: list[DocumentChunk]) -> list[AgentImage]:
                 )
             )
     return images
+
+
+def _source_identity(chunk: DocumentChunk) -> FileSearchSourceIdentity:
+    return FileSearchSourceIdentity(
+        source_path=chunk.source_path,
+        chunk_id=chunk.chunk_id,
+        document_id=chunk.document_id,
+        version_id=chunk.version_id,
+        release_id=chunk.release_id,
+    )
 
 
 def _to_agent_image(

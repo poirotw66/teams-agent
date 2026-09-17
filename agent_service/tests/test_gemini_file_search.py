@@ -88,13 +88,14 @@ def install_fake_client(service: GeminiFileSearchKnowledgeService, response) -> 
     return captured
 
 
-def make_chunk_record(chunk_id, title, source_path, images=None):
+def make_chunk_record(chunk_id, title, source_path, images=None, **overrides):
     return DocumentChunk(
         chunk_id=chunk_id,
         title=title,
         source_path=source_path,
         content="content",
         images=images or [],
+        **overrides,
     )
 
 
@@ -104,7 +105,17 @@ def make_chunk_record(chunk_id, title, source_path, images=None):
 @pytest.mark.asyncio
 async def test_known_slug_maps_to_real_title_and_images():
     image = DocumentImage(path="assets/vpn.png", title="VPN 設定圖", alt_text="vpn screenshot")
-    chunks = [make_chunk_record("c1", "VPN常見Q&A問答", "sources/VPN常見Q&A問答.md", images=[image])]
+    chunks = [
+        make_chunk_record(
+            "c1",
+            "VPN常見Q&A問答",
+            "sources/VPN常見Q&A問答.md",
+            images=[image],
+            document_id="doc-vpn",
+            version_id="version-vpn",
+            release_id="release-1",
+        )
+    ]
     registry = FileSearchDocumentRegistry.from_chunks(chunks)
     slug = FileSearchDocumentRegistry.slug_for("sources/VPN常見Q&A問答.md")
 
@@ -121,6 +132,9 @@ async def test_known_slug_maps_to_real_title_and_images():
     assert result.found is True
     assert result.sources[0].title == "VPN常見Q&A問答"
     assert result.sources[0].sourcePath == "sources/VPN常見Q&A問答.md"
+    assert result.sources[0].sourceRefId is not None
+    assert result.sources[0].releaseId == "release-1"
+    assert result.sources[0].url is None
     assert len(result.images) == 1
     assert result.images[0].path == "assets/vpn.png"
 

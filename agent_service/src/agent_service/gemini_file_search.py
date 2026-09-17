@@ -31,7 +31,7 @@ from .file_search_registry import FileSearchDocumentRegistry
 from .file_search_usage import FileSearchUsage, estimate_cost, extract_usage, log_fields
 from .knowledge import answer_indicates_insufficient_information
 from .llm_call_counter import LlmCallCounter
-from .source_refs import safe_source_path
+from .source_refs import make_source_ref_id, safe_source_path
 from .usage_events import extract_file_search_usage_from_result
 
 logger = logging.getLogger(__name__)
@@ -289,19 +289,35 @@ class GeminiFileSearchKnowledgeService:
             )
         sources = []
         for chunk in chunks:
-            raw_source_path = (
-                self.registry.source_path_for(chunk.title)
+            identity = (
+                self.registry.source_identity_for(chunk.title)
                 if self.registry is not None
                 else None
             )
+            raw_source_path = identity.source_path if identity is not None else None
             source_path = safe_source_path(raw_source_path)
             if source_path == "[REDACTED_SOURCE]":
                 source_path = None
+            source_ref_id = (
+                make_source_ref_id(
+                    release_id=identity.release_id,
+                    document_id=identity.document_id,
+                    version_id=identity.version_id,
+                    chunk_id=identity.chunk_id,
+                    source_path=source_path,
+                )
+                if identity is not None and identity.release_id
+                else None
+            )
             sources.append(
                 Citation(
                     title=self._resolve_title(chunk.title),
-                    url=chunk.uri,
-                    chunkId=chunk.document_name,
+                    url=None if source_ref_id else chunk.uri,
+                    chunkId=identity.chunk_id if identity is not None else chunk.document_name,
+                    sourceRefId=source_ref_id,
+                    documentId=identity.document_id if identity is not None else None,
+                    versionId=identity.version_id if identity is not None else None,
+                    releaseId=identity.release_id if identity is not None else None,
                     sourcePath=source_path,
                 )
             )
