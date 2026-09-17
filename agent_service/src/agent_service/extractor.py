@@ -80,6 +80,12 @@ questions about what this assistant can do or IT service scope (for example 你�
 etc.) is NOT an IT issue: set isIT=false, readiness="NOT_IT", route="NOT_IT",
 missingInfo=[], faqKey=null.
 
+Company systems, named applications, device controls, error codes, access or
+service requests, support routing, diagnostic evidence, data minimization, and
+security-setting cautions are within the Helpdesk domain. Questions asking what
+the available source can support, what remains unknown, or what must not be
+assumed are still IT support questions.
+
 Ambiguous workplace workflow requests need special care. A user may ask how to
 obtain, access, book, request, configure, or use a workplace capability without
 naming the system or application yet. If the request could reasonably be completed
@@ -156,6 +162,21 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _GENERIC_TICKET_DESCRIPTION = "使用者提出的 IT 支援請求"
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
+_HELPDESK_DOMAIN_SIGNALS = (
+    "powerpivot",
+    "xq",
+    "錯誤 12029",
+    "話機型號",
+    "話機面板",
+    "座位搬遷",
+    "報價查核",
+    "外部客戶問題",
+    "安全性設定",
+    "敏感資訊",
+    "資訊問題通報",
+    "來源能支持",
+    "操作順序",
+)
 _TICKET_COMMAND_RE = re.compile(
     r"(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好[，,]?|協助我?)*"
     r"(?:建立|建|開|提交|送出|申請)?(?:一張|個|張)?(?:派)?工單|開單|報修"
@@ -218,6 +239,13 @@ def _is_human_escalation_request(text: str) -> bool:
     return len(stripped) <= 4
 
 
+def _has_helpdesk_domain_evidence(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    if any(signal in normalized for signal in _HELPDESK_DOMAIN_SIGNALS):
+        return True
+    return bool(re.search(r"(?:錯誤|error)\s*[-:#]?\s*\d{3,}", normalized, re.IGNORECASE))
+
+
 _IT_SCOPE_KEYWORDS: tuple[str, ...] = (
     "工作內容",
     "在做什麼",
@@ -263,7 +291,15 @@ def _is_assistant_scope_question(text: str) -> bool:
     compact_lower = compact.casefold()
     if any(
         marker in compact
-        for marker in ("你的功能", "你的服務", "服務範圍", "問你什麼", "能問什麼", "你能做什麼", "你能回答")
+        for marker in (
+            "你的功能",
+            "你的服務",
+            "服務範圍",
+            "問你什麼",
+            "能問什麼",
+            "你能做什麼",
+            "你能回答",
+        )
     ):
         return True
     if any(target in compact_lower for target in _IT_TARGET_KEYWORDS) and any(
@@ -279,17 +315,17 @@ def _normalize_known_it_terms(text: str) -> str:
     """Normalize a narrow, observed alias without changing general language."""
     if "大洲" in text and any(term in text for term in _DAZHOU_FAILURE_TERMS):
         text = text.replace("大洲", "大州")
-    if "大州" in text and "大州系統" not in text and any(
-        term in text for term in _DAZHOU_FAILURE_TERMS
+    if (
+        "大州" in text
+        and "大州系統" not in text
+        and any(term in text for term in _DAZHOU_FAILURE_TERMS)
     ):
         text = text.replace("大州", "大州系統", 1)
     return text
 
 
 def _is_known_dazhou_issue(description: str) -> bool:
-    return "大州" in description and any(
-        term in description for term in _DAZHOU_FAILURE_TERMS
-    )
+    return "大州" in description and any(term in description for term in _DAZHOU_FAILURE_TERMS)
 
 
 def _strip_ticket_command(text: str) -> str:
@@ -516,8 +552,12 @@ class IssueExtractor:
                     prompt_version_id=resolved.version_id,
                     prompt_version=resolved.version,
                     prompt_canary=resolved.canary,
-                    model_source=getattr(resolved_model, "source", "settings_baseline") if resolved_model else "settings_baseline",
-                    model_version_id=getattr(resolved_model, "version_id", None) if resolved_model else None,
+                    model_source=getattr(resolved_model, "source", "settings_baseline")
+                    if resolved_model
+                    else "settings_baseline",
+                    model_version_id=getattr(resolved_model, "version_id", None)
+                    if resolved_model
+                    else None,
                     model_used=model_used,
                     model_fallback_applied=False,
                 )
@@ -531,8 +571,12 @@ class IssueExtractor:
             prompt_version_id=resolved.version_id,
             prompt_version=resolved.version,
             prompt_canary=resolved.canary,
-            model_source=getattr(resolved_model, "source", "settings_baseline") if resolved_model else "settings_baseline",
-            model_version_id=getattr(resolved_model, "version_id", None) if resolved_model else None,
+            model_source=getattr(resolved_model, "source", "settings_baseline")
+            if resolved_model
+            else "settings_baseline",
+            model_version_id=getattr(resolved_model, "version_id", None)
+            if resolved_model
+            else None,
             model_used=model_used,
             model_fallback_applied=fallback_applied,
         )
@@ -541,11 +585,24 @@ class IssueExtractor:
     def _classify_error(exc: Exception) -> str:
         name = type(exc).__name__.lower()
         msg = str(exc).lower()
-        if isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or "timeout" in name or "timed out" in msg:
+        if (
+            isinstance(exc, (TimeoutError, asyncio.TimeoutError))
+            or "timeout" in name
+            or "timed out" in msg
+        ):
             return "TIMEOUT"
-        if "ratelimit" in name or "rate_limit" in msg or "429" in msg or "resourceexhausted" in name:
+        if (
+            "ratelimit" in name
+            or "rate_limit" in msg
+            or "429" in msg
+            or "resourceexhausted" in name
+        ):
             return "RATE_LIMIT"
-        if "unavailable" in name or "connect" in name or any(code in msg for code in ("500", "502", "503", "504")):
+        if (
+            "unavailable" in name
+            or "connect" in name
+            or any(code in msg for code in ("500", "502", "503", "504"))
+        ):
             return "UNAVAILABLE"
         return "ERROR"
 
@@ -574,7 +631,9 @@ class IssueExtractor:
                     type(exc).__name__,
                 )
                 return self.model, resolved
-        if getattr(resolved, "source", None) != "governance" or not getattr(resolved, "model_name", None):
+        if getattr(resolved, "source", None) != "governance" or not getattr(
+            resolved, "model_name", None
+        ):
             return self.model, resolved
         try:
             from .graph import build_chat_model
@@ -583,7 +642,9 @@ class IssueExtractor:
                 resolved.model_name,
                 temperature=getattr(resolved, "temperature", None),
                 max_tokens=getattr(resolved, "max_output_tokens", None),
-                timeout=float(resolved.timeout_seconds) if getattr(resolved, "timeout_seconds", None) is not None else None,
+                timeout=float(resolved.timeout_seconds)
+                if getattr(resolved, "timeout_seconds", None) is not None
+                else None,
                 max_retries=getattr(resolved, "retry", None),
             )
             return built or self.model, resolved
@@ -688,9 +749,7 @@ class IssueExtractor:
             ticketAction=None,
         )
 
-    def _postprocess(
-        self, issues: list[Issue], faq_keys: list[str]
-    ) -> tuple[list[Issue], bool]:
+    def _postprocess(self, issues: list[Issue], faq_keys: list[str]) -> tuple[list[Issue], bool]:
         too_many = len(issues) > self.settings.max_issues_per_message
         truncated = issues[: self.settings.max_issues_per_message]
 
@@ -702,9 +761,7 @@ class IssueExtractor:
             )
         return coerced, too_many
 
-    def _coerce_issue(
-        self, issue: Issue, *, new_id: int, allowed_faq_keys: set[str]
-    ) -> Issue:
+    def _coerce_issue(self, issue: Issue, *, new_id: int, allowed_faq_keys: set[str]) -> Issue:
         data = issue.model_dump()
         data["id"] = new_id
 
@@ -721,6 +778,13 @@ class IssueExtractor:
         # the model produced. A prompt instruction alone is not sufficient.
         data["missingInfo"] = _strip_forbidden(data.get("missingInfo") or [])
         data["missingInfo"] = data["missingInfo"][: self.settings.max_missing_info_per_issue]
+
+        if not data["isIT"] and _has_helpdesk_domain_evidence(data["description"]):
+            data["isIT"] = True
+            data["readiness"] = "NEED_MORE_INFO"
+            data["route"] = "KNOWLEDGE"
+            data["missingInfo"] = data["missingInfo"] or ["請確認您希望查詢的系統與處理面向。"]
+            data["faqKey"] = None
 
         if not data["isIT"]:
             data["readiness"] = "NOT_IT"

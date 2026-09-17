@@ -21,6 +21,7 @@ from .usage_events import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+DEFAULT_REQUEST_DEADLINE_SECONDS = 30.0
 
 
 class RequestDeadlineExceeded(RuntimeError):
@@ -65,7 +66,11 @@ class ExecutionContext:
         timeout_seconds: float | None = None,
         knowledge_backend: str | None = None,
     ) -> ExecutionContext:
-        timeout = timeout_seconds if timeout_seconds is not None else 30.0
+        timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else DEFAULT_REQUEST_DEADLINE_SECONDS
+        )
         llm_calls = LlmCallCounter()
         usage_collector = UsageEventCollector(
             environment=settings.deployment_environment,

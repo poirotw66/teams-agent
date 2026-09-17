@@ -61,7 +61,10 @@ def make_evaluation_authorize(
 
 def sync_knowledge_to_active_pointer(target_app: FastAPI, resolved_settings: RagSettings) -> bool:
     """Reload the in-memory index when the portal active-release pointer moves."""
-    if resolved_settings.knowledge_release_store_mode == "GCS":
+    if (
+        resolved_settings.knowledge_release_store_mode == "GCS"
+        or resolved_settings.knowledge_active_release_id
+    ):
         return False
     release_dir = resolved_settings.knowledge_release_dir or (
         resolved_settings.data_dir / "releases"

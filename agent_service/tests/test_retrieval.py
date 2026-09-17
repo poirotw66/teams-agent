@@ -15,9 +15,7 @@ def test_chinese_tokenizer_creates_bigrams() -> None:
 
 
 def test_embedding_model_ids_compatible_with_or_without_provider() -> None:
-    assert _embedding_models_compatible(
-        "google_genai:gemini-embedding-2", "gemini-embedding-2"
-    )
+    assert _embedding_models_compatible("google_genai:gemini-embedding-2", "gemini-embedding-2")
     assert _embedding_models_compatible(
         "google_genai:gemini-embedding-2", "google_genai:gemini-embedding-2"
     )
@@ -50,6 +48,32 @@ def test_search_finds_relevant_chinese_document() -> None:
     assert results[0].score == 1.0
 
 
+def test_sparse_search_indexes_title_alias_and_section_identity() -> None:
+    index = HybridIndex(
+        [
+            DocumentChunk(
+                chunk_id="portal-error",
+                title="企業入口網站排錯",
+                source_path="sources/portal.md",
+                content="請先重新啟動應用程式。",
+                source_aliases=["PortalX"],
+                section_path="登入 > Error 12029",
+            ),
+            DocumentChunk(
+                chunk_id="unrelated",
+                title="VPN 操作",
+                source_path="sources/vpn.md",
+                content="VPN 連線說明。",
+            ),
+        ]
+    )
+
+    results = index.search("PortalX Error 12029", limit=2)
+
+    assert results[0].chunk.chunk_id == "portal-error"
+    assert results[0].sparse_score == 1.0
+
+
 def test_search_enforces_document_groups() -> None:
     index = HybridIndex(
         [
@@ -65,4 +89,3 @@ def test_search_enforces_document_groups() -> None:
 
     assert index.search("VPN", limit=1, groups={"HR"}) == []
     assert index.search("VPN", limit=1, groups={"IT"})
-

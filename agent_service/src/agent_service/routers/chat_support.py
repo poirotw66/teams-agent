@@ -9,7 +9,12 @@ import time
 
 from fastapi import FastAPI, HTTPException
 
-from ..contracts import AgentRequest, AgentResponse
+from ..contracts import (
+    AgentEvaluationResponse,
+    AgentRequest,
+    AgentResponse,
+    IssueRetrievalTrace,
+)
 from ..operations.contracts import OperationalEvent, utc_now
 from ..operations.emitter import _channel_scope
 from ..operations.event_identity import LogicalRequestIdentity
@@ -38,10 +43,7 @@ def sse(event: str, data: dict) -> str:
 
 def authorize_tenant(payload: AgentRequest, resolved_settings: RagSettings) -> None:
     tenant_id = payload.conversation.tenantId
-    if (
-        resolved_settings.allowed_tenants
-        and tenant_id not in resolved_settings.allowed_tenants
-    ):
+    if resolved_settings.allowed_tenants and tenant_id not in resolved_settings.allowed_tenants:
         raise HTTPException(status_code=403, detail="Tenant is not allowed.")
 
 
@@ -49,11 +51,14 @@ def start_chat(payload: AgentRequest) -> str:
     # Spec §15.1: derive the Correlation ID exactly ONCE, at this entry
     # point, and never regenerate it downstream (the workflow honors an
     # explicitly-passed value instead of deriving its own).
-    correlation_id = payload.correlationId or LogicalRequestIdentity(
-        payload.conversation.tenantId,
-        payload.conversation.conversationId,
-        payload.requestId,
-    ).value
+    correlation_id = (
+        payload.correlationId
+        or LogicalRequestIdentity(
+            payload.conversation.tenantId,
+            payload.conversation.conversationId,
+            payload.requestId,
+        ).value
+    )
     logger.info(
         "Agent request started: request_id=%s channel=%s correlation_id=%s",
         payload.requestId,
@@ -77,8 +82,7 @@ def log_chat_failure(
     elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
     error_type = type(error).__name__
     logger.error(
-        "Agent request failed: request_id=%s correlation_id=%s "
-        "error_type=%s elapsed_ms=%s",
+        "Agent request failed: request_id=%s correlation_id=%s error_type=%s elapsed_ms=%s",
         payload.requestId,
         correlation_id,
         error_type,
@@ -92,7 +96,10 @@ def log_chat_failure(
         if (
             channel_scope == "playground"
             and ops_runtime.settings.environment in {"dev", "test"}
-            and (not tenant_id or tenant_id in {"00000000-0000-0000-0000-0000000000001", "local-development"})
+            and (
+                not tenant_id
+                or tenant_id in {"00000000-0000-0000-0000-0000000000001", "local-development"}
+            )
         ):
             tenant_id = "local-development"
         failed_event = OperationalEvent(
@@ -202,6 +209,26 @@ def build_response(
     )
 
 
+def build_evaluation_response(
+    response: AgentResponse,
+    state: dict,
+) -> AgentEvaluationResponse:
+    counter = state.get("llm_call_counter")
+    traces = [
+        IssueRetrievalTrace(
+            issueId=result.issueId,
+            trace=result.retrievalTrace,
+        )
+        for result in state.get("issue_results", [])
+        if result.retrievalTrace is not None
+    ]
+    return AgentEvaluationResponse(
+        **response.model_dump(mode="python"),
+        retrievalTraces=traces,
+        llmCallCount=counter.count if counter else 0,
+    )
+
+
 def log_chat_request(
     payload: AgentRequest,
     state: dict,
@@ -225,9 +252,7 @@ def log_chat_request(
     issue_routes = [f"{issue.id}:{issue.route}" for issue in issues]
     faq_hit = any(result.resultType == "FAQ_ANSWERED" for result in issue_results)
     knowledge_hit = any(result.resultType == "KNOWLEDGE_ANSWERED" for result in issue_results)
-    knowledge_backends = sorted(
-        {result.backend for result in issue_results if result.backend}
-    )
+    knowledge_backends = sorted({result.backend for result in issue_results if result.backend})
     follow_up_asked = any(result.resultType == "NEED_MORE_INFO" for result in issue_results)
     ticket_created = any(result.resultType == "TICKET_CREATED" for result in issue_results)
 

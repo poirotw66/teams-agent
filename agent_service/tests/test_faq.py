@@ -44,6 +44,8 @@ def test_faq_hit_returns_entry(tmp_path: Path) -> None:
     assert entry is not None
     assert entry.faqKey == "PASSWORD_RESET"
     assert entry.answer == "請至密碼管理入口進行密碼重設。"
+    assert entry.versionId is not None
+    assert entry.versionId.startswith("legacy-")
 
 
 def test_faq_miss_unknown_key_returns_none(tmp_path: Path) -> None:
@@ -59,11 +61,7 @@ def test_faq_miss_unknown_key_returns_none(tmp_path: Path) -> None:
 def test_disabled_faq_returns_none(tmp_path: Path) -> None:
     path = _write_faq(
         tmp_path,
-        {
-            "faqs": [
-                {"id": "FAQ_001", "faqKey": "VPN_INSTALL", "enabled": False, "answer": "x"}
-            ]
-        },
+        {"faqs": [{"id": "FAQ_001", "faqKey": "VPN_INSTALL", "enabled": False, "answer": "x"}]},
     )
     service = FaqService(FaqRepository.load(path))
 

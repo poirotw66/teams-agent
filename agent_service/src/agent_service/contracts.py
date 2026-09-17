@@ -41,6 +41,49 @@ class AgentRequest(StrictModel):
     evaluationKnowledgeBackend: Literal["HYBRID", "GEMINI_FILE_SEARCH"] | None = None
 
 
+class RetrievalCandidate(StrictModel):
+    rank: int = Field(ge=1)
+    chunkId: str
+    documentId: str | None = None
+    canonicalSourceId: str | None = None
+    title: str
+    score: float | None = None
+    sparseScore: float | None = None
+    denseScore: float | None = None
+    scoreOrigin: Literal["HYBRID", "PROVIDER_UNAVAILABLE"]
+    selectedForContext: bool = False
+    rejectionReason: str | None = None
+
+
+class RetrievalAttempt(StrictModel):
+    searchQuery: str
+    candidates: list[RetrievalCandidate] = Field(default_factory=list)
+    decision: str | None = None
+    isRelevant: bool | None = None
+    rewriteQuery: str | None = None
+
+
+class GroundedClaim(StrictModel):
+    text: str
+    chunkIds: list[str] = Field(min_length=1)
+
+
+class RetrievalTrace(StrictModel):
+    rawUserUtterance: str
+    resolvedIssueQuery: str
+    searchQuery: str
+    facetQueries: list[str] = Field(default_factory=list, max_length=3)
+    selectedBackend: str
+    actualBackend: str
+    attempts: list[RetrievalAttempt] = Field(default_factory=list)
+    selectedChunkIds: list[str] = Field(default_factory=list)
+    answerability: Literal["FULL", "PARTIAL", "NONE"] | None = None
+    claims: list[GroundedClaim] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    fallbackPath: str
+    terminalReason: str | None = None
+
+
 class Citation(StrictModel):
     title: str
     url: str | None = None
@@ -48,6 +91,8 @@ class Citation(StrictModel):
     # Stable source identity.  These fields are optional so FAQ/ticket
     # citations and older adapters remain backward compatible.
     sourceRefId: str | None = None
+    canonicalSourceId: str | None = None
+    sourceAliases: list[str] = Field(default_factory=list)
     documentId: str | None = None
     versionId: str | None = None
     releaseId: str | None = None
@@ -133,6 +178,14 @@ class IssueResult(StrictModel):
     faqId: str | None = None
     faqKey: str | None = None
     faqVersionId: str | None = None
+    terminalReason: str | None = None
+    retrievalTrace: RetrievalTrace | None = Field(default=None, exclude=True)
+    answerability: Literal["FULL", "PARTIAL", "NONE"] | None = Field(
+        default=None,
+        exclude=True,
+    )
+    claims: list[GroundedClaim] = Field(default_factory=list, exclude=True)
+    unknowns: list[str] = Field(default_factory=list, exclude=True)
 
 
 class AgentResponse(StrictModel):
@@ -146,6 +199,16 @@ class AgentResponse(StrictModel):
     estimatedCostUsd: float | None = None
     estimatedCostTwd: float | None = None
     costComplete: bool | None = None
+
+
+class IssueRetrievalTrace(StrictModel):
+    issueId: int
+    trace: RetrievalTrace
+
+
+class AgentEvaluationResponse(AgentResponse):
+    retrievalTraces: list[IssueRetrievalTrace] = Field(default_factory=list)
+    llmCallCount: int = Field(default=0, ge=0)
 
 
 # --- User / conversation context (spec §10, §11.4, §12) -------------------
@@ -219,6 +282,14 @@ class KnowledgeResult(StrictModel):
     sources: list[Citation] = Field(default_factory=list)
     images: list[AgentImage] = Field(default_factory=list)
     backend: str
+    terminalReason: str | None = None
+    retrievalTrace: RetrievalTrace | None = Field(default=None, exclude=True)
+    answerability: Literal["FULL", "PARTIAL", "NONE"] | None = Field(
+        default=None,
+        exclude=True,
+    )
+    claims: list[GroundedClaim] = Field(default_factory=list, exclude=True)
+    unknowns: list[str] = Field(default_factory=list, exclude=True)
 
 
 # --- FAQ (spec §7.2) ---------------------------------------------------

@@ -26,6 +26,7 @@ from ai_ops_backoffice.evaluation_domain.baseline import (
 from ai_ops_backoffice.evaluation_domain.baseline_pipeline import run_baseline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+AI_OPS_CASE_IDS = frozenset({"QB-010", "QB-090", "QB-099", "QB-100"})
 load_dotenv(REPO_ROOT / "agent_service" / ".env", override=False)
 
 
@@ -34,6 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("question_bank", type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--tenant-id", default="golden-baseline")
+    parser.add_argument(
+        "--group",
+        action="append",
+        dest="groups",
+        help="Authorized audience group; repeat for multiple groups.",
+    )
     parser.add_argument("--token-env", default="GOLDEN_EVALUATION_TOKEN")
     parser.add_argument(
         "--judge-model",
@@ -47,6 +54,17 @@ def parse_args() -> argparse.Namespace:
         help="Deprecated: set both pipeline stages to this concurrency.",
     )
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--case-id",
+        action="append",
+        dest="case_ids",
+        help="Evaluate only the selected case ID; repeat for multiple cases.",
+    )
+    parser.add_argument(
+        "--suite",
+        choices=("All-100", "Helpdesk-96", "AI-Ops-4"),
+        default="All-100",
+    )
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
@@ -61,6 +79,10 @@ def _case_record(
 ) -> dict[str, Any]:
     return {
         "caseId": case.case_id,
+        "suites": [
+            "All-100",
+            "AI-Ops-4" if case.case_id in AI_OPS_CASE_IDS else "Helpdesk-96",
+        ],
         "topic": case.topic,
         "difficulty": case.difficulty,
         "coverage": case.coverage,
@@ -70,6 +92,8 @@ def _case_record(
             "answer": target.answer,
             "citations": list(target.citations),
             "issueResults": list(target.issue_results),
+            "retrievalTraces": list(target.retrieval_traces),
+            "llmCallCount": target.llm_call_count,
             "correlationId": target.correlation_id,
             "latencyMs": target.latency_ms,
             "error": target.error,
@@ -120,6 +144,7 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         for record in records
         if record["judge"].get("queueMs") is not None
     ]
+    llm_call_counts = [int(record["target"].get("llmCallCount") or 0) for record in records]
     scores = [
         float(record["judge"]["correctness"])
         for record in records
@@ -129,11 +154,15 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "caseCount": total,
         "conclusiveCount": completed,
         "verdicts": dict(verdicts),
-        "strictPassRate": round(verdicts["PASS"] / total, 4),
+        "strictPassRate": round(verdicts["PASS"] / total, 4) if total else None,
         "conclusivePassRate": round(verdicts["PASS"] / completed, 4) if completed else None,
-        "acceptableRate": round(
-            (verdicts["PASS"] + verdicts["PARTIAL"]) / total,
-            4,
+        "acceptableRate": (
+            round(
+                (verdicts["PASS"] + verdicts["PARTIAL"]) / total,
+                4,
+            )
+            if total
+            else None
         ),
         "meanCorrectness": round(statistics.fmean(scores), 4) if scores else None,
         "meanSourceRecall": round(
@@ -148,6 +177,10 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "meanLatencyMs": round(statistics.fmean(latencies), 2) if latencies else None,
         "p95LatencyMs": _percentile(latencies, 0.95),
+        "meanLlmCallCount": (
+            round(statistics.fmean(llm_call_counts), 2) if llm_call_counts else None
+        ),
+        "maxLlmCallCount": max(llm_call_counts, default=None),
         "meanJudgeLatencyMs": (
             round(statistics.fmean(judge_latencies), 2) if judge_latencies else None
         ),
@@ -157,6 +190,15 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "byDifficulty": _group_rates(records, "difficulty"),
         "byTopic": _group_rates(records, "topic"),
+    }
+
+
+def _suite_summaries(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        suite: summarize_records(
+            [record for record in records if suite in record.get("suites", [])]
+        )
+        for suite in ("All-100", "Helpdesk-96", "AI-Ops-4")
     }
 
 
@@ -180,7 +222,7 @@ def _build_report(
     updated_at = datetime.now(UTC)
     agent_concurrency, judge_concurrency = _resolve_concurrency(args)
     return {
-        "schemaVersion": "golden-baseline-v2",
+        "schemaVersion": "golden-baseline-v3",
         "startedFromQuestionBank": str(args.question_bank.resolve()),
         "startedAt": started_at.isoformat(),
         "updatedAt": updated_at.isoformat(),
@@ -195,6 +237,7 @@ def _build_report(
             "kind": "production-agent-http",
             "baseUrl": args.base_url,
             "endpoint": "/agent/evaluation/chat",
+            "groups": args.groups or ["grp_public"],
         },
         "judge": {
             "modelId": args.judge_model,
@@ -204,7 +247,9 @@ def _build_report(
             "agentConcurrency": agent_concurrency,
             "judgeConcurrency": judge_concurrency,
         },
+        "suite": args.suite,
         "summary": summarize_records(records),
+        "suiteSummaries": _suite_summaries(records),
         "cases": records,
     }
 
@@ -228,6 +273,17 @@ def _resolve_concurrency(args: argparse.Namespace) -> tuple[int, int]:
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     cases = load_question_bank_csv(args.question_bank.resolve())
+    if args.suite == "Helpdesk-96":
+        cases = [case for case in cases if case.case_id not in AI_OPS_CASE_IDS]
+    elif args.suite == "AI-Ops-4":
+        cases = [case for case in cases if case.case_id in AI_OPS_CASE_IDS]
+    if args.case_ids:
+        selected_case_ids = set(args.case_ids)
+        cases = [case for case in cases if case.case_id in selected_case_ids]
+        missing_case_ids = selected_case_ids.difference(case.case_id for case in cases)
+        if missing_case_ids:
+            missing = ", ".join(sorted(missing_case_ids))
+            raise ValueError(f"Selected case IDs are not in suite {args.suite}: {missing}")
     if args.limit is not None:
         cases = cases[: max(0, args.limit)]
     if not cases:
@@ -237,6 +293,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         base_url=args.base_url,
         tenant_id=args.tenant_id,
         token=os.environ.get(args.token_env),
+        groups=tuple(args.groups or ("grp_public",)),
     )
     judge = GeminiAnswerJudge(model_id=args.judge_model)
     agent_concurrency, judge_concurrency = _resolve_concurrency(args)

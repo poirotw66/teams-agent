@@ -24,7 +24,11 @@ from .contracts import (
     AgentImage,
     AgentRequest,
     Citation,
+    GroundedClaim,
     KnowledgeResult,
+    RetrievalAttempt,
+    RetrievalCandidate,
+    RetrievalTrace,
     UserContext,
 )
 from .execution_context import (
@@ -255,9 +259,25 @@ class GeminiFileSearchKnowledgeService:
                     call_counter.increment()
                 response = await _generate()
         except RequestModelBudgetExceeded:
-            return self._limit_result("BUDGET_EXCEEDED")
+            return self._with_trace(
+                self._limit_result("BUDGET_EXCEEDED"),
+                query=query,
+                chunks=[],
+                request=request,
+                execution_context=execution_context,
+                decision="BUDGET_LIMIT",
+                terminal_reason="BUDGET_EXCEEDED",
+            )
         except (RequestDeadlineExceeded, RequestOperationTimedOut):
-            return self._limit_result("DEADLINE_EXCEEDED")
+            return self._with_trace(
+                self._limit_result("DEADLINE_EXCEEDED"),
+                query=query,
+                chunks=[],
+                request=request,
+                execution_context=execution_context,
+                decision="DEADLINE_LIMIT",
+                terminal_reason="DEADLINE_EXCEEDED",
+            )
 
         usage = extract_usage(response)
         self.last_usage = usage
@@ -276,22 +296,38 @@ class GeminiFileSearchKnowledgeService:
         chunks = self._grounding_chunks(response)
         if not chunks:
             # Spec §8.4: 找不到答案時明確表示未命中, 不得編造.
-            return KnowledgeResult(
-                found=False,
-                answer="",
-                sources=[],
-                images=[],
-                backend="GEMINI_FILE_SEARCH",
+            return self._with_trace(
+                KnowledgeResult(
+                    found=False,
+                    answer="",
+                    sources=[],
+                    images=[],
+                    backend="GEMINI_FILE_SEARCH",
+                ),
+                query=query,
+                chunks=[],
+                request=request,
+                execution_context=execution_context,
+                decision="NO_GROUNDING",
+                terminal_reason="NO_RELEVANT_EVIDENCE",
             )
 
         answer = self._canonicalize_legacy_terms(self._response_text(response), chunks)
         if answer_indicates_insufficient_information(answer):
-            return KnowledgeResult(
-                found=False,
-                answer="",
-                sources=[],
-                images=[],
-                backend="GEMINI_FILE_SEARCH",
+            return self._with_trace(
+                KnowledgeResult(
+                    found=False,
+                    answer="",
+                    sources=[],
+                    images=[],
+                    backend="GEMINI_FILE_SEARCH",
+                ),
+                query=query,
+                chunks=chunks,
+                request=request,
+                execution_context=execution_context,
+                decision="INSUFFICIENT_INFORMATION",
+                terminal_reason="UNGROUNDED_ANSWER",
             )
         sources = []
         for chunk in chunks:
@@ -315,7 +351,9 @@ class GeminiFileSearchKnowledgeService:
                 if identity is not None and identity.release_id
                 else None
             )
-            chunk_id = identity.chunk_id if identity is not None else chunk.document_name
+            chunk_id = (
+                identity.chunk_id if identity is not None else chunk.document_name or chunk.title
+            )
             include_retrieval_evidence = (
                 request is not None and request.channel == EVALUATION_EVIDENCE_CHANNEL
             )
@@ -330,6 +368,7 @@ class GeminiFileSearchKnowledgeService:
                     url=None if source_ref_id else chunk.uri,
                     chunkId=chunk_id,
                     sourceRefId=source_ref_id,
+                    canonicalSourceId=(identity.document_id if identity is not None else None),
                     documentId=identity.document_id if identity is not None else None,
                     versionId=identity.version_id if identity is not None else None,
                     releaseId=identity.release_id if identity is not None else None,
@@ -337,22 +376,104 @@ class GeminiFileSearchKnowledgeService:
                     evidence=evidence,
                 )
             )
-        return KnowledgeResult(
-            found=True,
-            answer=answer,
-            sources=sources,
-            images=self._images_for(chunks),
-            backend="GEMINI_FILE_SEARCH",
+        return self._with_trace(
+            KnowledgeResult(
+                found=True,
+                answer=answer,
+                sources=sources,
+                images=self._images_for(chunks),
+                backend="GEMINI_FILE_SEARCH",
+                answerability="FULL",
+                claims=[
+                    GroundedClaim(
+                        text=answer,
+                        chunkIds=[source.chunkId for source in sources if source.chunkId],
+                    )
+                ],
+                unknowns=[],
+            ),
+            query=query,
+            chunks=chunks,
+            request=request,
+            execution_context=execution_context,
+            decision="GROUNDED_ANSWER",
+            terminal_reason=None,
+        )
+
+    def _with_trace(
+        self,
+        result: KnowledgeResult,
+        *,
+        query: str,
+        chunks: list[GeminiGroundingChunk],
+        request: AgentRequest | None,
+        execution_context: ExecutionContext | None,
+        decision: str,
+        terminal_reason: str | None,
+    ) -> KnowledgeResult:
+        candidates: list[RetrievalCandidate] = []
+        for rank, chunk in enumerate(chunks, start=1):
+            identity = (
+                self.registry.source_identity_for(chunk.title)
+                if self.registry is not None
+                else None
+            )
+            chunk_id = (
+                identity.chunk_id if identity is not None else chunk.document_name or chunk.title
+            )
+            candidates.append(
+                RetrievalCandidate(
+                    rank=rank,
+                    chunkId=chunk_id,
+                    documentId=identity.document_id if identity is not None else None,
+                    canonicalSourceId=(identity.document_id if identity is not None else None),
+                    title=self._resolve_title(chunk.title),
+                    scoreOrigin="PROVIDER_UNAVAILABLE",
+                )
+            )
+        selected_backend = (
+            execution_context.selected_knowledge_backend
+            if execution_context is not None
+            else "GEMINI_FILE_SEARCH"
+        )
+        trace = RetrievalTrace(
+            rawUserUtterance=request.message.text if request is not None else query,
+            resolvedIssueQuery=query,
+            searchQuery=query,
+            facetQueries=[],
+            selectedBackend=selected_backend or "GEMINI_FILE_SEARCH",
+            actualBackend="GEMINI_FILE_SEARCH",
+            attempts=[
+                RetrievalAttempt(
+                    searchQuery=query,
+                    candidates=candidates,
+                    decision=decision,
+                    isRelevant=result.found,
+                )
+            ],
+            selectedChunkIds=[source.chunkId for source in result.sources if source.chunkId],
+            answerability=result.answerability,
+            claims=result.claims,
+            unknowns=result.unknowns,
+            fallbackPath=decision,
+            terminalReason=terminal_reason,
+        )
+        return result.model_copy(
+            update={
+                "terminalReason": terminal_reason,
+                "retrievalTrace": trace,
+            }
         )
 
     @staticmethod
-    def _limit_result(backend: str) -> KnowledgeResult:
+    def _limit_result(terminal_reason: str) -> KnowledgeResult:
         return KnowledgeResult(
             found=False,
             answer="",
             sources=[],
             images=[],
-            backend=backend,
+            backend="GEMINI_FILE_SEARCH",
+            terminalReason=terminal_reason,
         )
 
     def _resolve_title(self, slug: str) -> str:

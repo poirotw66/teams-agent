@@ -63,6 +63,15 @@ async def test_production_target_receives_question_without_golden_fields() -> No
                 "correlationId": "trace-1",
                 "citations": [{"title": "VPN 指南"}],
                 "issueResults": [],
+                "retrievalTraces": [
+                    {
+                        "issueId": 1,
+                        "trace": {
+                            "actualBackend": "HYBRID",
+                        },
+                    }
+                ],
+                "llmCallCount": 3,
                 "feedbackEnabled": False,
             },
         )
@@ -70,6 +79,7 @@ async def test_production_target_receives_question_without_golden_fields() -> No
     target = ProductionAgentHttpTarget(
         base_url="https://agent.example",
         tenant_id="tenant-eval",
+        groups=("grp_public",),
         transport=httpx.MockTransport(handler),
     )
     try:
@@ -78,8 +88,11 @@ async def test_production_target_receives_question_without_golden_fields() -> No
         await target.aclose()
 
     assert result.answer == "請依文件操作。[S1]"
+    assert result.retrieval_traces[0]["trace"] == {"actualBackend": "HYBRID"}
+    assert result.llm_call_count == 3
     assert captured["request_path"] == "/agent/evaluation/chat"
     assert captured["message"] == {"text": "VPN 要如何設定？", "locale": "zh-TW"}
+    assert captured["user"]["groups"] == ["grp_public"]
     serialized = json.dumps(captured, ensure_ascii=False)
     assert "reference_answer" not in serialized
     assert "rubric" not in serialized

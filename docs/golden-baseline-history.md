@@ -78,6 +78,7 @@ objects in its `amendments` audit trail.
 - Judge recovery completed: 2026-09-17 15:54:17 (UTC+8)
 - Question count: 100
 - Target: Secured local production workflow via `POST /agent/evaluation/chat`
+- Knowledge release: `release-4052b21ce2c2`
 - Judge: `google_genai:gemini-3.1-pro-preview`
 - Judge rubric: `knowledge-answer-judge-v2`
 - Concurrency: 8 asynchronous workers
@@ -116,6 +117,18 @@ claim-level assessment, deterministic source recall, and independent review.
 - Comparison report SHA-256:
   `809c1a7442e62157617220e047a6cd801f8166de95eb1ea5df904af31ea425b0`
 
+These hashes and the release ID freeze Baseline #02. Future suite changes must
+not rewrite either artifact.
+
+### Suite membership for future comparisons
+
+- `All-100`: all original cases, preserving direct comparison with #02.
+- `Helpdesk-96`: all cases except `QB-010`, `QB-090`, `QB-099`, and `QB-100`.
+- `AI-Ops-4`: `QB-010`, `QB-090`, `QB-099`, and `QB-100`.
+
+Suite membership is metadata only. The four AI Ops cases remain in the
+historical question bank and `All-100` report.
+
 ### Judge recovery amendment
 
 The initial Judge pass left 10 cases inconclusive because the claim-reference
@@ -138,3 +151,49 @@ Every replacement and previous Judge object is retained in the report
 - This remains a single Agent run and does not measure repeated-run variance.
 - Baseline #02 is suitable for engineering comparison, but not yet approved as
   a release quality gate.
+
+## Baseline #03 — RAG Remediation Candidate
+
+- Completed: 2026-09-17
+- Agent target: local production workflow via `/agent/evaluation/chat`
+- Knowledge release: `release-b9438e33c0f6` (explicitly pinned)
+- Evaluation audience groups: `grp_public`
+- Judge: `google_genai:gemini-3.1-pro-preview`
+- Pipeline concurrency: Agent 8, Judge 16
+- Question bank SHA-256:
+  `f192c97378339feac2e8f62b04027856adadbf80924afdc5c29c8f932154af1a`
+- Release manifest SHA-256:
+  `ecb0cdcd4912a34c81b0ce7faf973f46e331854721303239ff0cf6f4d7fb0dc0`
+- Release index SHA-256:
+  `6e4fbf8d5a25365715da6f67a75807d33f5d5940d40af476498afc82cbb1b37f`
+
+### Results
+
+- `All-100`: 42 PASS, 29 PARTIAL, 29 FAIL; strict pass 42.00%,
+  acceptable 71.00%, expected-source recall 46.17%.
+- `Helpdesk-96`: 42 PASS, 29 PARTIAL, 25 FAIL; strict pass 43.75%,
+  acceptable 73.96%, expected-source recall 48.09%.
+- `AI-Ops-4`: 0 PASS, 0 PARTIAL, 4 FAIL. These cases remain outside the
+  Helpdesk product-quality suite.
+- Mean target latency: 7,325.30 ms; P95 target latency: 11,512.77 ms.
+- Cases requiring human review: 4.
+
+Compared with Baseline #02, `All-100` strict pass increased by 7 percentage
+points, acceptable rate increased by 9 percentage points, and expected-source
+recall increased by 5 percentage points. P95 latency increased by 37.5%, which
+exceeds the remediation acceptance budget of 15%; this candidate therefore
+must not be treated as a passed release gate.
+
+### Artifacts
+
+- Detailed report: `outputs/golden-baseline-03.json`
+- Comparison report: `outputs/golden-baseline-03-comparison.csv`
+- Detailed report SHA-256:
+  `70033a848b60718609645807e32dca40bed4886a9f9ceac81c0316d55e703e8b`
+- Comparison report SHA-256:
+  `10cf1bf6c2a231db2b3fe98962cf46b1a9262e4f51a065049888b0d651e41c23`
+
+The report contains all three suite summaries from the same Agent/Judge run,
+so suite comparisons are not affected by separate model samples. This remains
+a single run; repeated targeted runs are still required before release
+approval.

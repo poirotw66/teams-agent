@@ -1,6 +1,7 @@
 """Knowledge Service tests (spec §18.3): HybridKnowledgeService behaviour."""
 
 import inspect
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from agent_service.contracts import (
     EVALUATION_EVIDENCE_CHANNEL,
     AgentRequest,
     ConversationIdentity,
+    GroundedClaim,
     MessageContent,
     UserContext,
     UserIdentity,
@@ -22,6 +24,8 @@ from agent_service.knowledge import (
     KnowledgeService,
     RelevanceDecision,
     RewrittenQuery,
+    StructuredKnowledgeAnswer,
+    bounded_facet_queries,
     high_confidence_retrieval_hit,
     query_lexically_matches_results,
 )
@@ -70,6 +74,46 @@ class _FakeStructuredModel:
         return self._value
 
 
+class _RecordingStructuredModel:
+    def __init__(self, values: list[object], messages: list[object]) -> None:
+        self._values = values
+        self._messages = messages
+
+    async def ainvoke(self, messages: object) -> object:
+        self._messages.append(messages)
+        return self._values.pop(0)
+
+
+class _FakeStructuredAnswerModel:
+    def __init__(self, model: "FakeChatModel") -> None:
+        self._model = model
+
+    async def ainvoke(self, messages: object) -> StructuredKnowledgeAnswer:
+        response = await self._model.ainvoke(messages)
+        answer = str(response.text)
+        prompt = "\n".join(str(getattr(message, "content", "")) for message in messages)
+        source_chunks = {
+            marker: chunk_id
+            for marker, chunk_id in re.findall(
+                r"\[S(\d+)\][^\n]*\[chunkId=([^\]]+)\]",
+                prompt,
+            )
+        }
+        cited_markers = list(dict.fromkeys(re.findall(r"\[S(\d+)\]", answer)))
+        chunk_ids = [source_chunks[marker] for marker in cited_markers if marker in source_chunks]
+        is_insufficient = "沒有足夠資訊" in answer or "資訊不足" in answer
+        return StructuredKnowledgeAnswer(
+            answerability="NONE" if is_insufficient else "FULL",
+            answer=answer,
+            claims=(
+                []
+                if is_insufficient or not chunk_ids
+                else [GroundedClaim(text=answer, chunkIds=chunk_ids)]
+            ),
+            unknowns=[],
+        )
+
+
 class FakeChatModel:
     """Minimal stand-in for BaseChatModel used by HybridKnowledgeService."""
 
@@ -92,6 +136,8 @@ class FakeChatModel:
             return _FakeStructuredModel(RelevanceDecision(relevant=self.relevant))
         if schema is RewrittenQuery:
             return _FakeStructuredModel(RewrittenQuery(query=self.rewritten_query))
+        if schema is StructuredKnowledgeAnswer:
+            return _FakeStructuredAnswerModel(self)
         raise AssertionError(f"unexpected schema: {schema}")
 
     async def ainvoke(self, messages):
@@ -100,16 +146,78 @@ class FakeChatModel:
         return AIMessage(content=self.answer_text)
 
 
+class FixedStructuredAnswerModel(FakeChatModel):
+    def __init__(self, answer: StructuredKnowledgeAnswer) -> None:
+        super().__init__()
+        self.answer = answer
+
+    def with_structured_output(self, schema):
+        if schema is StructuredKnowledgeAnswer:
+            return _FakeStructuredModel(self.answer)
+        return super().with_structured_output(schema)
+
+
 class CountingIndex(HybridIndex):
     """HybridIndex that records how many times search() was called."""
 
     def __init__(self, chunks):
         super().__init__(chunks)
         self.search_calls = 0
+        self.search_queries: list[str] = []
 
-    def search(self, query, limit, groups=None):
+    def search(self, query, limit, groups=None, *, environment="dev"):
         self.search_calls += 1
-        return super().search(query, limit, groups)
+        self.search_queries.append(query)
+        return super().search(
+            query,
+            limit,
+            groups,
+            environment=environment,
+        )
+
+
+class QueryContractChatModel:
+    def __init__(self) -> None:
+        self.relevance_messages: list[object] = []
+        self.answer_messages: list[object] = []
+        self.relevance_values: list[object] = [
+            RelevanceDecision(relevant=False),
+            RelevanceDecision(relevant=True),
+        ]
+
+    def with_structured_output(self, schema: type[object]) -> _RecordingStructuredModel:
+        if schema is RelevanceDecision:
+            return _RecordingStructuredModel(
+                self.relevance_values,
+                self.relevance_messages,
+            )
+        if schema is RewrittenQuery:
+            return _RecordingStructuredModel(
+                [RewrittenQuery(query="PortalX 權限申請")],
+                [],
+            )
+        if schema is StructuredKnowledgeAnswer:
+            return _RecordingStructuredModel(
+                [
+                    StructuredKnowledgeAnswer(
+                        answerability="FULL",
+                        answer="請依 PortalX 權限流程申請 [S1]",
+                        claims=[
+                            GroundedClaim(
+                                text="請依 PortalX 權限流程申請",
+                                chunkIds=["vpn"],
+                            )
+                        ],
+                        unknowns=[],
+                    )
+                ],
+                self.answer_messages,
+            )
+        raise AssertionError(f"unexpected schema: {schema}")
+
+    async def ainvoke(self, messages: object) -> AIMessage:
+        self.answer_messages.append(messages)
+        return AIMessage(content="請依 PortalX 權限流程申請 [S1]")
 
 
 class FixedResultIndex(HybridIndex):
@@ -124,7 +232,10 @@ class FixedResultIndex(HybridIndex):
         query: str,
         limit: int,
         groups: set[str] | None = None,
+        *,
+        environment: str = "dev",
     ) -> list[SearchResult]:
+        del environment
         return self._results[:limit]
 
 
@@ -144,6 +255,50 @@ def vpn_chunk(**overrides) -> DocumentChunk:
     }
     defaults.update(overrides)
     return DocumentChunk(**defaults)
+
+
+def test_bounded_facet_queries_preserve_identifier_and_cap_at_three() -> None:
+    queries = bounded_facet_queries("PortalX 的申請方式、核准人、處理時間與必要資料有哪些？")
+
+    assert queries == (
+        "PortalX 申請方式",
+        "PortalX 核准人",
+        "PortalX 處理時間",
+    )
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_executes_bounded_facets_once(tmp_path: Path) -> None:
+    index = CountingIndex(
+        [
+            DocumentChunk(
+                chunk_id="portalx",
+                title="PortalX 權限申請",
+                source_path="sources/portalx.md",
+                content="申請方式、核准人與處理時間說明。",
+            )
+        ]
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+
+    result = await service.search(
+        "PortalX 的申請方式、核准人與處理時間有哪些？",
+        make_user(),
+    )
+
+    assert result.found is True
+    assert index.search_queries == [
+        "PortalX 的申請方式、核准人與處理時間有哪些？",
+        "PortalX 申請方式",
+        "PortalX 核准人",
+        "PortalX 處理時間",
+    ]
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.facetQueries == [
+        "PortalX 申請方式",
+        "PortalX 核准人",
+        "PortalX 處理時間",
+    ]
 
 
 @pytest.mark.asyncio
@@ -231,6 +386,88 @@ async def test_hybrid_excludes_uncompetitive_document_from_answer_context(
     assert [source.title for source in result.sources] == ["總公司IP話機操作"]
     answer_context = str(model.ainvoke_messages[0])
     assert "外部客戶線上問題" not in answer_context
+
+
+@pytest.mark.asyncio
+async def test_hybrid_selects_latest_canonical_version_and_caps_chunks(
+    tmp_path: Path,
+) -> None:
+    def versioned_chunk(
+        chunk_id: str,
+        *,
+        version_id: str,
+        version_number: int,
+        content: str,
+    ) -> DocumentChunk:
+        return DocumentChunk(
+            chunk_id=chunk_id,
+            title="PortalX 權限申請",
+            source_path=f"sources/{version_id}.md",
+            content=content,
+            document_id="doc-portalx",
+            version_id=version_id,
+            version_number=version_number,
+        )
+
+    index = FixedResultIndex(
+        [
+            SearchResult(
+                versioned_chunk(
+                    "old",
+                    version_id="version-1",
+                    version_number=1,
+                    content="舊版流程不得使用。",
+                ),
+                score=0.95,
+                sparse_score=0.95,
+            ),
+            SearchResult(
+                versioned_chunk(
+                    "new-1",
+                    version_id="version-2",
+                    version_number=2,
+                    content="新版申請入口。",
+                ),
+                score=0.9,
+                sparse_score=0.9,
+            ),
+            SearchResult(
+                versioned_chunk(
+                    "new-2",
+                    version_id="version-2",
+                    version_number=2,
+                    content="新版核准步驟。",
+                ),
+                score=0.85,
+                sparse_score=0.85,
+            ),
+            SearchResult(
+                versioned_chunk(
+                    "new-3",
+                    version_id="version-2",
+                    version_number=2,
+                    content="新版低優先補充。",
+                ),
+                score=0.8,
+                sparse_score=0.8,
+            ),
+        ]
+    )
+    model = FakeChatModel(answer_text="請依新版流程申請 [S1]")
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=4),
+        index,
+        model=model,
+    )
+
+    result = await service.search("PortalX 權限如何申請", make_user())
+
+    assert result.found is True
+    answer_context = str(model.ainvoke_messages[0])
+    assert "舊版流程不得使用" not in answer_context
+    assert "新版申請入口" in answer_context
+    assert "新版核准步驟" in answer_context
+    assert "新版低優先補充" not in answer_context
 
 
 @pytest.mark.asyncio
@@ -356,6 +593,61 @@ async def test_hybrid_search_acl_filters_restricted_chunk(tmp_path: Path) -> Non
     assert authorized.sources[0].title == "限制文件"
 
 
+def test_hybrid_index_scores_only_acl_authorized_documents() -> None:
+    public = vpn_chunk(
+        chunk_id="public",
+        content="VPN 密碼重設方式。",
+        allowed_groups=[],
+    )
+    restricted = vpn_chunk(
+        chunk_id="restricted",
+        content="VPN VPN VPN VPN VPN 密碼重設特殊權限。",
+        allowed_groups=["IT"],
+    )
+    baseline = HybridIndex([public]).search("VPN 密碼重設", 2, {"HR"})
+    with_restricted = HybridIndex([public, restricted]).search(
+        "VPN 密碼重設",
+        2,
+        {"HR"},
+    )
+
+    assert [(result.chunk.chunk_id, result.score) for result in with_restricted] == [
+        (result.chunk.chunk_id, result.score) for result in baseline
+    ]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_excludes_ineligible_chunk_before_generation(
+    tmp_path: Path,
+) -> None:
+    active = vpn_chunk(
+        chunk_id="active",
+        title="VPN 核准流程",
+        content="VPN 權限須由直屬主管核准。",
+    )
+    placeholder = vpn_chunk(
+        chunk_id="placeholder",
+        title="VPN 測試流程",
+        content="VPN VPN VPN 測試網址 https://placeholder.invalid。",
+        content_state="PLACEHOLDER",
+    )
+    model = FakeChatModel(
+        relevant=True,
+        answer_text="VPN 權限須由直屬主管核准 [S1]",
+    )
+    service = HybridKnowledgeService(
+        make_settings(tmp_path),
+        HybridIndex([active, placeholder]),
+        model=model,
+    )
+
+    result = await service.search("VPN 權限核准流程", make_user())
+
+    assert result.found is True
+    assert [source.chunkId for source in result.sources] == ["active"]
+    assert "placeholder.invalid" not in str(model.ainvoke_messages[0])
+
+
 @pytest.mark.asyncio
 async def test_hybrid_search_with_model_uses_grounded_answer_and_citations(
     tmp_path: Path,
@@ -397,7 +689,7 @@ async def test_hybrid_search_omits_invalid_zero_page_from_citation(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_uses_deterministic_answer_when_llm_omits_citation_markers(
+async def test_hybrid_search_rejects_answer_when_llm_omits_citation_markers(
     tmp_path: Path,
 ) -> None:
     portal_chunk = DocumentChunk(
@@ -419,13 +711,94 @@ async def test_hybrid_search_uses_deterministic_answer_when_llm_omits_citation_m
 
     result = await service.search("portal-e2e checksum verify steps", make_user())
 
-    assert result.found is True
-    assert result.sources[0].chunkId == "ac3bdb99b036944fdb8e"
-    assert "[S1]" in result.answer
+    assert result.found is False
+    assert result.answer == ""
+    assert result.sources == []
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_accepts_high_confidence_hit_when_grader_rejects(
+async def test_hybrid_rejects_claim_mapping_to_unknown_chunk(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FixedStructuredAnswerModel(
+        StructuredKnowledgeAnswer(
+            answerability="FULL",
+            answer="請聯絡資訊窗口 [S1]",
+            claims=[
+                GroundedClaim(
+                    text="請聯絡資訊窗口",
+                    chunkIds=["unknown-chunk"],
+                )
+            ],
+            unknowns=[],
+        )
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("VPN 密碼被鎖怎麼辦？", make_user())
+
+    assert result.found is False
+    assert result.terminalReason == "UNGROUNDED_ANSWER"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_rejects_false_external_action_claim(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FixedStructuredAnswerModel(
+        StructuredKnowledgeAnswer(
+            answerability="FULL",
+            answer="我已為您重設 VPN 密碼 [S1]",
+            claims=[
+                GroundedClaim(
+                    text="已重設 VPN 密碼",
+                    chunkIds=["vpn"],
+                )
+            ],
+            unknowns=[],
+        )
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("VPN 密碼被鎖怎麼辦？", make_user())
+
+    assert result.found is False
+    assert result.terminalReason == "UNGROUNDED_ANSWER"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_partial_answer_preserves_unknowns_and_claim_trace(
+    tmp_path: Path,
+) -> None:
+    index = HybridIndex([vpn_chunk()])
+    model = FixedStructuredAnswerModel(
+        StructuredKnowledgeAnswer(
+            answerability="PARTIAL",
+            answer="請聯絡資訊窗口協助解鎖 [S1]；處理時間未記載。",
+            claims=[
+                GroundedClaim(
+                    text="請聯絡資訊窗口協助解鎖",
+                    chunkIds=["vpn"],
+                )
+            ],
+            unknowns=["處理時間"],
+        )
+    )
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+
+    result = await service.search("VPN 密碼被鎖多久能處理？", make_user())
+
+    assert result.found is True
+    assert result.answerability == "PARTIAL"
+    assert result.unknowns == ["處理時間"]
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.claims[0].chunkIds == ["vpn"]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_respects_grader_rejection_for_high_confidence_hit(
     tmp_path: Path,
 ) -> None:
     portal_chunk = DocumentChunk(
@@ -450,9 +823,10 @@ async def test_hybrid_search_accepts_high_confidence_hit_when_grader_rejects(
 
     result = await service.search("詢問 portal-e2e 的 checksum 驗證步驟", make_user())
 
-    assert result.found is True
-    assert result.sources[0].chunkId == "ac3bdb99b036944fdb8e"
-    assert "RelevanceDecision" not in model.structured_output_calls
+    assert result.found is False
+    assert result.answer == ""
+    assert result.sources == []
+    assert "RelevanceDecision" in model.structured_output_calls
 
 
 @pytest.mark.asyncio
@@ -638,7 +1012,11 @@ async def test_budget_exhaustion_on_generate_returns_budget_exceeded_backend(
     )
 
     assert result.found is False
-    assert result.backend == "BUDGET_EXCEEDED"
+    assert result.backend == "HYBRID"
+    assert result.terminalReason == "BUDGET_EXCEEDED"
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.actualBackend == "HYBRID"
+    assert result.retrievalTrace.terminalReason == "BUDGET_EXCEEDED"
     assert context.llm_calls.count == 1
 
 
@@ -675,8 +1053,59 @@ async def test_rewrite_skipped_when_budget_cannot_cover_full_path(tmp_path: Path
     )
 
     assert result.found is False
-    assert result.backend == "BUDGET_EXCEEDED"
+    assert result.backend == "HYBRID"
+    assert result.terminalReason == "BUDGET_EXCEEDED"
     assert model.structured_output_calls.count("RewrittenQuery") == 0
+
+
+@pytest.mark.asyncio
+async def test_rewrite_preserves_resolved_issue_for_relevance_and_answer(
+    tmp_path: Path,
+) -> None:
+    resolved_issue = "PortalX 權限申請方式、核准人和處理時間"
+    raw_utterance = "PortalX"
+    index = CountingIndex(
+        [
+            vpn_chunk(
+                title="PortalX 權限",
+                content="PortalX 權限由主管核准，核准後一個工作天內開通。",
+            )
+        ]
+    )
+    model = QueryContractChatModel()
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
+    request = AgentRequest(
+        requestId="query-contract-request",
+        channel=EVALUATION_EVIDENCE_CHANNEL,
+        conversation=ConversationIdentity(tenantId="tenant-1"),
+        user=UserIdentity(teamsUserId="evaluation-user"),
+        message=MessageContent(text=raw_utterance),
+    )
+
+    result = await service.search(
+        resolved_issue,
+        make_user(),
+        request=request,
+    )
+
+    assert result.found is True
+    assert index.search_queries == [
+        resolved_issue,
+        "PortalX 申請方式",
+        "PortalX 核准人",
+        "PortalX 處理時間",
+        "PortalX 權限申請",
+    ]
+    assert len(model.relevance_messages) == 2
+    assert all(resolved_issue in str(messages) for messages in model.relevance_messages)
+    assert resolved_issue in str(model.answer_messages[0])
+    assert f"已解析問題：{raw_utterance}\n" not in str(model.answer_messages[0])
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.rawUserUtterance == raw_utterance
+    assert result.retrievalTrace.resolvedIssueQuery == resolved_issue
+    assert result.retrievalTrace.searchQuery == "PortalX 權限申請"
+    assert len(result.retrievalTrace.attempts) == 5
+    assert result.retrievalTrace.attempts[0].rewriteQuery == "PortalX 權限申請"
 
 
 def test_gemini_mode_is_not_the_default(tmp_path: Path) -> None:
@@ -835,11 +1264,11 @@ async def test_hybrid_search_remaps_chunk_markers_to_document_citations(
     assert len(result.sources) == 2
     assert result.sources[0].title == "員工 IT 支援服務手冊"
     assert result.sources[1].title == "AD 帳號與系統解鎖 FAQ"
-    assert result.sources[0].evidence == "Teams 無法登入 登出排除步驟。"
+    assert result.sources[0].evidence is None
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_single_document_cited_renumbers_to_s1(
+async def test_hybrid_search_rejects_citation_to_filtered_unrelated_document(
     tmp_path: Path,
 ) -> None:
     chunk_a = DocumentChunk(
@@ -866,7 +1295,6 @@ async def test_hybrid_search_single_document_cited_renumbers_to_s1(
 
     result = await service.search("電腦無法開機", make_user())
 
-    assert result.found is True
-    assert result.answer == "請檢查印表機驅動程式設定 [S1]。"
-    assert len(result.sources) == 1
-    assert result.sources[0].title == "印表機手冊"
+    assert result.found is False
+    assert result.answer == ""
+    assert result.sources == []

@@ -73,6 +73,8 @@ class AgentTargetResult:
     issue_results: tuple[dict[str, object], ...]
     correlation_id: str | None
     latency_ms: float
+    retrieval_traces: tuple[dict[str, object], ...] = ()
+    llm_call_count: int = 0
     error: str | None = None
 
 
@@ -138,6 +140,7 @@ class ProductionAgentHttpTarget:
         base_url: str,
         tenant_id: str,
         token: str | None = None,
+        groups: tuple[str, ...] = (),
         timeout_seconds: float = 120.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -149,6 +152,7 @@ class ProductionAgentHttpTarget:
             transport=transport,
         )
         self._tenant_id = tenant_id
+        self._groups = groups
 
     async def execute(self, *, case_id: str, question: str) -> AgentTargetResult:
         request_id = f"golden-baseline-{case_id}-{uuid4().hex[:12]}"
@@ -162,6 +166,7 @@ class ProductionAgentHttpTarget:
             "user": {
                 "teamsUserId": "golden-baseline-user",
                 "displayName": "Golden Baseline",
+                "groups": list(self._groups),
             },
             "message": {"text": question, "locale": "zh-TW"},
             "correlationId": request_id,
@@ -186,6 +191,8 @@ class ProductionAgentHttpTarget:
             issue_results=tuple(body.get("issueResults") or ()),
             correlation_id=body.get("correlationId") or body.get("traceId"),
             latency_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            retrieval_traces=tuple(body.get("retrievalTraces") or ()),
+            llm_call_count=int(body.get("llmCallCount") or 0),
         )
 
     async def aclose(self) -> None:

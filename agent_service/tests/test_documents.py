@@ -121,6 +121,21 @@ audience:
     assert "---" not in body.split("\n\n", 1)[0]
 
 
+def test_parse_front_matter_accepts_governed_category() -> None:
+    raw = """---
+title: Platform Engineering
+category: IT Service Guide
+---
+
+# Platform Engineering
+"""
+
+    front_matter, body = parse_front_matter(raw)
+
+    assert front_matter["category"] == "IT Service Guide"
+    assert body.strip() == "# Platform Engineering"
+
+
 def test_parse_front_matter_rejects_unknown_field() -> None:
     raw = """---
 title: VPN 登入問題

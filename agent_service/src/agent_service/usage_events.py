@@ -402,9 +402,7 @@ def build_request_cost_summary(
         embedding_model=embedding_model,
     )
     events = collector.events()
-    file_search_events = [
-        event for event in events if event.component == "gemini_file_search"
-    ]
+    file_search_events = [event for event in events if event.component == "gemini_file_search"]
     extra_input = sum(
         event.input_tokens + event.tool_context_tokens + event.embedding_tokens
         for event in file_search_events
@@ -419,13 +417,10 @@ def build_request_cost_summary(
     usage_coverage = 1.0 if not events else events_with_tokens / len(events)
 
     event_costs = [
-        event.estimated_cost_usd
-        for event in events
-        if event.estimated_cost_usd is not None
+        event.estimated_cost_usd for event in events if event.estimated_cost_usd is not None
     ]
     event_cost_complete = all(
-        event.estimated_cost_usd is not None or not _event_has_token_data(event)
-        for event in events
+        event.estimated_cost_usd is not None or not _event_has_token_data(event) for event in events
     )
 
     estimated_cost = report.estimated_cost_usd
@@ -439,8 +434,15 @@ def build_request_cost_summary(
     elif estimated_cost is None and event_costs and event_cost_complete:
         estimated_cost = sum(event_costs)
 
+    has_langchain_tokens = any(
+        any(
+            int(metadata.get(field, 0) or 0) > 0
+            for field in ("input_tokens", "output_tokens", "total_tokens")
+        )
+        for metadata in langchain_usage.values()
+    )
     cost_complete = (
-        report.estimated_cost_usd is not None or not langchain_usage
+        report.estimated_cost_usd is not None or not has_langchain_tokens
     ) and event_cost_complete
     if file_search_events and any(
         event.estimated_cost_usd is None and _event_has_token_data(event)
@@ -466,7 +468,9 @@ def build_request_cost_summary(
             {
                 "model": event.model,
                 "provider": event.provider,
-                "inputTokens": event.input_tokens + event.tool_context_tokens + event.embedding_tokens,
+                "inputTokens": event.input_tokens
+                + event.tool_context_tokens
+                + event.embedding_tokens,
                 "outputTokens": event.output_tokens,
                 "totalTokens": (
                     event.input_tokens

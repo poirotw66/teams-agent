@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent_service.contracts import ConversationMessage, Issue, IssueExtraction
@@ -80,7 +82,52 @@ async def test_model_none_fallback(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_without_llm(tmp_path) -> None:
+@pytest.mark.parametrize(
+    "question",
+    [
+        "同仁要求把舊式系統文件中的安全性設定推送到全公司裝置，應如何回應？",
+        "依話機面板原圖列出控制鍵，並說明為何不能確定話機型號。",
+        "遇到 PowerPivot 問題時應如何分流？",
+        "規劃座位搬遷時應在什麼時間提出申請？",
+        "座位搬遷附件應具備什麼內容？",
+        "外部客戶回報報價延遲時，應蒐集哪些報價查核資料？",
+        "外部客戶問題的截圖與密碼保護分別有哪些規定？",
+        "異常畫面包含個人敏感資訊時應如何回覆？",
+        "XQ 圖片未提供時，能否依印象補寫操作順序？",
+        "使用者回報錯誤 12029 時應先採取什麼原則？",
+        "PowerPivot 來源能支持哪些答案？",
+    ],
+)
+async def test_helpdesk_domain_evidence_prevents_terminal_not_it(
+    tmp_path: Path,
+    question: str,
+) -> None:
+    model = FakeModel(
+        IssueExtraction(
+            issues=[
+                issue(
+                    description=question,
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ]
+        )
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=question, history=[], faq_keys=[])
+
+    extracted = outcome.issues[0]
+    assert extracted.isIT is True
+    assert extracted.readiness == "NEED_MORE_INFO"
+    assert extracted.route == "KNOWLEDGE"
+
+
+@pytest.mark.asyncio
+async def test_explicit_multi_problem_ticket_creation_is_one_merged_issue_without_llm(
+    tmp_path,
+) -> None:
     # The model would have split the final instruction into a bogus third
     # issue, but this must be handled entirely by the deterministic guardrail.
     model = FakeModel(
@@ -451,9 +498,7 @@ async def test_need_more_info_capped_at_two_questions(tmp_path) -> None:
     ],
 )
 @pytest.mark.asyncio
-async def test_forbidden_missing_info_terms_are_stripped(
-    tmp_path, forbidden_question
-) -> None:
+async def test_forbidden_missing_info_terms_are_stripped(tmp_path, forbidden_question) -> None:
     canned = IssueExtraction(
         issues=[
             issue(
@@ -499,15 +544,11 @@ async def test_forbidden_term_stripped_but_valid_question_kept(tmp_path) -> None
 
 @pytest.mark.asyncio
 async def test_faq_key_not_in_allowed_list_coerced_to_knowledge(tmp_path) -> None:
-    canned = IssueExtraction(
-        issues=[issue(route="FAQ", faqKey="NOT_A_REAL_KEY")]
-    )
+    canned = IssueExtraction(issues=[issue(route="FAQ", faqKey="NOT_A_REAL_KEY")])
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(
-        text="密碼重設", history=[], faq_keys=["PASSWORD_RESET"]
-    )
+    outcome = await extractor.extract(text="密碼重設", history=[], faq_keys=["PASSWORD_RESET"])
 
     result_issue = outcome.issues[0]
     assert result_issue.route == "KNOWLEDGE"
@@ -516,15 +557,11 @@ async def test_faq_key_not_in_allowed_list_coerced_to_knowledge(tmp_path) -> Non
 
 @pytest.mark.asyncio
 async def test_faq_key_in_allowed_list_preserved(tmp_path) -> None:
-    canned = IssueExtraction(
-        issues=[issue(route="FAQ", faqKey="PASSWORD_RESET")]
-    )
+    canned = IssueExtraction(issues=[issue(route="FAQ", faqKey="PASSWORD_RESET")])
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(
-        text="密碼重設", history=[], faq_keys=["PASSWORD_RESET"]
-    )
+    outcome = await extractor.extract(text="密碼重設", history=[], faq_keys=["PASSWORD_RESET"])
 
     result_issue = outcome.issues[0]
     assert result_issue.route == "FAQ"
@@ -619,9 +656,7 @@ async def test_history_is_bounded_and_passed_to_model(tmp_path) -> None:
     from datetime import datetime, timezone
 
     history = [
-        ConversationMessage(
-            role="user", text=f"msg {i}", createdAt=datetime.now(timezone.utc)
-        )
+        ConversationMessage(role="user", text=f"msg {i}", createdAt=datetime.now(timezone.utc))
         for i in range(5)
     ]
 

@@ -9,12 +9,18 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.callbacks import get_usage_metadata_callback
 
-from ..contracts import EVALUATION_EVIDENCE_CHANNEL, AgentRequest, AgentResponse
+from ..contracts import (
+    EVALUATION_EVIDENCE_CHANNEL,
+    AgentEvaluationResponse,
+    AgentRequest,
+    AgentResponse,
+)
 from ..deps import sync_knowledge_to_active_pointer
 from ..settings import RagSettings
 from ..workflow import INITIAL_STAGE_LABEL, AgentWorkflow
 from .chat_support import (
     authorize_tenant,
+    build_evaluation_response,
     build_response,
     log_chat_failure,
     log_chat_success,
@@ -30,7 +36,10 @@ def register_chat_routes(
     authorize: Callable[..., None],
     authorize_evaluation: Callable[..., None],
 ) -> None:
-    async def execute_chat(payload: AgentRequest, request: Request) -> AgentResponse:
+    async def execute_chat(
+        payload: AgentRequest,
+        request: Request,
+    ) -> AgentResponse | AgentEvaluationResponse:
         from agent_service.operations.policy_runtime import (
             PolicySourceUnavailableError,
             get_policy_runtime,
@@ -98,7 +107,7 @@ def register_chat_routes(
                     status_code=503,
                     detail=f"Agent service is temporarily unavailable. Correlation ID: {correlation_id}",
                 ) from error
-            return build_response(
+            response = build_response(
                 state,
                 correlation_id,
                 channel=payload.channel,
@@ -106,6 +115,9 @@ def register_chat_routes(
                 resolved_settings=resolved_settings,
                 cost_summary=cost_summary,
             )
+            if payload.channel == EVALUATION_EVIDENCE_CHANNEL:
+                return build_evaluation_response(response, state)
+            return response
 
     @app.post(
         "/agent/chat",
@@ -115,19 +127,21 @@ def register_chat_routes(
     async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
         if payload.channel == EVALUATION_EVIDENCE_CHANNEL:
             raise HTTPException(status_code=400, detail="Reserved channel.")
-        return await execute_chat(payload, request)
+        response = await execute_chat(payload, request)
+        return AgentResponse.model_validate(response.model_dump())
 
     @app.post(
         "/agent/evaluation/chat",
-        response_model=AgentResponse,
+        response_model=AgentEvaluationResponse,
         dependencies=[Depends(authorize_evaluation)],
     )
     async def evaluation_chat(
         payload: AgentRequest,
         request: Request,
-    ) -> AgentResponse:
+    ) -> AgentEvaluationResponse:
         evaluation_payload = payload.model_copy(update={"channel": EVALUATION_EVIDENCE_CHANNEL})
-        return await execute_chat(evaluation_payload, request)
+        response = await execute_chat(evaluation_payload, request)
+        return AgentEvaluationResponse.model_validate(response.model_dump())
 
     @app.post(
         "/agent/chat/stream",

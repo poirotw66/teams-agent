@@ -15,6 +15,7 @@ LLM calls, fuzzy matching, or answer rewriting to this module violates the
 spec and should be rejected in review.
 """
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -24,6 +25,14 @@ from .contracts import FaqEntry
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _with_fallback_provenance(entry: FaqEntry) -> FaqEntry:
+    if entry.versionId:
+        return entry
+    payload = f"{entry.id}\0{entry.faqKey}\0{entry.answer}".encode()
+    version_id = f"legacy-{hashlib.sha256(payload).hexdigest()[:16]}"
+    return entry.model_copy(update={"versionId": version_id})
 
 
 class FaqConfigError(ValueError):
@@ -44,7 +53,8 @@ class FaqRepository:
 
     def __init__(self, entries: list[FaqEntry]):
         self._by_key: dict[str, FaqEntry] = {}
-        for entry in entries:
+        for raw_entry in entries:
+            entry = _with_fallback_provenance(raw_entry)
             if entry.faqKey in self._by_key:
                 raise FaqConfigError(
                     f"Duplicate faqKey {entry.faqKey!r} in FAQ configuration; "
@@ -56,9 +66,7 @@ class FaqRepository:
     def entries(self) -> list[FaqEntry]:
         return list(self._by_key.values())
 
-    def get(
-        self, faq_key: str, audience_group_ids: tuple[str, ...] = ()
-    ) -> FaqEntry | None:
+    def get(self, faq_key: str, audience_group_ids: tuple[str, ...] = ()) -> FaqEntry | None:
         return self._by_key.get(faq_key)
 
     def available_keys(self, audience_group_ids: tuple[str, ...] = ()) -> list[str]:
@@ -84,8 +92,7 @@ class FaqRepository:
             raw_entries = data.get("faqs")
             if raw_entries is None:
                 raise FaqConfigError(
-                    f"FAQ config file {path} must be a bare list or an object with a "
-                    "'faqs' key."
+                    f"FAQ config file {path} must be a bare list or an object with a 'faqs' key."
                 )
         elif isinstance(data, list):
             raw_entries = data
@@ -127,9 +134,7 @@ class GovernedFaqRepository:
             versionId=snapshot.version_id,
         )
 
-    def get(
-        self, faq_key: str, audience_group_ids: tuple[str, ...] = ()
-    ) -> FaqEntry | None:
+    def get(self, faq_key: str, audience_group_ids: tuple[str, ...] = ()) -> FaqEntry | None:
         snapshot = self._domain_service.active_snapshot(
             faq_key=faq_key,
             audience_group_ids=audience_group_ids,
@@ -181,9 +186,7 @@ class FaqService:
     def __init__(self, repository: Any):
         self._repository = repository
 
-    def get(
-        self, faq_key: str, audience_group_ids: tuple[str, ...] = ()
-    ) -> FaqEntry | None:
+    def get(self, faq_key: str, audience_group_ids: tuple[str, ...] = ()) -> FaqEntry | None:
         """Return the FAQ entry for ``faq_key`` only if it exists and is enabled."""
         entry = self._repository.get(faq_key, audience_group_ids)
         if entry is None or not entry.enabled:

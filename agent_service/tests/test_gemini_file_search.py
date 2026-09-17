@@ -164,6 +164,12 @@ async def test_known_slug_maps_to_real_title_and_images():
     assert result.sources[0].releaseId == "release-1"
     assert result.sources[0].url is None
     assert result.sources[0].evidence == "[chunkId=c1]\nVPN approved setup steps."
+    assert result.sources[0].canonicalSourceId == "doc-vpn"
+    assert result.retrievalTrace is not None
+    candidate = result.retrievalTrace.attempts[0].candidates[0]
+    assert candidate.chunkId == "c1"
+    assert candidate.score is None
+    assert candidate.scoreOrigin == "PROVIDER_UNAVAILABLE"
     assert len(result.images) == 1
     assert result.images[0].path == "assets/vpn.png"
 
@@ -219,7 +225,10 @@ async def test_execution_context_budget_exceeded_returns_budget_backend() -> Non
     result = await service.search("query", UserContext(groups=[]), execution_context=context)
 
     assert result.found is False
-    assert result.backend == "BUDGET_EXCEEDED"
+    assert result.backend == "GEMINI_FILE_SEARCH"
+    assert result.terminalReason == "BUDGET_EXCEEDED"
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.actualBackend == "GEMINI_FILE_SEARCH"
 
 
 @pytest.mark.asyncio

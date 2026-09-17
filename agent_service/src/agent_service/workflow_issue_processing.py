@@ -22,6 +22,37 @@ from .workflow_helpers import AgentState
 
 logger = logging.getLogger(__name__)
 
+_REQUESTED_FACET_MARKERS = (
+    "如何",
+    "哪些",
+    "什麼",
+    "列出",
+    "說明",
+    "原則",
+    "分流",
+    "時間",
+    "期限",
+    "內容",
+    "資料",
+    "規定",
+    "能支持",
+    "操作順序",
+)
+
+
+def _retrieval_probe_is_answerable(
+    issue: Issue,
+    result: IssueResult,
+) -> bool:
+    if result.resultType != "KNOWLEDGE_ANSWERED" or not result.sources:
+        return False
+    if not any(marker in issue.description for marker in _REQUESTED_FACET_MARKERS):
+        return False
+    canonical_sources = {
+        source.canonicalSourceId or source.documentId or source.title for source in result.sources
+    }
+    return len(canonical_sources) == 1 and result.terminalReason is None
+
 
 class IssueProcessingWorkflowMixin:
     """LangGraph nodes owned by the issue processing subgraph."""
@@ -136,10 +167,24 @@ class IssueProcessingWorkflowMixin:
             )
 
         if issue.readiness == "NEED_MORE_INFO":
+            probe = await self._handle_knowledge(
+                issue,
+                user,
+                correlation_id,
+                counter,
+                lock,
+                agent_request=agent_request,
+                execution_context=execution_context,
+            )
+            if _retrieval_probe_is_answerable(issue, probe):
+                return probe
             return IssueResult(
                 issueId=issue.id,
                 resultType="NEED_MORE_INFO",
                 questions=issue.missingInfo,
+                backend=probe.backend,
+                terminalReason="CLARIFICATION_REQUIRED",
+                retrievalTrace=probe.retrievalTrace,
             )
 
         if issue.route == "FAQ":
@@ -297,8 +342,19 @@ class IssueProcessingWorkflowMixin:
                 sources=result.sources,
                 images=result.images,
                 backend=result.backend,
+                terminalReason=result.terminalReason,
+                retrievalTrace=result.retrievalTrace,
+                answerability=result.answerability,
+                claims=result.claims,
+                unknowns=result.unknowns,
             )
-        return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE", backend=result.backend)
+        return IssueResult(
+            issueId=issue.id,
+            resultType="NO_KNOWLEDGE",
+            backend=result.backend,
+            terminalReason=result.terminalReason,
+            retrievalTrace=result.retrievalTrace,
+        )
 
     async def _handle_ticket(
         self,

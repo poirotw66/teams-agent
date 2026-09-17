@@ -159,12 +159,14 @@ def _validate_production_governance(
         raise KnowledgeReleaseValidationError(
             "Production knowledge release must declare governed documents."
         )
-    expected_acl_by_path: dict[str, set[str]] = {}
+    expected_documents_by_path: dict[str, dict[str, object]] = {}
+    seen_document_ids: set[str] = set()
+    alias_owners: dict[str, str] = {}
     for entry in documents:
         if not isinstance(entry, dict):
             raise KnowledgeReleaseValidationError("Knowledge release document metadata is invalid.")
         source_path = _required_string(entry, "source_path")
-        _required_string(entry, "document_id")
+        document_id = _required_string(entry, "document_id")
         _required_string(entry, "version_id")
         _required_string(entry, "content_hash")
         acl_groups = entry.get("acl_groups")
@@ -172,11 +174,30 @@ def _validate_production_governance(
             raise KnowledgeReleaseValidationError(
                 f"Knowledge release document '{source_path}' has no ACL."
             )
-        if source_path in expected_acl_by_path:
+        if source_path in expected_documents_by_path:
             raise KnowledgeReleaseValidationError(
                 f"Knowledge release source '{source_path}' is declared more than once."
             )
-        expected_acl_by_path[source_path] = {str(group) for group in acl_groups if str(group)}
+        if document_id in seen_document_ids:
+            raise KnowledgeReleaseValidationError(
+                f"Canonical document '{document_id}' is declared more than once."
+            )
+        seen_document_ids.add(document_id)
+        aliases = entry.get("source_aliases") or []
+        if not isinstance(aliases, list):
+            raise KnowledgeReleaseValidationError(
+                f"Knowledge release document '{source_path}' has invalid source aliases."
+            )
+        for alias in aliases:
+            normalized_alias = str(alias).strip().casefold()
+            if not normalized_alias:
+                continue
+            owner = alias_owners.setdefault(normalized_alias, document_id)
+            if owner != document_id:
+                raise KnowledgeReleaseValidationError(
+                    f"Source alias '{alias}' identifies multiple canonical documents."
+                )
+        expected_documents_by_path[source_path] = entry
 
     payload = json.loads(index_path.read_text(encoding="utf-8"))
     chunks = payload.get("chunks")
@@ -191,19 +212,32 @@ def _validate_production_governance(
                 "Knowledge release index contains an invalid chunk."
             )
         source_path = _required_string(chunk, "source_path")
-        expected_acl = expected_acl_by_path.get(source_path)
-        if expected_acl is None:
+        expected_entry = expected_documents_by_path.get(source_path)
+        if expected_entry is None:
             raise KnowledgeReleaseValidationError(
                 f"Knowledge chunk source '{source_path}' is absent from the manifest."
             )
+        expected_acl = {
+            str(group) for group in (expected_entry.get("acl_groups") or []) if str(group)
+        }
         chunk_acl = {str(group) for group in (chunk.get("allowed_groups") or []) if str(group)}
-        normalized_expected_acl = set() if expected_acl == {"grp_public"} else expected_acl
-        if chunk_acl != normalized_expected_acl:
+        allowed_chunk_acls = (
+            {frozenset(), frozenset({"grp_public"})}
+            if expected_acl == {"grp_public"}
+            else {frozenset(expected_acl)}
+        )
+        if frozenset(chunk_acl) not in allowed_chunk_acls:
             raise KnowledgeReleaseValidationError(
                 f"Knowledge chunk ACL does not match manifest source '{source_path}'."
             )
+        for identity_field in ("document_id", "version_id"):
+            if chunk.get(identity_field) != expected_entry.get(identity_field):
+                raise KnowledgeReleaseValidationError(
+                    f"Knowledge chunk {identity_field} does not match manifest "
+                    f"source '{source_path}'."
+                )
         seen_paths.add(source_path)
-    if missing_paths := set(expected_acl_by_path) - seen_paths:
+    if missing_paths := set(expected_documents_by_path) - seen_paths:
         raise KnowledgeReleaseValidationError(
             f"Knowledge release documents have no chunks: {sorted(missing_paths)}."
         )

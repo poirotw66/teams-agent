@@ -56,7 +56,8 @@ def test_ready_and_chat_endpoints(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "VPN 密碼被鎖" in response.json()["answer"]
     assert response.json()["citations"][0]["title"] == "VPN 處理方式"
-    assert "[chunkId=" not in response.json()["citations"][0]["evidence"]
+    assert response.json()["citations"][0]["evidence"] is None
+    assert "retrievalTraces" not in response.json()
 
 
 def test_service_token_is_required_when_configured(tmp_path: Path) -> None:
@@ -97,8 +98,15 @@ def test_evaluation_chat_requires_distinct_capability_token(tmp_path: Path) -> N
 
     assert rejected.status_code == 401
     assert accepted.status_code == 200
-    evidence = accepted.json()["citations"][0]["evidence"]
+    body = accepted.json()
+    evidence = body["citations"][0]["evidence"]
     assert "[chunkId=" in evidence
+    assert body["retrievalTraces"][0]["trace"]["actualBackend"] == "HYBRID"
+    assert body["retrievalTraces"][0]["trace"]["attempts"][0]["candidates"]
+    assert body["retrievalTraces"][0]["trace"]["answerability"] == "FULL"
+    assert body["retrievalTraces"][0]["trace"]["claims"][0]["chunkIds"]
+    assert body["retrievalTraces"][0]["trace"]["resolvedIssueQuery"] == "VPN 密碼被鎖怎麼辦？"
+    assert body["llmCallCount"] == 2
 
 
 def test_evaluation_chat_is_disabled_without_capability_token(tmp_path: Path) -> None:
@@ -201,7 +209,8 @@ CHAT_PAYLOAD = {
 def test_chat_stream_emits_stages_then_the_same_answer_as_chat(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path))) as client:
         plain = client.post("/agent/chat", json=CHAT_PAYLOAD)
-        streamed = client.post("/agent/chat/stream", json=CHAT_PAYLOAD)
+        stream_payload = {**CHAT_PAYLOAD, "requestId": "request-stream"}
+        streamed = client.post("/agent/chat/stream", json=stream_payload)
 
     assert streamed.status_code == 200
     assert streamed.headers["content-type"].startswith("text/event-stream")

@@ -148,6 +148,23 @@ class KnowledgeBackendRouter:
             ],
         }
 
+    async def _backend_for_search(
+        self,
+        request: AgentRequest | None,
+        execution_context: ExecutionContext | None,
+    ) -> str:
+        if execution_context is not None:
+            selected = execution_context.selected_knowledge_backend
+            if selected is not None:
+                if selected not in self._services:
+                    raise ValueError(f"Pinned knowledge backend is unavailable: {selected}")
+                return selected
+
+        backend = await self.resolve_backend(request)
+        if execution_context is not None:
+            execution_context.selected_knowledge_backend = backend
+        return backend
+
     async def search(
         self,
         query: str,
@@ -159,7 +176,8 @@ class KnowledgeBackendRouter:
         request: AgentRequest | None = None,
         answer_model: object | None = None,
     ) -> KnowledgeResult:
-        service = self._services[await self.resolve_backend(request)]
+        backend = await self._backend_for_search(request, execution_context)
+        service = self._services[backend]
         parameters = inspect.signature(service.search).parameters
         kwargs: dict[str, object] = {"correlation_id": correlation_id}
         if "call_counter" in parameters:

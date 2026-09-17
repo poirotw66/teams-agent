@@ -30,6 +30,9 @@ def _write_release(root: Path) -> tuple[Path, str]:
                 "content_hash": "hash",
                 "source_path": "sources/doc-vpn.md",
                 "source_type": "PDF",
+                "source_aliases": ["VPN 常見問題", "VPN FAQ"],
+                "content_state": "ACTIVE",
+                "applicable_environments": ["dev", "prod"],
             }
         ],
     }
@@ -39,6 +42,7 @@ def _write_release(root: Path) -> tuple[Path, str]:
         title="VPN",
         source_path="sources/doc-vpn.md",
         content="## 解鎖\n\n請聯繫服務台。",
+        release_id="release-stale",
     )
     HybridIndex([chunk]).save(release / "index" / "chunks.json")
     return root, release_id
@@ -57,6 +61,8 @@ def test_release_hydration_carries_version_into_citation(tmp_path: Path) -> None
     assert citation.documentId == "doc-vpn"
     assert citation.versionId == "ver-doc-vpn-2"
     assert citation.releaseId == release_id
+    assert citation.canonicalSourceId == "doc-vpn"
+    assert citation.sourceAliases == ["VPN 常見問題", "VPN FAQ"]
     assert citation.sourceRefId == make_source_ref_id(
         release_id=release_id,
         document_id="doc-vpn",
@@ -65,7 +71,7 @@ def test_release_hydration_carries_version_into_citation(tmp_path: Path) -> None
         source_path="sources/doc-vpn.md",
     )
     assert citation.sourceType == "PDF"
-    assert citation.evidence == "## 解鎖\n\n請聯繫服務台。"
+    assert citation.evidence is None
 
 
 def test_release_hydration_attaches_images_missing_from_index(tmp_path: Path) -> None:

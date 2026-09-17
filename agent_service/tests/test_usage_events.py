@@ -68,6 +68,33 @@ def test_collector_unknown_model_does_not_report_zero_cost() -> None:
     assert event.estimated_cost_usd is None
 
 
+def test_zero_token_callback_metadata_is_cost_complete() -> None:
+    collector = UsageEventCollector(
+        environment="test",
+        request_id="req-zero",
+        correlation_id="corr-zero",
+        tenant_id="tenant-1",
+        team_id=None,
+        knowledge_backend="HYBRID",
+    )
+
+    summary = build_request_cost_summary(
+        collector,
+        langchain_usage={
+            "unconfigured-model": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+            }
+        },
+        outcome="SUCCESS",
+        elapsed_ms=1.0,
+        llm_call_count=0,
+    )
+
+    assert summary.cost_complete is True
+
+
 def test_collector_record_file_search_includes_tool_context_cost() -> None:
     collector = UsageEventCollector(
         environment="test",
@@ -93,9 +120,7 @@ def test_collector_record_file_search_includes_tool_context_cost() -> None:
     )
 
     assert event.tool_context_tokens == 2004
-    assert event.estimated_cost_usd == pytest.approx(
-        (2020 * 0.30 + 426 * 2.50) / 1_000_000
-    )
+    assert event.estimated_cost_usd == pytest.approx((2020 * 0.30 + 426 * 2.50) / 1_000_000)
 
 
 def test_build_request_cost_summary_merges_file_search_tokens() -> None:

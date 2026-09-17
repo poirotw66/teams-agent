@@ -32,6 +32,7 @@ dev = [
 portal = [
     "PyJWT>=2.10,<3",
     "cryptography>=44,<47",
+    "pymupdf>=1.26,<2",
 ]
 # Spec §8.3: Gemini File Search is a spike-only candidate adapter, not part
 # of the default install. `google-genai` also happens to be pulled in
@@ -51,6 +52,7 @@ firestore = [
     "google-auth[requests]>=2.40,<3",
     "google-cloud-firestore>=2.20,<3",
     "google-cloud-storage>=2.19,<4",
+    "google-cloud-tasks>=2.19,<3",
 ]
 bigquery = [
     "google-cloud-bigquery>=3.25,<4",

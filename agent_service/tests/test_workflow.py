@@ -20,6 +20,7 @@ import pytest
 from agent_service.confirmation import TicketIntent, classify_ticket_intent
 from agent_service.contracts import (
     AgentRequest,
+    Citation,
     ConversationIdentity,
     FaqEntry,
     Issue,
@@ -139,8 +140,7 @@ class FakeExtractorModel:
                 async def ainvoke(self, messages):
                     text = FakeExtractorModel._latest_user_message(messages)
                     pending_clarification = any(
-                        "Pending clarification: yes" in str(message.content)
-                        for message in messages
+                        "Pending clarification: yes" in str(message.content) for message in messages
                     )
                     if not text:
                         for message in reversed(messages):
@@ -161,10 +161,7 @@ class FakeExtractorModel:
                             intent="IT_SUPPORT",
                             confidence=0.95,
                         )
-                    if any(
-                        marker in text
-                        for marker in ("真人客服", "線上客服", "人工客服")
-                    ):
+                    if any(marker in text for marker in ("真人客服", "線上客服", "人工客服")):
                         return ConversationSupervisorDecision(
                             intent="HUMAN_ESCALATION",
                             requestedAction="CONTACT_HUMAN",
@@ -234,7 +231,9 @@ class FakeKnowledgeService:
         self.calls: list[str] = []
         self.received_correlation_ids: list[str | None] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
+    async def search(
+        self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None
+    ):
         self.calls.append(query)
         self.received_correlation_ids.append(correlation_id)
         if call_counter is not None:
@@ -249,13 +248,17 @@ class SelectiveFailKnowledgeService:
         self.fail_marker = fail_marker
         self.calls: list[str] = []
 
-    async def search(self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None):
+    async def search(
+        self, query, user_context, *, correlation_id=None, call_counter=None, execution_context=None
+    ):
         self.calls.append(query)
         if call_counter is not None:
             call_counter.increment()
         if self.fail_marker in query:
             raise RuntimeError("knowledge backend exploded")
-        return KnowledgeResult(found=True, answer=f"根據資料，{query} 的處理方式如下。", backend="HYBRID")
+        return KnowledgeResult(
+            found=True, answer=f"根據資料，{query} 的處理方式如下。", backend="HYBRID"
+        )
 
 
 class FlakyFaqService:
@@ -429,8 +432,7 @@ def build_workflow(
         handoff_repository=handoff_repository,
         handoff_router=handoff_router,
         ticket_item_selector=ticket_item_selector or FakeTicketItemSelector(),
-        ticket_request_dedupe=ticket_request_dedupe
-        or InMemoryTicketRequestDedupeRepository(),
+        ticket_request_dedupe=ticket_request_dedupe or InMemoryTicketRequestDedupeRepository(),
     )
     return workflow, extractor_model, knowledge_service, ticket, conv_service, settings
 
@@ -462,9 +464,7 @@ async def test_multi_issue_one_failed_one_answered_both_surface(tmp_path: Path) 
     issue1 = issue(id=1, description="FAILME 案例")
     issue2 = issue(id=2, description="正常案例")
     knowledge = SelectiveFailKnowledgeService()
-    workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[issue1, issue2]], knowledge=knowledge
-    )
+    workflow, *_ = build_workflow(tmp_path, issues_sequence=[[issue1, issue2]], knowledge=knowledge)
 
     response = await workflow.respond(make_request("兩個問題"))
 
@@ -479,12 +479,12 @@ async def test_multi_issue_one_failed_one_answered_both_surface(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_faq_hit_answered_verbatim(tmp_path: Path) -> None:
-    entry = FaqEntry(id="1", faqKey="PW_RESET", enabled=True, answer="請至公司密碼管理入口重設密碼。")
+    entry = FaqEntry(
+        id="1", faqKey="PW_RESET", enabled=True, answer="請至公司密碼管理入口重設密碼。"
+    )
     faq_service = FaqService(FaqRepository([entry]))
     it_issue = issue(id=1, description="忘記密碼", route="FAQ", faqKey="PW_RESET")
-    workflow, *_ = build_workflow(
-        tmp_path, issues_sequence=[[it_issue]], faq_service=faq_service
-    )
+    workflow, *_ = build_workflow(tmp_path, issues_sequence=[[it_issue]], faq_service=faq_service)
 
     response = await workflow.respond(make_request("忘記密碼怎麼辦"))
 
@@ -521,9 +521,7 @@ async def test_new_question_supersedes_handoff_review_and_returns_to_ai(
     vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
     knowledge = FakeKnowledgeService(
         responses={
-            sap_issue.description: KnowledgeResult(
-                found=False, answer="", backend="HYBRID"
-            ),
+            sap_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID"),
             vpn_issue.description: KnowledgeResult(
                 found=True,
                 answer="請依 VPN 密碼解鎖流程處理。",
@@ -598,9 +596,7 @@ async def test_illegal_supplement_in_summary_review_keeps_case_summary(
         issues_sequence=[[sap_issue]],
         knowledge=FakeKnowledgeService(
             responses={
-                sap_issue.description: KnowledgeResult(
-                    found=False, answer="", backend="HYBRID"
-                )
+                sap_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID")
             }
         ),
         handoff_repository=repository,
@@ -627,9 +623,7 @@ async def test_revise_issue_after_handoff_offer_reruns_rag(tmp_path: Path) -> No
     click_issue = issue(description="大洲系統無法點選")
     knowledge = FakeKnowledgeService(
         responses={
-            unlock_issue.description: KnowledgeResult(
-                found=False, answer="", backend="HYBRID"
-            ),
+            unlock_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID"),
             click_issue.description: KnowledgeResult(
                 found=True,
                 answer="請依大洲功能無法點選排查步驟處理。",
@@ -669,9 +663,7 @@ async def test_cancel_clears_awaiting_supplement_for_next_question(
     vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
     knowledge = FakeKnowledgeService(
         responses={
-            sap_issue.description: KnowledgeResult(
-                found=False, answer="", backend="HYBRID"
-            ),
+            sap_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID"),
             vpn_issue.description: KnowledgeResult(
                 found=True,
                 answer="請依 VPN 密碼解鎖流程處理。",
@@ -685,9 +677,7 @@ async def test_cancel_clears_awaiting_supplement_for_next_question(
         issues_sequence=[[sap_issue], [vpn_issue]],
         knowledge=knowledge,
         handoff_repository=repository,
-        handoff_router=FakeHandoffRouter(
-            [HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.CANCEL]
-        ),
+        handoff_router=FakeHandoffRouter([HandoffAction.REQUEST_SUPPLEMENT, HandoffAction.CANCEL]),
         extractor_by_message={vpn_issue.description: [vpn_issue]},
     )
 
@@ -870,9 +860,7 @@ async def test_unknown_handoff_action_keeps_summary_review_case(tmp_path: Path) 
         issues_sequence=[[sap_issue]],
         knowledge=FakeKnowledgeService(
             responses={
-                sap_issue.description: KnowledgeResult(
-                    found=False, answer="", backend="HYBRID"
-                )
+                sap_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID")
             }
         ),
         handoff_repository=repository,
@@ -942,6 +930,76 @@ async def test_need_more_info_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_retrieval_probe_answers_only_identifiable_single_source_facet(
+    tmp_path: Path,
+) -> None:
+    it_issue = issue(
+        description="PortalX 權限應如何申請？",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["請確認需要處理的權限面向"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(
+            found=True,
+            answer="請由 PortalX 權限頁提出申請 [S1]",
+            sources=[
+                Citation(
+                    title="PortalX 權限申請",
+                    chunkId="portalx-access",
+                    documentId="doc-portalx-access",
+                    canonicalSourceId="doc-portalx-access",
+                )
+            ],
+            backend="HYBRID",
+        )
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        knowledge=knowledge,
+    )
+
+    response = await workflow.respond(make_request("PortalX 權限應如何申請？"))
+
+    assert response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
+
+
+@pytest.mark.asyncio
+async def test_retrieval_probe_keeps_ambiguous_permission_question_open(
+    tmp_path: Path,
+) -> None:
+    it_issue = issue(
+        description="CRM 權限",
+        readiness="NEED_MORE_INFO",
+        missingInfo=["請確認要申請、查詢進度、排錯或移除權限"],
+    )
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(
+            found=True,
+            answer="CRM 權限文件 [S1]",
+            sources=[
+                Citation(
+                    title="CRM 權限",
+                    chunkId="crm-access",
+                    documentId="doc-crm-access",
+                )
+            ],
+            backend="HYBRID",
+        )
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[it_issue]],
+        knowledge=knowledge,
+    )
+
+    response = await workflow.respond(make_request("CRM 權限"))
+
+    assert response.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert response.issueResults[0].questions == it_issue.missingInfo
+
+
+@pytest.mark.asyncio
 async def test_all_non_it_issues(tmp_path: Path) -> None:
     issues = [
         issue(id=1, description="天氣", isIT=False, readiness="NOT_IT", route="NOT_IT"),
@@ -989,7 +1047,9 @@ async def test_correlation_id_propagates_and_is_not_regenerated(tmp_path: Path) 
     assert response.traceId == "caller-supplied-corr-id"
     assert knowledge.received_correlation_ids == ["caller-supplied-corr-id"]
 
-    history = await conv_service.get_history((await workflow.run(request)).get("conversation").conversationId)
+    history = await conv_service.get_history(
+        (await workflow.run(request)).get("conversation").conversationId
+    )
     # Every saved message in this conversation carries the same correlation id.
     assert all(message.correlationId == "caller-supplied-corr-id" for message in history[:2])
 
@@ -1139,9 +1199,7 @@ async def test_yes_merges_multiple_pending_issues_into_one_ticket(tmp_path: Path
         ticket_service=ticket_service,
     )
 
-    offered = await workflow.respond(
-        make_request("VPN Error 619，而且 SAP 密碼也無法重置")
-    )
+    offered = await workflow.respond(make_request("VPN Error 619，而且 SAP 密碼也無法重置"))
     confirmed = await workflow.respond(make_request("是"))
 
     assert offered.answer.count("是否需要協助建立派工單") == 2
@@ -1178,9 +1236,7 @@ async def test_ticket_created_after_explicit_confirmation_with_trusted_identity(
     offered = await workflow.respond(
         make_request("VPN 一直斷線，請幫我建立工單", user=trusted_user())
     )
-    response = await workflow.respond(
-        make_request("是", user=trusted_user())
-    )
+    response = await workflow.respond(make_request("是", user=trusted_user()))
 
     assert "是否需要協助建立派工單" in offered.answer
     assert "查無相關資訊" not in offered.answer
@@ -1207,9 +1263,7 @@ async def test_ticket_is_not_created_when_catalog_match_is_ambiguous(
             [issue(description="印表機不能用", route="TICKET")],
         ],
         ticket_service=ticket_service,
-        ticket_item_selector=FakeTicketItemSelector(
-            item_id=None, reason="needs_clarification"
-        ),
+        ticket_item_selector=FakeTicketItemSelector(item_id=None, reason="needs_clarification"),
     )
 
     await workflow.respond(make_request("印表機不能用，請幫我建立工單"))
@@ -1253,9 +1307,7 @@ async def test_generic_create_ticket_reuses_recent_it_issue_from_multi_turn_conv
 ) -> None:
     ticket_service = FakeTicketService()
     knowledge = FakeKnowledgeService(
-        default=KnowledgeResult(
-            found=True, answer="請攜帶證件至服務台重設解鎖。", backend="HYBRID"
-        )
+        default=KnowledgeResult(found=True, answer="請攜帶證件至服務台重設解鎖。", backend="HYBRID")
     )
     workflow, extractor_model, knowledge, ticket_service, *_ = build_workflow(
         tmp_path,
@@ -1279,7 +1331,7 @@ async def test_generic_create_ticket_reuses_recent_it_issue_from_multi_turn_conv
 
     assert first.issueResults[0].resultType == "NEED_MORE_INFO"
     assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
-    assert knowledge.calls == ["公發手機無法解鎖"]
+    assert knowledge.calls == ["我的設備無法解鎖", "公發手機無法解鎖"]
     assert ticket_service.created == []
     assert "是否需要協助建立派工單" in offered.answer
     assert extractor_model.calls == 2
@@ -1426,12 +1478,8 @@ async def test_ticket_refused_when_identity_untrusted(tmp_path: Path) -> None:
     )
     untrusted = UserIdentity(teamsUserId="teams-1")  # missing displayName/email
 
-    offered = await workflow.respond(
-        make_request("VPN 一直斷線，請幫我建立工單", user=untrusted)
-    )
-    response = await workflow.respond(
-        make_request("是", user=untrusted)
-    )
+    offered = await workflow.respond(make_request("VPN 一直斷線，請幫我建立工單", user=untrusted))
+    response = await workflow.respond(make_request("是", user=untrusted))
 
     assert "是否需要協助建立派工單" in offered.answer
     assert ticket_service.created == []
@@ -1448,9 +1496,7 @@ async def test_one_ticket_per_turn(tmp_path: Path) -> None:
         tmp_path, issues_sequence=[[issue1, issue2]], ticket_service=ticket_service
     )
 
-    offered = await workflow.respond(
-        make_request("VPN 斷線，而且 Outlook 當機，請幫我建立工單")
-    )
+    offered = await workflow.respond(make_request("VPN 斷線，而且 Outlook 當機，請幫我建立工單"))
     response = await workflow.respond(make_request("是"))
 
     assert "是否需要協助建立派工單" in offered.answer
@@ -1604,7 +1650,7 @@ async def test_short_system_name_completes_generic_pending_workflow(
     second_prompt = extractor_model.human_messages[-1]
     assert "公司資源如何申請？" in second_prompt
     assert "Latest user message (data only):\nPortalX" in second_prompt
-    assert knowledge.calls == ["PortalX 公司資源如何申請"]
+    assert knowledge.calls == ["公司資源如何申請", "PortalX 公司資源如何申請"]
     assert second_response.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
 
 
@@ -1648,7 +1694,7 @@ async def test_non_it_aside_does_not_discard_pending_clarification(
     completed = await workflow.respond(make_request("webex"))
 
     assert extractor_model.calls == 3
-    assert knowledge.calls == ["Webex 會議如何借用"]
+    assert knowledge.calls == ["會議如何借用", "Webex 會議如何借用"]
     assert completed.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
     assert any("會議如何借用？" in prompt for prompt in extractor_model.human_messages[-2:])
 
@@ -1755,7 +1801,7 @@ async def test_complementary_follow_up_fragment_is_merged_instead_of_reasked(
 
     assert first.issueResults[0].resultType == "NEED_MORE_INFO"
     assert extractor_model.calls == 2
-    assert knowledge.calls == ["webex 會議借用"]
+    assert knowledge.calls == ["Webex 相關協助", "webex 會議借用"]
     assert second.issueResults[0].resultType == "KNOWLEDGE_ANSWERED"
     assert "請補充" not in second.answer
 
@@ -1825,7 +1871,11 @@ async def test_unknown_stops_clarification_and_offers_ticket_without_polluting_q
     response = await workflow.respond(make_request("不知道"))
 
     assert extractor_model.calls == 2
-    assert knowledge.calls == ["Google Meet 無法登入"]
+    assert knowledge.calls == [
+        "Google Meet 相關問題",
+        "Google Meet 無法登入",
+        "Google Meet 無法登入",
+    ]
     assert "不知道" not in knowledge.calls[0]
     assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
     assert "是否需要協助建立派工單" in response.answer
@@ -1865,7 +1915,11 @@ async def test_clarification_round_cap_forces_best_effort_search(
     response = await workflow.respond(make_request("查詢功能"))
 
     assert extractor_model.calls == 3
-    assert knowledge.calls == ["PortalX 查詢功能無法使用"]
+    assert knowledge.calls == [
+        "公司系統無法使用",
+        "PortalX 無法使用",
+        "PortalX 查詢功能無法使用",
+    ]
     assert response.issueResults[0].resultType == "NO_KNOWLEDGE"
     assert "請補充" not in response.answer
 

@@ -12,6 +12,7 @@ _FRONT_MATTER_PATTERN = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?",
 _KNOWN_FRONT_MATTER_KEYS = {
     "title",
     "owner",
+    "category",
     "version",
     "effectiveDate",
     "reviewDate",
@@ -40,6 +41,7 @@ class DocumentMetadata:
 
     title: str | None = None
     owner: str | None = None
+    category: str | None = None
     version: str | None = None
     effective_date: str | None = None
     review_date: str | None = None
@@ -56,6 +58,7 @@ class DocumentMetadata:
         return cls(
             title=value.get("title"),
             owner=value.get("owner"),
+            category=value.get("category"),
             version=str(value["version"]) if value.get("version") is not None else None,
             effective_date=value.get("effective_date"),
             review_date=value.get("review_date"),
@@ -78,6 +81,7 @@ class DocumentChunk:
     # index is loaded.  They stay optional for bundled and legacy indexes.
     document_id: str | None = None
     version_id: str | None = None
+    version_number: int | None = None
     release_id: str | None = None
     section: str | None = None
     page: int | None = None
@@ -91,6 +95,19 @@ class DocumentChunk:
     coordinate_system: str | None = None
     section_path: str | None = None
     paragraph_id: str | None = None
+    parent_id: str | None = None
+    neighbor_ids: list[str] = field(default_factory=list)
+    heading_path: list[str] = field(default_factory=list)
+    page_end: int | None = None
+    token_count: int | None = None
+    content_hash: str | None = None
+    parser_version: str | None = None
+    chunker_version: str | None = None
+    source_aliases: list[str] = field(default_factory=list)
+    content_state: str = "ACTIVE"
+    effective_at: str | None = None
+    expires_at: str | None = None
+    applicable_environments: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,6 +137,13 @@ def _coerce_date_value(value: Any) -> str | None:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def _metadata_string_list(metadata: dict[str, Any], field_name: str) -> list[str]:
+    value = metadata.get(field_name) or []
+    if not isinstance(value, list):
+        raise TypeError(f"Metadata field '{field_name}' must be a list of strings.")
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def parse_front_matter(raw_text: str) -> tuple[dict[str, Any], str]:
@@ -164,6 +188,7 @@ def _document_metadata_from_front_matter(
     return DocumentMetadata(
         title=str(front_matter["title"]) if front_matter.get("title") else fallback_title,
         owner=str(front_matter["owner"]) if front_matter.get("owner") else None,
+        category=str(front_matter["category"]) if front_matter.get("category") else None,
         version=str(version) if version is not None else None,
         effective_date=_coerce_date_value(front_matter.get("effectiveDate")),
         review_date=_coerce_date_value(front_matter.get("reviewDate")),
@@ -171,7 +196,7 @@ def _document_metadata_from_front_matter(
     )
 
 
-def _strip_excluded_markdown(raw_text: str) -> str:
+def strip_excluded_markdown(raw_text: str) -> str:
     text = re.sub(
         r"(?ms)^## Archive metadata.*?^---\s*$",
         "",
@@ -186,7 +211,7 @@ def _strip_excluded_markdown(raw_text: str) -> str:
 
 
 def clean_markdown(raw_text: str) -> str:
-    text = _strip_excluded_markdown(raw_text)
+    text = strip_excluded_markdown(raw_text)
     text = re.sub(r"«/?span[^»]*»", "", text)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -306,15 +331,13 @@ def chunk_markdown(
 ) -> list[DocumentChunk]:
     raw_text = source_path.read_text(encoding="utf-8")
     front_matter, body_text = parse_front_matter(raw_text)
-    canonical_markdown = _strip_excluded_markdown(body_text)
+    canonical_markdown = strip_excluded_markdown(body_text)
     text = clean_markdown(canonical_markdown)
     title_match = re.search(r"(?m)^#\s+(.+)$", text)
     derived_title = title_match.group(1).strip() if title_match else source_path.stem
 
     doc_metadata = (
-        _document_metadata_from_front_matter(front_matter, derived_title)
-        if front_matter
-        else None
+        _document_metadata_from_front_matter(front_matter, derived_title) if front_matter else None
     )
     title = doc_metadata.title if doc_metadata and doc_metadata.title else derived_title
     metadata = metadata or {}
@@ -323,9 +346,21 @@ def chunk_markdown(
     if not allowed_groups and doc_metadata and doc_metadata.audience:
         # "all-employees" is the open/no-restriction marker, matching the
         # existing "empty allowed_groups = visible to all" convention.
-        allowed_groups = [
-            group for group in doc_metadata.audience if group != "all-employees"
-        ]
+        allowed_groups = [group for group in doc_metadata.audience if group != "all-employees"]
+    if (
+        metadata.get("chunkingProfile")
+        or re.search(r"(?m)^##\s+Page\s+\d+\s*$", canonical_markdown)
+        or _SOURCE_MAP_RE.search(canonical_markdown)
+    ):
+        return _chunk_layout_markdown(
+            source_path=source_path,
+            relative_path=relative_path,
+            canonical_markdown=canonical_markdown,
+            title=title,
+            metadata=metadata,
+            allowed_groups=allowed_groups,
+            doc_metadata=doc_metadata,
+        )
 
     # Keep level-three headings with their parent page/section so screenshots and
     # the instructions they illustrate remain in the same retrieval chunk.
@@ -338,23 +373,18 @@ def chunk_markdown(
             continue
         images = extract_images(raw_section, source_path)
         content_parts.extend(
-            (part, images)
-            for part in _split_long_text(section, chunk_size, overlap)
+            (part, images) for part in _split_long_text(section, chunk_size, overlap)
         )
 
     if not content_parts:
         images = extract_images(canonical_markdown, source_path)
-        content_parts = [
-            (part, images)
-            for part in _split_long_text(text, chunk_size, overlap)
-        ]
+        content_parts = [(part, images) for part in _split_long_text(text, chunk_size, overlap)]
 
     chunks: list[DocumentChunk] = []
     for index, (content, images) in enumerate(content_parts):
         digest = hashlib.sha256(
             (
-                f"{relative_path}:{index}:{content}:"
-                + ",".join(image.path for image in images)
+                f"{relative_path}:{index}:{content}:" + ",".join(image.path for image in images)
             ).encode()
         ).hexdigest()[:20]
         source_map = _parse_source_map_marker(content)
@@ -383,9 +413,89 @@ def chunk_markdown(
                 paragraph_id=f"p-{index + 1}",
                 bbox=source_map.get("bbox"),
                 coordinate_system=source_map.get("coordinate_system"),
+                document_id=metadata.get("documentId"),
+                version_id=metadata.get("versionId"),
+                version_number=metadata.get("versionNumber"),
+                release_id=metadata.get("releaseId"),
+                source_type=metadata.get("sourceType"),
+                source_aliases=_metadata_string_list(metadata, "sourceAliases"),
+                content_state=str(metadata.get("contentState") or "ACTIVE"),
+                effective_at=metadata.get("effectiveAt"),
+                expires_at=metadata.get("expiresAt"),
+                applicable_environments=_metadata_string_list(
+                    metadata,
+                    "applicableEnvironments",
+                ),
             )
         )
     return chunks
+
+
+def _chunk_layout_markdown(
+    *,
+    source_path: Path,
+    relative_path: str,
+    canonical_markdown: str,
+    title: str,
+    metadata: dict[str, Any],
+    allowed_groups: list[str],
+    doc_metadata: DocumentMetadata | None,
+) -> list[DocumentChunk]:
+    from .document_parsing import MarkdownLayoutParser
+    from .layout_chunking import ChunkingProfile, chunk_parsed_document
+
+    profile_value = str(metadata.get("chunkingProfile") or "AUTO").upper()
+    try:
+        profile = ChunkingProfile(profile_value)
+    except ValueError:
+        profile = ChunkingProfile.AUTO
+    document_id = str(metadata.get("documentId") or source_path.stem)
+    parsed = MarkdownLayoutParser().parse(canonical_markdown, title=title)
+    drafts, _quality = chunk_parsed_document(
+        parsed,
+        document_id=document_id,
+        profile=profile,
+    )
+    return [
+        DocumentChunk(
+            chunk_id=draft.chunk_id,
+            title=title,
+            source_path=relative_path,
+            content=draft.content,
+            classification=str(metadata.get("classification", "internal")),
+            allowed_groups=allowed_groups,
+            images=extract_images(draft.content, source_path),
+            metadata=doc_metadata,
+            section=draft.heading_path[-1] if draft.heading_path else None,
+            page=draft.page_start,
+            page_index=draft.page_start,
+            page_label=str(draft.page_start),
+            section_path=" > ".join(draft.heading_path) or None,
+            paragraph_id=draft.chunk_id,
+            parent_id=draft.parent_id,
+            neighbor_ids=list(draft.neighbor_ids),
+            heading_path=list(draft.heading_path),
+            page_end=draft.page_end,
+            token_count=draft.token_count,
+            content_hash=draft.content_hash,
+            parser_version=draft.parser_version,
+            chunker_version=draft.chunker_version,
+            document_id=metadata.get("documentId"),
+            version_id=metadata.get("versionId"),
+            version_number=metadata.get("versionNumber"),
+            release_id=metadata.get("releaseId"),
+            source_type=metadata.get("sourceType"),
+            source_aliases=_metadata_string_list(metadata, "sourceAliases"),
+            content_state=str(metadata.get("contentState") or "ACTIVE"),
+            effective_at=metadata.get("effectiveAt"),
+            expires_at=metadata.get("expiresAt"),
+            applicable_environments=_metadata_string_list(
+                metadata,
+                "applicableEnvironments",
+            ),
+        )
+        for draft in drafts
+    ]
 
 
 _SOURCE_MAP_RE = re.compile(r"<!--\s*source-map:([^>]+)-->", re.IGNORECASE)
@@ -427,11 +537,7 @@ def load_metadata(data_dir: Path) -> dict[str, dict[str, Any]]:
     value = json.loads(metadata_path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise TypeError("data/metadata.json must be a JSON object.")
-    return {
-        str(key): item
-        for key, item in value.items()
-        if isinstance(item, dict)
-    }
+    return {str(key): item for key, item in value.items() if isinstance(item, dict)}
 
 
 def load_source_chunks(

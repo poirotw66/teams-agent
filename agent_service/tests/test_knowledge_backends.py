@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent_service.contracts import (
@@ -10,10 +12,12 @@ from agent_service.contracts import (
     UserContext,
     UserIdentity,
 )
+from agent_service.execution_context import ExecutionContext
 from agent_service.knowledge_backends import (
     FirestoreKnowledgeBackendStateStore,
     KnowledgeBackendRouter,
 )
+from agent_service.settings import RagSettings
 
 
 class FakeBackend:
@@ -74,6 +78,39 @@ async def test_router_switches_backends_and_keeps_unavailable_reason() -> None:
     assert first.backend == "HYBRID"
     assert second.backend == "GEMINI_FILE_SEARCH"
     assert (await router.status())["activeBackend"] == "GEMINI_FILE_SEARCH"
+
+
+@pytest.mark.asyncio
+async def test_router_keeps_request_backend_after_active_backend_switch(
+    tmp_path: Path,
+) -> None:
+    router = KnowledgeBackendRouter(
+        {
+            "HYBRID": FakeBackend("HYBRID"),
+            "GEMINI_FILE_SEARCH": FakeBackend("GEMINI_FILE_SEARCH"),
+        },
+        "HYBRID",
+    )
+    context = ExecutionContext.from_request(
+        settings=RagSettings(
+            data_dir=tmp_path,
+            index_path=tmp_path / "index.json",
+        ),
+        correlation_id="correlation-1",
+        request_id="request-1",
+        tenant_id="tenant-1",
+        knowledge_backend="HYBRID",
+    )
+
+    await router.select("GEMINI_FILE_SEARCH")
+    result = await router.search(
+        "question",
+        UserContext(),
+        execution_context=context,
+    )
+
+    assert result.backend == "HYBRID"
+    assert context.selected_knowledge_backend == "HYBRID"
 
 
 @pytest.mark.asyncio

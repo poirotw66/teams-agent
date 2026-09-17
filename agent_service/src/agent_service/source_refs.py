@@ -11,10 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 from urllib.parse import quote
 
 from .documents import DocumentChunk, DocumentImage, extract_images
@@ -35,8 +35,7 @@ def make_source_ref_id(
     if not chunk_id and not source_path:
         return None
     payload = "\x1f".join(
-        str(value or "")
-        for value in (release_id, document_id, version_id, chunk_id, source_path)
+        str(value or "") for value in (release_id, document_id, version_id, chunk_id, source_path)
     )
     return f"src-{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:24]}"
 
@@ -88,7 +87,9 @@ def build_citation_url(
     return None
 
 
-def _manifest_by_key(release_dir: Path) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+def _manifest_by_key(
+    release_dir: Path,
+) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     manifest_path = release_dir / "manifest.json"
     if not manifest_path.is_file():
         return {}, {}
@@ -187,16 +188,56 @@ def hydrate_index_sources(
             by_title=by_title,
         )
         if entry:
-            chunk.document_id = chunk.document_id or str(
-                entry.get("document_id") or entry.get("documentId") or ""
-            ) or None
-            chunk.version_id = chunk.version_id or str(
-                entry.get("version_id") or entry.get("versionId") or ""
-            ) or None
-            chunk.source_type = chunk.source_type or str(
-                entry.get("source_type") or entry.get("sourceType") or ""
-            ) or None
-        chunk.release_id = chunk.release_id or release_id
+            chunk.document_id = (
+                chunk.document_id
+                or str(entry.get("document_id") or entry.get("documentId") or "")
+                or None
+            )
+            chunk.version_id = (
+                chunk.version_id
+                or str(entry.get("version_id") or entry.get("versionId") or "")
+                or None
+            )
+            if chunk.version_number is None:
+                raw_version_number = entry.get("version_number") or entry.get("versionNumber")
+                if raw_version_number is not None:
+                    try:
+                        chunk.version_number = int(raw_version_number)
+                    except (TypeError, ValueError):
+                        chunk.version_number = None
+            chunk.source_type = (
+                chunk.source_type
+                or str(entry.get("source_type") or entry.get("sourceType") or "")
+                or None
+            )
+            aliases = entry.get("source_aliases") or entry.get("sourceAliases") or []
+            if not chunk.source_aliases and isinstance(aliases, list):
+                chunk.source_aliases = [
+                    str(alias).strip() for alias in aliases if str(alias).strip()
+                ]
+            chunk.content_state = str(
+                entry.get("content_state") or entry.get("contentState") or chunk.content_state
+            )
+            chunk.effective_at = (
+                chunk.effective_at
+                or str(entry.get("effective_at") or entry.get("effectiveAt") or "")
+                or None
+            )
+            chunk.expires_at = (
+                chunk.expires_at
+                or str(entry.get("expires_at") or entry.get("expiresAt") or "")
+                or None
+            )
+            environments = (
+                entry.get("applicable_environments") or entry.get("applicableEnvironments") or []
+            )
+            if not chunk.applicable_environments and isinstance(environments, list):
+                chunk.applicable_environments = [
+                    str(environment).strip()
+                    for environment in environments
+                    if str(environment).strip()
+                ]
+        chunk.release_id = release_id
         original = _original_asset_path(
             release_root,
             document_id=chunk.document_id,

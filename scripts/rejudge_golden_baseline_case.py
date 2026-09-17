@@ -55,6 +55,7 @@ def _cached_target(case: dict[str, Any]) -> AgentTargetResult:
         issue_results=tuple(target.get("issueResults") or ()),
         correlation_id=target.get("correlationId"),
         latency_ms=float(target.get("latencyMs") or 0.0),
+        retrieval_traces=tuple(target.get("retrievalTraces") or ()),
         error=target.get("error"),
     )
 

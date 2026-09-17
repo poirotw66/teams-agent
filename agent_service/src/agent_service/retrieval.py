@@ -9,6 +9,7 @@ from statistics import mean
 from langchain.embeddings import init_embeddings
 
 from .documents import DocumentChunk
+from .knowledge_eligibility import is_chunk_generation_eligible
 
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9_./:\\-]+|[\u3400-\u9fff]+")
 
@@ -22,6 +23,18 @@ def tokenize(text: str) -> list[str]:
         else:
             tokens.append(match)
     return tokens
+
+
+def sparse_index_text(chunk: DocumentChunk) -> str:
+    fields = [
+        chunk.title,
+        *chunk.source_aliases,
+        chunk.section or "",
+        chunk.section_path or "",
+        *chunk.heading_path,
+        chunk.content,
+    ]
+    return "\n".join(field for field in fields if field)
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -43,7 +56,6 @@ class SearchResult:
     dense_score: float | None = None
 
 
-
 def _normalize_embedding_model_id(model_id: str) -> str:
     """Compare embedding ids with or without provider prefix."""
 
@@ -59,7 +71,6 @@ def _embedding_models_compatible(left: str, right: str) -> bool:
     return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
 
 
-
 class HybridIndex:
     def __init__(
         self,
@@ -68,18 +79,8 @@ class HybridIndex:
     ) -> None:
         self.chunks = chunks
         self.embedding_model_name = embedding_model
-        self.embedding_client = (
-            init_embeddings(embedding_model) if embedding_model else None
-        )
-        self.tokenized_documents = [tokenize(chunk.content) for chunk in chunks]
-        self.document_frequencies: Counter[str] = Counter()
-        for tokens in self.tokenized_documents:
-            self.document_frequencies.update(set(tokens))
-        self.average_length = (
-            mean(len(tokens) for tokens in self.tokenized_documents)
-            if self.tokenized_documents
-            else 0
-        )
+        self.embedding_client = init_embeddings(embedding_model) if embedding_model else None
+        self.tokenized_documents = [tokenize(sparse_index_text(chunk)) for chunk in chunks]
 
     @classmethod
     def load(
@@ -90,12 +91,13 @@ class HybridIndex:
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
         indexed_model = value.get("embeddingModel")
-        if indexed_model and embedding_model and not _embedding_models_compatible(
-            indexed_model, embedding_model
+        if (
+            indexed_model
+            and embedding_model
+            and not _embedding_models_compatible(indexed_model, embedding_model)
         ):
             raise ValueError(
-                "Configured embedding model does not match the built index. "
-                "Run rag-index again."
+                "Configured embedding model does not match the built index. Run rag-index again."
             )
         # Prefer a provider-prefixed id so init_embeddings can resolve the client.
         runtime_model = None
@@ -129,16 +131,29 @@ class HybridIndex:
         for chunk, vector in zip(self.chunks, vectors, strict=True):
             chunk.vector = vector
 
-    def _bm25_scores(self, query: str) -> list[float]:
+    def _bm25_scores(
+        self,
+        query: str,
+        candidate_indices: list[int],
+    ) -> list[float]:
         query_terms = tokenize(query)
-        document_count = len(self.chunks)
-        if not query_terms or not document_count or self.average_length == 0:
-            return [0.0] * document_count
+        candidate_tokens = [self.tokenized_documents[index] for index in candidate_indices]
+        document_count = len(candidate_tokens)
+        average_length = (
+            mean(len(tokens) for tokens in candidate_tokens) if candidate_tokens else 0.0
+        )
+        if not query_terms or not document_count or average_length == 0:
+            return [0.0] * len(self.chunks)
+
+        document_frequencies: Counter[str] = Counter()
+        for tokens in candidate_tokens:
+            document_frequencies.update(set(tokens))
 
         k1 = 1.5
         b = 0.75
-        scores: list[float] = []
-        for document_tokens in self.tokenized_documents:
+        scores = [0.0] * len(self.chunks)
+        for index in candidate_indices:
+            document_tokens = self.tokenized_documents[index]
             term_counts = Counter(document_tokens)
             document_length = len(document_tokens)
             score = 0.0
@@ -146,17 +161,14 @@ class HybridIndex:
                 frequency = term_counts[term]
                 if frequency == 0:
                     continue
-                document_frequency = self.document_frequencies[term]
+                document_frequency = document_frequencies[term]
                 inverse_document_frequency = math.log(
-                    1 + (document_count - document_frequency + 0.5)
-                    / (document_frequency + 0.5)
+                    1 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5)
                 )
                 numerator = frequency * (k1 + 1)
-                denominator = frequency + k1 * (
-                    1 - b + b * document_length / self.average_length
-                )
+                denominator = frequency + k1 * (1 - b + b * document_length / average_length)
                 score += inverse_document_frequency * numerator / denominator
-            scores.append(score)
+            scores[index] = score
         return scores
 
     def search(
@@ -164,24 +176,30 @@ class HybridIndex:
         query: str,
         limit: int,
         groups: set[str] | None = None,
+        *,
+        environment: str = "dev",
     ) -> list[SearchResult]:
         groups = groups or set()
-        sparse_scores = self._bm25_scores(query)
-        max_sparse = max(sparse_scores, default=0.0)
-        normalized_sparse = [
-            score / max_sparse if max_sparse else 0.0 for score in sparse_scores
+        authorized_indices = [
+            index
+            for index, chunk in enumerate(self.chunks)
+            if (not chunk.allowed_groups or bool(set(chunk.allowed_groups).intersection(groups)))
+            and is_chunk_generation_eligible(
+                chunk,
+                environment=environment,
+            )
         ]
+        sparse_scores = self._bm25_scores(query, authorized_indices)
+        max_sparse = max(sparse_scores, default=0.0)
+        normalized_sparse = [score / max_sparse if max_sparse else 0.0 for score in sparse_scores]
 
         query_vector: list[float] | None = None
         if self.embedding_client and any(chunk.vector for chunk in self.chunks):
             query_vector = self.embedding_client.embed_query(query)
 
         results: list[SearchResult] = []
-        for index, chunk in enumerate(self.chunks):
-            allowed_groups = set(chunk.allowed_groups or [])
-            if allowed_groups and not allowed_groups.intersection(groups):
-                continue
-
+        for index in authorized_indices:
+            chunk = self.chunks[index]
             dense_score: float | None = None
             score = normalized_sparse[index]
             if query_vector is not None and chunk.vector:
@@ -193,9 +211,7 @@ class HybridIndex:
                     chunk=chunk,
                     score=round(score, 6),
                     sparse_score=round(normalized_sparse[index], 6),
-                    dense_score=round(dense_score, 6)
-                    if dense_score is not None
-                    else None,
+                    dense_score=round(dense_score, 6) if dense_score is not None else None,
                 )
             )
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from agent_service.deps import sync_knowledge_to_active_pointer
 from agent_service.knowledge_release import (
     read_active_release_id,
     release_index_path,
@@ -18,6 +21,18 @@ from agent_service.release_artifacts import (
     inspect_index_artifact,
 )
 from agent_service.settings import RagSettings
+
+
+def test_explicit_release_pin_ignores_mutable_active_pointer(tmp_path: Path) -> None:
+    settings = replace(
+        _settings(tmp_path),
+        knowledge_active_release_id="release-pinned",
+    )
+    write_active_release_pointer(tmp_path / "releases", "release-other")
+
+    app = SimpleNamespace(state=SimpleNamespace())
+
+    assert sync_knowledge_to_active_pointer(app, settings) is False
 
 
 def _settings(
@@ -233,6 +248,93 @@ def test_resolve_rejects_chunk_acl_that_differs_from_manifest(
         resolve_knowledge_index(settings)
 
 
+def test_resolve_accepts_explicit_public_chunk_acl(tmp_path: Path) -> None:
+    settings = _settings(
+        tmp_path,
+        mode="PORTAL",
+        active_release_id="release-explicit-public",
+        bundled_exists=False,
+        require_manifest=True,
+        require_vectors=True,
+    )
+    index_path = _write_release(
+        settings.knowledge_release_dir,
+        "release-explicit-public",
+        vectors=[[0.1, 0.2]],
+    )
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    payload["chunks"][0]["allowed_groups"] = ["grp_public"]
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    artifact = inspect_index_artifact(index_path)
+    manifest_path = index_path.parents[1] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["index"] = artifact.to_manifest_dict()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert resolve_knowledge_index(settings).release_id == "release-explicit-public"
+
+
+def test_resolve_rejects_chunk_identity_that_differs_from_manifest(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(
+        tmp_path,
+        mode="PORTAL",
+        active_release_id="release-identity-mismatch",
+        bundled_exists=False,
+        require_manifest=True,
+        require_vectors=True,
+    )
+    index_path = _write_release(
+        settings.knowledge_release_dir,
+        "release-identity-mismatch",
+        vectors=[[0.1, 0.2]],
+    )
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    payload["chunks"][0]["version_id"] = "wrong-version"
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    artifact = inspect_index_artifact(index_path)
+    manifest_path = index_path.parents[1] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["index"] = artifact.to_manifest_dict()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(
+        KnowledgeReleaseValidationError,
+        match="version_id does not match",
+    ):
+        resolve_knowledge_index(settings)
+
+
+def test_resolve_rejects_alias_shared_by_canonical_documents(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(
+        tmp_path,
+        mode="PORTAL",
+        active_release_id="release-alias-collision",
+        bundled_exists=False,
+        require_manifest=True,
+        require_vectors=True,
+    )
+    index_path = _write_release(
+        settings.knowledge_release_dir,
+        "release-alias-collision",
+        vectors=[[0.1, 0.2], [0.3, 0.4]],
+    )
+    manifest_path = index_path.parents[1] / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["documents"][0]["source_aliases"] = ["VPN FAQ"]
+    manifest["documents"][1]["source_aliases"] = [" vpn faq "]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(
+        KnowledgeReleaseValidationError,
+        match="identifies multiple canonical documents",
+    ):
+        resolve_knowledge_index(settings)
+
+
 def test_gcs_resolver_matches_firestore_metadata_to_downloaded_release(
     tmp_path: Path,
 ) -> None:
@@ -303,6 +405,9 @@ def _write_release(
             "content": f"Content {index}",
             "allowed_groups": [],
             "vector": vector,
+            "document_id": f"doc-{index}",
+            "version_id": f"version-{index}",
+            "release_id": release_id,
         }
         for index, vector in enumerate(vectors)
     ]
