@@ -1,0 +1,51 @@
+{
+  "job_id": "pdfjob-071653c5e7a9",
+  "status": "COMPLETED",
+  "filename": "員工 IT 支援服務手冊.pdf",
+  "created_at": "2026-09-17T06:26:21.208565+00:00",
+  "updated_at": "2026-09-17T06:26:21.209414+00:00",
+  "page_count": 1,
+  "byte_size": 587,
+  "mode": "legacy",
+  "error": null,
+  "result": {
+    "title": "員工 IT 支援服務手冊",
+    "owner_unit_id": "IT Service Desk",
+    "effective_at": "2026-09-17",
+    "review_due_at": "2026-09-17",
+    "audience_type": "ALL_EMPLOYEES",
+    "audience_group_ids": [],
+    "markdown_content": "# 員工 IT 支援服務手冊\n\n<!-- source-map:page_index=0 page_label=1 coordinate_system=PDF_POINTS_72DPI -->\nEmployee IT support guide\n",
+    "asset_slug": "員工 IT 支援服務手冊",
+    "page_count": 1,
+    "source_type": "PDF",
+    "warnings": [
+      "PDF converter URL is not configured; used legacy text extraction.",
+      "Scanned or chart-heavy PDFs need KNOWLEDGE_PORTAL_PDF_CONVERTER_URL."
+    ],
+    "conversion_mode": "legacy",
+    "conversion_engine": "legacy_text",
+    "assets": [],
+    "original_asset_token": "orig-bf6269a313e978696b1175ee",
+    "original_asset_name": "員工 IT 支援服務手冊.pdf",
+    "original_asset_sha256": "7c088632b87f5bc0d735f22ef16024f507722e7fc39695df2ec9067dcbb80c91",
+    "original_asset_content_type": "application/pdf",
+    "original_asset_size": 587
+  },
+  "actor_id": "test-admin",
+  "original_asset": {
+    "original_asset_token": "orig-bf6269a313e978696b1175ee",
+    "original_asset_name": "員工 IT 支援服務手冊.pdf",
+    "original_asset_sha256": "7c088632b87f5bc0d735f22ef16024f507722e7fc39695df2ec9067dcbb80c91",
+    "original_asset_content_type": "application/pdf",
+    "original_asset_size": 587
+  },
+  "ingestion_stage": "CHUNK_REVIEW",
+  "attempt": 1,
+  "correlation_id": "718ca1d817444fd5ba963a2db86779d0",
+  "idempotency_key": "7c088632b87f5bc0d735f22ef16024f507722e7fc39695df2ec9067dcbb80c91",
+  "payload_sha256": "7c088632b87f5bc0d735f22ef16024f507722e7fc39695df2ec9067dcbb80c91",
+  "parser_version": "pdf-converter-v1",
+  "chunker_version": "layout-v1",
+  "error_code": null
+}

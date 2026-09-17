@@ -1,5 +1,5 @@
 {
-  "revision": 14,
+  "revision": 187,
   "prompts": [
     {
       "prompt_id": "issue-extractor",
@@ -53,6 +53,9 @@
       "component": "issue-extractor",
       "active_version_id": "a4e7e274-8103-7678-d9bb-0b58be276ec2",
       "previous_healthy_version_id": "a4e7e274-8103-7678-d9bb-0b58be276ec2",
+      "scheduled_version_id": null,
+      "schedule_kind": null,
+      "schedule_status": null,
       "etag": 1
     },
     {
@@ -60,6 +63,9 @@
       "component": "rag-answer",
       "active_version_id": "81e35f5e-e371-0d88-650e-be48b1f9d14f",
       "previous_healthy_version_id": "81e35f5e-e371-0d88-650e-be48b1f9d14f",
+      "scheduled_version_id": null,
+      "schedule_kind": null,
+      "schedule_status": null,
       "etag": 1
     },
     {
@@ -67,6 +73,9 @@
       "component": "embedding",
       "active_version_id": "b6ef334d-e334-d918-0e33-05c0271c2f8f",
       "previous_healthy_version_id": "b6ef334d-e334-d918-0e33-05c0271c2f8f",
+      "scheduled_version_id": null,
+      "schedule_kind": null,
+      "schedule_status": null,
       "etag": 1
     },
     {
@@ -74,6 +83,9 @@
       "component": "file-search",
       "active_version_id": "23423f34-411a-872b-c321-e8c26d8dfa20",
       "previous_healthy_version_id": "23423f34-411a-872b-c321-e8c26d8dfa20",
+      "scheduled_version_id": null,
+      "schedule_kind": null,
+      "schedule_status": null,
       "etag": 1
     }
   ],
