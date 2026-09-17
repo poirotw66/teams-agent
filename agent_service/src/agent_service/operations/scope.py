@@ -37,7 +37,12 @@ def actor_bypasses_owner_unit_scope(actor: ActorContext) -> bool:
     return actor.role in CROSS_OWNER_UNIT_ROLES
 
 
+# Lab / local tenants that share a single development boundary.
+# HEADER auth defaults to "default" (Portal/SourceRecord alignment); missing
+# event tenants bind to "local-development". Treat both as equivalent sandboxes
+# so seeded ops fixtures remain readable without opening real-tenant access.
 LOCAL_SANDBOX_TENANTS = frozenset({
+    "default",
     "local-development",
     "00000000-0000-0000-0000-0000000000001",
 })
@@ -48,7 +53,8 @@ def tenant_allows_event(actor: ActorContext, event: OperationalEvent) -> bool:
 
     Events with a missing tenant bind only to the synthetic lab tenant
     ``local-development`` so legacy fixtures remain readable without opening
-    cross-tenant access for real tenants.
+    cross-tenant access for real tenants. Actors on any ``LOCAL_SANDBOX_TENANTS``
+    id may read those lab events.
     """
     if actor_bypasses_tenant_boundary(actor):
         return True

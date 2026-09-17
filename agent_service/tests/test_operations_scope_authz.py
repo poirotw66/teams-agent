@@ -282,3 +282,43 @@ def test_scope_requires_actor_tenant_binding() -> None:
         )
     ]
     assert filter_events_by_scope(events, actor, taxonomy) == []
+
+
+def test_header_default_tenant_can_read_lab_events_without_tenant() -> None:
+    """HEADER auth defaults to tenant 'default'; missing event tenants bind to
+    'local-development'. Lab sandbox equivalence must keep seeded fixtures visible.
+    """
+    taxonomy = _taxonomy()
+    actor = ActorContext(
+        user_id="owner.demo",
+        display_name="Owner Demo",
+        role="SERVICE_OWNER",
+        owner_unit_ids=("IT Service Desk",),
+        tenant_id="default",
+    )
+    events = [
+        _event(
+            event_id="seeded-issue",
+            conversation_id="conv-1",
+            turn_id="turn-1",
+            correlation_id="corr-1",
+            issue_type_id="vpn.connection_failed",
+        ),
+        _event(
+            event_id="seeded-feedback",
+            event_type="feedback.recorded",
+            conversation_id="conv-1",
+            correlation_id="corr-1",
+            payload={"rating": "DOWN"},
+        ),
+        _event(
+            event_id="real-tenant-issue",
+            conversation_id="conv-2",
+            turn_id="turn-2",
+            correlation_id="corr-2",
+            tenant_id="tenant-prod",
+            issue_type_id="vpn.connection_failed",
+        ),
+    ]
+    scoped_ids = {event.event_id for event in filter_events_by_scope(events, actor, taxonomy)}
+    assert scoped_ids == {"seeded-issue", "seeded-feedback"}

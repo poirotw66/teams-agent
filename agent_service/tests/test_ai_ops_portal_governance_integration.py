@@ -161,15 +161,20 @@ def _publish_pdf_document(portal_client: TestClient) -> str:
         headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
     )
     assert imported.status_code == 200
+    import_body = imported.json()
     payload = sample_document_payload()
-    payload["title"] = imported.json()["title"]
-    payload["markdown_content"] = imported.json()["markdown_content"]
+    payload["title"] = import_body["title"]
+    payload["markdown_content"] = import_body["markdown_content"]
+    # Indexed PDF page images are referenced in markdown; omit them and create fails MISSING_ASSET.
+    payload["assets"] = import_body["assets"]
+    payload["original_asset_token"] = import_body["original_asset_token"]
     payload["change_reason"] = "Import text PDF"
     create = portal_client.post(
         "/api/documents",
         json={**payload, "source_type": "PDF"},
         headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
     )
+    assert create.status_code == 200, create.json()
     document_id = create.json()["document"]["document_id"]
     etag = create.json()["document"]["etag"]
     submit = portal_client.post(

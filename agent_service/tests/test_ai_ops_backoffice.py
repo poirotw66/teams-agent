@@ -2564,6 +2564,9 @@ def test_production_store_mode_validation(tmp_path: Path) -> None:
         entra_tenant_id="entra-tenant",
         entra_client_id="entra-client",
         environment="production",
+        artifact_storage_backend="GCS",
+        artifact_gcs_bucket="ai-ops-artifacts-prod",
+        export_gcs_bucket="ai-ops-exports-prod",
     )
     assert prod_cloud_settings.validate_for_production() == []
 

@@ -692,6 +692,113 @@ def test_sentence_level_pruning_removes_unbacked_clause() -> None:
     assert "申請共用公槽請填必要資料 [S1]。" in cleaned
 
 
+def test_normalize_composite_citation_markers_expands_lists() -> None:
+    from agent_service.knowledge import normalize_composite_citation_markers
+
+    text = "步驟一 [S2, S3]。步驟二 [S1，S2]。"
+    normalized = normalize_composite_citation_markers(text)
+    assert normalized == "步驟一 [S2][S3]。步驟二 [S1][S2]。"
+
+
+def test_remap_claim_marker_ids_to_chunk_ids() -> None:
+    from agent_service.knowledge import remap_claim_marker_ids_to_chunk_ids
+
+    claims = [
+        GroundedClaim(text="a", chunkIds=["S1", "POLICY-SEC-002"]),
+        GroundedClaim(text="b", chunkIds=["s2"]),
+    ]
+    remapped = remap_claim_marker_ids_to_chunk_ids(
+        claims,
+        marker_to_chunk_id={"S1": "chk-1", "S2": "chk-2", "s1": "chk-1", "s2": "chk-2"},
+    )
+    assert remapped[0].chunkIds == ["chk-1", "POLICY-SEC-002"]
+    assert remapped[1].chunkIds == ["chk-2"]
+
+
+def test_answer_indicates_insufficient_information_covers_common_gap_phrasing() -> None:
+    from agent_service.knowledge import answer_indicates_insufficient_information
+
+    assert answer_indicates_insufficient_information(
+        "目前知識庫中並未記載關於 VPN 存取範圍的相關規定。"
+    )
+    assert answer_indicates_insufficient_information(
+        "目前無法從企業知識庫找到可確認的答案。"
+    )
+    assert answer_indicates_insufficient_information("知識庫未提供該權限清單。")
+    assert not answer_indicates_insufficient_information(
+        "VPN 連線後僅可存取白名單系統 [S1]。"
+    )
+
+
+@pytest.mark.asyncio
+async def test_false_none_retries_even_without_legacy_gap_markers(tmp_path: Path) -> None:
+    """NONE with empty claims must retry once even when phrasing is 「並未記載」."""
+    chunk = DocumentChunk(
+        chunk_id="cs-vpn",
+        title="分公司CS團隊VPN連線可使用權限列表",
+        source_path="sources/cs-vpn.md",
+        content=(
+            "通路事業處 CS 人員 VPN 連線可使用權限包含經紀 CRM 與 OA；"
+            "不可使用公槽資料夾。因此 VPN 連線不代表可存取所有內部系統。"
+        ),
+    )
+    index = HybridIndex([chunk])
+    calls = {"generate": 0}
+
+    class FalseNoneThenGroundedModel:
+        def with_structured_output(self, schema):
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        calls["generate"] += 1
+                        if calls["generate"] == 1:
+                            return StructuredKnowledgeAnswer(
+                                answer=(
+                                    "目前知識庫中並未記載關於透過 VPN 連線後是否代表"
+                                    "可存取所有內部系統的相關規定。"
+                                ),
+                                answerability="NONE",
+                                claims=[],
+                                unknowns=["VPN連線後的系統存取權限範圍"],
+                            )
+                        return StructuredKnowledgeAnswer(
+                            answer=(
+                                "否。CS 人員 VPN 僅可使用白名單系統（如 CRM、OA），"
+                                "不可使用公槽，因此不代表可存取所有內部系統 [S1]。"
+                            ),
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="CS VPN 僅可使用白名單系統，不可使用公槽",
+                                    chunkIds=["cs-vpn"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    if schema is GroundedClaimRepair:
+                        return GroundedClaimRepair(claims=[])
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    settings = make_settings(tmp_path, top_k=3, skip_relevance_llm_on_high_confidence=True)
+    service = HybridKnowledgeService(
+        settings, index, model=FalseNoneThenGroundedModel()
+    )
+    result = await service.search(
+        "特定角色透過 VPN 連線後，是否代表可存取所有內部系統？",
+        make_user(),
+    )
+
+    assert calls["generate"] == 2
+    assert result.found is True
+    assert result.terminalReason != "UNGROUNDED_ANSWER"
+    assert "不代表" in result.answer or "否" in result.answer
+    assert result.sources
+
+
 def test_qb052_webex_not_filtered_by_audience_heuristic() -> None:
     webex_chunk = DocumentChunk(
         chunk_id="webex-1",

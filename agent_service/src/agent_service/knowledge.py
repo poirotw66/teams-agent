@@ -76,7 +76,19 @@ KnowledgeLLM = TypeVar("KnowledgeLLM")
 _KNOWLEDGE_REWRITE_PATH_SLOTS = 3
 _RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 _MAX_CONTEXT_DOCUMENTS = 3
+_MAX_ACCESS_SCOPE_CONTEXT_DOCUMENTS = 4
 _MAX_CHUNKS_PER_DOCUMENT = 2
+_ACCESS_SCOPE_QUERY_MARKERS: tuple[str, ...] = (
+    "權限",
+    "存取",
+    "可使用",
+    "不可使用",
+    "所有內部",
+    "所有系統",
+    "是否代表可存取",
+    "能否存取",
+    "連線後是否",
+)
 _MAX_RETRIEVAL_CACHE_SIZE = 500
 _DOCUMENT_SELECTION_SCORE_RATIO = 0.7
 _DOCUMENT_SELECTION_OVERLAP_RATIO = 0.5
@@ -131,6 +143,45 @@ _UNCITED_POLICY_LEAK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+_COMPOSITE_S_MARKER_RE = re.compile(
+    r"\[\s*((?:S\d+\s*[,，、]\s*)+S\d+)\s*\]",
+    re.IGNORECASE,
+)
+
+
+def normalize_composite_citation_markers(text: str) -> str:
+    """Expand ``[S2, S3]`` style composites into discrete ``[S2][S3]`` markers."""
+
+    def _expand(match: re.Match[str]) -> str:
+        numbers = re.findall(r"S(\d+)", match.group(1), flags=re.IGNORECASE)
+        return "".join(f"[S{number}]" for number in numbers)
+
+    return _COMPOSITE_S_MARKER_RE.sub(_expand, text)
+
+
+def remap_claim_marker_ids_to_chunk_ids(
+    claims: list[GroundedClaim],
+    *,
+    marker_to_chunk_id: dict[str, str],
+) -> list[GroundedClaim]:
+    """Replace claim chunkIds like ``S1`` with the concrete retrieved chunk id."""
+    remapped: list[GroundedClaim] = []
+    for claim in claims:
+        resolved_ids: list[str] = []
+        for chunk_id in claim.chunkIds:
+            key = chunk_id.strip()
+            mapped = marker_to_chunk_id.get(key) or marker_to_chunk_id.get(key.upper())
+            if mapped is None and key.upper().startswith("S"):
+                mapped = marker_to_chunk_id.get(key.upper())
+            resolved_ids.append(mapped or chunk_id)
+        # Preserve order while dropping empty duplicates.
+        deduped = list(dict.fromkeys(cid for cid in resolved_ids if cid))
+        if not deduped:
+            continue
+        remapped.append(claim.model_copy(update={"chunkIds": deduped}))
+    return remapped
+
 
 def _merge_policy_advisories(*groups: list[PolicyAdvisory]) -> list[PolicyAdvisory]:
     merged: list[PolicyAdvisory] = []
@@ -249,8 +300,24 @@ _INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
     "沒有相關信息",
     "找不到相關資訊",
     "找不到相關信息",
+    "並未記載",
+    "未記載",
+    "未特別說明",
+    "未提供相關",
+    "無法從企業知識庫",
+    "無法從知識庫",
+    "找不到可確認",
+    "尚無可確認",
+    "知識庫未提供",
+    "知識庫中並無",
+    "知識庫中並未",
+    "目前知識庫中並無",
+    "目前知識庫中並未",
 )
-_KNOWLEDGE_GAP_PATTERN = re.compile(r"(?:知識庫|知識內容)(?:中|內)?(?:沒有足夠|缺乏|不足)")
+_KNOWLEDGE_GAP_PATTERN = re.compile(
+    r"(?:知識庫|知識內容|企業知識庫)(?:中|內)?"
+    r"(?:沒有足夠|缺乏|不足|並未記載|未記載|並無|並未|未提供|找不到)"
+)
 # ponytail: without an LLM grader, BM25 alone over-matches the sample corpus.
 # Require distinctive query tokens to overlap the retrieved text before accepting
 # a hit; upgrade path is enabling RAG_MODEL relevance grading.
@@ -966,7 +1033,12 @@ class HybridKnowledgeService:
                 if max(result.score for result in group) >= score_floor
                 or self._document_has_competitive_overlap(query, leader, group)
             ]
-        ranked_documents = ranked_documents[: min(self.settings.top_k, _MAX_CONTEXT_DOCUMENTS)]
+        max_context_documents = _MAX_CONTEXT_DOCUMENTS
+        if any(marker in query for marker in _ACCESS_SCOPE_QUERY_MARKERS):
+            max_context_documents = _MAX_ACCESS_SCOPE_CONTEXT_DOCUMENTS
+        ranked_documents = ranked_documents[
+            : min(self.settings.top_k, max_context_documents)
+        ]
 
         is_procedure_query = any(
             marker in query
@@ -1595,6 +1667,12 @@ class HybridKnowledgeService:
             f"[chunkId={result.chunk.chunk_id}]\n{result.chunk.content}"
             for index, result in enumerate(results)
         )
+        marker_to_chunk_id: dict[str, str] = {}
+        for index, result in enumerate(results):
+            marker = f"S{chunk_to_doc_idx[index]}"
+            # Prefer the first chunk observed for each document marker.
+            marker_to_chunk_id.setdefault(marker, result.chunk.chunk_id)
+            marker_to_chunk_id.setdefault(marker.lower(), result.chunk.chunk_id)
 
         async def _invoke_answer() -> StructuredKnowledgeAnswer:
             return await answer_model.with_structured_output(StructuredKnowledgeAnswer).ainvoke(
@@ -1621,7 +1699,11 @@ class HybridKnowledgeService:
             counter=counter,
         )
         response = self._repair_structured_answer(response)
-        answer = response.answer.strip()
+        response.claims = remap_claim_marker_ids_to_chunk_ids(
+            response.claims,
+            marker_to_chunk_id=marker_to_chunk_id,
+        )
+        answer = normalize_composite_citation_markers(response.answer.strip())
         logger.info(
             "Knowledge generated candidate answer=%r answerability=%s claims=%s unknowns=%s",
             answer,
@@ -1629,6 +1711,58 @@ class HybridKnowledgeService:
             response.claims,
             response.unknowns,
         )
+        if response.answerability == "NONE" and results:
+            # High-confidence retrieval can still get a false NONE. Retry once
+            # with an explicit instruction to use any overlapping document facts.
+            # Do not gate on phrasing markers: models often say 「並未記載」 without
+            # matching the older insufficient-info lexicon.
+            async def _invoke_answer_retry() -> StructuredKnowledgeAnswer:
+                return await answer_model.with_structured_output(
+                    StructuredKnowledgeAnswer
+                ).ainvoke(
+                    [
+                        SystemMessage(
+                            content=ANSWER_PROMPT.format(
+                                question=state.resolved_issue_query,
+                                context=context,
+                            )
+                        ),
+                        HumanMessage(
+                            content=(
+                                f"已解析問題：{state.resolved_issue_query}\n"
+                                "上方已授權知識內容已通過高信心檢索。"
+                                "若文件已描述相關角色、系統或權限範圍，必須以 PARTIAL 或 FULL "
+                                "依文件作答並標註 [S#]，不得因問題措辭較廣或未寫「所有系統」"
+                                "就回傳 NONE。"
+                            )
+                        ),
+                    ]
+                )
+
+            logger.info(
+                "Retrying knowledge generation after false NONE on retrieved evidence "
+                "(results=%d)",
+                len(results),
+            )
+            response = await self._invoke_llm(
+                _invoke_answer_retry,
+                component="knowledge_generate_retry",
+                execution_context=execution_context,
+                counter=counter,
+            )
+            response = self._repair_structured_answer(response)
+            response.claims = remap_claim_marker_ids_to_chunk_ids(
+                response.claims,
+                marker_to_chunk_id=marker_to_chunk_id,
+            )
+            answer = normalize_composite_citation_markers(response.answer.strip())
+            logger.info(
+                "Knowledge retry candidate answer=%r answerability=%s claims=%s unknowns=%s",
+                answer,
+                response.answerability,
+                response.claims,
+                response.unknowns,
+            )
         if not self._structured_answer_is_grounded(response, results):
             logger.warning(
                 "Knowledge answer rejected: _structured_answer_is_grounded failed. "
