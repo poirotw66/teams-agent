@@ -22,10 +22,70 @@ variable "knowledge_portal_token_secret_id" {
   default     = "teams-knowledge-portal-token"
 }
 
+variable "knowledge_ingestion_bucket_name" {
+  description = "Private tenant-scoped quarantine bucket for ingestion jobs."
+  type        = string
+  default     = ""
+}
+
+variable "portal_ingestion_worker_url" {
+  description = "Stable Cloud Run URL used by Cloud Tasks for ingestion workers."
+  type        = string
+  default     = ""
+}
+
 resource "google_service_account" "portal" {
   account_id   = var.portal_service_account_id
   display_name = "Knowledge Portal"
   project      = var.project_id
+}
+
+resource "google_storage_bucket" "knowledge_ingestion" {
+  name                        = var.knowledge_ingestion_bucket_name != "" ? var.knowledge_ingestion_bucket_name : "${var.project_id}-knowledge-ingestion"
+  location                    = var.region
+  project                     = var.project_id
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+
+  lifecycle_rule {
+    condition {
+      age = 7
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+resource "google_storage_bucket_iam_member" "portal_ingestion_objects" {
+  bucket = google_storage_bucket.knowledge_ingestion.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.portal.email}"
+}
+
+resource "google_cloud_tasks_queue" "knowledge_ingestion" {
+  name     = "knowledge-ingestion"
+  location = var.region
+  project  = var.project_id
+
+  rate_limits {
+    max_concurrent_dispatches = 2
+    max_dispatches_per_second = 2
+  }
+
+  retry_config {
+    max_attempts       = 5
+    max_retry_duration = "1800s"
+    min_backoff        = "5s"
+    max_backoff        = "300s"
+    max_doublings      = 4
+  }
+}
+
+resource "google_project_iam_member" "portal_task_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.portal.email}"
 }
 
 resource "google_project_iam_member" "portal_firestore" {
@@ -37,6 +97,12 @@ resource "google_project_iam_member" "portal_firestore" {
 resource "google_storage_bucket_iam_member" "portal_knowledge_writer" {
   bucket = google_storage_bucket.knowledge_releases.name
   role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.portal.email}"
+}
+
+resource "google_storage_bucket_iam_member" "portal_knowledge_reader" {
+  bucket = google_storage_bucket.knowledge_releases.name
+  role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.portal.email}"
 }
 
@@ -81,6 +147,8 @@ resource "google_cloud_run_v2_service" "portal" {
     google_secret_manager_secret_iam_member.portal_google_api_key,
     google_secret_manager_secret_iam_member.portal_delegation_secret,
     google_storage_bucket_iam_member.portal_knowledge_writer,
+    google_storage_bucket_iam_member.portal_ingestion_objects,
+    google_project_iam_member.portal_task_enqueuer,
     terraform_data.image_policy,
   ]
 
@@ -156,6 +224,60 @@ resource "google_cloud_run_v2_service" "portal" {
       env {
         name  = "KNOWLEDGE_PORTAL_RELEASE_GCS_PREFIX"
         value = var.knowledge_release_object_prefix
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_BACKEND"
+        value = "GCS"
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET"
+        value = google_storage_bucket.knowledge_ingestion.name
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_PDF_MAX_UPLOAD_BYTES"
+        value = "52428800"
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_DOCUMENT_PARSER"
+        value = "PDF_CONVERTER"
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED"
+        value = "true"
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY"
+        value = "true"
+      }
+
+      dynamic "env" {
+        for_each = var.portal_ingestion_worker_url != "" ? [1] : []
+        content {
+          name  = "KNOWLEDGE_PORTAL_INGESTION_TASKS_QUEUE"
+          value = google_cloud_tasks_queue.knowledge_ingestion.id
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.portal_ingestion_worker_url != "" ? [1] : []
+        content {
+          name  = "KNOWLEDGE_PORTAL_INGESTION_WORKER_URL"
+          value = var.portal_ingestion_worker_url
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.portal_ingestion_worker_url != "" ? [1] : []
+        content {
+          name  = "KNOWLEDGE_PORTAL_INGESTION_WORKER_SERVICE_ACCOUNT"
+          value = google_service_account.portal.email
+        }
       }
 
       env {
@@ -245,6 +367,16 @@ resource "google_cloud_run_v2_service_iam_member" "portal_invokes_agent" {
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.agent[0].name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.portal.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "portal_invokes_portal_worker" {
+  count = local.deploy_cloud_run ? 1 : 0
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.portal[0].name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.portal.email}"
 }

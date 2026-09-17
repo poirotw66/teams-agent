@@ -61,7 +61,7 @@ wait_for_cloud_run_ready() {
     status="$(gcloud run services describe "${service}" \
       --region="${REGION}" \
       --project="${PROJECT_ID}" \
-      --format='value(status.conditions[?type=Ready].status)' 2>/dev/null || true)"
+      --format='value(status.conditions[0].status)' 2>/dev/null || true)"
     if [[ "${status}" == "True" ]]; then
       return 0
     fi

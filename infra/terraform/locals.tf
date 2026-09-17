@@ -30,6 +30,7 @@ locals {
     "run.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudtasks.googleapis.com",
     "storage.googleapis.com",
     "secretmanager.googleapis.com",
     "iamcredentials.googleapis.com",

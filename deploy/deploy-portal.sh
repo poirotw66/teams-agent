@@ -11,6 +11,7 @@ PORTAL_SA_NAME="${GCP_PORTAL_SA:-teams-knowledge-portal}"
 BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
 ADAPTER_SERVICE="${GCP_ADAPTER_SERVICE:-teams-agent-adapter}"
 AGENT_SERVICE="${GCP_AGENT_SERVICE:-teams-rag-agent}"
+CONVERTER_SERVICE="${GCP_PDF_CONVERTER_SERVICE:-teams-pdf-converter}"
 
 PORTAL_SA="${PORTAL_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
@@ -24,6 +25,8 @@ log() { printf '[deploy-portal] %s\n' "$*"; }
 fail() { printf '[deploy-portal] ERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v gcloud >/dev/null 2>&1 || fail "gcloud CLI is required."
+gcloud services enable cloudtasks.googleapis.com \
+  --project="${PROJECT_ID}" >/dev/null
 
 env_value() {
   local file="$1"
@@ -75,6 +78,8 @@ gsutil iam ch "serviceAccount:${PORTAL_SA}:roles/storage.objectAdmin" \
   "gs://${ARTIFACT_GCS_BUCKET}" >/dev/null || true
 gsutil iam ch "serviceAccount:${PORTAL_SA}:roles/storage.objectCreator" \
   "gs://${RELEASE_GCS_BUCKET}" >/dev/null
+gsutil iam ch "serviceAccount:${PORTAL_SA}:roles/storage.objectViewer" \
+  "gs://${RELEASE_GCS_BUCKET}" >/dev/null
 
 log "Building ${PORTAL_IMAGE}"
 gcloud builds submit . \
@@ -86,6 +91,8 @@ AGENT_URL="$(gcloud run services describe "${AGENT_SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)' 2>/dev/null || true)"
 ADAPTER_URL="$(gcloud run services describe "${ADAPTER_SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)' 2>/dev/null || true)"
+CONVERTER_URL="$(gcloud run services describe "${CONVERTER_SERVICE}" \
+  --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
 
 log "Deploying ${PORTAL_SERVICE}"
 gcloud run deploy "${PORTAL_SERVICE}" \
@@ -102,11 +109,30 @@ gcloud run deploy "${PORTAL_SERVICE}" \
   --min-instances=0 \
   --max-instances=3 \
   --timeout=600 \
-  --set-env-vars="KNOWLEDGE_PORTAL_HOST=0.0.0.0,KNOWLEDGE_PORTAL_PORT=8080,KNOWLEDGE_PORTAL_DATA_DIR=/app/data,KNOWLEDGE_PORTAL_AUTH_MODE=HEADER,KNOWLEDGE_PORTAL_REQUIRE_SERVICE_TOKEN_WITH_DELEGATION=false,KNOWLEDGE_PORTAL_RELAXED_WORKFLOW=true,KNOWLEDGE_PORTAL_DEMO_MODE=true,KNOWLEDGE_PORTAL_REPOSITORY_MODE=FIRESTORE,GCP_PROJECT_ID=${PROJECT_ID},AGENT_DEPLOYMENT_ENV=poc,KNOWLEDGE_PORTAL_RELEASE_PURPOSE=PRODUCTION,RAG_EMBEDDING_MODEL=${EMBEDDING_MODEL},KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_BACKEND=GCS,AI_OPS_ARTIFACT_STORAGE_BACKEND=GCS,KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET=${ARTIFACT_GCS_BUCKET},AI_OPS_ARTIFACT_GCS_BUCKET=${ARTIFACT_GCS_BUCKET},KNOWLEDGE_PORTAL_RELEASE_GCS_BUCKET=${RELEASE_GCS_BUCKET},KNOWLEDGE_PORTAL_RELEASE_GCS_PREFIX=knowledge-releases,KNOWLEDGE_PORTAL_SOURCE_STORE_MODE=FIRESTORE,AI_OPS_SOURCE_STORE_MODE=FIRESTORE,KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID=default,KNOWLEDGE_PORTAL_AGENT_API_URL=${AGENT_URL},KNOWLEDGE_PORTAL_AGENT_API_AUTH_MODE=GOOGLE_ID_TOKEN,KNOWLEDGE_PORTAL_PUBLIC_URL=https://placeholder.invalid,TEAMS_ADAPTER_URL=${ADAPTER_URL}" \
+  --set-env-vars="KNOWLEDGE_PORTAL_HOST=0.0.0.0,KNOWLEDGE_PORTAL_PORT=8080,KNOWLEDGE_PORTAL_DATA_DIR=/app/data,KNOWLEDGE_PORTAL_AUTH_MODE=HEADER,KNOWLEDGE_PORTAL_REQUIRE_SERVICE_TOKEN_WITH_DELEGATION=false,KNOWLEDGE_PORTAL_RELAXED_WORKFLOW=true,KNOWLEDGE_PORTAL_DEMO_MODE=true,KNOWLEDGE_PORTAL_REPOSITORY_MODE=FIRESTORE,GCP_PROJECT_ID=${PROJECT_ID},AGENT_DEPLOYMENT_ENV=poc,KNOWLEDGE_PORTAL_RELEASE_PURPOSE=PRODUCTION,RAG_EMBEDDING_MODEL=${EMBEDDING_MODEL},KNOWLEDGE_PORTAL_ARTIFACT_STORAGE_BACKEND=GCS,AI_OPS_ARTIFACT_STORAGE_BACKEND=GCS,KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET=${ARTIFACT_GCS_BUCKET},AI_OPS_ARTIFACT_GCS_BUCKET=${ARTIFACT_GCS_BUCKET},KNOWLEDGE_PORTAL_PDF_MAX_UPLOAD_BYTES=52428800,KNOWLEDGE_PORTAL_DOCUMENT_PARSER=PDF_CONVERTER,KNOWLEDGE_PORTAL_PDF_CONVERTER_URL=${CONVERTER_URL},KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE=gemini_vision,KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE=GOOGLE_ID_TOKEN,KNOWLEDGE_PORTAL_PDF_CONVERTER_TIMEOUT_SECONDS=120,KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED=true,KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY=true,KNOWLEDGE_PORTAL_RELEASE_GCS_BUCKET=${RELEASE_GCS_BUCKET},KNOWLEDGE_PORTAL_RELEASE_GCS_PREFIX=knowledge-releases,KNOWLEDGE_PORTAL_SOURCE_STORE_MODE=FIRESTORE,AI_OPS_SOURCE_STORE_MODE=FIRESTORE,KNOWLEDGE_PORTAL_DEFAULT_TENANT_ID=default,KNOWLEDGE_PORTAL_AGENT_API_URL=${AGENT_URL},KNOWLEDGE_PORTAL_AGENT_API_AUTH_MODE=GOOGLE_ID_TOKEN,KNOWLEDGE_PORTAL_PUBLIC_URL=https://placeholder.invalid,TEAMS_ADAPTER_URL=${ADAPTER_URL}" \
   --set-secrets="KNOWLEDGE_PORTAL_TOKEN=teams-knowledge-portal-token:latest,KNOWLEDGE_PORTAL_DELEGATION_SECRET=${DELEGATION_SECRET}:latest,GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
 
 PORTAL_URL="$(gcloud run services describe "${PORTAL_SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
+
+if ! gcloud tasks queues describe knowledge-ingestion \
+  --location="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  gcloud tasks queues create knowledge-ingestion \
+    --location="${REGION}" --project="${PROJECT_ID}" \
+    --max-concurrent-dispatches=2 --max-dispatches-per-second=2 >/dev/null
+fi
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${PORTAL_SA}" \
+  --role=roles/cloudtasks.enqueuer \
+  --condition=None >/dev/null
+gcloud run services add-iam-policy-binding "${PORTAL_SERVICE}" \
+  --region="${REGION}" --project="${PROJECT_ID}" \
+  --member="serviceAccount:${PORTAL_SA}" \
+  --role=roles/run.invoker >/dev/null
+TASK_QUEUE="projects/${PROJECT_ID}/locations/${REGION}/queues/knowledge-ingestion"
+gcloud run services update "${PORTAL_SERVICE}" \
+  --region="${REGION}" --project="${PROJECT_ID}" \
+  --update-env-vars="KNOWLEDGE_PORTAL_INGESTION_TASKS_QUEUE=${TASK_QUEUE},KNOWLEDGE_PORTAL_INGESTION_WORKER_URL=${PORTAL_URL},KNOWLEDGE_PORTAL_INGESTION_WORKER_SERVICE_ACCOUNT=${PORTAL_SA}" >/dev/null
 
 gcloud run services add-iam-policy-binding "${AGENT_SERVICE}" \
   --region="${REGION}" --project="${PROJECT_ID}" \
