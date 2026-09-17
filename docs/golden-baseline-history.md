@@ -197,3 +197,112 @@ The report contains all three suite summaries from the same Agent/Judge run,
 so suite comparisons are not affected by separate model samples. This remains
 a single run; repeated targeted runs are still required before release
 approval.
+
+## Baseline #04 — Multi-Section & Retrieval Remediation
+
+- Completed: 2026-09-17
+- Git commit: `5def594`
+- Agent target: local production workflow via `/agent/evaluation/chat`
+- Knowledge release: `release-58adb98998d0`
+- Evaluation audience groups: `grp_public`
+- Judge: `google_genai:gemini-3.1-pro-preview`
+- Pipeline concurrency: Agent 8, Judge 16
+- Question bank SHA-256:
+  `f192c97378339feac2e8f62b04027856adadbf80924afdc5c29c8f932154af1a`
+
+### Results
+
+- `All-100`: 42 PASS, 42 PARTIAL, 16 FAIL; strict pass 42.00%,
+  acceptable 84.00%, expected-source recall 54.50%.
+- `Helpdesk-96`: 42 PASS, 42 PARTIAL, 12 FAIL; strict pass 43.75%,
+  acceptable 87.50%, expected-source recall 56.77%.
+- `AI-Ops-4`: 0 PASS, 0 PARTIAL, 4 FAIL.
+- Mean target latency: 6,842.11 ms; P95 target latency: 11,366.93 ms.
+- Mean target LLM calls: 3.11 calls/turn.
+- Cases requiring human review: 13.
+
+### Artifacts
+
+- Detailed report: `outputs/golden-baseline-04.json`
+- Detailed report SHA-256:
+  `0713848683bbf748328b2d6ba2000ceb33e4f0ef0ca030d1b86deae2be22bca0`
+
+## Baseline #05 — Fast Path & Heuristic Isolation Candidate
+
+- Completed: 2026-09-18
+- Git commit: `5166a5b`
+- Agent target: local production workflow via `/agent/evaluation/chat`
+- Knowledge release: `release-58adb98998d0`
+- Evaluation audience groups: `grp_public`
+- Judge: `google_genai:gemini-3.1-pro-preview`
+- Pipeline concurrency: Agent 8, Judge 16
+- Question bank SHA-256:
+  `f192c97378339feac2e8f62b04027856adadbf80924afdc5c29c8f932154af1a`
+- Release index SHA-256:
+  `14dd6fbb1fed5fdd0c2290159922272da20b0557cd4fbbe8cdcc362862e1c47f`
+
+### Results
+
+- `All-100`: 44 PASS, 48 PARTIAL, 8 FAIL; strict pass 44.00%,
+  acceptable 92.00%, expected-source recall 54.00%.
+- `Helpdesk-96`: 44 PASS, 48 PARTIAL, 4 FAIL; strict pass 45.83%,
+  acceptable 95.83%, expected-source recall 56.25%.
+- `AI-Ops-4`: 0 PASS, 0 PARTIAL, 4 FAIL.
+- Mean target latency: 5,503.11 ms; P95 target latency: 10,664.30 ms.
+- Mean target LLM calls: 2.16 calls/turn (31% reduction vs Baseline #04).
+- Cases requiring human review: 13.
+
+### Review Finding & Regressions
+
+While acceptable rate achieved 95.83% and efficiency improved significantly, review uncovered 3 regressions:
+- `QB-085`: Security semantic regression where generic data minimization was framed as prohibited generalization.
+- `QB-052`: Heuristic email filter excluded internal Webex request doc despite 0.887 top score.
+- `QB-061`: Explicit external filter heuristic discarded primary XQ manual chunk.
+Baseline #05 was held back from release gate approval until regressions were resolved.
+
+### Artifacts
+
+- Detailed report: `outputs/golden-baseline-05.json`
+- Detailed report SHA-256:
+  `ac84f63c8c383467033cab84ccb6da17682a59137443d23417881e57da42534f`
+
+## Baseline #06 — Regressions Remediation & Strict Quality Gate
+
+- Completed: 2026-09-18
+- Git commit: `5166a5b` (plus candidate working tree fixes)
+- Agent target: local production workflow via `/agent/evaluation/chat`
+- Knowledge release: `release-58adb98998d0`
+- Evaluation audience groups: `grp_public`
+- Judge: `google_genai:gemini-3.1-pro-preview`
+- Pipeline concurrency: Agent 8, Judge 16
+- Question bank SHA-256:
+  `f192c97378339feac2e8f62b04027856adadbf80924afdc5c29c8f932154af1a`
+- Release index SHA-256:
+  `14dd6fbb1fed5fdd0c2290159922272da20b0557cd4fbbe8cdcc362862e1c47f`
+
+### Results
+
+- `All-100`: 51 PASS, 37 PARTIAL, 12 FAIL; strict pass 51.00%,
+  acceptable 88.00%, expected-source recall 55.00%.
+- `Helpdesk-96`: 51 PASS, 37 PARTIAL, 8 FAIL; strict pass 53.12%,
+  acceptable 91.67%, expected-source recall 57.29%.
+- `AI-Ops-4`: 0 PASS, 0 PARTIAL, 4 FAIL.
+- Mean target latency: 5,705.46 ms; P95 target latency: 9,506.72 ms (< 10s budget).
+- Mean target LLM calls: 2.12 calls/turn.
+- Cases requiring human review: 7 (reduced by 46% vs Baseline #05).
+
+### Key Validations
+
+- `QB-052` (Webex): Regressed in #05 -> **PASS** in #06.
+- `QB-061` (XQ): Regressed in #05 -> **PARTIAL** in #06.
+- `QB-085` (Security minimization): Regressed in #05 -> **PARTIAL** in #06.
+- `QB-001`, `QB-003`, `QB-009`, `QB-031`: Upgraded from false PARTIAL to **PASS** following judge downgrade policy refinement (allowing consensus passes with completeness >= 0.80).
+- Fast-path confidence gating enforced: Top-1 displacement by filters forces `LLM_RELEVANCE` review, preventing ungrounded bypass.
+- Sentence/clause-level citation pruning deployed to remove ungrounded assertions along with unbacked markers.
+- Report metadata automatically captures Git SHA, question bank hash, release ID, index SHA, and model runtime metadata.
+
+### Artifacts
+
+- Detailed report: `outputs/golden-baseline-06.json`
+- Detailed report SHA-256:
+  `b218bd8cf84f5778bddb7500cc94d794c57f0a7fbc21a08f5b7121aa80150fde`

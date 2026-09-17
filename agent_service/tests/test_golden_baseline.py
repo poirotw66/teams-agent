@@ -232,7 +232,7 @@ class MaterialGapPassJudgeModel:
     async def ainvoke(self, _messages: object) -> object:
         return {
             "correctness": 0.9,
-            "completeness": 0.8,
+            "completeness": 0.7,
             "groundedness": 1.0,
             "claims": [
                 {

@@ -20,6 +20,7 @@ from agent_service.extractor import (
     _has_helpdesk_domain_evidence,
 )
 from agent_service.knowledge import (
+    ANSWER_PROMPT,
     GroundedClaimRepair,
     HybridKnowledgeService,
     RelevanceDecision,
@@ -72,8 +73,7 @@ def test_sanitize_answer_security_replaces_placeholder_urls() -> None:
 
 def test_sanitize_answer_security_redacts_internal_ips_and_unc() -> None:
     raw = (
-        "不可使用權限包含公槽資料夾（\\\\10.93.19.22\\shared）及 "
-        "http://10.93.3.80:8080/crm/ 系統。"
+        "不可使用權限包含公槽資料夾（\\\\10.93.19.22\\shared）及 http://10.93.3.80:8080/crm/ 系統。"
     )
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
     assert "10.93.19.22" not in sanitized
@@ -652,7 +652,10 @@ def test_procedure_expansion_orders_numbered_sections(tmp_path: Path) -> None:
     results = [
         SearchResult(chunk=chunks[0], score=0.9, sparse_score=0.9, dense_score=0.0),
     ]
-    selected = service._select_document_chunks("iOS Outlook 首次設定的視覺順序為何？", results)
+    selected, displaced = service._select_document_chunks(
+        "iOS Outlook 首次設定的視覺順序為何？", results
+    )
+    assert displaced is False
     # Selected chunks should expand all numbered sections and order them naturally (1, 2, 5)
     sections = [r.chunk.section for r in selected]
     assert sections == [
@@ -661,3 +664,98 @@ def test_procedure_expansion_orders_numbered_sections(tmp_path: Path) -> None:
         "5. Outlook App 設定",
     ]
 
+
+def test_sentence_level_pruning_removes_unbacked_clause() -> None:
+    text = "申請共用公槽請填必要資料 [S1]，另外參考規範 [S2]。"
+    common_keys = {"doc-1"}
+
+    def _resolve(val: int) -> str | None:
+        return "doc-1" if val == 1 else "doc-2"
+
+    cleaned = HybridKnowledgeService._prune_unbacked_sentences_and_citations(
+        text,
+        common_keys,
+        _resolve,
+    )
+    assert "[S1]" in cleaned
+    assert "[S2]" not in cleaned
+    assert "另外參考規範" not in cleaned
+    assert "申請共用公槽請填必要資料 [S1]。" in cleaned
+
+
+def test_qb052_webex_not_filtered_by_audience_heuristic() -> None:
+    webex_chunk = DocumentChunk(
+        chunk_id="webex-1",
+        title="Webex會議借用-可錄影",
+        source_path="sources/webex.md",
+        content="同仁申請可錄影會議請寄至 123@cathaysec.com.tw 申請借用。",
+    )
+    external_chunk = DocumentChunk(
+        chunk_id="ext-1",
+        title="外部客戶線上問題",
+        source_path="sources/external.md",
+        content="外部客戶線上問題請寄送至 123@cathaysec.com.tw 處理。",
+    )
+    results = [
+        SearchResult(chunk=webex_chunk, score=0.89, sparse_score=0.89, dense_score=0.0),
+        SearchResult(chunk=external_chunk, score=0.80, sparse_score=0.80, dense_score=0.0),
+    ]
+    filtered = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "同仁需要可錄影的 Webex 會議，已備妥必要欄位。接下來應如何完成申請？",
+        results,
+    )
+    assert any(r.chunk.chunk_id == "webex-1" for r in filtered)
+
+
+def test_qb061_xq_query_with_customer_complaint_retains_xq_doc() -> None:
+    xq_chunk = DocumentChunk(
+        chunk_id="xq-1",
+        title="XQ問題",
+        source_path="sources/xq.md",
+        content="客戶反映 XQ 無法下單時，第一步請先交叉測試下單連線。",
+    )
+    external_chunk = DocumentChunk(
+        chunk_id="ext-1",
+        title="外部客戶線上問題",
+        source_path="sources/external.md",
+        content="外部客戶線上問題回報流程說明。",
+    )
+    results = [
+        SearchResult(chunk=xq_chunk, score=0.85, sparse_score=0.85, dense_score=0.0),
+        SearchResult(chunk=external_chunk, score=0.82, sparse_score=0.82, dense_score=0.0),
+    ]
+    filtered = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "客戶反映 XQ 無法下單時，支援人員應如何進行第一步交叉測試？",
+        results,
+    )
+    assert any(r.chunk.chunk_id == "xq-1" for r in filtered)
+
+
+def test_filter_displaced_top1_prohibits_high_confidence_bypass(tmp_path: Path) -> None:
+    chunk_1 = DocumentChunk(
+        chunk_id="chk-1",
+        title="一般系統手冊",
+        source_path="sources/general.md",
+        content="一般系統操作指南。",
+    )
+    index = HybridIndex([chunk_1])
+    service = HybridKnowledgeService(make_settings(tmp_path), index)
+
+    res = SearchResult(chunk=chunk_1, score=0.85, sparse_score=0.85, dense_score=0.0)
+    # When filter_displaced_top1 is True, it must NOT take HIGH_CONFIDENCE_PASS
+    state_displaced = _RetrievalState(
+        raw_user_utterance="test",
+        resolved_issue_query="test",
+        search_query="test",
+        results=[res],
+        filter_displaced_top1=True,
+    )
+    decision, is_det = service._evaluate_retrieval_confidence(state_displaced)
+    assert decision == "LLM_RELEVANCE"
+    assert is_det is False
+
+
+def test_qb085_answer_prompt_rules_contain_global_security_baseline() -> None:
+    assert "全域資料最小化原則" in ANSWER_PROMPT
+    assert "絕對機敏資訊禁令" in ANSWER_PROMPT
+    assert "全域最高性" in ANSWER_PROMPT

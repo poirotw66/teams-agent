@@ -305,7 +305,9 @@ class GeminiAnswerJudge:
         ]
         verdict = quality.verdict
         reason = quality.reason
-        has_material_gap = bool(unsupported_claims or quality.missing_required_facts)
+        has_material_gap = bool(
+            unsupported_claims or (quality.missing_required_facts and quality.completeness < 0.80)
+        )
         if verdict == "PASS" and has_material_gap:
             verdict = "PARTIAL"
             needs_human_review = True

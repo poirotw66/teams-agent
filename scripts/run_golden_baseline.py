@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import statistics
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 
 from ai_ops_backoffice.evaluation_domain.baseline import (
@@ -210,6 +213,40 @@ def _percentile(values: list[float], percentile: float) -> float | None:
     return round(ordered[index], 2)
 
 
+def _git_commit_sha() -> str | None:
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return res.stdout.strip()
+    except Exception:
+        return None
+
+
+def _file_sha256(path: Path | None) -> str | None:
+    if not path or not path.is_file():
+        return None
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _fetch_target_readiness(base_url: str) -> dict[str, Any]:
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(f"{base_url.rstrip('/')}/readyz")
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception:
+        pass
+    return {}
+
+
 def _build_report(
     *,
     args: argparse.Namespace,
@@ -217,13 +254,23 @@ def _build_report(
     records_by_index: dict[int, dict[str, Any]],
     started_at: datetime,
     is_complete: bool,
+    target_readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     records = [records_by_index[index] for index in range(len(cases)) if index in records_by_index]
     updated_at = datetime.now(UTC)
     agent_concurrency, judge_concurrency = _resolve_concurrency(args)
+    ready = target_readiness or {}
+    qb_path = args.question_bank.resolve()
+    index_path_str = ready.get("knowledgeIndexPath")
+    index_path = Path(index_path_str) if index_path_str else None
+
     return {
         "schemaVersion": "golden-baseline-v3",
-        "startedFromQuestionBank": str(args.question_bank.resolve()),
+        "startedFromQuestionBank": str(qb_path),
+        "questionBankSha256": _file_sha256(qb_path),
+        "gitCommitSha": _git_commit_sha(),
+        "knowledgeReleaseId": ready.get("knowledgeReleaseId"),
+        "knowledgeIndexSha256": _file_sha256(index_path),
         "startedAt": started_at.isoformat(),
         "updatedAt": updated_at.isoformat(),
         "completedAt": updated_at.isoformat() if is_complete else None,
@@ -238,6 +285,15 @@ def _build_report(
             "baseUrl": args.base_url,
             "endpoint": "/agent/evaluation/chat",
             "groups": args.groups or ["grp_public"],
+            "runtimeMetadata": {
+                "status": ready.get("status"),
+                "knowledgeBackend": ready.get("knowledgeBackend"),
+                "knowledgeMode": ready.get("knowledgeMode"),
+                "model": ready.get("model"),
+                "agentModel": ready.get("agentModel"),
+                "embeddingModel": ready.get("embeddingModel"),
+                "fileSearchModel": ready.get("fileSearchModel"),
+            },
         },
         "judge": {
             "modelId": args.judge_model,
@@ -297,6 +353,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     judge = GeminiAnswerJudge(model_id=args.judge_model)
     agent_concurrency, judge_concurrency = _resolve_concurrency(args)
+    target_readiness = _fetch_target_readiness(args.base_url)
     records_by_index: dict[int, dict[str, Any]] = {}
     started_at = datetime.now(UTC)
 
@@ -329,6 +386,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 records_by_index=records_by_index,
                 started_at=started_at,
                 is_complete=False,
+                target_readiness=target_readiness,
             )
             _write_report(args.output, checkpoint)
     finally:
@@ -340,6 +398,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         records_by_index=records_by_index,
         started_at=started_at,
         is_complete=True,
+        target_readiness=target_readiness,
     )
 
 

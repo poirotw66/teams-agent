@@ -42,6 +42,7 @@ def make_settings(tmp_path: Path, **overrides) -> RagSettings:
         "top_k": 2,
         "min_score": 0.05,
         "max_retrieval_rewrites": 1,
+        "skip_relevance_llm_on_high_confidence": False,
     }
     defaults.update(overrides)
     return RagSettings(**defaults)
@@ -268,9 +269,18 @@ def test_bounded_facet_queries_preserve_identifier_and_cap_at_three() -> None:
 
 
 def test_bounded_facet_queries_extracts_error_codes() -> None:
-    assert bounded_facet_queries("使用者回報錯誤 12029，但裝置版本與企業管控政策不明。") == ("錯誤 12029", "12029")
-    assert bounded_facet_queries("FortiClient 顯示 Permission denied (-455)，應如何開始排查？") == ("錯誤 -455", "-455")
-    assert bounded_facet_queries("外網 CRM 出現 401 錯誤時，可以確定是瀏覽器造成的嗎？") == ("錯誤 401", "401")
+    assert bounded_facet_queries("使用者回報錯誤 12029，但裝置版本與企業管控政策不明。") == (
+        "錯誤 12029",
+        "12029",
+    )
+    assert bounded_facet_queries("FortiClient 顯示 Permission denied (-455)，應如何開始排查？") == (
+        "錯誤 -455",
+        "-455",
+    )
+    assert bounded_facet_queries("外網 CRM 出現 401 錯誤時，可以確定是瀏覽器造成的嗎？") == (
+        "錯誤 401",
+        "401",
+    )
     assert bounded_facet_queries("一般查詢問題，沒有任何錯誤代碼") == ()
 
 
@@ -513,7 +523,6 @@ async def test_hybrid_selects_expands_chunks_for_multi_section_query(
     assert "FAQ-002" in answer_context
     assert "FAQ-003" in answer_context
     assert "FAQ-004" in answer_context
-
 
 
 @pytest.mark.asyncio

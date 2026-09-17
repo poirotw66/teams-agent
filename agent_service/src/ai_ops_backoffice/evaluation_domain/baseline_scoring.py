@@ -174,13 +174,16 @@ def _match_source(
 def _source_identity(citation: dict[str, object]) -> _SourceIdentity:
     title = str(citation.get("title") or "").strip()
     source_path = str(citation.get("sourcePath") or "").strip()
+    section = str(citation.get("section") or "").strip()
+    raw_aliases = citation.get("sourceAliases") or []
     filename = PurePosixPath(source_path).name if source_path else ""
     stem = PurePosixPath(filename).stem if filename else ""
-    aliases = {
-        normalized for value in (title, filename, stem) if (normalized := _normalize_source(value))
-    }
+    alias_candidates = [title, source_path, filename, stem, section]
+    if isinstance(raw_aliases, (list, tuple)):
+        alias_candidates.extend(str(a) for a in raw_aliases)
+    aliases = {normalized for value in alias_candidates if (normalized := _normalize_source(value))}
     return _SourceIdentity(
-        label=title or filename,
+        label=title or filename or section,
         normalized_aliases=aliases,
     )
 

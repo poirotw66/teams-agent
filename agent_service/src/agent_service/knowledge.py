@@ -26,6 +26,7 @@ import logging
 import re
 
 logger = logging.getLogger(__name__)
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, TypeVar, runtime_checkable
@@ -65,6 +66,7 @@ _KNOWLEDGE_REWRITE_PATH_SLOTS = 3
 _RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 _MAX_CONTEXT_DOCUMENTS = 3
 _MAX_CHUNKS_PER_DOCUMENT = 2
+_MAX_RETRIEVAL_CACHE_SIZE = 500
 _DOCUMENT_SELECTION_SCORE_RATIO = 0.7
 _DOCUMENT_SELECTION_OVERLAP_RATIO = 0.5
 _FACET_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -167,15 +169,18 @@ ANSWER_PROMPT = """\
    - 連續的操作、申請、審核或設定步驟，必須使用有序清單格式（例如 1.、2.、3.）。
    - 重要名詞、系統平台名稱（如 AccessFlow、Teams、Outlook 等）、關鍵時限或天數（如「1 個工作天內」），請適度使用粗體標記（如 **AccessFlow**、**1 個工作天內**）。
    - 若有特別提醒、例外情境、申請限制或備註，請使用引言提示格式呈現（例如 `> 💡 **注意事項**：...`）。
-10. 嚴格遵守資安與敏感資訊原則：
+10. 嚴格遵守資安與敏感資訊原則（全域安全底線，優先於所有情境）：
+    - 全域資料最小化原則：使用者提供畫面截圖或附件時，嚴禁提交與問題或異常無關的個人及敏感資訊。若畫面包含無關的個人或敏感資訊，不應直接提交，應提醒使用者先行遮蔽或確認處理方式。
+    - 絕對機敏資訊禁令：登入密碼、個人憑證密碼、動態驗證碼等機敏資訊，在任何問題回報或諮詢中皆嚴禁於信件、畫面或文字中提供。
+    - 不確定時確認原則：若使用者不確定資料是否可提交或不確定可接受範圍，必須先向權責主管或資訊/資安部門確認後再行提交。
+    - 全域最高性：全域資安與資料最小化底線高於所有個別小節規範；任何情況下皆不得宣稱或推論「無須遵守資料最小化」或「可以提供不必要之敏感資訊」。
     - 不得在回答中輸出測試或佔位網址（例如含有 test、example、pages.dev 等佔位連結），若文件僅提供測試連結，應提醒使用者洽詢 IT 支援窗口或至公司正式入口。
     - 不得在回答中直接暴露內部 IP 位址（如 10.x.x.x、172.16-31.x.x、192.168.x.x）或內部伺服器主機路徑，應以系統名稱或公槽資料夾等功能名稱代稱。
     - 涉及停用安全性設定（如關閉 Proxy、變更安全性區域或憑證設定），若使用者問題或情境未確認裝置是否受企業管控政策管理，必須明確提示：「變更前需先向權責單位或資訊部門確認適用性，切勿擅自變更」。
-11. 嚴格區分情境與小節適用範圍，防範跨章節污染：
-    - 若知識內容包含不同問題類型、獨立 FAQ 或情境（如「交易問題」、「帳務問題」、「報價問題」等各自獨立的規範），必須僅依據與使用者問題直接相符之特定情境作答。
-    - 嚴禁將其他情境獨有的限制、注意事項或處理步驟（例如交易專屬的密碼禁令、帳務專屬的截圖隱私提醒）擅自套用至其他未提及的情境中。
-    - 若該特定情境在知識內容中並未規定某事項（例如未規範專屬資料保護限制），應如實指出該情境未特別註明專屬限制，嚴禁跨情境拼貼。
-    - 若使用者詢問「哪些作法不能跨類型/跨情境套用或說成既定要求」，請依據文件事實，具體指明哪些情境規範了該事項、哪些情境未規範該事項（例如：「密碼保護僅於交易問題中規範，截圖敏感資訊檢查僅於帳務問題中規範；線上資訊與報價問題並未規範上述限制，不得將個別問題類型的特定限制視為通用既定要求」）。請直接依文件事實敘述，切勿直接複誦 prompt 的規則詞句當成引用內容。
+11. 嚴格區分情境與小節適用範圍，防範跨章節混用：
+    - 若知識內容包含不同問題類型、獨立 FAQ 或情境（如「交易問題」、「帳務問題」、「報價問題」等各自獨立的規範），必須僅依據與使用者問題直接相符之特定情境作答，嚴禁將其他情境獨有的特定業務流程或步驟跨情境混用。
+    - 若特定情境之文件中未記載某事項，應如實指出該情境未特別說明，嚴禁跨情境拼貼。
+    - 跨情境區分僅限於業務流程與特定章節條款，絕不得牴觸 Rule 10 之全域資安與資料最小化原則。
 12. 嚴格依異常情境對應專屬處置，防範混淆跨小節解法：
     - 即使使用者提問中預設或詢問了其他章節的處置（例如詢問能否/如何執行關閉 Proxy 或特定變更），亦必須嚴格依據該具體異常現象（例如「已連線仍無法使用內網」與「Wi-Fi 瞬斷」為不同異常）所對應之專屬步驟作答。
     - 若該處置屬於另一種異常情境之解法，應在回答中清楚指明該處置僅適用於另一情境（例如 Wi-Fi 瞬斷），目前異常應依專屬步驟處理，切勿將不同小節之處置步驟混用。
@@ -476,6 +481,8 @@ class _RetrievalState:
     search_query: str
     facet_queries: tuple[str, ...] = ()
     results: list[SearchResult] = field(default_factory=list)
+    raw_results: list[SearchResult] = field(default_factory=list)
+    filter_displaced_top1: bool = False
     trace_attempts: list[RetrievalAttempt] = field(default_factory=list)
     attempt: int = 0
 
@@ -495,7 +502,9 @@ class HybridKnowledgeService:
         self.model = model
         self.release_id = release_id
         self.last_llm_call_count = 0
-        self._retrieval_cache: dict[tuple[str, frozenset[str], str], list[SearchResult]] = {}
+        self._retrieval_cache: OrderedDict[
+            tuple[str, frozenset[str], str, str, int, float], list[SearchResult]
+        ] = OrderedDict()
 
     async def search(
         self,
@@ -659,10 +668,17 @@ class HybridKnowledgeService:
         env = self.settings.deployment_environment
 
         async def _search_one(query: str) -> list[SearchResult]:
-            cache_key = (query, frozen_groups, env)
-            cached = self._retrieval_cache.get(cache_key)
-            if cached is not None:
-                return cached
+            cache_key = (
+                query.strip().casefold(),
+                frozen_groups,
+                env,
+                self.release_id or "",
+                self.settings.top_k,
+                self.settings.min_score,
+            )
+            if cache_key in self._retrieval_cache:
+                self._retrieval_cache.move_to_end(cache_key)
+                return self._retrieval_cache[cache_key]
             res = await asyncio.to_thread(
                 self.index.search,
                 query,
@@ -671,6 +687,8 @@ class HybridKnowledgeService:
                 environment=env,
             )
             self._retrieval_cache[cache_key] = res
+            if len(self._retrieval_cache) > _MAX_RETRIEVAL_CACHE_SIZE:
+                self._retrieval_cache.popitem(last=False)
             return res
 
         result_sets = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
@@ -687,7 +705,9 @@ class HybridKnowledgeService:
             key=lambda result: result.score,
             reverse=True,
         )
-        competitive_results = self._select_document_chunks(state.resolved_issue_query, results)
+        competitive_results, displaced_top1 = self._select_document_chunks(
+            state.resolved_issue_query, results
+        )
         selected_chunk_ids = {result.chunk.chunk_id for result in competitive_results}
         for retrieval_query, result_set in zip(
             retrieval_queries,
@@ -725,6 +745,8 @@ class HybridKnowledgeService:
             search_query=state.search_query,
             facet_queries=state.facet_queries,
             results=competitive_results,
+            raw_results=results,
+            filter_displaced_top1=displaced_top1,
             trace_attempts=state.trace_attempts,
             attempt=state.attempt,
         )
@@ -740,18 +762,36 @@ class HybridKnowledgeService:
 
         normalized_query = query.casefold()
 
+        # Check explicit specific product/service intent
+        is_webex_query = "webex" in normalized_query
+        is_xq_query = "xq" in normalized_query
+        is_outlook_query = any(t in normalized_query for t in ("outlook", "郵件", "authenticator"))
+        is_phone_query = any(t in normalized_query for t in ("ip話機", "話機", "分機", "轉接"))
+        is_ad_query = any(t in normalized_query for t in ("ad", "自助解鎖", "帳號鎖定", "網域"))
+        is_vpn_query = any(t in normalized_query for t in ("vpn", "跳板機", "forticlient"))
+        is_accessflow_query = any(
+            t in normalized_query for t in ("accessflow", "門禁", "打卡", "e點名")
+        )
+        is_share_drive_query = any(t in normalized_query for t in ("公槽", "共用公槽"))
+
         # 1. Topic FAQ scenario isolation
         target_scenario: str | None = None
-        if any(term in normalized_query for term in ("報價", "五檔", "走勢圖", "行情", "k線", "faq-004")):
+        if any(
+            term in normalized_query
+            for term in ("報價", "五檔", "走勢圖", "行情", "k線", "faq-004")
+        ):
             target_scenario = "QUOTE"
         elif any(term in normalized_query for term in ("交易", "下單", "委託", "faq-002")):
             target_scenario = "TRADE"
         elif any(term in normalized_query for term in ("帳務", "庫存", "損益", "交割", "faq-003")):
             target_scenario = "ACCOUNTING"
-        elif any(term in normalized_query for term in ("線上服務", "線上問題", "登入異常", "faq-001")):
+        elif any(
+            term in normalized_query for term in ("線上服務", "線上問題", "登入異常", "faq-001")
+        ):
             target_scenario = "GENERAL_ONLINE"
 
         if target_scenario:
+
             def _chunk_scenario(chunk: DocumentChunk) -> str | None:
                 text = f"{chunk.section or ''} {chunk.title} {chunk.content}"
                 text_lower = text.lower()
@@ -768,66 +808,73 @@ class HybridKnowledgeService:
             matching_results = [r for r in results if _chunk_scenario(r.chunk) == target_scenario]
             if matching_results:
                 results = [
-                    r for r in results
-                    if _chunk_scenario(r.chunk) in (target_scenario, None)
+                    r for r in results if _chunk_scenario(r.chunk) in (target_scenario, None)
                 ]
 
         # 2. Audience domain isolation: internal IT systems vs external customer FAQ
-        is_internal_it_query = any(
-            term in normalized_query
-            for term in (
-                "ad",
-                "自助解鎖",
-                "帳號鎖定",
-                "網域",
-                "公槽",
-                "forticlient",
-                "vpn",
-                "跳板機",
-                "outlook",
-                "teams",
-                "cisco",
-                "ip話機",
-                "話機",
-                "accessflow",
-                "門禁",
-                "打卡",
-                "e點名",
-                "內網",
-                "同仁",
-                "員工",
+        # Do not treat "客戶反映" as explicit external FAQ request; internal IT support often handles tickets from clients.
+        is_explicit_external_faq_query = any(
+            term in normalized_query for term in ("外部客戶", "外部客戶線上問題", "外網交易客")
+        )
+        is_internal_it_query = (
+            is_webex_query
+            or is_xq_query
+            or is_outlook_query
+            or is_phone_query
+            or is_ad_query
+            or is_vpn_query
+            or is_accessflow_query
+            or is_share_drive_query
+            or any(
+                term in normalized_query
+                for term in (
+                    "同仁",
+                    "員工",
+                    "內網",
+                    "打卡",
+                    "門禁",
+                    "派工單",
+                    "資訊問題",
+                )
             )
         )
-        is_explicit_external_query = any(
-            term in normalized_query
-            for term in ("外部客戶", "客戶線上問題", "客戶反映", "外網交易客")
-        )
-        if is_internal_it_query and not is_explicit_external_query:
-            internal_only = [
-                r for r in results
-                if "外部客戶" not in r.chunk.title
-                and "外部客戶線上問題" not in (r.chunk.source_path or "")
-                and "123@cathaysec.com.tw" not in r.chunk.content
-            ]
+
+        if is_internal_it_query and not is_explicit_external_faq_query:
+
+            def _is_external_faq_chunk(r: SearchResult) -> bool:
+                # Specific product matches like Webex or XQ are NEVER external customer FAQ!
+                c_title_source = f"{r.chunk.title} {r.chunk.source_path or ''}".lower()
+                if "webex" in c_title_source or "xq" in c_title_source:
+                    return False
+                return "外部客戶" in r.chunk.title or "外部客戶線上問題" in (
+                    r.chunk.source_path or ""
+                )
+
+            internal_only = [r for r in results if not _is_external_faq_chunk(r)]
             if internal_only:
                 results = internal_only
-        elif is_explicit_external_query:
+        elif is_explicit_external_faq_query:
             ext_results = [
-                r for r in results
-                if "外部客戶" in r.chunk.title or "外部客戶" in (r.chunk.section or "")
+                r
+                for r in results
+                if "外部客戶" in r.chunk.title
+                or "外部客戶" in (r.chunk.section or "")
+                or (is_xq_query and "xq" in f"{r.chunk.title} {r.chunk.content}".lower())
+                or (is_webex_query and "webex" in f"{r.chunk.title} {r.chunk.content}".lower())
             ]
             if ext_results:
                 results = ext_results
 
         # 3. Product domain isolation: Outlook vs IP Phone
-        if any(term in normalized_query for term in ("outlook", "郵件", "m365", "authenticator")):
+        if is_outlook_query and not is_phone_query:
             no_phone = [
-                r for r in results
+                r
+                for r in results
                 if "ip話機" not in r.chunk.title.lower() and "話機" not in r.chunk.title
             ]
             if no_phone:
                 results = no_phone
-        elif any(term in normalized_query for term in ("ip話機", "話機", "分機", "轉接")):
+        elif is_phone_query and not is_outlook_query:
             no_outlook = [r for r in results if "outlook" not in r.chunk.title.lower()]
             if no_outlook:
                 results = no_outlook
@@ -835,15 +882,18 @@ class HybridKnowledgeService:
         # 4. Platform domain isolation: iOS vs Android
         if "ios" in normalized_query and "android" not in normalized_query:
             ios_results = [
-                r for r in results
+                r
+                for r in results
                 if "ios" in r.chunk.title.lower() or "ios" in (r.chunk.section or "").lower()
             ]
             if ios_results:
                 results = [r for r in results if "android" not in r.chunk.title.lower()]
         elif "android" in normalized_query and "ios" not in normalized_query:
             android_results = [
-                r for r in results
-                if "android" in r.chunk.title.lower() or "android" in (r.chunk.section or "").lower()
+                r
+                for r in results
+                if "android" in r.chunk.title.lower()
+                or "android" in (r.chunk.section or "").lower()
             ]
             if android_results:
                 results = [r for r in results if "ios" not in r.chunk.title.lower()]
@@ -854,10 +904,23 @@ class HybridKnowledgeService:
         self,
         query: str,
         results: list[SearchResult],
-    ) -> list[SearchResult]:
-        results = self._filter_cross_scenario_chunks(query, results)
+    ) -> tuple[list[SearchResult], bool]:
+        if not results:
+            return ([], False)
+
+        raw_top1 = results[0]
+        filtered_results = self._filter_cross_scenario_chunks(query, results)
+
+        # Raw top-1 protection: if raw top-1 had high confidence (score >= 0.70)
+        # and matched query terms, do not let heuristic filtering drop it
+        if raw_top1 not in filtered_results and raw_top1.score >= 0.70:
+            query_tokens = [t for t in tokenize(query) if len(t) > 1]
+            top1_text = f"{raw_top1.chunk.title} {raw_top1.chunk.content}".lower()
+            if any(t in top1_text for t in query_tokens):
+                filtered_results.insert(0, raw_top1)
+
         by_document: dict[str, list[SearchResult]] = {}
-        for result in results:
+        for result in filtered_results:
             by_document.setdefault(self._document_key(result), []).append(result)
 
         ranked_documents = sorted(
@@ -894,7 +957,15 @@ class HybridKnowledgeService:
         )
         is_multi_section_query = any(
             marker in query
-            for marker in ("分別", "哪些問題類型", "跨類型", "各情境", "不同情境", "各類型", "分別規定")
+            for marker in (
+                "分別",
+                "哪些問題類型",
+                "跨類型",
+                "各情境",
+                "不同情境",
+                "各類型",
+                "分別規定",
+            )
         )
         max_chunks_limit = (
             6
@@ -916,7 +987,8 @@ class HybridKnowledgeService:
                 numbered_doc_chunks = [
                     chunk
                     for chunk in all_doc_chunks
-                    if chunk.section and re.match(r"^(?:[#\s]*\d+[\.\-\s]|目錄)", chunk.section.strip())
+                    if chunk.section
+                    and re.match(r"^(?:[#\s]*\d+[\.\-\s]|目錄)", chunk.section.strip())
                 ]
                 if numbered_doc_chunks:
                     existing_scores = {r.chunk.chunk_id: r.score for r in canonical_version}
@@ -945,7 +1017,16 @@ class HybridKnowledgeService:
                     reverse=True,
                 )[:max_chunks_limit]
             )
-        return selected
+
+        displaced_top1 = False
+        if raw_top1 is not None and selected:
+            if (
+                self._document_key(raw_top1) != self._document_key(selected[0])
+                or raw_top1.score - selected[0].score > 0.15
+            ):
+                displaced_top1 = True
+
+        return (selected, displaced_top1)
 
     @staticmethod
     def _document_has_competitive_overlap(
@@ -987,6 +1068,31 @@ class HybridKnowledgeService:
 
         top = results[0]
         query = state.resolved_issue_query
+
+        # If raw top-1 was displaced or significantly degraded by filtering,
+        # never bypass LLM relevance grading!
+        if state.filter_displaced_top1:
+            return ("LLM_RELEVANCE", False)
+
+        # Check if top-1 and top-2 have close scores but conflicting domain/product context
+        if len(results) >= 2:
+            top1 = results[0]
+            top2 = results[1]
+            if top1.score - top2.score < 0.08:
+                t1 = f"{top1.chunk.title} {top1.chunk.section or ''}".lower()
+                t2 = f"{top2.chunk.title} {top2.chunk.section or ''}".lower()
+                conflicting = (
+                    ("outlook" in t1 and ("話機" in t2 or "ip話機" in t2))
+                    or ("outlook" in t2 and ("話機" in t1 or "ip話機" in t1))
+                    or ("外部客戶" in t1 and "外部客戶" not in t2)
+                    or ("外部客戶" in t2 and "外部客戶" not in t1)
+                    or ("webex" in t1 and "webex" not in t2)
+                    or ("webex" in t2 and "webex" not in t1)
+                    or ("xq" in t1 and "xq" not in t2)
+                    or ("xq" in t2 and "xq" not in t1)
+                )
+                if conflicting:
+                    return ("LLM_RELEVANCE", False)
 
         # High confidence retrieval pass when score is strong and distinctive terms overlap
         if top.score >= _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE and (
@@ -1309,6 +1415,78 @@ class HybridKnowledgeService:
         ]
         return self._collect_images(sibling_results)
 
+    @staticmethod
+    def _prune_unbacked_sentences_and_citations(
+        text: str,
+        common_doc_keys: set[str],
+        resolve_doc_key: Callable[[int], str | None],
+    ) -> str:
+        markers = set(re.findall(r"\[S(\d+)\]", text))
+        unbacked_numbers = {
+            int(m) for m in markers if resolve_doc_key(int(m)) not in common_doc_keys
+        }
+        if not unbacked_numbers:
+            return text
+
+        lines = text.splitlines()
+        cleaned_lines: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                cleaned_lines.append("")
+                continue
+
+            line_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", line)]
+            if not line_cites:
+                cleaned_lines.append(line)
+                continue
+
+            if all(c in unbacked_numbers for c in line_cites):
+                continue
+
+            sentences = re.split(r"(?<=[。！？\n])", line)
+            cleaned_sentences: list[str] = []
+            for sentence in sentences:
+                if not sentence.strip():
+                    continue
+                s_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", sentence)]
+                if not s_cites:
+                    cleaned_sentences.append(sentence)
+                    continue
+                if all(c in unbacked_numbers for c in s_cites):
+                    continue
+
+                clauses = re.split(r"(?<=[，；,;])", sentence)
+                cleaned_clauses: list[str] = []
+                for clause in clauses:
+                    c_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", clause)]
+                    if c_cites and all(c in unbacked_numbers for c in c_cites):
+                        continue
+                    cleaned_clauses.append(clause)
+
+                rebuilt = "".join(cleaned_clauses).strip()
+                rebuilt = re.sub(r"[，；,;]+([。！？]?)$", r"\1", rebuilt)
+                if rebuilt and not rebuilt.endswith(("。", "！", "？", "；", "，")):
+                    rebuilt += "。"
+                if rebuilt and any(
+                    int(m) not in unbacked_numbers for m in re.findall(r"\[S(\d+)\]", rebuilt)
+                ):
+                    cleaned_sentences.append(rebuilt)
+
+            if cleaned_sentences:
+                cleaned_lines.append("".join(cleaned_sentences))
+
+        cleaned_text = "\n".join(cleaned_lines)
+
+        def _strip_any_remaining(match: re.Match[str]) -> str:
+            val = int(match.group(1))
+            if val in unbacked_numbers:
+                return ""
+            return match.group(0)
+
+        return re.sub(r"\[S(\d+)\]", _strip_any_remaining, cleaned_text)
+
     # --- answer generation -----------------------------------------------
 
     async def _generate(
@@ -1430,11 +1608,11 @@ class HybridKnowledgeService:
             if doc_key is not None and doc_key not in ordered_cited_doc_keys:
                 ordered_cited_doc_keys.append(doc_key)
 
-        is_unsupported_miss = (
-            answer_indicates_insufficient_information(answer) and (
-                response.answerability == "NONE"
-                or not response.claims
-                or not any(not answer_indicates_insufficient_information(c.text) for c in response.claims)
+        is_unsupported_miss = answer_indicates_insufficient_information(answer) and (
+            response.answerability == "NONE"
+            or not response.claims
+            or not any(
+                not answer_indicates_insufficient_information(c.text) for c in response.claims
             )
         )
         if is_unsupported_miss or not ordered_cited_doc_keys:
@@ -1468,10 +1646,7 @@ class HybridKnowledgeService:
                 response.claims = [
                     claim
                     for claim in repaired_claims
-                    if any(
-                        document_by_chunk_id.get(cid) in cited_set
-                        for cid in claim.chunkIds
-                    )
+                    if any(document_by_chunk_id.get(cid) in cited_set for cid in claim.chunkIds)
                 ]
                 claimed_doc_keys = {
                     document_by_chunk_id[chunk_id]
@@ -1493,21 +1668,15 @@ class HybridKnowledgeService:
         response.claims = [
             claim
             for claim in response.claims
-            if any(
-                document_by_chunk_id.get(cid) in common_doc_keys
-                for cid in claim.chunkIds
-            )
+            if any(document_by_chunk_id.get(cid) in common_doc_keys for cid in claim.chunkIds)
         ]
 
-        # Prune unbacked [S#] citations from answer text
-        def _strip_unbacked_citation(match: re.Match[str]) -> str:
-            val = int(match.group(1))
-            doc_key = _resolve_doc_key(val)
-            if doc_key in common_doc_keys:
-                return match.group(0)
-            return ""
-
-        answer = re.sub(r"\[S(\d+)\]", _strip_unbacked_citation, answer)
+        # Sentence/clause-level pruning of ungrounded text and citations
+        answer = self._prune_unbacked_sentences_and_citations(
+            answer,
+            common_doc_keys,
+            _resolve_doc_key,
+        )
         ordered_cited_doc_keys = [k for k in ordered_cited_doc_keys if k in common_doc_keys]
 
         doc_key_to_final_idx: dict[str, int] = {
@@ -1656,7 +1825,8 @@ class HybridKnowledgeService:
         if not answer.claims:
             return False
         valid_claims = [
-            claim for claim in answer.claims
+            claim
+            for claim in answer.claims
             if claim.text.strip() and claim.chunkIds and set(claim.chunkIds) <= valid_chunk_ids
         ]
         if not valid_claims:

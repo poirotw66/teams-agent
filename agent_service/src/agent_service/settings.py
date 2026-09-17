@@ -60,7 +60,7 @@ class RagSettings:
     supervisor_terminal_confidence: float = 0.9
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
-    skip_relevance_llm_on_high_confidence: bool = False
+    skip_relevance_llm_on_high_confidence: bool = True
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
