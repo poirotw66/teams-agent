@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .models import (
@@ -218,6 +219,56 @@ class FirestorePortalRepository:
         doc_id = record.key.replace("/", "_")
         await self._idempotency().document(doc_id).set(self._serialize(record))
 
+    async def acquire_publish_lease(
+        self,
+        owner: str,
+        ttl_seconds: float = 30.0,
+    ) -> bool:
+        from google.cloud import firestore
+
+        lease_ref = self._config().document("publish_lease")
+        transaction = self._client.transaction()
+
+        @firestore.async_transactional
+        async def acquire(transaction):
+            snapshot = await lease_ref.get(transaction=transaction)
+            now = datetime.now(UTC)
+            if snapshot.exists:
+                payload = snapshot.to_dict() or {}
+                current_owner = payload.get("owner")
+                expires_at = payload.get("expires_at")
+                if (
+                    current_owner
+                    and current_owner != owner
+                    and isinstance(expires_at, datetime)
+                    and now < expires_at
+                ):
+                    return False
+            transaction.set(
+                lease_ref,
+                {
+                    "owner": owner,
+                    "expires_at": now + timedelta(seconds=ttl_seconds),
+                },
+            )
+            return True
+
+        return bool(await acquire(transaction))
+
+    async def release_publish_lease(self, owner: str) -> None:
+        from google.cloud import firestore
+
+        lease_ref = self._config().document("publish_lease")
+        transaction = self._client.transaction()
+
+        @firestore.async_transactional
+        async def release(transaction):
+            snapshot = await lease_ref.get(transaction=transaction)
+            if snapshot.exists and (snapshot.to_dict() or {}).get("owner") == owner:
+                transaction.delete(lease_ref)
+
+        await release(transaction)
+
     async def dashboard_summary(self, actor: PortalActor) -> DashboardSummary:
         documents = await self.list_documents(actor=actor)
         pending_reviews = await self.list_pending_reviews(actor)
@@ -337,33 +388,3 @@ class _MemoryFilter(PortalRepository):
 
     async def dashboard_summary(self, actor):
         return await self._inner.dashboard_summary(actor)
-
-    async def acquire_publish_lease(self, owner: str, ttl_seconds: float = 30.0) -> bool:
-        from datetime import datetime, timedelta, timezone
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(seconds=ttl_seconds)
-        doc_ref = self._config().document("publish_lease")
-        doc = await doc_ref.get()
-        if doc.exists:
-            data = doc.to_dict() or {}
-            curr_owner = data.get("owner")
-            curr_exp = data.get("expires_at")
-            if curr_owner and curr_exp:
-                if isinstance(curr_exp, str):
-                    curr_exp_dt = datetime.fromisoformat(curr_exp)
-                elif hasattr(curr_exp, "to_datetime"):
-                    curr_exp_dt = curr_exp.to_datetime()
-                else:
-                    curr_exp_dt = curr_exp
-                if curr_owner != owner and now < curr_exp_dt:
-                    return False
-        await doc_ref.set({"owner": owner, "expires_at": expires_at.isoformat()})
-        return True
-
-    async def release_publish_lease(self, owner: str) -> None:
-        doc_ref = self._config().document("publish_lease")
-        doc = await doc_ref.get()
-        if doc.exists:
-            data = doc.to_dict() or {}
-            if data.get("owner") == owner:
-                await doc_ref.delete()

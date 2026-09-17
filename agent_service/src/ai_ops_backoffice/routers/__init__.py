@@ -13,6 +13,7 @@ from .quality_routes import register_quality_routes
 from .sources_router import register_sources_routes
 from .sync_routes import register_sync_routes
 from .tool_fixture_routes import register_tool_fixture_routes
+from .workbench_router import register_workbench_routes
 
 __all__ = [
     "register_analytics_routes",
@@ -30,5 +31,6 @@ __all__ = [
     "register_sources_routes",
     "register_sync_routes",
     "register_tool_fixture_routes",
+    "register_workbench_routes",
 ]
 

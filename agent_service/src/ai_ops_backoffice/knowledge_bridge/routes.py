@@ -144,7 +144,12 @@ def _to_response(upstream: Any, *, correlation_id: str) -> Response:
     if "application/json" in media_type:
         return JSONResponse(status_code=status, content=upstream.json())
     headers = {}
-    for key in ("content-disposition", "content-type", "cache-control"):
+    for key in (
+        "content-disposition",
+        "content-type",
+        "cache-control",
+        "x-content-type-options",
+    ):
         value = upstream.headers.get(key)
         if value:
             headers[key] = value

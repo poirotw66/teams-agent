@@ -18,6 +18,32 @@ from .models import (
 from .repository import InMemoryPortalRepository
 
 
+def _normalize_document_payload(item: object) -> dict[str, object]:
+    if not isinstance(item, dict):
+        raise TypeError("Portal document state must be a JSON object.")
+    normalized = dict(item)
+    if normalized.get("status") == "ARCHIVED":
+        normalized["status"] = "UNPUBLISHED"
+    return normalized
+
+
+def _normalize_version_payload(item: object) -> dict[str, object]:
+    if not isinstance(item, dict):
+        raise TypeError("Portal version state must be a JSON object.")
+    normalized = dict(item)
+    source_type_aliases = {
+        "PDF_UPLOAD": "PDF",
+        "DOCX_UPLOAD": "DOCX",
+    }
+    source_type = normalized.get("source_type")
+    if isinstance(source_type, str) and source_type in source_type_aliases:
+        normalized["source_type"] = source_type_aliases[source_type]
+    if not normalized.get("etag"):
+        version_id = str(normalized.get("version_id", "legacy-version"))
+        normalized["etag"] = f'W/"{version_id}"'
+    return normalized
+
+
 class FilePortalRepository(InMemoryPortalRepository):
     """JSON-backed portal state for local bootstrap and handoff drills."""
 
@@ -36,11 +62,15 @@ class FilePortalRepository(InMemoryPortalRepository):
             if self._path.exists():
                 payload = json.loads(self._path.read_text(encoding="utf-8"))
                 self.documents = {
-                    item["document_id"]: KnowledgeDocumentRecord.model_validate(item)
+                    item["document_id"]: KnowledgeDocumentRecord.model_validate(
+                        _normalize_document_payload(item)
+                    )
                     for item in payload.get("documents", [])
                 }
                 self.versions = {
-                    item["version_id"]: KnowledgeVersionRecord.model_validate(item)
+                    item["version_id"]: KnowledgeVersionRecord.model_validate(
+                        _normalize_version_payload(item)
+                    )
                     for item in payload.get("versions", [])
                 }
                 self.reviews = {

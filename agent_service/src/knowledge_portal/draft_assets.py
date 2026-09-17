@@ -5,6 +5,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from agent_service.documents import parse_front_matter
 
@@ -87,13 +88,20 @@ def normalize_markdown_target(raw: str) -> str:
 
 def referenced_asset_filenames(markdown_content: str, asset_slug: str) -> set[str]:
     filenames: set[str] = set()
-    for _, target in _IMAGE_REF_PATTERN.findall(markdown_content):
+    for _, target in markdown_image_references(markdown_content):
         target_path = normalize_markdown_target(target)
         if "://" in target_path or target_path.startswith("data:"):
             continue
         normalized = target_path.replace("\\", "/")
         filenames.add(Path(normalized).name)
     return filenames
+
+
+def markdown_image_references(markdown_content: str) -> list[tuple[str, str]]:
+    return [
+        (alt_text.strip(), normalize_markdown_target(target))
+        for alt_text, target in _IMAGE_REF_PATTERN.findall(markdown_content)
+    ]
 
 
 def markdown_asset_ref(*, asset_slug: str, filename: str, alt_text: str = "") -> str:
@@ -124,6 +132,7 @@ def rewrite_local_image_refs(markdown_content: str, *, asset_slug: str) -> str:
 @dataclass(frozen=True)
 class DraftAssetStore:
     settings: PortalSettings
+    storage_client: Any | None = None
 
     @property
     def root(self) -> Path:
@@ -144,6 +153,9 @@ class DraftAssetStore:
         version_id: str,
         asset_slug: str,
     ) -> list[DraftAssetRecord]:
+        bucket = self._gcs_bucket()
+        if bucket is not None:
+            return self._list_gcs_assets(bucket, document_id, version_id, asset_slug)
         directory = self.asset_dir(document_id, version_id, asset_slug)
         if not directory.is_dir():
             return []
@@ -172,9 +184,7 @@ class DraftAssetStore:
         payload: bytes,
     ) -> DraftAssetRecord:
         if len(payload) > self.settings.max_asset_bytes:
-            raise ValueError(
-                f"Image exceeds {self.settings.max_asset_bytes} bytes: {filename}"
-            )
+            raise ValueError(f"Image exceeds {self.settings.max_asset_bytes} bytes: {filename}")
         normalized = normalize_upload_filename(filename)
         suffix = Path(normalized).suffix.lower()
         if suffix not in ALLOWED_IMAGE_SUFFIXES:
@@ -182,13 +192,16 @@ class DraftAssetStore:
         existing = self.list_assets(document_id, version_id, asset_slug)
         replacing = any(item.filename == normalized for item in existing)
         if not replacing and len(existing) >= self.settings.max_assets_per_version:
-            raise ValueError(
-                f"At most {self.settings.max_assets_per_version} images per draft."
-            )
+            raise ValueError(f"At most {self.settings.max_assets_per_version} images per draft.")
         target_dir = self.asset_dir(document_id, version_id, asset_slug)
         target_dir.mkdir(parents=True, exist_ok=True)
         target = target_dir / normalized
         target.write_bytes(payload)
+        bucket = self._gcs_bucket()
+        if bucket is not None:
+            blob = bucket.blob(self._gcs_asset_key(document_id, version_id, asset_slug, normalized))
+            blob.metadata = {"sha256": hashlib.sha256(payload).hexdigest()}
+            blob.upload_from_string(payload, content_type=_content_type(suffix))
         return DraftAssetRecord(
             filename=normalized,
             size_bytes=len(payload),
@@ -209,6 +222,21 @@ class DraftAssetStore:
         )
         if target.exists():
             target.unlink()
+        bucket = self._gcs_bucket()
+        if bucket is not None:
+            blob = bucket.blob(
+                self._gcs_asset_key(
+                    document_id,
+                    version_id,
+                    asset_slug,
+                    normalize_upload_filename(filename),
+                )
+            )
+            try:
+                blob.delete()
+            except Exception as error:  # noqa: BLE001 - external storage boundary
+                if error.__class__.__name__ not in {"NotFound", "NotFoundError"}:
+                    raise
 
     def copy_bundle(
         self,
@@ -219,6 +247,24 @@ class DraftAssetStore:
         target_version_id: str,
         asset_slug: str,
     ) -> None:
+        bucket = self._gcs_bucket()
+        if bucket is not None:
+            source_prefix = self._gcs_asset_prefix(
+                source_document_id,
+                source_version_id,
+                asset_slug,
+            )
+            target_prefix = self._gcs_asset_prefix(
+                target_document_id,
+                target_version_id,
+                asset_slug,
+            )
+            for blob in bucket.list_blobs(prefix=f"{source_prefix}/"):
+                relative = blob.name.removeprefix(f"{source_prefix}/")
+                if relative and Path(relative).suffix.lower() in ALLOWED_IMAGE_SUFFIXES:
+                    bucket.copy_blob(blob, bucket, f"{target_prefix}/{relative}")
+            self.materialize_bundle(target_document_id, target_version_id, asset_slug)
+            return
         source_dir = self.asset_dir(source_document_id, source_version_id, asset_slug)
         if source_dir.is_dir():
             target_dir = self.asset_dir(target_document_id, target_version_id, asset_slug)
@@ -267,6 +313,10 @@ class DraftAssetStore:
     ) -> None:
         slug = version.asset_slug or slug_from_title(version.title)
         target_dir = release_dir / "assets" / slug
+        if self.materialize_bundle(version.document_id, version.version_id, slug):
+            source_dir = self.asset_dir(version.document_id, version.version_id, slug)
+            if _copy_image_dir(source_dir, target_dir):
+                return
         source_dir = self.asset_dir(version.document_id, version.version_id, slug)
         if not _copy_image_dir(source_dir, target_dir):
             legacy_dir = self.settings.data_dir / "assets" / slug
@@ -280,6 +330,121 @@ class DraftAssetStore:
             slug,
             getattr(version, "canonical_content", ""),
         )
+
+    def materialize_bundle(
+        self,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+    ) -> bool:
+        bucket = self._gcs_bucket()
+        if bucket is None:
+            return False
+        target_dir = self.asset_dir(document_id, version_id, asset_slug)
+        prefix = self._gcs_asset_prefix(document_id, version_id, asset_slug)
+        downloaded = False
+        for blob in bucket.list_blobs(prefix=f"{prefix}/"):
+            filename = normalize_upload_filename(Path(blob.name).name)
+            if Path(filename).suffix.lower() not in ALLOWED_IMAGE_SUFFIXES:
+                continue
+            target_dir.mkdir(parents=True, exist_ok=True)
+            blob.download_to_filename(str(target_dir / filename))
+            downloaded = True
+        return downloaded
+
+    def read_asset_bytes(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+        filename: str,
+    ) -> tuple[bytes, str]:
+        normalized = normalize_upload_filename(filename)
+        suffix = Path(normalized).suffix.lower()
+        if suffix not in ALLOWED_IMAGE_SUFFIXES:
+            raise ValueError("Unsupported image type.")
+        bucket = self._gcs_bucket()
+        if bucket is not None:
+            blob = bucket.blob(self._gcs_asset_key(document_id, version_id, asset_slug, normalized))
+            try:
+                return blob.download_as_bytes(), asset_content_type(suffix)
+            except Exception as error:  # noqa: BLE001 - external storage boundary
+                raise FileNotFoundError(normalized) from error
+        path = self.asset_dir(document_id, version_id, asset_slug) / normalized
+        if not path.is_file():
+            raise FileNotFoundError(normalized)
+        return path.read_bytes(), asset_content_type(suffix)
+
+    def _gcs_bucket(self) -> Any | None:
+        if (
+            self.settings.artifact_storage_backend.upper() != "GCS"
+            or not self.settings.artifact_gcs_bucket
+        ):
+            return None
+        if self.storage_client is not None:
+            return self.storage_client.bucket(self.settings.artifact_gcs_bucket)
+        try:
+            from google.cloud import storage
+        except ImportError as error:  # pragma: no cover - optional deployment dependency
+            raise RuntimeError(
+                "google-cloud-storage is required for shared draft assets."
+            ) from error
+        return storage.Client().bucket(self.settings.artifact_gcs_bucket)
+
+    def _gcs_asset_prefix(
+        self,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+    ) -> str:
+        for value in (document_id, version_id):
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value):
+                raise ValueError("Invalid document asset identifier.")
+        slug = slug_from_title(asset_slug)
+        return (
+            f"portal-drafts/{self.settings.default_tenant_id}/documents/"
+            f"{document_id}/versions/{version_id}/assets/{slug}"
+        )
+
+    def _gcs_asset_key(
+        self,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+        filename: str,
+    ) -> str:
+        return (
+            f"{self._gcs_asset_prefix(document_id, version_id, asset_slug)}/"
+            f"{normalize_upload_filename(filename)}"
+        )
+
+    def _list_gcs_assets(
+        self,
+        bucket: Any,
+        document_id: str,
+        version_id: str,
+        asset_slug: str,
+    ) -> list[DraftAssetRecord]:
+        prefix = self._gcs_asset_prefix(document_id, version_id, asset_slug)
+        items: list[DraftAssetRecord] = []
+        for blob in bucket.list_blobs(prefix=f"{prefix}/"):
+            filename = Path(blob.name).name
+            suffix = Path(filename).suffix.lower()
+            if suffix not in ALLOWED_IMAGE_SUFFIXES:
+                continue
+            metadata = getattr(blob, "metadata", None) or {}
+            items.append(
+                DraftAssetRecord(
+                    filename=filename,
+                    size_bytes=int(getattr(blob, "size", 0) or 0),
+                    content_type=str(
+                        getattr(blob, "content_type", None) or asset_content_type(suffix)
+                    ),
+                    sha256=str(metadata.get("sha256") or ""),
+                )
+            )
+        return sorted(items, key=lambda item: item.filename)
 
     def _supplement_corpus_assets(
         self,
@@ -304,10 +469,7 @@ class DraftAssetStore:
         version_id: str,
         asset_slug: str,
     ) -> str:
-        existing = {
-            item.filename
-            for item in self.list_assets(document_id, version_id, asset_slug)
-        }
+        existing = {item.filename for item in self.list_assets(document_id, version_id, asset_slug)}
         index = 1
         while True:
             candidate = f"p{index:02d}.png"
@@ -328,8 +490,7 @@ def _copy_image_dir(source: Path, target: Path) -> bool:
 
 def _directory_has_images(path: Path) -> bool:
     return any(
-        item.is_file() and item.suffix.lower() in ALLOWED_IMAGE_SUFFIXES
-        for item in path.rglob("*")
+        item.is_file() and item.suffix.lower() in ALLOWED_IMAGE_SUFFIXES for item in path.rglob("*")
     )
 
 
@@ -388,7 +549,12 @@ def is_expected_asset_markdown_path(
         return True
     # Accept equivalent paths when only the final filename is compared under assets/<slug>/.
     parts = [part for part in normalized.split("/") if part and part != "."]
-    return len(parts) >= 3 and parts[0] == "assets" and parts[1] == asset_slug and parts[-1] == filename
+    return (
+        len(parts) >= 3
+        and parts[0] == "assets"
+        and parts[1] == asset_slug
+        and parts[-1] == filename
+    )
 
 
 def validate_asset_bundle(

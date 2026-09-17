@@ -168,6 +168,34 @@ terraform plan   # expect: No changes
 
 Import checklist: `infra/terraform/INVENTORY.md`
 
+## Governed knowledge ingestion
+
+Workbench uploads create Portal drafts; they never modify `data/index/chunks.json`
+or the active release. Operators must review chunk diagnostics, run candidate
+evaluation, approve the draft, and publish through the release gate.
+
+Pre-migration corpus check:
+
+```bash
+PYTHONPATH=agent_service/src agent_service/.venv/bin/python \
+  scripts/rechunk_knowledge_corpus.py \
+  --sources data/sources \
+  --output artifacts/knowledge-rechunk-report.json
+```
+
+For the `260701-金融業生成式AI平台工程-Justin` canary, add:
+
+```bash
+--canary-title "260701-金融業生成式AI平台工程-Justin" \
+--canary-pages 14 --canary-min-chunks 14 --canary-max-chunks 24
+```
+
+Do not activate when the canary is absent, any deterministic chunk gate fails,
+the Hybrid vector count differs from searchable child count, or Gemini File
+Search lacks matching release/chunk identity and ACL metadata. Keep the
+previous release/store until the new release reload is verified. A reload
+failure restores the previous active pointer automatically.
+
 ## Sign-off checklist (manual)
 
 Phase 1 milestone acceptance requires one final `SYSTEM_ADMIN` approval. Justin is the administrator approver for this stage. BU, IT, Security/Legal, and Knowledge Admin records are supporting review evidence, not separate signature gates.

@@ -30,9 +30,7 @@ class ReviewService:
         self._ctx = ctx
         self._documents = documents
 
-    async def list_pending_reviews(
-        self, actor: PortalActor
-    ) -> PendingReviewListResponse:
+    async def list_pending_reviews(self, actor: PortalActor) -> PendingReviewListResponse:
         ensure_can_list_pending_reviews(actor)
         reviews = await self._ctx.repository.list_pending_reviews(actor)
         items: list[PendingReviewItem] = []
@@ -41,9 +39,7 @@ class ReviewService:
             if document is None:
                 continue
             try:
-                ensure_document_visible(
-                    actor, document.owner_unit_id, document.created_by
-                )
+                ensure_document_visible(actor, document.owner_unit_id, document.created_by)
             except PortalPermissionError:
                 continue
             context = await build_pending_review_context(
@@ -83,7 +79,7 @@ class ReviewService:
         if detail.draft_version is None:
             raise ValueError("Document has no draft version.")
         version = detail.draft_version
-        asset_slug, assets_root = self._ctx.validation_context(
+        asset_slug, assets_root = await self._ctx.validation_context(
             document_id=document_id,
             version_id=version.version_id,
             title=version.title,
@@ -106,9 +102,7 @@ class ReviewService:
         if not self._ctx.settings.effective_relaxed_workflow():
             test_cases = await self._ctx.repository.list_test_cases(version.version_id)
             if len(test_cases) < 3:
-                raise ValueError(
-                    "At least three test questions are required before review."
-                )
+                raise ValueError("At least three test questions are required before review.")
 
         review = ReviewRecord(
             review_id=new_id("review"),

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent_service.layout_chunking import ChunkingProfile
+
 from .models import (
     AssetRefSuggestion,
     CreateDocumentRequest,
@@ -45,9 +47,7 @@ class PortalService:
     ) -> None:
         # Optional gate checker: None keeps local/test allow path (REPORT_ONLY-compatible).
         # When injected, publish/activate/migration consult it before flipping pointers.
-        ctx = PortalServiceContext(
-            settings, repository, release_gate_checker=release_gate_checker
-        )
+        ctx = PortalServiceContext(settings, repository, release_gate_checker=release_gate_checker)
         self._ctx = ctx
         self._documents = DocumentService(ctx)
         self._reviews = ReviewService(ctx, self._documents)
@@ -77,10 +77,23 @@ class PortalService:
     async def list_pending_reviews(self, actor: PortalActor):
         return await self._reviews.list_pending_reviews(actor)
 
-    async def get_document(
-        self, actor: PortalActor, document_id: str
-    ) -> DocumentDetailResponse:
+    async def get_document(self, actor: PortalActor, document_id: str) -> DocumentDetailResponse:
         return await self._documents.get_document(actor, document_id)
+
+    async def preview_chunks(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        *,
+        profile: ChunkingProfile,
+        version_id: str | None = None,
+    ) -> dict[str, object]:
+        return await self._documents.preview_chunks(
+            actor,
+            document_id,
+            profile=profile,
+            version_id=version_id,
+        )
 
     async def create_document(
         self,
@@ -100,13 +113,9 @@ class PortalService:
         request: UpdateDraftRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        return await self._documents.update_draft(
-            actor, document_id, request, correlation_id
-        )
+        return await self._documents.update_draft(actor, document_id, request, correlation_id)
 
-    async def validate_document(
-        self, actor: PortalActor, document_id: str
-    ) -> ValidationSummary:
+    async def validate_document(self, actor: PortalActor, document_id: str) -> ValidationSummary:
         return await self._documents.validate_document(actor, document_id)
 
     async def submit_for_review(
@@ -116,9 +125,7 @@ class PortalService:
         request: SubmitReviewRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        return await self._reviews.submit_for_review(
-            actor, document_id, request, correlation_id
-        )
+        return await self._reviews.submit_for_review(actor, document_id, request, correlation_id)
 
     async def decide_review(
         self,
@@ -127,9 +134,7 @@ class PortalService:
         request: ReviewDecisionRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        return await self._reviews.decide_review(
-            actor, review_id, request, correlation_id
-        )
+        return await self._reviews.decide_review(actor, review_id, request, correlation_id)
 
     async def publish_version(
         self,
@@ -150,9 +155,7 @@ class PortalService:
         request: RemoveDocumentRequest,
         correlation_id: str,
     ) -> dict[str, str]:
-        return await self._documents.discard_draft(
-            actor, document_id, request, correlation_id
-        )
+        return await self._documents.discard_draft(actor, document_id, request, correlation_id)
 
     async def unpublish_document(
         self,
@@ -161,9 +164,7 @@ class PortalService:
         request: RemoveDocumentRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        return await self._releases.unpublish_document(
-            actor, document_id, request, correlation_id
-        )
+        return await self._releases.unpublish_document(actor, document_id, request, correlation_id)
 
     async def remove_document(
         self,
@@ -172,9 +173,7 @@ class PortalService:
         request: RemoveDocumentRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse | dict[str, str]:
-        return await self._releases.remove_document(
-            actor, document_id, request, correlation_id
-        )
+        return await self._releases.remove_document(actor, document_id, request, correlation_id)
 
     async def rollback_release(
         self,
@@ -208,9 +207,7 @@ class PortalService:
         release_id: str,
         correlation_id: str,
     ) -> ReleaseRecord:
-        return await self._releases.sync_agent_release(
-            actor, release_id, correlation_id
-        )
+        return await self._releases.sync_agent_release(actor, release_id, correlation_id)
 
     async def reindex_all_published(
         self,
@@ -234,12 +231,8 @@ class PortalService:
     async def list_releases(self, actor: PortalActor) -> list[ReleaseRecord]:
         return await self._releases.list_releases(actor)
 
-    async def compare_releases(
-        self, actor: PortalActor, *, target_release_id: str
-    ):
-        return await self._releases.compare_releases(
-            actor, target_release_id=target_release_id
-        )
+    async def compare_releases(self, actor: PortalActor, *, target_release_id: str):
+        return await self._releases.compare_releases(actor, target_release_id=target_release_id)
 
     async def list_audit(self, actor: PortalActor, *, limit: int = 100):
         ensure_can_view_audit(actor)
@@ -252,12 +245,21 @@ class PortalService:
         request: CreateTestCaseRequest,
         correlation_id: str,
     ) -> TestCaseRecord:
-        return await self._documents.add_test_case(
-            actor, document_id, request, correlation_id
-        )
+        return await self._documents.add_test_case(actor, document_id, request, correlation_id)
 
-    def import_markdown(self, actor: PortalActor, raw: str, *, filename: str | None = None) -> ImportMarkdownResponse:
+    def import_markdown(
+        self, actor: PortalActor, raw: str, *, filename: str | None = None
+    ) -> ImportMarkdownResponse:
         return self._documents.import_markdown(actor, raw, filename=filename)
+
+    def import_docx(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+    ) -> dict[str, object]:
+        return self._documents.import_docx(actor, payload, filename=filename)
 
     def import_pdf(
         self,
@@ -277,6 +279,8 @@ class PortalService:
         async_mode: str | None = "auto",
         job_store=None,
         background_tasks=None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ):
         return await self._documents.import_pdf_smart(
             actor,
@@ -285,6 +289,8 @@ class PortalService:
             async_mode=async_mode,
             job_store=job_store,
             background_tasks=background_tasks,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
         )
 
     async def list_draft_assets(
@@ -321,9 +327,7 @@ class PortalService:
         filename: str,
         alt_text: str = "",
     ) -> AssetRefSuggestion:
-        return await self._documents.suggest_asset_ref(
-            actor, document_id, filename, alt_text
-        )
+        return await self._documents.suggest_asset_ref(actor, document_id, filename, alt_text)
 
     def read_draft_asset(
         self,
@@ -332,8 +336,20 @@ class PortalService:
         asset_slug: str,
         filename: str,
     ) -> tuple[Path, str]:
-        return self._documents.read_draft_asset(
-            document_id, version_id, asset_slug, filename
+        return self._documents.read_draft_asset(document_id, version_id, asset_slug, filename)
+
+    async def read_version_asset(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        version_id: str,
+        filename: str,
+    ) -> tuple[bytes, str]:
+        return await self._documents.read_version_asset(
+            actor,
+            document_id,
+            version_id,
+            filename,
         )
 
     async def start_revision(
@@ -387,9 +403,7 @@ class PortalService:
         groups: list[str] | None = None,
         limit: int = 4,
     ):
-        return await self._documents.search_draft(
-            actor, document_id, query, groups, limit
-        )
+        return await self._documents.search_draft(actor, document_id, query, groups, limit)
 
     async def run_test_case(
         self,
@@ -398,13 +412,9 @@ class PortalService:
         test_case_id: str,
         correlation_id: str,
     ) -> TestRunRecord:
-        return await self._documents.run_test_case(
-            actor, document_id, test_case_id, correlation_id
-        )
+        return await self._documents.run_test_case(actor, document_id, test_case_id, correlation_id)
 
-    async def list_test_cases(
-        self, actor: PortalActor, document_id: str
-    ) -> list[TestCaseRecord]:
+    async def list_test_cases(self, actor: PortalActor, document_id: str) -> list[TestCaseRecord]:
         return await self._documents.list_test_cases(actor, document_id)
 
     async def list_test_runs(
@@ -413,6 +423,4 @@ class PortalService:
         document_id: str,
         test_case_id: str | None = None,
     ) -> list[TestRunRecord]:
-        return await self._documents.list_test_runs(
-            actor, document_id, test_case_id=test_case_id
-        )
+        return await self._documents.list_test_runs(actor, document_id, test_case_id=test_case_id)

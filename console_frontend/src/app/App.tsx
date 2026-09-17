@@ -12,10 +12,12 @@ import { authProvider } from './providers/authProvider';
 import { accessControlProvider } from './providers/accessControlProvider';
 import { AppLayout } from './shell/AppLayout';
 
-import { WorkPage } from '../features/work/pages/WorkPage';
+import { DashboardPage } from '../features/dashboard/pages/DashboardPage';
+import { TriagePage } from '../features/triage/pages/TriagePage';
+import { KnowledgePage } from '../features/knowledge/pages/KnowledgePage';
+import { TicketsPage } from '../features/tickets/pages/TicketsPage';
 import { HealthPage } from '../features/operations/pages/HealthPage';
 import { CaseDetailPage } from '../features/improvements/pages/CaseDetailPage';
-import { CasesListPage } from '../features/improvements/pages/CasesListPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
 
 export const App: React.FC = () => {
@@ -24,13 +26,59 @@ export const App: React.FC = () => {
       locale={zhTW}
       theme={{
         token: {
-          colorPrimary: '#1890ff',
-          borderRadius: 6,
+          colorPrimary: '#5B5FC7',
+          colorPrimaryHover: '#4F52B2',
+          colorPrimaryActive: '#444791',
+          colorPrimaryBg: '#F0F1FA',
+          colorInfo: '#5B5FC7',
+          colorSuccess: '#107C41',
+          colorWarning: '#B78800',
+          colorError: '#C4314B',
+          colorTextBase: '#242424',
+          colorTextSecondary: '#616161',
+          colorBorder: '#E0E0E6',
+          colorBorderSecondary: '#EBEBF2',
+          colorBgLayout: '#F5F5F7',
+          colorBgContainer: '#FFFFFF',
+          borderRadius: 8,
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', Roboto, Helvetica, Arial, sans-serif",
+        },
+        components: {
+          Button: {
+            borderRadius: 6,
+            fontWeight: 600,
+            primaryColor: '#FFFFFF',
+          },
+          Card: {
+            borderRadius: 10,
+            colorBorderSecondary: '#EBEBF2',
+          },
+          Tabs: {
+            colorPrimary: '#5B5FC7',
+            itemSelectedColor: '#5B5FC7',
+            itemHoverColor: '#4F52B2',
+            inkBarColor: '#5B5FC7',
+          },
+          Tag: {
+            borderRadius: 4,
+          },
+          Table: {
+            headerBg: '#F7F7FA',
+            headerColor: '#242424',
+            rowHoverBg: '#F9F9FC',
+          },
         },
       }}
     >
       <AntdApp>
-        <BrowserRouter basename="/console-v2">
+        <BrowserRouter
+          basename="/console-v2"
+          future={{
+            v7_relativeSplatPath: true,
+            v7_startTransition: true,
+          }}
+        >
           <Refine
             dataProvider={dataProvider}
             authProvider={authProvider}
@@ -38,18 +86,31 @@ export const App: React.FC = () => {
             routerProvider={routerBindings}
             resources={[
               {
-                name: 'work-items',
-                list: '/work',
+                name: 'dashboard',
+                list: '/dashboard',
                 meta: {
-                  label: '我的工作',
+                  label: '營運儀表板',
                 },
               },
               {
-                name: 'improvements',
-                list: '/improvements/cases',
-                show: '/improvements/cases/:id',
+                name: 'triage',
+                list: '/triage',
                 meta: {
-                  label: '問題改善',
+                  label: '對話與分診',
+                },
+              },
+              {
+                name: 'knowledge',
+                list: '/knowledge',
+                meta: {
+                  label: '知識庫與手冊',
+                },
+              },
+              {
+                name: 'tickets',
+                list: '/tickets',
+                meta: {
+                  label: 'IT 工單追蹤',
                 },
               },
               {
@@ -74,12 +135,16 @@ export const App: React.FC = () => {
                   </AppLayout>
                 }
               >
-                <Route path="/" element={<Navigate to="/work" replace />} />
-                <Route path="/work" element={<WorkPage />} />
-                <Route path="/operations/health" element={<HealthPage />} />
-                <Route path="/improvements" element={<Navigate to="/improvements/cases" replace />} />
-                <Route path="/improvements/cases" element={<CasesListPage />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/work" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/triage" element={<TriagePage />} />
+                <Route path="/improvements" element={<Navigate to="/triage" replace />} />
+                <Route path="/improvements/cases" element={<Navigate to="/triage" replace />} />
                 <Route path="/improvements/cases/:id" element={<CaseDetailPage />} />
+                <Route path="/knowledge" element={<KnowledgePage />} />
+                <Route path="/tickets" element={<TicketsPage />} />
+                <Route path="/operations/health" element={<HealthPage />} />
                 <Route
                   path="*"
                   element={
@@ -88,8 +153,8 @@ export const App: React.FC = () => {
                       title="404"
                       subTitle="抱歉，您所造訪的頁面不存在或已被移動。"
                       extra={
-                        <Button type="primary" href="/console-v2/work">
-                          返回我的工作
+                        <Button type="primary" href="/console-v2/dashboard">
+                          返回營運儀表板
                         </Button>
                       }
                     />

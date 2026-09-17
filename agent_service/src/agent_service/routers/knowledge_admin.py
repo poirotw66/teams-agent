@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
@@ -13,6 +14,7 @@ from ..deps import sync_knowledge_to_active_pointer
 from ..graph import RagAgent
 from ..knowledge_backends import KnowledgeBackendRouter
 from ..knowledge_release import (
+    manifest_file_search_store,
     read_active_release_id,
     release_index_path,
     resolve_knowledge_index,
@@ -118,6 +120,7 @@ def register_knowledge_admin_routes(
         active_release_id = read_active_release_id(release_dir)
         requested_release_id = payload.target_release_id if payload else None
         resolved_artifact = None
+        resolved_file_search_store: str | None = None
 
         if resolved_settings.knowledge_release_store_mode == "GCS":
             try:
@@ -131,6 +134,7 @@ def register_knowledge_admin_routes(
             target_index_path = resolved_index.index_path
             source = resolved_index.source
             resolved_artifact = resolved_index.artifact
+            resolved_file_search_store = resolved_index.file_search_store
         elif requested_release_id:
             if active_release_id and requested_release_id != active_release_id:
                 raise HTTPException(
@@ -153,16 +157,21 @@ def register_knowledge_admin_routes(
             target_index_path = resolved_index.index_path
             source = resolved_index.source
             resolved_artifact = resolved_index.artifact
+            resolved_file_search_store = resolved_index.file_search_store
         elif active_release_id:
             target_release_id = active_release_id
             target_index_path = release_index_path(release_dir, target_release_id)
             source = "portal_release"
+            resolved_file_search_store = manifest_file_search_store(
+                target_index_path.parents[1]
+            )
         else:
             resolved_index = resolve_knowledge_index(resolved_settings)
             target_release_id = resolved_index.release_id
             target_index_path = resolved_index.index_path
             source = resolved_index.source
             resolved_artifact = resolved_index.artifact
+            resolved_file_search_store = resolved_index.file_search_store
 
         if not target_index_path.exists():
             raise HTTPException(
@@ -188,6 +197,26 @@ def register_knowledge_admin_routes(
         )
         router: KnowledgeBackendRouter = request.app.state.knowledge_router
         router.update_service("HYBRID", new_hybrid_service)
+        if resolved_file_search_store:
+            file_search_settings = replace(
+                resolved_settings,
+                knowledge_service_mode="GEMINI_FILE_SEARCH",
+                gemini_file_search_store=resolved_file_search_store,
+            )
+            router.update_service(
+                "GEMINI_FILE_SEARCH",
+                build_knowledge_service(
+                    file_search_settings,
+                    new_index,
+                    request.app.state.rag_model,
+                    release_id=target_release_id,
+                ),
+            )
+        elif target_release_id:
+            router.remove_service(
+                "GEMINI_FILE_SEARCH",
+                "此知識版本沒有通過驗證的 Gemini File Search 綁定。",
+            )
 
         request.app.state.index = new_index
         request.app.state.knowledge_index_path = target_index_path

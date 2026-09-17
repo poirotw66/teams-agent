@@ -15,10 +15,13 @@ from fastapi import (
     Header,
     HTTPException,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+from agent_service.layout_chunking import ChunkingProfile
 
 from .auth import PortalAuthError, draft_search_response, resolve_portal_actor
 from .draft_assets import slug_from_title
@@ -288,6 +291,8 @@ def create_app(
         async_mode: str = "auto",
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
+        correlation_id_value: str = Depends(correlation_id),
+        idempotency_key_value: str | None = Depends(idempotency_key),
     ):
         payload = await file.read()
         try:
@@ -298,6 +303,8 @@ def create_app(
                 async_mode=async_mode,
                 job_store=pdf_job_store,
                 background_tasks=background_tasks,
+                correlation_id=correlation_id_value,
+                idempotency_key=idempotency_key_value,
             )
         except Exception as exc:
             raise handle_errors(exc) from exc
@@ -320,15 +327,92 @@ def create_app(
             resume(job, background_tasks)
         return pdf_job_store.to_public_dict(job)
 
+    @app.get("/api/ingestion-jobs/{job_id}")
+    @app.get("/api/v1/ingestion-jobs/{job_id}")
+    async def get_ingestion_job(
+        job_id: str,
+        background_tasks: BackgroundTasks,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        job = pdf_job_store.get(job_id)
+        if job is None or (job.actor_id and job.actor_id != actor.user_id):
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": "Ingestion job not found"},
+            )
+        resume = getattr(pdf_job_store, "resume", None)
+        if resume is not None:
+            resume(job, background_tasks)
+        return pdf_job_store.to_public_dict(job)
+
+    @app.post("/api/ingestion-jobs/{job_id}/cancel")
+    @app.post("/api/v1/ingestion-jobs/{job_id}/cancel")
+    async def cancel_ingestion_job(
+        job_id: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            job = pdf_job_store.cancel(job_id, actor_id=actor.user_id)
+            return pdf_job_store.to_public_dict(job)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/internal/v1/ingestion-jobs/{job_id}/run")
+    async def run_ingestion_job(
+        job_id: str,
+        x_cloudtasks_taskname: str | None = Header(
+            default=None,
+            alias="X-CloudTasks-TaskName",
+        ),
+    ):
+        queue = settings.ingestion_tasks_queue
+        expected_prefix = f"{queue}/tasks/" if queue else ""
+        if (
+            not expected_prefix
+            or not x_cloudtasks_taskname
+            or not x_cloudtasks_taskname.startswith(expected_prefix)
+        ):
+            raise HTTPException(status_code=404, detail="Not found.")
+        runner = getattr(pdf_job_store, "run", None)
+        if runner is None:
+            raise HTTPException(status_code=503, detail="Cloud worker is unavailable.")
+        await runner(job_id)
+        return {"status": "accepted", "jobId": job_id}
+
     @app.post("/api/documents/import-markdown")
     async def import_markdown(
         file: UploadFile = File(...),
         actor: PortalActor = Depends(current_actor),
         _: None = Depends(authorize),
     ):
-        raw = (await file.read()).decode("utf-8")
         try:
+            raw = (await file.read()).decode("utf-8")
             return service.import_markdown(actor, raw, filename=file.filename)
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "INVALID_UTF8",
+                    "message": "Markdown file must use UTF-8 encoding.",
+                },
+            ) from exc
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/documents/import-docx")
+    async def import_docx(
+        file: UploadFile = File(...),
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return service.import_docx(
+                actor,
+                await file.read(),
+                filename=file.filename,
+            )
         except Exception as exc:
             raise handle_errors(exc) from exc
 
@@ -455,6 +539,103 @@ def create_app(
     ):
         try:
             return await service.get_document(actor, document_id)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/documents/{document_id}/chunk-preview")
+    @app.get("/api/v1/documents/{document_id}/chunk-preview")
+    async def preview_document_chunks(
+        document_id: str,
+        profile: ChunkingProfile = ChunkingProfile.AUTO,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.preview_chunks(
+                actor,
+                document_id,
+                profile=profile,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/v1/documents/{document_id}/versions/{version_id}/chunk-preview")
+    async def preview_document_version_chunks(
+        document_id: str,
+        version_id: str,
+        profile: ChunkingProfile = ChunkingProfile.AUTO,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.preview_chunks(
+                actor,
+                document_id,
+                profile=profile,
+                version_id=version_id,
+            )
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.get("/api/v1/documents/{document_id}/versions/{version_id}/assets/{filename}")
+    async def get_document_version_asset(
+        document_id: str,
+        version_id: str,
+        filename: str,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            payload, media_type = await service.read_version_asset(
+                actor,
+                document_id,
+                version_id,
+                filename,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Asset not found.") from exc
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+        return Response(
+            content=payload,
+            media_type=media_type,
+            headers={
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.post("/api/documents/{document_id}/rechunk")
+    @app.post("/api/v1/documents/{document_id}/rechunk")
+    async def rechunk_document(
+        document_id: str,
+        profile: ChunkingProfile = ChunkingProfile.AUTO,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            return await service.preview_chunks(actor, document_id, profile=profile)
+        except Exception as exc:
+            raise handle_errors(exc) from exc
+
+    @app.post("/api/documents/{document_id}/evaluate")
+    @app.post("/api/v1/documents/{document_id}/evaluate")
+    async def evaluate_document_candidate(
+        document_id: str,
+        profile: ChunkingProfile = ChunkingProfile.AUTO,
+        actor: PortalActor = Depends(current_actor),
+        _: None = Depends(authorize),
+    ):
+        try:
+            preview = await service.preview_chunks(actor, document_id, profile=profile)
+            quality = preview["quality"]
+            return {
+                "documentId": document_id,
+                "versionId": preview["versionId"],
+                "profile": preview["profile"],
+                "ready": bool(quality["acceptable"]),
+                "quality": quality,
+            }
         except Exception as exc:
             raise handle_errors(exc) from exc
 

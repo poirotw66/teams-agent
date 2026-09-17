@@ -60,6 +60,9 @@ class PortalSettings:
     pdf_converter_engine: str = "legacy_text"
     pdf_sync_max_bytes: int = 5 * 1024 * 1024
     pdf_sync_max_pages: int = 20
+    pdf_max_upload_bytes: int = 50 * 1024 * 1024
+    document_parser: str = "PDF_CONVERTER"
+    document_ai_processor_name: str | None = None
     pdf_jobs_dir: Path | None = None
     pdf_prompt_template: str = "slide"
     original_assets_dir: Path | None = None
@@ -74,6 +77,12 @@ class PortalSettings:
     agent_api_auth_mode: str = "BEARER"
     deployment_environment: str = "dev"
     release_purpose: str = "PRODUCTION"
+    gemini_file_search_sync_enabled: bool = False
+    gemini_file_search_api_key: str | None = None
+    require_file_search_parity: bool = False
+    ingestion_tasks_queue: str | None = None
+    ingestion_worker_url: str | None = None
+    ingestion_worker_service_account: str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -95,6 +104,32 @@ class PortalSettings:
             raise ValueError("KNOWLEDGE_PORTAL_RELEASE_PURPOSE must be PRODUCTION, E2E, or SHADOW.")
         if self.deployment_environment == "prod" and self.release_purpose != "PRODUCTION":
             raise ValueError("Production Portal deployments may only publish PRODUCTION releases.")
+        if self.document_parser not in {"PDF_CONVERTER", "DOCUMENT_AI"}:
+            raise ValueError(
+                "KNOWLEDGE_PORTAL_DOCUMENT_PARSER must be PDF_CONVERTER or DOCUMENT_AI."
+            )
+        if self.document_parser == "DOCUMENT_AI" and not self.document_ai_processor_name:
+            raise ValueError(
+                "KNOWLEDGE_PORTAL_DOCUMENT_AI_PROCESSOR is required for DOCUMENT_AI."
+            )
+        if self.gemini_file_search_sync_enabled and not self.gemini_file_search_api_key:
+            raise ValueError(
+                "GEMINI_API_KEY is required when File Search release sync is enabled."
+            )
+        if self.require_file_search_parity and not self.gemini_file_search_sync_enabled:
+            raise ValueError(
+                "File Search release sync must be enabled when parity is required."
+            )
+        task_values = (
+            self.ingestion_tasks_queue,
+            self.ingestion_worker_url,
+            self.ingestion_worker_service_account,
+        )
+        if any(task_values) and not all(task_values):
+            raise ValueError(
+                "Ingestion Cloud Tasks queue, worker URL, and service account "
+                "must be configured together."
+            )
 
     @classmethod
     def from_env(cls) -> PortalSettings:
@@ -133,7 +168,7 @@ class PortalSettings:
         return cls(
             host=os.environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
             port=int(os.environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
-            service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", ""),
+            service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", "").strip(),
             repository_mode=repository_mode,
             firestore_project_id=os.environ.get("GCP_PROJECT_ID")
             or os.environ.get("KNOWLEDGE_PORTAL_FIRESTORE_PROJECT"),
@@ -284,6 +319,21 @@ class PortalSettings:
                 os.environ.get("KNOWLEDGE_PORTAL_PDF_SYNC_MAX_BYTES", str(5 * 1024 * 1024))
             ),
             pdf_sync_max_pages=int(os.environ.get("KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES", "20")),
+            pdf_max_upload_bytes=int(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_PDF_MAX_UPLOAD_BYTES",
+                    str(50 * 1024 * 1024),
+                )
+            ),
+            document_parser=os.environ.get(
+                "KNOWLEDGE_PORTAL_DOCUMENT_PARSER",
+                "PDF_CONVERTER",
+            )
+            .strip()
+            .upper(),
+            document_ai_processor_name=(
+                os.environ.get("KNOWLEDGE_PORTAL_DOCUMENT_AI_PROCESSOR") or None
+            ),
             pdf_jobs_dir=pdf_jobs_dir,
             pdf_prompt_template=os.environ.get("KNOWLEDGE_PORTAL_PDF_PROMPT_TEMPLATE", "slide"),
             original_assets_dir=(
@@ -340,6 +390,33 @@ class PortalSettings:
             )
             .strip()
             .upper(),
+            gemini_file_search_sync_enabled=os.environ.get(
+                "KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED",
+                "false",
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            gemini_file_search_api_key=(
+                os.environ.get("GEMINI_API_KEY")
+                or os.environ.get("GOOGLE_API_KEY")
+                or None
+            ),
+            require_file_search_parity=os.environ.get(
+                "KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY",
+                "false",
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            ingestion_tasks_queue=(
+                os.environ.get("KNOWLEDGE_PORTAL_INGESTION_TASKS_QUEUE") or None
+            ),
+            ingestion_worker_url=(
+                os.environ.get("KNOWLEDGE_PORTAL_INGESTION_WORKER_URL") or None
+            ),
+            ingestion_worker_service_account=(
+                os.environ.get(
+                    "KNOWLEDGE_PORTAL_INGESTION_WORKER_SERVICE_ACCOUNT"
+                )
+                or None
+            ),
         )
 
     def effective_relaxed_workflow(self) -> bool:

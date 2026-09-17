@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
+
 from agent_service.knowledge_release import write_active_release_pointer
 from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
 from agent_service.target_manifest import knowledge_release_target_manifest_hash
@@ -805,22 +806,42 @@ class ReleaseService:
             release.release_id, correlation_id
         )
         current_active = await self._ctx.repository.get_active_release_id()
-        if current_active == release.release_id:
-            if reload_success:
-                release = release.model_copy(
-                    update={
-                        "status": "ACTIVE",
-                        "verified_at": utc_now(),
-                        "failure_summary": "",
-                    }
+        if current_active == release.release_id and not reload_success:
+            release = release.model_copy(
+                update={
+                    "status": "RELOAD_FAILED",
+                    "failure_summary": reload_error or "Agent reload failed",
+                    "activated_at": None,
+                }
+            )
+            await self._ctx.repository.save_release(release)
+            await self._ctx.repository.set_active_release_id(previous_release_id)
+            self._write_local_active_pointer(previous_release_id)
+            if previous_release_id:
+                previous_release = await self._ctx.repository.get_release(
+                    previous_release_id
                 )
-            else:
-                release = release.model_copy(
-                    update={
-                        "status": "RELOAD_FAILED",
-                        "failure_summary": reload_error or "Agent reload failed",
-                    }
+                if previous_release is not None:
+                    await self._ctx.repository.save_release(
+                        previous_release.model_copy(
+                            update={
+                                "status": "ACTIVE",
+                                "activated_at": utc_now(),
+                            }
+                        )
+                    )
+                await self._notify_agent_reload(
+                    previous_release_id,
+                    correlation_id,
                 )
+        elif current_active == release.release_id:
+            release = release.model_copy(
+                update={
+                    "status": "ACTIVE",
+                    "verified_at": utc_now(),
+                    "failure_summary": "",
+                }
+            )
             await self._ctx.repository.save_release(release)
         else:
             logger.warning(
@@ -903,6 +924,7 @@ class ReleaseService:
             raise PortalPermissionError(str(exc)) from exc
 
         async with self._coordination_lock("promote_candidate"):
+            previous_active_id = await self._ctx.repository.get_active_release_id()
             release = target.model_copy(
                 update={
                     "status": "DEPLOYING",
@@ -932,9 +954,19 @@ class ReleaseService:
                     release = release.model_copy(
                         update={
                             "status": "RELOAD_FAILED",
+                            "activated_at": None,
                             "failure_summary": reload_error or "Agent reload failed",
                         }
                     )
+                    await self._ctx.repository.set_active_release_id(previous_active_id)
+                    if previous_active_id:
+                        previous = await self._ctx.repository.get_release(previous_active_id)
+                        if previous is not None:
+                            await self._ctx.repository.save_release(
+                                previous.model_copy(update={"status": "ACTIVE"})
+                            )
+                        self._write_local_active_pointer(previous_active_id)
+                        await self._notify_agent_reload(previous_active_id, corr)
                 await self._ctx.repository.save_release(release)
 
             await self._ctx.audit(

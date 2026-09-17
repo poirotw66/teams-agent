@@ -95,6 +95,7 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
     """Map an allowlisted Portal relative path to a knowledge.* capability."""
     method = method.upper()
     path = relative_path.strip("/")
+    path = path.removeprefix("v1/")
     if path == "dashboard" and method == "GET":
         return "knowledge.read"
     if path == "documents" and method == "GET":
@@ -105,7 +106,13 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
         return "knowledge.create"
     if path.startswith("documents/") and path.endswith("/import-markdown") and method == "POST":
         return "knowledge.create"
+    if path.startswith("documents/") and path.endswith("/import-docx") and method == "POST":
+        return "knowledge.create"
     if path.startswith("documents/pdf-jobs/") and method == "GET":
+        return "knowledge.create"
+    if path.startswith("ingestion-jobs/") and method == "GET":
+        return "knowledge.create"
+    if path.startswith("ingestion-jobs/") and path.endswith("/cancel"):
         return "knowledge.create"
     if "/draft/assets" in path and method in {"POST", "DELETE"}:
         return "knowledge.assets.write"
@@ -115,6 +122,10 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
         return "knowledge.edit"
     if path.endswith("/validate") and method == "POST":
         return "knowledge.validate"
+    if path.endswith("/rechunk") and method == "POST":
+        return "knowledge.edit"
+    if path.endswith("/evaluate") and method == "POST":
+        return "knowledge.test"
     if path.endswith("/submit-review") and method == "POST":
         return "knowledge.submit"
     if path.endswith("/publish") and method == "POST":
@@ -142,6 +153,8 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
     if path.startswith("releases/") and path.endswith("/sync-agent") and method == "POST":
         return "knowledge.publish"
     if path.startswith("releases/") and path.endswith("/promote") and method == "POST":
+        return "knowledge.publish"
+    if path == "sync" and method == "POST":
         return "knowledge.publish"
     if path.startswith("releases") and method == "GET":
         return "knowledge.read"

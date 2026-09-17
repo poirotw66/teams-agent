@@ -9,11 +9,13 @@ def main() -> None:
         level=environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    reload = environ.get("AI_OPS_BACKOFFICE_RELOAD", "").lower() in ("true", "1") or environ.get("AGENT_DEPLOYMENT_ENV") == "dev"
     uvicorn.run(
         "ai_ops_backoffice.api:app",
         host=environ.get("AI_OPS_BACKOFFICE_HOST", "0.0.0.0"),
         port=int(environ.get("AI_OPS_BACKOFFICE_PORT", "8092")),
         log_level=environ.get("LOG_LEVEL", "info").lower(),
+        reload=reload,
     )
 
 

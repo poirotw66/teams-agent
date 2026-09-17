@@ -15,6 +15,7 @@ from test_knowledge_portal import portal_headers, sample_document_payload
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.knowledge_bridge.capabilities import (
+    capability_for_portal_path,
     has_knowledge_capability,
     portal_role_for,
 )
@@ -115,6 +116,9 @@ def headers(role: str = "KNOWLEDGE_ADMIN") -> dict[str, str]:
 
 def test_path_allowlist_blocks_admin_and_traversal() -> None:
     assert assert_allowlisted("documents") == "documents"
+    asset_path = "v1/documents/doc-1/versions/ver-1/assets/p05.png"
+    assert assert_allowlisted(asset_path) == asset_path
+    assert capability_for_portal_path("GET", asset_path) == "knowledge.read"
     with pytest.raises(Exception):
         assert_allowlisted("admin/bootstrap-release-0001")
     with pytest.raises(Exception):

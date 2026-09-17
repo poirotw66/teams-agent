@@ -27,6 +27,7 @@ class ResolvedKnowledgeIndex:
     source: str
     artifact: KnowledgeIndexArtifact | None = None
     release_dir: Path | None = None
+    file_search_store: str | None = None
 
 
 def read_active_release_id(release_dir: Path) -> str | None:
@@ -114,6 +115,7 @@ def resolve_knowledge_index(
                 source="portal_release",
                 artifact=artifact,
                 release_dir=release_dir,
+                file_search_store=manifest_file_search_store(candidate.parents[1]),
             )
         if mode == "PORTAL":
             raise FileNotFoundError(
@@ -197,4 +199,20 @@ def _resolve_gcs_knowledge_index(
         source="gcs_release",
         artifact=artifact,
         release_dir=cache_dir,
+        file_search_store=manifest_file_search_store(index_path.parents[1]),
     )
+
+
+def manifest_file_search_store(release_dir: Path) -> str | None:
+    manifest_path = release_dir / MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        return None
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    backends = payload.get("backends")
+    if not isinstance(backends, dict):
+        return None
+    file_search = backends.get("geminiFileSearch")
+    if not isinstance(file_search, dict) or not file_search.get("ready"):
+        return None
+    store = str(file_search.get("store") or "").strip()
+    return store or None

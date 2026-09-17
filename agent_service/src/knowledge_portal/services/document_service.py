@@ -8,6 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent_service.document_parsing import MarkdownLayoutParser
+from agent_service.documents import parse_front_matter, strip_excluded_markdown
+from agent_service.layout_chunking import (
+    ChunkingProfile,
+    chunk_parsed_document,
+    chunk_quality_issues,
+)
+
 from ..draft_assets import DraftAssetStore, slug_from_title
 from ..models import (
     AssetRefSuggestion,
@@ -18,9 +26,10 @@ from ..models import (
     DraftAssetListResponse,
     ImportMarkdownResponse,
     ImportPdfResponse,
-    KnowledgeDocumentRecord,
     KnowledgeVersionRecord,
     PortalActor,
+    ReleaseRecord,
+    RemoveDocumentRequest,
     TestCaseRecord,
     TestRunRecord,
     UpdateDraftRequest,
@@ -30,7 +39,13 @@ from ..rbac import (
     ensure_document_visible,
     ensure_not_found,
 )
+from ..repository import PortalNotFoundError
 from ..validation import validate_draft
+from ..version_assets import (
+    build_version_asset_context,
+    images_for_chunk,
+    read_version_asset,
+)
 from .context import PortalServiceContext
 from .upload_service import UploadService
 from .version_service import VersionService
@@ -70,9 +85,7 @@ class DocumentService:
         )
         return DocumentListResponse(items=items, total=len(items))
 
-    async def get_document(
-        self, actor: PortalActor, document_id: str
-    ) -> DocumentDetailResponse:
+    async def get_document(self, actor: PortalActor, document_id: str) -> DocumentDetailResponse:
         document = await self._repository.get_document(document_id)
         ensure_not_found("document", document_id, document)
         ensure_document_visible(
@@ -111,7 +124,7 @@ class DocumentService:
                 issue.code == "ASSET_PATH_UNEXPECTED"
                 for issue in draft_version.validation_summary.issues
             ):
-                asset_slug, assets_root = self._ctx.validation_context(
+                asset_slug, assets_root = await self._ctx.validation_context(
                     document_id=document.document_id,
                     version_id=draft_version.version_id,
                     title=draft_version.title,
@@ -129,9 +142,7 @@ class DocumentService:
                     asset_slug=asset_slug,
                     draft_assets_root=assets_root,
                 )
-                draft_version = draft_version.model_copy(
-                    update={"validation_summary": refreshed}
-                )
+                draft_version = draft_version.model_copy(update={"validation_summary": refreshed})
                 await self._repository.save_version(draft_version)
 
         return self._ctx.document_detail_response(
@@ -142,6 +153,130 @@ class DocumentService:
             draft_assets=draft_assets,
             actor=actor,
         )
+
+    async def preview_chunks(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        *,
+        profile: ChunkingProfile,
+        version_id: str | None = None,
+    ) -> dict[str, Any]:
+        detail = await self.get_document(actor, document_id)
+        version = self._select_preview_version(detail, version_id)
+        if version is None:
+            if version_id is not None:
+                raise PortalNotFoundError("version", version_id)
+            raise ValueError("Document has no version available for chunk preview.")
+        release = await self._active_release_for_version(version.version_id)
+        asset_context = await build_version_asset_context(
+            self._settings,
+            version=version,
+            release=release,
+        )
+        _, markdown_body = parse_front_matter(version.canonical_content)
+        markdown_body = strip_excluded_markdown(markdown_body)
+        parsed = MarkdownLayoutParser().parse(markdown_body, title=version.title)
+        chunks, report = chunk_parsed_document(
+            parsed,
+            document_id=document_id,
+            profile=profile,
+        )
+        quality_issues = chunk_quality_issues(report.profile, chunks)
+        return {
+            "documentId": document_id,
+            "versionId": version.version_id,
+            "releaseId": asset_context.release_id,
+            "parser": {
+                "name": parsed.parser_name,
+                "version": parsed.parser_version,
+            },
+            "profile": report.profile.value,
+            "quality": {
+                "acceptable": report.is_acceptable,
+                "coverageRatio": report.coverage_ratio,
+                "sourceBlocks": report.source_blocks,
+                "coveredBlocks": report.covered_blocks,
+                "chunkCount": report.chunk_count,
+                "shortChunkCount": report.short_chunk_count,
+                "headingOnlyCount": report.heading_only_count,
+                "orphanMediaCount": report.orphan_media_count,
+                "duplicateChunkCount": report.duplicate_chunk_count,
+            },
+            "chunks": [
+                {
+                    "id": chunk.chunk_id,
+                    "parentId": chunk.parent_id,
+                    "neighborIds": list(chunk.neighbor_ids),
+                    "title": chunk.title,
+                    "content": chunk.content,
+                    "contentPreview": chunk.content[:240],
+                    "tokenCount": chunk.token_count,
+                    "pageStart": chunk.page_start,
+                    "pageEnd": chunk.page_end,
+                    "headingPath": list(chunk.heading_path),
+                    "contentHash": chunk.content_hash,
+                    "parserVersion": chunk.parser_version,
+                    "chunkerVersion": chunk.chunker_version,
+                    "qualityIssues": list(quality_issues.get(chunk.chunk_id, ())),
+                    "images": [
+                        image.model_dump(mode="json")
+                        for image in images_for_chunk(
+                            chunk.content,
+                            context=asset_context,
+                        )
+                    ],
+                }
+                for chunk in chunks
+            ],
+        }
+
+    async def read_version_asset(
+        self,
+        actor: PortalActor,
+        document_id: str,
+        version_id: str,
+        filename: str,
+    ) -> tuple[bytes, str]:
+        detail = await self.get_document(actor, document_id)
+        version = self._select_preview_version(detail, version_id)
+        if version is None:
+            raise PortalNotFoundError("version", version_id)
+        release = await self._active_release_for_version(version.version_id)
+        context = await build_version_asset_context(
+            self._settings,
+            version=version,
+            release=release,
+        )
+        return await read_version_asset(
+            self._settings,
+            context=context,
+            filename=filename,
+        )
+
+    @staticmethod
+    def _select_preview_version(
+        detail: DocumentDetailResponse,
+        version_id: str | None,
+    ) -> KnowledgeVersionRecord | None:
+        candidates = (detail.draft_version, detail.published_version)
+        if version_id is None:
+            return detail.draft_version or detail.published_version
+        return next(
+            (version for version in candidates if version and version.version_id == version_id),
+            None,
+        )
+
+    async def _active_release_for_version(self, version_id: str) -> ReleaseRecord | None:
+        active_release_id = await self._repository.get_active_release_id()
+        if not active_release_id:
+            return None
+        release = await self._repository.get_release(active_release_id)
+        if release is None:
+            return None
+        if any(entry.version_id == version_id for entry in release.manifest):
+            return release
+        return None
 
     # Delegation to VersionService
     async def create_document(
@@ -162,13 +297,9 @@ class DocumentService:
         request: UpdateDraftRequest,
         correlation_id: str,
     ) -> DocumentDetailResponse:
-        return await self._version_service.update_draft(
-            actor, document_id, request, correlation_id
-        )
+        return await self._version_service.update_draft(actor, document_id, request, correlation_id)
 
-    async def validate_document(
-        self, actor: PortalActor, document_id: str
-    ) -> ValidationSummary:
+    async def validate_document(self, actor: PortalActor, document_id: str) -> ValidationSummary:
         return await self._version_service.validate_document(actor, document_id)
 
     async def discard_draft(
@@ -227,9 +358,7 @@ class DocumentService:
             actor, document_id, test_case_id, correlation_id
         )
 
-    async def list_test_cases(
-        self, actor: PortalActor, document_id: str
-    ) -> list[TestCaseRecord]:
+    async def list_test_cases(self, actor: PortalActor, document_id: str) -> list[TestCaseRecord]:
         return await self._version_service.list_test_cases(actor, document_id)
 
     async def list_test_runs(
@@ -247,6 +376,15 @@ class DocumentService:
         self, actor: PortalActor, raw: str, *, filename: str | None = None
     ) -> ImportMarkdownResponse:
         return self._upload_service.import_markdown(actor, raw, filename=filename)
+
+    def import_docx(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+    ) -> dict[str, object]:
+        return self._upload_service.import_docx(actor, payload, filename=filename)
 
     def import_pdf(
         self,
@@ -266,6 +404,8 @@ class DocumentService:
         async_mode: str | None = "auto",
         job_store: Any | None = None,
         background_tasks: Any | None = None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ImportPdfResponse | dict[str, object]:
         return await self._upload_service.import_pdf_smart(
             actor,
@@ -274,6 +414,8 @@ class DocumentService:
             async_mode=async_mode,
             job_store=job_store,
             background_tasks=background_tasks,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
         )
 
     async def list_draft_assets(
@@ -321,6 +463,4 @@ class DocumentService:
         asset_slug: str,
         filename: str,
     ) -> tuple[Path, str]:
-        return self._upload_service.read_draft_asset(
-            document_id, version_id, asset_slug, filename
-        )
+        return self._upload_service.read_draft_asset(document_id, version_id, asset_slug, filename)

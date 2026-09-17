@@ -201,9 +201,7 @@ class PortalServiceContext:
         await self.idempotency.complete(key, payload_hash, response)
         now = utc_now()
         serialized_response = (
-            response.model_dump(mode="json")
-            if hasattr(response, "model_dump")
-            else response
+            response.model_dump(mode="json") if hasattr(response, "model_dump") else response
         )
         rec = IdempotencyRecord(
             key=key,
@@ -291,7 +289,7 @@ class PortalServiceContext:
             status_label=document_status_label(document.status),
         )
 
-    def validation_context(
+    async def validation_context(
         self,
         *,
         document_id: str,
@@ -301,4 +299,5 @@ class PortalServiceContext:
     ) -> tuple[str, Path]:
         slug = asset_slug or slug_from_title(title)
         store = DraftAssetStore(self.settings)
+        await asyncio.to_thread(store.materialize_bundle, document_id, version_id, slug)
         return slug, store.assets_root(document_id, version_id)

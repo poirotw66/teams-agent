@@ -82,9 +82,15 @@ def build_lifespan(resolved_settings: RagSettings):
             )
         }
         unavailable_backends: dict[str, str] = {}
-        if resolved_settings.gemini_file_search_store:
+        active_file_search_store = (
+            resolved_index.file_search_store
+            or resolved_settings.gemini_file_search_store
+        )
+        if active_file_search_store:
             gemini_settings = replace(
-                resolved_settings, knowledge_service_mode="GEMINI_FILE_SEARCH"
+                resolved_settings,
+                knowledge_service_mode="GEMINI_FILE_SEARCH",
+                gemini_file_search_store=active_file_search_store,
             )
             knowledge_services["GEMINI_FILE_SEARCH"] = build_knowledge_service(
                 gemini_settings,
@@ -112,7 +118,7 @@ def build_lifespan(resolved_settings: RagSettings):
         ticket_request_dedupe = build_ticket_request_dedupe(resolved_settings)
         if (
             resolved_settings.rag_require_file_search_acl
-            and resolved_settings.gemini_file_search_store
+            and active_file_search_store
             and not resolved_settings.gemini_file_search_enforce_acl
         ):
             raise RuntimeError(

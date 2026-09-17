@@ -104,6 +104,7 @@ from .routers import (
     register_quality_routes,
     register_sync_routes,
     register_tool_fixture_routes,
+    register_workbench_routes,
 )
 from .services.periods import PeriodPolicyError
 from .services.query_service import BackofficeQueryService
@@ -889,6 +890,14 @@ def create_app(
         evaluation_service=evaluation_service,
         evaluation_run_service=evaluation_run_service,
         quality_gate_service=quality_gate_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
+    register_workbench_routes(
+        app,
+        resolved_settings=resolved_settings,
+        query_service=query_service,
+        knowledge_client=knowledge_client,
         current_actor=current_actor,
         require_capability=require_capability,
     )

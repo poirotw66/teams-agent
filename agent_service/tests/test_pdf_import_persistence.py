@@ -233,6 +233,45 @@ def test_async_job_payload_and_result_survive_store_recreation(tmp_path: Path) -
     assert not any(key.endswith("/payload") for key in gcs_client.objects)
 
 
+def test_persistent_job_creation_is_idempotent_by_actor_and_key(
+    tmp_path: Path,
+) -> None:
+    settings = cloud_settings(tmp_path)
+    firestore = FakeFirestoreClient()
+    staging = GcsPdfStagingStore(
+        bucket_name="private-artifacts",
+        tenant_id="tenant-a",
+        client=FakeGcsClient(),
+    )
+    store = PersistentPdfConvertJobStore(
+        settings,
+        firestore_client=firestore,
+        staging_store=staging,
+    )
+    payload = build_text_pdf_bytes("Idempotent ingestion")
+
+    first = store.create_job(
+        payload=payload,
+        filename="guide.pdf",
+        actor_id="actor-1",
+        page_count=1,
+        idempotency_key="upload-1",
+        correlation_id="correlation-1",
+    )
+    second = store.create_job(
+        payload=payload,
+        filename="guide.pdf",
+        actor_id="actor-1",
+        page_count=1,
+        idempotency_key="upload-1",
+        correlation_id="correlation-1",
+    )
+
+    assert second.job_id == first.job_id
+    assert second.payload_sha256 == first.payload_sha256
+    assert second.correlation_id == "correlation-1"
+
+
 def test_file_mode_keeps_local_job_store(tmp_path: Path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "pdf_jobs_dir", tmp_path / "jobs")

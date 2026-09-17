@@ -631,7 +631,8 @@ fi
 printf '\n'
 printf '[start] ==============================================\n'
 printf '[start] 環境標籤：DEV／本機整合（HEADER auth 僅限本機）\n'
-printf '[start] 唯一操作入口：%s/#/platform/overview\n' "${PUBLIC_OPS_URL}"
+printf '[start] 資訊客服營運工作台 (全新)：%s/console-v2/dashboard\n' "${PUBLIC_OPS_URL}"
+printf '[start] 舊版管理後台：%s/#/platform/overview\n' "${PUBLIC_OPS_URL}"
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
   printf '[start] 知識文件庫：%s/#/knowledge_ops/knowledgePortal\n' "${PUBLIC_OPS_URL}"
   printf '[start] 知識 API：%s/api/knowledge/*（BFF → 內部 Portal）\n' "${PUBLIC_OPS_URL}"
@@ -654,7 +655,7 @@ printf '[start] ==============================================\n\n'
 
 if [[ "${OPEN_BACKOFFICE}" == "true" && "${START_BACKOFFICE}" == "true" ]]; then
   if command -v open >/dev/null 2>&1; then
-    open "${PUBLIC_OPS_URL}/#/platform/overview" || true
+    open "${PUBLIC_OPS_URL}/console-v2/dashboard" || true
   fi
 fi
 

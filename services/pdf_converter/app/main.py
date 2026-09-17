@@ -112,10 +112,15 @@ def _legacy_convert(payload: bytes, filename: str) -> tuple[str, int, list[str]]
     reader = PdfReader(BytesIO(payload))
     page_count = len(reader.pages)
     chunks: list[str] = []
-    for page in reader.pages:
+    for page_index, page in enumerate(reader.pages):
         text = (page.extract_text() or "").strip()
         if text:
-            chunks.append(text)
+            chunks.append(
+                "<!-- source-map:"
+                f"page_index={page_index} page_label={page_index + 1} "
+                "coordinate_system=PDF_POINTS_72DPI -->\n"
+                f"{text}"
+            )
     body = "\n\n".join(chunks).strip()
     if not body:
         raise HTTPException(

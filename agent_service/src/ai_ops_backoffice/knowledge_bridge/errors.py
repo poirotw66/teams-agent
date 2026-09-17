@@ -13,8 +13,21 @@ _ALLOWED = (
     re.compile(r"^documents$"),
     re.compile(r"^documents/import-pdf$"),
     re.compile(r"^documents/import-markdown$"),
+    re.compile(r"^documents/import-docx$"),
     re.compile(r"^documents/pdf-jobs/[^/]+$"),
+    re.compile(r"^ingestion-jobs/[^/]+$"),
+    re.compile(r"^ingestion-jobs/[^/]+/cancel$"),
+    re.compile(r"^v1/ingestion-jobs/[^/]+$"),
+    re.compile(r"^v1/ingestion-jobs/[^/]+/cancel$"),
     re.compile(r"^documents/[^/]+$"),
+    re.compile(r"^documents/[^/]+/chunk-preview$"),
+    re.compile(r"^documents/[^/]+/rechunk$"),
+    re.compile(r"^documents/[^/]+/evaluate$"),
+    re.compile(r"^v1/documents/[^/]+/chunk-preview$"),
+    re.compile(r"^v1/documents/[^/]+/versions/[^/]+/chunk-preview$"),
+    re.compile(r"^v1/documents/[^/]+/versions/[^/]+/assets/[^/]+$"),
+    re.compile(r"^v1/documents/[^/]+/rechunk$"),
+    re.compile(r"^v1/documents/[^/]+/evaluate$"),
     re.compile(r"^documents/[^/]+/start-revision$"),
     re.compile(r"^documents/[^/]+/draft$"),
     re.compile(r"^documents/[^/]+/draft/assets$"),
@@ -36,9 +49,9 @@ _ALLOWED = (
     re.compile(r"^releases/rollback$"),
     re.compile(r"^releases/[^/]+/sync-agent$"),
     re.compile(r"^releases/[^/]+/promote$"),
+    re.compile(r"^sync$"),
     re.compile(r"^audit-events$"),
 )
-
 
 
 @dataclass

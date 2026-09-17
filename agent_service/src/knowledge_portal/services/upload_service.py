@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..docx_import import docx_to_markdown
 from ..draft_assets import (
     DraftAssetStore,
     asset_content_type,
@@ -73,6 +74,46 @@ class UploadService:
             warnings=warnings,
         )
 
+    def import_docx(
+        self,
+        actor: PortalActor,
+        payload: bytes,
+        *,
+        filename: str | None = None,
+    ) -> dict[str, object]:
+        ensure_can_import_markdown(actor)
+        if len(payload) > self._settings.pdf_max_upload_bytes:
+            raise ValueError("Uploaded DOCX exceeds the configured size limit.")
+        safe_name = filename or "document.docx"
+        original_store = OriginalAssetStore(self._settings)
+        original_metadata = original_store.store_pending(
+            payload,
+            filename=safe_name,
+            actor_id=actor.user_id,
+        )
+        try:
+            markdown_content = docx_to_markdown(payload)
+        except Exception:
+            original_store.discard_pending(original_metadata.get("original_asset_token"))
+            raise
+        stem = Path(safe_name).stem.strip() or "DOCX Document"
+        today = utc_now().date().isoformat()
+        return {
+            "title": stem,
+            "owner_unit_id": self._settings.default_owner_unit_id,
+            "effective_at": today,
+            "review_due_at": today,
+            "audience_type": "ALL_EMPLOYEES",
+            "audience_group_ids": [],
+            "markdown_content": markdown_content,
+            "asset_slug": slug_from_title(stem),
+            "warnings": ["DOCX text was imported into a reviewable Markdown draft."],
+            "assets": [],
+            "source_type": "DOCX",
+            **original_metadata,
+            "mode": "sync",
+        }
+
     def import_pdf(
         self,
         actor: PortalActor,
@@ -122,6 +163,8 @@ class UploadService:
         async_mode: str | None = "auto",
         job_store: Any | None = None,
         background_tasks: Any | None = None,
+        correlation_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> ImportPdfResponse | dict[str, object]:
         """Import PDF via converter service when configured; else legacy text extract."""
         from ..pdf_convert_jobs import (
@@ -132,10 +175,11 @@ class UploadService:
         from ..pdf_text import count_pdf_pages
 
         ensure_can_import_markdown(actor)
-        if (
-            self._settings.deployment_environment == "prod"
-            and not self._settings.pdf_converter_url
-        ):
+        _validate_pdf_payload(
+            payload,
+            maximum_bytes=self._settings.pdf_max_upload_bytes,
+        )
+        if self._settings.deployment_environment == "prod" and not self._settings.pdf_converter_url:
             raise PdfConverterError(
                 "PDF converter is required in production but is not configured."
             )
@@ -163,6 +207,8 @@ class UploadService:
                 actor_id=actor.user_id,
                 page_count=page_count,
                 original_asset=original_metadata,
+                correlation_id=correlation_id,
+                idempotency_key=idempotency_key,
             )
             job_store.schedule(job.job_id, background_tasks)
             return {
@@ -310,3 +356,12 @@ class UploadService:
         if not target.is_file():
             raise PortalNotFoundError("draft asset", filename)
         return target, asset_content_type(target.suffix)
+
+
+def _validate_pdf_payload(payload: bytes, *, maximum_bytes: int) -> None:
+    if not payload.startswith(b"%PDF-"):
+        raise ValueError("Uploaded content is not a valid PDF.")
+    if len(payload) > maximum_bytes:
+        raise ValueError("Uploaded PDF exceeds the configured size limit.")
+    if b"/Encrypt" in payload[: min(len(payload), 1_000_000)]:
+        raise ValueError("Encrypted PDF files are not supported.")

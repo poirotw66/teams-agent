@@ -117,6 +117,22 @@ class FileSearchDocumentRegistry:
                 identity=_source_identity(doc_chunks[0]),
             )
             registry._by_slug[slug] = record
+            for chunk in doc_chunks:
+                chunk_record = _DocumentRecord(
+                    source_path=source_path,
+                    title=title,
+                    images=tuple(
+                        _to_agent_image(
+                            image,
+                            chunk.chunk_id,
+                            release_id=chunk.release_id,
+                        )
+                        for image in chunk.images
+                    ),
+                    identity=_source_identity(chunk),
+                )
+                registry._by_slug[chunk.chunk_id] = chunk_record
+                registry._by_slug[f"{chunk.chunk_id}.md"] = chunk_record
             records_by_filename[Path(source_path).name] = record
             records_by_title[title] = record
 
