@@ -348,7 +348,8 @@ def build_citation_preview_url(
     )
     if original_url is None:
         return None
-    return original_url.replace("/rag-originals/", "/rag-citations/", 1)
+    preview_url = original_url.replace("/rag-originals/", "/rag-citations/", 1)
+    return f"{preview_url}#citation-highlight"
 
 
 def authorize_original_open(

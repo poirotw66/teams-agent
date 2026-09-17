@@ -6,6 +6,7 @@ Entra ID SSO with CSRF protection, and session cookie management (Spec A05-T1).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -31,6 +32,7 @@ from .source_api import (
 )
 from .source_links import (
     authorize_original_open,
+    build_original_url,
     citation_source_groups,
     citation_source_tenant_id,
     create_viewer_token,
@@ -38,7 +40,11 @@ from .source_links import (
     source_media_type,
     verify_viewer_token,
 )
-from .source_viewer import render_source_document_html
+from .source_storage import (
+    SourceDocumentUnavailable,
+    fetch_release_source_document,
+)
+from .source_viewer import render_source_document_html, render_source_markdown_html
 from .viewer_sessions import get_viewer_membership_store
 
 logger = logging.getLogger(__name__)
@@ -47,32 +53,17 @@ _consumed_sso_states: dict[str, float] = {}
 _sso_lock = threading.Lock()
 
 
-def _render_governed_source_preview(payload: dict[str, Any]) -> str:
-    title = html.escape(str(payload.get("title") or "引用來源"))
+def _preview_evidence(payload: dict[str, Any]) -> str:
     evidence = payload.get("evidence")
-    excerpt = evidence.get("excerpt") if isinstance(evidence, dict) else ""
-    safe_excerpt = html.escape(str(excerpt or "目前沒有可顯示的引用內容。"))
-    status = html.escape(str(payload.get("mappingStatus") or ""))
-    return f"""<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>
-    body {{ font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 56rem; padding: 0 1rem; line-height: 1.7; }}
-    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f7f8; padding: 1rem; border-radius: .5rem; }}
-    .status {{ color: #5f6368; }}
-  </style>
-</head>
-<body>
-  <main>
-    <h1>{title}</h1>
-    <p class="status">{status}</p>
-    <pre>{safe_excerpt}</pre>
-  </main>
-</body>
-</html>"""
+    if not isinstance(evidence, dict):
+        return ""
+    return str(evidence.get("excerpt") or "")
+
+
+def _fallback_preview_markdown(payload: dict[str, Any]) -> str:
+    title = str(payload.get("title") or "引用來源")
+    excerpt = _preview_evidence(payload) or "目前沒有可顯示的引用內容。"
+    return f"# {title}\n\n## 已索引引用片段\n\n{excerpt}"
 
 
 def _is_safe_redirect_target(url: str, allowed_base_url: str | None = None) -> bool:
@@ -172,13 +163,15 @@ def _authenticated_viewer_subject(request: Request, settings: AgentSettings) -> 
         if payload and isinstance(payload.get("sub"), str) and payload["sub"].strip():
             query_tenant = request.query_params.get("tenantId")
             token_tenant = payload.get("tid")
-            if not query_tenant or not token_tenant or str(query_tenant).strip() == str(token_tenant).strip():
+            if (
+                not query_tenant
+                or not token_tenant
+                or str(query_tenant).strip() == str(token_tenant).strip()
+            ):
                 return payload["sub"].strip()
 
     # 3. Bearer token in Authorization header
-    authorization = request.headers.get("authorization") or request.headers.get(
-        "Authorization"
-    )
+    authorization = request.headers.get("authorization") or request.headers.get("Authorization")
     if not authorization:
         return None
     scheme, _, token = authorization.partition(" ")
@@ -260,12 +253,54 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
             status = error.status if error.status in {403, 404} else 502
             raise HTTPException(status_code=status, detail="Source preview unavailable.") from error
 
+        source_tenant_id = citation_source_tenant_id("playground", viewer.tenant_id)
+        release_id = str(payload.get("releaseId") or "")
+        source_path = str(payload.get("sourcePath") or "")
+        source_document: str | None = None
+        fallback_message: str | None = None
+        if release_id and source_path:
+            try:
+                source_document = await asyncio.to_thread(
+                    fetch_release_source_document,
+                    settings,
+                    release_id=release_id,
+                    source_path=source_path,
+                    tenant_id=source_tenant_id,
+                )
+            except SourceDocumentUnavailable as error:
+                logger.warning(
+                    "citation_full_source_unavailable source_ref_id=%s reason=%s",
+                    source_ref_id,
+                    error,
+                )
+                fallback_message = "完整文件目前無法載入；下方內容僅為已授權的引用片段。"
+        else:
+            fallback_message = "此引用沒有可驗證的文件版本；下方內容僅為已授權的引用片段。"
+
+        actions = payload.get("actions")
+        can_download = bool(isinstance(actions, dict) and actions.get("canDownloadOriginal"))
+        download_url = (
+            build_original_url(source_ref_id, settings, viewer=viewer) if can_download else None
+        )
+        rendered = render_source_markdown_html(
+            source_document or _fallback_preview_markdown(payload),
+            settings,
+            fallback_title=str(payload.get("title") or "引用來源"),
+            release_id=release_id or None,
+            evidence=_preview_evidence(payload),
+            status_message=fallback_message or str(payload.get("message") or ""),
+            mapping_status=str(payload.get("mappingStatus") or ""),
+            download_url=download_url,
+        )
         return Response(
-            content=_render_governed_source_preview(payload),
+            content=rendered,
             media_type="text/html; charset=utf-8",
             headers={
                 "Cache-Control": "private, no-store",
-                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'unsafe-inline'; "
+                    "img-src 'self' https:; base-uri 'none'; form-action 'none'"
+                ),
                 "X-Content-Type-Options": "nosniff",
             },
         )
@@ -290,10 +325,7 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 "true",
                 "yes",
             }
-            if (
-                not want_raw
-                and resolved.suffix.lower() in {".md", ".markdown", ".txt"}
-            ):
+            if not want_raw and resolved.suffix.lower() in {".md", ".markdown", ".txt"}:
                 content = render_source_document_html(resolved, settings)
                 content_type = "text/html; charset=utf-8"
             else:
@@ -317,10 +349,7 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
             headers={
                 "Cache-Control": f"private, max-age={settings.asset_url_ttl_seconds}",
                 "X-Content-Type-Options": "nosniff",
-                "Content-Disposition": (
-                    "inline; filename*=UTF-8''"
-                    + quote(resolved.name)
-                ),
+                "Content-Disposition": ("inline; filename*=UTF-8''" + quote(resolved.name)),
             },
         )
 
@@ -346,8 +375,8 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                     settings,
                     source_ref_id=source_ref_id,
                     subject=viewer.subject,
-                    tenant_id=viewer.tenant_id,
-                    groups=viewer.groups,
+                    tenant_id=citation_source_tenant_id("playground", viewer.tenant_id),
+                    groups=citation_source_groups("playground", viewer.tenant_id, viewer.groups),
                     accept=request.headers.get("accept"),
                     method="HEAD",
                 )
@@ -358,8 +387,8 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 settings,
                 source_ref_id=source_ref_id,
                 subject=viewer.subject,
-                tenant_id=viewer.tenant_id,
-                groups=viewer.groups,
+                tenant_id=citation_source_tenant_id("playground", viewer.tenant_id),
+                groups=citation_source_groups("playground", viewer.tenant_id, viewer.groups),
                 range_header=request.headers.get("range"),
                 accept=request.headers.get("accept"),
             )
@@ -389,7 +418,9 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 status = 404
             elif 400 <= error.status < 500:
                 status = error.status
-            raise HTTPException(status_code=status, detail="Original source unavailable.") from error
+            raise HTTPException(
+                status_code=status, detail="Original source unavailable."
+            ) from error
 
         headers = dict(upstream_headers)
         headers.setdefault("Cache-Control", "private, no-store")
@@ -401,17 +432,27 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
 
     @router.get("/sources/login")
     async def viewer_login_page(request: Request) -> Response:
-        redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        redirect_url = (
+            request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        )
         auth_subject = _authenticated_viewer_subject(request, settings)
         if auth_subject:
-            target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
+            target = (
+                redirect_url
+                if _is_safe_redirect_target(redirect_url, settings.public_base_url)
+                else "/healthz"
+            )
             return Response(status_code=302, headers={"Location": target})
 
         token = request.query_params.get("token") or request.query_params.get("viewer_token")
         if token and str(token).strip():
             payload = verify_viewer_token(str(token).strip(), settings)
             if payload and payload.get("sub"):
-                target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
+                target = (
+                    redirect_url
+                    if _is_safe_redirect_target(redirect_url, settings.public_base_url)
+                    else "/healthz"
+                )
                 resp = Response(status_code=302, headers={"Location": target})
                 resp.set_cookie(
                     "teams_viewer_token",
@@ -568,10 +609,16 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
 
     @router.get("/sources/auth/login")
     async def viewer_auth_login(request: Request) -> Response:
-        redirect_url = request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        redirect_url = (
+            request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
+        )
         auth_subject = _authenticated_viewer_subject(request, settings)
         if auth_subject:
-            target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
+            target = (
+                redirect_url
+                if _is_safe_redirect_target(redirect_url, settings.public_base_url)
+                else "/healthz"
+            )
             return Response(status_code=302, headers={"Location": target})
 
         tenant_id = settings.tenant_id or "common"
@@ -579,7 +626,9 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         if not client_id:
             return Response(
                 status_code=302,
-                headers={"Location": f"/sources/login?redirect_url={quote(redirect_url)}&error=sso_unconfigured"},
+                headers={
+                    "Location": f"/sources/login?redirect_url={quote(redirect_url)}&error=sso_unconfigured"
+                },
             )
 
         base_url = settings.public_base_url or str(request.base_url).rstrip("/")
@@ -604,7 +653,9 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         }
         session_bytes = json.dumps(session_payload, sort_keys=True).encode("utf-8")
         session_sig = hmac.new(secret.encode("utf-8"), session_bytes, hashlib.sha256).hexdigest()
-        session_cookie_val = f"{base64.urlsafe_b64encode(session_bytes).decode('ascii')}.{session_sig}"
+        session_cookie_val = (
+            f"{base64.urlsafe_b64encode(session_bytes).decode('ascii')}.{session_sig}"
+        )
 
         auth_url = (
             f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
@@ -651,12 +702,16 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         # Verify browser session cookie binding
         raw_session_cookie = request.cookies.get("sso_auth_session")
         if not raw_session_cookie or "." not in raw_session_cookie:
-            raise HTTPException(status_code=403, detail="Missing or invalid SSO session cookie (CSRF protection).")
+            raise HTTPException(
+                status_code=403, detail="Missing or invalid SSO session cookie (CSRF protection)."
+            )
 
         raw_sess, _, sess_sig = raw_session_cookie.partition(".")
         try:
             sess_bytes = base64.urlsafe_b64decode(raw_sess.encode("ascii"))
-            expected_sess_sig = hmac.new(secret.encode("utf-8"), sess_bytes, hashlib.sha256).hexdigest()
+            expected_sess_sig = hmac.new(
+                secret.encode("utf-8"), sess_bytes, hashlib.sha256
+            ).hexdigest()
             if not hmac.compare_digest(sess_sig, expected_sess_sig):
                 raise HTTPException(status_code=403, detail="Invalid SSO session signature.")
             session_data = json.loads(sess_bytes.decode("utf-8"))
@@ -673,7 +728,11 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         expected_nonce = str(session_data.get("nonce") or "")
 
         raw_redirect_url = str(state_data.get("redirect_url") or "")
-        target = raw_redirect_url if _is_safe_redirect_target(raw_redirect_url, settings.public_base_url) else "/healthz"
+        target = (
+            raw_redirect_url
+            if _is_safe_redirect_target(raw_redirect_url, settings.public_base_url)
+            else "/healthz"
+        )
 
         base_url = settings.public_base_url or str(request.base_url).rstrip("/")
         callback_url = f"{base_url}/sources/auth/callback"
@@ -756,7 +815,9 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                 token_json = token_resp.json()
                 id_token = token_json.get("id_token")
                 if not id_token:
-                    raise HTTPException(status_code=401, detail="Missing id_token in token response.")
+                    raise HTTPException(
+                        status_code=401, detail="Missing id_token in token response."
+                    )
 
                 claims = verify_entra_id_token(
                     id_token,
@@ -779,7 +840,9 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
                     tenant_id = tid
 
         if not subject:
-            raise HTTPException(status_code=401, detail="Failed to resolve authenticated subject from SSO.")
+            raise HTTPException(
+                status_code=401, detail="Failed to resolve authenticated subject from SSO."
+            )
 
         store = get_viewer_membership_store(settings)
         existing_membership = store.resolve(subject)
@@ -829,7 +892,11 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         if not payload or not payload.get("sub"):
             raise HTTPException(status_code=401, detail="Invalid or expired viewer token.")
 
-        target = redirect_url if _is_safe_redirect_target(redirect_url, settings.public_base_url) else "/healthz"
+        target = (
+            redirect_url
+            if _is_safe_redirect_target(redirect_url, settings.public_base_url)
+            else "/healthz"
+        )
         resp = Response(status_code=302, headers={"Location": target})
         resp.set_cookie(
             "teams_viewer_token",

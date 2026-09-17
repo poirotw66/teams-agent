@@ -165,9 +165,7 @@ def test_enrich_mints_governed_preview_without_bundled_sources(tmp_path: Path) -
     )
 
     assert enriched.citations[0].url is not None
-    assert enriched.citations[0].url.startswith(
-        "https://bot.example.com/rag-citations/src-cteam?"
-    )
+    assert enriched.citations[0].url.startswith("https://bot.example.com/rag-citations/src-cteam?")
 
 
 def test_rag_citation_route_renders_governed_preview(tmp_path: Path) -> None:
@@ -214,6 +212,148 @@ def test_rag_citation_route_renders_governed_preview(tmp_path: Path) -> None:
     assert preview_client.await_args.kwargs["groups"] == ("grp_public",)
 
 
+def test_rag_citation_route_renders_complete_release_document(
+    tmp_path: Path,
+) -> None:
+    settings = AgentSettings(
+        **{
+            **_settings(tmp_path).__dict__,
+            "asset_gcs_bucket": "knowledge-bucket",
+            "asset_gcs_prefix": "knowledge-releases",
+        }
+    )
+    store = InMemoryViewerMembershipStore()
+    url = build_citation_preview_url(
+        "src-preview-2",
+        settings,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    payload = {
+        "title": "Phone Guide",
+        "releaseId": "release-2",
+        "sourcePath": "sources/phone.md",
+        "mappingStatus": "AVAILABLE",
+        "message": "此來源可開啟原始檔。",
+        "evidence": {"excerpt": "Press Transfer to continue."},
+        "actions": {"canDownloadOriginal": True},
+    }
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    with (
+        patch(
+            "teams_agent.source_routes.fetch_source_preview",
+            new=AsyncMock(return_value=payload),
+        ),
+        patch(
+            "teams_agent.source_routes.fetch_release_source_document",
+            return_value=(
+                "# Phone Guide\n\nIntroductory text.\n\n"
+                "## Transfer\n\nPress Transfer to continue.\n\n"
+                "![Panel](assets/phone/panel.png)"
+            ),
+        ) as source_reader,
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(
+            f"{parsed.path}?{parsed.query}",
+            headers={
+                "Accept": "text/html",
+                "X-Viewer-Subject": "user-1",
+                "X-Gateway-Secret": "test-signing-key-long-enough",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Introductory text." in response.text
+    assert "索引命中片段" in response.text
+    assert "/rag-assets/releases/release-2/phone/panel.png?" in response.text
+    assert "開啟原始附件" in response.text
+    source_reader.assert_called_once_with(
+        settings,
+        release_id="release-2",
+        source_path="sources/phone.md",
+        tenant_id="t1",
+    )
+
+
+def test_rag_citation_route_keeps_excerpt_explicitly_degraded(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    store = InMemoryViewerMembershipStore()
+    url = build_citation_preview_url(
+        "src-preview-3",
+        settings,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    payload = {
+        "title": "Legacy Guide",
+        "mappingStatus": "LEGACY_UNVERIFIED",
+        "evidence": {"excerpt": "Authorized excerpt only."},
+    }
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    with patch(
+        "teams_agent.source_routes.fetch_source_preview",
+        new=AsyncMock(return_value=payload),
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(
+            f"{parsed.path}?{parsed.query}",
+            headers={
+                "X-Viewer-Subject": "user-1",
+                "X-Gateway-Secret": "test-signing-key-long-enough",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "此引用沒有可驗證的文件版本" in response.text
+    assert "Authorized excerpt only." in response.text
+
+
+def test_rag_citation_route_does_not_read_release_after_acl_denial(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    viewer = CitationViewerContext(
+        subject="playground-user",
+        groups=(),
+        tenant_id="00000000-0000-0000-0000-0000000000001",
+    )
+    url = build_citation_preview_url(
+        "src-private",
+        settings,
+        viewer=viewer,
+        membership_store=InMemoryViewerMembershipStore(),
+    )
+    assert url is not None
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    with (
+        patch(
+            "teams_agent.source_routes.fetch_source_preview",
+            new=AsyncMock(
+                side_effect=SourceApiError("Access denied", status=403),
+            ),
+        ),
+        patch(
+            "teams_agent.source_routes.fetch_release_source_document",
+        ) as source_reader,
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(f"{parsed.path}?{parsed.query}")
+
+    assert response.status_code == 403
+    source_reader.assert_not_called()
+
+
 def test_card_prefers_original_open_action(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     settings = AgentSettings(
@@ -237,9 +377,7 @@ def test_card_prefers_original_open_action(tmp_path: Path) -> None:
     enriched = enrich_citation_urls(
         response, settings, now=1_000, viewer=_viewer(), membership_store=store
     )
-    activity = build_agent_activity(
-        enriched, settings, now=1_000, viewer=_viewer()
-    )
+    activity = build_agent_activity(enriched, settings, now=1_000, viewer=_viewer())
     assert not isinstance(activity, str)
     card = activity.attachments[0].content
     assert isinstance(card, dict)
@@ -271,9 +409,7 @@ def test_card_hides_citation_open_actions_when_disabled(tmp_path: Path) -> None:
     enriched = enrich_citation_urls(
         response, settings, now=1_000, viewer=_viewer(), membership_store=store
     )
-    activity = build_agent_activity(
-        enriched, settings, now=1_000, viewer=_viewer()
-    )
+    activity = build_agent_activity(enriched, settings, now=1_000, viewer=_viewer())
     # Without images/feedback, disabled actions fall back to plain text.
     assert isinstance(activity, str)
     assert "請參考來源。" in activity
@@ -282,9 +418,7 @@ def test_card_hides_citation_open_actions_when_disabled(tmp_path: Path) -> None:
 def test_authorize_original_open_rejects_bad_signature(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     store = InMemoryViewerMembershipStore()
-    url = build_original_url(
-        "src-1", settings, now=1_000, viewer=_viewer(), membership_store=store
-    )
+    url = build_original_url("src-1", settings, now=1_000, viewer=_viewer(), membership_store=store)
     assert url is not None
     query = parse_qs(urlparse(url).query)
     with pytest.raises(PermissionError, match="signature"):
@@ -357,7 +491,6 @@ def test_rag_originals_route_proxies_backoffice_bytes(tmp_path: Path) -> None:
     assert "it-helpdesk" in kwargs["groups"]
 
 
-
 def test_issue_source_delegation_round_trips() -> None:
     from teams_agent.source_delegation import verify_source_delegation
 
@@ -368,9 +501,7 @@ def test_issue_source_delegation_round_trips() -> None:
         groups=("grp_public",),
         now=1_700_000_000.0,
     )
-    payload = verify_source_delegation(
-        token, secret="shared-secret", now=1_700_000_010.0
-    )
+    payload = verify_source_delegation(token, secret="shared-secret", now=1_700_000_010.0)
     assert payload["sub"] == "viewer@example.com"
     assert payload["tenantId"] == "tenant-a"
     assert payload["role"] == "VIEWER"
@@ -465,5 +596,3 @@ async def test_stream_original_source_file_chunks_content(tmp_path: Path) -> Non
         assert chunks == [b"chunk-1", b"chunk-2"]
         mock_resp.release.assert_awaited_once()
         mock_session.close.assert_awaited_once()
-
-
