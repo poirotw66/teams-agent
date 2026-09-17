@@ -174,6 +174,14 @@ class ConversationSupervisor:
                 intent="IT_SUPPORT",
                 confidence=decision.confidence,
             )
+        if decision.intent == "NON_IT":
+            from .extractor import _has_helpdesk_domain_evidence
+
+            if _has_helpdesk_domain_evidence(message):
+                return ConversationSupervisorDecision(
+                    intent="IT_SUPPORT",
+                    confidence=decision.confidence,
+                )
         return decision
 
     async def decide(

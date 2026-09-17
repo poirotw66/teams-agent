@@ -362,9 +362,12 @@ def chunk_markdown(
             doc_metadata=doc_metadata,
         )
 
-    # Keep level-three headings with their parent page/section so screenshots and
-    # the instructions they illustrate remain in the same retrieval chunk.
-    sections = re.split(r"(?m)(?=^#{1,2}\s+)", canonical_markdown)
+    # Split markdown on #{1,3} except visual evidence headings so subheadings
+    # and FAQ sections become independent retrieval chunks without cross-section contamination.
+    sections = re.split(
+        r"(?m)(?=^#{1,2}\s+|^###\s+(?!Visual\b|Image\b|附圖\b))",
+        canonical_markdown,
+    )
     content_parts: list[tuple[str, list[DocumentImage]]] = []
     for raw_section in sections:
         raw_section = raw_section.strip()
@@ -468,7 +471,7 @@ def _chunk_layout_markdown(
             metadata=doc_metadata,
             section=draft.heading_path[-1] if draft.heading_path else None,
             page=draft.page_start,
-            page_index=draft.page_start,
+            page_index=(draft.page_start - 1) if draft.page_start is not None else None,
             page_label=str(draft.page_start),
             section_path=" > ".join(draft.heading_path) or None,
             paragraph_id=draft.chunk_id,

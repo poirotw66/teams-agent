@@ -400,7 +400,8 @@ class ReleaseService:
         ensure_not_found("release", release_id, release)
         self._require_release_allowed(release)
         active_id = await self._ctx.repository.get_active_release_id()
-        if release_id != active_id:
+        is_initial_failed = active_id is None and release.status == "RELOAD_FAILED"
+        if release_id != active_id and not is_initial_failed:
             raise ValueError(
                 f"Cannot sync release '{release_id}' because it is not the current active release ('{active_id}'). Use rollback to switch versions."
             )
@@ -408,7 +409,7 @@ class ReleaseService:
         reload_success, reload_error = await self._notify_agent_reload(release_id, correlation_id)
         async with self._coordination_lock("sync_agent"):
             current_active = await self._ctx.repository.get_active_release_id()
-            if current_active != release_id:
+            if current_active != release_id and not is_initial_failed:
                 logger.warning(
                     "Agent reload completed for release %s, but active release has transitioned to %s; discarding stale state mutation.",
                     release_id,
@@ -417,6 +418,8 @@ class ReleaseService:
                 return release
 
             if reload_success:
+                await self._ctx.repository.set_active_release_id(release_id)
+                self._write_local_active_pointer(release_id)
                 updated = release.model_copy(
                     update={
                         "status": "ACTIVE",

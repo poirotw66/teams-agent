@@ -155,6 +155,11 @@ When the user refers to a prior turn with phrases such as 上面那題, 剛才�
 上一題, resolve the reference from conversation history and return the referenced
 IT issue instead of a generic placeholder.
 
+Issue description requirements:
+- Preserve the user's exact core question, product names, error codes, negative conditions, unknown statuses, and limiting qualifiers (e.g. 為何不能, 來源能支持哪些答案, 不知道裝置是否受企業政策管理, 未確認政策).
+- NEVER alter the intent: do NOT convert questions asking what answers a source can support (來源能支持哪些答案) into questions asking what data formats/sources a tool supports.
+- Keep the description focused, accurate, and faithful to the user's constraints.
+
 Return ONLY the structured issues schema. Do not include any other commentary.
 """
 
@@ -162,20 +167,51 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _GENERIC_TICKET_DESCRIPTION = "使用者提出的 IT 支援請求"
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
-_HELPDESK_DOMAIN_SIGNALS = (
+_STANDALONE_HELPDESK_SIGNALS = (
     "powerpivot",
     "xq",
-    "錯誤 12029",
     "話機型號",
     "話機面板",
     "座位搬遷",
-    "報價查核",
-    "外部客戶問題",
-    "安全性設定",
-    "敏感資訊",
+    "外部客戶線上問題",
     "資訊問題通報",
-    "來源能支持",
-    "操作順序",
+    "報價查核",
+    "五檔",
+)
+_SYSTEM_TERMS = (
+    "系統",
+    "vpn",
+    "teams",
+    "outlook",
+    "網路",
+    "平台",
+    "帳號",
+    "客戶",
+    "報價",
+    "外部客戶",
+    "xq",
+    "proxy",
+)
+_DEVICE_TERMS = (
+    "裝置",
+    "電腦",
+    "主機",
+    "筆電",
+    "伺服器",
+    "瀏覽器",
+    "proxy",
+    "話機",
+    "設備",
+)
+_IT_DOC_TERMS = (
+    "手冊",
+    "知識庫",
+    "來源",
+    "流程",
+    "faq",
+    "it",
+    "工單",
+    "客服",
 )
 _TICKET_COMMAND_RE = re.compile(
     r"(?:請|麻煩|幫我|幫忙|替我|屜我|我要|確認|確定|好[，,]?|協助我?)*"
@@ -241,9 +277,38 @@ def _is_human_escalation_request(text: str) -> bool:
 
 def _has_helpdesk_domain_evidence(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", text).strip().casefold()
-    if any(signal in normalized for signal in _HELPDESK_DOMAIN_SIGNALS):
+    if any(signal in normalized for signal in _STANDALONE_HELPDESK_SIGNALS):
         return True
-    return bool(re.search(r"(?:錯誤|error)\s*[-:#]?\s*\d{3,}", normalized, re.IGNORECASE))
+    if re.search(
+        r"(?:錯誤(?:碼|代碼)?|error(?:\s*code)?)\s*[-:#]?\s*\d{3,}",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(r"\b\d{4,5}\b", normalized) and any(
+        kw in normalized for kw in ("錯誤", "error", "code", "異常", "失敗", "連線")
+    ):
+        return True
+    # Composite: system + principle
+    if any(s in normalized for s in _SYSTEM_TERMS) and any(
+        p in normalized for p in ("處置原則", "處理原則", "原則")
+    ):
+        return True
+    # Composite: device + policy
+    if any(d in normalized for d in _DEVICE_TERMS) and any(
+        p in normalized for p in ("管控政策", "政策", "安全性設定", "安全設定")
+    ):
+        return True
+    # Composite: screen / screenshot + privacy / sensitive info / password
+    if any(img in normalized for img in ("截圖", "畫面", "圖片", "影像")) and any(
+        sec in normalized for sec in ("敏感資訊", "個資", "密碼", "密碼保護", "遮蔽", "保護")
+    ):
+        return True
+    # Composite: manual + support
+    return bool(
+        any(doc in normalized for doc in _IT_DOC_TERMS)
+        and any(m in normalized for m in ("來源能支持", "能支持", "操作順序", "操作方式"))
+    )
 
 
 _IT_SCOPE_KEYWORDS: tuple[str, ...] = (
@@ -562,7 +627,11 @@ class IssueExtractor:
                     model_fallback_applied=False,
                 )
 
-        issues, too_many = self._postprocess(raw.issues, faq_keys)
+        issues, too_many = self._postprocess(
+            raw.issues,
+            faq_keys,
+            raw_utterance=normalized_text,
+        )
         return ExtractionOutcome(
             issues=issues,
             too_many_issues=too_many,
@@ -749,7 +818,12 @@ class IssueExtractor:
             ticketAction=None,
         )
 
-    def _postprocess(self, issues: list[Issue], faq_keys: list[str]) -> tuple[list[Issue], bool]:
+    def _postprocess(
+        self,
+        issues: list[Issue],
+        faq_keys: list[str],
+        raw_utterance: str = "",
+    ) -> tuple[list[Issue], bool]:
         too_many = len(issues) > self.settings.max_issues_per_message
         truncated = issues[: self.settings.max_issues_per_message]
 
@@ -757,11 +831,85 @@ class IssueExtractor:
         coerced: list[Issue] = []
         for index, issue in enumerate(truncated, start=1):
             coerced.append(
-                self._coerce_issue(issue, new_id=index, allowed_faq_keys=allowed_faq_keys)
+                self._coerce_issue(
+                    issue,
+                    new_id=index,
+                    allowed_faq_keys=allowed_faq_keys,
+                    raw_utterance=raw_utterance,
+                )
             )
+
+        if raw_utterance and len(coerced) == 1 and coerced[0].isIT:
+            raw_qualifiers = (
+                "不知道裝置是否受企業政策管理",
+                "來源能支持哪些答案",
+                "未確認政策",
+                "政策未確認",
+                "來源能支持",
+                "為何不能",
+                "是否可以",
+                "處置原則",
+                "操作順序",
+                "XQ",
+                "PowerPivot",
+                "五檔",
+                "可否",
+                "能否",
+            )
+            # If the user asks about what answers the source supports, prevent distortion
+            # into data formats or data sources
+            if "來源能支持哪些答案" in raw_utterance:
+                coerced[0] = coerced[0].model_copy(
+                    update={
+                        "description": re.sub(
+                            r"支援(?:的|哪些)?資料來源",
+                            "來源能支持哪些答案",
+                            coerced[0].description,
+                        )
+                    }
+                )
+
+            missing_qualifiers: list[str] = []
+            for qualifier in raw_qualifiers:
+                if (
+                    qualifier in raw_utterance
+                    and qualifier not in coerced[0].description
+                    and not any(qualifier in m for m in missing_qualifiers)
+                    and not any(m in qualifier for m in missing_qualifiers)
+                ):
+                    missing_qualifiers.append(qualifier)
+
+            has_negative = any(
+                neg in coerced[0].description
+                for neg in ("不能", "無法", "不可", "不得", "未", "失敗", "異常", "中斷")
+            )
+            if not has_negative:
+                for neg in ("為何不能", "不能", "不可", "不得"):
+                    if (
+                        neg in raw_utterance
+                        and neg not in missing_qualifiers
+                        and not any(neg in m for m in missing_qualifiers)
+                    ):
+                        missing_qualifiers.append(neg)
+                        break
+
+            if missing_qualifiers:
+                coerced[0] = coerced[0].model_copy(
+                    update={
+                        "description": f"{' '.join(missing_qualifiers)} {coerced[0].description}".strip()
+                    }
+                )
+
         return coerced, too_many
 
-    def _coerce_issue(self, issue: Issue, *, new_id: int, allowed_faq_keys: set[str]) -> Issue:
+    def _coerce_issue(
+        self,
+        issue: Issue,
+        *,
+        new_id: int,
+        allowed_faq_keys: set[str],
+        raw_utterance: str = "",
+    ) -> Issue:
         data = issue.model_dump()
         data["id"] = new_id
 
@@ -779,7 +927,10 @@ class IssueExtractor:
         data["missingInfo"] = _strip_forbidden(data.get("missingInfo") or [])
         data["missingInfo"] = data["missingInfo"][: self.settings.max_missing_info_per_issue]
 
-        if not data["isIT"] and _has_helpdesk_domain_evidence(data["description"]):
+        has_domain_evidence = _has_helpdesk_domain_evidence(data["description"]) or (
+            bool(raw_utterance) and _has_helpdesk_domain_evidence(raw_utterance)
+        )
+        if not data["isIT"] and has_domain_evidence:
             data["isIT"] = True
             data["readiness"] = "NEED_MORE_INFO"
             data["route"] = "KNOWLEDGE"

@@ -16,8 +16,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from agent_service.artifact_storage import GcsArtifactStorage, LocalFileArtifactStorage
 from agent_service.document_authorization import (
@@ -25,7 +23,6 @@ from agent_service.document_authorization import (
     authorize_document_access,
     ensure_document_access,
 )
-from ai_ops_backoffice.routers.ops_reads import register_ops_read_routes
 from ai_ops_backoffice.services.source_models import (
     ArtifactKind,
     LocatorType,
@@ -35,7 +32,6 @@ from ai_ops_backoffice.services.source_models import (
 )
 from ai_ops_backoffice.services.source_repository import (
     BoundedSourceCache,
-    FileSourceRecordRepository,
     InMemorySourceRecordRepository,
 )
 from ai_ops_backoffice.services.source_trace import SourceTraceResolver
@@ -467,6 +463,7 @@ def test_a06_t1_bounded_cache_memory_limit() -> None:
 async def test_gcs_storage_chunked_streaming_and_sha256():
     """Verifies true GCS chunked streaming via blob.open and SHA-256 integrity."""
     import io
+
     from agent_service.artifact_storage import GcsArtifactStorage
 
     test_content = b"This is a test document for streaming verification." * 100
@@ -533,8 +530,8 @@ async def test_gcs_storage_chunked_streaming_and_sha256():
 
 def test_core_agent_service_has_no_backoffice_reverse_dependencies():
     """A08: Core agent_service modules must not import from ai_ops_backoffice."""
-    from agent_service.document_authorization import DocumentAccessDecision
     from agent_service.artifact_models import ArtifactRecord
+    from agent_service.document_authorization import DocumentAccessDecision
 
     assert DocumentAccessDecision.__module__ == "agent_service.document_authorization"
     assert ArtifactRecord.__module__ == "agent_service.artifact_models"
@@ -635,7 +632,6 @@ def test_f02_acl_and_revocation_deny_access() -> None:
 
 
 def test_f07_original_asset_dual_write_to_artifact_storage(tmp_path: Path) -> None:
-    from agent_service.artifact_storage import LocalFileArtifactStorage
     from knowledge_portal.original_assets import OriginalAssetStore
     from knowledge_portal.settings import PortalSettings
 

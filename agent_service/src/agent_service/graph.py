@@ -40,7 +40,7 @@ from .usage import UsageReport, build_usage_report, estimate_text_tokens
 def build_chat_model(
     model_name: str | None,
     *,
-    temperature: float | None = None,
+    temperature: float | None = 0.0,
     max_tokens: int | None = None,
     timeout: float | None = None,
     max_retries: int | None = None,
@@ -136,7 +136,7 @@ class RagAgent:
         self.settings = settings
         self.index = index
         self.model = model or (
-            build_chat_model(settings.model) if settings.model else None
+            build_chat_model(settings.model, temperature=0.0) if settings.model else None
         )
         self.knowledge: KnowledgeService = knowledge or HybridKnowledgeService(
             settings, index, self.model

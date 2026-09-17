@@ -499,7 +499,7 @@ async def test_new_issue_after_sap_handoff_clears_case_and_answers_vpn(
     assert stored is not None and stored.status == HandoffStatus.CANCELLED
     assert SAP_ISSUE not in vpn.answer
     assert vpn.issueResults[0].resultType == "NEED_MORE_INFO"
-    assert knowledge.calls == [SAP_ISSUE]
+    assert knowledge.calls == [SAP_ISSUE, vpn_issue.description]
 
 
 @pytest.mark.asyncio

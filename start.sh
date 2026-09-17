@@ -424,6 +424,7 @@ agent_env=(
   "GOOGLE_API_KEY=${GOOGLE_API_KEY_VALUE}"
   "RAG_MODEL=${RAG_MODEL_VALUE}"
   "AGENT_MODEL=${AGENT_MODEL_VALUE}"
+  "GOLDEN_EVALUATION_TOKEN=${GOLDEN_EVALUATION_TOKEN:-golden-eval-secret-token}"
 )
 if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   agent_env+=(

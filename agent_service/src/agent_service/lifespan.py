@@ -60,8 +60,11 @@ def build_lifespan(resolved_settings: RagSettings):
         # LangGraph workflow below (spec §5) is what /agent/chat runs.
         agent = RagAgent(resolved_settings, index)
 
-        rag_model = build_chat_model(resolved_settings.model)
-        agent_model = build_chat_model(resolved_settings.agent_model or resolved_settings.model)
+        rag_model = build_chat_model(resolved_settings.model, temperature=0.0)
+        agent_model = build_chat_model(
+            resolved_settings.agent_model or resolved_settings.model,
+            temperature=0.0,
+        )
 
         # Build every §5 collaborator ONCE here (not per request):
         # FAQ / Conversation / Ticket / Knowledge services + the Issue

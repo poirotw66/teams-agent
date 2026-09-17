@@ -55,8 +55,6 @@ class ReleasePublisher:
         release_dir.mkdir(parents=True, exist_ok=True)
         sources_dir = release_dir / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
-
-        has_governed_versions = bool(published_versions)
         published_versions = [
             version
             for version in published_versions
@@ -134,7 +132,6 @@ class ReleasePublisher:
         selected_embedding = embedding_model or self._settings.embedding_model
         copy_bundled = (
             embedding_model is None
-            and not has_governed_versions
             and bundled_index_path is not None
             and bundled_index_path.is_file()
         )

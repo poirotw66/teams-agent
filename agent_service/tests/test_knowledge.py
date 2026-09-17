@@ -267,6 +267,13 @@ def test_bounded_facet_queries_preserve_identifier_and_cap_at_three() -> None:
     )
 
 
+def test_bounded_facet_queries_extracts_error_codes() -> None:
+    assert bounded_facet_queries("使用者回報錯誤 12029，但裝置版本與企業管控政策不明。") == ("錯誤 12029", "12029")
+    assert bounded_facet_queries("FortiClient 顯示 Permission denied (-455)，應如何開始排查？") == ("錯誤 -455", "-455")
+    assert bounded_facet_queries("外網 CRM 出現 401 錯誤時，可以確定是瀏覽器造成的嗎？") == ("錯誤 401", "401")
+    assert bounded_facet_queries("一般查詢問題，沒有任何錯誤代碼") == ()
+
+
 @pytest.mark.asyncio
 async def test_hybrid_search_executes_bounded_facets_once(tmp_path: Path) -> None:
     index = CountingIndex(
@@ -468,6 +475,45 @@ async def test_hybrid_selects_latest_canonical_version_and_caps_chunks(
     assert "新版申請入口" in answer_context
     assert "新版核准步驟" in answer_context
     assert "新版低優先補充" not in answer_context
+
+
+@pytest.mark.asyncio
+async def test_hybrid_selects_expands_chunks_for_multi_section_query(
+    tmp_path: Path,
+) -> None:
+    def chunk(chunk_id: str, content: str) -> DocumentChunk:
+        return DocumentChunk(
+            chunk_id=chunk_id,
+            title="外部客戶線上問題",
+            source_path="sources/external.md",
+            content=content,
+            document_id="doc-external",
+            version_id="ver-1",
+        )
+
+    index = FixedResultIndex(
+        [
+            SearchResult(chunk("c1", "FAQ-001 線上問題"), score=0.9, sparse_score=0.9),
+            SearchResult(chunk("c2", "FAQ-002 交易問題密碼"), score=0.88, sparse_score=0.88),
+            SearchResult(chunk("c3", "FAQ-003 帳務問題截圖"), score=0.85, sparse_score=0.85),
+            SearchResult(chunk("c4", "FAQ-004 報價問題五檔"), score=0.82, sparse_score=0.82),
+        ]
+    )
+    model = FakeChatModel(answer_text="各問題類型規範不同 [S1]")
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=4),
+        index,
+        model=model,
+    )
+
+    result = await service.search("外部客戶問題分別規定在哪些問題類型？", make_user())
+    assert result.found is True
+    answer_context = str(model.ainvoke_messages[0])
+    assert "FAQ-001" in answer_context
+    assert "FAQ-002" in answer_context
+    assert "FAQ-003" in answer_context
+    assert "FAQ-004" in answer_context
+
 
 
 @pytest.mark.asyncio

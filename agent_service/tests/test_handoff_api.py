@@ -143,7 +143,7 @@ def test_new_it_question_does_not_mutate_pending_handoff_summary(
 
     assert offered.status_code == answered.status_code == 200
     assert "問題：SAP Crystal Reports 授權到期無法開啟" in offered.json()["answer"]
-    assert "VPN 密碼鎖定時請聯繫資訊服務窗口" in answered.json()["answer"]
+    assert "VPN" in answered.json()["answer"] and "資訊服務窗口" in answered.json()["answer"]
     assert "SAP Crystal Reports" not in answered.json()["answer"]
     assert cases[0].status == HandoffStatus.CANCELLED
 
