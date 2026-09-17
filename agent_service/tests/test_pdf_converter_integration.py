@@ -11,8 +11,17 @@ from fastapi.testclient import TestClient
 from pdf_test_helpers import build_text_pdf_bytes
 
 from knowledge_portal.api import create_app
-from knowledge_portal.pdf_convert_jobs import convert_pdf_bytes, should_convert_async
-from knowledge_portal.pdf_converter_client import PdfConverterClient, _parse_json_result
+from knowledge_portal.pdf_convert_jobs import (
+    conversion_to_import_dict,
+    convert_pdf_bytes,
+    should_convert_async,
+)
+from knowledge_portal.pdf_converter_client import (
+    PdfAsset,
+    PdfConversionResult,
+    PdfConverterClient,
+    _parse_json_result,
+)
 from knowledge_portal.settings import PdfConverterAuthMode, PortalSettings
 
 
@@ -38,6 +47,56 @@ def test_should_convert_async_thresholds() -> None:
     assert should_convert_async(settings, byte_size=10, page_count=1) is False
     assert should_convert_async(settings, byte_size=10, page_count=99, force="sync") is False
     assert should_convert_async(settings, byte_size=1, page_count=1, force="async") is True
+
+
+def test_import_places_rendered_images_after_each_source_mapped_page() -> None:
+    result = PdfConversionResult(
+        markdown=(
+            "# Guide\n\n"
+            "<!-- source-map:page_index=0 page_label=1 -->\n"
+            "First page instructions.\n\n"
+            "<!-- source-map:page_index=1 page_label=2 -->\n"
+            "Second page instructions.\n"
+        ),
+        page_count=2,
+        assets=(
+            PdfAsset(filename="p01.png", content=b"page-one"),
+            PdfAsset(filename="p02.png", content=b"page-two"),
+        ),
+    )
+
+    imported = conversion_to_import_dict(
+        result,
+        filename="Guide.pdf",
+        owner_unit_id="IT Service Desk",
+    )
+
+    markdown = imported["markdown_content"]
+    assert markdown.index("First page instructions.") < markdown.index("p01.png")
+    assert markdown.index("p01.png") < markdown.index("page_index=1")
+    assert markdown.index("Second page instructions.") < markdown.index("p02.png")
+
+
+def test_import_places_rendered_images_inside_page_heading_sections() -> None:
+    result = PdfConversionResult(
+        markdown="## Page 1\n\nFirst page.\n\n## Page 2\n\nSecond page.\n",
+        page_count=2,
+        assets=(
+            PdfAsset(filename="p01.png", content=b"page-one"),
+            PdfAsset(filename="p02.png", content=b"page-two"),
+        ),
+    )
+
+    imported = conversion_to_import_dict(
+        result,
+        filename="Guide.pdf",
+        owner_unit_id="IT Service Desk",
+    )
+
+    markdown = imported["markdown_content"]
+    assert markdown.index("First page.") < markdown.index("p01.png")
+    assert markdown.index("p01.png") < markdown.index("## Page 2")
+    assert markdown.index("Second page.") < markdown.index("p02.png")
 
 
 def test_parse_json_converter_result() -> None:
