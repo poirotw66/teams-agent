@@ -98,6 +98,34 @@ def test_answer_returned_verbatim_not_rewritten(tmp_path: Path) -> None:
     assert entry.answer == answer_text
 
 
+def test_faq_citation_exposes_version_provenance(tmp_path: Path) -> None:
+    from agent_service.faq import citation_for_faq
+
+    path = _write_faq(
+        tmp_path,
+        {
+            "faqs": [
+                {
+                    "id": "FAQ_001",
+                    "faqKey": "PASSWORD_RESET",
+                    "versionId": "v3",
+                    "answer": "請至密碼管理入口重設。",
+                }
+            ]
+        },
+    )
+    entry = FaqService(FaqRepository.load(path)).get("PASSWORD_RESET")
+    assert entry is not None
+    citation = citation_for_faq(entry, include_evidence=True)
+    assert citation.chunkId == "faq:FAQ_001:v3"
+    assert citation.documentId == "FAQ_001"
+    assert citation.versionId == "v3"
+    assert citation.sourceType == "FAQ"
+    assert citation.evidence is not None
+    assert "[chunkId=faq:FAQ_001:v3]" in citation.evidence
+    assert "請至密碼管理入口重設。" in citation.evidence
+
+
 def test_bare_list_shape_supported(tmp_path: Path) -> None:
     path = _write_faq(
         tmp_path,

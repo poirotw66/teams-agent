@@ -35,6 +35,16 @@ factual or procedural claim. For each claim, return SUPPORTED or UNSUPPORTED
 and cite only chunk IDs that appear in actual_citations. List every material
 required fact omitted from the candidate answer.
 
+Provenance rules:
+- Knowledge document facts must be grounded only on document chunk IDs from
+  actual_citations (typically retrieved knowledge chunks).
+- System security overlays use chunk IDs like POLICY-SEC-001 / POLICY-SEC-002 /
+  POLICY-SEC-003 (sourceType POLICY_ADVISORY). Policy claims may be SUPPORTED
+  only by those policy chunk IDs, never by unrelated knowledge chunks.
+- FAQ answers may be grounded on faq:<faqId>:<versionId> citations.
+- Do not treat a knowledge chunk as evidence for a global security policy, and
+  do not treat a POLICY-SEC-* citation as evidence for document-specific facts.
+
 Verdicts:
 - PASS: correct, materially complete, grounded, and no material unsupported claim.
 - PARTIAL: useful and mostly correct, but materially incomplete or imprecise.

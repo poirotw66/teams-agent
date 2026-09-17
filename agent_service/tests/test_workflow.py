@@ -491,6 +491,13 @@ async def test_faq_hit_answered_verbatim(tmp_path: Path) -> None:
     assert response.issueResults[0].resultType == "FAQ_ANSWERED"
     assert response.issueResults[0].answer == entry.answer
     assert entry.answer in response.answer
+    assert len(response.issueResults[0].sources) == 1
+    faq_source = response.issueResults[0].sources[0]
+    assert faq_source.sourceType == "FAQ"
+    assert faq_source.documentId == entry.id
+    assert faq_source.chunkId is not None
+    assert faq_source.chunkId.startswith("faq:1:")
+    assert any(c.chunkId == faq_source.chunkId for c in response.citations)
 
 
 @pytest.mark.asyncio

@@ -281,6 +281,24 @@ def test_retrieval_scoring_matches_titles_and_source_paths() -> None:
     assert assessment.missing_sources == []
 
 
+def test_retrieval_scoring_ignores_policy_advisory_citations() -> None:
+    assessment = score_retrieval(
+        ("VPN 操作手冊",),
+        (
+            {"title": "VPN 操作手冊", "chunkId": "vpn-1"},
+            {
+                "title": "安全性設定變更確認原則 (POLICY-SEC-003)",
+                "chunkId": "POLICY-SEC-003",
+                "sourceType": "POLICY_ADVISORY",
+            },
+        ),
+    )
+
+    assert assessment.source_recall == 1.0
+    assert len(assessment.matches) == 1
+    assert assessment.matches[0].expected_source == "VPN 操作手冊"
+
+
 def test_retrieval_scoring_uses_auditable_title_similarity_fallback() -> None:
     assessment = score_retrieval(
         ("GitLab 帳號解鎖與重置",),

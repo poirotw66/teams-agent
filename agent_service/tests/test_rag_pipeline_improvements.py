@@ -87,6 +87,7 @@ def test_sanitize_answer_security_appends_proxy_advisory_when_unqualified() -> N
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
     assert "Proxy 設定全部關閉" in sanitized
     assert "系統資安政策提醒" in sanitized
+    assert "[POLICY-SEC-003]" in sanitized
 
 
 def test_sanitize_answer_security_appends_advisory_for_cert_bypass_and_ie() -> None:
@@ -94,11 +95,13 @@ def test_sanitize_answer_security_appends_advisory_for_cert_bypass_and_ie() -> N
     raw_cert = "連線若出現憑證問題，可暫時忽略憑證錯誤繼續連線。"
     sanitized_cert = HybridKnowledgeService._sanitize_answer_security(raw_cert)
     assert "系統資安政策提醒" in sanitized_cert
+    assert "[POLICY-SEC-003]" in sanitized_cert
 
     # IE security lowering advice
     raw_ie = "若頁面無法顯示，可至網際網路選項調低安全性等級後重試。"
     sanitized_ie = HybridKnowledgeService._sanitize_answer_security(raw_ie)
     assert "系統資安政策提醒" in sanitized_ie
+    assert "[POLICY-SEC-003]" in sanitized_ie
 
 
 def test_sanitize_answer_security_does_not_duplicate_proxy_advisory() -> None:
@@ -204,7 +207,9 @@ async def test_generate_bounded_model_repair_recovers_missing_claims(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_generate_fails_closed_when_repair_cannot_ground(tmp_path: Path) -> None:
+async def test_generate_prunes_hallucinated_citation_instead_of_fail_closed(
+    tmp_path: Path,
+) -> None:
     chunk_1 = DocumentChunk(
         chunk_id="chk-1",
         title="公槽申請手冊",
@@ -247,8 +252,12 @@ async def test_generate_fails_closed_when_repair_cannot_ground(tmp_path: Path) -
         "提出共用公槽申請",
         make_user(),
     )
-    # Must fail-closed without fabricating claims
-    assert result.found is False
+    # Keep grounded [S1] content; drop unresolved hallucinated [S2] without miss.
+    assert result.found is True
+    assert "[S1]" in result.answer
+    assert "[S2]" not in result.answer
+    assert len(result.sources) == 1
+    assert result.sources[0].chunkId == "chk-1"
 
 
 def test_supervisor_constrains_non_it_when_error_code_present() -> None:
@@ -759,3 +768,233 @@ def test_qb085_answer_prompt_rules_contain_global_security_baseline() -> None:
     assert "全域資料最小化原則" in ANSWER_PROMPT
     assert "絕對機敏資訊禁令" in ANSWER_PROMPT
     assert "全域最高性" in ANSWER_PROMPT
+    assert "[POLICY-SEC-001]" in ANSWER_PROMPT
+    assert "[POLICY-SEC-002]" in ANSWER_PROMPT
+    assert "[POLICY-SEC-003]" in ANSWER_PROMPT
+    assert "該來源沒有規定" in ANSWER_PROMPT
+
+
+def test_uncited_security_policy_leak_is_pruned() -> None:
+    text = (
+        "申請共用公槽請填必要資料 [S1]。\n"
+        "另請注意資料最小化，勿提交無關敏感資訊。"
+    )
+    common_keys = {"doc-1"}
+
+    def _resolve(val: int) -> str | None:
+        return "doc-1" if val == 1 else None
+
+    cleaned = HybridKnowledgeService._prune_unbacked_sentences_and_citations(
+        text,
+        common_keys,
+        _resolve,
+    )
+    assert "[S1]" in cleaned
+    assert "資料最小化" not in cleaned
+
+
+def test_policy_marked_security_advisory_is_retained() -> None:
+    text = (
+        "申請共用公槽請填必要資料 [S1]。\n"
+        "系統資安政策要求遵守資料最小化 [POLICY-SEC-001]。"
+    )
+    common_keys = {"doc-1"}
+
+    def _resolve(val: int) -> str | None:
+        return "doc-1" if val == 1 else None
+
+    cleaned = HybridKnowledgeService._prune_unbacked_sentences_and_citations(
+        text,
+        common_keys,
+        _resolve,
+    )
+    assert "[POLICY-SEC-001]" in cleaned
+    assert "資料最小化" in cleaned
+
+
+@pytest.mark.asyncio
+async def test_proxy_advisory_emits_policy_citation(tmp_path: Path) -> None:
+    chunk = DocumentChunk(
+        chunk_id="wifi-1",
+        title="Wi-Fi 瞬斷處理",
+        source_path="sources/wifi.md",
+        content="若 Wi-Fi 瞬斷，可於個人裝置關閉 Proxy 後重新連線。",
+    )
+    index = HybridIndex([chunk])
+
+    class ProxyAnswerModel:
+        def with_structured_output(self, schema):
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        return StructuredKnowledgeAnswer(
+                            answer="若 Wi-Fi 瞬斷，可關閉 Proxy 後重新連線 [S1]。",
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="若 Wi-Fi 瞬斷，可關閉 Proxy 後重新連線",
+                                    chunkIds=["wifi-1"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    if schema is GroundedClaimRepair:
+                        return GroundedClaimRepair(claims=[])
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=1),
+        index,
+        model=ProxyAnswerModel(),
+    )
+    result = await service.search("Wi-Fi 瞬斷要關閉 Proxy 嗎？", make_user())
+    assert result.found is True
+    assert "[POLICY-SEC-003]" in result.answer
+    policy_sources = [s for s in result.sources if s.sourceType == "POLICY_ADVISORY"]
+    assert len(policy_sources) == 1
+    assert policy_sources[0].chunkId == "POLICY-SEC-003"
+    assert any(a.policyIds == ["POLICY-SEC-003"] for a in result.policyAdvisories)
+
+
+@pytest.mark.asyncio
+async def test_qb019_high_confidence_grounded_answer_is_not_rejected(tmp_path: Path) -> None:
+    """Regression: retrieved VPN docs + valid claims must not become UNGROUNDED."""
+    chunks = [
+        DocumentChunk(
+            chunk_id="vpn-jump",
+            title="VPN 跳板機連線異常",
+            source_path="sources/vpn-jump.md",
+            content="跳板機連線異常時，請先確認 VPN 通道與跳板主機狀態。",
+        ),
+        DocumentChunk(
+            chunk_id="vpn-faq",
+            title="VPN 常見 Q&A",
+            source_path="sources/vpn-faq.md",
+            content="VPN 常見問題包含連線失敗與跳板機異常排查。",
+        ),
+        DocumentChunk(
+            chunk_id="ad-faq",
+            title="AD FAQ",
+            source_path="sources/ad-faq.md",
+            content="AD 帳號狀態可能影響 VPN 登入。",
+        ),
+    ]
+    index = HybridIndex(chunks)
+
+    class GroundedVpnModel:
+        def with_structured_output(self, schema):
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        return StructuredKnowledgeAnswer(
+                            answer="跳板機連線異常時請先確認 VPN 通道與跳板主機狀態 [S1]。",
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="跳板機連線異常時請先確認 VPN 通道與跳板主機狀態",
+                                    chunkIds=["vpn-jump"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    if schema is GroundedClaimRepair:
+                        return GroundedClaimRepair(claims=[])
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    settings = make_settings(tmp_path, top_k=3, skip_relevance_llm_on_high_confidence=True)
+    service = HybridKnowledgeService(settings, index, model=GroundedVpnModel())
+    result = await service.search("VPN 跳板機連線異常怎麼辦？", make_user())
+
+    assert result.found is True
+    assert result.terminalReason != "UNGROUNDED_ANSWER"
+    assert "[S1]" in result.answer
+    assert result.sources
+    assert result.claims
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.claims
+
+
+@pytest.mark.asyncio
+async def test_qb097_pruned_answer_citations_stay_consistent(tmp_path: Path) -> None:
+    """After pruning unbacked Outlook markers, answer markers and sources must match."""
+    chunks = [
+        DocumentChunk(
+            chunk_id="phone-1",
+            title="總公司IP話機操作",
+            source_path="sources/phone.md",
+            content="IP 話機轉接請按 Transfer。",
+        ),
+        DocumentChunk(
+            chunk_id="outlook-ios",
+            title="行動裝置 Outlook 安裝手冊（iOS）",
+            source_path="sources/outlook-ios.md",
+            content="iOS Outlook 首次設定步驟。",
+        ),
+        DocumentChunk(
+            chunk_id="outlook-android",
+            title="行動裝置 Outlook 安裝手冊（Android）",
+            source_path="sources/outlook-android.md",
+            content="Android Outlook 首次設定步驟。",
+        ),
+    ]
+    index = HybridIndex(chunks)
+
+    class MixedCitationModel:
+        def with_structured_output(self, schema):
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        return StructuredKnowledgeAnswer(
+                            answer=(
+                                "IP 話機轉接請按 Transfer [S1]。"
+                                "iOS Outlook 步驟如下 [S2]。"
+                                "Android Outlook 步驟如下 [S3]。"
+                            ),
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="IP 話機轉接請按 Transfer",
+                                    chunkIds=["phone-1"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    if schema is GroundedClaimRepair:
+                        return GroundedClaimRepair(
+                            claims=[
+                                GroundedClaim(
+                                    text="IP 話機轉接請按 Transfer",
+                                    chunkIds=["phone-1"],
+                                )
+                            ]
+                        )
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=3),
+        index,
+        model=MixedCitationModel(),
+    )
+    result = await service.search("IP 話機如何轉接？", make_user())
+
+    assert result.found is True
+    assert "[S1]" in result.answer
+    assert "[S2]" not in result.answer
+    assert "[S3]" not in result.answer
+    assert "iOS Outlook" not in result.answer
+    assert "Android Outlook" not in result.answer
+    assert len(result.sources) == 1
+    assert result.sources[0].chunkId == "phone-1"
+    assert all(s.sourceType != "POLICY_ADVISORY" or "[POLICY" in result.answer for s in result.sources)

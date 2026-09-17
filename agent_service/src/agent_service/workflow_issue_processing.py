@@ -10,6 +10,7 @@ from .confirmation import TicketIntent
 from .contracts import AgentRequest, Citation, Issue, IssueResult, TicketDraft, UserContext
 from .execution_context import ExecutionContext, RequestDeadlineExceeded
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
+from .faq import citation_for_faq
 from .knowledge import LlmCallCounter
 from .ticket import (
     TicketServiceDisabledError,
@@ -258,10 +259,12 @@ class IssueProcessingWorkflowMixin:
             )
             if entry is not None:
                 # Spec §7.3: FAQ answer used VERBATIM. No LLM, no rewriting.
+                # Attach FAQ id/version as a citation so Judge can verify provenance.
                 return IssueResult(
                     issueId=issue.id,
                     resultType="FAQ_ANSWERED",
                     answer=entry.answer,
+                    sources=[citation_for_faq(entry, include_evidence=True)],
                     backend="FAQ",
                     faqId=entry.id,
                     faqKey=entry.faqKey,
@@ -405,6 +408,7 @@ class IssueProcessingWorkflowMixin:
                 retrievalTrace=result.retrievalTrace,
                 answerability=result.answerability,
                 claims=result.claims,
+                policyAdvisories=result.policyAdvisories,
                 unknowns=result.unknowns,
             )
         return IssueResult(

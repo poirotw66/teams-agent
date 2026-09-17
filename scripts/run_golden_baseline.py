@@ -222,7 +222,17 @@ def _git_commit_sha() -> str | None:
             text=True,
             check=True,
         )
-        return res.stdout.strip()
+        sha = res.stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if dirty.stdout.strip():
+            return f"{sha}-dirty"
+        return sha
     except Exception:
         return None
 

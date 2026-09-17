@@ -281,6 +281,11 @@ class TestUnauthorizedDocumentAccess:
         unauthorized_user = tw.trusted_user(groups=["HR"])
         authorized_user = tw.trusted_user(groups=["IT"])
 
+        fake_model = tk.FakeChatModel(
+            relevant=True,
+            answer_text="VPN 特殊權限請依內部流程設定 [S1]",
+        )
+
         # Two separate workflow instances (each with its own single-shot
         # FakeExtractorModel and a fresh copy of the index) so the two
         # requests don't interfere via shared conversation/extractor state.
@@ -288,16 +293,26 @@ class TestUnauthorizedDocumentAccess:
             tmp_path,
             issues_sequence=[[it_issue]],
             knowledge=HybridKnowledgeService(
-                tk.make_settings(tmp_path), HybridIndex([restricted, public]), model=None
+                tk.make_settings(tmp_path),
+                HybridIndex([restricted, public]),
+                model=fake_model,
             ),
         )
         authorized_workflow, *_ = tw.build_workflow(
             tmp_path,
             issues_sequence=[[it_issue]],
             knowledge=HybridKnowledgeService(
-                tk.make_settings(tmp_path), HybridIndex([restricted, public]), model=None
+                tk.make_settings(tmp_path),
+                HybridIndex([restricted, public]),
+                model=tk.FakeChatModel(
+                    relevant=True,
+                    answer_text="VPN 特殊權限請依內部流程設定 [S1]",
+                ),
             ),
         )
+        # Prevent GovernanceRuntime from injecting a live answer model over stubs.
+        unauthorized_workflow._governed_answer_model = lambda: None  # type: ignore[method-assign]
+        authorized_workflow._governed_answer_model = lambda: None  # type: ignore[method-assign]
 
         unauthorized_response = await unauthorized_workflow.respond(
             tw.make_request("VPN 特殊權限怎麼設定？", user=unauthorized_user, conversation_id="conv-a")

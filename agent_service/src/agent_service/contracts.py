@@ -68,6 +68,13 @@ class GroundedClaim(StrictModel):
     chunkIds: list[str] = Field(min_length=1)
 
 
+class PolicyAdvisory(StrictModel):
+    """System security policy overlay, distinct from document-grounded claims."""
+
+    text: str
+    policyIds: list[str] = Field(min_length=1)
+
+
 class RetrievalTrace(StrictModel):
     rawUserUtterance: str
     resolvedIssueQuery: str
@@ -79,6 +86,7 @@ class RetrievalTrace(StrictModel):
     selectedChunkIds: list[str] = Field(default_factory=list)
     answerability: Literal["FULL", "PARTIAL", "NONE"] | None = None
     claims: list[GroundedClaim] = Field(default_factory=list)
+    policyAdvisories: list[PolicyAdvisory] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
     fallbackPath: str
     terminalReason: str | None = None
@@ -185,6 +193,7 @@ class IssueResult(StrictModel):
         exclude=True,
     )
     claims: list[GroundedClaim] = Field(default_factory=list, exclude=True)
+    policyAdvisories: list[PolicyAdvisory] = Field(default_factory=list, exclude=True)
     unknowns: list[str] = Field(default_factory=list, exclude=True)
 
 
@@ -289,6 +298,7 @@ class KnowledgeResult(StrictModel):
         exclude=True,
     )
     claims: list[GroundedClaim] = Field(default_factory=list, exclude=True)
+    policyAdvisories: list[PolicyAdvisory] = Field(default_factory=list, exclude=True)
     unknowns: list[str] = Field(default_factory=list, exclude=True)
 
 

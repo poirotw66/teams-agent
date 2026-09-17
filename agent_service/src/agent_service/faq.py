@@ -21,10 +21,30 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .contracts import FaqEntry
+from .contracts import Citation, FaqEntry
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
+
+FAQ_SOURCE_TYPE = "FAQ"
+
+
+def citation_for_faq(entry: FaqEntry, *, include_evidence: bool = True) -> Citation:
+    """Build a Judge-verifiable FAQ provenance citation."""
+    version_id = entry.versionId or "legacy"
+    chunk_id = f"faq:{entry.id}:{version_id}"
+    evidence = (
+        f"[chunkId={chunk_id}]\n{entry.answer}" if include_evidence and entry.answer else None
+    )
+    return Citation(
+        title=f"FAQ: {entry.faqKey}",
+        chunkId=chunk_id,
+        documentId=entry.id,
+        versionId=version_id,
+        sourceType=FAQ_SOURCE_TYPE,
+        evidence=evidence,
+        sourceAliases=[entry.faqKey, entry.id, f"FAQ:{entry.faqKey}"],
+    )
 
 
 def _with_fallback_provenance(entry: FaqEntry) -> FaqEntry:

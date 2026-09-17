@@ -80,7 +80,13 @@ def score_retrieval(
     expected_sources: tuple[str, ...],
     citations: tuple[dict[str, object], ...],
 ) -> RetrievalAssessment:
-    actual = _unique_source_identities(citations)
+    # Policy overlays are not bank sources; exclude them from source recall.
+    knowledge_citations = tuple(
+        citation
+        for citation in citations
+        if str(citation.get("sourceType") or "") != "POLICY_ADVISORY"
+    )
+    actual = _unique_source_identities(knowledge_citations)
     unmatched_actual = set(range(len(actual)))
     matches: list[SourceMatch] = []
     for expected in expected_sources:
