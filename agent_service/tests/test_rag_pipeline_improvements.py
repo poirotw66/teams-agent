@@ -448,3 +448,216 @@ async def test_rewrite_preserves_multiple_constraint_markers(tmp_path: Path) -> 
     # Both constraint markers are preserved
     assert "未確認政策" in new_state.search_query
     assert "為何不能" in new_state.search_query
+
+
+@pytest.mark.asyncio
+async def test_skip_relevance_llm_on_high_confidence_bypasses_model_call(tmp_path: Path) -> None:
+    chunk = DocumentChunk(
+        chunk_id="chk-ad",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="AD 帳號遭鎖定時，請至 AD 自助解鎖專區進行解鎖。",
+    )
+    index = HybridIndex([chunk])
+
+    class CounterTrackingModel:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def with_structured_output(self, schema):
+            outer = self
+
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    outer.calls.append(schema.__name__)
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        return StructuredKnowledgeAnswer(
+                            answer="AD 帳號遭鎖定請至自助解鎖專區 [S1]。",
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="AD 帳號遭鎖定請至自助解鎖專區",
+                                    chunkIds=["chk-ad"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    tracking_model = CounterTrackingModel()
+    settings = make_settings(tmp_path, skip_relevance_llm_on_high_confidence=True)
+    service = HybridKnowledgeService(settings, index, model=tracking_model)
+
+    result = await service.search("AD 帳號鎖定如何自助解鎖", make_user())
+
+    assert result.found is True
+    # RelevanceDecision was bypassed because of high confidence hit
+    assert "RelevanceDecision" not in tracking_model.calls
+    assert "StructuredKnowledgeAnswer" in tracking_model.calls
+    assert len(tracking_model.calls) == 1
+    assert result.retrievalTrace.attempts[0].decision == "HIGH_CONFIDENCE_PASS"
+
+
+@pytest.mark.asyncio
+async def test_unbacked_citation_pruned_without_discarding_answer(tmp_path: Path) -> None:
+    chunk_1 = DocumentChunk(
+        chunk_id="chk-1",
+        title="公槽申請手冊",
+        source_path="sources/shared.md",
+        content="提出共用公槽人員新增或移除申請時，聯繫單應填寫必要資料。",
+    )
+    chunk_2 = DocumentChunk(
+        chunk_id="chk-2",
+        title="共用公槽資安手冊",
+        source_path="sources/security.md",
+        content="提出共用公槽人員新增申請時不可將個人機敏資訊填入聯繫單。",
+    )
+    index = HybridIndex([chunk_1, chunk_2])
+
+    class UnrepairableModel:
+        def with_structured_output(self, schema):
+            class _StructuredWrapper:
+                async def ainvoke(self, messages):
+                    if schema is RelevanceDecision:
+                        return RelevanceDecision(relevant=True)
+                    if schema is StructuredKnowledgeAnswer:
+                        # Model cites [S1] and [S2], but only generates claim for chk-1
+                        return StructuredKnowledgeAnswer(
+                            answer="申請共用公槽請填必要資料 [S1]，另外參考規範 [S2]。",
+                            answerability="FULL",
+                            claims=[
+                                GroundedClaim(
+                                    text="申請共用公槽請填必要資料",
+                                    chunkIds=["chk-1"],
+                                )
+                            ],
+                            unknowns=[],
+                        )
+                    if schema is GroundedClaimRepair:
+                        # Repair cannot ground S2, returns only valid claim for chk-1
+                        return GroundedClaimRepair(
+                            claims=[
+                                GroundedClaim(
+                                    text="申請共用公槽請填必要資料",
+                                    chunkIds=["chk-1"],
+                                )
+                            ]
+                        )
+                    raise NotImplementedError(schema)
+
+            return _StructuredWrapper()
+
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, top_k=2),
+        index,
+        model=UnrepairableModel(),
+    )
+    result = await service.search(
+        "提出共用公槽人員新增申請時應填寫哪些資料",
+        make_user(),
+    )
+
+    # Deterministic pruning removes unbacked [S2] and keeps [S1] answer instead of UNGROUNDED_ANSWER miss
+    assert result.found is True
+    assert "[S1]" in result.answer
+    assert "[S2]" not in result.answer
+    assert len(result.sources) == 1
+    assert result.sources[0].chunkId == "chk-1"
+
+
+def test_domain_isolation_filters_external_faq_and_cross_product() -> None:
+    it_chunk = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="AD 帳號鎖定請使用自助解鎖專區。",
+    )
+    external_chunk = DocumentChunk(
+        chunk_id="ext-1",
+        title="外部客戶線上問題",
+        source_path="sources/external.md",
+        content="外部客戶線上問題請寄送至 123@cathaysec.com.tw 處理。",
+    )
+    phone_chunk = DocumentChunk(
+        chunk_id="phone-1",
+        title="總公司IP話機操作",
+        source_path="sources/phone.md",
+        content="IP話機轉接請按 Transfer 按鍵。",
+    )
+    outlook_chunk = DocumentChunk(
+        chunk_id="outlook-1",
+        title="行動裝置 Outlook 安裝手冊（iOS）",
+        source_path="sources/outlook.md",
+        content="iOS Outlook 首次設定步驟包含 Microsoft Authenticator 驗證。",
+    )
+
+    # 1. Internal IT query excludes external customer support
+    it_results = [
+        SearchResult(chunk=it_chunk, score=0.9, sparse_score=0.9, dense_score=0.0),
+        SearchResult(chunk=external_chunk, score=0.8, sparse_score=0.8, dense_score=0.0),
+    ]
+    filtered_it = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "AD 帳號明確遭鎖定時，使用者應如何處理？",
+        it_results,
+    )
+    assert len(filtered_it) == 1
+    assert filtered_it[0].chunk.chunk_id == "ad-1"
+
+    # 2. Outlook query excludes Cisco IP phone
+    outlook_results = [
+        SearchResult(chunk=outlook_chunk, score=0.85, sparse_score=0.85, dense_score=0.0),
+        SearchResult(chunk=phone_chunk, score=0.82, sparse_score=0.82, dense_score=0.0),
+    ]
+    filtered_outlook = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "iOS Outlook 首次設定的視覺順序為何？",
+        outlook_results,
+    )
+    assert len(filtered_outlook) == 1
+    assert filtered_outlook[0].chunk.chunk_id == "outlook-1"
+
+
+def test_procedure_expansion_orders_numbered_sections(tmp_path: Path) -> None:
+    chunks = [
+        DocumentChunk(
+            chunk_id="sec-5",
+            title="行動裝置 Outlook 安裝手冊（iOS）",
+            source_path="sources/ios_outlook.md",
+            document_id="doc-ios",
+            section="5. Outlook App 設定",
+            content="5. Outlook App 設定步驟...",
+        ),
+        DocumentChunk(
+            chunk_id="sec-1",
+            title="行動裝置 Outlook 安裝手冊（iOS）",
+            source_path="sources/ios_outlook.md",
+            document_id="doc-ios",
+            section="1. 驗證程式下載、設定驗證器",
+            content="1. 驗證程式下載步驟...",
+        ),
+        DocumentChunk(
+            chunk_id="sec-2",
+            title="行動裝置 Outlook 安裝手冊（iOS）",
+            source_path="sources/ios_outlook.md",
+            document_id="doc-ios",
+            section="2. 驗證程式綁定手機 App",
+            content="2. 驗證程式綁定步驟...",
+        ),
+    ]
+    index = HybridIndex(chunks)
+    service = HybridKnowledgeService(make_settings(tmp_path), index)
+    results = [
+        SearchResult(chunk=chunks[0], score=0.9, sparse_score=0.9, dense_score=0.0),
+    ]
+    selected = service._select_document_chunks("iOS Outlook 首次設定的視覺順序為何？", results)
+    # Selected chunks should expand all numbered sections and order them naturally (1, 2, 5)
+    sections = [r.chunk.section for r in selected]
+    assert sections == [
+        "1. 驗證程式下載、設定驗證器",
+        "2. 驗證程式綁定手機 App",
+        "5. Outlook App 設定",
+    ]
+

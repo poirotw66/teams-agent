@@ -176,6 +176,9 @@ ANSWER_PROMPT = """\
     - 嚴禁將其他情境獨有的限制、注意事項或處理步驟（例如交易專屬的密碼禁令、帳務專屬的截圖隱私提醒）擅自套用至其他未提及的情境中。
     - 若該特定情境在知識內容中並未規定某事項（例如未規範專屬資料保護限制），應如實指出該情境未特別註明專屬限制，嚴禁跨情境拼貼。
     - 若使用者詢問「哪些作法不能跨類型/跨情境套用或說成既定要求」，請依據文件事實，具體指明哪些情境規範了該事項、哪些情境未規範該事項（例如：「密碼保護僅於交易問題中規範，截圖敏感資訊檢查僅於帳務問題中規範；線上資訊與報價問題並未規範上述限制，不得將個別問題類型的特定限制視為通用既定要求」）。請直接依文件事實敘述，切勿直接複誦 prompt 的規則詞句當成引用內容。
+12. 嚴格依異常情境對應專屬處置，防範混淆跨小節解法：
+    - 即使使用者提問中預設或詢問了其他章節的處置（例如詢問能否/如何執行關閉 Proxy 或特定變更），亦必須嚴格依據該具體異常現象（例如「已連線仍無法使用內網」與「Wi-Fi 瞬斷」為不同異常）所對應之專屬步驟作答。
+    - 若該處置屬於另一種異常情境之解法，應在回答中清楚指明該處置僅適用於另一情境（例如 Wi-Fi 瞬斷），目前異常應依專屬步驟處理，切勿將不同小節之處置步驟混用。
 
 使用者問題：
 {question}
@@ -302,7 +305,7 @@ _GENERIC_LEXICAL_TOKENS = frozenset(
 _OFFLINE_RELEVANCE_MIN_OVERLAP = 2
 _OFFLINE_RELEVANCE_MIN_RATIO = 0.34
 _OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
-_HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE = 0.85
+_HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE = 0.78
 _SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
 
 
@@ -492,6 +495,7 @@ class HybridKnowledgeService:
         self.model = model
         self.release_id = release_id
         self.last_llm_call_count = 0
+        self._retrieval_cache: dict[tuple[str, frozenset[str], str], list[SearchResult]] = {}
 
     async def search(
         self,
@@ -651,18 +655,25 @@ class HybridKnowledgeService:
         if state.attempt == 0 and state.facet_queries:
             queries_to_run.extend(state.facet_queries)
         retrieval_queries = tuple(dict.fromkeys(q for q in queries_to_run if q.strip()))
-        result_sets = await asyncio.gather(
-            *(
-                asyncio.to_thread(
-                    self.index.search,
-                    retrieval_query,
-                    self.settings.top_k * _RETRIEVAL_CANDIDATE_MULTIPLIER,
-                    groups,
-                    environment=self.settings.deployment_environment,
-                )
-                for retrieval_query in retrieval_queries
+        frozen_groups = frozenset(groups)
+        env = self.settings.deployment_environment
+
+        async def _search_one(query: str) -> list[SearchResult]:
+            cache_key = (query, frozen_groups, env)
+            cached = self._retrieval_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            res = await asyncio.to_thread(
+                self.index.search,
+                query,
+                self.settings.top_k * _RETRIEVAL_CANDIDATE_MULTIPLIER,
+                groups,
+                environment=env,
             )
-        )
+            self._retrieval_cache[cache_key] = res
+            return res
+
+        result_sets = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
         best_by_chunk: dict[str, SearchResult] = {}
         for prev_res in state.results:
             best_by_chunk[prev_res.chunk.chunk_id] = prev_res
@@ -728,6 +739,8 @@ class HybridKnowledgeService:
             return results
 
         normalized_query = query.casefold()
+
+        # 1. Topic FAQ scenario isolation
         target_scenario: str | None = None
         if any(term in normalized_query for term in ("報價", "五檔", "走勢圖", "行情", "k線", "faq-004")):
             target_scenario = "QUOTE"
@@ -738,31 +751,104 @@ class HybridKnowledgeService:
         elif any(term in normalized_query for term in ("線上服務", "線上問題", "登入異常", "faq-001")):
             target_scenario = "GENERAL_ONLINE"
 
-        if not target_scenario:
-            return results
+        if target_scenario:
+            def _chunk_scenario(chunk: DocumentChunk) -> str | None:
+                text = f"{chunk.section or ''} {chunk.title} {chunk.content}"
+                text_lower = text.lower()
+                if "faq-004" in text_lower or "報價問題" in text:
+                    return "QUOTE"
+                if "faq-002" in text_lower or "交易問題" in text:
+                    return "TRADE"
+                if "faq-003" in text_lower or "帳務問題" in text:
+                    return "ACCOUNTING"
+                if "faq-001" in text_lower or "外部客戶線上問題如何回報" in text:
+                    return "GENERAL_ONLINE"
+                return None
 
-        def _chunk_scenario(chunk: DocumentChunk) -> str | None:
-            text = f"{chunk.section or ''} {chunk.title} {chunk.content}"
-            text_lower = text.lower()
-            if "faq-004" in text_lower or "報價問題" in text:
-                return "QUOTE"
-            if "faq-002" in text_lower or "交易問題" in text:
-                return "TRADE"
-            if "faq-003" in text_lower or "帳務問題" in text:
-                return "ACCOUNTING"
-            if "faq-001" in text_lower or "外部客戶線上問題如何回報" in text:
-                return "GENERAL_ONLINE"
-            return None
+            matching_results = [r for r in results if _chunk_scenario(r.chunk) == target_scenario]
+            if matching_results:
+                results = [
+                    r for r in results
+                    if _chunk_scenario(r.chunk) in (target_scenario, None)
+                ]
 
-        matching_results = [r for r in results if _chunk_scenario(r.chunk) == target_scenario]
-        if not matching_results:
-            return results
+        # 2. Audience domain isolation: internal IT systems vs external customer FAQ
+        is_internal_it_query = any(
+            term in normalized_query
+            for term in (
+                "ad",
+                "自助解鎖",
+                "帳號鎖定",
+                "網域",
+                "公槽",
+                "forticlient",
+                "vpn",
+                "跳板機",
+                "outlook",
+                "teams",
+                "cisco",
+                "ip話機",
+                "話機",
+                "accessflow",
+                "門禁",
+                "打卡",
+                "e點名",
+                "內網",
+                "同仁",
+                "員工",
+            )
+        )
+        is_explicit_external_query = any(
+            term in normalized_query
+            for term in ("外部客戶", "客戶線上問題", "客戶反映", "外網交易客")
+        )
+        if is_internal_it_query and not is_explicit_external_query:
+            internal_only = [
+                r for r in results
+                if "外部客戶" not in r.chunk.title
+                and "外部客戶線上問題" not in (r.chunk.source_path or "")
+                and "123@cathaysec.com.tw" not in r.chunk.content
+            ]
+            if internal_only:
+                results = internal_only
+        elif is_explicit_external_query:
+            ext_results = [
+                r for r in results
+                if "外部客戶" in r.chunk.title or "外部客戶" in (r.chunk.section or "")
+            ]
+            if ext_results:
+                results = ext_results
 
-        filtered = [
-            r for r in results
-            if _chunk_scenario(r.chunk) in (target_scenario, None)
-        ]
-        return filtered if filtered else results
+        # 3. Product domain isolation: Outlook vs IP Phone
+        if any(term in normalized_query for term in ("outlook", "郵件", "m365", "authenticator")):
+            no_phone = [
+                r for r in results
+                if "ip話機" not in r.chunk.title.lower() and "話機" not in r.chunk.title
+            ]
+            if no_phone:
+                results = no_phone
+        elif any(term in normalized_query for term in ("ip話機", "話機", "分機", "轉接")):
+            no_outlook = [r for r in results if "outlook" not in r.chunk.title.lower()]
+            if no_outlook:
+                results = no_outlook
+
+        # 4. Platform domain isolation: iOS vs Android
+        if "ios" in normalized_query and "android" not in normalized_query:
+            ios_results = [
+                r for r in results
+                if "ios" in r.chunk.title.lower() or "ios" in (r.chunk.section or "").lower()
+            ]
+            if ios_results:
+                results = [r for r in results if "android" not in r.chunk.title.lower()]
+        elif "android" in normalized_query and "ios" not in normalized_query:
+            android_results = [
+                r for r in results
+                if "android" in r.chunk.title.lower() or "android" in (r.chunk.section or "").lower()
+            ]
+            if android_results:
+                results = [r for r in results if "ios" not in r.chunk.title.lower()]
+
+        return results
 
     def _select_document_chunks(
         self,
@@ -773,7 +859,6 @@ class HybridKnowledgeService:
         by_document: dict[str, list[SearchResult]] = {}
         for result in results:
             by_document.setdefault(self._document_key(result), []).append(result)
-        primary = _primary_distinctive_tokens(query)
 
         ranked_documents = sorted(
             by_document.values(),
@@ -790,18 +875,69 @@ class HybridKnowledgeService:
                 or self._document_has_competitive_overlap(query, leader, group)
             ]
         ranked_documents = ranked_documents[: min(self.settings.top_k, _MAX_CONTEXT_DOCUMENTS)]
+
+        is_procedure_query = any(
+            marker in query
+            for marker in (
+                "順序",
+                "步驟",
+                "首次設定",
+                "流程",
+                "安裝手冊",
+                "如何設定",
+                "安裝步驟",
+                "設定順序",
+                "視覺順序",
+                "建置順序",
+                "操作順序",
+            )
+        )
         is_multi_section_query = any(
             marker in query
             for marker in ("分別", "哪些問題類型", "跨類型", "各情境", "不同情境", "各類型", "分別規定")
         )
         max_chunks_limit = (
-            5
-            if is_multi_section_query
+            6
+            if (is_multi_section_query or is_procedure_query)
             else getattr(self.settings, "max_chunks_per_document", _MAX_CHUNKS_PER_DOCUMENT)
         )
         selected: list[SearchResult] = []
         for document_results in ranked_documents:
             canonical_version = self._canonical_version_results(document_results)
+            if is_procedure_query and len(canonical_version) >= 1:
+                doc_path = canonical_version[0].chunk.source_path
+                doc_id = canonical_version[0].chunk.document_id
+                all_doc_chunks = [
+                    chunk
+                    for chunk in self.index.chunks
+                    if (doc_id and chunk.document_id == doc_id)
+                    or (doc_path and chunk.source_path == doc_path)
+                ]
+                numbered_doc_chunks = [
+                    chunk
+                    for chunk in all_doc_chunks
+                    if chunk.section and re.match(r"^(?:[#\s]*\d+[\.\-\s]|目錄)", chunk.section.strip())
+                ]
+                if numbered_doc_chunks:
+                    existing_scores = {r.chunk.chunk_id: r.score for r in canonical_version}
+                    leader_score = max(r.score for r in canonical_version)
+                    procedure_results: list[SearchResult] = []
+                    for c in numbered_doc_chunks:
+                        sc = existing_scores.get(c.chunk_id, leader_score * 0.95)
+                        procedure_results.append(
+                            SearchResult(chunk=c, score=sc, sparse_score=0.0, dense_score=0.0)
+                        )
+
+                    def _section_sort_key(res: SearchResult) -> tuple[int, str]:
+                        sec = res.chunk.section or ""
+                        m = re.search(r"(\d+)", sec)
+                        num = int(m.group(1)) if m else 999
+                        return (num, sec)
+
+                    procedure_results.sort(key=_section_sort_key)
+                    selected.extend(procedure_results[:max_chunks_limit])
+                    continue
+
             selected.extend(
                 sorted(
                     canonical_version,
@@ -841,6 +977,30 @@ class HybridKnowledgeService:
             return results
         return [result for result in results if result.chunk.version_id == leading_version]
 
+    def _evaluate_retrieval_confidence(
+        self,
+        state: _RetrievalState,
+    ) -> tuple[str, bool]:
+        results = state.results
+        if not results or results[0].score < self.settings.min_score:
+            return ("BELOW_MIN_SCORE", False)
+
+        top = results[0]
+        query = state.resolved_issue_query
+
+        # High confidence retrieval pass when score is strong and distinctive terms overlap
+        if top.score >= _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE and (
+            high_confidence_retrieval_hit(query, top)
+            or query_lexically_matches_results(query, results)
+        ):
+            return ("HIGH_CONFIDENCE_PASS", True)
+
+        # Low confidence retrieval fail when score is poor or has no lexical match
+        if top.score < 0.60 and not query_lexically_matches_results(query, results):
+            return ("LOW_CONFIDENCE_FAIL", False)
+
+        return ("LLM_RELEVANCE", False)
+
     async def _documents_are_relevant(
         self,
         state: _RetrievalState,
@@ -849,18 +1009,29 @@ class HybridKnowledgeService:
         execution_context: ExecutionContext | None = None,
         model: BaseChatModel | None = None,
     ) -> bool:
-        results = state.results
-        answer_model = self.model if model is None else model
-        if not results or results[0].score < self.settings.min_score:
+        decision_label, is_deterministic = self._evaluate_retrieval_confidence(state)
+        if decision_label in ("BELOW_MIN_SCORE", "LOW_CONFIDENCE_FAIL"):
             for attempt in state.trace_attempts:
                 if attempt.decision is None:
-                    attempt.decision = "BELOW_MIN_SCORE"
+                    attempt.decision = decision_label
                     attempt.isRelevant = False
             return False
+
+        skip_llm = getattr(self.settings, "skip_relevance_llm_on_high_confidence", True)
+        if decision_label == "HIGH_CONFIDENCE_PASS" and skip_llm:
+            for attempt in state.trace_attempts:
+                if attempt.decision is None:
+                    attempt.decision = "HIGH_CONFIDENCE_PASS"
+                    attempt.isRelevant = True
+            return True
+
+        answer_model = self.model if model is None else model
         if not answer_model:
-            is_relevant = query_lexically_matches_results(
-                state.resolved_issue_query, results
-            ) or high_confidence_retrieval_hit(state.resolved_issue_query, results[0])
+            is_relevant = (
+                is_deterministic
+                or query_lexically_matches_results(state.resolved_issue_query, state.results)
+                or high_confidence_retrieval_hit(state.resolved_issue_query, state.results[0])
+            )
             for attempt in state.trace_attempts:
                 if attempt.decision is None:
                     attempt.decision = "DETERMINISTIC_RELEVANCE"
@@ -868,7 +1039,7 @@ class HybridKnowledgeService:
             return is_relevant
 
         context = "\n\n".join(
-            f"[{result.chunk.title}]\n{result.chunk.content}" for result in results
+            f"[{result.chunk.title}]\n{result.chunk.content}" for result in state.results
         )
 
         async def _grade() -> RelevanceDecision:
@@ -1259,10 +1430,17 @@ class HybridKnowledgeService:
             if doc_key is not None and doc_key not in ordered_cited_doc_keys:
                 ordered_cited_doc_keys.append(doc_key)
 
-        if answer_indicates_insufficient_information(answer) or not ordered_cited_doc_keys:
+        is_unsupported_miss = (
+            answer_indicates_insufficient_information(answer) and (
+                response.answerability == "NONE"
+                or not response.claims
+                or not any(not answer_indicates_insufficient_information(c.text) for c in response.claims)
+            )
+        )
+        if is_unsupported_miss or not ordered_cited_doc_keys:
             logger.warning(
-                "Knowledge answer rejected: insufficient_info=%s ordered_cited_doc_keys=%s",
-                answer_indicates_insufficient_information(answer),
+                "Knowledge answer rejected: unsupported_miss=%s ordered_cited_doc_keys=%s",
+                is_unsupported_miss,
                 ordered_cited_doc_keys,
             )
             return self._no_answer()
@@ -1274,23 +1452,11 @@ class HybridKnowledgeService:
             if chunk_id in document_by_chunk_id
         }
 
-        # Bounded claim and citation alignment repair via model:
-        response.claims = [
-            claim
-            for claim in response.claims
-            if any(
-                document_by_chunk_id.get(cid) in ordered_cited_doc_keys
-                for cid in claim.chunkIds
-            )
-        ]
-        claimed_doc_keys = {
-            document_by_chunk_id[chunk_id]
-            for claim in response.claims
-            for chunk_id in claim.chunkIds
-            if chunk_id in document_by_chunk_id
-        }
+        # Localized deterministic grounding and citation pruning:
+        cited_set = set(ordered_cited_doc_keys)
+        common_doc_keys = claimed_doc_keys & cited_set
 
-        if claimed_doc_keys != set(ordered_cited_doc_keys) and answer_model is not None:
+        if claimed_doc_keys != cited_set and answer_model is not None:
             repaired_claims = await self._repair_claims_with_model(
                 answer_model,
                 answer=answer,
@@ -1303,7 +1469,7 @@ class HybridKnowledgeService:
                     claim
                     for claim in repaired_claims
                     if any(
-                        document_by_chunk_id.get(cid) in ordered_cited_doc_keys
+                        document_by_chunk_id.get(cid) in cited_set
                         for cid in claim.chunkIds
                     )
                 ]
@@ -1313,14 +1479,36 @@ class HybridKnowledgeService:
                     for chunk_id in claim.chunkIds
                     if chunk_id in document_by_chunk_id
                 }
+                common_doc_keys = claimed_doc_keys & cited_set
 
-        if claimed_doc_keys != set(ordered_cited_doc_keys):
+        if not common_doc_keys:
             logger.warning(
-                "Knowledge answer rejected: claimed_doc_keys=%s != ordered_cited_doc_keys=%s",
+                "Knowledge answer rejected: no common doc keys between claims (%s) and citations (%s)",
                 claimed_doc_keys,
-                set(ordered_cited_doc_keys),
+                ordered_cited_doc_keys,
             )
             return self._no_answer()
+
+        # Prune claims not backed by common_doc_keys
+        response.claims = [
+            claim
+            for claim in response.claims
+            if any(
+                document_by_chunk_id.get(cid) in common_doc_keys
+                for cid in claim.chunkIds
+            )
+        ]
+
+        # Prune unbacked [S#] citations from answer text
+        def _strip_unbacked_citation(match: re.Match[str]) -> str:
+            val = int(match.group(1))
+            doc_key = _resolve_doc_key(val)
+            if doc_key in common_doc_keys:
+                return match.group(0)
+            return ""
+
+        answer = re.sub(r"\[S(\d+)\]", _strip_unbacked_citation, answer)
+        ordered_cited_doc_keys = [k for k in ordered_cited_doc_keys if k in common_doc_keys]
 
         doc_key_to_final_idx: dict[str, int] = {
             key: idx for idx, key in enumerate(ordered_cited_doc_keys, start=1)
@@ -1467,10 +1655,14 @@ class HybridKnowledgeService:
         valid_chunk_ids = {result.chunk.chunk_id for result in results}
         if not answer.claims:
             return False
-        return all(
-            claim.text.strip() and claim.chunkIds and set(claim.chunkIds) <= valid_chunk_ids
-            for claim in answer.claims
-        )
+        valid_claims = [
+            claim for claim in answer.claims
+            if claim.text.strip() and claim.chunkIds and set(claim.chunkIds) <= valid_chunk_ids
+        ]
+        if not valid_claims:
+            return False
+        answer.claims = valid_claims
+        return True
 
     @staticmethod
     def _answer_passes_safety_checks(answer: str) -> bool:

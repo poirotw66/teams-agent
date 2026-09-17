@@ -60,6 +60,7 @@ class RagSettings:
     supervisor_terminal_confidence: float = 0.9
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
+    skip_relevance_llm_on_high_confidence: bool = False
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
@@ -214,6 +215,9 @@ class RagSettings:
             or frozenset({"playground", "msteams-web"}),
             deployment_environment=(
                 _str_env("AGENT_DEPLOYMENT_ENV") or _str_env("RAG_DEPLOYMENT_ENV") or "dev"
+            ),
+            skip_relevance_llm_on_high_confidence=_bool_env(
+                "RAG_SKIP_RELEVANCE_LLM_ON_HIGH_CONFIDENCE", True
             ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
