@@ -7,7 +7,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from agent_service.documents import load_source_chunks
+from agent_service.documents import DocumentChunk, load_source_chunks
+from agent_service.knowledge_eligibility import is_generation_metadata_eligible
 from agent_service.knowledge_release_gcs import publish_release_directory
 from agent_service.release_artifacts import (
     INDEX_RELATIVE_PATH,
@@ -55,6 +56,18 @@ class ReleasePublisher:
         sources_dir = release_dir / "sources"
         sources_dir.mkdir(parents=True, exist_ok=True)
 
+        has_governed_versions = bool(published_versions)
+        published_versions = [
+            version
+            for version in published_versions
+            if is_generation_metadata_eligible(
+                content_state=version.content_state,
+                effective_at=version.effective_at,
+                expires_at=version.expires_at,
+                applicable_environments=version.applicable_environments,
+                environment=self._settings.deployment_environment,
+            )
+        ]
         manifest: list[ReleaseManifestEntry] = []
         asset_store = DraftAssetStore(self._settings)
         original_store = OriginalAssetStore(self._settings)
@@ -90,6 +103,7 @@ class ReleasePublisher:
                     ReleaseManifestEntry(
                         document_id=version.document_id,
                         version_id=version.version_id,
+                        version_number=version.version_number,
                         title=version.title,
                         content_hash=version.content_hash,
                         source_path=f"sources/{filename}",
@@ -100,6 +114,11 @@ class ReleasePublisher:
                         ),
                         artifact_ref=getattr(version, "original_artifact_ref", None),
                         acl_groups=version_acl,
+                        source_aliases=version.source_aliases,
+                        content_state=version.content_state,
+                        effective_at=version.effective_at,
+                        expires_at=version.expires_at,
+                        applicable_environments=version.applicable_environments,
                     )
                 )
 
@@ -115,9 +134,11 @@ class ReleasePublisher:
         selected_embedding = embedding_model or self._settings.embedding_model
         copy_bundled = (
             embedding_model is None
+            and not has_governed_versions
             and bundled_index_path is not None
             and bundled_index_path.is_file()
         )
+        file_search_store: str | None = None
         if copy_bundled:
             shutil.copy2(bundled_index_path, index_path)
             logger.info(
@@ -141,6 +162,31 @@ class ReleasePublisher:
                     shutil.copytree(release_assets, temp_sources / "assets")
                 for source_file in sources_dir.glob("*.md"):
                     shutil.copy2(source_file, temp_sources / source_file.name)
+                version_by_document = {
+                    version.document_id: version for version in published_versions
+                }
+                ingestion_metadata = {}
+                for entry in manifest:
+                    version = version_by_document[entry.document_id]
+                    ingestion_metadata[str(entry.source_path)] = {
+                        "documentId": entry.document_id,
+                        "versionId": entry.version_id,
+                        "versionNumber": entry.version_number,
+                        "releaseId": release_id,
+                        "allowedGroups": list(entry.acl_groups or []),
+                        "classification": "internal",
+                        "chunkingProfile": "AUTO",
+                        "sourceType": version.source_type,
+                        "sourceAliases": entry.source_aliases,
+                        "contentState": entry.content_state,
+                        "effectiveAt": entry.effective_at,
+                        "expiresAt": entry.expires_at,
+                        "applicableEnvironments": entry.applicable_environments,
+                    }
+                (temp_root / "metadata.json").write_text(
+                    json.dumps(ingestion_metadata, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
                 chunks = load_source_chunks(
                     temp_root,
                     self._settings.chunk_size,
@@ -152,6 +198,30 @@ class ReleasePublisher:
                 if selected_embedding:
                     index.add_embeddings()
                 index.save(index_path)
+                _write_parent_artifact(release_dir, chunks)
+                _write_file_search_artifact(
+                    release_dir,
+                    chunks,
+                    environment=self._settings.deployment_environment,
+                )
+                if self._settings.gemini_file_search_sync_enabled:
+                    try:
+                        from .file_search_release import (
+                            synchronize_file_search_release,
+                        )
+
+                        file_search_store = synchronize_file_search_release(
+                            release_dir,
+                            api_key=self._settings.gemini_file_search_api_key or "",
+                        )
+                    except Exception as error:
+                        raise ReleaseBuildError(
+                            f"Gemini File Search release sync failed: {error}"
+                        ) from error
+                elif self._settings.require_file_search_parity:
+                    raise ReleaseBuildError(
+                        "Gemini File Search parity is required but sync is disabled."
+                    )
 
         index_artifact = inspect_index_artifact(index_path)
         resolved_tenant_id = tenant_id or self._settings.default_tenant_id
@@ -163,6 +233,7 @@ class ReleasePublisher:
                     "schemaVersion": 1,
                     "releaseId": release_id,
                     "purpose": self._settings.release_purpose,
+                    "deploymentEnvironment": self._settings.deployment_environment,
                     "tenantId": resolved_tenant_id,
                     "createdAt": created_at.isoformat(),
                     "createdBy": created_by,
@@ -171,6 +242,13 @@ class ReleasePublisher:
                     "sourceMap": [entry.model_dump(mode="json") for entry in manifest],
                     "indexArtifact": INDEX_RELATIVE_PATH,
                     "index": index_artifact.to_manifest_dict(),
+                    "backends": {
+                        "hybrid": {"ready": True},
+                        "geminiFileSearch": {
+                            "ready": file_search_store is not None,
+                            "store": file_search_store,
+                        },
+                    },
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -231,4 +309,81 @@ class ReleasePublisher:
             vector_count=index_artifact.vector_count,
             embedding_model=index_artifact.embedding_model,
             embedding_dimensions=index_artifact.embedding_dimensions,
+            file_search_store=file_search_store,
+            hybrid_backend_ready=True,
+            file_search_backend_ready=file_search_store is not None,
         )
+
+
+def _write_parent_artifact(release_dir: Path, chunks: list[DocumentChunk]) -> None:
+    parents: dict[str, dict[str, object]] = {}
+    for chunk in chunks:
+        parent_id = chunk.parent_id
+        if not parent_id:
+            continue
+        parent = parents.setdefault(
+            parent_id,
+            {
+                "parentId": parent_id,
+                "chunkIds": [],
+                "sourcePath": chunk.source_path,
+                "pageStart": chunk.page,
+                "pageEnd": chunk.page_end,
+            },
+        )
+        parent["chunkIds"].append(chunk.chunk_id)
+    path = release_dir / "index" / "parents.json"
+    path.write_text(
+        json.dumps({"schemaVersion": 1, "parents": list(parents.values())}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _write_file_search_artifact(
+    release_dir: Path,
+    chunks: list[DocumentChunk],
+    *,
+    environment: str,
+) -> None:
+    staging_dir = release_dir / "file-search"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, object]] = []
+    for chunk in chunks:
+        chunk_id = chunk.chunk_id
+        slug = f"{chunk_id}.md"
+        (staging_dir / slug).write_text(
+            chunk.content,
+            encoding="utf-8",
+        )
+        entries.append(
+            {
+                "slug": slug,
+                "releaseId": chunk.release_id,
+                "documentId": chunk.document_id,
+                "versionId": chunk.version_id,
+                "versionNumber": chunk.version_number,
+                "chunkId": chunk_id,
+                "sourcePath": chunk.source_path,
+                "parentId": chunk.parent_id,
+                "page": chunk.page,
+                "allowedGroups": list(chunk.allowed_groups),
+                "contentHash": chunk.content_hash,
+                "sourceAliases": chunk.source_aliases,
+                "contentState": chunk.content_state,
+                "effectiveAt": chunk.effective_at,
+                "expiresAt": chunk.expires_at,
+                "applicableEnvironments": chunk.applicable_environments,
+            }
+        )
+    (staging_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "deploymentEnvironment": environment,
+                "documents": entries,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )

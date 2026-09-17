@@ -101,6 +101,7 @@ class KnowledgeDocumentRecord(StrictModel):
     classification: str = "internal"
     audience_type: AudienceType = "ALL_EMPLOYEES"
     audience_group_ids: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
     current_published_version_id: str | None = None
     draft_version_id: str | None = None
     status: DocumentLifecycleStatus = "DRAFT"
@@ -117,7 +118,7 @@ class KnowledgeVersionRecord(StrictModel):
     version_id: str
     document_id: str
     version_number: int
-    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
+    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF", "DOCX"] = "MARKDOWN_PASTE"
     content_hash: str
     canonical_content: str
     change_summary: str = ""
@@ -126,6 +127,10 @@ class KnowledgeVersionRecord(StrictModel):
     review_due_at: str
     audience_type: AudienceType = "ALL_EMPLOYEES"
     audience_group_ids: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
+    content_state: Literal["ACTIVE", "TEST", "PLACEHOLDER", "RETIRED"] = "ACTIVE"
+    expires_at: str | None = None
+    applicable_environments: list[str] = Field(default_factory=list)
     owner_unit_id: str
     business_contact: str = ""
     category: str = ""
@@ -183,6 +188,7 @@ class TestRunRecord(StrictModel):
 class ReleaseManifestEntry(StrictModel):
     document_id: str
     version_id: str
+    version_number: int | None = None
     title: str
     content_hash: str
     # The release manifest is also the source map consumed by citation
@@ -193,6 +199,11 @@ class ReleaseManifestEntry(StrictModel):
     original_asset_name: str | None = None
     artifact_ref: str | None = None
     acl_groups: list[str] | None = None
+    source_aliases: list[str] = Field(default_factory=list)
+    content_state: Literal["ACTIVE", "TEST", "PLACEHOLDER", "RETIRED"] = "ACTIVE"
+    effective_at: str | None = None
+    expires_at: str | None = None
+    applicable_environments: list[str] = Field(default_factory=list)
 
 
 class ReleaseRecord(StrictModel):
@@ -221,6 +232,9 @@ class ReleaseRecord(StrictModel):
     vector_count: int = 0
     embedding_model: str | None = None
     embedding_dimensions: int | None = None
+    file_search_store: str | None = None
+    hybrid_backend_ready: bool = False
+    file_search_backend_ready: bool = False
 
 
 class AuditEventRecord(StrictModel):
@@ -261,12 +275,16 @@ class CreateDocumentRequest(StrictModel):
     business_contact: str = Field(default="", max_length=256)
     audience_type: AudienceType = "ALL_EMPLOYEES"
     audience_group_ids: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
+    content_state: Literal["ACTIVE", "TEST", "PLACEHOLDER", "RETIRED"] = "ACTIVE"
+    expires_at: str | None = Field(default=None, max_length=32)
+    applicable_environments: list[str] = Field(default_factory=list)
     effective_at: str = Field(min_length=1, max_length=32)
     review_due_at: str = Field(min_length=1, max_length=32)
     change_summary: str = Field(default="", max_length=512)
     change_reason: str = Field(min_length=1, max_length=2000)
     markdown_content: str = Field(min_length=1)
-    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF"] = "MARKDOWN_PASTE"
+    source_type: Literal["MARKDOWN_PASTE", "MARKDOWN_UPLOAD", "PDF", "DOCX"] = "MARKDOWN_PASTE"
     assets: list[CreateDocumentAsset] = Field(default_factory=list)
     original_asset_token: str | None = None
 
@@ -274,6 +292,11 @@ class CreateDocumentRequest(StrictModel):
     @classmethod
     def normalize_group_ids(cls, value: list[str]) -> list[str]:
         return [item.strip() for item in value if item.strip()]
+
+    @field_validator("source_aliases", "applicable_environments")
+    @classmethod
+    def normalize_governance_values(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
 
 
 class UpdateDraftRequest(StrictModel):
@@ -285,11 +308,25 @@ class UpdateDraftRequest(StrictModel):
     business_contact: str = Field(default="", max_length=256)
     audience_type: AudienceType = "ALL_EMPLOYEES"
     audience_group_ids: list[str] = Field(default_factory=list)
+    source_aliases: list[str] = Field(default_factory=list)
+    content_state: Literal["ACTIVE", "TEST", "PLACEHOLDER", "RETIRED"] = "ACTIVE"
+    expires_at: str | None = Field(default=None, max_length=32)
+    applicable_environments: list[str] = Field(default_factory=list)
     effective_at: str = Field(min_length=1, max_length=32)
     review_due_at: str = Field(min_length=1, max_length=32)
     change_summary: str = Field(default="", max_length=512)
     change_reason: str = Field(min_length=1, max_length=2000)
     markdown_content: str = Field(min_length=1)
+
+    @field_validator("audience_group_ids")
+    @classmethod
+    def normalize_group_ids(cls, value: list[str]) -> list[str]:
+        return [item.strip() for item in value if item.strip()]
+
+    @field_validator("source_aliases", "applicable_environments")
+    @classmethod
+    def normalize_governance_values(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
 
 
 class SubmitReviewRequest(StrictModel):
@@ -339,6 +376,14 @@ class DraftAssetRecord(StrictModel):
     size_bytes: int
     content_type: str
     sha256: str
+
+
+class ChunkPreviewImage(StrictModel):
+    path: str
+    filename: str
+    alt_text: str
+    content_type: str
+    url: str
 
 
 class DraftAssetListResponse(StrictModel):

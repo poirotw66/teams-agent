@@ -82,7 +82,9 @@ class VersionService:
             )
 
         if idempotency_key:
-            scope_key = f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
+            scope_key = (
+                f"create_doc::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
+            )
             payload_hash = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
             status, cached = await self._ctx.claim_idempotency(scope_key, payload_hash)
             if status == "CACHED" and cached is not None:
@@ -97,7 +99,7 @@ class VersionService:
             document_id = new_id("doc")
             version_id = new_id("ver")
             asset_slug = slug_from_title(request.title)
-            _, assets_root = self._ctx.validation_context(
+            _, assets_root = await self._ctx.validation_context(
                 document_id=document_id,
                 version_id=version_id,
                 title=request.title,
@@ -110,9 +112,7 @@ class VersionService:
                     try:
                         payload = base64.b64decode(asset.content_base64, validate=False)
                     except Exception as exc:
-                        raise ValueError(
-                            f"Invalid base64 for asset {asset.filename}."
-                        ) from exc
+                        raise ValueError(f"Invalid base64 for asset {asset.filename}.") from exc
                     store.save_asset(
                         document_id=document_id,
                         version_id=version_id,
@@ -142,8 +142,10 @@ class VersionService:
 
             original_metadata: dict[str, Any] = {}
             if request.original_asset_token:
-                if request.source_type != "PDF":
-                    raise ValueError("Original asset token is only valid for PDF documents.")
+                if request.source_type not in {"PDF", "DOCX"}:
+                    raise ValueError(
+                        "Original asset token is only valid for PDF or DOCX documents."
+                    )
                 original_metadata = original_store.commit_pending(
                     request.original_asset_token,
                     document_id=document_id,
@@ -177,6 +179,10 @@ class VersionService:
                 review_due_at=request.review_due_at,
                 audience_type=request.audience_type,
                 audience_group_ids=request.audience_group_ids,
+                source_aliases=request.source_aliases,
+                content_state=request.content_state,
+                expires_at=request.expires_at,
+                applicable_environments=request.applicable_environments,
                 owner_unit_id=request.owner_unit_id,
                 business_contact=request.business_contact,
                 category=request.category,
@@ -199,6 +205,7 @@ class VersionService:
                 business_contact=request.business_contact,
                 audience_type=request.audience_type,
                 audience_group_ids=request.audience_group_ids,
+                source_aliases=request.source_aliases,
                 draft_version_id=version_id,
                 status="DRAFT",
                 etag=new_etag(document_id, 1),
@@ -263,7 +270,7 @@ class VersionService:
         if version.status not in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
             raise ValueError("Draft version is locked for editing.")
 
-        asset_slug, assets_root = self._ctx.validation_context(
+        asset_slug, assets_root = await self._ctx.validation_context(
             document_id=document_id,
             version_id=version.version_id,
             title=request.title,
@@ -311,6 +318,10 @@ class VersionService:
                 "business_contact": request.business_contact,
                 "audience_type": request.audience_type,
                 "audience_group_ids": request.audience_group_ids,
+                "source_aliases": request.source_aliases,
+                "content_state": request.content_state,
+                "expires_at": request.expires_at,
+                "applicable_environments": request.applicable_environments,
                 "change_summary": request.change_summary,
                 "change_reason": request.change_reason,
                 "effective_at": request.effective_at,
@@ -333,6 +344,7 @@ class VersionService:
                 "business_contact": request.business_contact,
                 "audience_type": request.audience_type,
                 "audience_group_ids": request.audience_group_ids,
+                "source_aliases": request.source_aliases,
                 "status": "DRAFT",
                 "updated_at": utc_now(),
                 "updated_by": actor.user_id,
@@ -347,19 +359,25 @@ class VersionService:
             target_type="document",
             target_id=document_id,
             correlation_id=correlation_id,
-            before={"status": document.status, "title": document.title, "category": document.category},
-            after={"status": updated_document.status, "title": updated_document.title, "category": updated_document.category},
+            before={
+                "status": document.status,
+                "title": document.title,
+                "category": document.category,
+            },
+            after={
+                "status": updated_document.status,
+                "title": updated_document.title,
+                "category": updated_document.category,
+            },
         )
         return await self._document_service.get_document(actor, document_id)
 
-    async def validate_document(
-        self, actor: PortalActor, document_id: str
-    ) -> ValidationSummary:
+    async def validate_document(self, actor: PortalActor, document_id: str) -> ValidationSummary:
         detail = await self._document_service.get_document(actor, document_id)
         if detail.draft_version is None:
             raise ValueError("Document has no draft version to validate.")
         version = detail.draft_version
-        asset_slug, assets_root = self._ctx.validation_context(
+        asset_slug, assets_root = await self._ctx.validation_context(
             document_id=document_id,
             version_id=version.version_id,
             title=version.title,
@@ -392,18 +410,14 @@ class VersionService:
         detail = await self._document_service.get_document(actor, document_id)
         document = detail.document
         if document.status == "IN_REVIEW":
-            raise ValueError(
-                "Documents in review cannot be removed. Approve or reject first."
-            )
+            raise ValueError("Documents in review cannot be removed. Approve or reject first.")
         ensure_can_remove_document(
             actor,
             document,
             relaxed_workflow=self._settings.effective_relaxed_workflow(),
         )
         if document.current_published_version_id and document.status == "PUBLISHED":
-            raise ValueError(
-                "Published documents must be unpublished instead of discarded."
-            )
+            raise ValueError("Published documents must be unpublished instead of discarded.")
 
         now = utc_now()
         if detail.draft_version is not None:
@@ -476,6 +490,10 @@ class VersionService:
             review_due_at=published.review_due_at,
             audience_type=published.audience_type,
             audience_group_ids=published.audience_group_ids,
+            source_aliases=published.source_aliases,
+            content_state=published.content_state,
+            expires_at=published.expires_at,
+            applicable_environments=published.applicable_environments,
             owner_unit_id=published.owner_unit_id,
             business_contact=published.business_contact,
             category=published.category,
@@ -517,7 +535,10 @@ class VersionService:
             target_id=document_id,
             correlation_id=correlation_id,
             before={"status": document.status, "draftVersionId": document.draft_version_id},
-            after={"status": updated_document.status, "draftVersionId": updated_document.draft_version_id},
+            after={
+                "status": updated_document.status,
+                "draftVersionId": updated_document.draft_version_id,
+            },
         )
         return await self._document_service.get_document(actor, document_id)
 
@@ -610,9 +631,7 @@ class VersionService:
         )
         return test_run
 
-    async def list_test_cases(
-        self, actor: PortalActor, document_id: str
-    ) -> list[TestCaseRecord]:
+    async def list_test_cases(self, actor: PortalActor, document_id: str) -> list[TestCaseRecord]:
         detail = await self._document_service.get_document(actor, document_id)
         if detail.draft_version is None:
             return []

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -74,6 +77,124 @@ def test_create_and_list_document(portal_client: TestClient) -> None:
     assert listing.json()["items"][0]["document_id"] == document_id
 
 
+def test_versioned_chunk_preview_keeps_page_hierarchy(
+    portal_client: TestClient,
+) -> None:
+    payload = sample_document_payload()
+    payload["markdown_content"] = (
+        "## Page 1\n# Architecture\n\n"
+        "The governed runtime keeps retrieval and authorization together.\n\n"
+        "## Page 2\n# Release\n\n"
+        "A candidate must pass evaluation before activation."
+    )
+    created = portal_client.post(
+        "/api/documents",
+        json=payload,
+        headers=portal_headers(),
+    )
+    document_id = created.json()["document"]["document_id"]
+
+    preview = portal_client.get(
+        f"/api/v1/documents/{document_id}/chunk-preview?profile=SLIDE_DECK",
+        headers=portal_headers(),
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["profile"] == "SLIDE_DECK"
+    assert preview.json()["quality"]["coverageRatio"] == 1
+    assert [chunk["pageStart"] for chunk in preview.json()["chunks"]] == [1, 2]
+
+
+def test_chunk_preview_excludes_generated_archive_metadata(
+    portal_client: TestClient,
+) -> None:
+    payload = sample_document_payload()
+    payload["markdown_content"] = (
+        "---\n"
+        "title: Platform guide\n"
+        "category: IT Service Guide\n"
+        "---\n\n"
+        "# Platform guide\n\n"
+        "## Archive metadata\n"
+        "- **Filename**: `platform.pdf`\n"
+        "- **Pages**: 14\n"
+        "---\n\n"
+        "## Canonical content\n\n"
+        + "This governed instruction contains sufficient operational detail. "
+        * 30
+    )
+    created = portal_client.post(
+        "/api/documents",
+        json=payload,
+        headers=portal_headers(),
+    )
+    document_id = created.json()["document"]["document_id"]
+
+    preview = portal_client.get(
+        f"/api/v1/documents/{document_id}/chunk-preview?profile=MANUAL",
+        headers=portal_headers(),
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["quality"]["acceptable"] is True
+    assert all("Archive metadata" not in chunk["content"] for chunk in preview.json()["chunks"])
+    assert all("qualityIssues" in chunk for chunk in preview.json()["chunks"])
+
+
+def test_versioned_chunk_preview_serves_referenced_draft_image(
+    portal_client: TestClient,
+) -> None:
+    payload = sample_document_payload()
+    payload["markdown_content"] = "# VPN\n\n![Connection status](assets/p01.png)"
+    payload["assets"] = [
+        {
+            "filename": "p01.png",
+            "content_base64": base64.b64encode(b"png-image").decode("ascii"),
+        }
+    ]
+    created = portal_client.post(
+        "/api/documents",
+        json=payload,
+        headers=portal_headers(),
+    )
+    document_id = created.json()["document"]["document_id"]
+    version_id = created.json()["draft_version"]["version_id"]
+
+    preview = portal_client.get(
+        f"/api/v1/documents/{document_id}/versions/{version_id}/chunk-preview",
+        headers=portal_headers(),
+    )
+
+    assert preview.status_code == 200
+    image = preview.json()["chunks"][0]["images"][0]
+    assert image["filename"] == "p01.png"
+    response = portal_client.get(
+        image["url"].replace("/api/knowledge/", "/api/", 1),
+        headers=portal_headers(),
+    )
+    assert response.status_code == 200
+    assert response.content == b"png-image"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_versioned_asset_rejects_wrong_version(
+    portal_client: TestClient,
+) -> None:
+    created = portal_client.post(
+        "/api/documents",
+        json=sample_document_payload(),
+        headers=portal_headers(),
+    )
+    document_id = created.json()["document"]["document_id"]
+
+    response = portal_client.get(
+        f"/api/v1/documents/{document_id}/versions/ver-other/assets/p01.png",
+        headers=portal_headers(),
+    )
+
+    assert response.status_code == 404
+
+
 def test_validation_blocks_empty_content(portal_client: TestClient) -> None:
     payload = sample_document_payload()
     payload["markdown_content"] = "   "
@@ -138,7 +259,13 @@ def _text_pdf_bytes(text: str) -> bytes:
 def test_import_text_pdf(portal_client: TestClient) -> None:
     response = portal_client.post(
         "/api/documents/import-pdf",
-        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN login troubleshooting steps"), "application/pdf")},
+        files={
+            "file": (
+                "vpn-guide.pdf",
+                _text_pdf_bytes("VPN login troubleshooting steps"),
+                "application/pdf",
+            )
+        },
         headers=portal_headers(),
     )
     assert response.status_code == 200
@@ -160,7 +287,9 @@ def test_imported_pdf_original_is_bound_to_version_and_release(tmp_path) -> None
 
     imported = client.post(
         "/api/documents/import-pdf",
-        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN original source"), "application/pdf")},
+        files={
+            "file": ("vpn-guide.pdf", _text_pdf_bytes("VPN original source"), "application/pdf")
+        },
         headers=headers,
     )
     assert imported.status_code == 200
@@ -176,6 +305,7 @@ def test_imported_pdf_original_is_bound_to_version_and_release(tmp_path) -> None
             "effective_at": import_body["effective_at"],
             "review_due_at": import_body["review_due_at"],
             "markdown_content": import_body["markdown_content"],
+            "assets": import_body["assets"],
             "source_type": "PDF",
             "original_asset_token": import_body["original_asset_token"],
         }
@@ -255,6 +385,59 @@ def test_release_index_includes_corpus_images(tmp_path: Path) -> None:
     assert (tmp_path / "releases" / "release-corpus-images" / "assets" / slug / "p02.png").is_file()
 
 
+def test_release_excludes_ineligible_versions_from_both_backends(
+    tmp_path: Path,
+) -> None:
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "data_dir", tmp_path)
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "portal_drafts")
+    object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "deployment_environment", "prod")
+    created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    def version(
+        document_id: str,
+        *,
+        content_state: Literal["ACTIVE", "TEST", "PLACEHOLDER", "RETIRED"],
+    ) -> KnowledgeVersionRecord:
+        return KnowledgeVersionRecord(
+            version_id=f"ver-{document_id}",
+            document_id=document_id,
+            version_number=1,
+            content_hash=f"hash-{document_id}",
+            canonical_content=f"# {document_id}\n\nVPN {document_id} instructions.",
+            effective_at="2026-01-01",
+            review_due_at="2026-12-31",
+            owner_unit_id="IT Service Desk",
+            title=document_id,
+            content_state=content_state,
+            applicable_environments=["prod"],
+            etag=f"etag-{document_id}",
+            created_at=created_at,
+            created_by="author.one",
+        )
+
+    ReleasePublisher(settings).build_release(
+        release_id="release-eligibility",
+        published_versions=[
+            version("approved", content_state="ACTIVE"),
+            version("placeholder", content_state="PLACEHOLDER"),
+        ],
+        created_by="author.one",
+        previous_release_id=None,
+    )
+
+    release_dir = tmp_path / "releases" / "release-eligibility"
+    index = HybridIndex.load(release_dir / "index" / "chunks.json")
+    file_search = json.loads(
+        (release_dir / "file-search" / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert {chunk.document_id for chunk in index.chunks} == {"approved"}
+    assert {entry["documentId"] for entry in file_search["documents"]} == {"approved"}
+
+
 def test_import_scanned_pdf_is_rejected(portal_client: TestClient) -> None:
     from io import BytesIO
 
@@ -326,7 +509,7 @@ def test_markdown_upload_update_publish_and_governed_removal(tmp_path) -> None:
         {
             "etag": created.json()["document"]["etag"],
             "title": imported_data["title"],
-            "markdown_content": f'{imported_data["markdown_content"]}\n\n## Updated\n\nUse MFA.',
+            "markdown_content": f"{imported_data['markdown_content']}\n\n## Updated\n\nUse MFA.",
             "change_summary": "Markdown update",
             "change_reason": "Refresh uploaded Markdown",
         }
@@ -400,13 +583,20 @@ def test_pdf_publish_workflow(portal_client: TestClient, tmp_path) -> None:
 
     imported = client.post(
         "/api/documents/import-pdf",
-        files={"file": ("vpn-guide.pdf", _text_pdf_bytes("VPN password reset guide"), "application/pdf")},
+        files={
+            "file": (
+                "vpn-guide.pdf",
+                _text_pdf_bytes("VPN password reset guide"),
+                "application/pdf",
+            )
+        },
         headers=portal_headers(user_id="manager.demo", name="Manager Demo", role="MANAGER"),
     )
     assert imported.status_code == 200
     payload = sample_document_payload()
     payload["title"] = imported.json()["title"]
     payload["markdown_content"] = imported.json()["markdown_content"]
+    payload["assets"] = imported.json()["assets"]
     payload["change_reason"] = "Import text PDF"
 
     create = client.post(
@@ -460,7 +650,7 @@ def test_pdf_publish_workflow(portal_client: TestClient, tmp_path) -> None:
         {
             "etag": revised_detail["document"]["etag"],
             "title": imported.json()["title"],
-            "markdown_content": f'{imported.json()["markdown_content"]}\n\n## Updated\n\nVPN v2.',
+            "markdown_content": f"{imported.json()['markdown_content']}\n\n## Updated\n\nVPN v2.",
             "change_summary": "PDF revision v2",
             "change_reason": "Refresh PDF guidance",
         }
