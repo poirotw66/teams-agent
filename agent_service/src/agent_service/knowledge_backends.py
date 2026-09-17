@@ -115,6 +115,11 @@ class KnowledgeBackendRouter:
 
     def update_service(self, backend: str, service: KnowledgeService) -> None:
         self._services[backend] = service
+        self._unavailable.pop(backend, None)
+
+    def remove_service(self, backend: str, reason: str) -> None:
+        self._services.pop(backend, None)
+        self._unavailable[backend] = reason
 
     async def select(self, backend: str) -> None:
         if backend not in self._services:
@@ -161,6 +166,8 @@ class KnowledgeBackendRouter:
             kwargs["call_counter"] = call_counter
         if "execution_context" in parameters:
             kwargs["execution_context"] = execution_context
+        if request is not None and "request" in parameters:
+            kwargs["request"] = request
         if answer_model is not None and "answer_model" in parameters:
             kwargs["answer_model"] = answer_model
         return await service.search(query, user_context, **kwargs)

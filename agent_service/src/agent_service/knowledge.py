@@ -31,7 +31,14 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
+from .contracts import (
+    EVALUATION_EVIDENCE_CHANNEL,
+    AgentImage,
+    AgentRequest,
+    Citation,
+    KnowledgeResult,
+    UserContext,
+)
 from .execution_context import (
     ExecutionContext,
     RequestDeadlineExceeded,
@@ -296,17 +303,12 @@ def _has_competitive_query_overlap(
 ) -> bool:
     query_tokens = _primary_distinctive_tokens(query)
     leader_tokens = set(tokenize(f"{leader.chunk.title}\n{leader.chunk.content}"))
-    candidate_tokens = set(
-        tokenize(f"{candidate.chunk.title}\n{candidate.chunk.content}")
-    )
+    candidate_tokens = set(tokenize(f"{candidate.chunk.title}\n{candidate.chunk.content}"))
     leader_overlap_count = len(query_tokens & leader_tokens)
     if not leader_overlap_count:
         return False
     candidate_overlap_count = len(query_tokens & candidate_tokens)
-    return (
-        candidate_overlap_count / leader_overlap_count
-        >= _DOCUMENT_QUERY_OVERLAP_RATIO
-    )
+    return candidate_overlap_count / leader_overlap_count >= _DOCUMENT_QUERY_OVERLAP_RATIO
 
 
 def answer_indicates_insufficient_information(answer: str) -> bool:
@@ -340,6 +342,7 @@ class KnowledgeService(Protocol):
         correlation_id: str | None = None,
         call_counter: LlmCallCounter | None = None,
         execution_context: ExecutionContext | None = None,
+        request: AgentRequest | None = None,
     ) -> KnowledgeResult: ...
 
 
@@ -375,6 +378,7 @@ class HybridKnowledgeService:
         call_counter: LlmCallCounter | None = None,
         execution_context: ExecutionContext | None = None,
         answer_model: BaseChatModel | None = None,
+        request: AgentRequest | None = None,
     ) -> KnowledgeResult:
         counter = (
             execution_context.llm_calls
@@ -383,6 +387,9 @@ class HybridKnowledgeService:
         )
         groups = set(user_context.groups)
         model = self.model if answer_model is None else answer_model
+        include_retrieval_evidence = (
+            request is not None and request.channel == EVALUATION_EVIDENCE_CHANNEL
+        )
 
         state = _RetrievalState(query=query)
         state = await self._retrieve(state, groups)
@@ -393,7 +400,11 @@ class HybridKnowledgeService:
                     state, counter, execution_context=execution_context, model=model
                 ):
                     result = await self._generate(
-                        state, counter, execution_context=execution_context, model=model
+                        state,
+                        counter,
+                        execution_context=execution_context,
+                        model=model,
+                        include_retrieval_evidence=include_retrieval_evidence,
                     )
                     self.last_llm_call_count = counter.count
                     return result
@@ -460,8 +471,7 @@ class HybridKnowledgeService:
         second_result = results[1]
         has_dominant_document = (
             self._document_key(second_result) == top_document
-            and second_result.score
-            >= results[0].score * _DOCUMENT_DOMINANCE_SECOND_SCORE_RATIO
+            and second_result.score >= results[0].score * _DOCUMENT_DOMINANCE_SECOND_SCORE_RATIO
         )
         if not has_dominant_document:
             return results
@@ -539,7 +549,12 @@ class HybridKnowledgeService:
 
     # --- citations / images ---------------------------------------------
 
-    def _citation_for(self, result: SearchResult) -> Citation:
+    def _citation_for(
+        self,
+        result: SearchResult,
+        *,
+        evidence_results: list[SearchResult] | None = None,
+    ) -> Citation:
         release_id = result.chunk.release_id or self.release_id
         source_ref_id = make_source_ref_id(
             release_id=release_id,
@@ -557,6 +572,11 @@ class HybridKnowledgeService:
             source_ref_id=source_ref_id,
         )
         page = result.chunk.page if (result.chunk.page or 0) >= 1 else None
+        evidence = (
+            self._retrieval_evidence(evidence_results)
+            if evidence_results is not None
+            else result.chunk.content[:2400] or None
+        )
         return Citation(
             title=result.chunk.title,
             url=url,
@@ -568,7 +588,7 @@ class HybridKnowledgeService:
             sourcePath=source_path,
             section=result.chunk.section,
             page=page,
-            evidence=result.chunk.content[:2400] if result.chunk.content else None,
+            evidence=evidence,
             sourceType=(
                 result.chunk.source_type
                 or ("PDF" if result.chunk.original_asset_available else "DERIVED_MARKDOWN")
@@ -578,10 +598,24 @@ class HybridKnowledgeService:
         )
 
     @staticmethod
+    def _retrieval_evidence(results: list[SearchResult]) -> str | None:
+        chunks = [
+            f"[chunkId={result.chunk.chunk_id}]\n{result.chunk.content}"
+            for result in results
+            if result.chunk.content
+        ]
+        return "\n\n".join(chunks) or None
+
+    @staticmethod
     def _document_key(result: SearchResult) -> str:
         return (result.chunk.source_path or "").strip() or result.chunk.title.strip()
 
-    def _unique_citations(self, results: list[SearchResult]) -> list[Citation]:
+    def _unique_citations(
+        self,
+        results: list[SearchResult],
+        *,
+        include_retrieval_evidence: bool,
+    ) -> list[Citation]:
         citations: list[Citation] = []
         seen: set[str] = set()
         for result in results:
@@ -589,14 +623,28 @@ class HybridKnowledgeService:
             if doc_key in seen:
                 continue
             seen.add(doc_key)
-            citations.append(self._citation_for(result))
+            document_results = [
+                candidate for candidate in results if self._document_key(candidate) == doc_key
+            ]
+            citations.append(
+                self._citation_for(
+                    result,
+                    evidence_results=(document_results if include_retrieval_evidence else None),
+                )
+            )
         return citations
 
     def _deterministic_grounded_answer(
-        self, results: list[SearchResult]
+        self,
+        results: list[SearchResult],
+        *,
+        include_retrieval_evidence: bool,
     ) -> KnowledgeResult:
         selected_results = results[:2]
-        citations = self._unique_citations(selected_results)
+        citations = self._unique_citations(
+            selected_results,
+            include_retrieval_evidence=include_retrieval_evidence,
+        )
         excerpts = "\n\n".join(
             f"[S{index}] {citation.title}\n{selected_results[index - 1].chunk.content}"
             if index <= len(selected_results)
@@ -661,6 +709,7 @@ class HybridKnowledgeService:
         *,
         execution_context: ExecutionContext | None = None,
         model: BaseChatModel | None = None,
+        include_retrieval_evidence: bool,
     ) -> KnowledgeResult:
         results = state.results
         answer_model = self.model if model is None else model
@@ -676,7 +725,10 @@ class HybridKnowledgeService:
             chunk_to_doc_idx.append(unique_doc_keys.index(key) + 1)
 
         if not answer_model:
-            return self._deterministic_grounded_answer(results)
+            return self._deterministic_grounded_answer(
+                results,
+                include_retrieval_evidence=include_retrieval_evidence,
+            )
 
         context = "\n\n".join(
             f"[S{chunk_to_doc_idx[index]}] {result.chunk.title}\n{result.chunk.content}"
@@ -725,7 +777,10 @@ class HybridKnowledgeService:
             # answer either declared a miss or failed to ground itself in a
             # valid [Sx] marker, so candidate sources/images are misleading.
             if high_confidence_retrieval_hit(state.query, results[0]):
-                return self._deterministic_grounded_answer(results)
+                return self._deterministic_grounded_answer(
+                    results,
+                    include_retrieval_evidence=include_retrieval_evidence,
+                )
             return self._no_answer()
 
         doc_key_to_final_idx: dict[str, int] = {
@@ -744,8 +799,15 @@ class HybridKnowledgeService:
 
         sources: list[Citation] = []
         for doc_key in ordered_cited_doc_keys:
-            rep_result = next(r for r in results if self._document_key(r) == doc_key)
-            sources.append(self._citation_for(rep_result))
+            document_results = [
+                result for result in results if self._document_key(result) == doc_key
+            ]
+            sources.append(
+                self._citation_for(
+                    document_results[0],
+                    evidence_results=(document_results if include_retrieval_evidence else None),
+                )
+            )
 
         cited_results = [
             result for result in results if self._document_key(result) in ordered_cited_doc_keys

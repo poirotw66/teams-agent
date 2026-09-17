@@ -5,12 +5,17 @@ from __future__ import annotations
 import hmac
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 
 from fastapi import FastAPI, Header, HTTPException
 
 from .graph import RagAgent
 from .knowledge_backends import KnowledgeBackendRouter
-from .knowledge_release import read_active_release_id, release_index_path
+from .knowledge_release import (
+    manifest_file_search_store,
+    read_active_release_id,
+    release_index_path,
+)
 from .release_artifacts import MANIFEST_FILENAME, validate_release_artifacts
 from .retrieval import HybridIndex
 from .settings import RagSettings
@@ -34,15 +39,32 @@ def make_authorize(resolved_settings: RagSettings) -> Callable[..., None]:
     return authorize
 
 
-def sync_knowledge_to_active_pointer(
-    target_app: FastAPI, resolved_settings: RagSettings
-) -> bool:
+def make_evaluation_authorize(
+    resolved_settings: RagSettings,
+) -> Callable[..., None]:
+    """Build a fail-closed capability check for full evaluation evidence."""
+
+    expected = resolved_settings.golden_evaluation_token
+    service_token = resolved_settings.service_token
+    if expected and service_token and hmac.compare_digest(expected, service_token):
+        raise ValueError("GOLDEN_EVALUATION_TOKEN must differ from AGENT_SERVICE_TOKEN")
+
+    def authorize(authorization: str | None = Header(default=None)) -> None:
+        if not expected:
+            raise HTTPException(status_code=404, detail="Not found.")
+        scheme, _, token = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
+            raise HTTPException(status_code=401, detail="Invalid evaluation token.")
+
+    return authorize
+
+
+def sync_knowledge_to_active_pointer(target_app: FastAPI, resolved_settings: RagSettings) -> bool:
     """Reload the in-memory index when the portal active-release pointer moves."""
     if resolved_settings.knowledge_release_store_mode == "GCS":
         return False
-    release_dir = (
-        resolved_settings.knowledge_release_dir
-        or (resolved_settings.data_dir / "releases")
+    release_dir = resolved_settings.knowledge_release_dir or (
+        resolved_settings.data_dir / "releases"
     )
     active_release_id = read_active_release_id(release_dir)
     if not active_release_id:
@@ -93,6 +115,27 @@ def sync_knowledge_to_active_pointer(
         )
         router: KnowledgeBackendRouter = target_app.state.knowledge_router
         router.update_service("HYBRID", new_hybrid_service)
+        file_search_store = manifest_file_search_store(release_path)
+        if file_search_store:
+            file_search_settings = replace(
+                resolved_settings,
+                knowledge_service_mode="GEMINI_FILE_SEARCH",
+                gemini_file_search_store=file_search_store,
+            )
+            router.update_service(
+                "GEMINI_FILE_SEARCH",
+                build_knowledge_service(
+                    file_search_settings,
+                    new_index,
+                    target_app.state.rag_model,
+                    release_id=active_release_id,
+                ),
+            )
+        else:
+            router.remove_service(
+                "GEMINI_FILE_SEARCH",
+                "此知識版本沒有通過驗證的 Gemini File Search 綁定。",
+            )
 
         target_app.state.index = new_index
         target_app.state.knowledge_index_path = target_index_path

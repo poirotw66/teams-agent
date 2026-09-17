@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage
 
-from agent_service.contracts import UserContext
+from agent_service.contracts import (
+    EVALUATION_EVIDENCE_CHANNEL,
+    AgentRequest,
+    ConversationIdentity,
+    MessageContent,
+    UserContext,
+    UserIdentity,
+)
 from agent_service.documents import DocumentChunk, DocumentImage
 from agent_service.execution_context import ExecutionContext
 from agent_service.knowledge import (
@@ -42,6 +49,16 @@ def make_user(groups: list[str] | None = None) -> UserContext:
         displayName="Test User",
         email="user@example.com",
         groups=groups or [],
+    )
+
+
+def make_evaluation_request() -> AgentRequest:
+    return AgentRequest(
+        requestId="evaluation-request",
+        channel=EVALUATION_EVIDENCE_CHANNEL,
+        conversation=ConversationIdentity(tenantId="tenant-1"),
+        user=UserIdentity(teamsUserId="evaluation-user"),
+        message=MessageContent(text="Evaluate this question."),
     )
 
 
@@ -158,11 +175,7 @@ async def test_cited_text_chunk_supplements_images_from_same_document(
     service = HybridKnowledgeService(
         make_settings(tmp_path, top_k=1),
         index,
-        model=FakeChatModel(
-            answer_text=(
-                "通話中按 Transfer，撥號後接通再按軟鍵[會談]。[S1]"
-            )
-        ),
+        model=FakeChatModel(answer_text=("通話中按 Transfer，撥號後接通再按軟鍵[會談]。[S1]")),
     )
 
     result = await service.search("公司話機三方通話設定方式", make_user())
@@ -750,7 +763,11 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
     model = InspectingFakeChatModel(relevant=True)
     service = HybridKnowledgeService(make_settings(tmp_path, top_k=5), index, model=model)
 
-    result = await service.search("Teams 無法登入", make_user())
+    result = await service.search(
+        "Teams 無法登入",
+        make_user(),
+        request=make_evaluation_request(),
+    )
 
     assert result.found is True
     system_prompt = recorded_messages[0].content
@@ -767,6 +784,11 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
     assert len(result.sources) == 2
     assert result.sources[0].title == "員工 IT 支援服務手冊"
     assert result.sources[1].title == "AD 帳號與系統解鎖 FAQ"
+    assert result.sources[0].evidence is not None
+    assert "[chunkId=a1]" in result.sources[0].evidence
+    assert "[chunkId=a2]" in result.sources[0].evidence
+    assert "[chunkId=a3]" not in result.sources[0].evidence
+    assert "[chunkId=b1]" not in result.sources[0].evidence
 
 
 @pytest.mark.asyncio
@@ -813,6 +835,7 @@ async def test_hybrid_search_remaps_chunk_markers_to_document_citations(
     assert len(result.sources) == 2
     assert result.sources[0].title == "員工 IT 支援服務手冊"
     assert result.sources[1].title == "AD 帳號與系統解鎖 FAQ"
+    assert result.sources[0].evidence == "Teams 無法登入 登出排除步驟。"
 
 
 @pytest.mark.asyncio
@@ -847,4 +870,3 @@ async def test_hybrid_search_single_document_cited_renumbers_to_s1(
     assert result.answer == "請檢查印表機驅動程式設定 [S1]。"
     assert len(result.sources) == 1
     assert result.sources[0].title == "印表機手冊"
-

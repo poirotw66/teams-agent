@@ -15,9 +15,7 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 def _csv_env(name: str) -> frozenset[str]:
-    return frozenset(
-        value.strip() for value in environ.get(name, "").split(",") if value.strip()
-    )
+    return frozenset(value.strip() for value in environ.get(name, "").split(",") if value.strip())
 
 
 def _int_env(name: str, default: int) -> int:
@@ -48,6 +46,7 @@ class RagSettings:
     allowed_tenants: frozenset[str] = frozenset()
     source_base_url: str | None = None
     service_token: str | None = None
+    golden_evaluation_token: str | None = None
     max_images: int = 2
 
     # --- Issue / cost controls (spec §4.2, §6.3, §16) ---
@@ -149,15 +148,11 @@ class RagSettings:
     def from_env(cls) -> "RagSettings":
         project_dir = Path(__file__).resolve().parents[2]
         data_dir = Path(environ.get("RAG_DATA_DIR", project_dir.parent / "data"))
-        index_path = Path(
-            environ.get("RAG_INDEX_PATH", data_dir / "index" / "chunks.json")
-        )
+        index_path = Path(environ.get("RAG_INDEX_PATH", data_dir / "index" / "chunks.json"))
         conversation_store_path = Path(
             environ.get("CONVERSATION_STORE_PATH", data_dir / "conversations")
         )
-        handoff_store_path = Path(
-            environ.get("HANDOFF_STORE_PATH", data_dir / "handoffs")
-        )
+        handoff_store_path = Path(environ.get("HANDOFF_STORE_PATH", data_dir / "handoffs"))
         faq_path = Path(environ.get("FAQ_PATH", data_dir / "faq.json"))
         faq_governed_store_path = Path(
             environ.get(
@@ -186,6 +181,7 @@ class RagSettings:
                 or environ.get("SERVICE_TOKEN", "").strip()
                 or None
             ),
+            golden_evaluation_token=_str_env("GOLDEN_EVALUATION_TOKEN"),
             max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
             max_issues_per_message=_int_env("MAX_ISSUES_PER_MESSAGE", 3),
             max_missing_info_per_issue=_int_env("MAX_MISSING_INFO_PER_ISSUE", 2),
@@ -207,34 +203,24 @@ class RagSettings:
             gemini_file_search_model=(
                 _str_env("GEMINI_FILE_SEARCH_MODEL") or "gemini-3.5-flash-lite"
             ),
-            gemini_file_search_enforce_acl=_bool_env(
-                "GEMINI_FILE_SEARCH_ENFORCE_ACL", True
-            ),
+            gemini_file_search_enforce_acl=_bool_env("GEMINI_FILE_SEARCH_ENFORCE_ACL", True),
             rag_require_file_search_acl=_bool_env("RAG_REQUIRE_FILE_SEARCH_ACL", False),
-            knowledge_backend_state_mode=(
-                _str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"
-            ),
+            knowledge_backend_state_mode=(_str_env("KNOWLEDGE_BACKEND_STATE_MODE") or "MEMORY"),
             knowledge_backend_state_collection=(
                 _str_env("KNOWLEDGE_BACKEND_STATE_COLLECTION") or "runtime_config"
             ),
-            knowledge_backend_admin_enabled=_bool_env(
-                "KNOWLEDGE_BACKEND_ADMIN_ENABLED", True
-            ),
+            knowledge_backend_admin_enabled=_bool_env("KNOWLEDGE_BACKEND_ADMIN_ENABLED", True),
             knowledge_evaluation_channels=_csv_env("KNOWLEDGE_EVALUATION_CHANNELS")
             or frozenset({"playground", "msteams-web"}),
             deployment_environment=(
-                _str_env("AGENT_DEPLOYMENT_ENV")
-                or _str_env("RAG_DEPLOYMENT_ENV")
-                or "dev"
+                _str_env("AGENT_DEPLOYMENT_ENV") or _str_env("RAG_DEPLOYMENT_ENV") or "dev"
             ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),
             ticket_service_token=_str_env("TICKET_SERVICE_TOKEN"),
             ticket_service_timeout_seconds=_float_env("TICKET_SERVICE_TIMEOUT_SECONDS", 10.0),
-            ticket_request_dedupe_mode=(
-                _str_env("TICKET_REQUEST_DEDUPE_MODE") or "MEMORY"
-            ),
+            ticket_request_dedupe_mode=(_str_env("TICKET_REQUEST_DEDUPE_MODE") or "MEMORY"),
             ticket_request_dedupe_collection=(
                 _str_env("TICKET_REQUEST_DEDUPE_COLLECTION") or "ticket_request_ledger"
             ),
@@ -257,28 +243,19 @@ class RagSettings:
             conversation_firestore_collection=(
                 _str_env("CONVERSATION_FIRESTORE_COLLECTION") or "conversations"
             ),
-            handoff_repository_mode=(
-                _str_env("HANDOFF_REPOSITORY_MODE") or "MEMORY"
-            ),
+            handoff_repository_mode=(_str_env("HANDOFF_REPOSITORY_MODE") or "MEMORY"),
             handoff_store_path=handoff_store_path.expanduser().resolve(),
             handoff_firestore_project=_str_env("HANDOFF_FIRESTORE_PROJECT"),
             handoff_firestore_database=_str_env("HANDOFF_FIRESTORE_DATABASE"),
-            handoff_firestore_collection=(
-                _str_env("HANDOFF_FIRESTORE_COLLECTION") or "handoffs"
-            ),
+            handoff_firestore_collection=(_str_env("HANDOFF_FIRESTORE_COLLECTION") or "handoffs"),
             handoff_demo_timeout_hours=_int_env("HANDOFF_DEMO_TIMEOUT_HOURS", 24),
             handoff_retention_days=_int_env("HANDOFF_RETENTION_DAYS", 365),
             faq_path=faq_path.expanduser().resolve(),
-            faq_runtime_mode=(
-                _str_env("FAQ_RUNTIME_MODE") or "LEGACY_JSON"
-            ).upper(),
-            faq_governed_store_mode=(
-                _str_env("AI_OPS_FAQ_STORE_MODE") or "FILE"
-            ).upper(),
+            faq_runtime_mode=(_str_env("FAQ_RUNTIME_MODE") or "LEGACY_JSON").upper(),
+            faq_governed_store_mode=(_str_env("AI_OPS_FAQ_STORE_MODE") or "FILE").upper(),
             faq_governed_store_path=faq_governed_store_path.expanduser().resolve(),
             faq_firestore_project=(
-                _str_env("AI_OPS_FAQ_FIRESTORE_PROJECT")
-                or _str_env("GOOGLE_CLOUD_PROJECT")
+                _str_env("AI_OPS_FAQ_FIRESTORE_PROJECT") or _str_env("GOOGLE_CLOUD_PROJECT")
             ),
             faq_firestore_database=_str_env("AI_OPS_FAQ_FIRESTORE_DATABASE"),
             faq_firestore_collection_prefix=(
@@ -288,15 +265,15 @@ class RagSettings:
             show_turn_cost=_bool_env("SHOW_TURN_COST", True),
             show_turn_cost_playground=_bool_env("SHOW_TURN_COST_PLAYGROUND", False),
             usd_twd_exchange_rate=_float_env("USD_TWD_EXCHANGE_RATE", 31.70),
-            knowledge_release_mode=(
-                _str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO"
-            ).upper(),
+            knowledge_release_mode=(_str_env("KNOWLEDGE_RELEASE_MODE") or "AUTO").upper(),
             knowledge_release_dir=Path(
                 environ.get(
                     "KNOWLEDGE_RELEASE_DIR",
                     data_dir / "releases",
                 )
-            ).expanduser().resolve(),
+            )
+            .expanduser()
+            .resolve(),
             knowledge_active_release_id=_str_env("KNOWLEDGE_ACTIVE_RELEASE_ID"),
             knowledge_release_require_manifest=_bool_env(
                 "KNOWLEDGE_RELEASE_REQUIRE_MANIFEST",
@@ -313,28 +290,23 @@ class RagSettings:
             knowledge_release_gcs_prefix=(
                 _str_env("KNOWLEDGE_RELEASE_GCS_PREFIX") or "knowledge-releases"
             ).strip("/"),
-            knowledge_release_tenant_id=(
-                _str_env("KNOWLEDGE_RELEASE_TENANT_ID") or "default"
-            ),
+            knowledge_release_tenant_id=(_str_env("KNOWLEDGE_RELEASE_TENANT_ID") or "default"),
             knowledge_release_cache_dir=Path(
                 environ.get(
                     "KNOWLEDGE_RELEASE_CACHE_DIR",
                     data_dir / "knowledge_cache",
                 )
-            ).expanduser().resolve(),
-            knowledge_release_firestore_project=_str_env(
-                "KNOWLEDGE_RELEASE_FIRESTORE_PROJECT"
-            ),
-            knowledge_release_firestore_database=_str_env(
-                "KNOWLEDGE_RELEASE_FIRESTORE_DATABASE"
-            ),
+            )
+            .expanduser()
+            .resolve(),
+            knowledge_release_firestore_project=_str_env("KNOWLEDGE_RELEASE_FIRESTORE_PROJECT"),
+            knowledge_release_firestore_database=_str_env("KNOWLEDGE_RELEASE_FIRESTORE_DATABASE"),
             knowledge_release_firestore_config_collection=(
                 _str_env("KNOWLEDGE_RELEASE_FIRESTORE_CONFIG_COLLECTION")
                 or "knowledge_portal_config"
             ),
             knowledge_release_firestore_releases_collection=(
-                _str_env("KNOWLEDGE_RELEASE_FIRESTORE_RELEASES_COLLECTION")
-                or "knowledge_releases"
+                _str_env("KNOWLEDGE_RELEASE_FIRESTORE_RELEASES_COLLECTION") or "knowledge_releases"
             ),
             prompt_runtime_mode=(_str_env("PROMPT_RUNTIME_MODE") or "GOVERNED").upper(),
             prompt_governance_store_mode=(
@@ -345,17 +317,15 @@ class RagSettings:
                     "AI_OPS_GOVERNANCE_STORE_PATH",
                     data_dir / "ops" / "phase3" / "governance.json",
                 )
-            ).expanduser().resolve(),
+            )
+            .expanduser()
+            .resolve(),
             prompt_governance_firestore_project=(
-                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_PROJECT")
-                or _str_env("GOOGLE_CLOUD_PROJECT")
+                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_PROJECT") or _str_env("GOOGLE_CLOUD_PROJECT")
             ),
-            prompt_governance_firestore_database=_str_env(
-                "AI_OPS_GOVERNANCE_FIRESTORE_DATABASE"
-            ),
+            prompt_governance_firestore_database=_str_env("AI_OPS_GOVERNANCE_FIRESTORE_DATABASE"),
             prompt_governance_firestore_collection=(
-                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION")
-                or "ai_ops_governance_state"
+                _str_env("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION") or "ai_ops_governance_state"
             ),
         )
         settings.validate()
@@ -395,34 +365,22 @@ class RagSettings:
         if not 1 <= self.conversation_retention_days <= 365:
             raise ValueError("CONVERSATION_RETENTION_DAYS must be between 1 and 365.")
         if not 0.5 <= self.supervisor_terminal_confidence <= 1:
-            raise ValueError(
-                "SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1."
-            )
+            raise ValueError("SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1.")
         if not 1 <= self.max_llm_calls_per_request <= 20:
             raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
         if not 0 <= self.max_retrieval_rewrites <= 3:
             raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
 
         if self.faq_runtime_mode not in {"LEGACY_JSON", "GOVERNED"}:
-            raise ValueError(
-                "FAQ_RUNTIME_MODE must be one of LEGACY_JSON or GOVERNED."
-            )
+            raise ValueError("FAQ_RUNTIME_MODE must be one of LEGACY_JSON or GOVERNED.")
         if self.faq_governed_store_mode not in {"FILE", "FIRESTORE"}:
-            raise ValueError(
-                "AI_OPS_FAQ_STORE_MODE must be one of FILE or FIRESTORE."
-            )
+            raise ValueError("AI_OPS_FAQ_STORE_MODE must be one of FILE or FIRESTORE.")
         if not self.faq_firestore_collection_prefix.strip():
-            raise ValueError(
-                "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not be blank."
-            )
+            raise ValueError("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not be blank.")
         if "/" in self.faq_firestore_collection_prefix:
-            raise ValueError(
-                "AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not contain '/'."
-            )
+            raise ValueError("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not contain '/'.")
         if self.prompt_runtime_mode not in {"CODE_BASELINE", "GOVERNED"}:
-            raise ValueError(
-                "PROMPT_RUNTIME_MODE must be one of CODE_BASELINE or GOVERNED."
-            )
+            raise ValueError("PROMPT_RUNTIME_MODE must be one of CODE_BASELINE or GOVERNED.")
         if self.prompt_governance_store_mode not in {
             "FILE",
             "FIRESTORE",
@@ -434,18 +392,12 @@ class RagSettings:
                 "FIRESTORE_SHARDED, or FIRESTORE_SPLIT."
             )
         if not self.prompt_governance_firestore_collection.strip():
-            raise ValueError(
-                "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not be blank."
-            )
+            raise ValueError("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not be blank.")
         if "/" in self.prompt_governance_firestore_collection:
-            raise ValueError(
-                "AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not contain '/'."
-            )
+            raise ValueError("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not contain '/'.")
 
         if self.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
-            raise ValueError(
-                "KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH."
-            )
+            raise ValueError("KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH.")
         if (
             self.rag_require_file_search_acl
             and self.gemini_file_search_store
@@ -456,9 +408,7 @@ class RagSettings:
                 "when GEMINI_FILE_SEARCH_STORE is configured."
             )
         if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
-            raise ValueError(
-                "KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE."
-            )
+            raise ValueError("KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE.")
         if not self.knowledge_backend_state_collection.strip():
             raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not be blank.")
         if "/" in self.knowledge_backend_state_collection:
@@ -476,17 +426,13 @@ class RagSettings:
         if not 1 <= self.ticket_service_timeout_seconds <= 60:
             raise ValueError("TICKET_SERVICE_TIMEOUT_SECONDS must be between 1 and 60.")
         if self.ticket_request_dedupe_mode not in {"MEMORY", "FIRESTORE"}:
-            raise ValueError(
-                "TICKET_REQUEST_DEDUPE_MODE must be one of MEMORY or FIRESTORE."
-            )
+            raise ValueError("TICKET_REQUEST_DEDUPE_MODE must be one of MEMORY or FIRESTORE.")
         if not self.ticket_request_dedupe_collection.strip():
             raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not be blank.")
         if "/" in self.ticket_request_dedupe_collection:
             raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not contain '/'.")
         if not 1 <= self.ticket_request_dedupe_retention_days <= 365:
-            raise ValueError(
-                "TICKET_REQUEST_DEDUPE_RETENTION_DAYS must be between 1 and 365."
-            )
+            raise ValueError("TICKET_REQUEST_DEDUPE_RETENTION_DAYS must be between 1 and 365.")
 
         if self.conversation_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
             raise ValueError(
@@ -500,9 +446,7 @@ class RagSettings:
             raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not contain '/'.")
 
         if self.handoff_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
-            raise ValueError(
-                "HANDOFF_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE."
-            )
+            raise ValueError("HANDOFF_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE.")
         if not self.handoff_firestore_collection.strip():
             raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not be blank.")
         if "/" in self.handoff_firestore_collection:
@@ -512,24 +456,14 @@ class RagSettings:
         if not 1 <= self.handoff_retention_days <= 365:
             raise ValueError("HANDOFF_RETENTION_DAYS must be between 1 and 365.")
         if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
-            raise ValueError(
-                "KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO."
-            )
+            raise ValueError("KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO.")
         if self.knowledge_release_store_mode not in {"FILE", "GCS"}:
+            raise ValueError("KNOWLEDGE_RELEASE_STORE_MODE must be one of FILE or GCS.")
+        if self.knowledge_release_store_mode == "GCS" and not self.knowledge_release_gcs_bucket:
             raise ValueError(
-                "KNOWLEDGE_RELEASE_STORE_MODE must be one of FILE or GCS."
-            )
-        if (
-            self.knowledge_release_store_mode == "GCS"
-            and not self.knowledge_release_gcs_bucket
-        ):
-            raise ValueError(
-                "KNOWLEDGE_RELEASE_GCS_BUCKET is required when "
-                "KNOWLEDGE_RELEASE_STORE_MODE=GCS."
+                "KNOWLEDGE_RELEASE_GCS_BUCKET is required when KNOWLEDGE_RELEASE_STORE_MODE=GCS."
             )
         if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
-            raise ValueError(
-                "AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod."
-            )
+            raise ValueError("AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod.")
         if self.usd_twd_exchange_rate <= 0:
             raise ValueError("USD_TWD_EXCHANGE_RATE must be greater than 0.")

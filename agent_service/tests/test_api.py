@@ -11,7 +11,11 @@ from agent_service.settings import RagSettings
 from agent_service.workflow import INITIAL_STAGE_LABEL, STAGE_LABELS
 
 
-def make_settings(tmp_path: Path, token: str | None = None) -> RagSettings:
+def make_settings(
+    tmp_path: Path,
+    token: str | None = None,
+    evaluation_token: str | None = None,
+) -> RagSettings:
     sources = tmp_path / "sources"
     sources.mkdir()
     (sources / "vpn.md").write_text(
@@ -23,6 +27,7 @@ def make_settings(tmp_path: Path, token: str | None = None) -> RagSettings:
         index_path=tmp_path / "index" / "chunks.json",
         min_score=0.05,
         service_token=token,
+        golden_evaluation_token=evaluation_token,
     )
 
 
@@ -51,6 +56,7 @@ def test_ready_and_chat_endpoints(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "VPN 密碼被鎖" in response.json()["answer"]
     assert response.json()["citations"][0]["title"] == "VPN 處理方式"
+    assert "[chunkId=" not in response.json()["citations"][0]["evidence"]
 
 
 def test_service_token_is_required_when_configured(tmp_path: Path) -> None:
@@ -69,6 +75,66 @@ def test_service_token_is_required_when_configured(tmp_path: Path) -> None:
     assert accepted.status_code == 200
 
 
+def test_evaluation_chat_requires_distinct_capability_token(tmp_path: Path) -> None:
+    payload = {
+        "requestId": "evaluation-request",
+        "channel": "evaluation",
+        "conversation": {
+            "tenantId": "tenant-1",
+            "conversationId": "evaluation-conversation",
+        },
+        "user": {"entraObjectId": "evaluation-user", "groups": []},
+        "message": {"text": "VPN 密碼被鎖怎麼辦？", "locale": "zh-TW"},
+    }
+    settings = make_settings(tmp_path, evaluation_token="evaluation-token")
+    with TestClient(create_app(settings)) as client:
+        rejected = client.post("/agent/evaluation/chat", json=payload)
+        accepted = client.post(
+            "/agent/evaluation/chat",
+            headers={"Authorization": "Bearer evaluation-token"},
+            json=payload,
+        )
+
+    assert rejected.status_code == 401
+    assert accepted.status_code == 200
+    evidence = accepted.json()["citations"][0]["evidence"]
+    assert "[chunkId=" in evidence
+
+
+def test_evaluation_chat_is_disabled_without_capability_token(tmp_path: Path) -> None:
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post("/agent/evaluation/chat", json={})
+
+    assert response.status_code == 404
+
+
+def test_regular_chat_rejects_reserved_evaluation_channel(tmp_path: Path) -> None:
+    payload = {
+        "requestId": "reserved-channel-request",
+        "channel": "__golden_evaluation__",
+        "conversation": {"tenantId": "tenant-1"},
+        "user": {"entraObjectId": "user-1", "groups": []},
+        "message": {"text": "VPN 密碼被鎖怎麼辦？", "locale": "zh-TW"},
+    }
+    with TestClient(create_app(make_settings(tmp_path))) as client:
+        response = client.post("/agent/chat", json=payload)
+        stream_response = client.post("/agent/chat/stream", json=payload)
+
+    assert response.status_code == 400
+    assert stream_response.status_code == 400
+
+
+def test_evaluation_token_must_differ_from_service_token(tmp_path: Path) -> None:
+    settings = make_settings(
+        tmp_path,
+        token="shared-token",
+        evaluation_token="shared-token",
+    )
+
+    with pytest.raises(ValueError, match="must differ"):
+        create_app(settings)
+
+
 def test_knowledge_backend_control_reports_unconfigured_gemini(tmp_path: Path) -> None:
     with TestClient(create_app(make_settings(tmp_path, token="test-token"))) as client:
         rejected = client.get("/admin/knowledge-backend")
@@ -85,9 +151,7 @@ def test_knowledge_backend_control_reports_unconfigured_gemini(tmp_path: Path) -
     assert rejected.status_code == 401
     assert status.status_code == 200
     assert status.json()["activeBackend"] == "HYBRID"
-    gemini = next(
-        item for item in status.json()["options"] if item["id"] == "GEMINI_FILE_SEARCH"
-    )
+    gemini = next(item for item in status.json()["options"] if item["id"] == "GEMINI_FILE_SEARCH")
     assert gemini["available"] is False
     assert switched.status_code == 409
     assert "GEMINI_FILE_SEARCH_STORE" in switched.json()["detail"]
@@ -221,7 +285,9 @@ def test_chat_omits_turn_cost_when_disabled(tmp_path: Path) -> None:
     assert body["costComplete"] is None
 
 
-def test_playground_omits_turn_cost_by_default_but_still_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_playground_omits_turn_cost_by_default_but_still_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     logged: list[object] = []
 
     def _capture(summary: object) -> None:
@@ -280,6 +346,7 @@ def test_chat_stream_requires_the_service_token_when_configured(tmp_path: Path) 
 def test_chat_stream_reports_a_workflow_failure_as_an_error_event(tmp_path: Path) -> None:
     app = create_app(make_settings(tmp_path))
     with TestClient(app) as client:
+
         async def boom(*_args, **_kwargs):
             raise RuntimeError("knowledge backend is down")
             yield  # pragma: no cover - makes this an async generator

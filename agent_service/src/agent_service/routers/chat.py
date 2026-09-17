@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.callbacks import get_usage_metadata_callback
 
-from ..contracts import AgentRequest, AgentResponse
+from ..contracts import EVALUATION_EVIDENCE_CHANNEL, AgentRequest, AgentResponse
 from ..deps import sync_knowledge_to_active_pointer
 from ..settings import RagSettings
 from ..workflow import INITIAL_STAGE_LABEL, AgentWorkflow
@@ -28,13 +28,9 @@ def register_chat_routes(
     *,
     resolved_settings: RagSettings,
     authorize: Callable[..., None],
+    authorize_evaluation: Callable[..., None],
 ) -> None:
-    @app.post(
-        "/agent/chat",
-        response_model=AgentResponse,
-        dependencies=[Depends(authorize)],
-    )
-    async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
+    async def execute_chat(payload: AgentRequest, request: Request) -> AgentResponse:
         from agent_service.operations.policy_runtime import (
             PolicySourceUnavailableError,
             get_policy_runtime,
@@ -68,7 +64,10 @@ def register_chat_routes(
                 usage_metadata = usage_callback.usage_metadata
             except Exception as error:
                 log_chat_failure(
-                    payload, correlation_id, error, started_at,
+                    payload,
+                    correlation_id,
+                    error,
+                    started_at,
                     ops_runtime=getattr(request.app.state, "ops_runtime", None),
                 )
                 raise HTTPException(
@@ -89,7 +88,10 @@ def register_chat_routes(
                 )
             except Exception as error:
                 log_chat_failure(
-                    payload, correlation_id, error, started_at,
+                    payload,
+                    correlation_id,
+                    error,
+                    started_at,
                     ops_runtime=getattr(request.app.state, "ops_runtime", None),
                 )
                 raise HTTPException(
@@ -104,6 +106,28 @@ def register_chat_routes(
                 resolved_settings=resolved_settings,
                 cost_summary=cost_summary,
             )
+
+    @app.post(
+        "/agent/chat",
+        response_model=AgentResponse,
+        dependencies=[Depends(authorize)],
+    )
+    async def chat(payload: AgentRequest, request: Request) -> AgentResponse:
+        if payload.channel == EVALUATION_EVIDENCE_CHANNEL:
+            raise HTTPException(status_code=400, detail="Reserved channel.")
+        return await execute_chat(payload, request)
+
+    @app.post(
+        "/agent/evaluation/chat",
+        response_model=AgentResponse,
+        dependencies=[Depends(authorize_evaluation)],
+    )
+    async def evaluation_chat(
+        payload: AgentRequest,
+        request: Request,
+    ) -> AgentResponse:
+        evaluation_payload = payload.model_copy(update={"channel": EVALUATION_EVIDENCE_CHANNEL})
+        return await execute_chat(evaluation_payload, request)
 
     @app.post(
         "/agent/chat/stream",
@@ -123,6 +147,8 @@ def register_chat_routes(
         starts -- bad service token, disallowed tenant -- is still a real HTTP
         error, because those checks run before the response begins.
         """
+        if payload.channel == EVALUATION_EVIDENCE_CHANNEL:
+            raise HTTPException(status_code=400, detail="Reserved channel.")
         sync_knowledge_to_active_pointer(request.app, resolved_settings)
         authorize_tenant(payload, resolved_settings)
         correlation_id = start_chat(payload)
@@ -166,7 +192,10 @@ def register_chat_routes(
                     usage_metadata = usage_callback.usage_metadata
                 except Exception as error:  # noqa: BLE001 - cannot re-raise mid-stream, see docstring
                     log_chat_failure(
-                        payload, correlation_id, error, started_at,
+                        payload,
+                        correlation_id,
+                        error,
+                        started_at,
                         ops_runtime=getattr(request.app.state, "ops_runtime", None),
                     )
                     yield sse(
@@ -182,7 +211,10 @@ def register_chat_routes(
                     # The graph completed without yielding a terminal state. Treat
                     # it as a failure rather than shipping an empty answer.
                     log_chat_failure(
-                        payload, correlation_id, RuntimeError("no state"), started_at,
+                        payload,
+                        correlation_id,
+                        RuntimeError("no state"),
+                        started_at,
                         ops_runtime=getattr(request.app.state, "ops_runtime", None),
                     )
                     yield sse(
@@ -203,11 +235,16 @@ def register_chat_routes(
                         started_at,
                         resolved_settings=resolved_settings,
                         ops_runtime=getattr(request.app.state, "ops_runtime", None),
-                        knowledge_release_id=getattr(request.app.state, "knowledge_release_id", None),
+                        knowledge_release_id=getattr(
+                            request.app.state, "knowledge_release_id", None
+                        ),
                     )
                 except Exception as error:  # noqa: BLE001 - HTTP status is already committed
                     log_chat_failure(
-                        payload, correlation_id, error, started_at,
+                        payload,
+                        correlation_id,
+                        error,
+                        started_at,
                         ops_runtime=getattr(request.app.state, "ops_runtime", None),
                     )
                     yield sse(

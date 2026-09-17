@@ -19,7 +19,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from .contracts import AgentImage, Citation, KnowledgeResult, UserContext
+from .contracts import (
+    EVALUATION_EVIDENCE_CHANNEL,
+    AgentImage,
+    AgentRequest,
+    Citation,
+    KnowledgeResult,
+    UserContext,
+)
 from .execution_context import (
     ExecutionContext,
     RequestDeadlineExceeded,
@@ -111,9 +118,7 @@ class GeminiFileSearchKnowledgeService:
         enforce_acl: bool = True,
     ) -> None:
         if not file_search_store:
-            raise ValueError(
-                "file_search_store is required (GEMINI_FILE_SEARCH_STORE)."
-            )
+            raise ValueError("file_search_store is required (GEMINI_FILE_SEARCH_STORE).")
         self.api_key = api_key
         self.file_search_store = file_search_store
         self.model = model
@@ -157,6 +162,7 @@ class GeminiFileSearchKnowledgeService:
         call_counter: LlmCallCounter | None = None,
         execution_context: ExecutionContext | None = None,
         metadata_filter: str | None = None,
+        request: AgentRequest | None = None,
     ) -> KnowledgeResult:
         """Run a grounded query against the configured File Search store.
 
@@ -309,16 +315,26 @@ class GeminiFileSearchKnowledgeService:
                 if identity is not None and identity.release_id
                 else None
             )
+            chunk_id = identity.chunk_id if identity is not None else chunk.document_name
+            include_retrieval_evidence = (
+                request is not None and request.channel == EVALUATION_EVIDENCE_CHANNEL
+            )
+            evidence = None
+            if include_retrieval_evidence:
+                evidence = (
+                    f"[chunkId={chunk_id}]\n{chunk.text}" if chunk_id and chunk.text else chunk.text
+                )
             sources.append(
                 Citation(
                     title=self._resolve_title(chunk.title),
                     url=None if source_ref_id else chunk.uri,
-                    chunkId=identity.chunk_id if identity is not None else chunk.document_name,
+                    chunkId=chunk_id,
                     sourceRefId=source_ref_id,
                     documentId=identity.document_id if identity is not None else None,
                     versionId=identity.version_id if identity is not None else None,
                     releaseId=identity.release_id if identity is not None else None,
                     sourcePath=source_path,
+                    evidence=evidence,
                 )
             )
         return KnowledgeResult(
@@ -380,9 +396,7 @@ class GeminiFileSearchKnowledgeService:
         return images
 
     @staticmethod
-    def _canonicalize_legacy_terms(
-        answer: str, chunks: list[GeminiGroundingChunk]
-    ) -> str:
+    def _canonicalize_legacy_terms(answer: str, chunks: list[GeminiGroundingChunk]) -> str:
         """Repair a known naming error in the legacy helpdesk-store upload."""
         if any(chunk.title.startswith("xiaozhou-") for chunk in chunks):
             return answer.replace("小州", "大州").replace("大洲", "大州")

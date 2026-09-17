@@ -28,6 +28,9 @@ class MessageContent(StrictModel):
     locale: str | None = None
 
 
+EVALUATION_EVIDENCE_CHANNEL = "__golden_evaluation__"
+
+
 class AgentRequest(StrictModel):
     requestId: str = Field(min_length=1, max_length=128)
     channel: str = Field(min_length=1, max_length=64)
@@ -188,9 +191,9 @@ class ConversationMessage(StrictModel):
     createdAt: datetime
     requestId: str | None = None
     correlationId: str | None = None
-    followUpState: Literal[
-        "NONE", "AWAITING_CLARIFICATION", "AWAITING_TICKET_CONFIRMATION"
-    ] = "NONE"
+    followUpState: Literal["NONE", "AWAITING_CLARIFICATION", "AWAITING_TICKET_CONFIRMATION"] = (
+        "NONE"
+    )
     pendingIssues: list[PendingIssueContext] = Field(default_factory=list)
 
 
@@ -301,4 +304,3 @@ class ReloadKnowledgeRequest(StrictModel):
     @property
     def target_release_id(self) -> str | None:
         return self.releaseId or self.release_id
-

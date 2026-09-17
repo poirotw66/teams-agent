@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .deps import make_authorize
+from .deps import make_authorize, make_evaluation_authorize
 from .lifespan import build_lifespan
 from .routers import (
     register_chat_routes,
@@ -21,6 +21,7 @@ from .settings import RagSettings
 def create_app(settings: RagSettings | None = None) -> FastAPI:
     resolved_settings = settings or RagSettings.from_env()
     authorize = make_authorize(resolved_settings)
+    authorize_evaluation = make_evaluation_authorize(resolved_settings)
 
     app = FastAPI(
         title="Teams Agentic RAG Service",
@@ -29,20 +30,17 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
     )
 
     register_health_routes(app, resolved_settings=resolved_settings)
-    register_knowledge_admin_routes(
-        app, resolved_settings=resolved_settings, authorize=authorize
-    )
-    register_model_control_routes(
-        app, resolved_settings=resolved_settings, authorize=authorize
-    )
+    register_knowledge_admin_routes(app, resolved_settings=resolved_settings, authorize=authorize)
+    register_model_control_routes(app, resolved_settings=resolved_settings, authorize=authorize)
     register_chat_routes(
-        app, resolved_settings=resolved_settings, authorize=authorize
+        app,
+        resolved_settings=resolved_settings,
+        authorize=authorize,
+        authorize_evaluation=authorize_evaluation,
     )
     register_ops_health_routes(app, authorize=authorize)
     register_feedback_routes(app, authorize=authorize)
-    register_retrieval_routes(
-        app, resolved_settings=resolved_settings, authorize=authorize
-    )
+    register_retrieval_routes(app, resolved_settings=resolved_settings, authorize=authorize)
 
     return app
 

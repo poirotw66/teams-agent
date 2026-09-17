@@ -38,7 +38,7 @@ def default_knowledge_retriever(
     query_tokens = [t.lower() for t in query.split() if len(t) > 1]
     cjk_chars = [ch for ch in query if "\u4e00" <= ch <= "\u9fff" or ch.isalnum()]
     for i in range(len(cjk_chars) - 1):
-        query_tokens.append("".join(cjk_chars[i:i + 2]).lower())
+        query_tokens.append("".join(cjk_chars[i : i + 2]).lower())
     if not query_tokens:
         query_tokens = [query.lower()]
     matched_chunks: list[dict[str, Any]] = []
@@ -48,18 +48,21 @@ def default_knowledge_retriever(
         title = str(chunk.get("title", "")).lower()
         score = sum(1 for tok in query_tokens if tok in content or tok in title)
         if score > 0:
-            matched_chunks.append({
-                "chunk_id": chunk.get("chunk_id"),
-                "title": chunk.get("title"),
-                "source_id": chunk.get("source_id") or chunk.get("source_path"),
-                "source_path": chunk.get("source_path"),
-                "content": chunk.get("content"),
-                "score": float(score),
-            })
+            matched_chunks.append(
+                {
+                    "chunk_id": chunk.get("chunk_id"),
+                    "title": chunk.get("title"),
+                    "source_id": chunk.get("source_id") or chunk.get("source_path"),
+                    "source_path": chunk.get("source_path"),
+                    "content": chunk.get("content"),
+                    "score": float(score),
+                }
+            )
 
     matched_chunks.sort(key=lambda c: c["score"], reverse=True)
     top_k = manifest.retriever_config.get("top_k", 5)
     return matched_chunks[:top_k]
+
 
 from .agent_behavior_scorer import AgentBehaviorScorer
 from .errors import (
@@ -163,9 +166,7 @@ class EvaluationRunner:
 
         set_version = self._repo.get_set_version(run.set_version_id)
         if not set_version:
-            raise EvaluationNotFoundError(
-                f"EvalSetVersion {run.set_version_id} not found"
-            )
+            raise EvaluationNotFoundError(f"EvalSetVersion {run.set_version_id} not found")
 
         if run.mode == "REAL_RAG":
             if not self.has_retriever_adapter() or not self.has_answering_adapter():
@@ -182,9 +183,7 @@ class EvaluationRunner:
 
         now = datetime.now(timezone.utc)
         # Update run status to RUNNING
-        updated_run = run.model_copy(
-            update={"status": "RUNNING", "started_at": now}
-        )
+        updated_run = run.model_copy(update={"status": "RUNNING", "started_at": now})
         self._save_run_state(updated_run)
 
         # Resolve revisions
@@ -279,7 +278,7 @@ class EvaluationRunner:
         final_status = "CANCELLED" if cancel_reason else "COMPLETED"
         has_unknown_tokens = any(e.usage_status == "UNKNOWN" for e in executed_cases)
         cost_status = "PARTIAL_UNKNOWN" if has_unknown_tokens else "EXACT"
-        is_eval_eligible = (run.mode != "OFFLINE_BENCHMARK")
+        is_eval_eligible = run.mode != "OFFLINE_BENCHMARK"
 
         final_run = run.model_copy(
             update={
@@ -366,7 +365,9 @@ class EvaluationRunner:
         sanitized_input = TargetExecutionInput(
             query=case_revision.query,
             conversation_history=(),
-            persona_context=manifest.retriever_config.get("persona_context", {}) if manifest.persona_fixture_id else {},
+            persona_context=manifest.retriever_config.get("persona_context", {})
+            if manifest.persona_fixture_id
+            else {},
             actor_id=manifest.target_id,
             tenant_id="default",
             owner_unit_id="default",
@@ -377,10 +378,11 @@ class EvaluationRunner:
         try:
             # 1. Retrieval phase
             if self._retriever_fn:
-                try:
-                    retrieved = self._retriever_fn(case_revision.query, manifest, sanitized_input)
-                except TypeError:
-                    retrieved = self._retriever_fn(case_revision.query, manifest, case_revision)
+                retrieved = self._retriever_fn(
+                    case_revision.query,
+                    manifest,
+                    sanitized_input,
+                )
             else:
                 retrieved = default_knowledge_retriever(
                     case_revision.query, manifest, case_revision, self._releases_dir
@@ -420,17 +422,17 @@ class EvaluationRunner:
                         "a structured result with answer and tool_calls."
                     )
             elif self._answering_fn:
-                try:
-                    ans_res = self._answering_fn(
-                        case_revision.query, manifest, sanitized_input, retrieved
-                    )
-                except TypeError:
-                    ans_res = self._answering_fn(
-                        case_revision.query, manifest, case_revision, retrieved
-                    )
+                ans_res = self._answering_fn(
+                    case_revision.query,
+                    manifest,
+                    sanitized_input,
+                    retrieved,
+                )
 
                 if isinstance(ans_res, tuple) and len(ans_res) >= 6:
-                    answer, tokens, cost, raw_tool_calls, provider_req_id, upstream_usage_status = ans_res[:6]
+                    answer, tokens, cost, raw_tool_calls, provider_req_id, upstream_usage_status = (
+                        ans_res[:6]
+                    )
                     tool_calls = list(raw_tool_calls)
                 elif isinstance(ans_res, tuple) and len(ans_res) == 5:
                     answer, tokens, cost, raw_tool_calls, provider_req_id = ans_res
@@ -488,7 +490,15 @@ class EvaluationRunner:
 
             # Tool constraints scoring
             tc = case_revision.tool_constraints
-            if tc and (tc.required_tools or tc.forbidden_tools or tc.allowed_tools or tc.parameter_constraints or tc.tool_order or tc.allowed_paths or tool_calls):
+            if tc and (
+                tc.required_tools
+                or tc.forbidden_tools
+                or tc.allowed_tools
+                or tc.parameter_constraints
+                or tc.tool_order
+                or tc.allowed_paths
+                or tool_calls
+            ):
                 tool_metrics = self._agent_scorer.score_tool_constraints(tc, tuple(tool_calls))
                 metric_results = metric_results + tuple(tool_metrics)
                 for tm in tool_metrics:
@@ -584,7 +594,9 @@ class EvaluationRunner:
                 turn_input = TargetExecutionInput(
                     query=user_query,
                     conversation_history=tuple(conversation_history),
-                    persona_context=manifest.retriever_config.get("persona_context", {}) if manifest.persona_fixture_id else {},
+                    persona_context=manifest.retriever_config.get("persona_context", {})
+                    if manifest.persona_fixture_id
+                    else {},
                     actor_id=manifest.target_id,
                     tenant_id="default",
                     owner_unit_id="default",
@@ -593,10 +605,11 @@ class EvaluationRunner:
                 )
 
                 if self._retriever_fn:
-                    try:
-                        retrieved = self._retriever_fn(user_query, manifest, turn_input)
-                    except TypeError:
-                        retrieved = self._retriever_fn(user_query, manifest, case_revision)
+                    retrieved = self._retriever_fn(
+                        user_query,
+                        manifest,
+                        turn_input,
+                    )
                 else:
                     retrieved = default_knowledge_retriever(
                         user_query, manifest, case_revision, self._releases_dir
@@ -631,19 +644,13 @@ class EvaluationRunner:
                     tool_calls = list(workflow_result.get("tool_calls") or [])
                     turn_usage = workflow_result.get("usage_status")
                 elif self._answering_fn:
-                    try:
-                        ans_res = self._answering_fn(
-                            user_query, manifest, turn_input, retrieved, conversation_history
-                        )
-                    except TypeError:
-                        try:
-                            ans_res = self._answering_fn(
-                                user_query, manifest, turn_input, retrieved
-                            )
-                        except TypeError:
-                            ans_res = self._answering_fn(
-                                user_query, manifest, case_revision, retrieved
-                            )
+                    ans_res = self._answering_fn(
+                        user_query,
+                        manifest,
+                        turn_input,
+                        retrieved,
+                        conversation_history,
+                    )
 
                     if isinstance(ans_res, tuple) and len(ans_res) >= 6:
                         answer, tokens, cost, raw_tool_calls, _, turn_usage = ans_res[:6]
@@ -692,9 +699,7 @@ class EvaluationRunner:
                 )
                 turn_metrics.extend(t_metrics)
 
-                turn_passed = all(
-                    m.pass_status == "PASS" for m in turn_metrics if m.applicability
-                )
+                turn_passed = all(m.pass_status == "PASS" for m in turn_metrics if m.applicability)
                 turn_traces.append(
                     TurnExecutionTrace(
                         turn_index=idx,
@@ -927,9 +932,7 @@ class EvaluationRunner:
             ]
             try:
                 self._repo.commit_mutation(
-                    state.model_copy(
-                        update={"case_executions": tuple(retained + [execution])}
-                    ),
+                    state.model_copy(update={"case_executions": tuple(retained + [execution])}),
                     expected_revision=state.revision,
                 )
                 return

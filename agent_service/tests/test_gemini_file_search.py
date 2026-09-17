@@ -14,7 +14,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_service.contracts import UserContext
+from agent_service.contracts import (
+    EVALUATION_EVIDENCE_CHANNEL,
+    AgentRequest,
+    ConversationIdentity,
+    MessageContent,
+    UserContext,
+    UserIdentity,
+)
 from agent_service.documents import DocumentChunk, DocumentImage
 from agent_service.execution_context import ExecutionContext
 from agent_service.file_search_acl import PUBLIC_GROUP_KEY, filter_for, group_metadata_key
@@ -35,6 +42,16 @@ def make_context(title=None, uri=None, document_name=None, text=None):
 
 def make_chunk(context):
     return SimpleNamespace(retrieved_context=context)
+
+
+def make_evaluation_request() -> AgentRequest:
+    return AgentRequest(
+        requestId="evaluation-request",
+        channel=EVALUATION_EVIDENCE_CHANNEL,
+        conversation=ConversationIdentity(tenantId="tenant-1"),
+        user=UserIdentity(teamsUserId="evaluation-user"),
+        message=MessageContent(text="Evaluate this question."),
+    )
 
 
 def make_usage_metadata(prompt=0, tool_use_prompt=0, candidates=0, total=None):
@@ -123,11 +140,22 @@ async def test_known_slug_maps_to_real_title_and_images():
         api_key="key", file_search_store="fileSearchStores/x", registry=registry
     )
     response = make_response(
-        grounding_chunks=[make_chunk(make_context(title=slug))],
+        grounding_chunks=[
+            make_chunk(
+                make_context(
+                    title=slug,
+                    text="VPN approved setup steps.",
+                )
+            )
+        ],
     )
     install_fake_client(service, response)
 
-    result = await service.search("query", UserContext(groups=[]))
+    result = await service.search(
+        "query",
+        UserContext(groups=[]),
+        request=make_evaluation_request(),
+    )
 
     assert result.found is True
     assert result.sources[0].title == "VPN常見Q&A問答"
@@ -135,6 +163,7 @@ async def test_known_slug_maps_to_real_title_and_images():
     assert result.sources[0].sourceRefId is not None
     assert result.sources[0].releaseId == "release-1"
     assert result.sources[0].url is None
+    assert result.sources[0].evidence == "[chunkId=c1]\nVPN approved setup steps."
     assert len(result.images) == 1
     assert result.images[0].path == "assets/vpn.png"
 
@@ -232,9 +261,7 @@ async def test_legacy_xiaozhou_grounding_uses_canonical_dazhou_name():
     )
     response = make_response(
         text="請調整小州系統設定，不是大洲分類。",
-        grounding_chunks=[
-            make_chunk(make_context(title="xiaozhou-feature-not-clickable.md"))
-        ],
+        grounding_chunks=[make_chunk(make_context(title="xiaozhou-feature-not-clickable.md"))],
     )
     install_fake_client(service, response)
 
@@ -282,9 +309,7 @@ async def test_grounded_answer_that_declares_insufficient_information_is_a_miss(
     )
     response = make_response(
         text="目前知識庫中沒有足夠關於公司大廳門禁申請的資訊。",
-        grounding_chunks=[
-            make_chunk(make_context(title="unrelated-shared-folder.md"))
-        ],
+        grounding_chunks=[make_chunk(make_context(title="unrelated-shared-folder.md"))],
     )
     install_fake_client(service, response)
 
@@ -376,9 +401,7 @@ async def test_enforce_acl_false_passes_caller_filter_through_and_logs_loudly(ca
     response = make_response(grounding_chunks=None)
     captured = install_fake_client(service, response)
 
-    await service.search(
-        "query", UserContext(groups=["cs-team"]), metadata_filter='category="vpn"'
-    )
+    await service.search("query", UserContext(groups=["cs-team"]), metadata_filter='category="vpn"')
 
     file_search = captured["config"].tools[0].file_search
     assert file_search.metadata_filter == 'category="vpn"'

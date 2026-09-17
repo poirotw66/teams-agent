@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from agent_service.contracts import KnowledgeResult, UserContext
+from agent_service.contracts import (
+    AgentRequest,
+    ConversationIdentity,
+    KnowledgeResult,
+    MessageContent,
+    UserContext,
+    UserIdentity,
+)
 from agent_service.knowledge_backends import (
     FirestoreKnowledgeBackendStateStore,
     KnowledgeBackendRouter,
@@ -15,6 +22,22 @@ class FakeBackend:
 
     async def search(self, query, user_context, *, correlation_id=None):
         return KnowledgeResult(found=True, answer=query, backend=self.name)
+
+
+class RequestAwareBackend:
+    def __init__(self) -> None:
+        self.request: AgentRequest | None = None
+
+    async def search(
+        self,
+        query,
+        user_context,
+        *,
+        correlation_id=None,
+        request=None,
+    ):
+        self.request = request
+        return KnowledgeResult(found=True, answer=query, backend="HYBRID")
 
 
 class FakeSnapshot:
@@ -54,6 +77,23 @@ async def test_router_switches_backends_and_keeps_unavailable_reason() -> None:
 
 
 @pytest.mark.asyncio
+async def test_router_forwards_evaluation_request_to_selected_backend() -> None:
+    backend = RequestAwareBackend()
+    router = KnowledgeBackendRouter({"HYBRID": backend}, "HYBRID")
+    request = AgentRequest(
+        requestId="evaluation-request",
+        channel="evaluation",
+        conversation=ConversationIdentity(tenantId="tenant-1"),
+        user=UserIdentity(teamsUserId="evaluation-user"),
+        message=MessageContent(text="Evaluate this question."),
+    )
+
+    await router.search("question", UserContext(), request=request)
+
+    assert backend.request is request
+
+
+@pytest.mark.asyncio
 async def test_router_rejects_an_unavailable_backend() -> None:
     router = KnowledgeBackendRouter(
         {"HYBRID": FakeBackend("HYBRID")},
@@ -65,9 +105,7 @@ async def test_router_rejects_an_unavailable_backend() -> None:
         await router.select("GEMINI_FILE_SEARCH")
 
     option = next(
-        item
-        for item in (await router.status())["options"]
-        if item["id"] == "GEMINI_FILE_SEARCH"
+        item for item in (await router.status())["options"] if item["id"] == "GEMINI_FILE_SEARCH"
     )
     assert option["available"] is False
 
@@ -76,11 +114,15 @@ async def test_router_rejects_an_unavailable_backend() -> None:
 async def test_firestore_state_is_shared_across_router_instances() -> None:
     document = FakeDocument()
     first_store = FirestoreKnowledgeBackendStateStore(
-        type("Client", (), {
-            "collection": lambda _self, _name: type(
-                "Collection", (), {"document": lambda _self, _name: document}
-            )()
-        })(),
+        type(
+            "Client",
+            (),
+            {
+                "collection": lambda _self, _name: type(
+                    "Collection", (), {"document": lambda _self, _name: document}
+                )()
+            },
+        )(),
         "runtime_config",
         "HYBRID",
     )

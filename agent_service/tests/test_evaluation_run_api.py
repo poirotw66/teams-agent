@@ -244,10 +244,10 @@ def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
     app = create_app(settings)
     client = TestClient(app)
 
-    # Verify index.html contains updated asset version
     index_res = client.get("/")
     assert index_res.status_code == 200
-    assert "ops-ui-20260914i" in index_res.text
+    from ai_ops_backoffice.api import UI_ASSET_VERSION
+    assert UI_ASSET_VERSION in index_res.text
 
     aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
     # Verify preflight with non-existent set version returns 200 with is_valid=False and blocking_errors
