@@ -165,6 +165,7 @@ def test_agent_response_formats_citations() -> None:
                     "title": "大州操作畫面",
                     "altText": "IE 安全性設定",
                     "sourceChunkId": "chunk-8",
+                    "releaseId": "release-1",
                 }
             ],
         },
@@ -175,6 +176,7 @@ def test_agent_response_formats_citations() -> None:
 
     assert response.traceId == "trace-1"
     assert response.images[0].path == "大州/p01.png"
+    assert response.images[0].releaseId == "release-1"
     assert "**來源**" in formatted
     assert "[API Key 申請流程](https://internal.example/docs/api-key)" in formatted
 

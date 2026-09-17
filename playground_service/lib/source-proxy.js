@@ -1,6 +1,11 @@
 "use strict";
 
-const ASSET_PREFIXES = ["/rag-sources/", "/rag-assets/", "/rag-originals/"];
+const ASSET_PREFIXES = [
+  "/rag-sources/",
+  "/rag-assets/",
+  "/rag-originals/",
+  "/rag-citations/",
+];
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const HOP_BY_HOP = new Set([
   "connection",
@@ -46,7 +51,7 @@ function rewriteAdapterAssetUrls(text, adapterTarget) {
   // Source links become root-relative so they open on whichever hostname the
   // tester is actually viewing.
   let rewritten = text;
-  for (const prefix of ["/rag-sources/", "/rag-originals/"]) {
+  for (const prefix of ["/rag-sources/", "/rag-originals/", "/rag-citations/"]) {
     rewritten = rewritten
       .split(`${adapter}${prefix}`).join(prefix)
       .split(`${adapter}${prefix}`.replaceAll("/", "\\/")).join(prefix.replaceAll("/", "\\/"));
@@ -57,7 +62,7 @@ function rewriteAdapterAssetUrls(text, adapterTarget) {
 function linkOpenerScript() {
   return `"use strict";
 (function () {
-  const prefixes = ["/rag-sources/", "/rag-assets/", "/rag-originals/"];
+  const prefixes = ["/rag-sources/", "/rag-assets/", "/rag-originals/", "/rag-citations/"];
   function assetUrl(raw) {
     if (!raw) return null;
     let url;

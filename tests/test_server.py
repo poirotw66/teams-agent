@@ -1,5 +1,7 @@
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -235,6 +237,30 @@ def test_missing_asset_returns_not_found(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_release_asset_falls_back_to_private_gcs(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path, asset_gcs_bucket="knowledge-bucket")
+    client = TestClient(create_web_app(settings))
+    url = urlparse(
+        build_asset_url(
+            "總公司IP話機操作/p02.png",
+            settings,
+            release_id="release-1",
+        )
+        or ""
+    )
+    image = BytesIO()
+    Image.new("RGB", (64, 64), "white").save(image, format="PNG")
+
+    with patch(
+        "teams_agent.server.fetch_gcs_asset",
+        return_value=image.getvalue(),
+    ):
+        response = client.get(url.path, params=parse_qs(url.query))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
 
 
 def test_signed_source_document_is_served(tmp_path: Path) -> None:

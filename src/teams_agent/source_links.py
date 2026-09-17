@@ -40,6 +40,7 @@ from .viewer_sessions import (
 _SOURCE_SIGN_PREFIX = "rag-source-v3\n"
 _ALLOWED_SUFFIXES = {".md", ".markdown", ".txt", ".pdf"}
 _SAFE_RELEASE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+_AGENTS_PLAYGROUND_TENANT_ID = "00000000-0000-0000-0000-0000000000001"
 logger = logging.getLogger(__name__)
 
 
@@ -122,6 +123,28 @@ class CitationViewerContext:
     groups: tuple[str, ...] = ()
     tenant_id: str | None = None
     revoked: bool = False
+
+
+def citation_source_tenant_id(channel: str, tenant_id: str | None) -> str | None:
+    """Map the synthetic Agents Playground tenant to the shared lab corpus."""
+    if channel.casefold() == "playground" and tenant_id == _AGENTS_PLAYGROUND_TENANT_ID:
+        return "default"
+    return tenant_id
+
+
+def citation_source_groups(
+    channel: str,
+    tenant_id: str | None,
+    groups: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Supply the public corpus group for synthetic Playground identities."""
+    if (
+        channel.casefold() == "playground"
+        and tenant_id == _AGENTS_PLAYGROUND_TENANT_ID
+        and not groups
+    ):
+        return ("grp_public",)
+    return groups
 
 
 def sign_source_access(
@@ -304,6 +327,28 @@ def build_original_url(
         query += f"&tenantId={quote(str(viewer.tenant_id), safe='')}"
     encoded_ref = quote(str(source_ref_id).strip(), safe="")
     return f"{settings.public_base_url}/rag-originals/{encoded_ref}?{query}"
+
+
+def build_citation_preview_url(
+    source_ref_id: str,
+    settings: AgentSettings,
+    now: int | None = None,
+    *,
+    viewer: CitationViewerContext | None = None,
+    membership_store: InMemoryViewerMembershipStore | ViewerMembershipResolver | None = None,
+) -> str | None:
+    """Mint a signed URL for a governed citation preview."""
+
+    original_url = build_original_url(
+        source_ref_id,
+        settings,
+        now,
+        viewer=viewer,
+        membership_store=membership_store,
+    )
+    if original_url is None:
+        return None
+    return original_url.replace("/rag-originals/", "/rag-citations/", 1)
 
 
 def authorize_original_open(
@@ -725,6 +770,18 @@ def enrich_citation_urls(
             )
             if url:
                 updated = replace(updated, url=url)
+                changed = True
+
+        if can_mint_original and citation.sourceRefId and not updated.url:
+            preview_url = build_citation_preview_url(
+                citation.sourceRefId,
+                settings,
+                now,
+                viewer=viewer,
+                membership_store=membership_store,
+            )
+            if preview_url:
+                updated = replace(updated, url=preview_url)
                 changed = True
 
         if (

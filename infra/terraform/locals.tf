@@ -151,6 +151,9 @@ locals {
     RAG_ASSET_URL_TTL_SECONDS = "3600"
     RAG_ASSET_MAX_DIMENSION   = "1024"
     RAG_ASSET_MAX_BYTES       = "1000000"
+    RAG_ASSET_GCS_BUCKET      = local.knowledge_release_bucket_name
+    RAG_ASSET_GCS_PREFIX      = var.knowledge_release_object_prefix
+    RAG_ASSET_GCS_TENANT_ID   = "default"
   }
 }
 

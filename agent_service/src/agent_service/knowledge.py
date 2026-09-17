@@ -572,6 +572,7 @@ class HybridKnowledgeService:
                         title=image.title,
                         altText=image.alt_text,
                         sourceChunkId=result.chunk.chunk_id,
+                        releaseId=result.chunk.release_id or self.release_id,
                     )
                 )
                 if len(images) >= self.settings.max_images:

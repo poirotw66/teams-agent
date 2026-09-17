@@ -170,6 +170,7 @@ class AgentImage:
     title: str
     altText: str
     sourceChunkId: str
+    releaseId: str | None = None
 
 
 # Result types where the Agent Service considers the issue "answered" and
@@ -275,6 +276,7 @@ class AgentResponse:
                 title = item.get("title")
                 alt_text = item.get("altText")
                 source_chunk_id = item.get("sourceChunkId")
+                release_id = item.get("releaseId")
                 if not all(
                     isinstance(value, str) and value.strip()
                     for value in (path, title, alt_text, source_chunk_id)
@@ -289,6 +291,11 @@ class AgentResponse:
                         title=title.strip(),
                         altText=alt_text.strip(),
                         sourceChunkId=source_chunk_id.strip(),
+                        releaseId=(
+                            release_id.strip()
+                            if isinstance(release_id, str) and release_id.strip()
+                            else None
+                        ),
                     )
                 )
 

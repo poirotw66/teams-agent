@@ -233,7 +233,12 @@ def build_agent_activity(
         }
     ]
     for image in response.images:
-        url = build_asset_url(image.path, settings, now)
+        url = build_asset_url(
+            image.path,
+            settings,
+            now,
+            release_id=image.releaseId,
+        )
         if not url:
             continue
         body.extend(

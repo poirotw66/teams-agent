@@ -135,6 +135,7 @@ async def test_cited_text_chunk_supplements_images_from_same_document(
             )
         ],
     )
+    panel_chunk.release_id = "release-phone"
     index = HybridIndex([text_chunk, panel_chunk])
     service = HybridKnowledgeService(
         make_settings(tmp_path, top_k=1),
@@ -152,6 +153,7 @@ async def test_cited_text_chunk_supplements_images_from_same_document(
     assert len(result.images) == 1
     assert result.images[0].path == "總公司IP話機操作/p02.png"
     assert result.images[0].sourceChunkId == "phone-panel"
+    assert result.images[0].releaseId == "release-phone"
 
 
 @pytest.mark.asyncio

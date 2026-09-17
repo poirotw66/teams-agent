@@ -161,14 +161,26 @@ def _collect_images(doc_chunks: list[DocumentChunk]) -> list[AgentImage]:
             if image.path in seen:
                 continue
             seen.add(image.path)
-            images.append(_to_agent_image(image, chunk.chunk_id))
+            images.append(
+                _to_agent_image(
+                    image,
+                    chunk.chunk_id,
+                    release_id=chunk.release_id,
+                )
+            )
     return images
 
 
-def _to_agent_image(image: DocumentImage, chunk_id: str) -> AgentImage:
+def _to_agent_image(
+    image: DocumentImage,
+    chunk_id: str,
+    *,
+    release_id: str | None,
+) -> AgentImage:
     return AgentImage(
         path=image.path,
         title=image.title,
         altText=image.alt_text,
         sourceChunkId=chunk_id,
+        releaseId=release_id,
     )

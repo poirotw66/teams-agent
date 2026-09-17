@@ -26,10 +26,13 @@ from .settings import AgentSettings
 from .source_api import (
     SourceApiError,
     fetch_original_source_file,
+    fetch_source_preview,
     stream_original_source_file,
 )
 from .source_links import (
     authorize_original_open,
+    citation_source_groups,
+    citation_source_tenant_id,
     create_viewer_token,
     resolve_source_file,
     source_media_type,
@@ -42,6 +45,34 @@ logger = logging.getLogger(__name__)
 
 _consumed_sso_states: dict[str, float] = {}
 _sso_lock = threading.Lock()
+
+
+def _render_governed_source_preview(payload: dict[str, Any]) -> str:
+    title = html.escape(str(payload.get("title") or "引用來源"))
+    evidence = payload.get("evidence")
+    excerpt = evidence.get("excerpt") if isinstance(evidence, dict) else ""
+    safe_excerpt = html.escape(str(excerpt or "目前沒有可顯示的引用內容。"))
+    status = html.escape(str(payload.get("mappingStatus") or ""))
+    return f"""<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 56rem; padding: 0 1rem; line-height: 1.7; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f7f8; padding: 1rem; border-radius: .5rem; }}
+    .status {{ color: #5f6368; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>{title}</h1>
+    <p class="status">{status}</p>
+    <pre>{safe_excerpt}</pre>
+  </main>
+</body>
+</html>"""
 
 
 def _is_safe_redirect_target(url: str, allowed_base_url: str | None = None) -> bool:
@@ -94,6 +125,27 @@ def _is_gateway_authenticated(request: Request, settings: AgentSettings) -> bool
         expected_secret
         and gateway_secret
         and hmac.compare_digest(gateway_secret.strip(), expected_secret.strip())
+    )
+
+
+def _seed_gateway_membership(
+    request: Request,
+    settings: AgentSettings,
+    *,
+    subject: str | None,
+) -> None:
+    """Seed the lab gateway's public membership when no chat turn exists."""
+    if not subject or not _is_gateway_authenticated(request, settings):
+        return
+    store = get_viewer_membership_store(settings)
+    if store.resolve(subject) is not None:
+        return
+    store.remember(
+        subject,
+        groups=("grp_public",),
+        tenant_id=request.query_params.get("tenantId") or "default",
+        revoked=False,
+        ttl_seconds=float(settings.asset_url_ttl_seconds),
     )
 
 
@@ -170,6 +222,54 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
     """Create router with RAG source document and SSO authentication endpoints."""
     router = APIRouter()
 
+    @router.get("/rag-citations/{source_ref_id}")
+    async def source_preview(source_ref_id: str, request: Request) -> Response:
+        auth_subject = _authenticated_viewer_subject(request, settings)
+        _seed_gateway_membership(request, settings, subject=auth_subject)
+        try:
+            viewer = authorize_original_open(
+                source_ref_id,
+                request.query_params.get("expires"),
+                request.query_params.get("signature"),
+                settings,
+                subject=request.query_params.get("subject"),
+                tenant_id=request.query_params.get("tenantId"),
+                authenticated_subject=auth_subject,
+            )
+            payload = await fetch_source_preview(
+                settings,
+                source_ref_id=source_ref_id,
+                subject=viewer.subject,
+                tenant_id=citation_source_tenant_id(
+                    "playground",
+                    viewer.tenant_id,
+                ),
+                groups=citation_source_groups(
+                    "playground",
+                    viewer.tenant_id,
+                    viewer.groups,
+                ),
+            )
+        except PermissionError as error:
+            accept = request.headers.get("accept", "").lower()
+            if "text/html" in accept and not auth_subject:
+                redirect_target = f"/sources/login?redirect_url={quote(str(request.url))}"
+                return Response(status_code=302, headers={"Location": redirect_target})
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except SourceApiError as error:
+            status = error.status if error.status in {403, 404} else 502
+            raise HTTPException(status_code=status, detail="Source preview unavailable.") from error
+
+        return Response(
+            content=_render_governed_source_preview(payload),
+            media_type="text/html; charset=utf-8",
+            headers={
+                "Cache-Control": "private, no-store",
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @router.get("/rag-sources/{path:path}")
     async def source_document(path: str, request: Request) -> Response:
         auth_subject = _authenticated_viewer_subject(request, settings)
@@ -230,16 +330,7 @@ def create_source_router(settings: AgentSettings) -> APIRouter:
         # Playground/gateway opens authenticate the subject via shared secret but
         # may arrive before a chat turn refreshes viewer membership. Seed a
         # short-lived public membership so lab testing does not require M365.
-        if auth_subject and _is_gateway_authenticated(request, settings):
-            store = get_viewer_membership_store(settings)
-            if store.resolve(auth_subject) is None:
-                store.remember(
-                    auth_subject,
-                    groups=("grp_public",),
-                    tenant_id=request.query_params.get("tenantId") or "default",
-                    revoked=False,
-                    ttl_seconds=float(settings.asset_url_ttl_seconds),
-                )
+        _seed_gateway_membership(request, settings, subject=auth_subject)
         try:
             viewer = authorize_original_open(
                 source_ref_id,

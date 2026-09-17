@@ -45,8 +45,9 @@ def build_lifespan(resolved_settings: RagSettings):
                 resolved_settings.embedding_model,
             )
 
-        release_dir = resolved_settings.knowledge_release_dir or (
-            resolved_settings.data_dir / "releases"
+        release_dir = resolved_index.release_dir or (
+            resolved_settings.knowledge_release_dir
+            or resolved_settings.data_dir / "releases"
         )
         hydrate_index_sources(
             index.chunks,

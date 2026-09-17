@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from .source_delegation import DELEGATION_HEADER, SourceDelegationError, issue_s
 logger = logging.getLogger(__name__)
 
 SERVICE_TOKEN_HEADER = "X-Backoffice-Service-Token"
+MAX_SOURCE_PREVIEW_BYTES = 64 * 1024
 
 
 class SourceApiError(RuntimeError):
@@ -58,6 +60,70 @@ def _google_identity_token(audience: str) -> str | None:
     except Exception:
         logger.debug("Unable to mint Google ID token for Source API", exc_info=True)
         return None
+
+
+async def fetch_source_preview(
+    settings: AgentSettings,
+    *,
+    source_ref_id: str,
+    subject: str,
+    tenant_id: str | None = None,
+    groups: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Fetch one authorized citation preview from the Backoffice."""
+    if not source_api_ready(settings):
+        raise SourceApiError("Source API is not configured.")
+    source_ref = str(source_ref_id or "").strip()
+    if not source_ref or "/" in source_ref or ".." in source_ref:
+        raise SourceApiError("Invalid source reference.")
+    try:
+        delegation = issue_source_delegation(
+            subject=subject,
+            secret=settings.source_delegation_secret or "",
+            tenant_id=tenant_id,
+            groups=groups,
+            display_name=subject,
+        )
+    except SourceDelegationError as error:
+        raise SourceApiError(str(error)) from error
+
+    base = str(settings.source_api_base_url or "").rstrip("/")
+    headers = {
+        SERVICE_TOKEN_HEADER: str(settings.source_api_token or ""),
+        "Authorization": f"Bearer {settings.source_api_token}",
+        DELEGATION_HEADER: delegation,
+        "Accept": "application/json",
+    }
+    identity = _google_identity_token(base)
+    if identity:
+        headers["Authorization"] = f"Bearer {identity}"
+
+    timeout = ClientTimeout(total=float(settings.source_api_timeout_seconds))
+    try:
+        async with ClientSession(timeout=timeout) as session, session.get(
+            f"{base}/api/sources/{source_ref}",
+            headers=headers,
+        ) as response:
+            body = await response.content.read(MAX_SOURCE_PREVIEW_BYTES + 1)
+            if len(body) > MAX_SOURCE_PREVIEW_BYTES:
+                raise SourceApiError("Source API preview exceeded the size limit.")
+            if response.status >= 400:
+                detail = body[:200].decode("utf-8", errors="replace")
+                raise SourceApiError(
+                    f"Source API returned HTTP {response.status}: {detail}",
+                    status=response.status,
+                    body=body,
+                )
+    except ClientError as error:
+        raise SourceApiError(f"Source API request failed: {error}") from error
+
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SourceApiError("Source API returned an invalid preview.") from error
+    if not isinstance(payload, dict):
+        raise SourceApiError("Source API returned an invalid preview.")
+    return payload
 
 
 async def fetch_original_source_file(

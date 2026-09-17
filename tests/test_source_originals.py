@@ -18,6 +18,7 @@ from teams_agent.source_delegation import issue_source_delegation
 from teams_agent.source_links import (
     CitationViewerContext,
     authorize_original_open,
+    build_citation_preview_url,
     build_original_url,
     enrich_citation_urls,
 )
@@ -39,6 +40,7 @@ def test_rag_asset_signing_key_alone_does_not_enable_source_api(
     monkeypatch.setenv("AGENT_MODE", "echo")
     monkeypatch.setenv("RAG_SOURCE_DIR", str(source_dir))
     monkeypatch.setenv("RAG_ASSET_SIGNING_KEY", "local-signing-key-16+")
+    monkeypatch.delenv("BOT_PUBLIC_BASE_URL", raising=False)
     monkeypatch.delenv("SOURCE_API_BASE_URL", raising=False)
     monkeypatch.delenv("SOURCE_API_TOKEN", raising=False)
     monkeypatch.delenv("SOURCE_DELEGATION_SECRET", raising=False)
@@ -60,6 +62,7 @@ def test_source_api_reuses_rag_signing_key_when_base_url_set(
     monkeypatch.setenv("AGENT_MODE", "echo")
     monkeypatch.setenv("RAG_SOURCE_DIR", str(source_dir))
     monkeypatch.setenv("RAG_ASSET_SIGNING_KEY", "local-signing-key-16+")
+    monkeypatch.delenv("BOT_PUBLIC_BASE_URL", raising=False)
     monkeypatch.setenv("SOURCE_API_BASE_URL", "http://127.0.0.1:8092")
     monkeypatch.setenv("SOURCE_API_TOKEN", "service-token")
     monkeypatch.delenv("SOURCE_DELEGATION_SECRET", raising=False)
@@ -131,6 +134,84 @@ def test_enrich_mints_original_url_when_source_api_ready(tmp_path: Path) -> None
     assert enriched.citations[0].originalUrl.startswith(
         "https://bot.example.com/rag-originals/src-vpn-1?"
     )
+
+
+def test_enrich_mints_governed_preview_without_bundled_sources(tmp_path: Path) -> None:
+    source_dir = tmp_path / "data"
+    source_dir.mkdir()
+    settings = AgentSettings(
+        source_dir=source_dir,
+        public_base_url="https://bot.example.com",
+        asset_signing_key="test-signing-key-long-enough",
+        asset_url_ttl_seconds=3600,
+        allow_unauthenticated_requests=True,
+        source_api_base_url="https://backoffice.example.com",
+        source_api_token="service-token",
+        source_delegation_secret="delegation-secret",
+    )
+    store = InMemoryViewerMembershipStore()
+    response = AgentResponse(
+        answer="ok",
+        traceId="t",
+        citations=[Citation(title="CTeam", sourceRefId="src-cteam")],
+    )
+
+    enriched = enrich_citation_urls(
+        response,
+        settings,
+        now=1_000,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+
+    assert enriched.citations[0].url is not None
+    assert enriched.citations[0].url.startswith(
+        "https://bot.example.com/rag-citations/src-cteam?"
+    )
+
+
+def test_rag_citation_route_renders_governed_preview(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    from teams_agent.viewer_sessions import get_viewer_membership_store
+
+    store = get_viewer_membership_store(settings)
+    viewer = CitationViewerContext(
+        subject="playground-user",
+        groups=(),
+        tenant_id="00000000-0000-0000-0000-0000000000001",
+    )
+    url = build_citation_preview_url(
+        "src-preview-1",
+        settings,
+        viewer=viewer,
+        membership_store=store,
+    )
+    assert url is not None
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    preview_client = AsyncMock(
+        return_value={
+            "title": "CTeam 登入",
+            "mappingStatus": "AVAILABLE",
+            "evidence": {"excerpt": "請點選忘記密碼。"},
+        }
+    )
+    with patch(
+        "teams_agent.source_routes.fetch_source_preview",
+        new=preview_client,
+    ):
+        response = TestClient(app).get(
+            f"{urlparse(url).path}?{urlparse(url).query}",
+            headers={"Accept": "text/html"},
+        )
+
+    assert response.status_code == 200
+    assert "CTeam 登入" in response.text
+    assert "請點選忘記密碼。" in response.text
+    assert response.headers["content-security-policy"].startswith("default-src")
+    assert preview_client.await_args.kwargs["tenant_id"] == "default"
+    assert preview_client.await_args.kwargs["groups"] == ("grp_public",)
 
 
 def test_card_prefers_original_open_action(tmp_path: Path) -> None:

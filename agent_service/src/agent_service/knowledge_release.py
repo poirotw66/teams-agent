@@ -26,6 +26,7 @@ class ResolvedKnowledgeIndex:
     release_id: str | None
     source: str
     artifact: KnowledgeIndexArtifact | None = None
+    release_dir: Path | None = None
 
 
 def read_active_release_id(release_dir: Path) -> str | None:
@@ -112,6 +113,7 @@ def resolve_knowledge_index(
                 release_id=release_id,
                 source="portal_release",
                 artifact=artifact,
+                release_dir=release_dir,
             )
         if mode == "PORTAL":
             raise FileNotFoundError(
@@ -194,4 +196,5 @@ def _resolve_gcs_knowledge_index(
         release_id=reference.release_id,
         source="gcs_release",
         artifact=artifact,
+        release_dir=cache_dir,
     )

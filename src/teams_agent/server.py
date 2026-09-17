@@ -18,6 +18,7 @@ These extra routes are guarded as follows:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -26,7 +27,12 @@ from fastapi.responses import JSONResponse
 from microsoft_teams.apps import FastAPIAdapter
 from microsoft_teams.apps.auth import TokenValidator
 
-from .media import render_teams_image, resolve_asset
+from .media import (
+    fetch_gcs_asset,
+    render_teams_image,
+    render_teams_image_bytes,
+    resolve_asset,
+)
 from .oidc import verify_entra_id_token
 from .settings import AgentSettings
 from .source_routes import (
@@ -171,8 +177,21 @@ def create_web_app(
             content, content_type = render_teams_image(resolved, settings)
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error)) from error
-        except FileNotFoundError as error:
-            raise HTTPException(status_code=404, detail="Not Found") from error
+        except FileNotFoundError:
+            try:
+                source = await asyncio.to_thread(fetch_gcs_asset, path, settings)
+                content, content_type = render_teams_image_bytes(source, settings)
+            except FileNotFoundError as error:
+                raise HTTPException(status_code=404, detail="Not Found") from error
+            except PermissionError as error:
+                raise HTTPException(status_code=403, detail=str(error)) from error
+            except RuntimeError as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Image delivery unavailable.",
+                ) from error
+            except ValueError as error:
+                raise HTTPException(status_code=413, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=413, detail=str(error)) from error
         return Response(

@@ -19,7 +19,9 @@ ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:latest"
 GOOGLE_API_SECRET="teams-agent-google-api-key"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
+SOURCE_DELEGATION_SECRET="${GCP_SOURCE_DELEGATION_SECRET:-teams-agent-knowledge-delegation-secret}"
 VIEWER_MEMBERSHIP_BUCKET="${GCP_VIEWER_MEMBERSHIP_BUCKET:-${PROJECT_ID}-viewer-memberships}"
+KNOWLEDGE_RELEASE_BUCKET="${GCP_KNOWLEDGE_RELEASE_BUCKET:-${PROJECT_ID}-knowledge-releases}"
 
 # Conversation Repository (spec §10.3). Cloud Run scales to zero and routes
 # across instances, so MEMORY/FILE cannot hold conversation context here --
@@ -243,6 +245,11 @@ for secret in "${BOT_CLIENT_SECRET}" "${ASSET_SIGNING_SECRET}"; do
     --project="${PROJECT_ID}" >/dev/null
 done
 
+gcloud storage buckets add-iam-policy-binding \
+  "gs://${KNOWLEDGE_RELEASE_BUCKET}" \
+  --member="serviceAccount:${ADAPTER_SA}" \
+  --role=roles/storage.objectViewer >/dev/null
+
 log "確認 Viewer membership GCS bucket（跨 Adapter 實例共用）"
 if ! gcloud storage buckets describe "gs://${VIEWER_MEMBERSHIP_BUCKET}" \
   --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -331,7 +338,7 @@ gcloud run deploy "${ADAPTER_SERVICE}" \
   --timeout=90 \
   --min=0 \
   --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},TEAMS_INBOUND_AUTH_MODE=both,RAG_SOURCE_DIR=/app/data,RAG_ASSET_DIR=/app/data/sources/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000,VIEWER_MEMBERSHIP_BACKEND=gcs,VIEWER_MEMBERSHIP_GCS_BUCKET=${VIEWER_MEMBERSHIP_BUCKET}" \
+  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},TEAMS_INBOUND_AUTH_MODE=both,RAG_SOURCE_DIR=/app/data,RAG_ASSET_DIR=/app/data/sources/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000,RAG_ASSET_GCS_BUCKET=${KNOWLEDGE_RELEASE_BUCKET},RAG_ASSET_GCS_PREFIX=knowledge-releases,RAG_ASSET_GCS_TENANT_ID=default,VIEWER_MEMBERSHIP_BACKEND=gcs,VIEWER_MEMBERSHIP_GCS_BUCKET=${VIEWER_MEMBERSHIP_BUCKET}" \
   --set-secrets="CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
 
 ADAPTER_URL="$(gcloud run services describe "${ADAPTER_SERVICE}" \
@@ -361,11 +368,15 @@ if gcloud run services describe "${BACKOFFICE_SERVICE}" \
     --project="${PROJECT_ID}" \
     --member="serviceAccount:${ADAPTER_SA}" \
     --role=roles/run.invoker >/dev/null
-  UPDATE_SECRETS="SOURCE_API_TOKEN=${BACKOFFICE_TOKEN_SECRET}:latest,SOURCE_DELEGATION_SECRET=${ASSET_SIGNING_SECRET}:latest"
+  gcloud secrets add-iam-policy-binding "${SOURCE_DELEGATION_SECRET}" \
+    --member="serviceAccount:${ADAPTER_SA}" \
+    --role=roles/secretmanager.secretAccessor \
+    --project="${PROJECT_ID}" >/dev/null
+  UPDATE_SECRETS="SOURCE_API_TOKEN=${BACKOFFICE_TOKEN_SECRET}:latest,SOURCE_DELEGATION_SECRET=${SOURCE_DELEGATION_SECRET}:latest"
   if ! gcloud secrets describe "${BACKOFFICE_TOKEN_SECRET}" \
     --project="${PROJECT_ID}" >/dev/null 2>&1; then
     log "警告：缺少 secret ${BACKOFFICE_TOKEN_SECRET}；略過 SOURCE_API_TOKEN 掛載"
-    UPDATE_SECRETS="SOURCE_DELEGATION_SECRET=${ASSET_SIGNING_SECRET}:latest"
+    UPDATE_SECRETS="SOURCE_DELEGATION_SECRET=${SOURCE_DELEGATION_SECRET}:latest"
   fi
   gcloud run services update "${ADAPTER_SERVICE}" \
     --region="${REGION}" \

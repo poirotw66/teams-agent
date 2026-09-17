@@ -62,6 +62,7 @@ class AgentImage(StrictModel):
     title: str
     altText: str
     sourceChunkId: str
+    releaseId: str | None = None
 
 
 # --- Issue domain model (spec §4.3, §6) -----------------------------------

@@ -25,6 +25,9 @@ class AgentSettings:
     asset_url_ttl_seconds: int = 3600
     asset_max_dimension: int = 1024
     asset_max_bytes: int = 1_000_000
+    asset_gcs_bucket: str | None = None
+    asset_gcs_prefix: str = "knowledge-releases"
+    asset_gcs_tenant_id: str = "default"
     user_directory_mode: str = "disabled"
     user_directory_cache_ttl_seconds: float = 300.0
     # Stream workflow progress into Teams while the Agent Service runs.
@@ -106,6 +109,18 @@ class AgentSettings:
             ),
             asset_max_bytes=int(
                 environ.get("RAG_ASSET_MAX_BYTES", "1000000")
+            ),
+            asset_gcs_bucket=(
+                environ.get("RAG_ASSET_GCS_BUCKET", "").strip() or None
+            ),
+            asset_gcs_prefix=(
+                environ.get("RAG_ASSET_GCS_PREFIX", "knowledge-releases")
+                .strip()
+                .strip("/")
+            ),
+            asset_gcs_tenant_id=(
+                environ.get("RAG_ASSET_GCS_TENANT_ID", "default").strip()
+                or "default"
             ),
             user_directory_mode=(
                 environ.get("USER_DIRECTORY_MODE", "disabled").strip().lower()
@@ -373,9 +388,9 @@ class AgentSettings:
 
     @property
     def images_ready(self) -> bool:
+        has_local_assets = bool(self.asset_dir and self.asset_dir.is_dir())
         return bool(
-            self.asset_dir
-            and self.asset_dir.is_dir()
+            (has_local_assets or self.asset_gcs_bucket)
             and self.public_base_url
             and self.asset_signing_key
         )

@@ -70,3 +70,10 @@ resource "google_secret_manager_secret_iam_member" "backoffice_knowledge_delegat
   member    = "serviceAccount:${google_service_account.backoffice.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "adapter_knowledge_delegation_secret" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.knowledge_delegation_secret.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.adapter.email}"
+}
+

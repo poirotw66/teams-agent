@@ -397,7 +397,7 @@ test("adapter proxy injects playgroundSessionId for logical conversation reset",
 
 test("rewrites adapter source links to the current page and leaves images on the adapter", () => {
   const rewritten = rewriteAdapterAssetUrls(
-    "see https://adapter.example/rag-sources/vpn.md?signature=abc and https://adapter.example/rag-assets/a.png and https://adapter.example/rag-originals/src-1?signature=xyz",
+    "see https://adapter.example/rag-sources/vpn.md?signature=abc and https://adapter.example/rag-assets/a.png and https://adapter.example/rag-originals/src-1?signature=xyz and https://adapter.example/rag-citations/src-1?signature=preview",
     "https://adapter.example",
   );
   assert.match(rewritten, /\/rag-sources\/vpn\.md\?signature=abc/);
@@ -405,6 +405,8 @@ test("rewrites adapter source links to the current page and leaves images on the
   assert.match(rewritten, /\/rag-originals\/src-1\?signature=xyz/);
   assert.doesNotMatch(rewritten, /https:\/\/adapter\.example\/rag-originals/);
   assert.match(rewritten, /https:\/\/adapter\.example\/rag-assets\/a\.png/);
+  assert.match(rewritten, /\/rag-citations\/src-1\?signature=preview/);
+  assert.doesNotMatch(rewritten, /https:\/\/adapter\.example\/rag-citations/);
 });
 
 test("authenticated source links are proxied with the gateway viewer assertion", async () => {

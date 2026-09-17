@@ -204,7 +204,7 @@ class BackofficeSettings:
             source_delegation_secret=os.environ.get(
                 "AI_OPS_SOURCE_DELEGATION_SECRET",
                 os.environ.get("RAG_ASSET_SIGNING_KEY", ""),
-            ),
+            ).strip(),
             knowledge_bridge_enabled=os.environ.get(
                 "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", "true"
             ).lower()

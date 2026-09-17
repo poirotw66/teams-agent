@@ -283,6 +283,7 @@ def test_gcs_resolver_matches_firestore_metadata_to_downloaded_release(
     assert resolved.source == "gcs_release"
     assert resolved.release_id == "release-gcs"
     assert resolved.artifact == artifact
+    assert resolved.release_dir == cache_dir
 
 
 def _write_release(

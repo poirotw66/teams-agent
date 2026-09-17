@@ -16,7 +16,12 @@ from .directory import EntraAppTokenProvider, build_user_directory_service
 from .health_telemetry import AdapterHealthReporter, classify_gateway_status
 from .server import build_http_adapter
 from .settings import AgentSettings
-from .source_links import CitationViewerContext, register_viewer_membership
+from .source_links import (
+    CitationViewerContext,
+    citation_source_groups,
+    citation_source_tenant_id,
+    register_viewer_membership,
+)
 from .text import clean_message_text
 
 logger = logging.getLogger(__name__)
@@ -303,10 +308,18 @@ def _build_activity(response: AgentResponse, request: AgentRequest):
         or request.user.email
         or "anonymous"
     )
+    source_groups = citation_source_groups(
+        request.channel,
+        request.conversation.tenantId,
+        tuple(request.user.groups or ()),
+    )
     viewer = CitationViewerContext(
         subject=subject,
-        groups=tuple(request.user.groups or ()),
-        tenant_id=request.conversation.tenantId,
+        groups=source_groups,
+        tenant_id=citation_source_tenant_id(
+            request.channel,
+            request.conversation.tenantId,
+        ),
     )
     # Refresh live membership on every authenticated turn so citation opens
     # re-authorize against current groups rather than signed URL claims.

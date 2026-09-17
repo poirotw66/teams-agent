@@ -31,6 +31,7 @@ def test_response_with_image_builds_adaptive_card(tmp_path) -> None:
                 title="大州操作畫面",
                 altText="IE 安全性設定",
                 sourceChunkId="chunk-1",
+                releaseId="release-1",
             )
         ],
     )
@@ -42,7 +43,9 @@ def test_response_with_image_builds_adaptive_card(tmp_path) -> None:
     assert activity.attachments[0].content_type == ADAPTIVE_CARD_CONTENT_TYPE
     body = activity.attachments[0].content["body"]
     image = next(item for item in body if item["type"] == "Image")
-    assert image["url"].startswith("https://bot.example.com/rag-assets/")
+    assert image["url"].startswith(
+        "https://bot.example.com/rag-assets/releases/release-1/"
+    )
 
 
 def test_response_without_image_remains_plain_text() -> None:

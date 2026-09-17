@@ -27,6 +27,12 @@ resource "google_storage_bucket_iam_member" "agent_knowledge_reader" {
   member = "serviceAccount:${google_service_account.agent.email}"
 }
 
+resource "google_storage_bucket_iam_member" "adapter_knowledge_reader" {
+  bucket = google_storage_bucket.knowledge_releases.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.adapter.email}"
+}
+
 resource "google_storage_bucket_iam_member" "knowledge_release_writers" {
   for_each = var.knowledge_release_writer_members
 

@@ -86,6 +86,8 @@ resource "google_cloud_run_v2_service" "adapter" {
     google_cloud_run_v2_service.agent,
     google_secret_manager_secret_iam_member.adapter_bot_client_secret,
     google_secret_manager_secret_iam_member.adapter_asset_signing_key,
+    google_secret_manager_secret_iam_member.adapter_knowledge_delegation_secret,
+    google_storage_bucket_iam_member.adapter_knowledge_reader,
     terraform_data.image_policy,
   ]
 
@@ -150,6 +152,16 @@ resource "google_cloud_run_v2_service" "adapter" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.asset_signing_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "SOURCE_DELEGATION_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.knowledge_delegation_secret.secret_id
             version = "latest"
           }
         }
