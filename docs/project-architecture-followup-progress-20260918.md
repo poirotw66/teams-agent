@@ -13,11 +13,14 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | A Required CI green | Done |
 | B Composition import isolation | Done |
 | C Monotonic architecture ratchet | Done |
-| D Shared ownership (`operations_core` / `knowledge_core`) | Done for ownership importers — Portal=0; Backoffice=0 (Agent wiring via composition ports: chat model, answer prompt, HybridIndex, eval Agent bindings, policy runtime, ops/GCS collaborators) |
-| E HTTP/app/persistence boundaries | Done for hotspot paths + expanded private-access gate (services/application/governance; eval_* excluded) |
-| F Canonical OpenAPI + generated TS client | Done first+second slice (schemas + typed client + CI freshness) |
-| G Independent frontend + legacy removal | Bundle sync gate + legacy-shell quarantine CI; full `legacy-js` delete pending unused cycle |
-| H Oversized domain convergence | Ongoing (eval runtime/repo/runner, quality service, gate repos, draft/export) |
+| D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
+| E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
+| F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
+| G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
+| H Oversized domain convergence | Ongoing — FAQ service, source_routes, eval/quality/gate repos already shrunk; more remain |
 
-## Remaining Backoffice→Agent importers (0)
-Cleared this slice: `eval_prompt`, `wiring`, `real_rag_adapters`, `eval_fixtures`, `eval_flow`, `eval_runtime` — all Agent construction moved behind Backoffice ports registered by `composition/backoffice_agent_adapters.py` / `backoffice_eval_agent_factory.py`.
+## Recent Phase H wins
+- `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
+- `teams_agent/source_routes.py` 916→255 (`source_route_auth/payloads/streaming`)
+- `teams_agent/source_links.py` 866→354 (`source_link_signing`, `source_link_access`)
+- `evaluation_domain/gate_service.py` 821→457 (`gate_policy_ops`, `gate_release_ops`, `gate_case_ops`)

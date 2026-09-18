@@ -44,8 +44,6 @@
     "agent_service/src/ai_ops_backoffice/evaluation_domain/agent_behavior_scorer.py::score_tool_constraints": 237,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/candidate_generator.py::start_generation_job": 122,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/gate_evaluator.py::evaluate": 122,
-    "agent_service/src/ai_ops_backoffice/evaluation_domain/gate_service.py::activate_target": 142,
-    "agent_service/src/ai_ops_backoffice/evaluation_domain/gate_service.py::verify_release_gate": 99,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/job_worker.py::_process_claimed_job": 118,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/manifest.py::preflight_run": 106,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/migration.py::migrate": 103,
