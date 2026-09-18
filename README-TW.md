@@ -36,7 +36,7 @@ Bot：依知識庫回覆排除步驟 + 來源引用（可附圖）+ 👍/👎
 
 | 服務模組 | 本機 Port | 存取類型 | 說明 |
 | :--- | :--- | :--- | :--- |
-| **AI 營運後台 (AI Ops Console)** | `8092` | 公開／營運 | **主要統一操作入口與 BFF**（高階視覺設計、Bento Grid 數據網格、閉環營運） |
+| **AI 營運後台 (AI Ops Console)** | `8092` | 公開／營運 | **主要統一營運 BFF** — React `/console-v2` 為預設產品 UI（`/` 導向）；legacy shell 僅緊急路徑 `/legacy` |
 | **Teams Adapter** | `3978` | 公開／Teams | Microsoft Teams SDK 訊息端點（`/api/messages`）與 Adaptive Card 渲染 |
 | **Agent Service** | `8000` | 私有／內部 | LangGraph Workflow 主入口（`/agent/chat`）、Hybrid RAG 與評測引擎 |
 | **知識文件庫 (Knowledge Portal)** | `8091` | 僅 Loopback | 內部 Headless 知識管理引擎（由 8092 BFF 橋接至原生元件視圖） |
@@ -46,7 +46,9 @@ Bot：依知識庫回覆排除步驟 + 來源引用（可附圖）+ 👍/👎
 各服務詳細端點：
 
 - **AI 資訊客服營運後台（Port 8092；統一營運入口 & BFF）**：
-  - `GET /`：AI 營運後台 Web UI（Double-Bezel 雙層邊框設計、Bento Grid 指標卡、原生 DOM 視圖）
+  - `GET /console-v2/*`：React Console（`BACKOFFICE_CONSOLE_V2_ENABLED=true` 時為 canonical 產品 UI；`/` 導向 `/console-v2/dashboard`）
+  - `GET /legacy`：緊急 legacy shell（非正常產品路徑）
+  - `GET /`：Legacy 營運 shell（hash 路由；擁有者見 `docs/ai-ops-route-ledger.md`）
   - `POST /api/quality-cases/*`：品質案件閉環管理（候選分派、合併案件、關聯知識、成效觀察、生命週期流轉）
   - `POST /api/knowledge/*`：BFF 橋接原生知識庫操作（草稿、送審、發布、版本回滾）
   - `GET /api/governance/*`：Prompt 版本、模型設定、Feature Flag、角色權限、保存政策、脫敏遮罩、全域搜尋與雙稽核軌
@@ -175,8 +177,18 @@ Agent Workflow（spec §4–§14）：
 
 ## 架構
 
-雙服務分離：公開的 Teams Adapter 負責 Bot 通訊、串流進度、圖片簽章與
-Adaptive Card；私有的 LangGraph Agent 負責對話、Issue、FAQ、知識檢索與工單。
+Runtime 拓樸是**模組化單體（modular monolith）與四個主要入口**，不是微服務重寫：
+
+| 入口 | Port | 職責 |
+| :--- | :--- | :--- |
+| Teams Adapter (`src/teams_agent`) | `3978` | 公開 Bot webhook、Adaptive Card、簽章 RAG 資產 |
+| Agent Service (`agent_service`) | `8000` | LangGraph workflow、Hybrid RAG、評測 |
+| AI Ops Console / BFF (`ai_ops_backoffice`) | `8092` | 營運 UI + BFF；掛載 React `/console-v2`（`/` 預設導向）；legacy 在 `/legacy` |
+| Knowledge Portal (`knowledge_portal`) | `8091` | Loopback 知識引擎，經 BFF 橋接 |
+
+跨 domain 配線在 `composition/`，共用 port 在 `platform_kernel/`。Domain 之間不可反向 import；CI 以 `scripts/check_architecture.py` 與 Adapter↔Agent 欄位相容檢查 `scripts/check_wire_contracts.py` 驗證。UI 遷移期間的路由擁有者見 [`docs/ai-ops-route-ledger.md`](docs/ai-ops-route-ledger.md)。
+
+公開的 Teams Adapter 仍負責 Bot 通訊、串流進度、圖片簽章與 Adaptive Card；私有的 Agent Service 負責對話、Issue、FAQ、知識檢索與工單。
 
 ![Teams Agent 專案架構圖](./team-agent-arc.png)
 

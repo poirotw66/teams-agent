@@ -6,6 +6,12 @@ Later slices will move activation saga steps behind ports and a coordinator.
 
 from __future__ import annotations
 
+from .activation import (
+    mark_release_failed,
+    mark_release_gate_blocked,
+    persist_failed_release,
+    settle_after_agent_reload,
+)
 from .coordinator import (
     assert_promotable,
     compensation_target_status,
@@ -53,8 +59,8 @@ from .transitions import (
 
 __all__ = [
     "ACTIVE",
-    "ALL_RELEASE_STATUSES",
     "ALLOWED_TRANSITIONS",
+    "ALL_RELEASE_STATUSES",
     "BUILDING",
     "DEACTIVATABLE_STATUSES",
     "DEPLOYING",
@@ -82,9 +88,13 @@ __all__ = [
     "is_allowed_status_hop",
     "is_deactivatable",
     "is_known_status",
+    "mark_release_failed",
+    "mark_release_gate_blocked",
+    "persist_failed_release",
     "promote_rejection_message",
     "resolve_post_reload_status",
     "restored_previous_status",
+    "settle_after_agent_reload",
     "should_compensate_reload_failure",
     "should_finalize_as_active",
     "should_mark_rolled_back",

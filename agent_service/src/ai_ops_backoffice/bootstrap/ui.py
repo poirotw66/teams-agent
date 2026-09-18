@@ -70,7 +70,9 @@ class _NoStoreStaticCacheMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith(("/static/", "/knowledge-ui")):
+        if path in {"/", "/legacy", "/legacy/"} or path.startswith(
+            ("/static/", "/knowledge-ui", "/console-v2")
+        ):
             response.headers["Cache-Control"] = "no-cache, must-revalidate"
         return response
 
@@ -129,8 +131,21 @@ def register_static_ui_routes(
         require_capability(actor, "ops.flags.read")
         return {"items": governance_service.list_flags(actor=actor)}
 
+    @app.get("/legacy")
+    @app.get("/legacy/")
+    async def legacy_shell() -> HTMLResponse:
+        """Emergency legacy shell; normal product path uses `/console-v2`."""
+        return HTMLResponse(
+            _render_index_html(),
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
+
     @app.get("/")
-    async def index() -> HTMLResponse:
+    async def index() -> Response:
+        if settings.console_v2_enabled:
+            from starlette.responses import RedirectResponse
+
+            return RedirectResponse(url="/console-v2/dashboard", status_code=307)
         return HTMLResponse(
             _render_index_html(),
             headers={"Cache-Control": "no-cache, must-revalidate"},

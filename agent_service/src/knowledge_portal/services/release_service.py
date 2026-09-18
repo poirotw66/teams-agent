@@ -16,6 +16,7 @@ from agent_service.target_manifest import knowledge_release_target_manifest_hash
 logger = logging.getLogger(__name__)
 
 
+from .. import release as release_workflow
 from ..models import (
     DocumentDetailResponse,
     KnowledgeVersionRecord,
@@ -29,7 +30,6 @@ from ..models import (
     RollbackRequest,
     utc_now,
 )
-from .. import release as release_workflow
 from ..publisher import ReleaseBuildError
 from ..rbac import (
     PortalPermissionError,
@@ -707,13 +707,7 @@ class ReleaseService:
         try:
             self._require_release_allowed(release)
         except PortalPermissionError as exc:
-            failed = release.model_copy(
-                update={
-                    "status": "FAILED",
-                    "failure_summary": str(exc),
-                    "activated_at": None,
-                }
-            )
+            failed = release_workflow.mark_release_failed(release, summary=str(exc))
             await self._ctx.repository.save_release(failed)
             await self._ctx.audit(
                 actor=actor,
@@ -737,12 +731,8 @@ class ReleaseService:
                 tenant_id=getattr(actor, "tenant_id", None),
             )
         except ReleaseGateBlockedError as exc:
-            blocked = release.model_copy(
-                update={
-                    "status": "GATE_BLOCKED",
-                    "failure_summary": str(exc),
-                    "activated_at": None,
-                }
+            blocked = release_workflow.mark_release_gate_blocked(
+                release, summary=str(exc)
             )
             await self._ctx.repository.save_release(blocked)
             await self._ctx.audit(
@@ -777,12 +767,9 @@ class ReleaseService:
                 "Failed persisting SourceRecords for release %s",
                 release.release_id,
             )
-            failed = release.model_copy(
-                update={
-                    "status": "FAILED",
-                    "failure_summary": f"Failed persisting SourceRecords: {exc}",
-                    "activated_at": None,
-                }
+            failed = release_workflow.mark_release_failed(
+                release,
+                summary=f"Failed persisting SourceRecords: {exc}",
             )
             await self._ctx.repository.save_release(failed)
             await self._ctx.audit(
@@ -804,50 +791,17 @@ class ReleaseService:
         reload_success, reload_error = await self._notify_agent_reload(
             release.release_id, correlation_id
         )
-        current_active = await self._ctx.repository.get_active_release_id()
-        if current_active == release.release_id and not reload_success:
-            release = release.model_copy(
-                update={
-                    "status": release_workflow.compensation_target_status(),
-                    "failure_summary": reload_error or "Agent reload failed",
-                    "activated_at": None,
-                }
-            )
-            await self._ctx.repository.save_release(release)
-            await self._ctx.repository.set_active_release_id(previous_release_id)
-            self._write_local_active_pointer(previous_release_id)
-            if previous_release_id:
-                previous_release = await self._ctx.repository.get_release(
-                    previous_release_id
-                )
-                if previous_release is not None:
-                    await self._ctx.repository.save_release(
-                        previous_release.model_copy(
-                            update={
-                                "status": release_workflow.restored_previous_status(),
-                                "activated_at": utc_now(),
-                            }
-                        )
-                    )
-                await self._notify_agent_reload(
-                    previous_release_id,
-                    correlation_id,
-                )
-        elif current_active == release.release_id:
-            release = release.model_copy(
-                update={
-                    "status": "ACTIVE",
-                    "verified_at": utc_now(),
-                    "failure_summary": "",
-                }
-            )
-            await self._ctx.repository.save_release(release)
-        else:
-            logger.warning(
-                "Release %s reload finished, but active pointer has transitioned to %s.",
-                release.release_id,
-                current_active,
-            )
+        release = await release_workflow.settle_after_agent_reload(
+            store=self._ctx.repository,
+            release=release,
+            previous_release_id=previous_release_id,
+            correlation_id=correlation_id,
+            reload_success=reload_success,
+            reload_error=reload_error,
+            notify_reload=self._notify_agent_reload,
+            write_local_pointer=self._write_local_active_pointer,
+            utc_now=utc_now,
+        )
 
         audit_meta = dict(metadata or {})
         audit_meta["reloadStatus"] = "SUCCESS" if reload_success else "FAILURE"

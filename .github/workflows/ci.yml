@@ -43,6 +43,8 @@ jobs:
         run: uv run python ../scripts/check_architecture.py
       - name: OpenAPI snapshot
         run: PYTHONPATH=src uv run python ../scripts/snapshot_openapi.py --check
+      - name: Wire-contract compatibility
+        run: PYTHONPATH=../src:src uv run python ../scripts/check_wire_contracts.py
       - name: Pytest
         run: uv run pytest -q
 
@@ -77,5 +79,7 @@ jobs:
           cache-dependency-path: console_frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Component smoke tests
+        run: npm test
       - name: Typecheck and build
         run: npm run build

@@ -58,40 +58,58 @@ from .knowledge_pipeline import (
     RelevanceDecision,
     RewrittenQuery,
     StructuredKnowledgeAnswer,
-    answer_covers_error_branches,
     answer_covers_procedure_steps,
     answer_covers_visual_evidence_plates,
+    answer_has_knowledge_citation,
+    answer_indicates_insufficient_information,
     answer_passes_safety_checks,
     bounded_facet_queries,
+    build_chunk_document_maps,
+    claimed_document_keys,
+    document_has_competitive_overlap,
     error_branch_codes_in_text,
+    filter_claims_to_doc_keys,
     filter_cross_scenario_chunks,
+    high_confidence_retrieval_hit,
+    infer_markers_from_claims,
+    is_numbered_section,
+    is_unsupported_miss_answer,
+    max_chunks_for_query,
     merge_policy_advisories,
     missing_diagnosis_facet_queries,
     missing_procedure_steps,
     missing_visual_evidence_plates,
     normalize_composite_citation_markers,
+    ordered_cited_keys_from_markers,
     procedure_steps_in_text,
     prune_unbacked_sentences_and_citations,
     prune_uncited_material_sentences,
+    query_asks_for_error_branch_selection,
     query_asks_for_procedure,
+    query_asks_for_procedure_selection,
     query_asks_for_visual_evidence,
+    query_lexically_matches_results,
+    remap_answer_citation_markers,
     remap_claim_marker_ids_to_chunk_ids,
     repair_structured_answer,
+    resolve_doc_key_for_marker,
     sanitize_answer_security,
+    section_sort_key,
+    should_keep_prior_after_visual_retry,
+    should_retry_error_coverage,
+    should_retry_false_none,
+    should_retry_procedure_coverage,
+    should_retry_visual_evidence,
     structured_answer_is_grounded,
+    top1_was_displaced,
     visual_evidence_plates_in_text,
 )
 from .knowledge_pipeline.relevance import (
-    GRADE_PROMPT,
     annotate_relevance_attempts,
-    answer_indicates_insufficient_information,
     build_relevance_grade_context,
     deterministic_relevance_without_model,
     evaluate_retrieval_confidence,
     format_grade_prompt,
-    high_confidence_retrieval_hit,
-    primary_distinctive_tokens,
-    query_lexically_matches_results,
 )
 from .knowledge_pipeline.retriever import (
     MAX_RETRIEVAL_CACHE_SIZE,
@@ -118,6 +136,33 @@ from .temporal_claims import (
     annotate_historical_dates_in_text,
     sanitize_temporal_claims,
 )
+
+# Compatibility re-exports for tests and adapters that import helpers from this
+# module rather than ``knowledge_pipeline``.
+__all__ = [
+    "ANSWER_PROMPT",
+    "HybridKnowledgeService",
+    "KnowledgeResult",
+    "KnowledgeService",
+    "RelevanceDecision",
+    "RewrittenQuery",
+    "StructuredKnowledgeAnswer",
+    "answer_covers_procedure_steps",
+    "answer_covers_visual_evidence_plates",
+    "answer_indicates_insufficient_information",
+    "bounded_facet_queries",
+    "high_confidence_retrieval_hit",
+    "missing_diagnosis_facet_queries",
+    "missing_procedure_steps",
+    "missing_visual_evidence_plates",
+    "normalize_composite_citation_markers",
+    "procedure_steps_in_text",
+    "query_asks_for_procedure",
+    "query_asks_for_visual_evidence",
+    "query_lexically_matches_results",
+    "remap_claim_marker_ids_to_chunk_ids",
+    "visual_evidence_plates_in_text",
+]
 
 KnowledgeLLM = TypeVar("KnowledgeLLM")
 
@@ -662,7 +707,12 @@ class HybridKnowledgeService:
                 group
                 for group in ranked_documents
                 if max(result.score for result in group) >= score_floor
-                or self._document_has_competitive_overlap(query, leader, group)
+                or document_has_competitive_overlap(
+                    query=query,
+                    leader=leader,
+                    candidates=group,
+                    overlap_ratio=_DOCUMENT_SELECTION_OVERLAP_RATIO,
+                )
             ]
         max_context_documents = _MAX_CONTEXT_DOCUMENTS
         if any(marker in query for marker in _ACCESS_SCOPE_QUERY_MARKERS):
@@ -671,49 +721,13 @@ class HybridKnowledgeService:
             : min(self.settings.top_k, max_context_documents)
         ]
 
-        is_procedure_query = any(
-            marker in query
-            for marker in (
-                "順序",
-                "步驟",
-                "首次設定",
-                "流程",
-                "安裝手冊",
-                "如何設定",
-                "安裝步驟",
-                "設定順序",
-                "視覺順序",
-                "建置順序",
-                "操作順序",
-            )
-        )
-        is_error_branch_query = any(
-            marker in query
-            for marker in (
-                "分流",
-                "錯誤時",
-                "各錯誤",
-                "不同錯誤",
-                "FortiClient 錯誤",
-                "forticlient 錯誤",
-            )
-        )
-        is_multi_section_query = any(
-            marker in query
-            for marker in (
-                "分別",
-                "哪些問題類型",
-                "跨類型",
-                "各情境",
-                "不同情境",
-                "各類型",
-                "分別規定",
-            )
-        )
-        max_chunks_limit = (
-            6
-            if (is_multi_section_query or is_procedure_query or is_error_branch_query)
-            else getattr(self.settings, "max_chunks_per_document", _MAX_CHUNKS_PER_DOCUMENT)
+        is_procedure_query = query_asks_for_procedure_selection(query)
+        is_error_branch_query = query_asks_for_error_branch_selection(query)
+        max_chunks_limit = max_chunks_for_query(
+            query=query,
+            default_max_chunks=getattr(
+                self.settings, "max_chunks_per_document", _MAX_CHUNKS_PER_DOCUMENT
+            ),
         )
         selected: list[SearchResult] = []
         for document_results in ranked_documents:
@@ -730,26 +744,23 @@ class HybridKnowledgeService:
                 numbered_doc_chunks = [
                     chunk
                     for chunk in all_doc_chunks
-                    if chunk.section
-                    and re.match(r"^(?:[#\s]*\d+[\.\-\s]|目錄)", chunk.section.strip())
+                    if is_numbered_section(chunk.section)
                 ]
                 if numbered_doc_chunks:
                     existing_scores = {r.chunk.chunk_id: r.score for r in canonical_version}
                     leader_score = max(r.score for r in canonical_version)
                     procedure_results: list[SearchResult] = []
-                    for c in numbered_doc_chunks:
-                        sc = existing_scores.get(c.chunk_id, leader_score * 0.95)
+                    for chunk in numbered_doc_chunks:
+                        score = existing_scores.get(chunk.chunk_id, leader_score * 0.95)
                         procedure_results.append(
-                            SearchResult(chunk=c, score=sc, sparse_score=0.0, dense_score=0.0)
+                            SearchResult(
+                                chunk=chunk,
+                                score=score,
+                                sparse_score=0.0,
+                                dense_score=0.0,
+                            )
                         )
-
-                    def _section_sort_key(res: SearchResult) -> tuple[int, str]:
-                        sec = res.chunk.section or ""
-                        m = re.search(r"(\d+)", sec)
-                        num = int(m.group(1)) if m else 999
-                        return (num, sec)
-
-                    procedure_results.sort(key=_section_sort_key)
+                    procedure_results.sort(key=section_sort_key)
                     selected.extend(procedure_results[:max_chunks_limit])
                     continue
 
@@ -761,32 +772,12 @@ class HybridKnowledgeService:
                 )[:max_chunks_limit]
             )
 
-        displaced_top1 = False
-        if raw_top1 is not None and selected:
-            if (
-                self._document_key(raw_top1) != self._document_key(selected[0])
-                or raw_top1.score - selected[0].score > 0.15
-            ):
-                displaced_top1 = True
-
+        displaced_top1 = top1_was_displaced(
+            raw_top1=raw_top1,
+            selected=selected,
+            document_key=self._document_key,
+        )
         return (selected, displaced_top1)
-
-    @staticmethod
-    def _document_has_competitive_overlap(
-        query: str,
-        leader: SearchResult,
-        candidates: list[SearchResult],
-    ) -> bool:
-        query_tokens = primary_distinctive_tokens(query)
-        leader_tokens = set(tokenize(f"{leader.chunk.title}\n{leader.chunk.content}"))
-        leader_overlap = len(query_tokens & leader_tokens)
-        if not leader_overlap:
-            return False
-        candidate_tokens: set[str] = set()
-        for candidate in candidates:
-            candidate_tokens.update(tokenize(f"{candidate.chunk.title}\n{candidate.chunk.content}"))
-        candidate_overlap = len(query_tokens & candidate_tokens)
-        return candidate_overlap / leader_overlap >= _DOCUMENT_SELECTION_OVERLAP_RATIO
 
     @staticmethod
     def _canonical_version_results(
@@ -1155,13 +1146,10 @@ class HybridKnowledgeService:
         if not results:
             return self._no_answer()
 
-        unique_doc_keys: list[str] = []
-        chunk_to_doc_idx: list[int] = []
-        for result in results:
-            key = self._document_key(result)
-            if key not in unique_doc_keys:
-                unique_doc_keys.append(key)
-            chunk_to_doc_idx.append(unique_doc_keys.index(key) + 1)
+        unique_doc_keys, chunk_to_doc_idx, document_by_chunk_id = build_chunk_document_maps(
+            results,
+            document_key=self._document_key,
+        )
 
         if not answer_model:
             return self._deterministic_grounded_answer(
@@ -1224,16 +1212,14 @@ class HybridKnowledgeService:
             response.unknowns,
         )
         confidence_label, _ = self._evaluate_retrieval_confidence(state)
-        should_retry_false_none = (
-            response.answerability == "NONE"
-            and results
-            and confidence_label == "HIGH_CONFIDENCE_PASS"
-            and (
-                answer_indicates_insufficient_information(answer) or not response.claims
-            )
-            and query_lexically_matches_results(state.resolved_issue_query, results)
-        )
-        if should_retry_false_none:
+        if should_retry_false_none(
+            answerability=response.answerability,
+            results=results,
+            confidence_label=confidence_label,
+            answer=answer,
+            claims=response.claims,
+            resolved_issue_query=state.resolved_issue_query,
+        ):
             # Narrow retry: only when high-confidence retrieval + lexical overlap
             # still produced NONE / empty claims. Soften instruction so legitimate
             # NONE remains allowed when evidence cannot answer the question.
@@ -1289,22 +1275,11 @@ class HybridKnowledgeService:
                 response.unknowns,
             )
         context_error_codes = error_branch_codes_in_text(context)
-        asks_for_error_branching = any(
-            marker in state.resolved_issue_query
-            for marker in (
-                "分流",
-                "錯誤時",
-                "各錯誤",
-                "不同錯誤",
-                "多個錯誤",
-                "錯誤碼分流",
-            )
-        )
-        if (
-            response.answerability in {"FULL", "PARTIAL"}
-            and asks_for_error_branching
-            and len(context_error_codes) >= 2
-            and not answer_covers_error_branches(answer, context_error_codes)
+        if should_retry_error_coverage(
+            answerability=response.answerability,
+            resolved_issue_query=state.resolved_issue_query,
+            context_error_codes=context_error_codes,
+            answer=answer,
         ):
             codes_csv = ", ".join(f"({code})" for code in context_error_codes)
 
@@ -1357,11 +1332,11 @@ class HybridKnowledgeService:
                 response.claims,
             )
         context_procedure_steps = procedure_steps_in_text(context)
-        if (
-            response.answerability in {"FULL", "PARTIAL"}
-            and query_asks_for_procedure(state.resolved_issue_query)
-            and len(context_procedure_steps) >= 2
-            and not answer_covers_procedure_steps(answer, context_procedure_steps)
+        if should_retry_procedure_coverage(
+            answerability=response.answerability,
+            resolved_issue_query=state.resolved_issue_query,
+            context_procedure_steps=context_procedure_steps,
+            answer=answer,
         ):
             missing_steps = missing_procedure_steps(answer, context_procedure_steps)
             missing_csv = ", ".join(missing_steps)
@@ -1415,11 +1390,11 @@ class HybridKnowledgeService:
                 response.claims,
             )
         context_visual_plates = visual_evidence_plates_in_text(context)
-        if (
-            response.answerability in {"FULL", "PARTIAL"}
-            and query_asks_for_visual_evidence(state.resolved_issue_query)
-            and len(context_visual_plates) >= 2
-            and not answer_covers_visual_evidence_plates(answer, context_visual_plates)
+        if should_retry_visual_evidence(
+            answerability=response.answerability,
+            resolved_issue_query=state.resolved_issue_query,
+            context_visual_plates=context_visual_plates,
+            answer=answer,
         ):
             missing_plates = missing_visual_evidence_plates(answer, context_visual_plates)
             missing_csv = ", ".join(missing_plates[:8])
@@ -1470,8 +1445,9 @@ class HybridKnowledgeService:
             answer = normalize_composite_citation_markers(response.answer.strip())
             answer = strip_unknown_policy_markers(answer)
             # Do not keep a visual retry that drops previously covered procedure steps.
-            if context_procedure_steps and not answer_covers_procedure_steps(
-                answer, context_procedure_steps
+            if should_keep_prior_after_visual_retry(
+                context_procedure_steps=context_procedure_steps,
+                answer=answer,
             ):
                 logger.info(
                     "Visual-evidence retry dropped procedure steps; keeping prior answer"
@@ -1505,23 +1481,20 @@ class HybridKnowledgeService:
         }
 
         def _resolve_doc_key(marker_num: int) -> str | None:
-            if 1 <= marker_num <= len(unique_doc_keys):
-                return unique_doc_keys[marker_num - 1]
-            if 1 <= marker_num <= len(results):
-                doc_idx = chunk_to_doc_idx[marker_num - 1]
-                return unique_doc_keys[doc_idx - 1]
-            return None
+            return resolve_doc_key_for_marker(
+                marker_num,
+                unique_doc_keys=unique_doc_keys,
+                chunk_to_doc_idx=chunk_to_doc_idx,
+                results_len=len(results),
+            )
 
         raw_markers = [int(value) for value in re.findall(r"\[S(\d+)\]", answer)]
         if not raw_markers and response.claims:
-            inferred_markers: list[int] = []
-            for claim in response.claims:
-                for cid in claim.chunkIds:
-                    dkey = document_by_chunk_id.get(cid)
-                    if dkey and dkey in unique_doc_keys:
-                        didx = unique_doc_keys.index(dkey) + 1
-                        if didx not in inferred_markers:
-                            inferred_markers.append(didx)
+            inferred_markers = infer_markers_from_claims(
+                response.claims,
+                document_by_chunk_id=document_by_chunk_id,
+                unique_doc_keys=unique_doc_keys,
+            )
             if inferred_markers:
                 markers_str = " ".join(f"[S{m}]" for m in inferred_markers)
                 answer = f"{answer} {markers_str}"
@@ -1534,11 +1507,10 @@ class HybridKnowledgeService:
             )
             return self._no_answer()
 
-        ordered_cited_doc_keys: list[str] = []
-        for marker in raw_markers:
-            doc_key = _resolve_doc_key(marker)
-            if doc_key is not None and doc_key not in ordered_cited_doc_keys:
-                ordered_cited_doc_keys.append(doc_key)
+        ordered_cited_doc_keys = ordered_cited_keys_from_markers(
+            raw_markers,
+            resolve_doc_key=_resolve_doc_key,
+        )
 
         if not ordered_cited_doc_keys:
             logger.warning(
@@ -1549,12 +1521,10 @@ class HybridKnowledgeService:
             )
             return self._no_answer()
 
-        is_unsupported_miss = answer_indicates_insufficient_information(answer) and (
-            response.answerability == "NONE"
-            or not response.claims
-            or not any(
-                not answer_indicates_insufficient_information(c.text) for c in response.claims
-            )
+        is_unsupported_miss = is_unsupported_miss_answer(
+            answer=answer,
+            answerability=response.answerability,
+            claims=response.claims,
         )
         if is_unsupported_miss:
             logger.warning(
@@ -1564,12 +1534,10 @@ class HybridKnowledgeService:
             )
             return self._no_answer()
 
-        claimed_doc_keys = {
-            document_by_chunk_id[chunk_id]
-            for claim in response.claims
-            for chunk_id in claim.chunkIds
-            if chunk_id in document_by_chunk_id
-        }
+        claimed_doc_keys = claimed_document_keys(
+            response.claims,
+            document_by_chunk_id=document_by_chunk_id,
+        )
 
         # Localized deterministic grounding and citation pruning:
         cited_set = set(ordered_cited_doc_keys)
@@ -1584,17 +1552,15 @@ class HybridKnowledgeService:
                 execution_context=execution_context,
             )
             if repaired_claims:
-                response.claims = [
-                    claim
-                    for claim in repaired_claims
-                    if any(document_by_chunk_id.get(cid) in cited_set for cid in claim.chunkIds)
-                ]
-                claimed_doc_keys = {
-                    document_by_chunk_id[chunk_id]
-                    for claim in response.claims
-                    for chunk_id in claim.chunkIds
-                    if chunk_id in document_by_chunk_id
-                }
+                response.claims = filter_claims_to_doc_keys(
+                    repaired_claims,
+                    allowed_doc_keys=cited_set,
+                    document_by_chunk_id=document_by_chunk_id,
+                )
+                claimed_doc_keys = claimed_document_keys(
+                    response.claims,
+                    document_by_chunk_id=document_by_chunk_id,
+                )
                 common_doc_keys = claimed_doc_keys & cited_set
 
         if not common_doc_keys:
@@ -1605,14 +1571,12 @@ class HybridKnowledgeService:
             )
             return self._no_answer()
 
-        # Prune claims not backed by common_doc_keys
-        response.claims = [
-            claim
-            for claim in response.claims
-            if any(document_by_chunk_id.get(cid) in common_doc_keys for cid in claim.chunkIds)
-        ]
+        response.claims = filter_claims_to_doc_keys(
+            response.claims,
+            allowed_doc_keys=common_doc_keys,
+            document_by_chunk_id=document_by_chunk_id,
+        )
 
-        # Sentence/clause-level pruning of ungrounded text and citations
         answer = self._prune_unbacked_sentences_and_citations(
             answer,
             common_doc_keys,
@@ -1620,21 +1584,12 @@ class HybridKnowledgeService:
         )
         ordered_cited_doc_keys = [k for k in ordered_cited_doc_keys if k in common_doc_keys]
 
-        doc_key_to_final_idx: dict[str, int] = {
-            key: idx for idx, key in enumerate(ordered_cited_doc_keys, start=1)
-        }
-
-        def _remap_marker(match: re.Match[str]) -> str:
-            val = int(match.group(1))
-            doc_key = _resolve_doc_key(val)
-            if doc_key is None and unique_doc_keys:
-                doc_key = unique_doc_keys[0]
-            if doc_key is not None and doc_key in doc_key_to_final_idx:
-                return f"[S{doc_key_to_final_idx[doc_key]}]"
-            return match.group(0)
-
-        normalized_answer = re.sub(r"\[S(\d+)\]", _remap_marker, answer)
-        normalized_answer = re.sub(r"(\[S\d+\])\1+", r"\1", normalized_answer)
+        normalized_answer = remap_answer_citation_markers(
+            answer,
+            ordered_cited_doc_keys=ordered_cited_doc_keys,
+            unique_doc_keys=unique_doc_keys,
+            resolve_doc_key=_resolve_doc_key,
+        )
         normalized_answer = self._sanitize_answer_security(normalized_answer)
         normalized_answer = sanitize_temporal_claims(normalized_answer)
 
@@ -1673,7 +1628,7 @@ class HybridKnowledgeService:
             )
         )
 
-        if not re.search(r"\[S\d+\]", normalized_answer) or not ordered_cited_doc_keys:
+        if not answer_has_knowledge_citation(normalized_answer) or not ordered_cited_doc_keys:
             logger.warning(
                 "Knowledge answer rejected after pruning: missing knowledge citations"
             )

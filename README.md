@@ -36,7 +36,7 @@ Service endpoints:
 
 | Service | Port | Access | Description |
 | :--- | :--- | :--- | :--- |
-| **AI Ops Console** | `8092` | Public / Ops | **Primary Unified Operations Portal & BFF** (Native UI, Bento Grid metrics, Closed-Loop Ops) |
+| **AI Ops Console** | `8092` | Public / Ops | **Primary unified ops BFF** — React `/console-v2` is the default product UI (`/` redirects there); legacy shell is emergency-only at `/legacy` |
 | **Teams Adapter** | `3978` | Public / Teams | Microsoft Teams SDK Messaging Endpoint (`/api/messages`) & Adaptive Card renderer |
 | **Agent Service** | `8000` | Private / Internal | LangGraph Workflow main entry (`/agent/chat`), Hybrid RAG, & Evaluation engine |
 | **Knowledge Portal** | `8091` | Loopback Only | Internal Headless Knowledge Engine (Bridged directly into Port `8092`) |
@@ -46,7 +46,9 @@ Service endpoints:
 Detailed endpoints by service:
 
 - **AI Operations Console (Port 8092; Unified Operations Entrypoint & BFF)**:
-  - `GET /`: AI Operations Console Web UI (Double-Bezel hardware architecture, Bento Grid metrics, native DOM components)
+  - `GET /console-v2/*`: React Console (canonical product UI when `BACKOFFICE_CONSOLE_V2_ENABLED=true`; `/` redirects to `/console-v2/dashboard`)
+  - `GET /legacy`: emergency legacy shell (not the normal product path)
+  - `GET /`: Legacy ops shell (hash routes; owners tracked in `docs/ai-ops-route-ledger.md`)
   - `POST /api/quality-cases/*`: Quality Case closed-loop management (triage candidates, merge, link content, observation, lifecycle transitions)
   - `POST /api/knowledge/*`: BFF bridge for native knowledge document operations (draft, review, publish, rollback)
   - `GET /api/governance/*`: Prompts, Models, Feature Flags, Roles, Retention, Masking, Search & Audit
@@ -176,8 +178,18 @@ Agent Workflow (spec §4–§14):
 
 ## Architecture
 
-Two-service split: the public Teams Adapter handles Bot communications, streaming progress, image signing, and
-Adaptive Cards; the private LangGraph Agent handles conversation, Issues, FAQ, knowledge retrieval, and tickets.
+Runtime topology is a **modular monolith with four primary entrypoints**, not a microservice rewrite:
+
+| Entrypoint | Port | Role |
+| :--- | :--- | :--- |
+| Teams Adapter (`src/teams_agent`) | `3978` | Public Bot webhook, Adaptive Cards, signed RAG assets |
+| Agent Service (`agent_service`) | `8000` | LangGraph workflow, Hybrid RAG, evaluation |
+| AI Ops Console / BFF (`ai_ops_backoffice`) | `8092` | Ops UI + BFF; mounts React `/console-v2` (default via `/` redirect); legacy at `/legacy` |
+| Knowledge Portal (`knowledge_portal`) | `8091` | Loopback knowledge engine bridged through the BFF |
+
+Cross-domain wiring lives in `composition/` and shared ports in `platform_kernel/`. Domains must not reverse-import each other; CI enforces this via `scripts/check_architecture.py` and Adapter↔Agent field compatibility via `scripts/check_wire_contracts.py`. Route ownership during UI migration is tracked in [`docs/ai-ops-route-ledger.md`](docs/ai-ops-route-ledger.md).
+
+The public Teams Adapter still owns Bot communications, streaming progress, image signing, and Adaptive Cards; the private Agent Service owns conversation, Issues, FAQ, knowledge retrieval, and tickets.
 
 ![Teams Agent 專案架構圖](./team-agent-arc.png)
 

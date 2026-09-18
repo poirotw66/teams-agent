@@ -299,3 +299,15 @@ def test_console_v2_feature_flag_redirect(tmp_path: Path) -> None:
     deep_res = client_disabled.get("/console-v2/work", follow_redirects=False)
     assert deep_res.status_code == 307
     assert deep_res.headers["location"] == "/"
+
+    settings_enabled = _build_settings(tmp_path, console_v2_enabled=True)
+    app_enabled = create_app(settings_enabled)
+    client_enabled = TestClient(app_enabled)
+
+    root_res = client_enabled.get("/", follow_redirects=False)
+    assert root_res.status_code == 307
+    assert root_res.headers["location"] == "/console-v2/dashboard"
+
+    legacy_res = client_enabled.get("/legacy")
+    assert legacy_res.status_code == 200
+    assert "text/html" in legacy_res.headers.get("content-type", "")

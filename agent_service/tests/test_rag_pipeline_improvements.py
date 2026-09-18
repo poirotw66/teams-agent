@@ -839,7 +839,7 @@ def test_remap_claim_marker_ids_to_chunk_ids() -> None:
 
 
 def test_answer_indicates_insufficient_information_covers_common_gap_phrasing() -> None:
-    from agent_service.knowledge import answer_indicates_insufficient_information
+    from agent_service.knowledge_pipeline import answer_indicates_insufficient_information
 
     assert answer_indicates_insufficient_information(
         "目前知識庫中並未記載關於 VPN 存取範圍的相關規定。"
@@ -1065,7 +1065,7 @@ def test_same_line_uncited_policy_clause_is_pruned() -> None:
 
 
 def test_error_branch_coverage_helpers() -> None:
-    from agent_service.knowledge import (
+    from agent_service.knowledge_pipeline import (
         answer_covers_error_branches,
         error_branch_codes_in_text,
     )

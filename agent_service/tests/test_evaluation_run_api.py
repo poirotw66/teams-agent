@@ -244,7 +244,11 @@ def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
     app = create_app(settings)
     client = TestClient(app)
 
-    index_res = client.get("/")
+    root_res = client.get("/", follow_redirects=False)
+    assert root_res.status_code == 307
+    assert root_res.headers["location"] == "/console-v2/dashboard"
+
+    index_res = client.get("/legacy")
     assert index_res.status_code == 200
     from ai_ops_backoffice.api import UI_ASSET_VERSION
     assert UI_ASSET_VERSION in index_res.text

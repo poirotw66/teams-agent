@@ -15,9 +15,32 @@ import { AppLayout } from './shell/AppLayout';
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage';
 import { TriagePage } from '../features/triage/pages/TriagePage';
 import { KnowledgePage } from '../features/knowledge/pages/KnowledgePage';
+import { ReleasesPage } from '../features/knowledge/pages/ReleasesPage';
+import { ReviewsPage } from '../features/knowledge/pages/ReviewsPage';
+import { SyncJobsPage } from '../features/knowledge/pages/SyncJobsPage';
 import { TicketsPage } from '../features/tickets/pages/TicketsPage';
 import { HealthPage } from '../features/operations/pages/HealthPage';
 import { CaseDetailPage } from '../features/improvements/pages/CaseDetailPage';
+import { EvaluationsPage } from '../features/evaluations/pages/EvaluationsPage';
+import { ExamplesPage } from '../features/ai/pages/ExamplesPage';
+import { PromptsPage } from '../features/ai/pages/PromptsPage';
+import {
+  AuditPage,
+  FlagsPage,
+  MaskingPage,
+  ModelsPage,
+  RetentionPage,
+  RolesPage,
+} from '../features/governance/pages/GovernancePages';
+import {
+  BudgetsPage,
+  CostsPage,
+  IssuesPage,
+  KnowledgeAnalyticsPage,
+  KnowledgeAuditPage,
+  RoutesPage,
+} from '../features/operations/pages/OpsPages';
+import { SearchPage } from '../features/operations/pages/SearchPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
 
 export const App: React.FC = () => {
@@ -107,10 +130,52 @@ export const App: React.FC = () => {
                 },
               },
               {
+                name: 'knowledge-reviews',
+                list: '/knowledge/reviews',
+                meta: {
+                  label: '知識審核',
+                },
+              },
+              {
+                name: 'knowledge-releases',
+                list: '/knowledge/releases',
+                meta: {
+                  label: '知識 Release',
+                },
+              },
+              {
+                name: 'knowledge-sync',
+                list: '/knowledge/sync',
+                meta: {
+                  label: '知識 Sync',
+                },
+              },
+              {
                 name: 'tickets',
                 list: '/tickets',
                 meta: {
                   label: 'IT 工單追蹤',
+                },
+              },
+              {
+                name: 'evaluations',
+                list: '/ai/evaluations',
+                meta: {
+                  label: '評測執行',
+                },
+              },
+              {
+                name: 'examples',
+                list: '/ai/examples',
+                meta: {
+                  label: 'Examples',
+                },
+              },
+              {
+                name: 'prompts',
+                list: '/ai/prompts',
+                meta: {
+                  label: 'Prompts',
                 },
               },
               {
@@ -119,6 +184,31 @@ export const App: React.FC = () => {
                 meta: {
                   label: '系統健康',
                 },
+              },
+              { name: 'issues', list: '/operations/issues', meta: { label: '議題摘要' } },
+              { name: 'routes', list: '/operations/routes', meta: { label: '路由摘要' } },
+              { name: 'costs', list: '/operations/costs', meta: { label: '成本摘要' } },
+              { name: 'budgets', list: '/operations/budgets', meta: { label: '預算政策' } },
+              { name: 'models', list: '/ai/models', meta: { label: '模型設定' } },
+              { name: 'flags', list: '/ai/flags', meta: { label: 'Feature Flags' } },
+              { name: 'roles', list: '/governance/roles', meta: { label: '角色權限' } },
+              { name: 'retention', list: '/governance/retention', meta: { label: '保存政策' } },
+              { name: 'masking', list: '/governance/masking', meta: { label: '脫敏遮罩' } },
+              { name: 'audit', list: '/governance/audit', meta: { label: '治理稽核' } },
+              {
+                name: 'knowledge-analytics',
+                list: '/knowledge/analytics',
+                meta: { label: '知識成效' },
+              },
+              {
+                name: 'knowledge-audit',
+                list: '/knowledge/audit',
+                meta: { label: '知識稽核' },
+              },
+              {
+                name: 'search',
+                list: '/operations/search',
+                meta: { label: '跨實體搜尋' },
               },
             ]}
             options={{
@@ -143,8 +233,28 @@ export const App: React.FC = () => {
                 <Route path="/improvements/cases" element={<Navigate to="/triage" replace />} />
                 <Route path="/improvements/cases/:id" element={<CaseDetailPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
+                <Route path="/knowledge/reviews" element={<ReviewsPage />} />
+                <Route path="/knowledge/releases" element={<ReleasesPage />} />
+                <Route path="/knowledge/sync" element={<SyncJobsPage />} />
                 <Route path="/tickets" element={<TicketsPage />} />
                 <Route path="/operations/health" element={<HealthPage />} />
+                <Route path="/ai/evaluations" element={<EvaluationsPage />} />
+                <Route path="/ai/examples" element={<ExamplesPage />} />
+                <Route path="/ai/prompts" element={<PromptsPage />} />
+                <Route path="/ai/models" element={<ModelsPage />} />
+                <Route path="/ai/flags" element={<FlagsPage />} />
+                <Route path="/ai/evals" element={<Navigate to="/ai/evaluations" replace />} />
+                <Route path="/operations/issues" element={<IssuesPage />} />
+                <Route path="/operations/routes" element={<RoutesPage />} />
+                <Route path="/operations/costs" element={<CostsPage />} />
+                <Route path="/operations/budgets" element={<BudgetsPage />} />
+                <Route path="/governance/roles" element={<RolesPage />} />
+                <Route path="/governance/retention" element={<RetentionPage />} />
+                <Route path="/governance/masking" element={<MaskingPage />} />
+                <Route path="/governance/audit" element={<AuditPage />} />
+                <Route path="/knowledge/analytics" element={<KnowledgeAnalyticsPage />} />
+                <Route path="/knowledge/audit" element={<KnowledgeAuditPage />} />
+                <Route path="/operations/search" element={<SearchPage />} />
                 <Route
                   path="*"
                   element={
