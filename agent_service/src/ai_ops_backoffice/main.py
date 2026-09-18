@@ -11,7 +11,7 @@ def main() -> None:
     )
     reload = environ.get("AI_OPS_BACKOFFICE_RELOAD", "").lower() in ("true", "1") or environ.get("AGENT_DEPLOYMENT_ENV") == "dev"
     uvicorn.run(
-        "composition.backoffice_app:app",
+        "composition.backoffice_asgi:app",
         host=environ.get("AI_OPS_BACKOFFICE_HOST", "0.0.0.0"),
         port=int(environ.get("AI_OPS_BACKOFFICE_PORT", "8092")),
         log_level=environ.get("LOG_LEVEL", "info").lower(),

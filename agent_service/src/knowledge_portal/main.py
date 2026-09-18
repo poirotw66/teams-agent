@@ -10,7 +10,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     uvicorn.run(
-        "composition.portal_app:app",
+        "composition.portal_asgi:app",
         host=environ.get("KNOWLEDGE_PORTAL_HOST", "0.0.0.0"),
         port=int(environ.get("KNOWLEDGE_PORTAL_PORT", "8090")),
         log_level=environ.get("LOG_LEVEL", "info").lower(),

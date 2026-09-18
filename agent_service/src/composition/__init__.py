@@ -1,15 +1,10 @@
-"""Composition root: wire domain ports without reverse domain imports."""
+"""Composition root package.
 
-from __future__ import annotations
+Import concrete factory or ASGI modules directly, for example:
 
-from composition.agent_app import create_agent_app
-from composition.agent_hooks import install_agent_hooks
-from composition.backoffice_app import create_backoffice_app
-from composition.portal_app import create_portal_app
+- ``composition.agent_app.create_agent_app``
+- ``composition.agent_asgi:app``
 
-__all__ = [
-    "create_agent_app",
-    "create_backoffice_app",
-    "create_portal_app",
-    "install_agent_hooks",
-]
+This package init intentionally does not import app factories so loading one
+service entrypoint cannot assemble the others.
+"""

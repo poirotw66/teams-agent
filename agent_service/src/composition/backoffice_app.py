@@ -20,7 +20,3 @@ def create_backoffice_app(
         portal_app_factory=create_portal_app,
         **kwargs,
     )
-
-
-# ASGI entry used by uvicorn / Cloud Run.
-app = create_backoffice_app()

@@ -30,7 +30,3 @@ def create_portal_app(
         release_gate_checker=checker,
         source_catalog_writer=writer,
     )
-
-
-# ASGI entry used by uvicorn / Cloud Run.
-app = create_portal_app()

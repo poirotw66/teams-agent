@@ -12,7 +12,3 @@ from composition.agent_hooks import install_agent_hooks
 def create_agent_app(settings: RagSettings | None = None) -> FastAPI:
     install_agent_hooks()
     return create_agent_core_app(settings)
-
-
-# ASGI entry used by uvicorn / Cloud Run.
-app = create_agent_app()

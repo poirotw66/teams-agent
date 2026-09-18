@@ -10,7 +10,7 @@ from knowledge_portal.bootstrap.container import build_portal_container
 from knowledge_portal.bootstrap.register_routes import register_portal_routes
 from knowledge_portal.settings import PortalSettings
 
-__all__ = ["app", "create_app"]
+__all__ = ["create_app"]
 
 
 def create_app(
@@ -52,6 +52,3 @@ def create_app(
         handle_errors=container.handle_errors,
     )
     return app
-
-
-app = create_app()

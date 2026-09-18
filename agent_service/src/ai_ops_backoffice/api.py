@@ -16,7 +16,6 @@ from ai_ops_backoffice.settings import BackofficeSettings
 
 __all__ = [
     "UI_ASSET_VERSION",
-    "app",
     "build_eval_prompt_resolver",
     "create_app",
 ]
@@ -57,6 +56,3 @@ def create_app(
     bind_app_state(app, container)
     register_domain_routes(app, container)
     return app
-
-
-app = create_app()

@@ -43,6 +43,3 @@ def create_app(settings: RagSettings | None = None) -> FastAPI:
     register_retrieval_routes(app, resolved_settings=resolved_settings, authorize=authorize)
 
     return app
-
-
-app = create_app()
