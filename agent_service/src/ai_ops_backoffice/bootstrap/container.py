@@ -180,13 +180,16 @@ def build_backoffice_container(
     eval_chat_model: object | None = None,
     eval_model_invoker: Callable[..., object] | None = None,
     eval_answering_fn: Callable[..., object] | None = None,
+    portal_app_factory: Callable[..., FastAPI] | None = None,
 ) -> BackofficeContainer:
     query_service = BackofficeQueryService(settings)
-    faq_repository, faq_service, example_service, quality_service = (
-        build_core_domain_services(settings, query_service)
+    faq_repository, faq_service, example_service, quality_service = build_core_domain_services(
+        settings, query_service
     )
     portal_app, knowledge_client, knowledge_transport = build_knowledge_client(
-        settings, knowledge_transport=knowledge_transport
+        settings,
+        knowledge_transport=knowledge_transport,
+        portal_app_factory=portal_app_factory,
     )
     ops = build_ops_services(
         settings,
@@ -194,10 +197,8 @@ def build_backoffice_container(
         email_sender=email_sender,
     )
     sync_service, configured_targets, budget_service, notification_dispatcher, prompt_service, prompt_repository = ops
-    governance_repository, governance_service, eval_harness_status = (
-        build_governance_bundle(
-            settings, query_service, eval_flow_harness=eval_flow_harness
-        )
+    governance_repository, governance_service, eval_harness_status = build_governance_bundle(
+        settings, query_service, eval_flow_harness=eval_flow_harness
     )
     evaluation = build_evaluation_stack(
         settings,

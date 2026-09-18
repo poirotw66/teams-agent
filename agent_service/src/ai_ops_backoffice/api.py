@@ -33,6 +33,7 @@ def create_app(
     eval_chat_model: object | None = None,
     eval_model_invoker: Callable[..., object] | None = None,
     eval_answering_fn: Callable[..., object] | None = None,
+    portal_app_factory: Callable[..., FastAPI] | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
     prod_issues = resolved_settings.validate_for_production()
@@ -49,6 +50,7 @@ def create_app(
         eval_chat_model=eval_chat_model,
         eval_model_invoker=eval_model_invoker,
         eval_answering_fn=eval_answering_fn,
+        portal_app_factory=portal_app_factory,
     )
     app = FastAPI(title="AI Operations Backoffice", lifespan=container.lifespan)
     register_exception_handlers(app)

@@ -314,6 +314,7 @@
         "facetQueries",
         "fallbackPath",
         "policyAdvisories",
+        "queryTier",
         "rawUserUtterance",
         "resolvedIssueQuery",
         "searchQuery",

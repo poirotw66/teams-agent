@@ -19,9 +19,6 @@ from .settings import RagSettings
 
 
 def create_app(settings: RagSettings | None = None) -> FastAPI:
-    from composition.agent_hooks import install_agent_hooks
-
-    install_agent_hooks()
     resolved_settings = settings or RagSettings.from_env()
     authorize = make_authorize(resolved_settings)
     authorize_evaluation = make_evaluation_authorize(resolved_settings)

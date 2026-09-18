@@ -35,7 +35,33 @@ def _str_env(name: str) -> str | None:
     return environ.get(name, "").strip() or None
 
 
+def _resolve_paths(project_dir: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
+    raw = environ.get("RAG_DATA_DIR")
+    if raw and Path(raw).is_absolute():
+        data_dir = Path(raw).resolve()
+    elif raw and (project_dir / raw).exists():
+        data_dir = (project_dir / raw).resolve()
+    elif raw and Path(raw).exists():
+        data_dir = Path(raw).resolve()
+    else:
+        data_dir = (project_dir.parent / "data").resolve()
+
+    def _p(key: str, default: Path) -> Path:
+        return Path(environ.get(key, default)).expanduser().resolve()
+
+    return (
+        data_dir,
+        _p("RAG_INDEX_PATH", data_dir / "index" / "chunks.json"),
+        _p("CONVERSATION_STORE_PATH", data_dir / "conversations"),
+        _p("HANDOFF_STORE_PATH", data_dir / "handoffs"),
+        _p("FAQ_PATH", data_dir / "faq.json"),
+        _p("AI_OPS_FAQ_STORE_PATH", data_dir / "ops" / "phase2" / "faqs.json"),
+    )
+
+
+
 @dataclass(frozen=True)
+
 class RagSettings:
     data_dir: Path
     index_path: Path
@@ -154,42 +180,36 @@ class RagSettings:
     @classmethod
     def from_env(cls) -> "RagSettings":
         project_dir = Path(__file__).resolve().parents[2]
-        data_dir = Path(environ.get("RAG_DATA_DIR", project_dir.parent / "data"))
-        index_path = Path(environ.get("RAG_INDEX_PATH", data_dir / "index" / "chunks.json"))
-        conversation_store_path = Path(
-            environ.get("CONVERSATION_STORE_PATH", data_dir / "conversations")
-        )
-        handoff_store_path = Path(environ.get("HANDOFF_STORE_PATH", data_dir / "handoffs"))
-        faq_path = Path(environ.get("FAQ_PATH", data_dir / "faq.json"))
-        faq_governed_store_path = Path(
-            environ.get(
-                "AI_OPS_FAQ_STORE_PATH",
-                data_dir / "ops" / "phase2" / "faqs.json",
-            )
-        )
+        (
+            data_dir,
+            index_path,
+            conversation_store_path,
+            handoff_store_path,
+            faq_path,
+            faq_governed_store_path,
+        ) = _resolve_paths(project_dir)
 
         settings = cls(
-            data_dir=data_dir.expanduser().resolve(),
-            index_path=index_path.expanduser().resolve(),
+            data_dir=data_dir,
+            index_path=index_path,
             auto_build_index=_bool_env("RAG_AUTO_BUILD_INDEX", True),
+
             model=environ.get("RAG_MODEL", "").strip() or None,
             agent_model=environ.get("AGENT_MODEL", "").strip() or None,
             embedding_model=environ.get("RAG_EMBEDDING_MODEL", "").strip() or None,
-            top_k=int(environ.get("RAG_TOP_K", "4")),
-            min_score=float(environ.get("RAG_MIN_SCORE", "0.08")),
-            max_rewrites=int(environ.get("RAG_MAX_REWRITES", "1")),
-            chunk_size=int(environ.get("RAG_CHUNK_SIZE", "900")),
-            chunk_overlap=int(environ.get("RAG_CHUNK_OVERLAP", "120")),
+            top_k=_int_env("RAG_TOP_K", 4),
+            min_score=_float_env("RAG_MIN_SCORE", 0.08),
+            max_rewrites=_int_env("RAG_MAX_REWRITES", 1),
+            chunk_size=_int_env("RAG_CHUNK_SIZE", 900),
+            chunk_overlap=_int_env("RAG_CHUNK_OVERLAP", 120),
             allowed_tenants=_csv_env("RAG_ALLOWED_TENANTS"),
             source_base_url=_str_env("RAG_SOURCE_BASE_URL"),
-            service_token=(
-                environ.get("AGENT_SERVICE_TOKEN", "").strip()
-                or environ.get("AGENT_RELOAD_TOKEN", "").strip()
-                or environ.get("SERVICE_TOKEN", "").strip()
-                or None
+            service_token=next(
+                (environ[k].strip() for k in ("AGENT_SERVICE_TOKEN", "AGENT_RELOAD_TOKEN", "SERVICE_TOKEN") if environ.get(k, "").strip()),
+                None,
             ),
             golden_evaluation_token=_str_env("GOLDEN_EVALUATION_TOKEN"),
-            max_images=int(environ.get("RAG_MAX_IMAGES", "2")),
+            max_images=_int_env("RAG_MAX_IMAGES", 2),
             max_issues_per_message=_int_env("MAX_ISSUES_PER_MESSAGE", 3),
             max_missing_info_per_issue=_int_env("MAX_MISSING_INFO_PER_ISSUE", 2),
             max_clarification_rounds=_int_env("MAX_CLARIFICATION_ROUNDS", 2),
@@ -197,10 +217,9 @@ class RagSettings:
             conversation_history_rounds=_int_env("CONVERSATION_HISTORY_ROUNDS", 5),
             conversation_timeout_hours=_int_env("CONVERSATION_TIMEOUT_HOURS", 24),
             conversation_retention_days=_int_env("CONVERSATION_RETENTION_DAYS", 365),
-            supervisor_terminal_confidence=float(
-                environ.get("SUPERVISOR_TERMINAL_CONFIDENCE", "0.9")
-            ),
+            supervisor_terminal_confidence=_float_env("SUPERVISOR_TERMINAL_CONFIDENCE", 0.9),
             max_llm_calls_per_request=_int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
+
             max_retrieval_rewrites=_int_env(
                 "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
             ),
@@ -222,12 +241,9 @@ class RagSettings:
             deployment_environment=(
                 _str_env("AGENT_DEPLOYMENT_ENV") or _str_env("RAG_DEPLOYMENT_ENV") or "dev"
             ),
-            skip_relevance_llm_on_high_confidence=_bool_env(
-                "RAG_SKIP_RELEVANCE_LLM_ON_HIGH_CONFIDENCE", True
-            ),
-            enable_adaptive_query_tiers=_bool_env(
-                "ENABLE_ADAPTIVE_QUERY_TIERS", True
-            ),
+            skip_relevance_llm_on_high_confidence=_bool_env("RAG_SKIP_RELEVANCE_LLM_ON_HIGH_CONFIDENCE", True),
+            enable_adaptive_query_tiers=_bool_env("ENABLE_ADAPTIVE_QUERY_TIERS", True),
+
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",
             ticket_service_base_url=_str_env("TICKET_SERVICE_BASE_URL"),

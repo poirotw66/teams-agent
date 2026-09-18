@@ -12,6 +12,21 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _resolve_root_data(project_dir: Path, data_dir: Path | None = None) -> Path:
+    if data_dir is not None:
+        return data_dir
+    raw = environ.get("RAG_DATA_DIR")
+    if raw:
+        candidate = Path(raw).expanduser()
+        if candidate.is_absolute():
+            return candidate
+        if (project_dir / candidate).exists():
+            return (project_dir / candidate).resolve()
+        if (Path.cwd() / candidate).exists():
+            return (Path.cwd() / candidate).resolve()
+    return (project_dir.parent / "data").resolve()
+
+
 @dataclass(frozen=True)
 class OpsSettings:
     enabled: bool
@@ -48,7 +63,7 @@ class OpsSettings:
     @classmethod
     def from_env(cls, data_dir: Path | None = None) -> OpsSettings:
         project_dir = Path(__file__).resolve().parents[3]
-        root_data = data_dir or Path(environ.get("RAG_DATA_DIR", project_dir.parent / "data"))
+        root_data = _resolve_root_data(project_dir, data_dir)
         ops_dir = Path(environ.get("OPS_DATA_DIR", root_data / "ops"))
         return cls(
             enabled=_bool_env("OPS_EVENTS_ENABLED", True),

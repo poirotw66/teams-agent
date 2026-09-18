@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from typing import Any
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -199,6 +200,18 @@ async def on_message(ctx: ActivityContext[MessageActivity]) -> None:
         await ctx.send(_service_unavailable_message(correlation_id))
 
 
+async def _resolve_sender_email(sender: Any) -> str | None:
+    # Teams populates `from.email` on some channels; the User Directory
+    # Service only has to call Graph when the activity didn't carry one (spec §12).
+    email = account_field(sender, "email", "email") if sender else None
+    if not email:
+        entra_object_id = sender.aad_object_id if sender else None
+        email = await user_directory_service.get_email(entra_object_id)
+    if not email and agent_settings.uses_playground_identity_fallback:
+        email = agent_settings.playground_test_user_email
+    return email
+
+
 async def _handle_message(
     ctx: ActivityContext[MessageActivity],
     *,
@@ -231,28 +244,10 @@ async def _handle_message(
         return
 
     # Spec §15.1: one Correlation ID per Teams activity, generated once here
-    # and never regenerated for retries within this turn. The adapter uses
-    # this same value as both AgentRequest.requestId (the adapter's own
-    # tracking id, historically surfaced to the user in error messages) and
-    # AgentRequest.correlationId (the id propagated through the Agent
-    # Service / LangGraph / downstream nodes). Keeping them identical avoids
-    # tracking two ids for what is, from the Teams Adapter's perspective,
-    # a single request.
+    # and never regenerated for retries within this turn.
     correlation_id = str(uuid4())
+    email = await _resolve_sender_email(ctx.activity.from_)
 
-    sender = ctx.activity.from_
-    # Teams populates `from.email` on some channels; the User Directory
-    # Service only has to call Graph when the activity didn't carry one
-    # (spec §12).
-    email = account_field(sender, "email", "email") if sender else None
-    if not email:
-        entra_object_id = sender.aad_object_id if sender else None
-        email = await user_directory_service.get_email(entra_object_id)
-    if not email and agent_settings.uses_playground_identity_fallback:
-        # Agents Playground mock users do not carry a resolvable corporate
-        # email. This opt-in is accepted only in the explicitly unsafe local
-        # mode; AgentSettings rejects it for Cloud Run and real Teams.
-        email = agent_settings.playground_test_user_email
 
     # Playground synthetic identities have no Graph groups; mirror
     # citation_source_groups so Hybrid ACL can see grp_public corpus chunks.

@@ -1,5 +1,5 @@
 {
-  "routeCount": 213,
+  "routeCount": 215,
   "routes": [
     {
       "method": "GET",
@@ -3078,6 +3078,28 @@
       "method": "GET",
       "operationId": "get_knowledge_ui",
       "path": "/knowledge-ui/",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_legacy",
+      "path": "/legacy",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_legacy",
+      "path": "/legacy/",
       "requestSchema": null,
       "responseSchemas": [],
       "statusCodes": [

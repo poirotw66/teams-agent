@@ -53,7 +53,10 @@ FORBIDDEN_EDGES = frozenset(
     {
         ("agent_service", "ai_ops_backoffice"),
         ("agent_service", "knowledge_portal"),
+        ("agent_service", "composition"),
+        ("ai_ops_backoffice", "composition"),
         ("knowledge_portal", "ai_ops_backoffice"),
+        ("knowledge_portal", "composition"),
         ("platform_kernel", "agent_service"),
         ("platform_kernel", "ai_ops_backoffice"),
         ("platform_kernel", "knowledge_portal"),
@@ -271,6 +274,79 @@ def check_reverse_imports(
     return findings
 
 
+def collect_package_dependency_graph() -> dict[str, set[str]]:
+    """Map src_pkg -> set of imported dst_pkgs."""
+    graph: dict[str, set[str]] = {pkg: set() for pkg in DOMAIN_PACKAGES}
+    for path in iter_source_files():
+        if path.suffix != ".py":
+            continue
+        src_pkg = package_of(path)
+        if src_pkg is None or src_pkg not in DOMAIN_PACKAGES:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError:
+            continue
+        for dst_pkg in imported_domain_packages(tree):
+            if src_pkg != dst_pkg and dst_pkg in DOMAIN_PACKAGES:
+                graph[src_pkg].add(dst_pkg)
+    return graph
+
+
+def find_package_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
+    """Find all strongly connected components with >1 node using Tarjan's algorithm."""
+    index = 0
+    indices: dict[str, int] = {}
+    lowlinks: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    sccs: list[list[str]] = []
+
+    def strongconnect(node: str) -> None:
+        nonlocal index
+        indices[node] = index
+        lowlinks[node] = index
+        index += 1
+        stack.append(node)
+        on_stack.add(node)
+
+        for neighbor in sorted(graph.get(node, set())):
+            if neighbor not in indices:
+                strongconnect(neighbor)
+                lowlinks[node] = min(lowlinks[node], lowlinks[neighbor])
+            elif neighbor in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[neighbor])
+
+        if lowlinks[node] == indices[node]:
+            component: list[str] = []
+            while True:
+                w = stack.pop()
+                on_stack.remove(w)
+                component.append(w)
+                if w == node:
+                    break
+            if len(component) > 1:
+                sccs.append(sorted(component))
+
+    for node in sorted(graph):
+        if node not in indices:
+            strongconnect(node)
+
+    return sccs
+
+
+def check_package_cycles(graph: dict[str, set[str]]) -> list[Finding]:
+    findings: list[Finding] = []
+    for scc in find_package_cycles(graph):
+        findings.append(
+            Finding(
+                "PACKAGE_CYCLE",
+                f"strongly connected package cycle detected: {' <-> '.join(scc)}",
+            )
+        )
+    return findings
+
+
 def build_baselines() -> dict[str, object]:
     file_sizes = collect_file_sizes()
     oversized_files = {
@@ -342,6 +418,9 @@ def run_checks() -> list[Finding]:
     )
     findings.extend(
         check_reverse_imports(collect_reverse_imports(), import_baseline)
+    )
+    findings.extend(
+        check_package_cycles(collect_package_dependency_graph())
     )
     return findings
 

@@ -36,8 +36,25 @@ from .prompts import ANSWER_PROMPT
 logger = logging.getLogger(__name__)
 
 
+def _normalize_retry_response(
+    response: StructuredKnowledgeAnswer,
+    *,
+    marker_to_chunk_ids: dict[str, list[str]],
+    chunk_content_by_id: dict[str, str],
+) -> tuple[StructuredKnowledgeAnswer, str]:
+    repaired = repair_structured_answer(response)
+    repaired.claims = remap_claim_marker_ids_to_chunk_ids(
+        repaired.claims,
+        marker_to_chunk_ids=marker_to_chunk_ids,
+        chunk_content_by_id=chunk_content_by_id,
+    )
+    answer = normalize_composite_citation_markers(repaired.answer.strip())
+    return repaired, strip_unknown_policy_markers(answer)
+
+
 async def apply_generation_retries(
     host: Any,
+
     *,
     state: Any,
     results: list[SearchResult],
@@ -101,14 +118,12 @@ async def apply_generation_retries(
             execution_context=execution_context,
             counter=counter,
         )
-        response = repair_structured_answer(response)
-        response.claims = remap_claim_marker_ids_to_chunk_ids(
-            response.claims,
+        response, answer = _normalize_retry_response(
+            response,
             marker_to_chunk_ids=marker_to_chunk_ids,
             chunk_content_by_id=chunk_content_by_id,
         )
-        answer = normalize_composite_citation_markers(response.answer.strip())
-        answer = strip_unknown_policy_markers(answer)
+
         logger.info(
             "Knowledge retry candidate answer=%r answerability=%s claims=%s unknowns=%s",
             answer,
@@ -159,14 +174,12 @@ async def apply_generation_retries(
             execution_context=execution_context,
             counter=counter,
         )
-        response = repair_structured_answer(response)
-        response.claims = remap_claim_marker_ids_to_chunk_ids(
-            response.claims,
+        response, answer = _normalize_retry_response(
+            response,
             marker_to_chunk_ids=marker_to_chunk_ids,
             chunk_content_by_id=chunk_content_by_id,
         )
-        answer = normalize_composite_citation_markers(response.answer.strip())
-        answer = strip_unknown_policy_markers(answer)
+
         logger.info(
             "Knowledge error-coverage retry answer=%r answerability=%s claims=%s",
             answer,
@@ -217,14 +230,12 @@ async def apply_generation_retries(
             execution_context=execution_context,
             counter=counter,
         )
-        response = repair_structured_answer(response)
-        response.claims = remap_claim_marker_ids_to_chunk_ids(
-            response.claims,
+        response, answer = _normalize_retry_response(
+            response,
             marker_to_chunk_ids=marker_to_chunk_ids,
             chunk_content_by_id=chunk_content_by_id,
         )
-        answer = normalize_composite_citation_markers(response.answer.strip())
-        answer = strip_unknown_policy_markers(answer)
+
         logger.info(
             "Knowledge procedure-coverage retry answer=%r answerability=%s claims=%s",
             answer,
@@ -278,14 +289,12 @@ async def apply_generation_retries(
             execution_context=execution_context,
             counter=counter,
         )
-        response = repair_structured_answer(response)
-        response.claims = remap_claim_marker_ids_to_chunk_ids(
-            response.claims,
+        response, answer = _normalize_retry_response(
+            response,
             marker_to_chunk_ids=marker_to_chunk_ids,
             chunk_content_by_id=chunk_content_by_id,
         )
-        answer = normalize_composite_citation_markers(response.answer.strip())
-        answer = strip_unknown_policy_markers(answer)
+
         # Do not keep a visual retry that drops previously covered procedure steps.
         if should_keep_prior_after_visual_retry(
             context_procedure_steps=context_procedure_steps,

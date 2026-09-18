@@ -128,7 +128,14 @@ class BackofficeSettings:
     @classmethod
     def from_env(cls) -> BackofficeSettings:
         project_dir = Path(__file__).resolve().parents[2]
-        data_dir = Path(os.environ.get("RAG_DATA_DIR", project_dir.parent / "data"))
+        raw_data = os.environ.get("RAG_DATA_DIR")
+        data_dir = (
+            Path(raw_data).resolve()
+            if raw_data and Path(raw_data).is_absolute()
+            else (project_dir / raw_data).resolve()
+            if raw_data and (project_dir / raw_data).exists()
+            else (Path(raw_data).resolve() if raw_data and Path(raw_data).exists() else project_dir.parent / "data")
+        )
         ops_dir = Path(os.environ.get("OPS_DATA_DIR", data_dir / "ops"))
         primary_store_mode = (
             os.environ.get("OPS_STORE_MODE")
@@ -144,20 +151,15 @@ class BackofficeSettings:
                 return "FIRESTORE"
             return default.upper()
 
-        resolved_gcp_project = (
-            os.environ.get("AI_OPS_GCP_PROJECT")
-            or os.environ.get("GCP_PROJECT_ID")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or os.environ.get("GCP_PROJECT")
+        resolved_gcp_project = next(
+            (os.environ[k] for k in ("AI_OPS_GCP_PROJECT", "GCP_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GCP_PROJECT") if os.environ.get(k)),
+            None,
+        )
+        resolved_env = next(
+            (os.environ[k].strip().lower() for k in ("AI_OPS_DEPLOYMENT_ENV", "ENVIRONMENT", "AGENT_DEPLOYMENT_ENV", "ENV") if os.environ.get(k)),
+            "dev",
         )
 
-        resolved_env = (
-            os.environ.get("AI_OPS_DEPLOYMENT_ENV")
-            or os.environ.get("ENVIRONMENT")
-            or os.environ.get("AGENT_DEPLOYMENT_ENV")
-            or os.environ.get("ENV")
-            or "dev"
-        ).strip().lower()
 
         return cls(
             host=os.environ.get("AI_OPS_BACKOFFICE_HOST", "0.0.0.0"),
@@ -174,35 +176,25 @@ class BackofficeSettings:
             ).strip().upper(),
             ops_store_mode=primary_store_mode,
             ops_store_path=Path(os.environ.get("OPS_STORE_PATH", ops_dir / "events")).expanduser().resolve(),
-            ops_taxonomy_path=Path(
-                os.environ.get("OPS_TAXONOMY_PATH", ops_dir / "issue_taxonomy_v1.json")
-            ).expanduser().resolve(),
-            ops_metrics_path=Path(
-                os.environ.get("OPS_METRICS_PATH", ops_dir / "metrics_definitions_v1.json")
-            ).expanduser().resolve(),
+            ops_taxonomy_path=Path(os.environ.get("OPS_TAXONOMY_PATH", ops_dir / "issue_taxonomy_v1.json")).expanduser().resolve(),
+            ops_metrics_path=Path(os.environ.get("OPS_METRICS_PATH", ops_dir / "metrics_definitions_v1.json")).expanduser().resolve(),
             ops_classification_rules_path=Path(
                 os.environ.get("OPS_CLASSIFICATION_RULES_PATH", ops_dir / "issue_classification_rules.json")
             ).expanduser().resolve(),
             ops_audit_store_mode=_resolve_store_mode("OPS_AUDIT_STORE_MODE", "FILE"),
-            knowledge_portal_url=os.environ.get(
-                "KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"
-            ),
+            knowledge_portal_url=os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"),
             knowledge_internal_url=os.environ.get(
                 "KNOWLEDGE_PORTAL_INTERNAL_URL",
                 os.environ.get("KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"),
             ),
             knowledge_service_token=os.environ.get("KNOWLEDGE_PORTAL_TOKEN", ""),
-            knowledge_auth_mode=os.environ.get(
-                "KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE",
-                "BEARER",
-            ).upper(),
-            knowledge_timeout_seconds=float(
-                os.environ.get("KNOWLEDGE_PORTAL_UPSTREAM_TIMEOUT_SECONDS", "180")
+            knowledge_auth_mode=os.environ.get("KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE", "BEARER").upper(),
+            knowledge_timeout_seconds=float(os.environ.get("KNOWLEDGE_PORTAL_UPSTREAM_TIMEOUT_SECONDS", "180")),
+            knowledge_delegation_secret=(
+                os.environ.get("KNOWLEDGE_PORTAL_DELEGATION_SECRET")
+                or os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", "")
             ),
-            knowledge_delegation_secret=os.environ.get(
-                "KNOWLEDGE_PORTAL_DELEGATION_SECRET",
-                os.environ.get("AI_OPS_KNOWLEDGE_DELEGATION_SECRET", ""),
-            ),
+
             source_delegation_secret=os.environ.get(
                 "AI_OPS_SOURCE_DELEGATION_SECRET",
                 os.environ.get("RAG_ASSET_SIGNING_KEY", ""),

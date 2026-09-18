@@ -101,6 +101,27 @@ class GenerationHost(Protocol):
     ) -> list[GroundedClaim]: ...
 
 
+def _build_context_and_markers(
+    results: list[SearchResult],
+    chunk_to_doc_idx: dict[int, int],
+) -> tuple[str, dict[str, list[str]], dict[str, str]]:
+    context = "\n\n".join(
+        f"[S{chunk_to_doc_idx[index]}] {result.chunk.title} "
+        f"[chunkId={result.chunk.chunk_id}]\n"
+        f"{annotate_historical_dates_in_text(result.chunk.content)}"
+        for index, result in enumerate(results)
+    )
+    marker_to_chunk_ids: dict[str, list[str]] = {}
+    chunk_content_by_id = {
+        result.chunk.chunk_id: result.chunk.content for result in results
+    }
+    for index, result in enumerate(results):
+        marker = f"S{chunk_to_doc_idx[index]}"
+        marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)
+        marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
+    return context, marker_to_chunk_ids, chunk_content_by_id
+
+
 async def generate_grounded_answer(
     host: GenerationHost,
     state: Any,
@@ -126,22 +147,12 @@ async def generate_grounded_answer(
             include_retrieval_evidence=include_retrieval_evidence,
         )
 
-    context = "\n\n".join(
-        f"[S{chunk_to_doc_idx[index]}] {result.chunk.title} "
-        f"[chunkId={result.chunk.chunk_id}]\n"
-        f"{annotate_historical_dates_in_text(result.chunk.content)}"
-        for index, result in enumerate(results)
+    context, marker_to_chunk_ids, chunk_content_by_id = _build_context_and_markers(
+        results, chunk_to_doc_idx
     )
-    marker_to_chunk_ids: dict[str, list[str]] = {}
-    chunk_content_by_id = {
-        result.chunk.chunk_id: result.chunk.content for result in results
-    }
-    for index, result in enumerate(results):
-        marker = f"S{chunk_to_doc_idx[index]}"
-        marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)
-        marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
 
     async def _invoke_answer() -> StructuredKnowledgeAnswer:
+
         return await answer_model.with_structured_output(StructuredKnowledgeAnswer).ainvoke(
             [
                 SystemMessage(

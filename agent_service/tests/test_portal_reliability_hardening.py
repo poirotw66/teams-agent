@@ -1281,7 +1281,7 @@ def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
         / "src"
         / "ai_ops_backoffice"
         / "static"
-        / "js"
+        / "legacy-js"
         / "api.js"
     )
     content = api_js_path.read_text(encoding="utf-8")

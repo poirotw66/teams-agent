@@ -20,6 +20,7 @@ SNAPSHOT_DIR = REPO_ROOT / "docs" / "architecture" / "baselines" / "openapi"
 DATA_DIR = REPO_ROOT / "data"
 
 
+
 def rel_path(path: Path) -> str:
     return path.resolve().relative_to(REPO_ROOT).as_posix()
 
@@ -157,6 +158,8 @@ def build_portal_schema() -> dict[str, Any]:
 def build_backoffice_schema() -> dict[str, Any]:
     from ai_ops_backoffice.api import create_app
     from ai_ops_backoffice.settings import BackofficeSettings
+
+
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)

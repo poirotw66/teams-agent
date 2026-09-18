@@ -35,6 +35,7 @@ from ai_ops_backoffice.bootstrap.repositories import (
     build_tool_fixture_repository,
 )
 from ai_ops_backoffice.budget_domain import BudgetService
+from ai_ops_backoffice.runtime_hooks import get_portal_app_factory
 from ai_ops_backoffice.evaluation_domain import (
     AgentBehaviorScorer,
     CandidateGenerationManager,
@@ -132,17 +133,19 @@ def maybe_build_in_process_portal(
     *,
     knowledge_transport: httpx.AsyncBaseTransport | None,
     delegation_secret: str | None,
+    portal_app_factory: Callable[..., FastAPI] | None = None,
 ) -> tuple[FastAPI | None, httpx.AsyncBaseTransport | None, str | None]:
     portal_app: FastAPI | None = None
     resolved_secret = delegation_secret
     resolved_transport = knowledge_transport
+    factory = portal_app_factory or get_portal_app_factory()
     if (
         knowledge_transport is None
         and settings.knowledge_bridge_enabled
         and getattr(settings, "knowledge_in_process", True)
+        and factory is not None
     ):
         try:
-            from composition.portal_app import create_portal_app
             from knowledge_portal.settings import PortalSettings
 
             if not resolved_secret:
@@ -154,7 +157,7 @@ def maybe_build_in_process_portal(
                 delegation_secret=resolved_secret,
                 require_service_token_with_delegation=bool(settings.knowledge_service_token),
             )
-            portal_app = create_portal_app(portal_settings)
+            portal_app = factory(portal_settings)
             resolved_transport = httpx.ASGITransport(app=portal_app)
             logger.info("In-process Knowledge Portal initialized successfully.")
         except Exception:
@@ -256,11 +259,13 @@ def build_knowledge_client(
     settings: BackofficeSettings,
     *,
     knowledge_transport: httpx.AsyncBaseTransport | None,
+    portal_app_factory: Callable[..., FastAPI] | None = None,
 ) -> tuple[FastAPI | None, KnowledgePortalClient, httpx.AsyncBaseTransport | None]:
     portal_app, resolved_transport, delegation_secret = maybe_build_in_process_portal(
         settings,
         knowledge_transport=knowledge_transport,
         delegation_secret=settings.knowledge_delegation_secret,
+        portal_app_factory=portal_app_factory,
     )
     knowledge_client = KnowledgePortalClient(
         base_url=settings.knowledge_internal_url

@@ -101,3 +101,45 @@ def test_new_oversized_file_is_rejected(tmp_path: Path, monkeypatch: pytest.Monk
     current = checker.collect_file_sizes()
     findings = checker.check_file_sizes(current, baseline={})
     assert any(finding.code == "FILE_NEW_OVERSIZED" for finding in findings)
+
+
+def test_package_cycle_is_detected() -> None:
+    checker = _load_script(
+        "check_architecture_under_test",
+        SCRIPTS / "check_architecture.py",
+    )
+    cycle_graph = {
+        "agent_service": {"composition", "platform_kernel"},
+        "composition": {"agent_service"},
+        "platform_kernel": set(),
+    }
+    cycles = checker.find_package_cycles(cycle_graph)
+    assert len(cycles) == 1
+    assert sorted(cycles[0]) == ["agent_service", "composition"]
+
+    findings = checker.check_package_cycles(cycle_graph)
+    assert any(finding.code == "PACKAGE_CYCLE" for finding in findings)
+
+
+def test_acyclic_graph_has_no_cycles() -> None:
+    checker = _load_script(
+        "check_architecture_under_test",
+        SCRIPTS / "check_architecture.py",
+    )
+    acyclic_graph = {
+        "composition": {"ai_ops_backoffice", "knowledge_portal", "agent_service"},
+        "ai_ops_backoffice": {"knowledge_portal", "agent_service", "platform_kernel"},
+        "knowledge_portal": {"agent_service", "platform_kernel"},
+        "agent_service": {"platform_kernel"},
+        "platform_kernel": set(),
+    }
+    assert checker.find_package_cycles(acyclic_graph) == []
+    assert checker.check_package_cycles(acyclic_graph) == []
+
+
+def test_domain_to_composition_edges_are_forbidden() -> None:
+    payload = json.loads((BASELINES / "reverse_imports.json").read_text(encoding="utf-8"))
+    assert "agent_service->composition" in payload["forbidden_edges"]
+    assert "ai_ops_backoffice->composition" in payload["forbidden_edges"]
+    assert "knowledge_portal->composition" in payload["forbidden_edges"]
+

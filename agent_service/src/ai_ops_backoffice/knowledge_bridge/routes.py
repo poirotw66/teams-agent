@@ -16,6 +16,101 @@ from .client import KnowledgePortalClient
 from .errors import KnowledgeBridgeError, assert_allowlisted
 
 
+def _correlation(x_correlation_id: str | None = Header(default=None)) -> str:
+    value = (x_correlation_id or "").strip()
+    if value and len(value) <= 128 and all(ch.isalnum() or ch in "-_" for ch in value):
+        return value
+    return uuid.uuid4().hex
+
+
+def _require_enabled(client: KnowledgePortalClient, enabled: bool) -> None:
+    if not enabled or not client.configured:
+        raise KnowledgeBridgeError(
+            code="KNOWLEDGE_BRIDGE_DISABLED",
+            message="知識整合尚未啟用。請使用核准的整合設定後再試。",
+            status_code=503,
+        )
+
+
+async def _handle_knowledge_proxy(
+    full_path: str,
+    request: Request,
+    actor: ActorContext,
+    correlation_id: str,
+    *,
+    client: KnowledgePortalClient,
+    enabled: bool,
+) -> Response:
+    _require_enabled(client, enabled)
+
+    # Reject browser-forged Portal identity on the BFF surface.
+    for banned in (
+        "x-portal-user-id",
+        "x-portal-user-name",
+        "x-portal-role",
+        "x-portal-owner-units",
+    ):
+        if banned in request.headers:
+            raise KnowledgeBridgeError(
+                code="KNOWLEDGE_FORGED_PORTAL_IDENTITY",
+                message="不可透過瀏覽器指定知識服務身分。",
+                status_code=400,
+                correlation_id=correlation_id,
+            )
+
+    relative = assert_allowlisted(full_path)
+    capability = capability_for_portal_path(request.method, relative)
+    if not has_knowledge_capability(actor, capability):
+        raise KnowledgeBridgeError(
+            code="KNOWLEDGE_FORBIDDEN",
+            message=f"需要權限：{capability}。請聯絡知識管理者。",
+            status_code=403,
+            correlation_id=correlation_id,
+            details={"requiredCapability": capability},
+        )
+
+    content_type = request.headers.get("content-type")
+    body = await request.body()
+    json_body = None
+    content = None
+    forward_content_type = None
+    if body:
+        if content_type and "application/json" in content_type:
+            import json
+
+            try:
+                json_body = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise KnowledgeBridgeError(
+                    code="KNOWLEDGE_INVALID_JSON",
+                    message="請求內容不是有效的 JSON。",
+                    status_code=400,
+                    correlation_id=correlation_id,
+                ) from exc
+        else:
+            content = body
+            forward_content_type = content_type
+
+    forward_headers: dict[str, str] = {}
+    for key in ("idempotency-key", "x-idempotency-key"):
+        if key in request.headers:
+            forward_headers["Idempotency-Key"] = request.headers[key]
+            break
+
+    upstream = await client.request(
+        method=request.method,
+        relative_path=relative,
+        actor=actor,
+        correlation_id=correlation_id,
+        query=dict(request.query_params),
+        json_body=json_body,
+        content=content,
+        content_type=forward_content_type,
+        headers=forward_headers or None,
+    )
+    return _to_response(upstream, correlation_id=correlation_id)
+
+
 def build_knowledge_router(
     *,
     client: KnowledgePortalClient,
@@ -23,20 +118,6 @@ def build_knowledge_router(
     enabled: bool,
 ) -> APIRouter:
     router = APIRouter(tags=["knowledge-bridge"])
-
-    def _correlation(x_correlation_id: str | None = Header(default=None)) -> str:
-        value = (x_correlation_id or "").strip()
-        if value and len(value) <= 128 and all(ch.isalnum() or ch in "-_" for ch in value):
-            return value
-        return uuid.uuid4().hex
-
-    def _require_enabled() -> None:
-        if not enabled or not client.configured:
-            raise KnowledgeBridgeError(
-                code="KNOWLEDGE_BRIDGE_DISABLED",
-                message="知識整合尚未啟用。請使用核准的整合設定後再試。",
-                status_code=503,
-            )
 
     @router.get("/status")
     async def knowledge_bridge_status(
@@ -54,85 +135,52 @@ def build_knowledge_router(
             ),
         }
 
-    @router.api_route(
-        "/{full_path:path}",
-        methods=["GET", "POST", "PUT", "DELETE"],
-    )
-    async def knowledge_proxy(
+    @router.get("/{full_path:path}", operation_id="knowledge_proxy_get")
+    async def knowledge_proxy_get(
         full_path: str,
         request: Request,
         actor: ActorContext = Depends(current_actor),
         correlation_id: str = Depends(_correlation),
     ) -> Response:
-        _require_enabled()
-        # Reject browser-forged Portal identity on the BFF surface.
-        for banned in (
-            "x-portal-user-id",
-            "x-portal-user-name",
-            "x-portal-role",
-            "x-portal-owner-units",
-        ):
-            if banned in request.headers:
-                raise KnowledgeBridgeError(
-                    code="KNOWLEDGE_FORGED_PORTAL_IDENTITY",
-                    message="不可透過瀏覽器指定知識服務身分。",
-                    status_code=400,
-                    correlation_id=correlation_id,
-                )
-
-        relative = assert_allowlisted(full_path)
-        capability = capability_for_portal_path(request.method, relative)
-        if not has_knowledge_capability(actor, capability):
-            raise KnowledgeBridgeError(
-                code="KNOWLEDGE_FORBIDDEN",
-                message=f"需要權限：{capability}。請聯絡知識管理者。",
-                status_code=403,
-                correlation_id=correlation_id,
-                details={"requiredCapability": capability},
-            )
-
-        content_type = request.headers.get("content-type")
-        body = await request.body()
-        json_body = None
-        content = None
-        forward_content_type = None
-        if body:
-            if content_type and "application/json" in content_type:
-                import json
-
-                try:
-                    json_body = json.loads(body.decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise KnowledgeBridgeError(
-                        code="KNOWLEDGE_INVALID_JSON",
-                        message="請求內容不是有效的 JSON。",
-                        status_code=400,
-                        correlation_id=correlation_id,
-                    ) from exc
-            else:
-                content = body
-                forward_content_type = content_type
-
-        forward_headers: dict[str, str] = {}
-        for key in ("idempotency-key", "x-idempotency-key"):
-            if key in request.headers:
-                forward_headers["Idempotency-Key"] = request.headers[key]
-                break
-
-        upstream = await client.request(
-            method=request.method,
-            relative_path=relative,
-            actor=actor,
-            correlation_id=correlation_id,
-            query=dict(request.query_params),
-            json_body=json_body,
-            content=content,
-            content_type=forward_content_type,
-            headers=forward_headers or None,
+        return await _handle_knowledge_proxy(
+            full_path, request, actor, correlation_id, client=client, enabled=enabled
         )
-        return _to_response(upstream, correlation_id=correlation_id)
+
+    @router.post("/{full_path:path}", operation_id="knowledge_proxy_post")
+    async def knowledge_proxy_post(
+        full_path: str,
+        request: Request,
+        actor: ActorContext = Depends(current_actor),
+        correlation_id: str = Depends(_correlation),
+    ) -> Response:
+        return await _handle_knowledge_proxy(
+            full_path, request, actor, correlation_id, client=client, enabled=enabled
+        )
+
+    @router.put("/{full_path:path}", operation_id="knowledge_proxy_put")
+    async def knowledge_proxy_put(
+        full_path: str,
+        request: Request,
+        actor: ActorContext = Depends(current_actor),
+        correlation_id: str = Depends(_correlation),
+    ) -> Response:
+        return await _handle_knowledge_proxy(
+            full_path, request, actor, correlation_id, client=client, enabled=enabled
+        )
+
+    @router.delete("/{full_path:path}", operation_id="knowledge_proxy_delete")
+    async def knowledge_proxy_delete(
+        full_path: str,
+        request: Request,
+        actor: ActorContext = Depends(current_actor),
+        correlation_id: str = Depends(_correlation),
+    ) -> Response:
+        return await _handle_knowledge_proxy(
+            full_path, request, actor, correlation_id, client=client, enabled=enabled
+        )
 
     return router
+
 
 
 def _to_response(upstream: Any, *, correlation_id: str) -> Response:

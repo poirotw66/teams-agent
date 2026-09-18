@@ -35,6 +35,7 @@ def register_health_routes(
     idempotency_key: Callable[..., str | None],
     handle_errors: Callable[[Exception], HTTPException],
 ) -> None:
+    @app.middleware("http")
     async def disable_portal_cache(request: Request, call_next):
         response = await call_next(request)
         if request.url.path == "/" or request.url.path.startswith("/static/"):

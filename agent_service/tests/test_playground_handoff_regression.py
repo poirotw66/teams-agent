@@ -189,7 +189,7 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
         ]
     )
     vpn_need_more = tw.issue(
-        description="VPN 密碼鎖住怎麼辦",
+        description="VPN 密碼異常怎麼辦",
         readiness="NEED_MORE_INFO",
         missingInfo=["請問是行動裝置還是公司配發設備？"],
     )
@@ -201,7 +201,7 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     knowledge = tw.FakeKnowledgeService(
         default=KnowledgeResult(found=False, answer="", backend="HYBRID")
     )
-    knowledge.responses["VPN 密碼鎖住怎麼辦"] = vpn_answer
+    knowledge.responses["VPN 密碼異常怎麼辦"] = vpn_answer
     knowledge.responses["VPN 帳號密碼被鎖住，需要解鎖或重設"] = vpn_answer
 
     issues_sequence = [
@@ -224,7 +224,7 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
         handoff_router=handoff_router,
         ticket_item_selector=tw.FakeTicketItemSelector("item-1"),
         extractor_by_message={
-            "VPN 密碼鎖住怎麼辦": [vpn_need_more],
+            "VPN 密碼異常怎麼辦": [vpn_need_more],
         },
     )
 
@@ -256,7 +256,7 @@ async def test_playground_conversation_core_scenarios(tmp_path: Path) -> None:
     closed_demo = await workflow.respond(tw.make_request("/close"))
     assert "已結束" in closed_demo.answer
 
-    vpn = await workflow.respond(tw.make_request("VPN 密碼鎖住怎麼辦"))
+    vpn = await workflow.respond(tw.make_request("VPN 密碼異常怎麼辦"))
     assert vpn.issueResults[0].resultType == "NEED_MORE_INFO"
 
     vpn_answered = await workflow.respond(tw.make_request("設備"))
@@ -465,7 +465,7 @@ async def test_new_issue_after_sap_handoff_clears_case_and_answers_vpn(
 ) -> None:
     """Scenario 1: unrelated VPN question supersedes pending SAP handoff."""
     vpn_issue = tw.issue(
-        description="VPN 密碼鎖住怎麼辦",
+        description="VPN 密碼異常怎麼辦",
         readiness="NEED_MORE_INFO",
         missingInfo=["請問是行動裝置還是公司配發設備？"],
     )

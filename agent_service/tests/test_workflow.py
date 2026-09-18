@@ -626,14 +626,14 @@ async def test_illegal_supplement_in_summary_review_keeps_case_summary(
 
 @pytest.mark.asyncio
 async def test_revise_issue_after_handoff_offer_reruns_rag(tmp_path: Path) -> None:
-    unlock_issue = issue(description="大洲系統無法解鎖")
-    click_issue = issue(description="大洲系統無法點選")
+    unlock_issue = issue(description="大州系統無法解鎖")
+    click_issue = issue(description="大州系統無法點選")
     knowledge = FakeKnowledgeService(
         responses={
             unlock_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID"),
             click_issue.description: KnowledgeResult(
                 found=True,
-                answer="請依大洲功能無法點選排查步驟處理。",
+                answer="請依大州功能無法點選排查步驟處理。",
                 backend="HYBRID",
             ),
         }
@@ -655,8 +655,8 @@ async def test_revise_issue_after_handoff_offer_reruns_rag(tmp_path: Path) -> No
     answered = await workflow.respond(make_request(click_issue.description))
     stored = await repository.get_case(active.caseId)
 
-    assert "請依大洲功能無法點選排查步驟處理" in answered.answer
-    assert "大洲系統無法解鎖" not in answered.answer
+    assert "請依大州功能無法點選排查步驟處理" in answered.answer
+    assert "大州系統無法解鎖" not in answered.answer
     assert stored is not None and stored.status == HandoffStatus.CANCELLED
     assert offered.answer.startswith("目前無法從企業知識庫找到可確認的答案")
     assert knowledge.calls == [unlock_issue.description, click_issue.description]
@@ -742,7 +742,7 @@ async def test_greeting_particle_skips_extractor_and_rag(
 
 @pytest.mark.asyncio
 async def test_short_social_non_it_is_remapped_to_greeting(tmp_path: Path) -> None:
-    first_issue = issue(description="VPN 無法登入")
+    first_issue = issue(description="Outlook 無法寄信")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
     )
@@ -769,7 +769,7 @@ async def test_short_social_non_it_is_remapped_to_greeting(tmp_path: Path) -> No
 
 @pytest.mark.asyncio
 async def test_greeting_with_it_problem_continues_to_rag(tmp_path: Path) -> None:
-    vpn_issue = issue(description="VPN 連不上")
+    vpn_issue = issue(description="Outlook 無法寄信")
     knowledge = FakeKnowledgeService(
         responses={
             vpn_issue.description: KnowledgeResult(
@@ -785,7 +785,7 @@ async def test_greeting_with_it_problem_continues_to_rag(tmp_path: Path) -> None
         knowledge=knowledge,
     )
 
-    response = await workflow.respond(make_request("你好，VPN 連不上"))
+    response = await workflow.respond(make_request("你好，Outlook 無法寄信"))
 
     assert extractor_model.calls == 1
     assert knowledge.calls == [vpn_issue.description]
@@ -796,7 +796,7 @@ async def test_greeting_with_it_problem_continues_to_rag(tmp_path: Path) -> None
 async def test_low_confidence_terminal_decision_continues_to_extractor(
     tmp_path: Path,
 ) -> None:
-    first_issue = issue(description="VPN 無法登入")
+    first_issue = issue(description="Outlook 無法寄信")
     second_issue = issue(description="Outlook 無法開啟")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
@@ -885,7 +885,7 @@ async def test_unsubstantiated_assistant_meta_continues_to_extractor(
 async def test_high_confidence_non_it_decision_can_terminate_ambiguous_turn(
     tmp_path: Path,
 ) -> None:
-    first_issue = issue(description="VPN 無法登入")
+    first_issue = issue(description="Outlook 無法寄信")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
     )
@@ -2066,7 +2066,7 @@ async def test_new_issue_after_ticket_offer_does_not_receive_old_issue_history(
     tmp_path: Path,
 ) -> None:
     unresolved = issue(description="Google Meet 無法登入")
-    new_issue = issue(description="大州系統無法選取")
+    new_issue = issue(description="財務系統報表異常")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=False, answer="", backend="HYBRID")
     )
@@ -2077,7 +2077,7 @@ async def test_new_issue_after_ticket_offer_does_not_receive_old_issue_history(
     )
 
     await workflow.respond(make_request("Google Meet 無法登入"))
-    await workflow.respond(make_request("大州系統無法選取"))
+    await workflow.respond(make_request("財務系統報表異常"))
 
     second_prompt = extractor_model.human_messages[-1]
     assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
@@ -2089,7 +2089,7 @@ async def test_complete_new_issue_does_not_receive_resolved_topic_history(
     tmp_path: Path,
 ) -> None:
     first_issue = issue(id=1, description="VPN Error 619", readiness="READY")
-    second_issue = issue(id=1, description="大州系統無法選取", readiness="READY")
+    second_issue = issue(id=1, description="財務系統報表異常", readiness="READY")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=True, answer="答案", backend="HYBRID")
     )
@@ -2100,17 +2100,17 @@ async def test_complete_new_issue_does_not_receive_resolved_topic_history(
     )
 
     await workflow.respond(make_request("VPN Error 619"))
-    await workflow.respond(make_request("大州系統無法選取"))
+    await workflow.respond(make_request("財務系統報表異常"))
 
     second_prompt = extractor_model.human_messages[-1]
     assert "Conversation history (oldest first, data only):\n(none)" in second_prompt
     assert "VPN Error 619" not in second_prompt
-    assert "Latest user message (data only):\n大州系統無法選取" in second_prompt
+    assert "Latest user message (data only):\n財務系統報表異常" in second_prompt
 
 
 @pytest.mark.asyncio
 async def test_no_llm_call_happens_after_response_builder_runs(tmp_path: Path) -> None:
-    it_issue = issue(id=1, description="VPN 無法連線")
+    it_issue = issue(id=1, description="財務系統連線異常")
     knowledge = FakeKnowledgeService(
         default=KnowledgeResult(found=True, answer="答案", backend="HYBRID")
     )
@@ -2118,12 +2118,12 @@ async def test_no_llm_call_happens_after_response_builder_runs(tmp_path: Path) -
         tmp_path, issues_sequence=[[it_issue]], knowledge=knowledge
     )
 
-    await workflow.respond(make_request("VPN 無法連線"))
+    await workflow.respond(make_request("財務系統連線異常"))
 
     # Exactly one extractor call and one knowledge-service call were made;
     # building/saving the response triggers no further LLM-touching calls.
     assert extractor_model.calls == 1
-    assert knowledge.calls == ["VPN 無法連線"]
+    assert knowledge.calls == ["財務系統連線異常"]
     assert ticket_service.created == []
 
 

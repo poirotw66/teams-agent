@@ -2,8 +2,11 @@
   "allowlist": {},
   "forbidden_edges": [
     "agent_service->ai_ops_backoffice",
+    "agent_service->composition",
     "agent_service->knowledge_portal",
+    "ai_ops_backoffice->composition",
     "knowledge_portal->ai_ops_backoffice",
+    "knowledge_portal->composition",
     "platform_kernel->agent_service",
     "platform_kernel->ai_ops_backoffice",
     "platform_kernel->composition",
