@@ -17,9 +17,6 @@ from agent_service.operations.scope import (
 )
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
-from agent_service.usage import (
-    configure_pricing_provider,
-)
 from operations_core.access import ActorContext
 from operations_core.contracts import (
     DEFAULT_TIMEZONE,
@@ -27,6 +24,7 @@ from operations_core.contracts import (
     OperationalEvent,
     utc_now,
 )
+from operations_core.usage import configure_pricing_provider
 
 from ..pricing_domain import (
     FilePricingRepository,

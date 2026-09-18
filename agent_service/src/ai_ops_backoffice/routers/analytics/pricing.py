@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 
-from agent_service.usage import list_model_rates_usd
+from operations_core.usage import list_model_rates_usd
 
 from .context import AnalyticsRouteContext
 

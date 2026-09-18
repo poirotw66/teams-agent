@@ -259,7 +259,7 @@ def build_agent_sandbox_workflow_executor(
         return traces
 
     def executor(query: str, manifest: Any, sanitized_input: Any) -> dict[str, Any]:
-        from agent_service.usage import estimate_cost_usd
+        from operations_core.usage import estimate_cost_usd
 
         model_id = _resolve_model_id(manifest)
         if not model_id:

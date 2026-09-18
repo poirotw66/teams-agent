@@ -214,13 +214,13 @@ def build_and_configure_pricing_service(
     import os
 
     from agent_service.pricing_bootstrap import resolve_pricing_store_path
-    from agent_service.usage import configure_pricing_provider
     from ai_ops_backoffice.pricing_domain import (
         FilePricingRepository,
         FirestorePricingRepository,
         InMemoryPricingRepository,
         PricingService,
     )
+    from operations_core.usage import configure_pricing_provider
 
     logger = logging.getLogger(__name__)
     mode = (os.environ.get("AI_OPS_PRICING_STORE_MODE", "FILE") or "FILE").upper()

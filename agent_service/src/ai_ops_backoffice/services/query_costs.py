@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-from agent_service.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
 from operations_core.access import ActorContext
+from operations_core.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
 
 from .usage_projection import (
     UsageDimensions,

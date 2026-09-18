@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from agent_service.usage import _MODEL_RATES_USD, PRICING_VERSION
+from operations_core.usage import MODEL_RATES_USD, PRICING_VERSION
 
 from .models import HistoricalPricingRule, Mutation, PricingState
 
@@ -25,7 +25,7 @@ def _initial_pricing_state() -> PricingState:
         version=PRICING_VERSION,
         effective_at=datetime(2026, 8, 31, 0, 0, tzinfo=UTC),
         exchange_rate=31.70,
-        rates=dict(_MODEL_RATES_USD),
+        rates=dict(MODEL_RATES_USD),
         description="Initial standard production pricing baseline.",
         created_by="system",
         created_at=now,
@@ -34,7 +34,7 @@ def _initial_pricing_state() -> PricingState:
         revision=1,
         exchange_rate=31.70,
         pricing_version=PRICING_VERSION,
-        rates=dict(_MODEL_RATES_USD),
+        rates=dict(MODEL_RATES_USD),
         history=(initial_rule,),
         audits=(),
     )

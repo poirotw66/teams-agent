@@ -232,7 +232,7 @@ class RealRagAnswerAdapter:
         prompt_chars: int,
         answer_chars: int,
     ) -> float:
-        from agent_service.usage import estimate_cost_usd
+        from operations_core.usage import estimate_cost_usd
 
         total = total_tokens
         if total is None or total <= 0:
