@@ -1,37 +1,25 @@
+"""Evaluation run lifecycle facade: preflight, create, cancel, review, rescore."""
+
 from __future__ import annotations
 
-import logging
-import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from operations_core.access import ActorContext
 
-from .errors import (
-    EvaluationAuthorizationError,
-    EvaluationNotFoundError,
-    EvaluationValidationError,
-    EvaluationVersionConflictError,
-)
-from .job_models import ExecutionJob
+from . import run_create_ops, run_outbox_ops, run_review_ops
+from .case_ops import authorize
+from .errors import EvaluationNotFoundError
 from .job_repository import JobRepository
 from .manifest import ManifestResolver
 from .models import EvaluationAuditEvent
 from .repository import EvaluationRepository
 from .runner import EvaluationRunner
-from .runner_models import (
-    CaseExecution,
-    EvaluationRun,
-    MetricResult,
-    MetricStatus,
-    ReviewDecision,
-    RunPreflightResult,
-    TargetSide,
-)
+from .runner_models import MetricStatus, RunPreflightResult, TargetSide
 from .scorer import EvaluationScorer
+
+__all__ = ["EvaluationRunService"]
 
 
 class EvaluationRunService:
@@ -53,10 +41,7 @@ class EvaluationRunService:
 
     @staticmethod
     def _authorize(actor: ActorContext, capability: str, owner_unit_id: str | None = None) -> None:
-        if not actor.has_capability(capability):
-            raise EvaluationAuthorizationError(f"Actor lacks capability: {capability}")
-        if owner_unit_id and not actor.allows_owner_unit(owner_unit_id):
-            raise EvaluationAuthorizationError(f"Actor lacks scope for owner unit: {owner_unit_id}")
+        authorize(actor, capability, owner_unit_id)
 
     def preflight_run(
         self,
@@ -67,20 +52,15 @@ class EvaluationRunService:
         actor: ActorContext | None = None,
         mode: str = "REAL_RAG",
     ) -> RunPreflightResult:
-        if actor:
-            self._authorize(actor, "ops.evals.read")
-        has_retriever = self._runner.has_retriever_adapter() if hasattr(self._runner, "has_retriever_adapter") else True
-        has_answering = self._runner.has_answering_adapter() if hasattr(self._runner, "has_answering_adapter") else True
-        has_sandbox = self._runner.has_sandbox_adapter() if hasattr(self._runner, "has_sandbox_adapter") else True
-        return self._resolver.preflight_run(
+        return run_create_ops.preflight_run(
+            self._runner,
+            self._resolver,
             set_version_id=set_version_id,
             baseline_target=baseline_target,
             candidate_target=candidate_target,
             limits=limits,
+            actor=actor,
             mode=mode,
-            has_retriever_adapter=has_retriever,
-            has_answering_adapter=has_answering,
-            has_sandbox_adapter=has_sandbox,
         )
 
     def has_job_repository(self) -> bool:
@@ -101,179 +81,29 @@ class EvaluationRunService:
         execute_inline: bool | None = None,
     ) -> dict[str, Any]:
         """Queues and executes an evaluation run."""
-        if actor:
-            self._authorize(actor, "ops.evals.run")
-
-        limits = limits or {}
-        has_retriever = self._runner.has_retriever_adapter() if hasattr(self._runner, "has_retriever_adapter") else True
-        has_answering = self._runner.has_answering_adapter() if hasattr(self._runner, "has_answering_adapter") else True
-        has_sandbox = self._runner.has_sandbox_adapter() if hasattr(self._runner, "has_sandbox_adapter") else True
-
-        # Preflight validation
-        preflight = self._resolver.preflight_run(
+        return run_create_ops.create_run(
+            self._repo,
+            self._resolver,
+            self._runner,
+            self._job_repo,
             set_version_id=set_version_id,
             baseline_target=baseline_target,
             candidate_target=candidate_target,
-            limits=limits,
             mode=mode,
-            has_retriever_adapter=has_retriever,
-            has_answering_adapter=has_answering,
-            has_sandbox_adapter=has_sandbox,
-        )
-        if not preflight.is_valid:
-            raise EvaluationValidationError(
-                f"Run preflight rejected with errors: {'; '.join(preflight.blocking_errors)}"
-            )
-
-        set_version = self._repo.get_set_version(set_version_id)
-        if not set_version:
-            raise EvaluationNotFoundError(f"Set version {set_version_id} not found")
-
-        eval_set = self._repo.get_set(set_version.set_id)
-        owner_unit = eval_set.owner_unit_ids[0] if eval_set and eval_set.owner_unit_ids else "ALL"
-        tenant_id = eval_set.tenant_id if eval_set else "default"
-
-        run_id = f"run_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
-
-        run = EvaluationRun(
-            run_id=run_id,
-            tenant_id=tenant_id,
-            owner_unit_id=owner_unit,
-            quality_case_id=quality_case_id,
-            set_version_id=set_version_id,
-            baseline_manifest=preflight.resolved_baseline_manifest,
-            candidate_manifest=preflight.resolved_candidate_manifest,
-            mode=mode if mode in {"REAL_RAG", "AGENT_SANDBOX"} else "OFFLINE_BENCHMARK",
-            status="QUEUED",
             limits=limits,
             repetitions=repetitions,
-            requested_by=actor.user_id if actor else "system",
-            created_at=now,
+            quality_case_id=quality_case_id,
+            idempotency_key=idempotency_key,
             correlation_id=correlation_id,
-            is_eval_eligible=preflight.is_eval_eligible,
+            actor=actor,
+            execute_inline=execute_inline,
         )
-
-        should_execute_inline = (
-            execute_inline
-            if execute_inline is not None
-            else (self._job_repo is None)
-        )
-
-        outbox_entry: dict[str, Any] | None = None
-        if not should_execute_inline and self._job_repo:
-            job_id = str(uuid.uuid4())
-            logical_key = f"run:{tenant_id}:{run_id}"
-            outbox_entry = {
-                "outbox_id": f"outbox_{job_id}",
-                "job_id": job_id,
-                "run_id": run_id,
-                "tenant_id": tenant_id,
-                "logical_key": logical_key,
-                "state": "QUEUED",
-                "created_at": now.isoformat(),
-                "attempts": 0,
-            }
-
-        max_retries = 5
-        for attempt in range(max_retries):
-            state = self._repo.load()
-            runs = list(state.runs)
-            runs.append(run)
-
-            new_outbox = list(getattr(state, "outbox_jobs", ()))
-            if outbox_entry is not None:
-                new_outbox.append(outbox_entry)
-
-            new_state = state.model_copy(
-                update={"runs": tuple(runs), "outbox_jobs": tuple(new_outbox)}
-            )
-
-            audit = EvaluationAuditEvent(
-                audit_id=str(uuid.uuid4()),
-                entity_type="EVAL_RUN",
-                entity_id=run_id,
-                action="CREATE_RUN",
-                actor_id=actor.user_id if actor else "system",
-                actor_role=actor.role if actor else "SYSTEM",
-                owner_unit_id=owner_unit,
-                tenant_id=tenant_id,
-                before=None,
-                after={"run_id": run_id, "status": "QUEUED"},
-                reason="Queued new evaluation run",
-                occurred_at=now,
-                correlation_id=correlation_id,
-            )
-            try:
-                self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
-                break
-            except EvaluationVersionConflictError:
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(0.02 * (attempt + 1))
-                continue
-
-        if should_execute_inline:
-            run = self._runner.execute_run(run_id)
-        elif self._job_repo and outbox_entry:
-            try:
-                dispatched = self._dispatch_outbox_job(outbox_entry)
-                if dispatched:
-                    self._remove_outbox_job(outbox_entry["outbox_id"])
-            except Exception as err:
-                logger.debug("Immediate outbox dispatch failed: %s", err)
-
-        return {
-            "run": run.model_dump(mode="json"),
-            "runId": run_id,
-            "statusUrl": f"/api/evaluations/runs/{run_id}",
-        }
 
     def _dispatch_outbox_job(self, outbox_entry: dict[str, Any]) -> bool:
-        if not self._job_repo:
-            return False
-        raw_created = outbox_entry.get("created_at")
-        if isinstance(raw_created, str):
-            try:
-                created_dt = datetime.fromisoformat(raw_created)
-            except Exception:
-                created_dt = datetime.now(timezone.utc)
-        elif isinstance(raw_created, datetime):
-            created_dt = raw_created
-        else:
-            created_dt = datetime.now(timezone.utc)
-
-        job = ExecutionJob(
-            tenant_id=str(outbox_entry.get("tenant_id", "default")),
-            job_id=str(outbox_entry["job_id"]),
-            run_id=str(outbox_entry["run_id"]),
-            logical_key=str(outbox_entry.get("logical_key", f"run:{outbox_entry['run_id']}")),
-            state="QUEUED",
-            created_at=created_dt,
-            updated_at=datetime.now(timezone.utc),
-        )
-        try:
-            self._job_repo.enqueue_job(job)
-            return True
-        except Exception:
-            return False
+        return run_outbox_ops.dispatch_outbox_job(self._job_repo, outbox_entry)
 
     def _remove_outbox_job(self, outbox_id: str) -> None:
-        try:
-            if hasattr(self._repo, "delete_outbox_jobs"):
-                self._repo.delete_outbox_jobs([outbox_id])
-            else:
-                cur_state = self._repo.load()
-                remaining = [
-                    j for j in getattr(cur_state, "outbox_jobs", ())
-                    if j.get("outbox_id") != outbox_id and j.get("job_id") != outbox_id
-                ]
-                self._repo.commit_mutation(
-                    cur_state.model_copy(update={"outbox_jobs": tuple(remaining)}),
-                    expected_revision=cur_state.revision,
-                )
-        except Exception as err:
-            logger.warning("Failed to remove dispatched outbox job %s: %s", outbox_id, err)
+        run_outbox_ops.remove_outbox_job(self._repo, outbox_id)
 
     def _mark_run_enqueue_failed(
         self,
@@ -282,85 +112,16 @@ class EvaluationRunService:
         *,
         actor: ActorContext | None = None,
     ) -> None:
-        state = self._repo.load()
-        run = next((r for r in state.runs if r.run_id == run_id), None)
-        if not run:
-            return
-        failed = run.model_copy(
-            update={
-                "status": "FAILED",
-                "cancel_reason": f"job_enqueue_failed: {error}",
-                "completed_at": datetime.now(timezone.utc),
-            }
-        )
-        runs = [r for r in state.runs if r.run_id != run_id] + [failed]
-        self._repo.commit_mutation(
-            state.model_copy(update={"runs": tuple(runs)}),
-            expected_revision=state.revision,
-        )
+        _ = actor  # retained for call-site compatibility
+        run_outbox_ops.mark_run_enqueue_failed(self._repo, run_id, error)
 
     def recover_undispatched_runs(self, *, older_than_seconds: float = 30.0) -> int:
         """Process pending outbox jobs and recover queued runs missing durable jobs."""
-        if not self._job_repo:
-            return 0
-        now = datetime.now(timezone.utc)
-        recovered = 0
-
-        # Phase 1: Drain pending transactional outbox jobs
-        state = self._repo.load()
-        outbox_jobs = list(getattr(state, "outbox_jobs", ()))
-        dispatched_ids: set[str] = set()
-
-        for oj in outbox_jobs:
-            oid = str(oj.get("outbox_id", oj.get("job_id")))
-            if self._dispatch_outbox_job(oj):
-                dispatched_ids.add(oid)
-                recovered += 1
-
-        if dispatched_ids:
-            try:
-                if hasattr(self._repo, "delete_outbox_jobs"):
-                    self._repo.delete_outbox_jobs(dispatched_ids)
-                else:
-                    cur_state = self._repo.load()
-                    remaining = [
-                        oj for oj in getattr(cur_state, "outbox_jobs", ())
-                        if str(oj.get("outbox_id", oj.get("job_id"))) not in dispatched_ids
-                    ]
-                    self._repo.commit_mutation(
-                        cur_state.model_copy(update={"outbox_jobs": tuple(remaining)}),
-                        expected_revision=cur_state.revision,
-                    )
-            except Exception as err:
-                logger.warning("Failed to remove dispatched outbox jobs during recovery: %s", err)
-
-        # Phase 2: Defense in depth for legacy runs without outbox entry
-        for run in self._repo.list_runs():
-            if run.status != "QUEUED":
-                continue
-            age = (now - run.created_at).total_seconds()
-            if age < older_than_seconds:
-                continue
-            existing = self._job_repo.get_job_by_run_id(run.run_id)
-            if existing is not None and existing.state in {"QUEUED", "RUNNING"}:
-                continue
-            logical_key = f"run:{run.tenant_id}:{run.run_id}"
-            job = ExecutionJob(
-                tenant_id=run.tenant_id,
-                job_id=str(uuid.uuid4()),
-                run_id=run.run_id,
-                logical_key=logical_key,
-                state="QUEUED",
-                created_at=now,
-                updated_at=now,
-            )
-            try:
-                self._job_repo.enqueue_job(job)
-                recovered += 1
-            except Exception as err:
-                logger.debug("Failed to recover job for run %s: %s", run.run_id, err)
-                continue
-        return recovered
+        return run_outbox_ops.recover_undispatched_runs(
+            self._repo,
+            self._job_repo,
+            older_than_seconds=older_than_seconds,
+        )
 
     def get_run(self, run_id: str, actor: ActorContext | None = None) -> dict[str, Any]:
         if actor:
@@ -379,7 +140,7 @@ class EvaluationRunService:
             self._authorize(actor, "ops.evals.read")
         tenant = actor.tenant_id if actor else None
         runs = self._repo.list_runs(set_version_id=set_version_id, tenant_id=tenant)
-        return [r.model_dump(mode="json") for r in runs]
+        return [item.model_dump(mode="json") for item in runs]
 
     def cancel_run(
         self,
@@ -409,10 +170,9 @@ class EvaluationRunService:
             }
         )
         state = self._repo.load()
-        runs = [r for r in state.runs if r.run_id != run_id]
+        runs = [item for item in state.runs if item.run_id != run_id]
         runs.append(cancelled_run)
         new_state = state.model_copy(update={"runs": tuple(runs)})
-
         audit = EvaluationAuditEvent(
             audit_id=str(uuid.uuid4()),
             entity_type="EVAL_RUN",
@@ -439,7 +199,7 @@ class EvaluationRunService:
         if actor:
             self._authorize(actor, "ops.evals.read")
         executions = self._repo.list_case_executions(run_id=run_id, target_side=side)
-        return [e.model_dump(mode="json") for e in executions]
+        return [item.model_dump(mode="json") for item in executions]
 
     def get_case_execution(
         self,
@@ -463,7 +223,9 @@ class EvaluationRunService:
             self._authorize(actor, "ops.evals.read")
         execution = self._repo.get_case_execution(execution_id)
         if not execution or execution.run_id != run_id:
-            raise EvaluationNotFoundError(f"Case execution {execution_id} not found in run {run_id}")
+            raise EvaluationNotFoundError(
+                f"Case execution {execution_id} not found in run {run_id}"
+            )
         trajectory = execution.trace_ref.get("trajectory")
         if not trajectory:
             raise EvaluationNotFoundError(f"No trajectory recorded for execution {execution_id}")
@@ -478,94 +240,16 @@ class EvaluationRunService:
         reason: str,
         actor: ActorContext,
     ) -> dict[str, Any]:
-        """Appends a human review decision and updates the effective pass determination without mutating raw trace."""
-        self._authorize(actor, "ops.evals.results.review")
-
-        execution = self._repo.get_case_execution(execution_id)
-        if not execution or execution.run_id != run_id:
-            raise EvaluationNotFoundError(f"Execution {execution_id} not found in run {run_id}")
-
-        decision_id = f"rev_dec_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
-
-        # Locate target metric in execution
-        original_metric = next(
-            (m for m in execution.metric_results if m.metric_id == metric_id), None
-        )
-        original_decision = original_metric.pass_status if original_metric else "UNKNOWN"
-
-        review_decision = ReviewDecision(
-            decision_id=decision_id,
+        """Appends a human review decision and updates the effective pass determination."""
+        return run_review_ops.review_execution(
+            self._repo,
             run_id=run_id,
-            case_execution_id=execution_id,
+            execution_id=execution_id,
             metric_id=metric_id,
-            original_decision=original_decision,
-            new_decision=decision,
+            decision=decision,
             reason=reason,
-            reviewer_id=actor.user_id,
-            reviewed_at=now,
+            actor=actor,
         )
-
-        # Update the metric result's pass_status
-        updated_metrics: list[MetricResult] = []
-        for m in execution.metric_results:
-            if m.metric_id == metric_id:
-                updated_metrics.append(
-                    m.model_copy(
-                        update={
-                            "pass_status": decision,
-                            "reason": f"Overridden by human reviewer {actor.user_id}: {reason}",
-                        }
-                    )
-                )
-            else:
-                updated_metrics.append(m)
-
-        applicable = [m for m in updated_metrics if m.applicability]
-        new_passed = all(m.pass_status == "PASS" for m in applicable)
-
-        updated_execution = execution.model_copy(
-            update={
-                "metric_results": tuple(updated_metrics),
-                "passed": new_passed,
-                "is_critical_failure": (not new_passed) and execution.is_critical_failure,
-            }
-        )
-
-        state = self._repo.load()
-        existing_executions = [
-            e if e.execution_id != execution_id else updated_execution
-            for e in state.case_executions
-        ]
-        decisions = list(state.review_decisions)
-        decisions.append(review_decision)
-
-        new_state = state.model_copy(
-            update={
-                "case_executions": tuple(existing_executions),
-                "review_decisions": tuple(decisions),
-            }
-        )
-
-        audit = EvaluationAuditEvent(
-            audit_id=str(uuid.uuid4()),
-            entity_type="CASE_EXECUTION",
-            entity_id=execution_id,
-            action="REVIEW_METRIC",
-            actor_id=actor.user_id,
-            actor_role=actor.role,
-            owner_unit_id="ALL",
-            tenant_id=actor.tenant_id or "default",
-            before={"metric_id": metric_id, "pass_status": original_decision},
-            after={"metric_id": metric_id, "pass_status": decision},
-            reason=reason,
-            occurred_at=now,
-        )
-        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
-        return {
-            "review_decision": review_decision.model_dump(mode="json"),
-            "execution": updated_execution.model_dump(mode="json"),
-        }
 
     def rescore_run(
         self,
@@ -574,84 +258,12 @@ class EvaluationRunService:
         metric_version: str,
         actor: ActorContext,
     ) -> dict[str, Any]:
-        """Rescores all completed executions under new judge/metric versions while preserving observations."""
-        self._authorize(actor, "ops.evals.results.review")
-
-        run = self._repo.get_run(run_id)
-        if not run:
-            raise EvaluationNotFoundError(f"Run {run_id} not found")
-
-        # GE2-A08: Baseline and Candidate must use identical judge/metric version
-        scorer = EvaluationScorer(version=metric_version)
-        state = self._repo.load()
-        revision_map = {r.revision_id: r for r in state.revisions}
-
-        updated_executions: list[CaseExecution] = []
-        for execution in state.case_executions:
-            if execution.run_id != run_id or execution.status != "COMPLETED":
-                updated_executions.append(execution)
-                continue
-
-            rev = revision_map.get(execution.case_revision_id)
-            if not rev:
-                updated_executions.append(execution)
-                continue
-
-            metric_results, failure_class, passed = scorer.evaluate_execution(
-                case_revision=rev,
-                answer=execution.answer or "",
-                retrieved_evidence=execution.retrieved_evidence,
-            )
-            is_critical = (not passed) and (rev.criticality == "CRITICAL")
-            rescored_exec = execution.model_copy(
-                update={
-                    "metric_results": metric_results,
-                    "failure_classification": failure_class,
-                    "passed": passed,
-                    "is_critical_failure": is_critical,
-                }
-            )
-            updated_executions.append(rescored_exec)
-
-        # Recompute comparison summary
-        rescored_cases = [e for e in updated_executions if e.run_id == run_id]
-        total_cost = sum(e.estimated_cost_usd for e in rescored_cases)
-        total_cases = len({e.case_revision_id for e in rescored_cases})
-        new_summary = self._runner._compute_comparison_summary(
-            total_cases=total_cases,
-            executed_cases=rescored_cases,
-            total_cost=total_cost,
+        """Rescores all completed executions under new judge/metric versions."""
+        return run_review_ops.rescore_run(
+            self._repo,
+            self._runner,
+            run_id=run_id,
+            judge_version=judge_version,
+            metric_version=metric_version,
+            actor=actor,
         )
-
-        updated_run = run.model_copy(
-            update={
-                "judge_version": judge_version,
-                "metric_version": metric_version,
-                "summary": new_summary,
-            }
-        )
-
-        runs = [r if r.run_id != run_id else updated_run for r in state.runs]
-        new_state = state.model_copy(
-            update={
-                "runs": tuple(runs),
-                "case_executions": tuple(updated_executions),
-            }
-        )
-
-        audit = EvaluationAuditEvent(
-            audit_id=str(uuid.uuid4()),
-            entity_type="EVAL_RUN",
-            entity_id=run_id,
-            action="RESCORE_RUN",
-            actor_id=actor.user_id,
-            actor_role=actor.role,
-            owner_unit_id=run.owner_unit_id,
-            tenant_id=run.tenant_id,
-            before={"judge_version": run.judge_version, "metric_version": run.metric_version},
-            after={"judge_version": judge_version, "metric_version": metric_version},
-            reason="Rescored run with updated metric/judge version",
-            occurred_at=datetime.now(timezone.utc),
-        )
-        self._repo.commit_mutation(new_state, audit=audit, expected_revision=state.revision)
-        return {"run": updated_run.model_dump(mode="json")}

@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~27 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | Ongoing — ~24 oversized files remain (was ~36); continue workflow/query/eval residuals |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -33,3 +33,6 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `quality_domain/service.py` 713→245 (`candidate_ops`, `case_lifecycle_ops`, `cluster_ops`)
 - `evaluation_domain/job_repository.py` 698→191 (`job_lease_ops`, file/firestore adapters)
 - `evaluation_domain/tool_fixtures.py` 691→265 (`tool_fixture_repository/sandbox/seeds`)
+- `operations/emitter.py` 678→203 (`emitter_turn/feedback/results/replay/...`)
+- `services/export_service.py` 659→457 (`export_job_runner`, `export_artifact_gc`)
+- `evaluation_domain/run_service.py` 657→269 (`run_create/review/outbox_ops`)
