@@ -16,7 +16,7 @@ from agent_service.artifact_models import (
     ArtifactRecord,
     ArtifactScanStatus,
 )
-from agent_service.document_authorization import DocumentAccessDecision
+from operations_core.document_authorization import DocumentAccessDecision
 
 # Compatibility re-exports used by tests and historical import sites.
 __all__ = [

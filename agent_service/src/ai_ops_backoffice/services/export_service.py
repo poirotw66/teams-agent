@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from agent_service.operations.audit import AuditStore, build_audit_event
-from agent_service.operations.audit_errors import AuditWriteError
 from operations_core.access import ActorContext
+from operations_core.audit_errors import AuditWriteError
 from operations_core.contracts import utc_now
 
 from .export_auth_store import FileBackedExportAuthorizationResolver

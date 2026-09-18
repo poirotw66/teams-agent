@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from agent_service.document_authorization import (
+from operations_core.document_authorization import (
     DocumentAccessDeniedError,
     ensure_document_access,
 )

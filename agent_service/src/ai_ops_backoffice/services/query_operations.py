@@ -6,7 +6,6 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from agent_service.operations.scope import actor_bypasses_owner_unit_scope
 from operations_core.access import ActorContext
 from operations_core.contracts import (
     DEFAULT_TIMEZONE,
@@ -14,6 +13,7 @@ from operations_core.contracts import (
     OperationalEvent,
     utc_now,
 )
+from operations_core.scope import actor_bypasses_owner_unit_scope
 
 from .daily_aggregates import (
     aggregate_store_updated_at,

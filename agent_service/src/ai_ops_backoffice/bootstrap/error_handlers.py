@@ -5,7 +5,6 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from agent_service.operations.audit_errors import AuditWriteError
 from ai_ops_backoffice.evaluation_domain import (
     EvaluationAuditWriteError,
     EvaluationAuthorizationError,
@@ -29,6 +28,7 @@ from ai_ops_backoffice.faq_domain import (
 from ai_ops_backoffice.knowledge_bridge.errors import KnowledgeBridgeError
 from ai_ops_backoffice.services.periods import PeriodPolicyError
 from ai_ops_backoffice.services.rate_limit import RateLimitExceeded
+from operations_core.audit_errors import AuditWriteError
 
 
 def register_exception_handlers(app: FastAPI) -> None:
