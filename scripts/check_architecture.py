@@ -30,6 +30,7 @@ OVERSIZED_FILES_BASELINE = BASELINE_DIR / "oversized_files.json"
 OVERSIZED_FUNCTIONS_BASELINE = BASELINE_DIR / "oversized_functions.json"
 REVERSE_IMPORTS_BASELINE = BASELINE_DIR / "reverse_imports.json"
 IMPORTER_COUNTS_BASELINE = BASELINE_DIR / "importer_counts.json"
+PRIVATE_ACCESS_BASELINE = BASELINE_DIR / "private_access.json"
 
 PACKAGE_ROOTS: dict[str, Path] = {
     "agent_service": REPO_ROOT / "agent_service" / "src" / "agent_service",
@@ -460,8 +461,18 @@ def find_package_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
 _PRIVATE_ACCESS_ROOTS: tuple[Path, ...] = (
     REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "routers",
     REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "bootstrap",
+    REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "services",
+    REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "application",
+    REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "governance_domain",
 )
 _ALLOWED_PRIVATE_BASES = frozenset({"self", "cls"})
+
+
+def is_private_access_path_excluded(path: Path) -> bool:
+    """Exclude generated dirs and governance eval harness (intentional private digs)."""
+    if is_excluded(path):
+        return True
+    return "governance_domain" in path.parts and path.name.startswith("eval_")
 
 
 def _attribute_expr(node: ast.AST) -> str | None:
@@ -480,9 +491,9 @@ def is_cross_module_private_attr(node: ast.Attribute) -> bool:
     """True when node loads a single-underscore private attr on a non-self/cls base."""
     if not node.attr.startswith("_") or node.attr.startswith("__"):
         return False
-    if isinstance(node.value, ast.Name) and node.value.id in _ALLOWED_PRIVATE_BASES:
-        return False
-    return True
+    return not (
+        isinstance(node.value, ast.Name) and node.value.id in _ALLOWED_PRIVATE_BASES
+    )
 
 
 def collect_cross_module_private_access(
@@ -508,25 +519,46 @@ def collect_cross_module_private_access(
     return findings
 
 
-def check_cross_module_private_access() -> list[Finding]:
-    """Fail on cross-module private attribute access under routers/ and bootstrap/."""
-    findings: list[Finding] = []
+def private_access_finding_key(path: Path, lineno: int, expr: str) -> str:
+    return f"{rel_path(path)}:{lineno}: {expr}"
+
+
+def collect_private_access_keys() -> list[str]:
+    """Return sorted finding keys for current private-access violations."""
+    keys: list[str] = []
     for root in _PRIVATE_ACCESS_ROOTS:
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.py")):
-            if is_excluded(path):
+            if is_private_access_path_excluded(path):
                 continue
             text = path.read_text(encoding="utf-8")
             for lineno, expr in collect_cross_module_private_access(
                 text, filename=str(path)
             ):
-                findings.append(
-                    Finding(
-                        "CROSS_MODULE_PRIVATE_ACCESS",
-                        f"{rel_path(path)}:{lineno}: {expr}",
-                    )
-                )
+                keys.append(private_access_finding_key(path, lineno, expr))
+    return sorted(keys)
+
+
+def tighten_private_access_allowlist(
+    baseline: list[str],
+    current: list[str],
+) -> list[str]:
+    """Return allowlist capped to entries still present in current findings."""
+    current_set = set(current)
+    return sorted(entry for entry in baseline if entry in current_set)
+
+
+def check_cross_module_private_access(
+    allowlist: list[str] | None = None,
+) -> list[Finding]:
+    """Fail on non-allowlisted cross-module private attribute access."""
+    allowed = set(allowlist or [])
+    findings: list[Finding] = []
+    for key in collect_private_access_keys():
+        if key in allowed:
+            continue
+        findings.append(Finding("CROSS_MODULE_PRIVATE_ACCESS", key))
     return findings
 
 
@@ -567,6 +599,9 @@ def build_baselines() -> dict[str, object]:
         "importer_counts": {
             "edges": collect_importer_counts(),
         },
+        "private_access": {
+            "allowlist": collect_private_access_keys(),
+        },
     }
 
 
@@ -576,10 +611,12 @@ def write_baselines() -> None:
     write_json(OVERSIZED_FUNCTIONS_BASELINE, baselines["oversized_functions"])
     write_json(REVERSE_IMPORTS_BASELINE, baselines["reverse_imports"])
     write_json(IMPORTER_COUNTS_BASELINE, baselines["importer_counts"])
+    write_json(PRIVATE_ACCESS_BASELINE, baselines["private_access"])
     print(f"Wrote {rel_path(OVERSIZED_FILES_BASELINE)}")
     print(f"Wrote {rel_path(OVERSIZED_FUNCTIONS_BASELINE)}")
     print(f"Wrote {rel_path(REVERSE_IMPORTS_BASELINE)}")
     print(f"Wrote {rel_path(IMPORTER_COUNTS_BASELINE)}")
+    print(f"Wrote {rel_path(PRIVATE_ACCESS_BASELINE)}")
 
 
 def _count_reduced_caps(
@@ -643,6 +680,23 @@ def _apply_importer_count_tighten(
     )
 
 
+def _apply_private_access_tighten(
+    stored: list[str],
+    current: list[str],
+) -> Finding | None:
+    tightened = tighten_private_access_allowlist(stored, current)
+    if tightened == stored:
+        return None
+    write_json(PRIVATE_ACCESS_BASELINE, {"allowlist": tightened})
+    removed = len(stored) - len(tightened)
+    return Finding(
+        "PRIVATE_ACCESS_TIGHTENED",
+        f"tightened {rel_path(PRIVATE_ACCESS_BASELINE)}: "
+        f"{removed} allowlist entr{'y' if removed == 1 else 'ies'} removed; "
+        "commit the updated JSON",
+    )
+
+
 def run_checks() -> list[Finding]:
     missing = [
         path
@@ -650,6 +704,7 @@ def run_checks() -> list[Finding]:
             OVERSIZED_FILES_BASELINE,
             OVERSIZED_FUNCTIONS_BASELINE,
             REVERSE_IMPORTS_BASELINE,
+            PRIVATE_ACCESS_BASELINE,
         )
         if not path.exists()
     ]
@@ -668,6 +723,9 @@ def run_checks() -> list[Finding]:
     file_baseline = file_payload["files"]
     function_baseline = function_payload["functions"]
     import_baseline = load_json(REVERSE_IMPORTS_BASELINE)["allowlist"]
+    private_access_baseline = list(
+        load_json(PRIVATE_ACCESS_BASELINE).get("allowlist", [])
+    )
 
     all_file_sizes = collect_file_sizes()
     current_files = {
@@ -677,6 +735,7 @@ def run_checks() -> list[Finding]:
     }
     current_functions = collect_oversized_functions()
     current_importer_counts = collect_importer_counts()
+    current_private_access = collect_private_access_keys()
 
     findings: list[Finding] = []
     findings.extend(check_file_sizes(current_files, file_baseline))
@@ -685,7 +744,7 @@ def run_checks() -> list[Finding]:
         check_reverse_imports(collect_reverse_imports(), import_baseline)
     )
     findings.extend(check_package_cycles(collect_package_dependency_graph()))
-    findings.extend(check_cross_module_private_access())
+    findings.extend(check_cross_module_private_access(private_access_baseline))
 
     if IMPORTER_COUNTS_BASELINE.exists():
         importer_baseline = load_json(IMPORTER_COUNTS_BASELINE).get("edges", {})
@@ -723,6 +782,13 @@ def run_checks() -> list[Finding]:
     )
     if importer_finding is not None:
         findings.append(importer_finding)
+
+    private_finding = _apply_private_access_tighten(
+        private_access_baseline,
+        current_private_access,
+    )
+    if private_finding is not None:
+        findings.append(private_finding)
 
     return findings
 

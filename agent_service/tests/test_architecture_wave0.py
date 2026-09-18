@@ -49,6 +49,7 @@ def test_architecture_baselines_exist() -> None:
         BASELINES / "oversized_functions.json",
         BASELINES / "reverse_imports.json",
         BASELINES / "importer_counts.json",
+        BASELINES / "private_access.json",
         BASELINES / "openapi" / "agent_service.routes.json",
         BASELINES / "openapi" / "knowledge_portal.routes.json",
         BASELINES / "openapi" / "ai_ops_backoffice.routes.json",
@@ -69,6 +70,14 @@ def test_architecture_baselines_exist() -> None:
             f"missing generated OpenAPI TypeScript ({name}); "
             "run scripts/generate_openapi_ts.py --write"
         )
+
+    private_access = json.loads(
+        (BASELINES / "private_access.json").read_text(encoding="utf-8")
+    )
+    assert private_access.get("allowlist") == [], (
+        "private_access allowlist must stay empty after Phase E fixes; "
+        f"found {private_access.get('allowlist')}"
+    )
 
 
 def test_reverse_import_allowlist_is_empty_after_wave1() -> None:
@@ -260,4 +269,48 @@ def test_cross_module_private_access_is_detected() -> None:
         "        return self._source_trace\n"
     )
     assert checker.collect_cross_module_private_access(allowed) == []
+
+
+def test_private_access_roots_cover_services_and_application() -> None:
+    checker = _load_script(
+        "check_architecture_private_access_roots",
+        SCRIPTS / "check_architecture.py",
+    )
+    root_names = {path.name for path in checker._PRIVATE_ACCESS_ROOTS}
+    assert {"routers", "bootstrap", "services", "application", "governance_domain"} <= (
+        root_names
+    )
+
+
+def test_governance_eval_harness_is_excluded_from_private_access_scan(
+    tmp_path: Path,
+) -> None:
+    checker = _load_script(
+        "check_architecture_private_access_exclude",
+        SCRIPTS / "check_architecture.py",
+    )
+    harness = tmp_path / "governance_domain" / "eval_runtime.py"
+    harness.parent.mkdir(parents=True)
+    harness.write_text("x = 1\n", encoding="utf-8")
+    peer = tmp_path / "governance_domain" / "models.py"
+    peer.write_text("x = 1\n", encoding="utf-8")
+    assert checker.is_private_access_path_excluded(harness) is True
+    assert checker.is_private_access_path_excluded(peer) is False
+
+
+def test_private_access_allowlist_only_shrinks() -> None:
+    checker = _load_script(
+        "check_architecture_private_access_ratchet",
+        SCRIPTS / "check_architecture.py",
+    )
+    baseline = [
+        "services/a.py:1: other._foo",
+        "services/b.py:2: other._bar",
+    ]
+    current = ["services/a.py:1: other._foo"]
+    tightened = checker.tighten_private_access_allowlist(baseline, current)
+    assert tightened == ["services/a.py:1: other._foo"]
+
+    # New findings are not auto-added; callers must fail via check.
+    assert checker.tighten_private_access_allowlist([], current) == []
 

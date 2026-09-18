@@ -4,6 +4,8 @@ import json
 import os
 import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -112,42 +114,37 @@ class FileExportJobStore:
         self._lock_path = root / "export_jobs.lock"
         self._lock = threading.RLock()
 
-    def _exclusive(self):
-        class _Guard:
-            def __init__(self, store: FileExportJobStore) -> None:
-                self._store = store
-                self._handle = None
+    @contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """Hold the process-safe exclusive lock for a critical section."""
+        self._lock.acquire()
+        handle = None
+        try:
+            self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+            # Dedicated lock file — never replaced by JSON writes.
+            handle = self._lock_path.open("a+", encoding="utf-8")
+            try:
+                import fcntl
 
-            def __enter__(self):
-                self._store._lock.acquire()
-                self._store._lock_path.parent.mkdir(parents=True, exist_ok=True)
-                # Dedicated lock file — never replaced by JSON writes.
-                self._handle = self._store._lock_path.open("a+", encoding="utf-8")
-                try:
-                    import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                # Windows / unsupported FS: threading lock still serializes in-process.
+                pass
+            if not self._path.exists():
+                self._path.write_text("[]", encoding="utf-8")
+            yield
+        finally:
+            try:
+                if handle is not None:
+                    try:
+                        import fcntl
 
-                    fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX)
-                except (ImportError, OSError):
-                    # Windows / unsupported FS: threading lock still serializes in-process.
-                    pass
-                if not self._store._path.exists():
-                    self._store._path.write_text("[]", encoding="utf-8")
-                return self
-
-            def __exit__(self, exc_type, exc, tb) -> None:
-                try:
-                    if self._handle is not None:
-                        try:
-                            import fcntl
-
-                            fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
-                        except (ImportError, OSError):
-                            pass
-                        self._handle.close()
-                finally:
-                    self._store._lock.release()
-
-        return _Guard(self)
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                    except (ImportError, OSError):
+                        pass
+                    handle.close()
+            finally:
+                self._lock.release()
 
     def _read_unlocked(self) -> dict[str, dict[str, Any]]:
         if not self._path.is_file():

@@ -34,7 +34,7 @@ async def reconcile_operations_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    events = await query_service._scoped_events(actor, period)
+    events = await query_service.scoped_events(actor, period)
     summary = await query_service.operations_summary(
         actor,
         preset=preset,
@@ -110,7 +110,7 @@ async def reconcile_costs_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    events = await query_service._scoped_events(actor, period)
+    events = await query_service.scoped_events(actor, period)
     summary = await query_service.costs_summary(
         actor,
         preset=preset,
@@ -191,7 +191,7 @@ async def reconcile_issues_summary(
         start_date=start_date,
         end_date=end_date,
     )
-    events = await query_service._scoped_events(actor, period)
+    events = await query_service.scoped_events(actor, period)
     summary = await query_service.issues_summary(
         actor,
         preset=preset,

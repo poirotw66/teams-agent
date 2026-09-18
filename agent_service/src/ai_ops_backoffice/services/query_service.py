@@ -425,6 +425,17 @@ class BackofficeQueryService(
             end_date=end_date,
         )
 
+    async def scoped_events(
+        self,
+        actor: ActorContext,
+        period: ResolvedPeriod,
+        force_refresh: bool = False,
+    ) -> list[OperationalEvent]:
+        """Public accessor for scope-filtered events used by reconciliation and mixins."""
+        return await self._scoped_events(
+            actor, period, force_refresh=force_refresh
+        )
+
     async def _scoped_events(
         self,
         actor: ActorContext,
