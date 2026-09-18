@@ -8,7 +8,6 @@
     "agent_service/src/agent_service/usage_events.py": 521,
     "agent_service/src/agent_service/workflow_helpers.py": 567,
     "agent_service/src/agent_service/workflow_issue_processing.py": 579,
-    "agent_service/src/ai_ops_backoffice/evaluation_domain/job_repository.py": 698,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/run_service.py": 657,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/tool_fixtures.py": 691,
     "agent_service/src/ai_ops_backoffice/governance_domain/eval_flow.py": 578,

@@ -1,33 +1,34 @@
+"""Execution job repository port and in-memory implementation.
+
+File and Firestore adapters live in dedicated modules and are re-exported here
+so existing ``from .job_repository import ...`` imports keep working.
+"""
+
 from __future__ import annotations
 
-import fcntl
-import json
-import logging
-import os
-import sys
 import threading
-import uuid
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
-from .errors import (
-    EvaluationNotFoundError,
-    JobFencingConflictError,
-    JobLeaseLostError,
+from .job_lease_ops import (
+    apply_cancel_request,
+    apply_checkpoint,
+    apply_completion,
+    apply_heartbeat,
+    assert_lease_ownership,
+    build_claimed_job,
+    build_max_attempts_failed_job,
+    filter_jobs,
+    find_logical_key_duplicate,
+    require_job,
+    utc_now,
 )
 from .job_models import ExecutionJob, JobState
-from .json_record_io import load_json_model
-
-logger = logging.getLogger(__name__)
 
 
 class JobRepository(Protocol):
     def enqueue_job(self, job: ExecutionJob) -> ExecutionJob: ...
 
-    def claim_job(
-        self, worker_id: str, lease_seconds: float = 60.0
-    ) -> ExecutionJob | None: ...
+    def claim_job(self, worker_id: str, lease_seconds: float = 60.0) -> ExecutionJob | None: ...
 
     def heartbeat(
         self,
@@ -74,66 +75,38 @@ class InMemoryJobRepository:
 
     def enqueue_job(self, job: ExecutionJob) -> ExecutionJob:
         with self._lock:
-            # Check if same job_id already exists
             if job.job_id in self._jobs:
                 return self._jobs[job.job_id]
-            # Idempotency / Deduplication: check if active or terminal job already exists for logical_key
-            for existing in self._jobs.values():
-                if (
-                    existing.tenant_id == job.tenant_id
-                    and existing.logical_key == job.logical_key
-                    and existing.state in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"}
-                ):
-                    return existing
+            duplicate = find_logical_key_duplicate(list(self._jobs.values()), job)
+            if duplicate is not None:
+                return duplicate
             self._jobs[job.job_id] = job
             return job
 
-    def claim_job(
-        self, worker_id: str, lease_seconds: float = 60.0
-    ) -> ExecutionJob | None:
-        now = datetime.now(UTC)
+    def claim_job(self, worker_id: str, lease_seconds: float = 60.0) -> ExecutionJob | None:
+        now = utc_now()
         with self._lock:
             candidates: list[ExecutionJob] = []
-            for j in self._jobs.values():
-                if j.state == "QUEUED":
-                    candidates.append(j)
-                elif j.state == "RUNNING" and j.lease_until and j.lease_until < now:
-                    # Lease expired; re-claimable if max_attempts not exceeded
-                    if j.attempt < j.max_attempts:
-                        candidates.append(j)
+            for job in self._jobs.values():
+                if job.state == "QUEUED":
+                    candidates.append(job)
+                elif job.state == "RUNNING" and job.lease_until and job.lease_until < now:
+                    if job.attempt < job.max_attempts:
+                        candidates.append(job)
                     else:
-                        # Exceeded attempts; transition to FAILED
-                        failed_job = j.model_copy(
-                            update={
-                                "state": "FAILED",
-                                "last_error": "Lease expired and max attempts exceeded",
-                                "updated_at": now,
-                                "revision": j.revision + 1,
-                            }
-                        )
-                        self._jobs[j.job_id] = failed_job
+                        self._jobs[job.job_id] = build_max_attempts_failed_job(job, now=now)
 
             if not candidates:
                 return None
 
-            # Pick oldest candidate by created_at
-            candidates.sort(key=lambda j: j.created_at)
+            candidates.sort(key=lambda item: item.created_at)
             chosen = candidates[0]
-            is_reclaim = chosen.state == "RUNNING"
-            new_attempt = chosen.attempt + 1 if is_reclaim else chosen.attempt
-            new_fencing = chosen.fencing_token + 1
-
-            claimed = chosen.model_copy(
-                update={
-                    "state": "RUNNING",
-                    "lease_owner": worker_id,
-                    "lease_until": now + timedelta(seconds=lease_seconds),
-                    "heartbeat_at": now,
-                    "attempt": new_attempt,
-                    "fencing_token": new_fencing,
-                    "revision": chosen.revision + 1,
-                    "updated_at": now,
-                }
+            claimed = build_claimed_job(
+                chosen,
+                worker_id=worker_id,
+                lease_seconds=lease_seconds,
+                now=now,
+                is_reclaim=chosen.state == "RUNNING",
             )
             self._jobs[chosen.job_id] = claimed
             return claimed
@@ -145,27 +118,11 @@ class InMemoryJobRepository:
         fencing_token: int,
         extend_seconds: float = 60.0,
     ) -> ExecutionJob:
-        now = datetime.now(UTC)
+        now = utc_now()
         with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(
-                    f"Fencing token mismatch for job {job_id}: current={job.fencing_token}, worker={fencing_token}"
-                )
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(
-                    f"Job {job_id} lease is owned by {job.lease_owner}, not {worker_id}"
-                )
-            updated = job.model_copy(
-                update={
-                    "heartbeat_at": now,
-                    "lease_until": now + timedelta(seconds=extend_seconds),
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
+            job = require_job(self._jobs.get(job_id), job_id)
+            assert_lease_ownership(job, worker_id=worker_id, fencing_token=fencing_token)
+            updated = apply_heartbeat(job, extend_seconds=extend_seconds, now=now)
             self._jobs[job_id] = updated
             return updated
 
@@ -176,27 +133,11 @@ class InMemoryJobRepository:
         fencing_token: int,
         checkpoint_ref: str,
     ) -> ExecutionJob:
-        now = datetime.now(UTC)
+        now = utc_now()
         with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(
-                    f"Fencing token mismatch for job {job_id}: current={job.fencing_token}, worker={fencing_token}"
-                )
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(
-                    f"Job {job_id} lease is owned by {job.lease_owner}, not {worker_id}"
-                )
-            updated = job.model_copy(
-                update={
-                    "checkpoint_ref": checkpoint_ref,
-                    "heartbeat_at": now,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
+            job = require_job(self._jobs.get(job_id), job_id)
+            assert_lease_ownership(job, worker_id=worker_id, fencing_token=fencing_token)
+            updated = apply_checkpoint(job, checkpoint_ref=checkpoint_ref, now=now)
             self._jobs[job_id] = updated
             return updated
 
@@ -208,47 +149,19 @@ class InMemoryJobRepository:
         state: JobState,
         last_error: str | None = None,
     ) -> ExecutionJob:
-        now = datetime.now(UTC)
+        now = utc_now()
         with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(
-                    f"Fencing token mismatch for job {job_id}: current={job.fencing_token}, worker={fencing_token}"
-                )
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(
-                    f"Job {job_id} lease is owned by {job.lease_owner}, not {worker_id}"
-                )
-            updated = job.model_copy(
-                update={
-                    "state": state,
-                    "lease_owner": None,
-                    "lease_until": None,
-                    "last_error": last_error or job.last_error,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
+            job = require_job(self._jobs.get(job_id), job_id)
+            assert_lease_ownership(job, worker_id=worker_id, fencing_token=fencing_token)
+            updated = apply_completion(job, state=state, last_error=last_error, now=now)
             self._jobs[job_id] = updated
             return updated
 
     def request_cancellation(self, job_id: str) -> ExecutionJob:
-        now = datetime.now(UTC)
+        now = utc_now()
         with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            if job.state in {"COMPLETED", "FAILED", "CANCELLED"}:
-                return job
-            updated = job.model_copy(
-                update={
-                    "cancel_requested_at": now,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
+            job = require_job(self._jobs.get(job_id), job_id)
+            updated = apply_cancel_request(job, now=now)
             self._jobs[job_id] = updated
             return updated
 
@@ -258,441 +171,21 @@ class InMemoryJobRepository:
 
     def get_job_by_run_id(self, run_id: str) -> ExecutionJob | None:
         with self._lock:
-            return next((j for j in self._jobs.values() if j.run_id == run_id), None)
+            return next((job for job in self._jobs.values() if job.run_id == run_id), None)
 
     def list_jobs(
         self, tenant_id: str | None = None, state: JobState | None = None
     ) -> list[ExecutionJob]:
         with self._lock:
-            results = list(self._jobs.values())
-            if tenant_id:
-                results = [j for j in results if j.tenant_id == tenant_id]
-            if state:
-                results = [j for j in results if j.state == state]
-            return sorted(results, key=lambda j: j.created_at, reverse=True)
+            return filter_jobs(list(self._jobs.values()), tenant_id=tenant_id, state=state)
 
 
-class FileJobRepository(InMemoryJobRepository):
-    """Multi-process safe, file-based durable execution job repository.
+from .file_job_repository import FileJobRepository
+from .firestore_job_repository import FirestoreJobRepository
 
-    Stores each job in an individual JSON file under `directory/records/{job_id}.json`
-    with file locking (`fcntl.flock`) for atomic read-modify-write and CAS.
-    """
-
-    def __init__(self, directory: Path) -> None:
-        super().__init__()
-        self._dir = directory
-        self._records_dir = self._dir / "records"
-        self._records_dir.mkdir(parents=True, exist_ok=True)
-        self._lock_file = self._dir / ".jobs.lock"
-        self._sync_from_disk()
-
-    def _sync_from_disk(self) -> None:
-        with self._lock:
-            jobs: dict[str, ExecutionJob] = {}
-            for path in self._records_dir.glob("*.json"):
-                job = load_json_model(path, ExecutionJob)
-                if job is not None:
-                    jobs[job.job_id] = job
-            self._jobs = jobs
-
-    def _write_record_atomic(self, job: ExecutionJob) -> None:
-        target = self._records_dir / f"{job.job_id}.json"
-        temp = target.with_suffix(f".{uuid.uuid4().hex}.tmp")
-        with temp.open("w", encoding="utf-8") as f:
-            f.write(job.model_dump_json(indent=2))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp, target)
-        if sys.platform != "win32":
-            parent_fd = os.open(str(self._records_dir), os.O_RDONLY)
-            try:
-                os.fsync(parent_fd)
-            finally:
-                os.close(parent_fd)
-
-    def _with_file_lock(self, fn: Any) -> Any:
-        self._lock_file.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock_file.open("a+") as lock_handle:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-            try:
-                self._sync_from_disk()
-                res = fn()
-                if isinstance(res, ExecutionJob):
-                    self._write_record_atomic(res)
-                return res
-            finally:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-
-    def enqueue_job(self, job: ExecutionJob) -> ExecutionJob:
-        return self._with_file_lock(lambda: super(FileJobRepository, self).enqueue_job(job))
-
-    def claim_job(
-        self, worker_id: str, lease_seconds: float = 60.0
-    ) -> ExecutionJob | None:
-        return self._with_file_lock(
-            lambda: super(FileJobRepository, self).claim_job(worker_id, lease_seconds)
-        )
-
-    def heartbeat(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        extend_seconds: float = 60.0,
-    ) -> ExecutionJob:
-        return self._with_file_lock(
-            lambda: super(FileJobRepository, self).heartbeat(
-                job_id, worker_id, fencing_token, extend_seconds
-            )
-        )
-
-    def save_checkpoint(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        checkpoint_ref: str,
-    ) -> ExecutionJob:
-        return self._with_file_lock(
-            lambda: super(FileJobRepository, self).save_checkpoint(
-                job_id, worker_id, fencing_token, checkpoint_ref
-            )
-        )
-
-    def complete_job(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        state: JobState,
-        last_error: str | None = None,
-    ) -> ExecutionJob:
-        return self._with_file_lock(
-            lambda: super(FileJobRepository, self).complete_job(
-                job_id, worker_id, fencing_token, state, last_error
-            )
-        )
-
-    def request_cancellation(self, job_id: str) -> ExecutionJob:
-        return self._with_file_lock(
-            lambda: super(FileJobRepository, self).request_cancellation(job_id)
-        )
-
-    def get_job(self, job_id: str) -> ExecutionJob | None:
-        self._sync_from_disk()
-        return super().get_job(job_id)
-
-    def get_job_by_run_id(self, run_id: str) -> ExecutionJob | None:
-        self._sync_from_disk()
-        return super().get_job_by_run_id(run_id)
-
-    def list_jobs(
-        self, tenant_id: str | None = None, state: JobState | None = None
-    ) -> list[ExecutionJob]:
-        self._sync_from_disk()
-        return super().list_jobs(tenant_id=tenant_id, state=state)
-
-
-class FirestoreJobRepository:
-    """Production GCP Firestore repository for execution jobs with transactional leasing and fencing."""
-
-    def __init__(
-        self,
-        client: Any,
-        collection: str = "ai_ops_execution_jobs",
-        transaction_runner: Any = None,
-    ) -> None:
-        self._client = client
-        self._collection = collection
-        self._transaction_runner = transaction_runner
-
-    def _doc_ref(self, job_id: str) -> Any:
-        return self._client.collection(self._collection).document(job_id)
-
-    def _run_transaction(self, operation: Any) -> Any:
-        if self._transaction_runner is not None:
-            tx = self._client.transaction() if hasattr(self._client, "transaction") else None
-            return self._transaction_runner(operation, tx)
-        if hasattr(self._client, "transaction"):
-            try:
-                from google.cloud.firestore_v1.transaction import transactional
-                return transactional(operation)(self._client.transaction())
-            except (ImportError, Exception):
-                tx = self._client.transaction()
-                res = operation(tx)
-                if hasattr(tx, "commit"):
-                    tx.commit()
-                return res
-        class _ImmediateTx:
-            def get(self, ref: Any) -> Any:
-                return ref.get()
-            def set(self, ref: Any, data: Any, merge: bool = False) -> None:
-                ref.set(data, merge=merge) if hasattr(ref, "set") else None
-            def update(self, ref: Any, data: Any) -> None:
-                ref.update(data) if hasattr(ref, "update") else (ref.set(data) if hasattr(ref, "set") else None)
-        return operation(_ImmediateTx())
-
-    def enqueue_job(self, job: ExecutionJob) -> ExecutionJob:
-        """Enqueue with transactional logical-key dedup via a deterministic dedup document."""
-        import hashlib
-
-        digest = hashlib.sha256(
-            f"{job.tenant_id}:{job.logical_key}".encode()
-        ).hexdigest()[:32]
-        dedup_id = f"lk_{job.tenant_id}_{digest}"
-        dedup_ref = self._client.collection(self._collection).document(dedup_id)
-        job_ref = self._doc_ref(job.job_id)
-
-        def enqueue_tx(transaction: Any) -> ExecutionJob:
-            job_snap = job_ref.get(transaction=transaction)
-            if getattr(job_snap, "exists", False):
-                return ExecutionJob.model_validate(job_snap.to_dict())
-
-            dedup_snap = dedup_ref.get(transaction=transaction)
-            if getattr(dedup_snap, "exists", False):
-                existing_id = (dedup_snap.to_dict() or {}).get("job_id")
-                if existing_id:
-                    existing_ref = self._doc_ref(existing_id)
-                    existing_snap = existing_ref.get(transaction=transaction)
-                    if getattr(existing_snap, "exists", False):
-                        existing = ExecutionJob.model_validate(existing_snap.to_dict())
-                        if existing.state in {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"}:
-                            return existing
-            data = json.loads(job.model_dump_json())
-            transaction.set(job_ref, data)
-            transaction.set(
-                dedup_ref,
-                {
-                    "job_id": job.job_id,
-                    "tenant_id": job.tenant_id,
-                    "logical_key": job.logical_key,
-                    "state": job.state,
-                },
-            )
-            return job
-
-        return self._run_transaction(enqueue_tx)
-
-    def claim_job(
-        self, worker_id: str, lease_seconds: float = 60.0
-    ) -> ExecutionJob | None:
-        query = (
-            self._client.collection(self._collection)
-            .where("state", "in", ["QUEUED", "RUNNING"])
-            .limit(20)
-        )
-        docs = list(query.stream())
-        for d in docs:
-            doc_ref = self._doc_ref(d.id)
-
-            def claim_tx(transaction: Any, doc_ref: Any = doc_ref) -> ExecutionJob | None:
-                curr_now = datetime.now(UTC)
-                snap = doc_ref.get(transaction=transaction)
-                if not getattr(snap, "exists", False):
-                    return None
-                j = ExecutionJob.model_validate(snap.to_dict())
-                should_claim = False
-                is_reclaim = False
-                if j.state == "QUEUED":
-                    should_claim = True
-                elif j.state == "RUNNING" and j.lease_until and j.lease_until < curr_now:
-                    if j.attempt < j.max_attempts:
-                        should_claim = True
-                        is_reclaim = True
-                    else:
-                        transaction.set(
-                            doc_ref,
-                            {
-                                **snap.to_dict(),
-                                "state": "FAILED",
-                                "last_error": "Lease expired and max attempts exceeded",
-                                "updated_at": curr_now.isoformat(),
-                                "revision": j.revision + 1,
-                            },
-                        )
-                        return None
-
-                if not should_claim:
-                    return None
-
-                new_attempt = j.attempt + 1 if is_reclaim else j.attempt
-                new_fencing = j.fencing_token + 1
-                new_lease = curr_now + timedelta(seconds=lease_seconds)
-                claimed = j.model_copy(
-                    update={
-                        "state": "RUNNING",
-                        "lease_owner": worker_id,
-                        "lease_until": new_lease,
-                        "heartbeat_at": curr_now,
-                        "attempt": new_attempt,
-                        "fencing_token": new_fencing,
-                        "revision": j.revision + 1,
-                        "updated_at": curr_now,
-                    }
-                )
-                transaction.set(doc_ref, json.loads(claimed.model_dump_json()))
-                return claimed
-
-            try:
-                claimed_job = self._run_transaction(claim_tx)
-                if claimed_job is not None:
-                    return claimed_job
-            except Exception:
-                logger.warning("Skipping claim failure for job doc %s", d.id, exc_info=True)
-                continue
-        return None
-
-    def heartbeat(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        extend_seconds: float = 60.0,
-    ) -> ExecutionJob:
-        doc_ref = self._doc_ref(job_id)
-
-        def hb_tx(transaction: Any) -> ExecutionJob:
-            now = datetime.now(UTC)
-            snap = doc_ref.get(transaction=transaction)
-            if not getattr(snap, "exists", False):
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            job = ExecutionJob.model_validate(snap.to_dict())
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(f"Fencing token conflict for job {job_id}")
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(f"Lease lost for job {job_id}")
-
-            updated = job.model_copy(
-                update={
-                    "heartbeat_at": now,
-                    "lease_until": now + timedelta(seconds=extend_seconds),
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
-            transaction.set(doc_ref, json.loads(updated.model_dump_json()))
-            return updated
-
-        return self._run_transaction(hb_tx)
-
-    def save_checkpoint(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        checkpoint_ref: str,
-    ) -> ExecutionJob:
-        doc_ref = self._doc_ref(job_id)
-
-        def cp_tx(transaction: Any) -> ExecutionJob:
-            now = datetime.now(UTC)
-            snap = doc_ref.get(transaction=transaction)
-            if not getattr(snap, "exists", False):
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            job = ExecutionJob.model_validate(snap.to_dict())
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(f"Fencing token conflict for job {job_id}")
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(f"Lease lost for job {job_id}")
-
-            updated = job.model_copy(
-                update={
-                    "checkpoint_ref": checkpoint_ref,
-                    "heartbeat_at": now,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
-            transaction.set(doc_ref, json.loads(updated.model_dump_json()))
-            return updated
-
-        return self._run_transaction(cp_tx)
-
-    def complete_job(
-        self,
-        job_id: str,
-        worker_id: str,
-        fencing_token: int,
-        state: JobState,
-        last_error: str | None = None,
-    ) -> ExecutionJob:
-        doc_ref = self._doc_ref(job_id)
-
-        def comp_tx(transaction: Any) -> ExecutionJob:
-            now = datetime.now(UTC)
-            snap = doc_ref.get(transaction=transaction)
-            if not getattr(snap, "exists", False):
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            job = ExecutionJob.model_validate(snap.to_dict())
-            if job.fencing_token != fencing_token:
-                raise JobFencingConflictError(f"Fencing token conflict for job {job_id}")
-            if job.lease_owner != worker_id:
-                raise JobLeaseLostError(f"Lease lost for job {job_id}")
-
-            updated = job.model_copy(
-                update={
-                    "state": state,
-                    "lease_owner": None,
-                    "lease_until": None,
-                    "last_error": last_error or job.last_error,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
-            transaction.set(doc_ref, json.loads(updated.model_dump_json()))
-            return updated
-
-        return self._run_transaction(comp_tx)
-
-    def request_cancellation(self, job_id: str) -> ExecutionJob:
-        doc_ref = self._doc_ref(job_id)
-
-        def cancel_tx(transaction: Any) -> ExecutionJob:
-            now = datetime.now(UTC)
-            snap = doc_ref.get(transaction=transaction)
-            if not getattr(snap, "exists", False):
-                raise EvaluationNotFoundError(f"Job {job_id} not found")
-            job = ExecutionJob.model_validate(snap.to_dict())
-            if job.state in {"COMPLETED", "FAILED", "CANCELLED"}:
-                return job
-            updated = job.model_copy(
-                update={
-                    "cancel_requested_at": now,
-                    "updated_at": now,
-                    "revision": job.revision + 1,
-                }
-            )
-            transaction.set(doc_ref, json.loads(updated.model_dump_json()))
-            return updated
-
-        return self._run_transaction(cancel_tx)
-
-    def get_job(self, job_id: str) -> ExecutionJob | None:
-        doc = self._doc_ref(job_id).get()
-        if not doc.exists:
-            return None
-        return ExecutionJob.model_validate(doc.to_dict())
-
-    def get_job_by_run_id(self, run_id: str) -> ExecutionJob | None:
-        query = (
-            self._client.collection(self._collection)
-            .where("run_id", "==", run_id)
-            .limit(1)
-        )
-        docs = list(query.stream())
-        if not docs:
-            return None
-        return ExecutionJob.model_validate(docs[0].to_dict())
-
-    def list_jobs(
-        self, tenant_id: str | None = None, state: JobState | None = None
-    ) -> list[ExecutionJob]:
-        query = self._client.collection(self._collection)
-        if tenant_id:
-            query = query.where("tenant_id", "==", tenant_id)
-        if state:
-            query = query.where("state", "==", state)
-        docs = list(query.stream())
-        jobs = [ExecutionJob.model_validate(d.to_dict()) for d in docs]
-        return sorted(jobs, key=lambda j: j.created_at, reverse=True)
+__all__ = [
+    "FileJobRepository",
+    "FirestoreJobRepository",
+    "InMemoryJobRepository",
+    "JobRepository",
+]
