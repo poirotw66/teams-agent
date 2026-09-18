@@ -1,13 +1,11 @@
+"""Tool fixture lifecycle service and stable public re-exports."""
+
 from __future__ import annotations
 
-import sys
-import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from .errors import EvaluationDomainError, EvaluationNotFoundError, EvaluationValidationError
-from .json_record_io import iter_json_models
 from .tool_fixture_models import (
     MockResponseSpec,
     ToolCallTrace,
@@ -15,184 +13,21 @@ from .tool_fixture_models import (
     ToolFixtureVersion,
     calculate_tool_fixture_hash,
 )
+from .tool_fixture_repository import (
+    FileToolFixtureRepository,
+    FirestoreToolFixtureRepository,
+    ToolFixtureRepository,
+)
+from .tool_fixture_sandbox import SIDE_EFFECT_TOOLS, execute_sandbox_tool
+from .tool_fixture_seeds import seed_default_tool_fixtures
 
-SIDE_EFFECT_TOOLS: frozenset[str] = frozenset({
-    "send_email",
-    "email_dispatch",
-    "send_notification",
-    "create_ticket",
-    "dispatch_ticket",
-    "update_production_db",
-    "delete_record",
-    "production_write",
-})
-
-
-class ToolFixtureRepository:
-    """Thread-safe in-memory repository for tool fixtures and their versions."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._fixtures: dict[str, ToolFixture] = {}
-        self._versions: dict[tuple[str, int], ToolFixtureVersion] = {}
-
-    def save_fixture(self, fixture: ToolFixture) -> None:
-        with self._lock:
-            self._fixtures[fixture.fixture_id] = fixture
-
-    def get_fixture(self, fixture_id: str) -> ToolFixture | None:
-        with self._lock:
-            return self._fixtures.get(fixture_id)
-
-    def list_fixtures(self, tenant_id: str | None = None) -> list[ToolFixture]:
-        with self._lock:
-            if tenant_id:
-                return [f for f in self._fixtures.values() if f.tenant_id == tenant_id]
-            return list(self._fixtures.values())
-
-    def save_version(self, version: ToolFixtureVersion) -> None:
-        with self._lock:
-            self._versions[(version.fixture_id, version.version)] = version
-
-    def get_version(self, fixture_id: str, version: int) -> ToolFixtureVersion | None:
-        with self._lock:
-            return self._versions.get((fixture_id, version))
-
-    def list_versions(self, fixture_id: str) -> list[ToolFixtureVersion]:
-        with self._lock:
-            versions = [v for (f_id, _), v in self._versions.items() if f_id == fixture_id]
-            return sorted(versions, key=lambda v: v.version)
-
-
-class FileToolFixtureRepository(ToolFixtureRepository):
-    """Multi-process safe, file-based tool fixture repository."""
-
-    def __init__(self, directory: Path) -> None:
-        super().__init__()
-        self._dir = directory
-        self._fixtures_dir = self._dir / "fixtures"
-        self._versions_dir = self._dir / "versions"
-        self._lock_file = self._dir / ".fixtures.lock"
-        self._fixtures_dir.mkdir(parents=True, exist_ok=True)
-        self._versions_dir.mkdir(parents=True, exist_ok=True)
-        self._sync_from_disk()
-
-    def _sync_from_disk(self) -> None:
-        with self._lock:
-            self._fixtures = {
-                fixture.fixture_id: fixture
-                for _, fixture in iter_json_models(self._fixtures_dir, ToolFixture)
-            }
-            self._versions = {
-                (version.fixture_id, version.version): version
-                for _, version in iter_json_models(self._versions_dir, ToolFixtureVersion)
-            }
-
-    def _write_record_atomic(self, target: Path, content: str) -> None:
-        import os
-        import uuid
-        temp = target.with_suffix(f".{uuid.uuid4().hex}.tmp")
-        with temp.open("w", encoding="utf-8") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp, target)
-        if sys.platform != "win32":
-            pfd = os.open(str(target.parent), os.O_RDONLY)
-            try:
-                os.fsync(pfd)
-            finally:
-                os.close(pfd)
-
-    def _with_lock(self, fn: Any) -> Any:
-        import fcntl
-        self._lock_file.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock_file.open("a+") as lh:
-            fcntl.flock(lh.fileno(), fcntl.LOCK_EX)
-            try:
-                self._sync_from_disk()
-                return fn()
-            finally:
-                fcntl.flock(lh.fileno(), fcntl.LOCK_UN)
-
-    def save_fixture(self, fixture: ToolFixture) -> None:
-        def _op() -> None:
-            super(FileToolFixtureRepository, self).save_fixture(fixture)
-            target = self._fixtures_dir / f"{fixture.fixture_id}.json"
-            self._write_record_atomic(target, fixture.model_dump_json(indent=2))
-
-        self._with_lock(_op)
-
-    def get_fixture(self, fixture_id: str) -> ToolFixture | None:
-        self._sync_from_disk()
-        return super().get_fixture(fixture_id)
-
-    def list_fixtures(self, tenant_id: str | None = None) -> list[ToolFixture]:
-        self._sync_from_disk()
-        return super().list_fixtures(tenant_id)
-
-    def save_version(self, version: ToolFixtureVersion) -> None:
-        def _op() -> None:
-            super(FileToolFixtureRepository, self).save_version(version)
-            target = self._versions_dir / f"{version.fixture_id}_{version.version}.json"
-            self._write_record_atomic(target, version.model_dump_json(indent=2))
-
-        self._with_lock(_op)
-
-    def get_version(self, fixture_id: str, version: int) -> ToolFixtureVersion | None:
-        self._sync_from_disk()
-        return super().get_version(fixture_id, version)
-
-    def list_versions(self, fixture_id: str) -> list[ToolFixtureVersion]:
-        self._sync_from_disk()
-        return super().list_versions(fixture_id)
-
-
-class FirestoreToolFixtureRepository:
-    """Production GCP Firestore repository for tool fixtures and fixture versions."""
-
-    def __init__(self, client: Any, prefix: str = "ai_ops_fixture") -> None:
-        self._client = client
-        self._fixtures_col = self._client.collection(f"{prefix}_items")
-        self._versions_col = self._client.collection(f"{prefix}_versions")
-
-    def save_fixture(self, fixture: ToolFixture) -> None:
-        import json
-        self._fixtures_col.document(fixture.fixture_id).set(
-            json.loads(fixture.model_dump_json())
-        )
-
-    def get_fixture(self, fixture_id: str) -> ToolFixture | None:
-        doc = self._fixtures_col.document(fixture_id).get()
-        if not doc.exists:
-            return None
-        return ToolFixture.model_validate(doc.to_dict())
-
-    def list_fixtures(self, tenant_id: str | None = None) -> list[ToolFixture]:
-        q = self._fixtures_col
-        if tenant_id:
-            q = q.where("tenant_id", "==", tenant_id)
-        return [ToolFixture.model_validate(d.to_dict()) for d in q.stream()]
-
-    def save_version(self, version: ToolFixtureVersion) -> None:
-        import json
-        doc_id = f"{version.fixture_id}_{version.version}"
-        self._versions_col.document(doc_id).set(
-            json.loads(version.model_dump_json())
-        )
-
-    def get_version(self, fixture_id: str, version: int) -> ToolFixtureVersion | None:
-        doc_id = f"{fixture_id}_{version}"
-        doc = self._versions_col.document(doc_id).get()
-        if not doc.exists:
-            return None
-        return ToolFixtureVersion.model_validate(doc.to_dict())
-
-    def list_versions(self, fixture_id: str) -> list[ToolFixtureVersion]:
-        q = self._versions_col.where("fixture_id", "==", fixture_id)
-        versions = [ToolFixtureVersion.model_validate(d.to_dict()) for d in q.stream()]
-        return sorted(versions, key=lambda v: v.version)
-
+__all__ = [
+    "SIDE_EFFECT_TOOLS",
+    "FileToolFixtureRepository",
+    "FirestoreToolFixtureRepository",
+    "ToolFixtureRepository",
+    "ToolFixtureService",
+]
 
 
 class ToolFixtureService:
@@ -226,9 +61,7 @@ class ToolFixtureService:
             raise EvaluationValidationError(f"Tool fixture '{fixture_id}' already exists")
 
         now = datetime.now(timezone.utc)
-        parsed_mocks = tuple(
-            MockResponseSpec(**resp) for resp in (mock_responses or [])
-        )
+        parsed_mocks = tuple(MockResponseSpec(**resp) for resp in (mock_responses or []))
         schema = input_schema or {}
         default_resp = default_response or {}
 
@@ -252,7 +85,6 @@ class ToolFixtureService:
             updated_by=created_by,
             updated_at=now,
         )
-
         version_record = ToolFixtureVersion(
             fixture_id=fixture_id,
             version=1,
@@ -270,7 +102,6 @@ class ToolFixtureService:
             created_by=created_by,
             created_at=now,
         )
-
         self._repository.save_fixture(fixture)
         self._repository.save_version(version_record)
         return fixture, version_record
@@ -294,11 +125,8 @@ class ToolFixtureService:
 
         existing_versions = self._repository.list_versions(fixture_id)
         next_version_num = max([v.version for v in existing_versions], default=0) + 1
-
         now = datetime.now(timezone.utc)
-        parsed_mocks = tuple(
-            MockResponseSpec(**resp) for resp in (mock_responses or [])
-        )
+        parsed_mocks = tuple(MockResponseSpec(**resp) for resp in (mock_responses or []))
         schema = input_schema or {}
         default_resp = default_response or {}
 
@@ -311,7 +139,6 @@ class ToolFixtureService:
             is_sandbox_safe=is_sandbox_safe,
             is_mutation=is_mutation,
         )
-
         version_record = ToolFixtureVersion(
             fixture_id=fixture_id,
             version=next_version_num,
@@ -343,16 +170,12 @@ class ToolFixtureService:
         v = self._repository.get_version(fixture_id, version)
         if not v:
             raise EvaluationNotFoundError(f"Fixture version '{fixture_id}:v{version}' not found")
-
         if v.created_by == approved_by:
             raise EvaluationValidationError(
                 f"Author '{v.created_by}' cannot approve their own tool fixture version"
             )
-
         if v.status != "DRAFT":
-            raise EvaluationValidationError(
-                f"Cannot approve fixture in status '{v.status}'"
-            )
+            raise EvaluationValidationError(f"Cannot approve fixture in status '{v.status}'")
 
         now = datetime.now(timezone.utc)
         approved = ToolFixtureVersion(
@@ -378,7 +201,6 @@ class ToolFixtureService:
         )
         self._repository.save_version(approved)
 
-        # Update fixture current version
         fixture = self._repository.get_fixture(fixture_id)
         if fixture and fixture.current_version <= version:
             updated_fixture = ToolFixture(
@@ -392,7 +214,6 @@ class ToolFixtureService:
                 updated_at=now,
             )
             self._repository.save_fixture(updated_fixture)
-
         return approved
 
     def execute_mock_tool(
@@ -403,7 +224,7 @@ class ToolFixtureService:
         arguments: dict[str, Any],
         attempt: int = 1,
     ) -> dict[str, Any]:
-        """Matches arguments against fixture mock responses or returns default response."""
+        """Match arguments against fixture mock responses or return default response."""
         trace = self.execute_sandbox_tool(
             tool_name="",
             arguments=arguments,
@@ -429,263 +250,16 @@ class ToolFixtureService:
         call_id: str | None = None,
         attempt: int = 1,
     ) -> ToolCallTrace:
-        """Executes a tool within the safe evaluation sandbox.
-        
-        Guarantees that production write, email dispatch, and ticket creation
-        side effects are strictly intercepted and neutralized (F04-T2).
-        """
-        import uuid
-        actual_call_id = call_id or f"call_{uuid.uuid4().hex[:8]}"
-        resolved_tool_name = tool_name
-
-        # Resolve fixture by id or tool_name
-        fixture = None
-        if fixture_id:
-            fixture = self._repository.get_fixture(fixture_id)
-        elif tool_name:
-            for f in self._repository.list_fixtures():
-                if f.tool_name == tool_name:
-                    fixture = f
-                    break
-
-        target_version = version or (fixture.current_version if fixture else 1)
-        v = self._repository.get_version(fixture.fixture_id, target_version) if fixture else None
-        if v:
-            resolved_tool_name = v.tool_name or resolved_tool_name
-
-        # Check side-effect interception
-        is_side_effect = (
-            resolved_tool_name in SIDE_EFFECT_TOOLS
-            or (v is not None and v.is_mutation)
-        )
-
-        if not v:
-            if is_side_effect:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={
-                        "status": "INTERCEPTED",
-                        "side_effect_blocked": True,
-                        "message": "Production side effect blocked in sandbox",
-                    },
-                    is_error=False,
-                    was_intercepted=True,
-                    side_effect_blocked=True,
-                    intercept_reason="Production write/ticket/email side effects are blocked in sandbox",
-                )
-            return ToolCallTrace(
-                call_id=actual_call_id,
-                tool_name=resolved_tool_name,
-                arguments=dict(arguments),
-                result={"status": "error", "error": f"Tool fixture for '{resolved_tool_name}' not found"},
-                is_error=True,
-                error_message=f"Tool fixture for '{resolved_tool_name}' not found",
-            )
-
-        # Search mock responses for matching parameters
-        matched_mock = None
-        for mock in v.mock_responses:
-            if not mock.match_parameters:
-                continue
-            is_match = True
-            for k, expected_val in mock.match_parameters.items():
-                if arguments.get(k) != expected_val:
-                    is_match = False
-                    break
-            if is_match:
-                matched_mock = mock
-                break
-
-        # Handle simulation specs
-        if matched_mock:
-            # Retry simulation: fail first N attempts
-            if matched_mock.retry_after_failures > 0 and attempt <= matched_mock.retry_after_failures:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "error", "attempt": attempt},
-                    duration_ms=matched_mock.latency_ms,
-                    is_error=True,
-                    error_message=f"Simulated transient failure on attempt {attempt}",
-                    retry_count=attempt,
-                )
-            if matched_mock.is_timeout:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "error", "error_code": "TIMEOUT"},
-                    duration_ms=matched_mock.latency_ms or 5000.0,
-                    is_error=True,
-                    error_message="Tool execution timed out",
-                )
-            if matched_mock.is_permission_denied:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "error", "error_code": "PERMISSION_DENIED"},
-                    duration_ms=matched_mock.latency_ms,
-                    is_error=True,
-                    error_message="Permission denied by ACL policy",
-                )
-            if matched_mock.is_empty:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "EMPTY", "results": [], "data": {}},
-                    duration_ms=matched_mock.latency_ms,
-                    is_error=False,
-                )
-            if matched_mock.is_contradictory:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "RESOLVED", "outcome": "FAILED", "conflict": True},
-                    duration_ms=matched_mock.latency_ms,
-                    is_error=False,
-                )
-            if matched_mock.is_error:
-                return ToolCallTrace(
-                    call_id=actual_call_id,
-                    tool_name=resolved_tool_name,
-                    arguments=dict(arguments),
-                    result={"status": "error", "error_code": matched_mock.error_status or "TOOL_EXECUTION_ERROR"},
-                    duration_ms=matched_mock.latency_ms,
-                    is_error=True,
-                    error_message=matched_mock.error_message or "Simulated tool failure",
-                )
-
-            payload = dict(matched_mock.response_payload)
-            if is_side_effect:
-                payload["side_effect_blocked"] = True
-                payload["was_intercepted"] = True
-
-            return ToolCallTrace(
-                call_id=actual_call_id,
-                tool_name=resolved_tool_name,
-                arguments=dict(arguments),
-                result=payload,
-                duration_ms=matched_mock.latency_ms,
-                is_error=False,
-                was_intercepted=is_side_effect,
-                side_effect_blocked=is_side_effect,
-                intercept_reason="Production write/ticket/email side effects are blocked in sandbox" if is_side_effect else None,
-            )
-
-        # Default response
-        default_payload = dict(v.default_response or {"status": "success", "data": {}})
-        if is_side_effect:
-            default_payload["side_effect_blocked"] = True
-            default_payload["was_intercepted"] = True
-
-        return ToolCallTrace(
-            call_id=actual_call_id,
-            tool_name=resolved_tool_name,
-            arguments=dict(arguments),
-            result=default_payload,
-            is_error=False,
-            was_intercepted=is_side_effect,
-            side_effect_blocked=is_side_effect,
-            intercept_reason="Production write/ticket/email side effects are blocked in sandbox" if is_side_effect else None,
+        """Execute a tool within the safe evaluation sandbox."""
+        return execute_sandbox_tool(
+            self._repository,
+            tool_name=tool_name,
+            arguments=arguments,
+            fixture_id=fixture_id,
+            version=version,
+            call_id=call_id,
+            attempt=attempt,
         )
 
     def _seed_default_fixtures(self) -> None:
-        """Seeds baseline tool fixtures for IT / HR enterprise scenarios."""
-        now = datetime.now(timezone.utc)
-        defaults = [
-            (
-                "fixture-leave-balance",
-                "query_leave_balance",
-                "查詢同仁特休與補休餘額",
-                {"user_id": {"type": "string"}},
-                [
-                    MockResponseSpec(
-                        match_parameters={"user_id": "E12345"},
-                        response_payload={"user_id": "E12345", "annual_leave_days": 12, "comp_leave_hours": 8},
-                    ),
-                    MockResponseSpec(
-                        match_parameters={"user_id": "M88888"},
-                        response_payload={"user_id": "M88888", "annual_leave_days": 21, "comp_leave_hours": 16},
-                    ),
-                ],
-                {"user_id": "unknown", "annual_leave_days": 0, "comp_leave_hours": 0},
-                False,
-            ),
-            (
-                "fixture-ticket-status",
-                "query_it_ticket_status",
-                "查詢IT服務工單進度",
-                {"ticket_id": {"type": "string"}},
-                [
-                    MockResponseSpec(
-                        match_parameters={"ticket_id": "INC-9901"},
-                        response_payload={"ticket_id": "INC-9901", "status": "IN_PROGRESS", "assigned_to": "IT-Helpdesk"},
-                    )
-                ],
-                {"status": "NOT_FOUND"},
-                False,
-            ),
-            (
-                "fixture-hr-policy",
-                "query_hr_policy",
-                "查詢人資出勤與差旅政策",
-                {"topic": {"type": "string"}},
-                [
-                    MockResponseSpec(
-                        match_parameters={"topic": "remote_work"},
-                        response_payload={"topic": "remote_work", "rules": "每週最多兩天申請遠距，需主管核准。"},
-                    )
-                ],
-                {"topic": "general", "rules": "請參照公司標準出勤手冊。"},
-                False,
-            ),
-            (
-                "fixture-create-ticket",
-                "create_ticket",
-                "建立IT支援工單（受控沙盒模擬）",
-                {"user_id": {"type": "string"}, "summary": {"type": "string"}},
-                [],
-                {"status": "CREATED", "ticket_id": "SIM-TICKET-001"},
-                True,
-            ),
-        ]
-
-        for fix_id, tool_name, desc, schema, mocks, default_resp, is_mut in defaults:
-            if not self._repository.get_fixture(fix_id):
-                fix = ToolFixture(
-                    fixture_id=fix_id,
-                    tenant_id="default",
-                    tool_name=tool_name,
-                    current_version=1,
-                    created_by="system",
-                    created_at=now,
-                    updated_by="system",
-                    updated_at=now,
-                )
-                ver = ToolFixtureVersion(
-                    fixture_id=fix_id,
-                    version=1,
-                    schema_version="v1",
-                    tool_name=tool_name,
-                    description=desc,
-                    input_schema=schema,
-                    mock_responses=tuple(mocks),
-                    default_response=default_resp,
-                    allowlist_enabled=True,
-                    is_sandbox_safe=True,
-                    is_mutation=is_mut,
-                    content_hash="seed-hash-" + fix_id,
-                    status="APPROVED",
-                    created_by="system",
-                    created_at=now,
-                    approved_by="admin",
-                    approved_at=now,
-                )
-                self._repository.save_fixture(fix)
-                self._repository.save_version(ver)
+        seed_default_tool_fixtures(self._repository)
