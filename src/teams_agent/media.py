@@ -47,7 +47,13 @@ def storage_relative_from_delivery(delivery_path: str) -> tuple[str, bool]:
 
 
 def resolve_local_asset_path(delivery_path: str, settings: AgentSettings) -> Path:
-    """Resolve a delivery path against local source_dir (release) or asset_dir."""
+    """Resolve a delivery path against local source_dir (release) or asset_dir.
+
+    Release-pinned URLs prefer ``releases/<id>/assets/<path>``. When that file
+    is missing — typically because publish used a title slug that differs from
+    the markdown asset folder — fall back to the corpus ``asset_dir/<path>``
+    for the same relative image path.
+    """
     storage_relative, is_release = storage_relative_from_delivery(delivery_path)
     root = (
         (settings.source_dir or Path()).resolve()
@@ -59,7 +65,24 @@ def resolve_local_asset_path(delivery_path: str, settings: AgentSettings) -> Pat
         resolved.relative_to(root)
     except ValueError as error:
         raise PermissionError("Invalid asset path.") from error
-    return resolved
+    if resolved.is_file() or not is_release:
+        return resolved
+    return _corpus_fallback_for_release(delivery_path, settings)
+
+
+def _corpus_fallback_for_release(delivery_path: str, settings: AgentSettings) -> Path:
+    """Map ``releases/<id>/<rest>`` to ``asset_dir/<rest>`` when release packaging missed the file."""
+    pure_path = PurePosixPath(delivery_path)
+    rest = PurePosixPath(*pure_path.parts[2:]).as_posix()
+    if not rest:
+        raise PermissionError("Invalid asset path.")
+    asset_root = (settings.asset_dir or Path()).resolve()
+    fallback = (asset_root / rest).resolve()
+    try:
+        fallback.relative_to(asset_root)
+    except ValueError as error:
+        raise PermissionError("Invalid asset path.") from error
+    return fallback
 
 
 def build_asset_url(

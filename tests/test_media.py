@@ -115,6 +115,41 @@ def test_invalid_asset_signature_is_rejected(tmp_path: Path) -> None:
         raise AssertionError("Invalid signature must be rejected.")
 
 
+def test_release_asset_falls_back_to_corpus_when_missing_from_package(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(tmp_path)
+    corpus_dir = settings.asset_dir / "國金CRM_OTP綁訂操作"
+    corpus_dir.mkdir(parents=True)
+    corpus_image = corpus_dir / "p01.png"
+    Image.new("RGB", (80, 80), "blue").save(corpus_image)
+
+    # Release package has other docs but not this markdown-aligned folder.
+    (
+        settings.source_dir / "releases" / "release-1" / "assets" / "大州系統_功能無法點選"
+    ).mkdir(parents=True)
+
+    url = build_asset_url(
+        "國金CRM_OTP綁訂操作/p01.png",
+        settings,
+        now=1_000,
+        release_id="release-1",
+    )
+    parsed = urlparse(url or "")
+    delivery = unquote(parsed.path.removeprefix("/rag-assets/"))
+    query = parse_qs(parsed.query)
+
+    assert delivery == "releases/release-1/國金CRM_OTP綁訂操作/p01.png"
+    resolved = resolve_asset(
+        delivery,
+        query["expires"][0],
+        query["signature"][0],
+        settings,
+        now=1_000,
+    )
+    assert resolved == corpus_image
+
+
 def test_image_is_resized_for_teams(tmp_path: Path) -> None:
     image_path = tmp_path / "large.png"
     Image.new("RGB", (1191, 1684), "white").save(image_path)

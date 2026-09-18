@@ -4,7 +4,7 @@ import hashlib
 import re
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from agent_service.documents import parse_front_matter
@@ -95,6 +95,30 @@ def referenced_asset_filenames(markdown_content: str, asset_slug: str) -> set[st
         normalized = target_path.replace("\\", "/")
         filenames.add(Path(normalized).name)
     return filenames
+
+
+def referenced_asset_relative_paths(markdown_content: str) -> set[str]:
+    """Return corpus-relative image paths cited by markdown (``folder/file.png``).
+
+    Titles may slug to a different folder than historical corpus assets, so
+    packaging must follow the path embedded in the markdown, not only
+    ``slug_from_title``.
+    """
+    paths: set[str] = set()
+    for _, target in markdown_image_references(markdown_content):
+        target_path = normalize_markdown_target(target)
+        if "://" in target_path or target_path.startswith("data:"):
+            continue
+        normalized = target_path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        relative = normalized.removeprefix("assets/")
+        if not relative or relative.startswith("/") or ".." in PurePosixPath(relative).parts:
+            continue
+        if Path(relative).suffix.lower() not in ALLOWED_IMAGE_SUFFIXES:
+            continue
+        paths.add(relative)
+    return paths
 
 
 def markdown_image_references(markdown_content: str) -> list[tuple[str, str]]:
@@ -330,6 +354,10 @@ class DraftAssetStore:
             slug,
             getattr(version, "canonical_content", ""),
         )
+        self._copy_markdown_referenced_corpus_assets(
+            release_dir / "assets",
+            getattr(version, "canonical_content", ""),
+        )
 
     def materialize_bundle(
         self,
@@ -461,6 +489,30 @@ class DraftAssetStore:
             if destination.is_file() or not source.is_file():
                 continue
             target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+    def _copy_markdown_referenced_corpus_assets(
+        self,
+        release_assets_root: Path,
+        markdown_content: str,
+    ) -> None:
+        """Copy corpus images using the folder path cited in markdown.
+
+        Historical corpus folders (e.g. ``國金CRM_OTP綁訂操作``) can diverge from
+        ``slug_from_title`` (e.g. ``國金 CRM OTP 綁訂操作``). Delivery URLs follow
+        the markdown path, so packaging must materialize that exact relative path.
+        """
+        if not markdown_content:
+            return
+        corpus_root = self.settings.data_dir / "sources" / "assets"
+        for relative in referenced_asset_relative_paths(markdown_content):
+            destination = release_assets_root / relative
+            if destination.is_file():
+                continue
+            source = corpus_root / relative
+            if not source.is_file():
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
 
     def next_filename(

@@ -454,3 +454,43 @@ def test_validate_asset_bundle_warns_on_short_path(tmp_path) -> None:
         assets_root=assets_root,
     )
     assert any(code == "ASSET_PATH_UNEXPECTED" for code, _, _ in issues)
+
+
+def test_copy_assets_to_release_follows_markdown_corpus_folder(tmp_path) -> None:
+    """Title slug may include spaces while corpus folders do not."""
+    from types import SimpleNamespace
+
+    from knowledge_portal.draft_assets import DraftAssetStore
+
+    title = "國金 CRM OTP 綁訂操作"
+    corpus_folder = "國金CRM_OTP綁訂操作"
+    corpus_dir = tmp_path / "sources" / "assets" / corpus_folder
+    corpus_dir.mkdir(parents=True)
+    (corpus_dir / "p01.png").write_bytes(b"png-one")
+    (corpus_dir / "p02.png").write_bytes(b"png-two")
+
+    markdown = (
+        f"# {title}\n\n"
+        f"![{title} 第 1 頁](assets/{corpus_folder}/p01.png)\n"
+        f"![{title} 第 2 頁](assets/{corpus_folder}/p02.png)\n"
+    )
+    version = SimpleNamespace(
+        document_id="doc-1",
+        version_id="ver-1",
+        title=title,
+        asset_slug=slug_from_title(title),
+        canonical_content=markdown,
+    )
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "data_dir", tmp_path)
+    store = DraftAssetStore(settings)
+    release_dir = tmp_path / "releases" / "release-1"
+    release_dir.mkdir(parents=True)
+
+    store.copy_assets_to_release(release_dir, version=version)
+
+    assert (release_dir / "assets" / corpus_folder / "p01.png").is_file()
+    assert (release_dir / "assets" / corpus_folder / "p02.png").is_file()
+    # Spaced title slug alone must not be the only packaging target.
+    assert not (release_dir / "assets" / slug_from_title(title) / "p01.png").is_file()
+
