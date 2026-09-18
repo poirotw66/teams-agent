@@ -1,5 +1,4 @@
 from dataclasses import asdict, dataclass, field
-from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -219,6 +218,13 @@ class AgentResponse:
         payload: object,
         fallback_trace_id: str,
     ) -> "AgentResponse":
+        from .contracts_parse import (
+            parse_citations,
+            parse_images,
+            parse_issue_results,
+            parse_optional_cost,
+        )
+
         if not isinstance(payload, dict):
             raise TypeError("Agent API response must be a JSON object.")
 
@@ -230,82 +236,8 @@ class AgentResponse:
         if not isinstance(trace_id, str) or not trace_id:
             trace_id = fallback_trace_id
 
-        citations: list[Citation] = []
-        raw_citations = payload.get("citations", [])
-        if isinstance(raw_citations, list):
-            for item in raw_citations:
-                if not isinstance(item, dict):
-                    continue
-                title = item.get("title")
-                url = item.get("url")
-                chunk_id = item.get("chunkId")
-                source_path = item.get("sourcePath")
-                source_ref_id = item.get("sourceRefId")
-                release_id = item.get("releaseId")
-                original_url = item.get("originalUrl")
-                if isinstance(title, str) and (
-                    isinstance(url, str) or url is None
-                ):
-                    citations.append(
-                        Citation(
-                            title=title,
-                            url=url if isinstance(url, str) and url.strip() else None,
-                            chunkId=chunk_id if isinstance(chunk_id, str) else None,
-                            sourcePath=(
-                                source_path
-                                if isinstance(source_path, str) and source_path.strip()
-                                else None
-                            ),
-                            sourceRefId=(
-                                source_ref_id
-                                if isinstance(source_ref_id, str) and source_ref_id.strip()
-                                else None
-                            ),
-                            releaseId=(
-                                release_id
-                                if isinstance(release_id, str) and release_id.strip()
-                                else None
-                            ),
-                            originalUrl=(
-                                original_url
-                                if isinstance(original_url, str) and original_url.strip()
-                                else None
-                            ),
-                        )
-                    )
-
-        images: list[AgentImage] = []
-        raw_images = payload.get("images", [])
-        if isinstance(raw_images, list):
-            for item in raw_images:
-                if not isinstance(item, dict):
-                    continue
-                path = item.get("path")
-                title = item.get("title")
-                alt_text = item.get("altText")
-                source_chunk_id = item.get("sourceChunkId")
-                release_id = item.get("releaseId")
-                if not all(
-                    isinstance(value, str) and value.strip()
-                    for value in (path, title, alt_text, source_chunk_id)
-                ):
-                    continue
-                pure_path = PurePosixPath(path)
-                if pure_path.is_absolute() or ".." in pure_path.parts:
-                    continue
-                images.append(
-                    AgentImage(
-                        path=pure_path.as_posix(),
-                        title=title.strip(),
-                        altText=alt_text.strip(),
-                        sourceChunkId=source_chunk_id.strip(),
-                        releaseId=(
-                            release_id.strip()
-                            if isinstance(release_id, str) and release_id.strip()
-                            else None
-                        ),
-                    )
-                )
+        citations = parse_citations(payload.get("citations", []))
+        images = parse_images(payload.get("images", []))
 
         # correlationId (spec §15.1): degrade to the same fallback used for
         # traceId rather than raising, so a malformed/missing field never
@@ -321,42 +253,12 @@ class AgentResponse:
         if not isinstance(feedback_enabled, bool):
             feedback_enabled = False
 
-        estimated_cost_usd = payload.get("estimatedCostUsd")
-        if estimated_cost_usd is not None and not isinstance(estimated_cost_usd, (int, float)):
-            estimated_cost_usd = None
-        elif isinstance(estimated_cost_usd, (int, float)):
-            estimated_cost_usd = float(estimated_cost_usd)
-
-        estimated_cost_twd = payload.get("estimatedCostTwd")
-        if estimated_cost_twd is not None and not isinstance(estimated_cost_twd, (int, float)):
-            estimated_cost_twd = None
-        elif isinstance(estimated_cost_twd, (int, float)):
-            estimated_cost_twd = float(estimated_cost_twd)
+        estimated_cost_usd = parse_optional_cost(payload, "estimatedCostUsd")
+        estimated_cost_twd = parse_optional_cost(payload, "estimatedCostTwd")
 
         cost_complete = payload.get("costComplete")
         if cost_complete is not None and not isinstance(cost_complete, bool):
             cost_complete = None
-
-        issue_results: list[IssueResult] = []
-        raw_issue_results = payload.get("issueResults", [])
-        if isinstance(raw_issue_results, list):
-            for item in raw_issue_results:
-                if not isinstance(item, dict):
-                    continue
-                issue_id = item.get("issueId")
-                result_type = item.get("resultType")
-                if not isinstance(issue_id, int) or isinstance(issue_id, bool):
-                    continue
-                if not isinstance(result_type, str) or not result_type:
-                    continue
-                answer_text = item.get("answer", "")
-                issue_results.append(
-                    IssueResult(
-                        issueId=issue_id,
-                        resultType=result_type,
-                        answer=answer_text if isinstance(answer_text, str) else "",
-                    )
-                )
 
         return cls(
             answer=answer.strip(),
@@ -364,7 +266,7 @@ class AgentResponse:
             citations=citations,
             images=images,
             correlationId=correlation_id,
-            issueResults=issue_results,
+            issueResults=parse_issue_results(payload.get("issueResults", [])),
             feedbackEnabled=feedback_enabled,
             estimatedCostUsd=estimated_cost_usd,
             estimatedCostTwd=estimated_cost_twd,
