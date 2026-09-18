@@ -1,7 +1,7 @@
 """Pure operations scope constants, tenant predicates, and event filtering.
 
-Taxonomy persistence stays in Agent; callers supply any ``TaxonomyLookup`` that
-can resolve ``owner_unit_id`` for an issue type.
+Callers supply any ``TaxonomyLookup`` that can resolve ``owner_unit_id`` for an
+issue type (for example ``operations_core.taxonomy.TaxonomyRepository``).
 """
 
 from __future__ import annotations

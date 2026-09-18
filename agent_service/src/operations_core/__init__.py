@@ -1,8 +1,9 @@
 """Shared operations contracts used by Agent, Backoffice, and Portal.
 
-This package holds stable access, audit, authorization, event, masking,
-security-policy catalog, and scope predicates so Backoffice and Portal do not
-need to import Agent runtime implementation modules for those concerns.
+This package holds stable access, audit protocol/builder, authorization, event,
+masking, security-policy catalog, scope predicates, and taxonomy repository so
+Backoffice and Portal do not need to import Agent runtime implementation
+modules for those concerns.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from operations_core.access import (
     ActorContext,
     BackofficeRole,
 )
+from operations_core.audit import AuditStore, build_audit_event
 from operations_core.audit_errors import AuditWriteError
 from operations_core.contracts import (
     DEFAULT_TIMEZONE,
@@ -48,6 +50,7 @@ from operations_core.security_policies import (
     known_policy_ids_in_text,
     policy_ids_in_text,
 )
+from operations_core.taxonomy import TaxonomyRepository
 
 __all__ = [
     "CAPABILITIES",
@@ -58,6 +61,7 @@ __all__ = [
     "MASKING_POLICY_VERSION",
     "SECURITY_POLICIES",
     "ActorContext",
+    "AuditStore",
     "AuditWriteError",
     "BackofficeRole",
     "DocumentAccessDecision",
@@ -69,9 +73,11 @@ __all__ = [
     "SecurityPolicy",
     "TaxonomyLookup",
     "TaxonomyOwnerUnit",
+    "TaxonomyRepository",
     "actor_bypasses_owner_unit_scope",
     "actor_bypasses_tenant_boundary",
     "authorize_document_access",
+    "build_audit_event",
     "ensure_document_access",
     "event_in_actor_scope",
     "filter_events_by_scope",

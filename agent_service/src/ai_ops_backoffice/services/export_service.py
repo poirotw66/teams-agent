@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
-from agent_service.operations.audit import AuditStore, build_audit_event
 from operations_core.access import ActorContext
+from operations_core.audit import AuditStore, build_audit_event
 from operations_core.audit_errors import AuditWriteError
 from operations_core.contracts import utc_now
 

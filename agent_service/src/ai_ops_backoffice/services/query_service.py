@@ -10,11 +10,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from agent_service.operations.audit import AuditStore
 from agent_service.operations.runtime import build_ops_runtime
 from agent_service.operations.settings import OpsSettings
-from agent_service.operations.taxonomy import TaxonomyRepository
 from operations_core.access import ActorContext
+from operations_core.audit import AuditStore
 from operations_core.contracts import (
     DEFAULT_TIMEZONE,
     METRICS_DEFINITION_VERSION,
@@ -22,6 +21,7 @@ from operations_core.contracts import (
     utc_now,
 )
 from operations_core.scope import filter_events_by_scope
+from operations_core.taxonomy import TaxonomyRepository
 from operations_core.usage import configure_pricing_provider
 
 from ..pricing_domain import (
@@ -130,7 +130,7 @@ class BackofficeQueryService(
                 allow_memory_fallback=False,
             )
         else:
-            from agent_service.artifact_storage import LocalFileArtifactStorage
+            from knowledge_core.artifact_ports import LocalFileArtifactStorage
 
             artifact_path = getattr(settings, "artifact_storage_path", None) or (
                 settings.ops_store_path.parent / "sources" / "artifacts"

@@ -4,8 +4,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_service.operations.audit import AuditStore, build_audit_event
 from operations_core.access import ActorContext
+from operations_core.audit import AuditStore, build_audit_event
 from operations_core.usage import normalize_model_name
 
 from ..faq_domain.errors import FaqAuthorizationError, FaqValidationError

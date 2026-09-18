@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent_service.operations.audit import AuditStore, build_audit_event
 from operations_core.access import ActorContext
+from operations_core.audit import AuditStore, build_audit_event
 from operations_core.audit_errors import AuditWriteError
 
 
