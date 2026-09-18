@@ -36,6 +36,18 @@ def account_field(account: object, snake_case: str, camel_case: str) -> str | No
     return None
 
 
+def activity_tenant_id(activity: MessageActivity) -> str | None:
+    """Resolve tenant id from channelData.tenant, then from.sender tenant claims."""
+    channel_data = activity.channel_data
+    tenant_id = _info_id(getattr(channel_data, "tenant", None))
+    if tenant_id:
+        return tenant_id
+    sender = activity.from_
+    if not sender:
+        return None
+    return account_field(sender, "tenant_id", "tenantId")
+
+
 @dataclass(frozen=True)
 class ConversationIdentity:
     tenantId: str | None = None
@@ -87,10 +99,7 @@ class AgentRequest:
         channel_data = activity.channel_data
         sender = activity.from_
         conversation = activity.conversation
-
-        tenant_id = _info_id(getattr(channel_data, "tenant", None))
-        if not tenant_id and sender:
-            tenant_id = account_field(sender, "tenant_id", "tenantId")
+        tenant_id = activity_tenant_id(activity)
 
         # Generate a correlation id only if the caller didn't already mint one
         # for this activity. Callers (teams_agent.agent) should always pass

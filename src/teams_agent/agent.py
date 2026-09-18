@@ -11,7 +11,13 @@ from microsoft_teams.apps.plugins import StreamNotAllowedError, TerminalStreamEr
 
 from .agent_gateway import AgentGateway, AgentGatewayError
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
-from .contracts import AgentRequest, AgentResponse, FeedbackRequest, account_field
+from .contracts import (
+    AgentRequest,
+    AgentResponse,
+    FeedbackRequest,
+    account_field,
+    activity_tenant_id,
+)
 from .directory import EntraAppTokenProvider, build_user_directory_service
 from .health_telemetry import AdapterHealthReporter, classify_gateway_status
 from .server import build_http_adapter
@@ -74,6 +80,22 @@ def _welcome_message(mode: str) -> str:
     return (
         "你好，我是 Teams AI Agent 測試 Bot。"
         "請描述公司 IT 問題，我會查詢企業知識庫並協助處理。"
+    )
+
+
+def resolve_request_groups(activity: MessageActivity) -> list[str]:
+    """Resolve retrieval ACL groups for an inbound Teams activity.
+
+    Agents Playground identities do not carry Graph group membership. Reuse
+    ``citation_source_groups`` so retrieval and citation viewers agree on the
+    public corpus group for the synthetic playground tenant.
+    """
+    return list(
+        citation_source_groups(
+            activity.channel_id or "unknown",
+            activity_tenant_id(activity),
+            (),
+        )
     )
 
 
@@ -232,11 +254,15 @@ async def _handle_message(
         # mode; AgentSettings rejects it for Cloud Run and real Teams.
         email = agent_settings.playground_test_user_email
 
+    # Playground synthetic identities have no Graph groups; mirror
+    # citation_source_groups so Hybrid ACL can see grp_public corpus chunks.
+    request_groups = resolve_request_groups(ctx.activity)
     request = AgentRequest.from_activity(
         ctx.activity,
         message,
         correlation_id=correlation_id,
         email=email,
+        groups=request_groups,
     )
     logger.info(
         "Message received: correlation_id=%s channel=%s conversation=%s",
