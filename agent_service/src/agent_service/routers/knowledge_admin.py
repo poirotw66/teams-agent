@@ -5,28 +5,61 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import replace
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from ..contracts import KnowledgeBackendUpdate, ReloadKnowledgeRequest
 from ..deps import sync_knowledge_to_active_pointer
-from ..graph import RagAgent
 from ..knowledge_backends import KnowledgeBackendRouter
-from ..knowledge_release import (
-    manifest_file_search_store,
-    read_active_release_id,
-    release_index_path,
-    resolve_knowledge_index,
-)
+from ..knowledge_release import read_active_release_id
 from ..knowledge_release_control import FirestoreKnowledgeReleaseControl
-from ..model_control import embedding_model_for_load
 from ..retrieval import HybridIndex
 from ..settings import RagSettings
-from ..source_refs import hydrate_index_sources
-from ..workflow import build_knowledge_service
+from .knowledge_admin_reload import perform_knowledge_reload
 
 logger = logging.getLogger(__name__)
+
+
+async def _build_knowledge_status(
+    request: Request,
+    resolved_settings: RagSettings,
+) -> dict[str, object]:
+    release_dir = resolved_settings.knowledge_release_dir or (
+        resolved_settings.data_dir / "releases"
+    )
+    if resolved_settings.knowledge_release_store_mode == "GCS":
+        control: FirestoreKnowledgeReleaseControl | None = getattr(
+            request.app.state,
+            "knowledge_release_control",
+            None,
+        )
+        if control is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge release control plane is unavailable.",
+            )
+        try:
+            active_id = await asyncio.to_thread(control.read_active_release_id)
+        except Exception as error:
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge release control plane is unavailable.",
+            ) from error
+    else:
+        sync_knowledge_to_active_pointer(request.app, resolved_settings)
+        active_id = read_active_release_id(release_dir)
+    current_id = getattr(request.app.state, "knowledge_release_id", None)
+    index: HybridIndex | None = getattr(request.app.state, "index", None)
+    return {
+        "currentReleaseId": current_id,
+        "targetReleaseId": active_id,
+        "inSync": current_id == active_id if active_id else True,
+        "chunks": len(index.chunks) if index else 0,
+        "source": getattr(request.app.state, "knowledge_index_source", "bundled_index"),
+        "indexPath": str(
+            getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
+        ),
+    }
 
 
 def register_knowledge_admin_routes(
@@ -68,42 +101,7 @@ def register_knowledge_admin_routes(
         dependencies=[Depends(authorize)],
     )
     async def get_knowledge_status(request: Request) -> dict[str, object]:
-        release_dir = resolved_settings.knowledge_release_dir or (
-            resolved_settings.data_dir / "releases"
-        )
-        if resolved_settings.knowledge_release_store_mode == "GCS":
-            control: FirestoreKnowledgeReleaseControl | None = getattr(
-                request.app.state,
-                "knowledge_release_control",
-                None,
-            )
-            if control is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Knowledge release control plane is unavailable.",
-                )
-            try:
-                active_id = await asyncio.to_thread(control.read_active_release_id)
-            except Exception as error:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Knowledge release control plane is unavailable.",
-                ) from error
-        else:
-            sync_knowledge_to_active_pointer(request.app, resolved_settings)
-            active_id = read_active_release_id(release_dir)
-        current_id = getattr(request.app.state, "knowledge_release_id", None)
-        index: HybridIndex | None = getattr(request.app.state, "index", None)
-        return {
-            "currentReleaseId": current_id,
-            "targetReleaseId": active_id,
-            "inSync": current_id == active_id if active_id else True,
-            "chunks": len(index.chunks) if index else 0,
-            "source": getattr(request.app.state, "knowledge_index_source", "bundled_index"),
-            "indexPath": str(
-                getattr(request.app.state, "knowledge_index_path", resolved_settings.index_path)
-            ),
-        }
+        return await _build_knowledge_status(request, resolved_settings)
 
     @app.post(
         "/admin/reload-knowledge",
@@ -113,129 +111,8 @@ def register_knowledge_admin_routes(
         request: Request,
         payload: ReloadKnowledgeRequest | None = None,
     ) -> dict[str, object]:
-        target_release_id: str | None = None
-        release_dir = resolved_settings.knowledge_release_dir or (
-            resolved_settings.data_dir / "releases"
+        return await perform_knowledge_reload(
+            request,
+            resolved_settings=resolved_settings,
+            payload=payload,
         )
-        active_release_id = read_active_release_id(release_dir)
-        requested_release_id = payload.target_release_id if payload else None
-        resolved_artifact = None
-        resolved_file_search_store: str | None = None
-
-        if resolved_settings.knowledge_release_store_mode == "GCS":
-            try:
-                resolved_index = resolve_knowledge_index(
-                    resolved_settings,
-                    release_id_override=requested_release_id,
-                )
-            except (FileNotFoundError, ValueError) as error:
-                raise HTTPException(status_code=409, detail=str(error)) from error
-            target_release_id = resolved_index.release_id
-            target_index_path = resolved_index.index_path
-            source = resolved_index.source
-            resolved_artifact = resolved_index.artifact
-            resolved_file_search_store = resolved_index.file_search_store
-        elif requested_release_id:
-            if active_release_id and requested_release_id != active_release_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"Stale deployment request: target release '{requested_release_id}' "
-                        f"does not match active release '{active_release_id}'."
-                    ),
-                )
-            resolved_index = resolve_knowledge_index(
-                resolved_settings,
-                release_id_override=requested_release_id,
-            )
-            if resolved_index.release_id != requested_release_id:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Knowledge release not found: {requested_release_id}",
-                )
-            target_release_id = resolved_index.release_id
-            target_index_path = resolved_index.index_path
-            source = resolved_index.source
-            resolved_artifact = resolved_index.artifact
-            resolved_file_search_store = resolved_index.file_search_store
-        elif active_release_id:
-            target_release_id = active_release_id
-            target_index_path = release_index_path(release_dir, target_release_id)
-            source = "portal_release"
-            resolved_file_search_store = manifest_file_search_store(
-                target_index_path.parents[1]
-            )
-        else:
-            resolved_index = resolve_knowledge_index(resolved_settings)
-            target_release_id = resolved_index.release_id
-            target_index_path = resolved_index.index_path
-            source = resolved_index.source
-            resolved_artifact = resolved_index.artifact
-            resolved_file_search_store = resolved_index.file_search_store
-
-        if not target_index_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Knowledge index not found: {target_index_path}",
-            )
-
-        new_index = HybridIndex.load(
-            target_index_path,
-            embedding_model_for_load(request.app, resolved_settings),
-        )
-        hydrate_index_sources(
-            new_index.chunks,
-            release_dir=release_dir,
-            release_id=target_release_id,
-        )
-        new_agent = RagAgent(resolved_settings, new_index)
-        new_hybrid_service = build_knowledge_service(
-            request.app.state.hybrid_settings,
-            new_index,
-            request.app.state.rag_model,
-            release_id=target_release_id,
-        )
-        router: KnowledgeBackendRouter = request.app.state.knowledge_router
-        router.update_service("HYBRID", new_hybrid_service)
-        if resolved_file_search_store:
-            file_search_settings = replace(
-                resolved_settings,
-                knowledge_service_mode="GEMINI_FILE_SEARCH",
-                gemini_file_search_store=resolved_file_search_store,
-            )
-            router.update_service(
-                "GEMINI_FILE_SEARCH",
-                build_knowledge_service(
-                    file_search_settings,
-                    new_index,
-                    request.app.state.rag_model,
-                    release_id=target_release_id,
-                ),
-            )
-        elif target_release_id:
-            router.remove_service(
-                "GEMINI_FILE_SEARCH",
-                "此知識版本沒有通過驗證的 Gemini File Search 綁定。",
-            )
-
-        request.app.state.index = new_index
-        request.app.state.knowledge_index_path = target_index_path
-        request.app.state.knowledge_release_id = target_release_id
-        request.app.state.knowledge_index_source = source
-        request.app.state.knowledge_index_artifact = resolved_artifact
-        request.app.state.agent = new_agent
-
-        logger.info(
-            "Knowledge index reloaded: release_id=%s path=%s chunks=%d source=%s",
-            target_release_id,
-            target_index_path,
-            len(new_index.chunks),
-            source,
-        )
-        return {
-            "status": "reloaded",
-            "releaseId": target_release_id,
-            "indexPath": str(target_index_path),
-            "chunks": len(new_index.chunks),
-            "source": source,
-        }
