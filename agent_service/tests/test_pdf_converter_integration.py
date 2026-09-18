@@ -241,7 +241,7 @@ async def test_configured_converter_failure_does_not_fallback(
 
     monkeypatch.setattr(PdfConverterClient, "convert_pdf", fail_conversion)
     monkeypatch.setattr(
-        "knowledge_portal.pdf_convert_jobs.extract_text_pdf",
+        "knowledge_portal.pdf_convert_runner.extract_text_pdf",
         fail_legacy_extraction,
     )
 
