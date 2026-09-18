@@ -220,6 +220,33 @@ def test_response_with_citations_numbered_in_answer_prefixes_sources_with_matchi
     assert "- [S2] AD 帳號與系統解鎖 FAQ" in activity_text
 
 
+def test_format_agent_response_hides_policy_overlay_markers_and_sources() -> None:
+    response = AgentResponse(
+        answer=(
+            "請調整安全性設定 [S1]。\n"
+            "變更前請向權責單位確認 [POLICY-SEC-003]。\n"
+            "> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：切勿擅自變更。"
+        ),
+        traceId="trace-1",
+        citations=[
+            Citation(title="大州操作說明", chunkId="chunk-1"),
+            Citation(
+                title="安全性設定變更確認原則 (POLICY-SEC-003)",
+                chunkId="POLICY-SEC-003",
+            ),
+        ],
+    )
+
+    formatted = format_agent_response(response)
+
+    assert "[S1]" in formatted
+    assert "向權責單位確認" in formatted
+    assert "POLICY-SEC-003" not in formatted
+    assert "系統資安政策提醒" not in formatted
+    assert "大州操作說明" in formatted
+    assert "安全性設定變更確認原則" not in formatted
+
+
 def test_card_adds_open_url_actions_for_citation_links() -> None:
     response = AgentResponse(
         answer="請調整安全性設定。",

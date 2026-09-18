@@ -514,10 +514,42 @@ def format_teams_answer(answer: str) -> str:
     return text.strip()
 
 
+_POLICY_MARKER_DISPLAY_RE = re.compile(r"\[POLICY-SEC-\d{3}\]")
+_SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
+    r"(?m)^(?:>\s*)?[^\n]*系統資安政策提醒[^\n]*\n?",
+)
+
+
+def _strip_policy_overlay_for_display(answer: str) -> str:
+    """Hide system security-policy markers/callouts from chat text."""
+    if not answer:
+        return answer
+    text = _SECURITY_POLICY_ADVISORY_LINE_RE.sub("", answer)
+    text = _POLICY_MARKER_DISPLAY_RE.sub("", text)
+    text = re.sub(r"[ \t]+([。．.，,！!？?])", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _is_policy_advisory_citation(citation: Citation) -> bool:
+    chunk_id = citation.chunkId or ""
+    if chunk_id.startswith("POLICY-SEC-"):
+        return True
+    return bool(re.search(r"POLICY-SEC-\d{3}", citation.title or ""))
+
+
 def format_agent_response(response: AgentResponse) -> str:
-    formatted_answer = format_teams_answer(response.answer)
+    formatted_answer = format_teams_answer(
+        _strip_policy_overlay_for_display(response.answer)
+    )
     parts = [formatted_answer]
-    if response.citations:
+    display_citations = [
+        citation
+        for citation in response.citations
+        if not _is_policy_advisory_citation(citation)
+    ]
+    if display_citations:
         has_citations_in_answer = bool(re.search(r"\[S\d+\]", formatted_answer))
         sources = "\n".join(
             (
@@ -531,7 +563,7 @@ def format_agent_response(response: AgentResponse) -> str:
                 if citation.url
                 else f"- {citation.title}"
             )
-            for index, citation in enumerate(response.citations, start=1)
+            for index, citation in enumerate(display_citations, start=1)
         )
         parts.append(f"**來源**\n\n{sources}")
     cost_line = format_turn_cost_line(response)

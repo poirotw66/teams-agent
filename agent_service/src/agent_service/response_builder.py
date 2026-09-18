@@ -58,6 +58,10 @@ from dataclasses import dataclass
 
 from .contracts import AgentImage, Citation, Issue, IssueResult
 from .sanitize import sanitize_description
+from .security_policies import (
+    filter_display_citations,
+    strip_policy_overlay_for_display,
+)
 from .settings import RagSettings
 
 # Spec §14: shown after every FAQ / Knowledge answer. The actual 👍/👎
@@ -188,9 +192,10 @@ def _render_all_not_it(issues: list[Issue]) -> str:
 
 def _render_faq_answered(issue: Issue, result: IssueResult) -> str:
     # Spec §13 "FAQ" — exact template.
+    answer = strip_policy_overlay_for_display(result.answer)
     return (
         f"問題：{_safe_description(issue)}\n\n"
-        f"處理方式：\n{result.answer}\n\n"
+        f"處理方式：\n{answer}\n\n"
         f"來源：\nFAQ"
     )
 
@@ -199,7 +204,8 @@ def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
     # Citations travel separately in BuiltResponse and are rendered by the
     # Teams adapter. Keeping them out of the answer body prevents duplicate
     # source sections in both plain text and Adaptive Cards.
-    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{result.answer}"
+    answer = strip_policy_overlay_for_display(result.answer)
+    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{answer}"
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
@@ -418,7 +424,7 @@ def build_response(
 
     return BuiltResponse(
         text=text,
-        citations=_dedupe_citations(all_sources),
+        citations=filter_display_citations(_dedupe_citations(all_sources)),
         images=_dedupe_images(all_images),
         feedback_enabled=settings.feedback_enabled and feedback_eligible,
     )

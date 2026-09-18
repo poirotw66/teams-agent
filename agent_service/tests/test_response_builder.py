@@ -569,6 +569,37 @@ def test_build_response_sanitises_description_even_if_extractor_gate_is_bypassed
     assert NEUTRAL_DESCRIPTION_PLACEHOLDER in built.text
 
 
+def test_build_response_hides_policy_overlay_from_user_facing_text():
+    from agent_service.security_policies import PROXY_ADVISORY_TEXT, citation_for_policy
+
+    issue = make_issue(id=1, description="大州無法點選", route="KNOWLEDGE")
+    knowledge = Citation(
+        title="大州操作說明",
+        chunkId="chunk-1",
+        url="https://kb.example/dajhou",
+    )
+    policy = citation_for_policy("POLICY-SEC-003", include_evidence=False)
+    result = IssueResult(
+        issueId=1,
+        resultType="KNOWLEDGE_ANSWERED",
+        answer=(
+            "請調整 IE 信任的網站設定 [S1]。\n"
+            "變更安全性設定前，請務必向權責單位確認 [POLICY-SEC-003]。\n\n"
+            f"{PROXY_ADVISORY_TEXT}"
+        ),
+        sources=[knowledge, policy],
+    )
+
+    built = build_response(issues=[issue], results=[result], settings=make_settings())
+
+    assert "[S1]" in built.text
+    assert "向權責單位確認" in built.text
+    assert "請調整 IE 信任的網站設定" in built.text
+    assert "POLICY-SEC-003" not in built.text
+    assert "系統資安政策提醒" not in built.text
+    assert [citation.chunkId for citation in built.citations] == ["chunk-1"]
+
+
 def test_render_sources_block_formats_inline_citation_prefixes():
     from agent_service.response_builder import _render_sources_block
 

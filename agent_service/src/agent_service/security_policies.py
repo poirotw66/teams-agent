@@ -212,6 +212,49 @@ def strip_unknown_policy_markers(text: str) -> str:
     return POLICY_MARKER_RE.sub(_replace, text)
 
 
+_SECURITY_POLICY_ADVISORY_BLOCK_RE = re.compile(
+    r"(?:\n\s*)?>\s*⚠️?\s*\*\*系統資安政策提醒\*\*[^\n]*(?:\n(?!\n)[^\n]*)*",
+)
+_SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
+    r"(?m)^[^\n]*系統資安政策提醒[^\n]*\n?",
+)
+
+
+def strip_policy_overlay_for_display(answer: str) -> str:
+    """Remove policy IDs and system-policy callouts from user-facing text.
+
+    Knowledge steps and ordinary confirmation wording are kept. Internal
+    generation, sanitize, claims, and evaluation keep full POLICY markers.
+    """
+    if not answer:
+        return answer
+    text = _SECURITY_POLICY_ADVISORY_BLOCK_RE.sub("", answer)
+    text = _SECURITY_POLICY_ADVISORY_LINE_RE.sub("", text)
+    text = POLICY_MARKER_RE.sub("", text)
+    text = re.sub(r"[ \t]+([。．.，,！!？?])", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def is_policy_advisory_citation(citation: Citation) -> bool:
+    """Return whether a citation is a system security-policy overlay entry."""
+    chunk_id = citation.chunkId or ""
+    if chunk_id.startswith("POLICY-SEC-") or citation.sourceType == POLICY_SOURCE_TYPE:
+        return True
+    return bool(re.search(r"POLICY-SEC-\d{3}", citation.title or ""))
+
+
+def filter_display_citations(citations: list[Citation]) -> list[Citation]:
+    """Drop POLICY_ADVISORY citations from user-facing source lists."""
+    return [
+        citation
+        for citation in citations
+        if not is_policy_advisory_citation(citation)
+    ]
+
+
 def citation_for_policy(policy_id: str, *, include_evidence: bool = True) -> Citation:
     if policy_id not in SECURITY_POLICIES:
         raise KeyError(f"Unknown security policy id: {policy_id}")
