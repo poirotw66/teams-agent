@@ -2,6 +2,8 @@
 
 import inspect
 import re
+import threading
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +29,7 @@ from agent_service.knowledge import (
     StructuredKnowledgeAnswer,
     bounded_facet_queries,
     high_confidence_retrieval_hit,
+    missing_diagnosis_facet_queries,
     query_lexically_matches_results,
 )
 from agent_service.llm_call_counter import LlmCallCounter
@@ -159,17 +162,19 @@ class FixedStructuredAnswerModel(FakeChatModel):
 
 
 class CountingIndex(HybridIndex):
-    """HybridIndex that records how many times search() was called."""
+    """HybridIndex that records how many times search_with_timings() was called."""
 
     def __init__(self, chunks):
         super().__init__(chunks)
         self.search_calls = 0
         self.search_queries: list[str] = []
+        self._search_lock = threading.Lock()
 
-    def search(self, query, limit, groups=None, *, environment="dev"):
-        self.search_calls += 1
-        self.search_queries.append(query)
-        return super().search(
+    def search_with_timings(self, query, limit, groups=None, *, environment="dev"):
+        with self._search_lock:
+            self.search_calls += 1
+            self.search_queries.append(query)
+        return super().search_with_timings(
             query,
             limit,
             groups,
@@ -258,6 +263,62 @@ def vpn_chunk(**overrides) -> DocumentChunk:
     return DocumentChunk(**defaults)
 
 
+def test_procedure_step_coverage_detects_omitted_executable_steps() -> None:
+    from agent_service.knowledge import (
+        answer_covers_procedure_steps,
+        missing_procedure_steps,
+        procedure_steps_in_text,
+        query_asks_for_procedure,
+    )
+
+    assert query_asks_for_procedure("iOS Outlook 首次設定的視覺順序為何？")
+    context = (
+        "請掃描電腦畫面上的 QR Code，完成 number matching，"
+        "Android 需安裝 Intune 公司入口網站，重啟後完成第二次裝置驗證，"
+        "成功後進入收件匣使用。"
+    )
+    steps = procedure_steps_in_text(context)
+    assert "qr_code_scan" in steps
+    assert "intune_company_portal" in steps
+    assert "second_device_verify" in steps
+    assert "reach_inbox" in steps
+    outline = (
+        "1. 下載驗證器。2. 綁定手機。3. 安裝 Outlook。"
+        "4. 關閉焦點收件匣。"
+    )
+    assert "reach_inbox" not in procedure_steps_in_text(outline)
+    assert not answer_covers_procedure_steps(outline, steps)
+    assert "intune_company_portal" in missing_procedure_steps(outline, steps)
+
+
+def test_visual_evidence_plate_coverage_requires_source_plates() -> None:
+    from agent_service.knowledge import (
+        answer_covers_visual_evidence_plates,
+        missing_visual_evidence_plates,
+        query_asks_for_visual_evidence,
+        visual_evidence_plates_in_text,
+    )
+
+    assert query_asks_for_visual_evidence("依來源操作章節與 Visual Evidence 說明順序")
+    context = (
+        "### 1. 驗證程式下載與設定\nAndroid Outlook 手冊第 2 頁\n"
+        "### 2. 驗證程式綁定手機 App\nAndroid Outlook 手冊第 3 頁\n"
+        "### 4. Intune 安裝登入\nAndroid Outlook 手冊第 5 頁\n"
+    )
+    plates = visual_evidence_plates_in_text(context)
+    assert "chapter:1" in plates
+    assert "page:2" in plates
+    assert "chapter:4" in plates
+    outline = "1. 下載驗證器。2. 綁定手機。3. 安裝 Outlook。"
+    assert not answer_covers_visual_evidence_plates(outline, plates)
+    assert "chapter:1" in missing_visual_evidence_plates(outline, plates)
+    covered = (
+        "第 1 章驗證器設定（手冊第 2 頁），第 2 章綁定 App（手冊第 3 頁），"
+        "第 4 章 Intune（手冊第 5 頁）。"
+    )
+    assert answer_covers_visual_evidence_plates(covered, plates)
+
+
 def test_bounded_facet_queries_preserve_identifier_and_cap_at_three() -> None:
     queries = bounded_facet_queries("PortalX 的申請方式、核准人、處理時間與必要資料有哪些？")
 
@@ -284,6 +345,22 @@ def test_bounded_facet_queries_extracts_error_codes() -> None:
     assert bounded_facet_queries("一般查詢問題，沒有任何錯誤代碼") == ()
 
 
+def test_bounded_facet_queries_splits_diagnosis_aspects() -> None:
+    queries = bounded_facet_queries(
+        "使用者回報 VPN 伺服器可能無法到達，應如何區分版本、網路與設定問題？"
+    )
+    assert queries == ("VPN 版本", "VPN 網路", "VPN 設定")
+
+
+def test_missing_diagnosis_facet_queries_targets_absent_version_evidence() -> None:
+    context = "請確認網路連線是否正常，並檢查 FortiClient 齒輪中的 VPN 設定。"
+    missing = missing_diagnosis_facet_queries(
+        "使用者回報 VPN 伺服器可能無法到達，應如何區分版本、網路與設定問題？",
+        context,
+    )
+    assert missing == ("VPN 錯誤 -14", "VPN 版本")
+
+
 @pytest.mark.asyncio
 async def test_hybrid_search_executes_bounded_facets_once(tmp_path: Path) -> None:
     index = CountingIndex(
@@ -304,12 +381,14 @@ async def test_hybrid_search_executes_bounded_facets_once(tmp_path: Path) -> Non
     )
 
     assert result.found is True
-    assert index.search_queries == [
-        "PortalX 的申請方式、核准人與處理時間有哪些？",
-        "PortalX 申請方式",
-        "PortalX 核准人",
-        "PortalX 處理時間",
-    ]
+    assert Counter(index.search_queries) == Counter(
+        [
+            "PortalX 的申請方式、核准人與處理時間有哪些？",
+            "PortalX 申請方式",
+            "PortalX 核准人",
+            "PortalX 處理時間",
+        ]
+    )
     assert result.retrievalTrace is not None
     assert result.retrievalTrace.facetQueries == [
         "PortalX 申請方式",
@@ -940,10 +1019,13 @@ async def test_hybrid_sap_answer_never_falls_back_to_an_unrelated_dazhou_source(
     # Deliberately return an irrelevant 大州 candidate first.  Only the valid
     # [S2] citation may be exposed; falling back to all candidates would leak
     # the unrelated source into SAP's answer.
-    index.search = lambda *_args, **_kwargs: [  # type: ignore[method-assign]
-        SearchResult(chunk=dazhou, score=0.9, sparse_score=0.9),
-        SearchResult(chunk=sap, score=0.8, sparse_score=0.8),
-    ]
+    index.search_with_timings = lambda *_args, **_kwargs: (  # type: ignore[method-assign]
+        [
+            SearchResult(chunk=dazhou, score=0.9, sparse_score=0.9),
+            SearchResult(chunk=sap, score=0.8, sparse_score=0.8),
+        ],
+        {},
+    )
     model = FakeChatModel(
         relevant=True,
         answer_text="請使用帳號管理入口重設 SAP 密碼。[S2]",
@@ -1144,13 +1226,15 @@ async def test_rewrite_preserves_resolved_issue_for_relevance_and_answer(
     )
 
     assert result.found is True
-    assert index.search_queries == [
-        resolved_issue,
-        "PortalX 申請方式",
-        "PortalX 核准人",
-        "PortalX 處理時間",
-        "PortalX 權限申請",
-    ]
+    assert Counter(index.search_queries) == Counter(
+        [
+            resolved_issue,
+            "PortalX 申請方式",
+            "PortalX 核准人",
+            "PortalX 處理時間",
+            "PortalX 權限申請",
+        ]
+    )
     assert len(model.relevance_messages) == 2
     assert all(resolved_issue in str(messages) for messages in model.relevance_messages)
     assert resolved_issue in str(model.answer_messages[0])

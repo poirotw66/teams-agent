@@ -186,8 +186,44 @@ def test_sanitize_answer_security_does_not_duplicate_proxy_advisory() -> None:
     raw = "若需關閉 Proxy，請先向權責單位確認是否受企業政策管制。"
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
     assert sanitized.count("權責單位") == 1
+    assert "[POLICY-SEC-003]" in sanitized
     assert "系統資安政策提醒" not in sanitized
 
+
+def test_sanitize_pairs_sec003_text_and_id_for_invalid_signature_topic() -> None:
+    """QB-048: in-scope security reminders must keep text + POLICY-SEC-003 together."""
+    raw = (
+        "文件畫面顯示「即使簽章無效也允許執行或安裝軟體」僅為大州首次使用設定內容 [S1]。"
+        "此外，進行任何安全性設定變更前，請務必向權責單位確認。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "向權責單位確認" in sanitized
+    assert "[POLICY-SEC-003]" in sanitized
+    assert "[S1]" in sanitized
+
+    # Hedge that only says 洽詢權責單位 (common model wording) must still pair.
+    soft = (
+        "關於「即使簽章無效也允許執行或安裝軟體」的設定，文件僅記載其位於進階安全性區塊 [S1]。"
+        "若您有安裝需求，建議洽詢權責單位確認操作規範。"
+    )
+    soft_sanitized = HybridKnowledgeService._sanitize_answer_security(soft)
+    assert "[POLICY-SEC-003]" in soft_sanitized
+    assert "洽詢權責單位確認" in soft_sanitized
+    assert soft_sanitized.count("[POLICY-SEC-003]") == 1
+
+
+def test_sanitize_adds_visual_inventory_caveats_for_invalid_signature() -> None:
+    """Visual checkbox inventory must not become enablement advice."""
+    raw = (
+        "關於「即使簽章無效也允許執行或安裝軟體」，文件記載該項目應為已勾選狀態 [S1]。"
+        "安裝前請向權責單位確認。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "應為已勾選" not in sanitized
+    assert "畫面顯示為已勾選" in sanitized
+    assert "不得據此作為通用排障" in sanitized or "不得" in sanitized
+    assert "名稱未詳" in sanitized or "元件名稱" in sanitized
+    assert "[POLICY-SEC-003]" in sanitized
 
 def test_repair_structured_answer_aligns_unknowns_and_answerability() -> None:
     # Case 1: PARTIAL without unknowns
@@ -1097,6 +1133,78 @@ def test_enterprise_app_query_prefers_device_management_doc() -> None:
     )
     assert filtered[0].chunk.chunk_id == "portal-1"
     assert all(item.chunk.chunk_id != "ext-1" for item in filtered)
+
+
+def test_enterprise_app_inject_does_not_reintroduce_acl_excluded_chunks(
+    tmp_path: Path,
+) -> None:
+    """Regression: post-search boost must not bypass Hybrid ACL filtering."""
+    public_ad = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="帳號鎖定請至 AD 自助解鎖專區。",
+        allowed_groups=[],
+    )
+    restricted_portal = DocumentChunk(
+        chunk_id="portal-restricted",
+        title="國泰員工入口網、CTeam密碼、國泰e點名",
+        source_path="sources/portal-restricted.md",
+        content=(
+            "安裝完成請務必至手機一般 > VPN與裝置管理 > "
+            "企業級APP內將CATHAY LIFE加入驗證。"
+        ),
+        allowed_groups=["IT"],
+    )
+    index = HybridIndex([public_ad, restricted_portal])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+    query = "iOS 上安裝來源所述的企業 App 後仍無法使用，應檢查什麼？"
+    acl_filtered = [
+        SearchResult(chunk=public_ad, score=0.8, sparse_score=0.8, dense_score=0.0),
+    ]
+
+    unauthorized = service._inject_enterprise_app_evidence(
+        query,
+        acl_filtered,
+        groups={"HR"},
+        environment="dev",
+    )
+    assert all(item.chunk.chunk_id != "portal-restricted" for item in unauthorized)
+
+    authorized = service._inject_enterprise_app_evidence(
+        query,
+        acl_filtered,
+        groups={"IT"},
+        environment="dev",
+    )
+    assert any(item.chunk.chunk_id == "portal-restricted" for item in authorized)
+
+
+def test_enterprise_app_inject_does_not_reintroduce_ineligible_chunks(
+    tmp_path: Path,
+) -> None:
+    public_ad = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="帳號鎖定請至 AD 自助解鎖專區。",
+    )
+    placeholder_portal = DocumentChunk(
+        chunk_id="portal-placeholder",
+        title="國泰員工入口網",
+        source_path="sources/portal-placeholder.md",
+        content="企業級APP內將CATHAY LIFE加入驗證。",
+        content_state="PLACEHOLDER",
+    )
+    index = HybridIndex([public_ad, placeholder_portal])
+    service = HybridKnowledgeService(make_settings(tmp_path), index, model=None)
+    injected = service._inject_enterprise_app_evidence(
+        "來源所述的企業 App 無法使用應檢查什麼？",
+        [SearchResult(chunk=public_ad, score=0.8, sparse_score=0.8, dense_score=0.0)],
+        groups=set(),
+        environment="dev",
+    )
+    assert all(item.chunk.chunk_id != "portal-placeholder" for item in injected)
 
 
 def test_policy_marked_security_advisory_is_retained() -> None:

@@ -44,6 +44,7 @@ def build_chat_model(
     max_tokens: int | None = None,
     timeout: float | None = None,
     max_retries: int | None = None,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
 ) -> BaseChatModel | None:
     """Return a LangChain chat model, or ``None`` when no model is configured."""
     if not model_name:
@@ -57,6 +58,8 @@ def build_chat_model(
         kwargs["timeout"] = timeout
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
+    if reasoning_effort is not None:
+        kwargs["reasoning_effort"] = reasoning_effort
     return init_chat_model(model_name, **kwargs)
 
 

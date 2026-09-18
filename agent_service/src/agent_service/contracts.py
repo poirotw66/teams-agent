@@ -90,6 +90,8 @@ class RetrievalTrace(StrictModel):
     unknowns: list[str] = Field(default_factory=list)
     fallbackPath: str
     terminalReason: str | None = None
+    # Stage timings in milliseconds (embedding, retrieval, relevance, generate, …).
+    stageTimingsMs: dict[str, float] = Field(default_factory=dict)
 
 
 class Citation(StrictModel):

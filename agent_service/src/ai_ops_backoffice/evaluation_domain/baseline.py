@@ -17,7 +17,11 @@ from uuid import uuid4
 
 import httpx
 
-from .baseline_judge import GeminiAnswerJudge
+from .baseline_judge import (
+    DEFAULT_JUDGE_MODEL_ID,
+    DEFAULT_JUDGE_REASONING_EFFORT,
+    GeminiAnswerJudge,
+)
 from .baseline_scoring import (
     JudgeAssessment,
     inconclusive_assessment,
@@ -26,6 +30,8 @@ from .baseline_scoring import (
 
 __all__ = [
     "AgentTargetResult",
+    "DEFAULT_JUDGE_MODEL_ID",
+    "DEFAULT_JUDGE_REASONING_EFFORT",
     "GeminiAnswerJudge",
     "JudgeAssessment",
     "KnowledgeBaselineCase",

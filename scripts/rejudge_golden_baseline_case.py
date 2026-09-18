@@ -14,6 +14,8 @@ from run_golden_baseline import summarize_records
 
 from ai_ops_backoffice.evaluation_domain.baseline import (
     AgentTargetResult,
+    DEFAULT_JUDGE_MODEL_ID,
+    DEFAULT_JUDGE_REASONING_EFFORT,
     GeminiAnswerJudge,
     load_question_bank_csv,
 )
@@ -26,7 +28,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("case_id")
     parser.add_argument(
         "--judge-model",
-        default="google_genai:gemini-3.1-pro-preview",
+        default=DEFAULT_JUDGE_MODEL_ID,
+    )
+    parser.add_argument(
+        "--judge-effort",
+        choices=("minimal", "low", "medium", "high"),
+        default=DEFAULT_JUDGE_REASONING_EFFORT,
+        help="Gemini reasoning effort for the LLM judge.",
     )
     return parser.parse_args()
 
@@ -83,7 +91,10 @@ async def rejudge(args: argparse.Namespace) -> dict[str, Any]:
     if golden_case is None:
         raise ValueError(f"Question bank does not contain case {args.case_id}")
 
-    judge = GeminiAnswerJudge(model_id=args.judge_model)
+    judge = GeminiAnswerJudge(
+        model_id=args.judge_model,
+        reasoning_effort=args.judge_effort,
+    )
     assessment = await judge.judge(golden_case, _cached_target(report_case))
     repaired_at = datetime.now(UTC).isoformat()
     replacement_judge = assessment.model_dump(mode="json")
@@ -97,6 +108,7 @@ async def rejudge(args: argparse.Namespace) -> dict[str, Any]:
             "caseId": args.case_id,
             "reason": "Rejudged cached target output after adding schema retry support.",
             "judgeModelId": args.judge_model,
+            "judgeReasoningEffort": args.judge_effort,
             "previousJudge": previous_judge,
             "replacementJudge": replacement_judge,
         }

@@ -24,11 +24,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 
 logger = logging.getLogger(__name__)
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol, TypeVar, runtime_checkable
 
 from langchain_core.language_models import BaseChatModel
@@ -56,13 +57,17 @@ from .execution_context import (
     RequestOperationTimedOut,
 )
 from .llm_call_counter import LlmCallCounter
-from .retrieval import HybridIndex, SearchResult, tokenize
+from .knowledge_eligibility import is_chunk_generation_eligible
+from .retrieval import HybridIndex, SearchResult, is_chunk_visible_to_groups, tokenize
 from .security_policies import (
     ANSWER_PROMPT_SECURITY_RULES,
     PROXY_ADVISORY_TEXT,
+    SEC003_APPLICABLE_SCOPE_RE,
     SECURITY_POLICIES,
     advisories_from_text,
     citations_for_policy_ids,
+    ensure_policy_text_and_id_paired,
+    ensure_visual_security_inventory_caveats,
     is_policy_id,
     policy_ids_in_text,
     split_claims_by_provenance,
@@ -70,6 +75,10 @@ from .security_policies import (
 )
 from .settings import RagSettings
 from .source_refs import build_citation_url, make_source_ref_id, safe_source_path
+from .temporal_claims import (
+    annotate_historical_dates_in_text,
+    sanitize_temporal_claims,
+)
 
 KnowledgeLLM = TypeVar("KnowledgeLLM")
 
@@ -106,6 +115,16 @@ _FACET_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("必要資料", ("哪些資料", "必要資料", "附件", "欄位")),
     ("限制", ("限制", "不能", "避免", "不得", "未定義")),
 )
+# Multi-aspect diagnosis questions (e.g. distinguish version / network / settings).
+_DIAGNOSIS_FACETS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("版本", ("版本",), ("版本", "-14", "過舊", "升級客戶端", "客戶端版本")),
+    ("網路", ("網路",), ("網路", "熱點", "Wi-Fi", "WiFi", "連線是否正常")),
+    ("設定", ("設定",), ("設定", "齒輪", "組態", "VPN 設定")),
+)
+_DIAGNOSIS_ANCHOR_RE = re.compile(
+    r"(FortiClient|Outlook|Intune|Teams|AccessFlow|VPN|AD)",
+    re.IGNORECASE,
+)
 _UNSAFE_ACTION_CLAIM = re.compile(
     r"(?:我|系統)?已(?:為您|替您|幫您)(?:建立|修改|重設|刪除|提交|核准)"
 )
@@ -130,7 +149,8 @@ _PROXY_DISABLE_PATTERN = re.compile(
 )
 _CERT_BYPASS_PATTERN = re.compile(
     r"(?:(?:忽略|略過|繞過|停用|關閉|取消).{0,12}(?:憑證|證書|簽章|安全警告|安全檢查)|"
-    r"(?:憑證|證書|簽章).{0,12}(?:忽略|略過|繞過|停用|關閉|失效繼續))",
+    r"(?:憑證|證書|簽章).{0,12}(?:忽略|略過|繞過|停用|關閉|失效繼續)|"
+    r"即使簽章無效|簽章無效也允許|簽章無效也(?:可|能)?執行)",
     re.IGNORECASE,
 )
 _IE_SECURITY_LOWERING_PATTERN = re.compile(
@@ -142,11 +162,7 @@ _SEC001_APPLICABLE_SCOPE_RE = re.compile(
     r"(?:畫面|截圖|附件|敏感資訊|資料最小化|個人及敏感|與問題無關的個人)",
     re.IGNORECASE,
 )
-_SEC003_APPLICABLE_SCOPE_RE = re.compile(
-    r"(?:Proxy|代理伺服器|憑證設定|變更憑證|忽略憑證|繞過憑證|關閉\s*Proxy|停用\s*Proxy|"
-    r"安全性區域|受保護模式|信任的網站|安全等級)",
-    re.IGNORECASE,
-)
+_SEC003_APPLICABLE_SCOPE_RE = SEC003_APPLICABLE_SCOPE_RE
 _TEST_LINK_POLICY_SENTENCE_RE = re.compile(
     r"(?:此外[，,]?\s*)?(?:請注意)?(?:文件中的)?(?:測試連結|佔位(?:用途|網址|連結)|"
     r"非正式連結|正式網址)[^。\n]*\[POLICY-SEC-\d{3}\][。.]?",
@@ -194,6 +210,135 @@ def answer_covers_error_branches(answer: str, codes: list[str]) -> bool:
     hits = sum(1 for code in codes if code in answer)
     required = max(2, (len(codes) + 1) // 2)
     return hits >= required
+
+
+_PROCEDURE_QUERY_MARKERS: tuple[str, ...] = (
+    "順序",
+    "步驟",
+    "首次設定",
+    "視覺順序",
+    "安裝步驟",
+    "Visual Evidence",
+    "先後順序",
+    "操作章節",
+    "如何設定",
+    "設定順序",
+)
+
+# Distinctive executable steps that summarization often drops.
+_PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("intune_company_portal", ("intune", "公司入口網站")),
+    ("qr_code_scan", ("qr code", "qrcode", "掃描電腦畫面")),
+    ("number_matching", ("number matching", "數字匹配")),
+    (
+        "restart_outlook",
+        ("重啟 outlook", "重新啟動 outlook", "重新開啟 outlook", "重啟app", "重啟 app"),
+    ),
+    ("second_device_verify", ("第二次", "再次驗證", "後續驗證", "裝置驗證")),
+    # Avoid matching 「焦點收件匣」 alone; require completion/entry phrasing.
+    ("reach_inbox", ("進入收件匣", "主介面", "收件匣使用", "進入 outlook 主")),
+    ("bind_phone", ("綁定電話", "簡訊驗證")),
+    ("authenticator", ("authenticator", "驗證器")),
+)
+
+
+def query_asks_for_procedure(query: str) -> bool:
+    return any(marker in query for marker in _PROCEDURE_QUERY_MARKERS)
+
+
+def procedure_steps_in_text(text: str) -> list[str]:
+    """Return distinctive procedure-step ids present in ``text``."""
+    folded = text.casefold()
+    found: list[str] = []
+    for step_id, variants in _PROCEDURE_STEP_MARKERS:
+        if any(variant.casefold() in folded for variant in variants):
+            found.append(step_id)
+    return found
+
+
+def answer_covers_procedure_steps(answer: str, step_ids: list[str]) -> bool:
+    """Whether the answer retains enough distinctive steps from the context."""
+    if len(step_ids) < 2:
+        return True
+    answer_steps = set(procedure_steps_in_text(answer))
+    hits = sum(1 for step_id in step_ids if step_id in answer_steps)
+    required = max(2, (len(step_ids) + 1) // 2)
+    return hits >= required
+
+
+_VISUAL_EVIDENCE_PLATE_RE = re.compile(r"\bp0(\d{2})\b", re.IGNORECASE)
+_VISUAL_CHAPTER_RE = re.compile(r"###\s*(\d+)\.")
+_VISUAL_HANDBOOK_PAGE_RE = re.compile(r"手冊第\s*(\d+)\s*頁")
+_VISUAL_EVIDENCE_QUERY_MARKERS: tuple[str, ...] = (
+    "Visual Evidence",
+    "視覺順序",
+    "視覺證據",
+    "操作章節",
+)
+
+
+def query_asks_for_visual_evidence(query: str) -> bool:
+    return any(marker in query for marker in _VISUAL_EVIDENCE_QUERY_MARKERS)
+
+
+def visual_evidence_plates_in_text(text: str) -> list[str]:
+    """Return handbook visual-structure markers from retrieved context.
+
+    Indexed Outlook manuals use chapter headings (``### N.``) and
+    ``手冊第 N 頁`` labels rather than raw ``p0N.png`` asset names. Prefer
+    those stable markers; only keep ``p0N`` plates that appear beside
+    Visual Evidence captions so unrelated PDFs do not pollute coverage.
+    """
+    markers: list[str] = []
+    for match in _VISUAL_CHAPTER_RE.finditer(text):
+        markers.append(f"chapter:{match.group(1)}")
+    for match in _VISUAL_HANDBOOK_PAGE_RE.finditer(text):
+        markers.append(f"page:{match.group(1)}")
+    for match in _VISUAL_EVIDENCE_PLATE_RE.finditer(text):
+        start = max(0, match.start() - 80)
+        window = text[start : match.end() + 20]
+        if "Visual Evidence" in window or "手冊" in window or "assets/" in window:
+            markers.append(f"p0{match.group(1)}")
+    return list(dict.fromkeys(markers))
+
+
+def _answer_mentions_visual_marker(answer: str, marker: str) -> bool:
+    kind, _, value = marker.partition(":")
+    if kind == "chapter":
+        # Do not treat ordinary numbered steps ("1. ...") as chapter citations.
+        patterns = (
+            rf"章節\s*{value}\b",
+            rf"第\s*{value}\s*章",
+            rf"###\s*{value}\.",
+        )
+        return any(re.search(pattern, answer) for pattern in patterns)
+    if kind == "page":
+        patterns = (
+            rf"手冊第\s*{value}\s*頁",
+            rf"第\s*{value}\s*頁",
+            rf"\bp0{int(value):02d}\b",
+        )
+        return any(re.search(pattern, answer, flags=re.IGNORECASE) for pattern in patterns)
+    # Raw p0N plate id.
+    return re.search(rf"\b{re.escape(marker)}\b", answer, flags=re.IGNORECASE) is not None
+
+
+def answer_covers_visual_evidence_plates(answer: str, plates: list[str]) -> bool:
+    """Whether the answer cites enough visual-structure markers from context."""
+    if len(plates) < 2:
+        return True
+    hits = sum(1 for plate in plates if _answer_mentions_visual_marker(answer, plate))
+    required = max(2, (len(plates) + 1) // 2)
+    return hits >= required
+
+
+def missing_visual_evidence_plates(answer: str, plates: list[str]) -> list[str]:
+    return [plate for plate in plates if not _answer_mentions_visual_marker(answer, plate)]
+
+
+def missing_procedure_steps(answer: str, step_ids: list[str]) -> list[str]:
+    answer_steps = set(procedure_steps_in_text(answer))
+    return [step_id for step_id in step_ids if step_id not in answer_steps]
 
 
 def _is_non_production_knowledge_chunk(chunk: DocumentChunk) -> bool:
@@ -367,7 +512,7 @@ ANSWER_PROMPT = """\
    - 若資料僅提供窗口、權責單位或部分資訊，但足以回答責任歸屬或部分限制時，answerability 應為 PARTIAL（並列出 unknowns），不得標記為 NONE。
    - 只有在完全沒有任何相關資訊、無法提供任何有效主張時，才回傳 NONE。
 9. 排版與結構要求：
-   - 連續的操作、申請、審核或設定步驟，必須使用有序清單格式（例如 1.、2.、3.）。
+   - 連續的操作、申請、審核或設定步驟，必須使用有序清單格式（例如 1.、2.、3.），且每個步驟開頭必須獨立換行（例如：\n1. 步驟一\n2. 步驟二），嚴禁將多個編號步驟合併在同一行。
    - 重要名詞、系統平台名稱（如 AccessFlow、Teams、Outlook 等）、關鍵時限或天數（如「1 個工作天內」），請適度使用粗體標記（如 **AccessFlow**、**1 個工作天內**）。
    - 若有特別提醒、例外情境、申請限制或備註，請使用引言提示格式呈現（例如 `> 💡 **注意事項**：...`）。
 {security_rules}
@@ -384,6 +529,23 @@ ANSWER_PROMPT = """\
 13. 錯誤碼／分流題完整性：
     - 若知識內容以多個錯誤碼、錯訊或條件分支列出處置（例如 (-455)、(-14)、(-20199)），回答必須依「條件／錯誤碼 → 處置 → 完成或升級條件」逐項覆蓋相關分支，不得只給通用排查三步驟。
     - 不得引用標題含 [UX-AUDIT]、[TEST] 等非正式測試文件作為正式處置依據。
+14. 歷史記載與現行狀態：
+    - 知識內容中的日曆日期、期限、事件原因可能是文件曾記載的歷史情況，即使整份文件仍為有效 FAQ，也不代表使用者「目前」狀態。
+    - 若內容標示【歷史記載日期…】，或期限已過／僅為個案紀錄，應寫成「文件記載…」，並請使用者向權責單位確認現況；不得寫成「目前一定是…」或把過期日期當成現行有效期。
+    - 同一錯訊在不同日期／授權狀態下處置可能不同；回答應保留可執行的確認步驟，而不是沿用某個歷史日期當成固定答案。
+15. 流程／平台完整性（精簡語句，不可省略必要步驟）：
+    - 先判斷使用者要的是「概述」還是「可執行步驟／順序／視覺順序」；若問步驟、順序、首次設定或 Visual Evidence，必須輸出可執行步驟，不得只保留高階大綱。
+    - 若問題要求操作章節與 Visual Evidence，步驟中須標出來源章節或 Visual Evidence 編號（如 p02、p03）的對應，不可只寫抽象步驟名稱。
+    - 若知識內容同時含多個平台（如 iOS 與 Android），先列共同步驟，再分平台列出特有步驟；不得把平台差異合併成單一流程而漏掉任一方必要步驟（例如 Intune 公司入口網站須列為獨立步驟，不可只當備註）。
+    - 來源已寫明的關鍵動作（如掃描 QR Code、number matching、重啟 App、完成後進入收件匣）與完成狀態，必須保留；先保完整再精簡用字。
+16. 先答所問、控制篇幅：
+    - 若問題是可否／是否／能不能等封閉題，先用一句直接回答，再附必要證據；不要展開未詢問的其他錯誤碼或完整 SOP。
+    - 若問題只問「要蒐集哪些資料／欄位」，列出欄位即可；提交信箱或後續流程僅在問題或來源明確要求時才寫。
+    - 不要為了看起來完整而重複同一來源的無關分支。
+17. 畫面／Visual Evidence 與安全性控制項：
+    - 文件或畫面顯示某控制項「已勾選／可見」，只代表視覺紀錄，不得轉成「應普遍啟用」或通用排障步驟；不得寫成「應為已勾選／必須勾選」。
+    - 若來源未提供元件名稱、版本、來源可信度、適用範圍或回復方式（含「名稱未詳」），必須明說文件未提供這些資訊，並請向權責單位確認；不得自行啟用或擴大套用。
+    - 涉及簽章無效、憑證、Proxy 或安全性設定時，確認提醒必須同時附上 [POLICY-SEC-003]。
 
 使用者問題：
 {question}
@@ -567,6 +729,12 @@ def bounded_facet_queries(query: str) -> tuple[str, ...]:
         anchor = identifier.group(0) if identifier else query[:16].rstrip("，,、；;。？?")
         return tuple(f"{anchor} {facet}" for facet in matched_facets[:3])
 
+    diagnosis_facets = requested_diagnosis_facets(query)
+    if len(diagnosis_facets) >= 2:
+        return tuple(
+            f"{_diagnosis_query_anchor(query)} {facet}" for facet in diagnosis_facets[:3]
+        )
+
     m1 = re.search(r"(?:錯誤|error|代碼|code)\s*[:：]?\s*(-?[A-Za-z0-9_]+)", query, re.IGNORECASE)
     if m1:
         code = m1.group(1).strip()
@@ -586,6 +754,44 @@ def bounded_facet_queries(query: str) -> tuple[str, ...]:
         code = m4.group(1).strip()
         return (f"錯誤 {code}", code)
     return ()
+
+
+def requested_diagnosis_facets(query: str) -> list[str]:
+    """Return diagnosis facets named in the query when at least two are present."""
+    return [
+        name
+        for name, markers, _evidence in _DIAGNOSIS_FACETS
+        if any(marker in query for marker in markers)
+    ]
+
+
+def _diagnosis_query_anchor(query: str) -> str:
+    match = _DIAGNOSIS_ANCHOR_RE.search(query)
+    if match is not None:
+        return match.group(1)
+    identifier = re.search(r"\b[A-Za-z][A-Za-z0-9._-]*\b", query)
+    if identifier is not None:
+        return identifier.group(0)
+    return query[:16].rstrip("，,、；;。？?")
+
+
+def missing_diagnosis_facet_queries(query: str, context: str) -> tuple[str, ...]:
+    """Build targeted follow-up searches for diagnosis facets absent from context."""
+    requested = requested_diagnosis_facets(query)
+    if len(requested) < 2:
+        return ()
+    context_fold = context.casefold()
+    anchor = _diagnosis_query_anchor(query)
+    missing: list[str] = []
+    for name, _markers, evidence_markers in _DIAGNOSIS_FACETS:
+        if name not in requested:
+            continue
+        if any(marker.casefold() in context_fold for marker in evidence_markers):
+            continue
+        if name == "版本":
+            missing.append(f"{anchor} 錯誤 -14")
+        missing.append(f"{anchor} {name}")
+    return tuple(list(dict.fromkeys(missing))[:3])
 
 
 def _distinctive_query_tokens(query: str) -> set[str]:
@@ -703,6 +909,7 @@ class _RetrievalState:
     filter_displaced_top1: bool = False
     trace_attempts: list[RetrievalAttempt] = field(default_factory=list)
     attempt: int = 0
+    stage_timings_ms: dict[str, float] = field(default_factory=dict)
 
 
 class HybridKnowledgeService:
@@ -756,19 +963,49 @@ class HybridKnowledgeService:
             search_query=query,
             facet_queries=facet_queries,
         )
+        total_started = time.perf_counter()
+        retrieve_started = time.perf_counter()
         state = await self._retrieve(state, groups)
+        gap_queries = missing_diagnosis_facet_queries(
+            state.resolved_issue_query,
+            "\n".join(
+                f"{result.chunk.title}\n{result.chunk.content}" for result in state.results
+            ),
+        )
+        if gap_queries:
+            state = await self._retrieve(
+                replace(state, facet_queries=gap_queries),
+                groups,
+            )
+        state.stage_timings_ms["retrievalMs"] = round(
+            (time.perf_counter() - retrieve_started) * 1000, 1
+        )
 
         try:
             while True:
-                if await self._documents_are_relevant(
+                relevance_started = time.perf_counter()
+                is_relevant = await self._documents_are_relevant(
                     state, counter, execution_context=execution_context, model=model
-                ):
+                )
+                state.stage_timings_ms["relevanceMs"] = round(
+                    state.stage_timings_ms.get("relevanceMs", 0.0)
+                    + (time.perf_counter() - relevance_started) * 1000,
+                    1,
+                )
+                if is_relevant:
+                    generate_started = time.perf_counter()
                     result = await self._generate(
                         state,
                         counter,
                         execution_context=execution_context,
                         model=model,
                         include_retrieval_evidence=include_retrieval_evidence,
+                    )
+                    state.stage_timings_ms["generateMs"] = round(
+                        (time.perf_counter() - generate_started) * 1000, 1
+                    )
+                    state.stage_timings_ms["totalMs"] = round(
+                        (time.perf_counter() - total_started) * 1000, 1
                     )
                     self.last_llm_call_count = counter.count
                     fallback_path = "GENERATED_ANSWER" if result.found else "SAFE_NO_ANSWER"
@@ -868,6 +1105,7 @@ class HybridKnowledgeService:
             unknowns=result.unknowns,
             fallbackPath=fallback_path,
             terminalReason=terminal_reason,
+            stageTimingsMs=dict(state.stage_timings_ms),
         )
         return result.model_copy(
             update={
@@ -886,7 +1124,7 @@ class HybridKnowledgeService:
         frozen_groups = frozenset(groups)
         env = self.settings.deployment_environment
 
-        async def _search_one(query: str) -> list[SearchResult]:
+        async def _search_one(query: str) -> tuple[list[SearchResult], dict[str, float]]:
             cache_key = (
                 query.strip().casefold(),
                 frozen_groups,
@@ -897,9 +1135,9 @@ class HybridKnowledgeService:
             )
             if cache_key in self._retrieval_cache:
                 self._retrieval_cache.move_to_end(cache_key)
-                return self._retrieval_cache[cache_key]
-            res = await asyncio.to_thread(
-                self.index.search,
+                return self._retrieval_cache[cache_key], {}
+            res, timings = await asyncio.to_thread(
+                self.index.search_with_timings,
                 query,
                 self.settings.top_k * _RETRIEVAL_CANDIDATE_MULTIPLIER,
                 groups,
@@ -908,9 +1146,16 @@ class HybridKnowledgeService:
             self._retrieval_cache[cache_key] = res
             if len(self._retrieval_cache) > _MAX_RETRIEVAL_CACHE_SIZE:
                 self._retrieval_cache.popitem(last=False)
-            return res
+            return res, timings
 
-        result_sets = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
+        search_outcomes = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
+        result_sets = [outcome[0] for outcome in search_outcomes]
+        for _results, timings in search_outcomes:
+            for key, value in timings.items():
+                # Sum of work across parallel facet searches; wall clock is retrievalMs.
+                state.stage_timings_ms[key] = round(
+                    state.stage_timings_ms.get(key, 0.0) + value, 1
+                )
         best_by_chunk: dict[str, SearchResult] = {}
         for prev_res in state.results:
             best_by_chunk[prev_res.chunk.chunk_id] = prev_res
@@ -925,7 +1170,10 @@ class HybridKnowledgeService:
             reverse=True,
         )
         results = self._inject_enterprise_app_evidence(
-            state.resolved_issue_query, results
+            state.resolved_issue_query,
+            results,
+            groups=groups,
+            environment=env,
         )
         competitive_results, displaced_top1 = self._select_document_chunks(
             state.resolved_issue_query, results
@@ -971,6 +1219,7 @@ class HybridKnowledgeService:
             filter_displaced_top1=displaced_top1,
             trace_attempts=state.trace_attempts,
             attempt=state.attempt,
+            stage_timings_ms=state.stage_timings_ms,
         )
 
     @classmethod
@@ -1170,11 +1419,17 @@ class HybridKnowledgeService:
         self,
         query: str,
         results: list[SearchResult],
+        *,
+        groups: set[str],
+        environment: str,
     ) -> list[SearchResult]:
         """Ensure enterprise-app trust docs enter and lead the candidate pool.
 
         Hybrid retrieval often ranks AD/Outlook ahead of the portal note that
         actually describes 企業級APP / CATHAY LIFE verification.
+
+        Injection must never reintroduce chunks that Hybrid search already
+        excluded for ACL or generation eligibility.
         """
         if not any(
             term in query
@@ -1188,12 +1443,17 @@ class HybridKnowledgeService:
         ):
             return results
 
-        def _is_enterprise_trust_chunk(chunk) -> bool:
+        def _is_enterprise_trust_chunk(chunk: DocumentChunk) -> bool:
             blob = f"{chunk.title}\n{chunk.content}"
             return any(
                 marker in blob
                 for marker in ("企業級APP", "企業級 App", "CATHAY LIFE")
             )
+
+        def _is_injectable(chunk: DocumentChunk) -> bool:
+            return is_chunk_visible_to_groups(
+                chunk, groups
+            ) and is_chunk_generation_eligible(chunk, environment=environment)
 
         boosted: list[SearchResult] = []
         seen_ids: set[str] = set()
@@ -1213,6 +1473,8 @@ class HybridKnowledgeService:
 
         for chunk in self.index.chunks:
             if chunk.chunk_id in seen_ids:
+                continue
+            if not _is_injectable(chunk):
                 continue
             if _is_enterprise_trust_chunk(chunk):
                 boosted.append(
@@ -1487,8 +1749,11 @@ class HybridKnowledgeService:
                     attempt.isRelevant = is_relevant
             return is_relevant
 
+        # Grade only the top candidates: wall-clock stageTimings show relevance is
+        # secondary to generate, but full-pool grading still adds token latency.
+        grade_results = state.results[:3]
         context = "\n\n".join(
-            f"[{result.chunk.title}]\n{result.chunk.content}" for result in state.results
+            f"[{result.chunk.title}]\n{result.chunk.content}" for result in grade_results
         )
 
         async def _grade() -> RelevanceDecision:
@@ -1590,6 +1855,7 @@ class HybridKnowledgeService:
             results=state.results,
             trace_attempts=state.trace_attempts,
             attempt=state.attempt + 1,
+            stage_timings_ms=state.stage_timings_ms,
         )
 
     # --- citations / images ---------------------------------------------
@@ -1920,7 +2186,8 @@ class HybridKnowledgeService:
 
         context = "\n\n".join(
             f"[S{chunk_to_doc_idx[index]}] {result.chunk.title} "
-            f"[chunkId={result.chunk.chunk_id}]\n{result.chunk.content}"
+            f"[chunkId={result.chunk.chunk_id}]\n"
+            f"{annotate_historical_dates_in_text(result.chunk.content)}"
             for index, result in enumerate(results)
         )
         marker_to_chunk_ids: dict[str, list[str]] = {}
@@ -2104,6 +2371,135 @@ class HybridKnowledgeService:
                 response.answerability,
                 response.claims,
             )
+        context_procedure_steps = procedure_steps_in_text(context)
+        if (
+            response.answerability in {"FULL", "PARTIAL"}
+            and query_asks_for_procedure(state.resolved_issue_query)
+            and len(context_procedure_steps) >= 2
+            and not answer_covers_procedure_steps(answer, context_procedure_steps)
+        ):
+            missing_steps = missing_procedure_steps(answer, context_procedure_steps)
+            missing_csv = ", ".join(missing_steps)
+
+            async def _invoke_procedure_coverage_retry() -> StructuredKnowledgeAnswer:
+                return await answer_model.with_structured_output(
+                    StructuredKnowledgeAnswer
+                ).ainvoke(
+                    [
+                        SystemMessage(
+                            content=ANSWER_PROMPT.format(
+                                question=state.resolved_issue_query,
+                                context=context,
+                            )
+                        ),
+                        HumanMessage(
+                            content=(
+                                f"已解析問題：{state.resolved_issue_query}\n"
+                                "此題需要可執行步驟／視覺順序，不可只給高階大綱。"
+                                f"知識內容已包含但回答仍缺的關鍵步驟：{missing_csv}。"
+                                "請依來源保留共同步驟與平台特有步驟、完成狀態；"
+                                "先保完整再精簡用字，勿合併省略。"
+                            )
+                        ),
+                    ]
+                )
+
+            logger.info(
+                "Retrying knowledge generation for incomplete procedure coverage "
+                "(missing=%s)",
+                missing_steps,
+            )
+            response = await self._invoke_llm(
+                _invoke_procedure_coverage_retry,
+                component="knowledge_generate_procedure_coverage",
+                execution_context=execution_context,
+                counter=counter,
+            )
+            response = self._repair_structured_answer(response)
+            response.claims = remap_claim_marker_ids_to_chunk_ids(
+                response.claims,
+                marker_to_chunk_ids=marker_to_chunk_ids,
+                chunk_content_by_id=chunk_content_by_id,
+            )
+            answer = normalize_composite_citation_markers(response.answer.strip())
+            answer = strip_unknown_policy_markers(answer)
+            logger.info(
+                "Knowledge procedure-coverage retry answer=%r answerability=%s claims=%s",
+                answer,
+                response.answerability,
+                response.claims,
+            )
+        context_visual_plates = visual_evidence_plates_in_text(context)
+        if (
+            response.answerability in {"FULL", "PARTIAL"}
+            and query_asks_for_visual_evidence(state.resolved_issue_query)
+            and len(context_visual_plates) >= 2
+            and not answer_covers_visual_evidence_plates(answer, context_visual_plates)
+        ):
+            missing_plates = missing_visual_evidence_plates(answer, context_visual_plates)
+            missing_csv = ", ".join(missing_plates[:8])
+            answer_before_visual = answer
+            response_before_visual = response
+
+            async def _invoke_visual_evidence_retry() -> StructuredKnowledgeAnswer:
+                return await answer_model.with_structured_output(
+                    StructuredKnowledgeAnswer
+                ).ainvoke(
+                    [
+                        SystemMessage(
+                            content=ANSWER_PROMPT.format(
+                                question=state.resolved_issue_query,
+                                context=context,
+                            )
+                        ),
+                        HumanMessage(
+                            content=(
+                                f"已解析問題：{state.resolved_issue_query}\n"
+                                "此題要求依來源操作章節與 Visual Evidence／手冊頁說明順序。"
+                                f"知識內容已有但回答未對照的章節或頁碼標記：{missing_csv}。"
+                                "請在步驟中標出章節編號與手冊頁（例如第 1 章／手冊第 2 頁），"
+                                "平台特有步驟（如 Intune）須列為獨立步驟；"
+                                "並保留重啟、第二次驗證、進入收件匣等完成狀態，不可省略。"
+                            )
+                        ),
+                    ]
+                )
+
+            logger.info(
+                "Retrying knowledge generation for incomplete visual evidence coverage "
+                "(missing=%s)",
+                missing_plates,
+            )
+            response = await self._invoke_llm(
+                _invoke_visual_evidence_retry,
+                component="knowledge_generate_visual_evidence",
+                execution_context=execution_context,
+                counter=counter,
+            )
+            response = self._repair_structured_answer(response)
+            response.claims = remap_claim_marker_ids_to_chunk_ids(
+                response.claims,
+                marker_to_chunk_ids=marker_to_chunk_ids,
+                chunk_content_by_id=chunk_content_by_id,
+            )
+            answer = normalize_composite_citation_markers(response.answer.strip())
+            answer = strip_unknown_policy_markers(answer)
+            # Do not keep a visual retry that drops previously covered procedure steps.
+            if context_procedure_steps and not answer_covers_procedure_steps(
+                answer, context_procedure_steps
+            ):
+                logger.info(
+                    "Visual-evidence retry dropped procedure steps; keeping prior answer"
+                )
+                answer = answer_before_visual
+                response = response_before_visual
+            else:
+                logger.info(
+                    "Knowledge visual-evidence retry answer=%r answerability=%s claims=%s",
+                    answer,
+                    response.answerability,
+                    response.claims,
+                )
         if not self._structured_answer_is_grounded(response, results):
             logger.warning(
                 "Knowledge answer rejected: _structured_answer_is_grounded failed. "
@@ -2255,6 +2651,7 @@ class HybridKnowledgeService:
         normalized_answer = re.sub(r"\[S(\d+)\]", _remap_marker, answer)
         normalized_answer = re.sub(r"(\[S\d+\])\1+", r"\1", normalized_answer)
         normalized_answer = self._sanitize_answer_security(normalized_answer)
+        normalized_answer = sanitize_temporal_claims(normalized_answer)
 
         knowledge_claims, claim_policy_advisories = split_claims_by_provenance(response.claims)
         response.claims = knowledge_claims
@@ -2360,24 +2757,17 @@ class HybridKnowledgeService:
         sanitized = _INTERNAL_UNC_PATTERN.sub("內部公槽資料夾", sanitized)
         sanitized = _INTERNAL_URL_PATTERN.sub("內部系統伺服器路徑", sanitized)
         sanitized = _INTERNAL_IP_PATTERN.sub("內部伺服器位址", sanitized)
-        # 3. If proxy disabling, cert bypass, or browser security lowering is detected without policy qualification
+        # 3. Security-sensitive bypass / lowering needs POLICY-SEC-003 text+ID.
+        # Keyword hedges like「權責單位」alone are not enough without the marker.
         needs_advisory = bool(
             _PROXY_DISABLE_PATTERN.search(sanitized)
             or _CERT_BYPASS_PATTERN.search(sanitized)
             or _IE_SECURITY_LOWERING_PATTERN.search(sanitized)
         )
-        if needs_advisory:
-            policy_markers = (
-                "權責單位",
-                "資訊部門",
-                "管控政策",
-                "企業政策",
-                "資安政策",
-                "IT 支援窗口",
-                "經核准",
-            )
-            if not any(marker in sanitized for marker in policy_markers):
-                sanitized = f"{sanitized}{_SECURITY_POLICY_ADVISORY}"
+        if needs_advisory and "[POLICY-SEC-003]" not in sanitized:
+            sanitized = ensure_policy_text_and_id_paired(sanitized)
+        if needs_advisory and "[POLICY-SEC-003]" not in sanitized:
+            sanitized = f"{sanitized}{_SECURITY_POLICY_ADVISORY}"
         # 4. Drop fabricated test-link "policy" sentences (not any POLICY-SEC scope).
         sanitized = _TEST_LINK_POLICY_SENTENCE_RE.sub("", sanitized)
         # 4b. Separate citation markers from UI key brackets (QB-055).
@@ -2397,9 +2787,18 @@ class HybridKnowledgeService:
             sanitized = sanitized.replace("[POLICY-SEC-003]", "")
         sanitized = re.sub(r"[ \t]{2,}", " ", sanitized)
         sanitized = re.sub(r"[。]{2,}", "。", sanitized)
+        # Pair bare policy wording with IDs before pruning uncited policy prose.
+        sanitized = ensure_policy_text_and_id_paired(sanitized)
+        sanitized = ensure_visual_security_inventory_caveats(sanitized)
         # Marker stripping can leave uncited policy prose; prune again.
         sanitized = HybridKnowledgeService._prune_uncited_material_sentences(
             sanitized.strip()
+        )
+        # Unpack inline numbered steps that were merged on a single line
+        sanitized = re.sub(
+            r"(?<!\n)(?:([：:。；;!?！？])\s*|(\s+))(\d+)\.\s+",
+            r"\1\n\3. ",
+            sanitized,
         )
         return sanitized.strip()
 

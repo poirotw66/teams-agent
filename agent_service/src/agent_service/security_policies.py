@@ -64,6 +64,103 @@ PROXY_ADVISORY_TEXT = (
     "切勿擅自變更或停用安全防護設定。"
 )
 
+# Topics that legitimately activate POLICY-SEC-003 (keep in sync with answer sanitize).
+SEC003_APPLICABLE_SCOPE_RE = re.compile(
+    r"(?:Proxy|代理伺服器|憑證設定|變更憑證|忽略憑證|繞過憑證|關閉\s*Proxy|停用\s*Proxy|"
+    r"安全性區域|受保護模式|信任的網站|安全等級|"
+    r"簽章無效|即使簽章無效|忽略簽章|繞過簽章|憑證錯誤)",
+    re.IGNORECASE,
+)
+
+# Bare SEC-003 reminders that must keep the policy ID alongside the wording.
+_BARE_SEC003_REMINDER_RE = re.compile(
+    r"(?P<clause>"
+    r"(?:此外[，,]?\s*)?"
+    r"(?:進行任何)?安全性設定變更前[^。\n]{0,40}向權責單位確認"
+    r"|變更(?:前|安全性設定前)[^。\n]{0,40}向權責單位確認"
+    r"|變更安全性設定前[^。\n]{0,40}確認"
+    r"|(?:請先|請務必|建議)?(?:向|洽詢)權責單位確認[^。\n]{0,24}"
+    r")(?P<tail>\s*[。.]?)(?!\s*\[POLICY-SEC-003\])",
+    re.IGNORECASE,
+)
+
+
+def ensure_policy_text_and_id_paired(answer: str) -> str:
+    """Attach policy IDs when in-scope advisory wording lacks a marker.
+
+    Only pairs reminders when the answer already discusses SEC-003 topics
+    (Proxy / certificate / invalid signature). Generic hedges alone must not
+    mint a POLICY-SEC-003 citation.
+    """
+    if not answer or "[POLICY-SEC-003]" in answer:
+        return answer
+    if not SEC003_APPLICABLE_SCOPE_RE.search(answer):
+        return answer
+
+    def _attach(match: re.Match[str]) -> str:
+        clause = match.group("clause").rstrip("。. ")
+        tail = match.group("tail") or "。"
+        if not tail.strip():
+            tail = "。"
+        return f"{clause} [POLICY-SEC-003]{tail}"
+
+    return _BARE_SEC003_REMINDER_RE.sub(_attach, answer)
+
+
+_VISUAL_SECURITY_CONTROL_RE = re.compile(
+    r"即使簽章無效|簽章無效也允許|可見「?即使簽章無效",
+    re.IGNORECASE,
+)
+_VISUAL_LIMIT_MARKERS = (
+    "僅為視覺",
+    "只代表視覺",
+    "畫面僅",
+    "僅證明",
+    "不得將畫面",
+    "不可將畫面",
+    "不能將畫面",
+    "不得據此作為通用",
+    "不可轉為通用",
+    "不能視為通用",
+    "不得轉成普遍",
+    "不得作為通用排障",
+    "不得普遍啟用",
+)
+_MISSING_COMPONENT_MARKERS = (
+    "名稱未詳",
+    "未提供元件",
+    "元件名稱",
+    "適用範圍",
+    "未提供版本",
+    "版本、來源",
+    "來源或適用",
+)
+_VISUAL_SECURITY_INVENTORY_CAVEAT = (
+    "文件畫面僅證明該控制項可見且已勾選，不得據此作為通用排障步驟或普遍啟用建議。"
+    "來源若未提供元件名稱、版本、來源或適用範圍（例如記載為名稱未詳），"
+    "在權責流程確認前不得自行啟用或擴大套用。"
+)
+
+
+def ensure_visual_security_inventory_caveats(answer: str) -> str:
+    """Keep visual inventory of risky security controls from becoming enablement advice.
+
+    Applies when the answer discusses invalid-signature allow controls. Softens
+    normative「應為已勾選」wording and appends missing must-answer caveats.
+    """
+    if not answer or not _VISUAL_SECURITY_CONTROL_RE.search(answer):
+        return answer
+    sanitized = re.sub(r"應為已勾選", "畫面顯示為已勾選", answer)
+    sanitized = re.sub(r"該項目應勾選", "該項目在畫面中顯示為已勾選", sanitized)
+    has_visual_limit = any(marker in sanitized for marker in _VISUAL_LIMIT_MARKERS)
+    has_missing_meta = any(marker in sanitized for marker in _MISSING_COMPONENT_MARKERS)
+    if has_visual_limit and has_missing_meta:
+        return sanitized
+    caveat = _VISUAL_SECURITY_INVENTORY_CAVEAT
+    if sanitized.rstrip().endswith(("。", ".", "！", "!")):
+        return f"{sanitized.rstrip()}{caveat}"
+    return f"{sanitized.rstrip()}。{caveat}"
+
 
 def build_answer_prompt_security_rules() -> str:
     """Derive prompt Rule 10 from SECURITY_POLICIES so text cannot drift from bodies."""

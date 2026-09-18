@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 
 from ai_ops_backoffice.evaluation_domain.baseline import (
     AgentTargetResult,
+    DEFAULT_JUDGE_MODEL_ID,
+    DEFAULT_JUDGE_REASONING_EFFORT,
     GeminiAnswerJudge,
     JudgeAssessment,
     KnowledgeBaselineCase,
@@ -47,7 +49,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token-env", default="GOLDEN_EVALUATION_TOKEN")
     parser.add_argument(
         "--judge-model",
-        default="google_genai:gemini-3.1-pro-preview",
+        default=DEFAULT_JUDGE_MODEL_ID,
+    )
+    parser.add_argument(
+        "--judge-effort",
+        choices=("minimal", "low", "medium", "high"),
+        default=DEFAULT_JUDGE_REASONING_EFFORT,
+        help="Gemini reasoning effort for the LLM judge.",
     )
     parser.add_argument("--agent-concurrency", type=int)
     parser.add_argument("--judge-concurrency", type=int)
@@ -307,6 +315,7 @@ def _build_report(
         },
         "judge": {
             "modelId": args.judge_model,
+            "reasoningEffort": args.judge_effort,
             "rubricVersion": "knowledge-answer-judge-v2",
         },
         "pipeline": {
@@ -361,7 +370,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         token=os.environ.get(args.token_env),
         groups=tuple(args.groups or ("grp_public",)),
     )
-    judge = GeminiAnswerJudge(model_id=args.judge_model)
+    judge = GeminiAnswerJudge(
+        model_id=args.judge_model,
+        reasoning_effort=args.judge_effort,
+    )
     agent_concurrency, judge_concurrency = _resolve_concurrency(args)
     target_readiness = _fetch_target_readiness(args.base_url)
     records_by_index: dict[int, dict[str, Any]] = {}

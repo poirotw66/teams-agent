@@ -2,6 +2,7 @@ from agent_service.documents import DocumentChunk
 from agent_service.retrieval import (
     HybridIndex,
     _embedding_models_compatible,
+    is_chunk_visible_to_groups,
     tokenize,
 )
 
@@ -89,3 +90,26 @@ def test_search_enforces_document_groups() -> None:
 
     assert index.search("VPN", limit=1, groups={"HR"}) == []
     assert index.search("VPN", limit=1, groups={"IT"})
+
+
+def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
+    public = DocumentChunk(
+        chunk_id="public",
+        title="公開",
+        source_path="sources/public.md",
+        content="公開內容",
+        allowed_groups=[],
+    )
+    restricted = DocumentChunk(
+        chunk_id="restricted",
+        title="限制",
+        source_path="sources/restricted.md",
+        content="限制內容",
+        allowed_groups=["IT"],
+    )
+
+    assert is_chunk_visible_to_groups(public, set()) is True
+    assert is_chunk_visible_to_groups(public, {"HR"}) is True
+    assert is_chunk_visible_to_groups(restricted, set()) is False
+    assert is_chunk_visible_to_groups(restricted, {"HR"}) is False
+    assert is_chunk_visible_to_groups(restricted, {"IT"}) is True

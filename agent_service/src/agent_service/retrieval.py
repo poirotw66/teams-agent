@@ -1,6 +1,7 @@
 import json
 import math
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,21 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot_product / (left_norm * right_norm)
 
 
+def is_chunk_visible_to_groups(
+    chunk: DocumentChunk,
+    groups: set[str] | None,
+) -> bool:
+    """Return whether Hybrid ACL allows the caller to see ``chunk``.
+
+    Empty ``allowed_groups`` means public. Otherwise the caller's groups must
+    intersect the document allowlist.
+    """
+    caller_groups = groups or set()
+    if not chunk.allowed_groups:
+        return True
+    return bool(set(chunk.allowed_groups).intersection(caller_groups))
+
+
 @dataclass(frozen=True)
 class SearchResult:
     chunk: DocumentChunk
@@ -81,6 +97,7 @@ class HybridIndex:
         self.embedding_model_name = embedding_model
         self.embedding_client = init_embeddings(embedding_model) if embedding_model else None
         self.tokenized_documents = [tokenize(sparse_index_text(chunk)) for chunk in chunks]
+        self.last_search_timings_ms: dict[str, float] = {}
 
     @classmethod
     def load(
@@ -179,23 +196,44 @@ class HybridIndex:
         *,
         environment: str = "dev",
     ) -> list[SearchResult]:
+        results, timings = self.search_with_timings(
+            query, limit, groups, environment=environment
+        )
+        self.last_search_timings_ms = timings
+        return results
+
+    def search_with_timings(
+        self,
+        query: str,
+        limit: int,
+        groups: set[str] | None = None,
+        *,
+        environment: str = "dev",
+    ) -> tuple[list[SearchResult], dict[str, float]]:
+        """Search and return per-call timings from locals (safe under parallel calls)."""
         groups = groups or set()
+        started = time.perf_counter()
         authorized_indices = [
             index
             for index, chunk in enumerate(self.chunks)
-            if (not chunk.allowed_groups or bool(set(chunk.allowed_groups).intersection(groups)))
+            if is_chunk_visible_to_groups(chunk, groups)
             and is_chunk_generation_eligible(
                 chunk,
                 environment=environment,
             )
         ]
+        sparse_started = time.perf_counter()
         sparse_scores = self._bm25_scores(query, authorized_indices)
+        sparse_ms = (time.perf_counter() - sparse_started) * 1000
         max_sparse = max(sparse_scores, default=0.0)
         normalized_sparse = [score / max_sparse if max_sparse else 0.0 for score in sparse_scores]
 
         query_vector: list[float] | None = None
+        embedding_ms = 0.0
         if self.embedding_client and any(chunk.vector for chunk in self.chunks):
+            embed_started = time.perf_counter()
             query_vector = self.embedding_client.embed_query(query)
+            embedding_ms = (time.perf_counter() - embed_started) * 1000
 
         results: list[SearchResult] = []
         for index in authorized_indices:
@@ -216,4 +254,10 @@ class HybridIndex:
             )
 
         results.sort(key=lambda item: item.score, reverse=True)
-        return [result for result in results[:limit] if result.score > 0]
+        filtered = [result for result in results[:limit] if result.score > 0]
+        timings = {
+            "embeddingMs": round(embedding_ms, 1),
+            "sparseMs": round(sparse_ms, 1),
+            "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
+        }
+        return filtered, timings

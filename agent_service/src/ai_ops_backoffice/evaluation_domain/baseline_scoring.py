@@ -206,6 +206,8 @@ def inconclusive_assessment(
     reason: str,
 ) -> JudgeAssessment:
     retrieval = score_retrieval(expected_sources, citations)
+    # Judge failure payloads can exceed the assessment reason cap; keep a usable prefix.
+    safe_reason = reason if len(reason) <= 2000 else f"{reason[:1997]}..."
     return JudgeAssessment(
         correctness=0.0,
         completeness=0.0,
@@ -216,5 +218,5 @@ def inconclusive_assessment(
         confidence=0.0,
         review_status="SINGLE_PASS",
         needs_human_review=True,
-        reason=reason,
+        reason=safe_reason,
     )

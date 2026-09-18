@@ -35,6 +35,19 @@ factual or procedural claim. For each claim, return SUPPORTED or UNSUPPORTED
 and cite only chunk IDs that appear in actual_citations. List every material
 required fact omitted from the candidate answer.
 
+Required-fact tiers (apply before marking incompleteness):
+- Must-answer: facts without which the question itself is not answered.
+  Example: when asked which data to collect, the data fields are must-answer.
+- Conditional must-answer: required only when the question or rubric explicitly
+  asks for that branch (platform, error code, date/auth state, etc.).
+- Bonus: adjacent process details that help but are not asked (for example
+  mailbox submission steps when the question only asks which fields to gather).
+  Bonus omissions must not by themselves force PARTIAL or FAIL.
+- Never-penalize-absent-evidence: do not list a missing required fact when that
+  fact is absent from actual_citations and the candidate correctly stays within
+  retrieved evidence. Prefer PARTIAL only when retrieved evidence could answer
+  the asked facet but the candidate omitted it.
+
 Provenance rules:
 - Knowledge document facts must be grounded only on document chunk IDs from
   actual_citations (typically retrieved knowledge chunks).
@@ -46,8 +59,11 @@ Provenance rules:
   do not treat a POLICY-SEC-* citation as evidence for document-specific facts.
 
 Verdicts:
-- PASS: correct, materially complete, grounded, and no material unsupported claim.
-- PARTIAL: useful and mostly correct, but materially incomplete or imprecise.
+- PASS: correct, materially complete for must-answer (and applicable conditional)
+  facts, grounded, and no material unsupported claim. Bonus gaps alone are OK.
+- PARTIAL: useful and mostly correct, but missing a must-answer or applicable
+  conditional fact that is supported by actual_citations, or imprecise on a
+  material asked facet.
 - FAIL: wrong, contradictory, ungrounded, unsafe, or does not answer the question.
 - INCONCLUSIVE: the supplied evaluation inputs are insufficient to decide.
 
@@ -74,6 +90,9 @@ return the most defensible assessment. Do not decide by majority or averaging.
 """
 EVIDENCE_CHUNK_MARKER = re.compile(r"\[chunkId=([^\]]+)\]")
 
+DEFAULT_JUDGE_MODEL_ID = "google_genai:gemini-3.8-flash"
+DEFAULT_JUDGE_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "high"
+
 
 class BaselineCase(Protocol):
     case_id: str
@@ -95,8 +114,11 @@ class GeminiAnswerJudge:
     def __init__(
         self,
         *,
-        model_id: str = "google_genai:gemini-3.1-pro-preview",
+        model_id: str = DEFAULT_JUDGE_MODEL_ID,
         model: BaseChatModel | None = None,
+        reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = (
+            DEFAULT_JUDGE_REASONING_EFFORT
+        ),
         max_attempts: int = 3,
         independent_review_confidence: float = 0.75,
     ) -> None:
@@ -107,13 +129,17 @@ class GeminiAnswerJudge:
         resolved_model = model or build_chat_model(
             model_id,
             temperature=0.0,
-            max_tokens=4096,
-            timeout=90.0,
+            # High reasoning effort can consume thinking tokens from the same
+            # output budget; keep headroom so structured JSON is not truncated.
+            max_tokens=16384,
+            timeout=120.0,
             max_retries=2,
+            reasoning_effort=reasoning_effort,
         )
         if resolved_model is None:
             raise ValueError("A judge model is required")
         self.model_id = model_id
+        self.reasoning_effort = reasoning_effort
         self._judge = resolved_model.with_structured_output(AnswerQualityAssessment)
         self._max_attempts = max_attempts
         self._review_confidence = independent_review_confidence

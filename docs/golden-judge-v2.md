@@ -12,8 +12,9 @@ decision cannot silently redefine both metrics.
    markers. Normal user responses retain the compact citation payload.
 3. Expected-source recall is calculated deterministically before the LLM Judge
    runs.
-4. `google_genai:gemini-3.1-pro-preview` evaluates correctness, completeness,
-   groundedness, material claims, and missing required facts.
+4. `google_genai:gemini-3.8-flash` with `reasoning_effort=high` evaluates
+   correctness, completeness, groundedness, material claims, and missing
+   required facts.
 5. Each supported claim must reference an observed evidence chunk ID.
 6. PARTIAL, INCONCLUSIVE, and low-confidence results receive an independent
    second review. Disagreeing verdicts receive a third adjudication and are
