@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~21 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | Ongoing — ~19 oversized files remain (was ~36); continue workflow/query/eval residuals |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -39,3 +39,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `teams_agent/viewer_sessions.py` 708→78 (`viewer_sessions_types/memory/file/gcs`)
 - `workers.py` 654→80 (`workers_retention/sync/budget/loops/lifespan`)
 - `services/source_trace.py` 653→153 (`release/locator/mapping/resolve/payload`)
+- `CaseDetailPage.tsx` 780→97 (`useCaseDetail`, header/body/modals/timeline)
+- `extractor.py` 699→425 (`extractor_invoke/fallback/normalize`)
