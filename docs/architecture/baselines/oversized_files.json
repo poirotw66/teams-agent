@@ -22,8 +22,7 @@
     "agent_service/src/knowledge_portal/services/version_service.py": 652,
     "console_frontend/src/features/improvements/pages/CaseDetailPage.tsx": 780,
     "console_frontend/src/features/knowledge/components/ChunkInspectorModal.tsx": 580,
-    "src/teams_agent/source_viewer.py": 544,
-    "src/teams_agent/viewer_sessions.py": 708
+    "src/teams_agent/source_viewer.py": 544
   },
   "max_new_file_lines": 500
 }
