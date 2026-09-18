@@ -7,8 +7,8 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 
 | Command | Purpose |
 |---|---|
-| `uv run python scripts/check_architecture.py` | Reverse-import allowlist, file-size ratchet, function-size ratchet |
-| `uv run python scripts/check_architecture.py --write-baselines` | Refresh size/import baselines after intentional shrinks |
+| `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet |
+| `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories |
 | `PYTHONPATH=../src:src uv run --directory agent_service python ../scripts/check_wire_contracts.py` | Adapter ↔ Agent wire-field compatibility |
 | Golden / release / frontend steps | Named jobs in `.github/workflows/ci.yml` |
@@ -19,9 +19,11 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
 
 1. Domain packages must not add new reverse imports beyond `baselines/reverse_imports.json` (currently empty).
 2. New production source files must stay at or below 500 lines.
-3. Existing oversized files and functions may shrink, but must not grow past their baseline.
-4. Public FastAPI routes/status codes/schema names are pinned under `baselines/openapi/`.
-5. `platform_kernel` holds shared ports only and must not import domain packages.
+3. Existing oversized files and functions may shrink, but must not grow past their baseline. Shrinks auto-tighten the baseline JSON on check (`BASELINE_TIGHTENED`); commit the rewrite.
+4. Ownership edges `ai_ops_backoffice->agent_service` and `knowledge_portal->agent_service` are capped by `baselines/importer_counts.json` (must not grow).
+5. Public FastAPI routes/status codes/schema names are pinned under `baselines/openapi/`.
+6. `platform_kernel` holds shared ports only and must not import domain packages.
+7. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
 
 ## Characterization suites
 

@@ -8,9 +8,17 @@ file ratchet or the 80-line function ratchet after the architecture refactor.
 1. **New production files** must stay at or below 500 lines (`scripts/check_architecture.py`).
 2. **Existing oversized files/functions** must not grow past the counts in
    `docs/architecture/baselines/oversized_*.json`. Shrinks are always allowed.
-3. This document is the **explicit exception rationale** required by
+3. **Monotonic shrink (Phase C):** a normal `check_architecture.py` run auto-tightens
+   size baselines when current sizes are below the stored caps. The rewritten JSON
+   must be committed (finding `BASELINE_TIGHTENED`). Do not rely on `--write-baselines`
+   for shrinks; that flag remains for full regeneration.
+4. **Ownership importer ratchet:** `baselines/importer_counts.json` caps distinct
+   importer files for `ai_ops_backoffice->agent_service` and
+   `knowledge_portal->agent_service`. Counts must not grow (`IMPORTER_COUNT_GREW`);
+   shrinks auto-tighten (`IMPORTER_COUNT_TIGHTENED`).
+5. This document is the **explicit exception rationale** required by
    `docs/project-architecture-refactor-plan-20260918.md` §10 item 6.
-4. Review date: **2026-12-18**. Owners must either shrink the file below the
+6. Review date: **2026-12-18**. Owners must either shrink the file below the
    threshold or renew the waiver with an updated reason.
 
 ## Current inventory
@@ -19,14 +27,18 @@ Baselines are the machine-checked source of truth:
 
 | Baseline | Purpose |
 |---|---|
-| `baselines/oversized_files.json` | Files still above 500 lines |
-| `baselines/oversized_functions.json` | Functions still above 80 lines |
+| `baselines/oversized_files.json` | Files still above 500 lines (monotonic upper bound) |
+| `baselines/oversized_functions.json` | Functions still above 80 lines (monotonic upper bound) |
 | `baselines/reverse_imports.json` | Forbidden reverse-import allowlist (must stay empty) |
+| `baselines/importer_counts.json` | Ownership-edge importer file counts (must not grow) |
+| `baselines/size_waivers.json` | Optional per-symbol waiver stub (`waivers: []`; expiry no-op while empty) |
 
-Regenerate after intentional shrinks:
+After intentional shrinks, run check (auto-tightens) and commit the JSON, or fully regenerate:
 
 ```bash
-uv run python scripts/check_architecture.py --write-baselines
+uv run python scripts/check_architecture.py
+# If BASELINE_TIGHTENED / IMPORTER_COUNT_TIGHTENED: commit rewritten baselines, re-run
+uv run python scripts/check_architecture.py --write-baselines  # full refresh
 ```
 
 ## Waiver classes

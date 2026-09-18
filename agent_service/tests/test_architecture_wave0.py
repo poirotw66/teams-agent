@@ -48,6 +48,7 @@ def test_architecture_baselines_exist() -> None:
         BASELINES / "oversized_files.json",
         BASELINES / "oversized_functions.json",
         BASELINES / "reverse_imports.json",
+        BASELINES / "importer_counts.json",
         BASELINES / "openapi" / "agent_service.routes.json",
         BASELINES / "openapi" / "knowledge_portal.routes.json",
         BASELINES / "openapi" / "ai_ops_backoffice.routes.json",
@@ -142,4 +143,90 @@ def test_domain_to_composition_edges_are_forbidden() -> None:
     assert "agent_service->composition" in payload["forbidden_edges"]
     assert "ai_ops_backoffice->composition" in payload["forbidden_edges"]
     assert "knowledge_portal->composition" in payload["forbidden_edges"]
+
+
+def test_tighten_size_baseline_caps_at_current() -> None:
+    checker = _load_script(
+        "check_architecture_tighten",
+        SCRIPTS / "check_architecture.py",
+    )
+    extractor = "agent_service/src/agent_service/extractor.py"
+    tightened = checker.tighten_size_baseline(
+        {extractor: 978},
+        {extractor: 802},
+        max_lines=500,
+    )
+    assert tightened == {extractor: 802}
+
+
+def test_file_growth_after_tighten_is_rejected() -> None:
+    """Shrink becomes the new cap; silent re-growth past that cap must fail."""
+    checker = _load_script(
+        "check_architecture_regrow",
+        SCRIPTS / "check_architecture.py",
+    )
+    extractor = "agent_service/src/agent_service/extractor.py"
+    tightened = checker.tighten_size_baseline(
+        {extractor: 978},
+        {extractor: 802},
+        max_lines=500,
+    )
+    assert tightened == {extractor: 802}
+
+    findings = checker.check_file_sizes({extractor: 803}, baseline=tightened)
+    assert any(finding.code == "FILE_GREW" for finding in findings)
+    grew = next(finding for finding in findings if finding.code == "FILE_GREW")
+    assert "802 -> 803" in grew.message
+
+
+def test_check_file_sizes_rejects_growth_from_tight_baseline() -> None:
+    checker = _load_script(
+        "check_architecture_file_grew",
+        SCRIPTS / "check_architecture.py",
+    )
+    extractor = "agent_service/src/agent_service/extractor.py"
+    findings = checker.check_file_sizes(
+        {extractor: 803},
+        baseline={extractor: 802},
+    )
+    assert any(finding.code == "FILE_GREW" for finding in findings)
+
+
+def test_importer_count_growth_is_rejected() -> None:
+    checker = _load_script(
+        "check_architecture_importer",
+        SCRIPTS / "check_architecture.py",
+    )
+    baseline = {
+        "ai_ops_backoffice->agent_service": 100,
+        "knowledge_portal->agent_service": 18,
+    }
+    current = {
+        "ai_ops_backoffice->agent_service": 101,
+        "knowledge_portal->agent_service": 18,
+    }
+    findings = checker.check_importer_counts(current, baseline)
+    assert any(finding.code == "IMPORTER_COUNT_GREW" for finding in findings)
+    grew = next(
+        finding for finding in findings if finding.code == "IMPORTER_COUNT_GREW"
+    )
+    assert "ai_ops_backoffice->agent_service" in grew.message
+    assert "100 -> 101" in grew.message
+
+
+def test_importer_count_tighten_reduces_cap() -> None:
+    checker = _load_script(
+        "check_architecture_importer_tighten",
+        SCRIPTS / "check_architecture.py",
+    )
+    baseline = {
+        "ai_ops_backoffice->agent_service": 110,
+        "knowledge_portal->agent_service": 20,
+    }
+    current = {
+        "ai_ops_backoffice->agent_service": 107,
+        "knowledge_portal->agent_service": 18,
+    }
+    tightened = checker.tighten_importer_counts(baseline, current)
+    assert tightened == current
 
