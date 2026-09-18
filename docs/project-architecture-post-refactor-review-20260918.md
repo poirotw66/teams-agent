@@ -1,844 +1,692 @@
-# 重構後專案架構複審與持續優化計畫
+# 專案架構重構後複審與持續優化計畫
 
-> 複審日期：2026-09-18  
-> Git 基準：`main@641aaa7`，並納入複審期間工作目錄內尚未提交的變更  
-> 原始計畫：`docs/project-architecture-refactor-plan-20260918.md`  
-> 範圍：Teams Adapter、Agent Runtime、Knowledge Portal、AI Ops Backoffice、React Console、architecture governance 與 CI  
-> 結論：**重構方向正確且已有顯著成果，但原計畫的完成定義尚未全部達成；目前應視為「主要熱點拆解完成、邊界收斂進行中」，不宜標示 Wave 0–5 全部完成。**
+> 複審日期：2026-09-18
+> Git 基準：`main@0b3ce32`
+> 前次基準：`main@641aaa7`
+> 原始計畫：`docs/project-architecture-refactor-plan-20260918.md`
+> 範圍：Teams Adapter、Agent/RAG Runtime、Knowledge Portal、AI Ops Backoffice、React Console、composition、contracts、CI 與部署拓樸
+> Repository 決策：**維持 repo-ready modular monorepo；先把 RAG 與 frontend 做到可獨立交付，暫不拆成兩個 repositories。**
 
 ## 1. 執行摘要
 
-這次重構不是無效的「把一個大檔切成很多小檔」。幾個最危險的熱點確實已被改善：
+本輪重構有實質成果，前次複審最嚴重的 architecture cycle、size gate 與 OpenAPI snapshot failure 已處理：
 
-- `knowledge.py` 從 2,838 行縮成 89 行 facade，主要行為移至 `knowledge_hybrid.py` 與 `knowledge_pipeline/`。
-- `workbench_router.py` 從 1,295 行縮成 10 行 compatibility shim，routes 依功能拆分。
-- `ReleaseService` 從 1,063 行縮成 288 行，release transitions、activation、publish、rollback 已有具名模組。
-- Backoffice `api.py` 從 989 行降到 60 行；Portal `api.py` 從 985 行降到 57 行。
-- `ConversationStream.tsx` 從 954 行降到 114 行。
-- React route ledger 已標示 30/30 routes 由 `/console-v2` 接手，production image 也改由 multi-stage build 從 TypeScript source 產生 bundle。
-- architecture ratchet、OpenAPI snapshot、wire compatibility、golden tests、release matrix 與 frontend job 已被加入 CI。
+- `agent_service`、`ai_ops_backoffice`、`knowledge_portal` 不再反向 import `composition`。
+- ASGI entry 已改由 `composition.agent_app`、`composition.backoffice_app` 與 `composition.portal_app` 組裝。
+- architecture checker 新增 Tarjan SCC cycle detection，目前 package graph 無 cycle。
+- reverse-import allowlist 目前為空，architecture check 通過。
+- OpenAPI snapshots 現在一致，先前的 duplicate operation ID warnings 已消失。
+- `src/teams_agent/contracts.py` 從 572 行降至 397 行，formatting 行為移至 `formatting.py`。
+- `agent_service/extractor.py` 從約 979 行降至 802 行，heuristics 移至 360 行的具名模組。
+- Knowledge、release、composition 與 portal regression tests 均通過。
+- 全套 Agent Service tests 為 1,708 passed；Teams Adapter tests 為 213 passed。
 
-然而，複審也發現四個必須先處理的事實：
+但專案仍不能標示為「架構重構全部完成」，原因如下：
 
-1. **目前 CI 不是綠的**：architecture ratchet 與 OpenAPI snapshot 都失敗。
-2. **新的 composition cycle 未被 architecture check 偵測**：`agent_service -> composition -> agent_service`，以及 Backoffice wiring 與 composition 之間也存在反向關係。
-3. **domain 邊界仍高度耦合**：Backoffice 有 224 個 imports 指向 Agent、Portal 有 37 個 imports 指向 Agent；目前只是消除了部分反向 import，尚未做到各 domain 只依賴 ports/kernel。
-4. **部分「Done」是形式完成**：Workbench persistence 仍在 router package、wire checker 不檢查型別與 TypeScript、frontend tests 只有兩個 source-regex smoke tests、legacy UI 仍保留約 23,000 行。
+1. **Required CI 仍會失敗**：Teams Adapter Ruff 有 1 個錯誤；Agent Service Ruff 有 859 個錯誤，其中 production source 771 個、tests 88 個。
+2. **Composition 已修正方向，但仍有 import-time side effects**：`composition/__init__.py` eager-import 三個 app modules，而各 module 都在 import 時執行 `app = create_*_app()`；啟動單一服務可能額外組裝其他服務。
+3. **無 cycle 不等於 domain 邊界健康**：Backoffice 仍有 115 個檔案 import Agent implementation，Portal 仍有 18 個檔案 import Agent implementation。這些 edges 沒被列為 forbidden，因此 checker 會通過。
+4. **Size baseline 不是單調 ratchet**：baseline 未在 shrink 後下修，`extractor.py` 可從 802 行重新長回 978 行而不失敗；`contracts.py` 可從 397 行長回 531 行而不失敗。
+5. **HTTP/application/persistence 邊界仍有穿透**：Workbench router package 直接讀寫 JSON；source routers 與 bootstrap 仍讀取 private members。
+6. **Repo-ready 目標尚未完成**：frontend 仍被 bake 進 Backoffice image，沒有 generated TypeScript client、獨立 frontend artifact/deploy 或跨版本 compatibility tests。
+7. **Frontend 品質門檻仍偏低**：只有 2 個 regex-based tests，production bundle 仍是單一約 2.12 MB chunk，store 仍同時管理多個 domains 與 production mock defaults。
 
-因此，下一階段不應繼續大規模拆檔，而應集中處理：
+因此，目前最準確的狀態是：
 
-1. 恢復 required CI 全綠。
-2. 修正 composition root 的依賴方向與 architecture checker 漏洞。
-3. 把共用 operations/knowledge 能力移出 `agent_service` 私有命名空間。
-4. 完成 HTTP/application/persistence 邊界。
-5. 把 RAG backend 與 frontend 建成立即可獨立建置、測試、部署的 workspace，並以 OpenAPI generated client 作為唯一整合邊界。
-6. 將 schema、frontend test 與 legacy removal 從「有機制」提升為「真正可防回歸」。
-
-Repository 策略採用 **repo-ready modular monorepo**：RAG 系統與前端在責任、contract、build、test、artifact、deploy 上立即分離，但目前保留在同一個 repository。待 API 與團隊 ownership 穩定且符合拆分門檻後，才進行不改產品行為的 repository 搬遷。
+> **主要循環與幾個高風險熱點已處理，架構治理開始可用；下一階段應從「拆檔」轉向「讓 CI 可信、讓邊界可執行、讓前後端可獨立交付」。**
 
 ## 2. 複審方法與限制
 
-本次複審採用：
+本次複審採用以下方法：
 
-- 原始重構計畫的完成定義逐項驗收。
-- Python AST 統計檔案、函式與 package imports。
-- 檢查 FastAPI app factories、bootstrap、routers、ports 與 adapters。
-- 檢查 Knowledge pipeline、Release workflow 與 React feature split。
-- 執行 architecture、OpenAPI、wire-contract、frontend build/test 與關鍵 characterization tests。
-- 檢查 CI、Docker build、route ledger、architecture baselines 與 waivers。
+- 比對 `641aaa7..0b3ce32` 的實際變更。
+- 執行 architecture、OpenAPI、wire-contract、Ruff、frontend build/test。
+- 執行 Teams Adapter 與 Agent Service 全套 tests。
+- 以 Python AST 統計 package dependency edges、檔案大小與函式大小。
+- 檢查 composition、app factories、routers、bootstrap、settings、ports、Dockerfiles 與 CI workflow。
+- 檢查 frontend store、API types、tests、bundle 與 legacy UI。
 
-限制：
+本文件的判定原則：
 
-- 本次未執行完整 58,000+ 行 Python test suite；已執行架構與主要重構邊界的針對性測試。
-- 行數與 import 數量是風險訊號，不單獨等同設計品質。
-- 工作目錄在複審期間存在尚未提交的程式碼與 governance data 變更；本文件只記錄狀態，不修改或回復它們。
+- 原始碼與測試是權威來源；文件中的 `Done` 不自動視為完成。
+- 行數只代表風險訊號，不代表一定要拆分。
+- 測試通過證明現有 assertions 通過，不代表 architecture boundary 已經正確。
+- 本次只更新文件，未修改 production code、tests、baselines 或 generated assets。
 
-## 3. 重構前後量化比較
+## 3. 前次問題的複驗結果
 
-### 3.1 Production source
-
-統計排除 tests、`node_modules`、static generated bundle、data、outputs、artifacts 與 `__pycache__`。
-
-| 指標 | 重構前 | 現況 | 變化 | 判讀 |
-|---|---:|---:|---:|---|
-| Production source files | 365 | 553 | +188 | 拆分與新功能造成，單獨不視為退化 |
-| Production LOC | 100,026 | 108,375 | +8,349 | 功能成長與 compatibility layers 使總量增加 |
-| >300 行檔案 | 118 | 117 | -1 | 中型模組密度幾乎未下降 |
-| >500 行檔案 | 56 | 47 | -9 | 有改善，但仍有大量 residuals |
-| >800 行檔案 | 20 | 13 | -7 | 高風險巨型檔案明顯下降 |
-| >80 行 Python functions | 未建立可比基準 | 175 | — | 仍是主要維護風險 |
-| >150 行 Python functions | 未建立可比基準 | 53 | — | 多數集中在 evaluation、governance、settings、workflow |
-| >250 行 Python functions | 未建立可比基準 | 13 | — | 尚未達成原 80 行目標 |
-| >250 行 router modules | 原先多個巨型 registrar | 3 | — | HTTP 拆分成效良好，但未清零 |
-
-總 LOC 上升並不否定這次重構。真正的改善在於極端熱點下降、app factory 變薄、路由與流程有明確名稱。問題在於中型複雜度仍大量存在，且部分切分仍共享原本的私有 state。
-
-### 3.2 主要熱點前後
-
-| 原熱點 | 重構前 | 現況 | 判定 |
-|---|---:|---|---|
-| `agent_service/knowledge.py` | 2,838 | facade 89；`knowledge_hybrid.py` 438；pipeline 分散於 20+ modules | **顯著改善，仍需降低 callback/private-host 耦合** |
-| `workbench_router.py` | 1,295 | shim 10；功能 routes 已拆 | **檔案完成拆分，但 persistence 仍留在 HTTP package** |
-| `ReleaseService` | 1,063 | facade 288；release package 2,000+ LOC | **流程具名化成功，ports 尚未完全落地** |
-| Backoffice `api.py` | 989 | 60 | **達標** |
-| Portal `api.py` | 985 | 57 | **達標** |
-| `ConversationStream.tsx` | 954 | 114 | **達標** |
-| `workbenchStore.ts` | 799 | compatibility export 5；implementation 429 | **改善，但仍是全域 mega-store** |
-| `source_routes.py` | 917 | 917 | **未處理** |
-| `eval_runtime.py` | 1,019 | 1,019 | **未處理** |
-| `extractor.py` | 約 979 | 約 979 | **未處理** |
-
-### 3.3 現況最大 production 檔案
-
-| 檔案 | 約略行數 | 下一步 |
-|---|---:|---|
-| `ai_ops_backoffice/governance_domain/eval_runtime.py` | 1,019 | 把 Agent runtime adapter 與 sandbox construction 分離 |
-| `agent_service/extractor.py` | 979 | 拆 deterministic intent policy、model adapter、normalizer |
-| `evaluation_domain/repository.py` | 976 | 分開 domain port、serialization、File/Firestore adapters |
-| `evaluation_domain/runner.py` | 974 | 拆 single-turn、multi-turn、comparison、checkpoint |
-| `teams_agent/source_routes.py` | 917 | 拆 source serving、viewer auth、SSO callback、session routes |
-| `quality_domain/service.py` | 903 | 依 use case 拆 application services |
-| `evaluation_domain/gate_repository.py` | 885 | 分離 gate policy、decision、schedule persistence |
-| `teams_agent/source_links.py` | 867 | 分離 resolver、URL signer、source mapping |
-| `faq_domain/service.py` | 866 | 依 draft/review/activate/test use cases 拆分 |
-| `governance_routes.py` | 845 | 仍有 630 行 registrar；依 governance resource 拆 routers |
-
-## 4. 原完成定義逐項驗收
-
-| 原完成定義 | 狀態 | 複審結論 |
+| 前次問題 | 現況 | 判定 |
 |---|---|---|
-| 1. Domain dependency graph 無循環且 CI 可驗證 | **未達成** | 原先 Agent→Backoffice cycle 已移除，但新增 Agent→Composition→Agent cycle；checker 未禁止所有 domain→composition edges |
-| 2. App factory/router 不含 repository selection 或主要商業流程 | **部分達成** | 三個 app factory 已達標；Workbench routes 仍直接讀寫 JSON，source routes 仍讀 private state |
-| 3. Knowledge/Release 由具名 stage/use case 組成 | **大致達成** | 模組與 tests 已建立；但 facade/host/callback 與 direct Agent imports 顯示 ports 尚未完全收口 |
-| 4. Wire schema 有單一來源或自動 compatibility check | **部分達成** | 有 checker，但只比 Python 欄位名稱；不檢查型別、requiredness、enum、alias、nested schema 或 TypeScript |
-| 5. React 是唯一 active UI，legacy 已退場 | **部分達成** | 預設產品路徑已是 React；legacy 約 23,000 行仍可由 kill switch 啟用，尚未刪除 |
-| 6. 不再新增 >500 行檔案，residuals 完成 ratchet/例外治理 | **未達成** | ratchet 存在但目前失敗；47 個 >500 行檔案、175 個 >80 行函式；waiver 類別過於寬鬆 |
-| 7. Architecture/schema/frontend/golden/release checks 為 required CI | **形式達成、實際紅燈** | jobs 已加入，但 architecture 與 OpenAPI 當前失敗；frontend test 只做 source regex |
-| 8. README、route ledger、build 與 runtime topology 一致 | **部分達成** | runtime 表與 route ledger 已更新；但 README 宣稱「domain 不反向 import 且 CI enforce」與實際不符 |
+| Architecture ratchet failure | `check_architecture.py` 通過 | **已關閉** |
+| OpenAPI snapshot drift | snapshots match | **已關閉** |
+| Agent→Composition cycle | domain→composition imports 已移除 | **已關閉** |
+| Backoffice→Composition cycle | 已改由 runtime hook/factory injection | **已關閉** |
+| Checker 不偵測 SCC | 已加入 Tarjan SCC detection | **已關閉** |
+| `contracts.py` 成長 | 572→397，formatting 抽出 | **已關閉** |
+| `_handle_message()` 成長 | architecture gate 已恢復通過 | **已關閉** |
+| `extractor.py` 巨型檔案 | 約 979→802 | **改善，未完成** |
+| Workbench router persistence | JSON I/O 仍在 router package | **未處理** |
+| Router private state | source routes/bootstrap 仍存在 | **未處理** |
+| Backoffice/Portal→Agent imports | 115/18 importer files | **未處理** |
+| Wire schema coverage | 仍只比對 Python 欄位名稱 | **未處理** |
+| Generated TypeScript API client | 不存在 | **未處理** |
+| Frontend behavioral tests | 仍只有 2 個 source-regex tests | **未處理** |
+| Single frontend bundle | 仍約 2.12 MB | **未處理** |
+| Legacy UI retirement | 約 18,097 LOC，kill switch 仍存在 | **部分改善** |
+| Ruff required CI | Adapter 1 error；Agent 859 errors | **新的 P0** |
 
-## 5. 已完成且應保留的設計
+## 4. 量化現況
 
-### 5.1 薄 app factory
+### 4.1 Production source
 
-三個主要 app factories 已縮至約 51–60 行。這是正確方向：
+統計排除 tests、`node_modules`、static generated bundles、data、outputs、artifacts 與 caches。
 
-- Backoffice 使用 `bootstrap.container`、`error_handlers`、`register_routes`。
-- Portal 使用 `bootstrap.container` 與分組 routers。
-- Agent route registration 本身維持簡單。
+| 指標 | 前次複審 | 現況 | 變化 | 判讀 |
+|---|---:|---:|---:|---|
+| Production source files | 553 | 561 | +8 | 新增具名模組與 composition entrypoints |
+| Production LOC | 108,375 | 108,486 | +111 | 總量近乎持平 |
+| >300 行檔案 | 117 | 116 | -1 | 中型模組密度仍高 |
+| >500 行檔案 | 47 | 46 | -1 | 改善有限 |
+| >800 行檔案 | 13 | 13 | 0 | 極端熱點未繼續下降 |
+| >80 行 Python functions | 175 | 173 | -2 | 仍有大量流程型函式 |
+| >150 行 Python functions | 53 | 52 | -1 | 改善有限 |
+| >250 行 Python functions | 13 | 13 | 0 | 主要 orchestration 熱點未動 |
 
-後續修正 composition cycle 時應保留這個特性，不要把 wiring 再塞回 `api.py`。
+本輪不是無效重構：總 LOC 幾乎未增加，且 contracts/extractor 確實縮小。不過整體複雜度只小幅下降，下一輪不能只依靠檔案搬移。
 
-### 5.2 Knowledge pipeline 拆分
+### 4.2 主要改善
 
-目前已有 planner、retrieval、relevance、generation、grounding、citation、trace 等具名模組，並新增文件選擇與 generator policy tests。這已讓純 policy 能獨立測試，也是本次重構最有價值的成果之一。
+| 模組 | 前次 | 現況 | 判定 |
+|---|---:|---:|---|
+| `src/teams_agent/contracts.py` | 572 | 397 | formatting responsibility 已分離 |
+| `src/teams_agent/formatting.py` | 不存在 | 212 | 新增 cohesive formatter module |
+| `agent_service/extractor.py` | 約 979 | 802 | heuristics 與部分 invocation flow 已抽出 |
+| `extractor_heuristics.py` | 不存在 | 360 | 純 heuristic policy 有明確位置 |
+| `knowledge_portal/draft_assets.py` | 約 617 | 531 | asset validation 抽出 |
+| `knowledge_portal/asset_validation.py` | 不存在 | 156 | validation boundary 改善 |
+| `knowledge_bridge/routes.py` | 約 482 | 268 | route orchestration 縮小 |
+| `routers/sources/file.py` | 約 240 | 107 | file streaming responsibility 分離 |
 
-下一步應是收斂介面，而不是再次重新命名或搬檔。
+### 4.3 最大 production files
 
-### 5.3 Release state transitions
+| 檔案 | 行數 | 建議方向 |
+|---|---:|---|
+| `governance_domain/eval_runtime.py` | 1,018 | Agent runtime adapter、sandbox、invocation 分離 |
+| `evaluation_domain/repository.py` | 975 | port、serialization、File/Firestore adapters 分離 |
+| `evaluation_domain/runner.py` | 973 | single-turn、multi-turn、comparison、checkpoint 分離 |
+| `teams_agent/source_routes.py` | 916 | source serving、viewer auth、SSO/session 分離 |
+| `quality_domain/service.py` | 902 | 依 use case 拆 application services |
+| `evaluation_domain/gate_repository.py` | 884 | policy、decision、schedule persistence 分離 |
+| `teams_agent/source_links.py` | 866 | resolver、signer、mapping 分離 |
+| `faq_domain/service.py` | 865 | draft/review/activate/test use cases 分離 |
+| `governance_routes.py` | 844 | 依 governance resource 拆 router registrar |
+| `evaluation_domain/gate_service.py` | 821 | gate evaluation 與 activation coordination 分離 |
+| `evaluation_domain/service.py` | 813 | command/query application services 分離 |
+| `agent_service/extractor.py` | 802 | model invocation、normalization、fallback 分離 |
 
-Release 已有 `transitions.py`、`coordinator.py`、`activation.py`、publish/rollback/promote modules 與 failure matrix tests。原本隱藏在單一方法內的 compensation 分支已較可見。
+### 4.4 最大 functions
 
-應保留 explicit state transition，不引入通用 workflow framework。
+| Symbol | 行數 | 風險 |
+|---|---:|---|
+| `source_routes.py::create_source_router` | 703 | 單一 registrar 擁有過多 auth/session/source behaviors |
+| `governance_routes.py::register_governance_routes` | 630 | HTTP surface 與 use cases 高度聚合 |
+| `workers.py::install_background_runtime` | 554 | scheduling、lifecycle、dependencies 混合 |
+| `BackofficeSettings.from_env` | 359 | env parsing 與全部 domain configuration 聚合 |
+| `query_conversations.py::list_conversations` | 299 | query shaping、join、filter 混合 |
+| `PortalSettings.from_env` | 286 | 同上 |
+| `publisher.py::build_release` | 273 | release assembly 流程仍集中 |
+| `generation_stage.py::generate_grounded_answer` | 270 | generation orchestration 仍過長 |
+| `generation_retries.py::apply_generation_retries` | 261 | retry policies 仍以大型程序實作 |
 
-### 5.4 React route ownership與 production build
+## 5. 實際驗證結果
 
-- route ledger 已列出 30/30 React-owned routes。
-- `/` 預設 redirect 到 `/console-v2/dashboard`。
-- `Dockerfile.backoffice` 已使用 `npm ci` + `npm run build` 的 multi-stage build。
-
-這三項解決了「source 與 production bundle 不一致」的主要風險。後續應補 bundle freshness 或直接停止提交 hash bundle，而不是回到人工 copy。
-
-## 6. 目前最重要的架構問題
-
-### P0-1：Required CI 當前失敗
-
-#### Architecture ratchet
-
-實際執行結果：
-
-```text
-[FILE_GREW] src/teams_agent/contracts.py 531 -> 572 lines
-[FUNC_GREW] src/teams_agent/agent.py::_handle_message 123 -> 127 lines
-```
-
-對應 `test_architecture_wave0.py` 也因此 1 failed、11 passed。
-
-不建議直接執行 `--write-baselines` 把成長合法化。應先：
-
-1. 將 Adapter response parsing/formatting 從 `contracts.py` 移至 `wire_parsing.py` 或 `response_parser.py`。
-2. 把 `_handle_message()` 的 progress/error/render branches 拆成具名 use cases。
-3. 只有在檔案確實縮小後才更新 baseline。
-
-#### OpenAPI snapshot
-
-實際執行結果：
-
-- baseline：213 Backoffice routes。
-- current：215 routes。
-- 新增 `GET /legacy` 與 `GET /legacy/` 未更新 snapshot。
-- FastAPI 同時警告兩組 duplicate operation IDs：source file GET/HEAD、knowledge proxy multi-method route。
-
-應先判定 `/legacy` 是否為正式支援 contract。若是，補安全與 redirect tests 後更新 snapshot；若不是，不應將 emergency route 加入 public API surface。
-
-Duplicate operation IDs 必須修正，否則 OpenAPI client generation 可能覆寫 methods。建議為每個 method 使用獨立 handler 或明確且唯一的 `operation_id`。
-
-### P0-2：Composition root 方向錯誤，形成新循環
-
-現況 import graph 包含：
-
-```text
-agent_service -> composition
-composition -> agent_service
-
-ai_ops_backoffice -> composition
-composition -> ai_ops_backoffice
-
-ai_ops_backoffice -> knowledge_portal
-composition -> knowledge_portal
-```
-
-具體來源：
-
-- `agent_service/api.py` 在 `create_app()` 內匯入並執行 `composition.agent_hooks.install_agent_hooks()`。
-- `composition/agent_hooks.py` 再匯入 Agent 與 Backoffice implementations。
-- `ai_ops_backoffice/bootstrap/wiring.py` 匯入 `composition.portal_app` 以建立 in-process Portal。
-
-Composition root 的正確方向應是 composition 匯入 domains；domain 不得回頭匯入 composition。
-
-#### 建議目標
-
-```text
-composition.agent_app
-  -> agent_service.create_core_app(dependencies)
-  -> backoffice adapters
-
-composition.portal_app
-  -> knowledge_portal.create_core_app(ports)
-  -> backoffice adapters
-
-composition.backoffice_app
-  -> ai_ops_backoffice.create_core_app(container)
-  -> optional in-process portal app
-```
-
-具體修正：
-
-1. 新增 `composition/agent_app.py`，由它安裝 hooks／建立 adapters，再呼叫 Agent core app factory。
-2. `agent_service/api.py` 不匯入 composition；它只接受已建立的 runtime dependencies。
-3. `agent_service/main.py` 的 uvicorn target 改指向 `composition.agent_app:app`。
-4. in-process Portal 應由 `composition/backoffice_app.py` 建立後注入 Backoffice，不由 Backoffice bootstrap 匯入 composition。
-5. architecture checker 禁止所有 domain packages 指向 composition。
-
-### P0-3：Architecture checker 只阻擋部分 edges，無法證明「無循環」
-
-目前 `FORBIDDEN_EDGES` 遺漏：
-
-- `agent_service -> composition`
-- `ai_ops_backoffice -> composition`
-- `knowledge_portal -> composition`
-- `ai_ops_backoffice -> knowledge_portal`
-- 大量 `ai_ops_backoffice -> agent_service`
-- 大量 `knowledge_portal -> agent_service`
-
-因此 baseline allowlist 為空，不代表 dependency graph 無循環，只代表預先列出的少數 forbidden edges 沒有被使用。
-
-建議把 checker 改為：
-
-1. 先建立完整 package graph。
-2. 用 strongly connected components 偵測任何 cycle。
-3. 定義完整 allowed-edge matrix，而不是只定義少數 forbidden edges。
-4. composition 可依賴所有 domains；任何 domain 都不得依賴 composition。
-5. domain-to-domain 只允許明確的 integration adapter package，且需逐 edge 說明。
-6. CI 將目前 graph 輸出成可 review 的 JSON/DOT artifact。
-
-### P0-4：架構文件宣稱全部 Done，與實際狀態不符
-
-`docs/architecture/README.md` 目前將 Wave 0–5 全部標示 Done，README 也宣稱 domain 之間不可反向 import 且 CI 已 enforce。依本次複審，這兩項陳述不成立。
-
-建議狀態調整為：
-
-| Wave | 建議狀態 |
+| 驗證 | 結果 |
 |---|---|
-| 0 Architecture ratchet | **Implemented / currently failing** |
-| 1 Kernel + composition | **Partial：ports 已有，composition direction 待修** |
-| 2 HTTP / workbench | **Partial：routes 已拆，persistence boundary 待修** |
-| 3 Knowledge + Release | **Substantially complete：ports/facades 尚待收口** |
-| 4 React ownership | **Default path complete / legacy removal pending** |
-| 5 Governance | **Partial：gates 已建立，但 coverage 與 baseline policy 不足** |
+| Architecture checker | **通過** |
+| OpenAPI snapshots | **通過** |
+| Wire-contract checker | **通過但有 warning**：`Citation.originalUrl` 只存在 Adapter |
+| Architecture + release matrix tests | **15 passed** |
+| Knowledge selection/generator/pipeline tests | **17 passed** |
+| Portal/playground regression tests | **37 passed，1 warning** |
+| Teams Adapter full pytest | **213 passed，4 warnings** |
+| Agent Service full pytest | **1,708 passed，6 warnings** |
+| Frontend tests | **2 passed**；僅為 source-regex smoke tests |
+| Frontend TypeScript/Vite build | **通過**；單一 JS 約 2.12 MB、gzip 約 632.55 KB |
+| Teams Adapter Ruff | **失敗**：1 個 unused import |
+| Agent Service Ruff | **失敗**：859 errors |
 
-## 7. Domain 邊界仍未收斂
+Agent Service Ruff 分布：
 
-### 7.1 Backoffice 對 Agent 內部實作依賴過深
+| 範圍 | 數量 | 主要問題 |
+|---|---:|---|
+| Production source | 771 | 681 unused imports、47 import ordering、2 undefined names 等 |
+| Tests | 88 | 47 unused imports、22 undefined names、13 import ordering 等 |
 
-目前 `ai_ops_backoffice -> agent_service` 約 224 個 imports，分布於 115 個檔案。其中：
+由於 `.github/workflows/ci.yml` 把兩個 Ruff steps 都列為 required job steps，目前不能宣稱 required CI 全綠。
 
-- `agent_service.operations.*`：156 imports／100 files。
-- `agent_service.extractor`：12 imports／12 files。
-- 另有 usage、graph、settings、knowledge、workflow、ticket、handoff、retrieval 等 implementation imports。
+## 6. 已完成且應保留的設計
 
-這表示 Backoffice 仍把 Agent package 當 shared kernel 與 runtime library。雖然 Agent 不再直接 import Backoffice domain implementation，但兩者仍無法真正獨立演進。
+### 6.1 Composition direction
 
-#### 建議
-
-- 將 Actor、audit、masking、operational events、taxonomy、scope 等真正共用的 operations domain 移到獨立 `operations_core` package，而不是全部塞進 `platform_kernel`。
-- Backoffice evaluation 對真實 Agent workflow 的依賴集中到單一 `adapters/agent_runtime.py`；evaluation domain 只依賴 `AgentEvaluationRuntime` port。
-- `build_chat_model`、Agent settings、workflow/handoff/ticket internals 不應散落在 Backoffice domain。
-- `platform_kernel` 保持小型 contract package，不接收 repository、service locator 或 runtime builders。
-
-### 7.2 Portal 對 Agent knowledge implementation 的所有權錯置
-
-目前 `knowledge_portal -> agent_service` 約 37 個 imports，分布於 18 個檔案，主要包括：documents、chunking、retrieval、release artifacts、target manifest、source refs 與 artifact storage。
-
-這些能力本質上同時被 knowledge authoring 與 runtime consumption 使用，不應由 Agent package單方面擁有。
-
-建議建立 `knowledge_core`：
-
-- documents/front matter/layout parsing；
-- chunking profiles；
-- release artifact/manifest identity；
-- source identity contract；
-- retrieval index contract；
-- knowledge release pointer abstractions。
-
-Agent Runtime 與 Knowledge Portal 都依賴 `knowledge_core`，避免 Portal 匯入 Agent implementation。
-
-## 8. HTTP、Application 與 Persistence 邊界
-
-### 8.1 Workbench 仍在 router package 直接存取 filesystem
-
-雖然 routes 已拆檔，但以下仍位於 `routers/workbench/`：
-
-- `persistence.py` 的 `load_json_safe()`／`save_json_safe()`。
-- `context.py` 直接載入 state、tickets、chunks。
-- FAQ、ticket、document、simulation routes 直接呼叫檔案 helper。
-
-這是物理拆檔完成、邏輯邊界未完成。
-
-建議：
+`composition` 現在是 outward dependency root：
 
 ```text
-application/workbench/
-  ports.py                 # WorkbenchStateRepository, TicketRepository, FaqRepository
-  overview.py
-  conversations.py
-  documents.py
-  tickets.py
-
-adapters/workbench/
-  file_state_repository.py
-  file_ticket_repository.py
-  portal_document_gateway.py
-
-routers/workbench/
-  ...                      # 只解析/授權/呼叫 use case/映射 response
+composition
+  -> agent_service
+  -> ai_ops_backoffice
+  -> knowledge_portal
 ```
 
-Application layer 不應接受十多個裸 `Callable`；應接受有型別的窄 ports。
+Domain packages 不再 import `composition`，這是正確修正。`agent_service.main`、`ai_ops_backoffice.main`、`knowledge_portal.main` 也已指向 composed ASGI apps。
 
-### 8.2 Router 仍存取 private state
+### 6.2 SCC cycle detection
 
-目前 source routes 仍使用：
+Architecture checker 已不再只依賴手寫 reverse edges，也會對完整 package graph 執行 strongly connected component detection。這能防止不同路徑形成的新循環，應保留並增加 fixture tests。
 
-- `query_service._source_trace`
-- `trace._active_release_id()`
-- `query_service._source_trace.source_repository`
+### 6.3 Thin app factories
 
-Bootstrap 也仍讀取 `_freshness_tracker`、`_runtime.settings`、`export_jobs._store_path` 等 private members。
+Agent、Portal、Backoffice 的 `create_app()` 仍維持薄層，主要 wiring 由 container、route registration 與 composition 負責。後續修正 import-time side effects 時，不應把 wiring 塞回 domain `api.py`。
 
-建議建立：
+### 6.4 Knowledge 與 release stages
 
-- `SourceTraceQuery` public interface。
-- `MetricsCatalog` interface。
-- `FreshnessQuery`／`FreshnessRecorder` interfaces。
-- `ExportJobAuthorizationStore` 明確 dependency。
+Knowledge 已有 planner、retrieval、relevance、generation、grounding、citation 與 trace stages；Release 已有 explicit transitions、coordinator、activation、publish、rollback。下一步是縮窄 typed context/ports，不是再次全面搬檔。
 
-禁止 router 與 bootstrap 直接讀 private members，並在 architecture/lint check 中掃描跨 module `._name` access。
+### 6.5 Default React product path
 
-## 9. Knowledge pipeline 後續優化
+30/30 ledger routes 已由 React `/console-v2` 接手，預設 `/` 與 `/legacy` 會 redirect 到 React UI；legacy shell 只在 kill switch 開啟時提供。這個產品路徑應保持。
 
-### 已改善
+## 7. P0：Required CI 目前失敗
 
-- facade、planner、retriever、relevance、generation、grounding、citation 與 trace 已具名分離。
-- 文件選擇與 generator policy 有獨立 tests。
-- `knowledge.py` 不再是 2,838 行 implementation。
+### 問題
 
-### 尚存問題
+最新提交標題宣稱完成 architectural decoupling，但與 CI 相同的 Ruff commands 仍失敗：
 
-1. `knowledge_hybrid.py` 仍有約 438 行，超過原 facade <300 的目標。
-2. `_HybridGenerationHost` 透過大量 private method 回呼 facade，stage 尚未真正依賴穩定 port。
-3. `run_search_loop()` 使用大量 callable parameters，型別與資料流難以閱讀。
-4. `apply_generation_retries()` 265 行，將 false-NONE、error coverage、procedure coverage、visual evidence 四種策略放在同一函式。
-5. `generate_grounded_answer()` 279 行，仍是新的局部 god function。
-6. Pipeline modules 已被直接寫入 oversized-function baseline，代表 ratchet 沒有阻止重構過程新增 >80 行函式。
+- Adapter：`src/teams_agent/contracts.py` 有未使用的 `re` import。
+- Agent Service：859 errors，包含 production source 的 2 個 `F821 undefined-name`。
+- CI 在 Ruff 之後才執行 architecture、OpenAPI 與 pytest，因此 GitHub required job 會先失敗。
 
-### 建議方向
+### 建議
 
-- 定義 `KnowledgePipelineContext`，封裝 model、budget、citation、image、trace ports，取代 10+ callback parameters。
-- 將 retry 行為拆成 `GenerationRetryPolicy` 列表，每個 policy 實作 `should_retry()` 與 `retry()`。
-- `GenerationHost` 使用正式 Protocol，不接受 `Any`，也不依賴 `HybridKnowledgeService` private methods。
-- 將 mutable `stage_timings_ms` 從 frozen dataclass 中抽離，避免表面 immutable、內部 mutable。
-- 先維持 ranking/prompt 結果不變；介面重構與品質調整分開。
+1. 先處理 `F821`、mutable class defaults、loop capture 等可能影響 runtime correctness 的項目。
+2. 再使用 Ruff safe fixes 處理 import ordering 與明確 unused imports。
+3. 對 compatibility facade/re-export module 使用明確 `__all__`，不要靠大量 unused imports 維持 public API。
+4. 將純 formatting cleanup 與 behavioral refactor 分開提交。
+5. 在乾淨 checkout 執行 CI 全部 jobs，確認不是本機環境差異。
 
-## 10. Release workflow 後續優化
+### 出口條件
 
-### 已改善
+- 兩個 Ruff commands exit 0。
+- architecture、OpenAPI、wire、frontend、full pytest 同時通過。
+- 不以擴大 Ruff ignore list 掩蓋 `F821` 或 dead imports。
 
-- Release facade 降至 288 行。
-- activation、publish、rollback、promote、sync、queries、transitions 已拆分。
-- failure matrix 能驗證 reload compensation 的關鍵分支。
+## 8. P0：Composition 仍有 import-time side effects
 
-### 尚存問題
+### 問題
 
-1. `release/activation.py` 約 491 行，仍集中多個 side effects。
-2. `AgentReloadPort` 已定義，但 facade 仍傳遞裸 `notify_reload` callable。
-3. `ActivationStorePort` 使用 `object` 與 `hasattr/model_copy`，domain type safety 不足。
-4. release package 仍直接 import `agent_service.knowledge_release`、`release_gate`、`target_manifest`。
-5. `ports.py` docstring 明確寫著「will adopt in later slices」，與 architecture README 宣稱 Wave 3 Done 不一致。
-6. failure matrix 主要覆蓋 decision helpers 與 promote compensation，尚未完整覆蓋 build/gate/source persistence/pointer/audit 每一步的失敗結果。
+目前 `composition/__init__.py` eager-import：
 
-### 建議方向
+- `composition.agent_app`
+- `composition.backoffice_app`
+- `composition.portal_app`
+- `composition.agent_hooks`
 
-- `ReleaseWorkflowDependencies` 聚合 typed store、builder、gate、source catalog、reload、pointer、clock、audit ports。
-- `ActivationStorePort` 回傳 `ReleaseRecord`，不要使用 `object`/`hasattr`。
-- 使用 `AgentReloadPort` 與 `ActiveReleasePointerPort`，移除裸 callbacks。
-- target manifest/release pointer 移至 `knowledge_core`，Portal 不再 import Agent。
-- 擴充 failure matrix：build fail、gate blocked、source write fail、pointer write fail、reload fail、compensation reload fail、audit fail。
+而前三個 app modules 都在 module scope 執行 `app = create_*_app()`。此外三個 domain `api.py` 也各自保留 `app = create_app()`。
 
-## 11. Contract 與 OpenAPI governance
+Python 載入 `composition.agent_app` 前會先執行 `composition/__init__.py`。因此啟動 Agent 時，可能同時 import 並組裝 Backoffice、Portal 以及未注入 dependencies 的 domain default apps。可能後果包括：
 
-### 11.1 Wire checker 覆蓋不足
+- 非目標服務解析額外 settings 與 filesystem paths。
+- 建立重複 containers、repositories、lifespans 或 clients。
+- import order 影響 runtime hook registration。
+- 測試 import core factory 時意外建立 production-shaped global app。
+- 啟動時間、記憶體與錯誤面擴大。
 
-目前 checker 通過，但有：
+### 建議
+
+1. `composition/__init__.py` 保持空白或只放 package docstring，不 re-export app factories。
+2. ASGI module 每個只組裝一個 app，例如 `composition/agent_asgi.py`。
+3. Domain `api.py` 只提供 `create_app()`；若需要 standalone app，放入獨立 `*_asgi.py`。
+4. Hook/dependency registration 改成 factory arguments 或 typed container，不依賴 import order。
+5. 新增測試：import 任一 ASGI entry 時，只建立該服務的 container。
+
+### 出口條件
+
+- import `composition.agent_app` 不載入 Backoffice/Portal app instances。
+- domain factory import 不讀環境、建立目錄或連線外部服務。
+- composition initialization 可重複且無全域順序依賴。
+
+## 9. P1：Dependency graph 無循環，但 ownership 仍錯置
+
+### 現況
+
+AST 統計的跨 package importer files：
+
+| Edge | Importer files | 判讀 |
+|---|---:|---|
+| `ai_ops_backoffice -> agent_service` | 115 | 過度依賴 Agent implementation |
+| `knowledge_portal -> agent_service` | 18 | Knowledge ownership 仍放在 Agent namespace |
+| `ai_ops_backoffice -> knowledge_portal` | 1 | bootstrap wiring residual |
+| `agent_service -> platform_kernel` | 4 | 合理方向 |
+| `ai_ops_backoffice -> platform_kernel` | 6 | 合理方向 |
+| `knowledge_portal -> platform_kernel` | 3 | 合理方向 |
+
+Backoffice 對 Agent imports 中，`agent_service.operations` 就出現在 100 個檔案。Portal 則直接依賴 `documents`、`target_manifest`、`release_gate`、`layout_chunking`、`knowledge_release` 等 Agent modules。
+
+目前 checker 將這些視為允許 edges，所以「architecture checks passed」只代表沒有 forbidden/cyclic edge，不代表 ownership 已收斂。
+
+### 建議 ownership
+
+建立兩個 bounded shared packages，但避免把所有東西塞進 `platform_kernel`：
 
 ```text
-WARN: Citation: adapter-only fields not on agent ['originalUrl']
+operations_core
+  ActorContext
+  audit/event contracts
+  masking contracts
+  taxonomy/scope identifiers
+  freshness metadata contracts
+
+knowledge_core
+  document/chunk/source identity
+  target/release manifest
+  citation/retrieval contracts
+  release artifact contracts
+  pure chunking policies
 ```
 
-它只驗證九個 Python model 的欄位名稱是否存在，沒有驗證：
+`platform_kernel` 只保留真正技術性且穩定的 ports/primitives。Agent runtime、Backoffice 與 Portal 都依賴 shared contracts；具體 adapters 由 composition 注入。
 
-- field type；
-- required/optional；
-- enum/Literal；
-- default；
-- alias；
-- nested model；
-- serialization/deserialization 行為；
-- TypeScript types。
+### Checker 改進
 
-`originalUrl` warning 應有明確決策：加入 Agent contract、從 Adapter 移除，或標示為 Adapter-derived field；不應永久保留 warning。
+- 從 partial forbidden list 改成完整 allowed-edge matrix。
+- 對目前允許但過大的 edges 建立 importer-count ratchet。
+- `ai_ops_backoffice -> agent_service` 與 `knowledge_portal -> agent_service` 每個 PR 只能下降，不可增加。
+- 最終只有明確 integration adapter 可以 import runtime implementation。
 
-### 11.2 OpenAPI snapshot 過度簡化
+## 10. P1：Size baseline 不是單調 ratchet
 
-目前 schema inventory 只保存 schema name、type、required 欄位名與 property names；route inventory 還自行產生 stable operation ID，因此無法偵測 FastAPI 真實 duplicate operation IDs。
+目前 baseline 儲存歷史上限，而不是 current main 的最小值：
 
-建議：
+- `extractor.py` baseline 978，current 802。
+- `contracts.py` baseline 531，current 397。
 
-- snapshot 實際 OpenAPI operationId、security schemes、parameters、request/response media types。
-- schema snapshot保留 property type、format、enum、nullable、items、refs 與 discriminator。
-- 以 backward-compatibility diff 判定 breaking/non-breaking，而不是任何變更都要求重寫 snapshot。
-- 由 OpenAPI 產生 TypeScript types，CI 執行 generate 後 `git diff --exit-code`。
-- Adapter↔Agent Python 可採共用 `agent_protocol` package，或至少做真實 payload round-trip contract tests。
+checker 只在 current 超過 baseline 時失敗。因此已縮小的檔案仍可重新增長到舊 baseline；這不符合 ratchet 的語意。
 
-## 12. Frontend 現況與下一步
+此外，`--write-baselines` 可直接用 branch 當前狀態覆寫基準，若 code 與 baseline 同一 PR 成長，reviewer 難以區分合理 waiver 與重新合法化。
 
-### 已改善
+### 建議
 
-- `ConversationStream` 已拆成 message、citation、markdown、preview hook 等元件。
-- `workbenchStore.ts` 舊路徑只保留 5 行 compatibility export。
-- API calls 已按 conversations/documents/FAQ/tickets/overview 分檔。
-- 30/30 route ownership 已切到 React。
-- production Docker build 會從 lockfile 建置。
+1. CI 從 default branch 讀 baseline/current metrics，比較 PR branch。
+2. Shrink 自動成為新上限，不依賴人工執行 `--write-baselines`。
+3. Growth 只能透過逐項 waiver：path、symbol、owner、reason、expiry、tracking issue、target size。
+4. Waiver 到期自動失敗，不只在 Markdown 寫一個全域 review date。
+5. 加入 regression test，驗證 978→802 後再長到 803 會失敗。
 
-### 尚存問題
+## 11. P1：HTTP、application 與 persistence 邊界未完成
 
-1. `workbench/store.ts` 仍有 429 行，保存 dashboard、conversation、ticket、FAQ、document、gap 的全部 state 與 mutations。
-2. Store constructor 仍主動載入資料，增加測試與 lifecycle 控制難度。
-3. `initialMockData` 仍直接參與 production store initialization，容易掩蓋 API failure。
-4. `documentsApi.ts` 251 行，混合 import、polling、preview、review、publish、delete。
-5. Frontend tests 只有 2 個，內容是讀取 `App.tsx` 原始文字後用 regex 驗證 routes/Refine wiring，不是 component tests。
-6. Build 雖成功，但產出單一約 2.12 MB JS chunk，gzip 約 632 KB，Vite 發出 >500 KB warning。
-7. Legacy static UI 約 23,000 行仍保留，kill switch 仍可啟用完整舊應用。
+### Workbench persistence
 
-### 建議方向
+`ai_ops_backoffice/routers/workbench/persistence.py` 仍直接執行：
 
-- Store 依 domain 切成 `overviewStore`、`conversationStore`、`knowledgeStore`、`ticketStore`；或採 query cache，把 server state 與 local UI state 分開。
-- 移除 constructor side effect，由 provider/hook 明確觸發 load。
-- Mock data 只在明確 demo/test adapter 使用，production API failure 顯示 error state。
-- 使用 Vitest + React Testing Library 測 route guard、loading/error、citation drawer、markdown、store mutations。
-- Route pages 使用 `React.lazy()`/dynamic imports，拆出 Ant Design-heavy feature chunks。
-- 設定 bundle budget，例如 entry gzip <350 KB、單一 lazy chunk gzip <200 KB，CI 超標失敗。
-- Legacy kill switch 設定移除日期與 usage telemetry；連續一個 release cycle 無使用後刪除 `legacy-js`、legacy CSS/HTML/tests。
+- `Path.read_text()`
+- `Path.write_text()`
+- `json.loads()` / `json.dumps()`
 
-## 13. Repository 策略：Repo-ready modular monorepo
+檔案雖小，但責任仍屬 repository/adapter，而不是 HTTP package。
 
-### 13.1 決策
+### Private-state access
 
-**狀態：Accepted（2026-09-18）**
+目前仍可觀察到：
 
-本專案採用以下原則：
+- source routers 使用 `query_service._source_trace`。
+- resolver 使用 `trace._active_release_id()`。
+- resolver 直接存取 `source_repository` 與 `artifact_storage`。
+- bootstrap 使用 `export_jobs._store_path`。
+- bootstrap 使用 `existing_runtime._settings` 或 `query_service._runtime.settings`。
 
-> **把 RAG 系統與前端設計成隨時可以拆成兩個 repository，但現階段保留在同一個 repository。**
+### 建議
 
-這裡的「不拆 repo」不代表維持現有耦合。RAG backend 與 frontend 必須先在 monorepo 內成為兩個可獨立交付的產品單元：
+1. 建立 typed `WorkbenchRepository`、`SourceQueryService`、`RuntimeSettingsView`。
+2. Router 只做 request validation、authorization、application call、response mapping。
+3. 所有 filesystem/database I/O 移至 adapters。
+4. 禁止跨 module private-member access，納入 AST gate。
+5. Source preview/file/resolve 共用 public source application service，避免各 route 自行拼裝。
 
-- 獨立 dependency manifest 與 lockfile。
-- 獨立 build、test、lint、artifact 與 Docker image。
-- 獨立 deployment、rollback 與版本識別。
-- 只透過公開 HTTP API 與版本化 contract 整合。
-- frontend 不 import、讀取或假設 Python implementation、repository、filesystem layout 或 pipeline private state。
-- RAG implementation 在不改 API contract 時，不應要求 frontend 同步修改或發版。
-- 純 UI 變更不應要求重新建置或部署 RAG backend。
+## 12. P1：Contract governance 仍不足以支撐拆 repo
 
-### 13.2 為何現在不直接拆成兩個 repositories
+### Wire checker
 
-目前直接拆 repo 會把尚未解決的程式內耦合轉換成發版與協作耦合：
+`check_wire_contracts.py` 目前只檢查：
 
-- OpenAPI snapshot 尚未提供完整 backward-compatibility 保證，且目前仍有 duplicate operation IDs。
-- frontend 尚未使用 generated API client 作為唯一 schema source。
-- Backoffice、Portal 與 Agent implementation ownership 尚未收斂。
-- legacy routes 與 legacy UI 尚未退場。
-- composition direction、shared knowledge contracts 與 deployment topology 仍在調整。
-- 多數重構仍需要跨 backend/frontend 的原子提交與整合驗證。
+- 9 個 Python models 是否存在。
+- 指定欄位名稱是否存在。
 
-此時拆 repo 會增加跨 repo PR、版本 pinning、CI 發版順序、本機整合與 rollback 成本，但不會自動形成正確邊界。先在單一 repo 內完成可拆性，能保留原子變更能力，也能用同一套 CI 驗證 contract 與整合行為。
+它不檢查 type、requiredness、default、alias、enum、nested schema、serialization 或 TypeScript consumers。`Citation.originalUrl` 仍只有 Adapter 定義，checker 只發 warning。
 
-### 13.3 目標拓樸
+### OpenAPI snapshot
 
-以下是責任拓樸，不要求一次性搬動所有現有目錄；應透過小型 PR 逐步收斂：
+目前比前次更穩定，但仍有兩個限制：
+
+1. `operationId` 由 snapshot script 依 method/path 重建，沒有保存 FastAPI 真實 operation ID。
+2. Component snapshot 只保存 schema name、top-level type、required fields 與 property names，不保存 property types、formats、enums、nullable、items、refs 或 discriminators。
+
+這能抓 route/schema inventory drift，不能可靠判斷 backward compatibility。
+
+### 建議
+
+1. 保存 canonical OpenAPI document 或使用專用 breaking-change diff。
+2. 保留真實 operation IDs。
+3. 從 OpenAPI 自動產生 TypeScript client/types。
+4. CI 執行 generate 後要求 working tree clean。
+5. 加入 consumer-driven contract tests，覆蓋 error payload、pagination、streaming、auth 與 frontend 實際使用 endpoints。
+
+## 13. Repo-ready modular monorepo 複驗
+
+### 13.1 決策維持不變
+
+> **RAG backend 與 frontend 在 contract、build、test、artifact、deploy 上應可獨立；Git repository 目前維持單一。**
+
+現在直接拆 repo 仍不合適，因為 API contract 與 shared ownership 尚未穩定。拆 repo 只會把 source coupling 變成跨 repo release coupling。
+
+### 13.2 已具備的條件
+
+- `console_frontend` 有獨立 `package.json`、lockfile、test/build commands。
+- Agent、Portal、Backoffice 有不同 Dockerfiles 與 runtime entrypoints。
+- deploy script 已能依路徑選擇部分 backend components。
+- frontend build 已可從 TypeScript source 重現 production bundle。
+
+### 13.3 尚未具備的條件
+
+- Frontend 沒有獨立 Docker image；`Dockerfile.backoffice` 會 build frontend 後 bake 到 Python Backoffice image。
+- 純 frontend 變更仍要求重建與部署 Backoffice image。
+- Frontend DTO 為手寫：`shared/api/types.ts` 300 行、`workbench/types.ts` 112 行。
+- 沒有 canonical generated TypeScript client package。
+- 沒有 current/previous frontend/backend cross-version tests。
+- `agent_service/pyproject.toml` 同一個 wheel 同時包含 Agent、Portal、Backoffice、kernel 與 composition。
+- 三個 backend images 都 copy 整個 `agent_service/src` 並安裝同一個 package。
+- Legacy UI/routes 還沒清除。
+
+### 13.4 目標拓樸
 
 ```text
 teams-agent/
 ├── apps/
-│   ├── rag-api/                  # Python API composition and runtime
-│   ├── backoffice-web/           # React application
-│   └── knowledge-portal-web/     # React application, if retained separately
-├── packages/
-│   ├── api-contracts/            # Versioned OpenAPI and generated TypeScript client
-│   ├── knowledge-core/           # Documents, chunks, citations, retrieval contracts
-│   ├── operations-core/          # Actor, audit, masking, scope, taxonomy
-│   └── platform-kernel/          # Small technical primitives only
-├── deploy/
 │   ├── rag-api/
-│   ├── backoffice-web/
-│   └── knowledge-portal-web/
-└── integration-tests/            # Black-box API and deployed-system tests
+│   ├── backoffice-api/
+│   ├── knowledge-portal-api/
+│   └── console-web/
+├── packages/
+│   ├── api-contracts/
+│   ├── knowledge-core/
+│   ├── operations-core/
+│   └── platform-kernel/
+├── deploy/
+└── integration-tests/
 ```
 
-允許的主要依賴方向：
+這是責任拓樸，不要求一次性移動目錄。先建立可獨立交付的 seams，再做機械式搬遷。
+
+### 13.5 未來拆 repo 門檻
+
+- Frontend 對 backend 的唯一依賴是版本化 API artifact。
+- 前後端可獨立 checkout、install、build、test、deploy、rollback。
+- API compatibility 與 generated-client freshness 是 required checks。
+- 純 UI 變更不重建 backend image。
+- 純 RAG implementation 變更在 API 不變時不重建 frontend。
+- Legacy UI/runtime path coupling 已清除。
+- 連續至少兩個 release cycles 大多數變更可獨立交付。
+- 確實存在不同 team ownership、release cadence、access control 或多產品共用需求。
+
+## 14. Frontend 現況
+
+### 問題
+
+1. `workbench/store.ts` 429 行，同時管理 dashboard、conversation、ticket、FAQ、document、gap。
+2. Store constructor 立即呼叫 `loadAll()`，造成 import/lifecycle side effect。
+3. Production store 以 `initialMockData` 初始化；API failure 可能留下看似有效的假資料。
+4. `documentsApi.ts` 251 行，混合 import、polling、preview、review、publish、delete。
+5. API DTO 至少有 412 行手寫 types，容易與 backend drift。
+6. Tests 只有 2 個，且只是讀 `App.tsx` 文字後用 regex 驗證 routes/Refine wiring。
+7. Build 產出單一約 2.12 MB JS，gzip 約 632.55 KB，超過 Vite 500 KB warning。
+8. `CaseDetailPage.tsx` 780 行、`ChunkInspectorModal.tsx` 580 行。
+9. Legacy JS 約 18,097 LOC，kill switch 仍可重新啟用。
+
+### 建議
+
+- Server state 改用 query cache；local UI state 與 domain commands 分離。
+- Store 依 overview、conversation、knowledge、ticket 拆分。
+- 移除 constructor fetch，由 provider/hook 明確啟動。
+- Production 預設空 state + visible error；mock data 只由 demo/test adapter 注入。
+- 使用 Vitest + React Testing Library 驗證 route guard、loading/error、citation、markdown、store mutations。
+- Route-level dynamic imports，拆出 Ant Design-heavy chunks。
+- 設 bundle budget：entry gzip <350 KB、單一 lazy chunk gzip <200 KB。
+- 建立獨立 frontend image，由 CDN/static host 或 web container 提供；API URL 由 runtime config 注入。
+- Legacy kill switch 加 usage telemetry 與刪除日期；一個 release cycle 無使用後移除。
+
+## 15. RAG、Knowledge 與 Release 後續優化
+
+### 15.1 Extractor
+
+本輪把 heuristics 抽出是正確的，但 `extractor.py` 仍有 802 行。下一步應按責任拆分：
+
+- structured model invocation adapter
+- fallback/model-switch policy
+- issue normalization
+- extraction result assembly
+
+不要再把所有 private constants re-import 回 facade；只 import 實際使用的 public policy functions/types。
+
+### 15.2 Generation pipeline
+
+`generate_grounded_answer()` 270 行、`apply_generation_retries()` 261 行。建議建立 typed `GenerationContext` 與 strategy chain：
 
 ```text
-Frontend applications
-        |
-        | HTTP + generated TypeScript client
-        v
-RAG API / application services
-        |
-        v
-knowledge-core / operations-core ports
-        |
-        v
-Infrastructure adapters
+PrimaryGeneration
+  -> CitationRepair
+  -> GroundingRepair
+  -> FallbackGeneration
+  -> FinalValidation
 ```
 
-禁止的依賴包括：
+每個 strategy 回傳 typed outcome 與 reason，不以 callback explosion 或 private-host forwarding 傳遞狀態。
 
-- frontend 直接依賴 backend source tree、Python models 或 generated runtime files。
-- backend 依賴 frontend source、bundle 或 UI route ownership。
-- frontend 手寫一份與 OpenAPI 平行演化的 API DTO。
-- RAG domain 直接回傳 UI component 需要的 presentation-specific structure；應由 API presenter/DTO 轉換。
-- 共用 package 同時包含 browser code 與 Python runtime implementation。
-- 透過 repository-relative filesystem path 在前後端之間交換 runtime data。
+### 15.3 Release workflow
 
-### 13.4 Contract 與版本策略
+保留 explicit transitions/compensation，不引入通用 workflow engine。下一步集中在：
 
-`packages/api-contracts` 應是 repository 可拆性的核心 seam：
+- typed store/reload/pointer/catalog ports
+- 移除 `object`、`Any`、`hasattr` orchestration
+- Portal 不直接 import Agent release implementation
+- failure matrix 加入 timeout、partial publish、stale pointer、idempotent retry
 
-1. RAG API 輸出 canonical OpenAPI document。
-2. CI 對 canonical OpenAPI 執行 backward-compatibility diff。
-3. TypeScript client 與 types 由 OpenAPI 自動產生，不手動維護重複 DTO。
-4. CI 重新產生 client 後要求 working tree 無差異。
-5. frontend 只經 generated client 或其薄 application adapter 呼叫 backend。
-6. breaking API change 必須使用明確版本策略、migration window 與 deprecation policy。
-7. consumer-driven contract tests 覆蓋前端實際使用的 endpoints、error payload、pagination、streaming 與 auth behavior。
+### 15.4 Settings
 
-在 monorepo 階段，generated client 可以直接作為 workspace package 使用；未來拆 repo 時，再將相同 artifact 發佈到 private package registry。這能讓 repository 搬遷只改變 distribution mechanism，不改變應用程式邊界。
+目前主要 settings files：
 
-### 13.5 Build、CI 與部署隔離
+- Agent：498 行。
+- Backoffice：488 行，`from_env()` 359 行。
+- Portal：426 行，`from_env()` 286 行。
 
-CI 應形成三個層次：
+應拆成 immutable sections，例如 `RagModelSettings`、`KnowledgeSettings`、`StorageSettings`、`AuthSettings`、`WorkerSettings`。Service 只接收需要的 section，不傳整個 global settings object。
 
-| 層次 | 觸發範圍 | 必要驗證 |
-|---|---|---|
-| RAG backend | Python/backend/contracts 變更 | unit、architecture、OpenAPI、RAG integration、backend image build |
-| Frontend | React/generated client 變更 | typecheck、component tests、bundle budget、frontend image build |
-| Cross-system | contract、auth、streaming、deployment 變更 | generated-client freshness、contract tests、black-box E2E |
+## 16. 其他治理問題
 
-即使使用 path filters，required checks 不可因錯誤分類而被跳過。Contract 變更必須同時觸發 backend、client generation、frontend typecheck 與 cross-system tests。
+### Wildcard imports
 
-部署面應具備：
+Backoffice 仍有 15 個 `from ... import *`，集中於 example、prompt、quality、sync、budget domains。應以明確 `__all__` 與 explicit imports 取代，compatibility facade 才可例外。
 
-- backend 與 frontend 分開的 immutable images。
-- 獨立 health checks、version metadata、rollback target 與 release notes。
-- frontend 透過設定注入 API base URL，不在 bundle 中綁定 repository 或 environment-specific backend implementation。
-- 至少支援「新 frontend + 前一版 backend」與「前一版 frontend + 新 backend」的相容性 smoke tests。
+### Oversized waivers
 
-### 13.6 未來拆 repo 的門檻
+目前 waiver 仍以類別描述，沒有逐檔 owner、tracking issue、target size。應改成 machine-readable entries，並由 CI 驗證 expiry。
 
-只有在下列條件持續成立後，才重新評估 physical repository split：
+### Test topology
 
-- frontend 對 backend 的唯一依賴是已版本化的 API contract/artifact。
-- 前後端已可獨立 checkout、安裝、建置、測試、部署與 rollback。
-- API compatibility、generated client freshness 與 consumer contract tests 均為 required checks。
-- legacy UI、legacy routes 與 repository-relative runtime coupling 已清除。
-- 連續至少兩個 release cycles 中，大部分前端與 RAG 變更可獨立交付。
-- 確實存在不同 team ownership、release cadence、access control 或多產品共用 RAG API 的治理需求。
-- 已定義跨 repo change protocol、package registry、版本政策、release ordering 與 incident ownership。
-
-若只是希望「目錄看起來乾淨」或「大 repo 感覺太大」，不構成拆 repo 的充分理由。拆分應解決團隊與交付邊界，而不是代替模組化。
-
-### 13.7 Repository split 執行方式
-
-一旦達成門檻，拆分應是機械式搬遷，而不是第二次架構重寫：
-
-1. 凍結並標記 canonical API contract 版本。
-2. 將 generated TypeScript client 發佈至 private registry。
-3. 先讓 frontend 在 monorepo 內改用 registry artifact，驗證不再依賴 workspace-relative source。
-4. 以 history-preserving 工具抽出 frontend repository。
-5. 建立跨 repo compatibility workflow 與 coordinated breaking-change 流程。
-6. 驗證 build、deployment、rollback、observability 與 local development parity。
-
-此決策的短期成本是必須建立更嚴格的 contract 與 CI；收益是未來可以選擇拆 repo，也可以在沒有額外協作成本的情況下長期維持 monorepo。
-
-## 14. Architecture governance 本身需要修正
-
-### 14.1 Baseline 可被任意重寫
-
-`check_architecture.py --write-baselines` 會把當前狀態直接寫成新基準。若 code 與 baseline 在同一 PR 一起增加，CI 仍可通過。
-
-建議：
-
-- CI 從 default branch 取得 baseline，比較 current branch，而不是只信任 branch 內的 baseline。
-- baseline increase 必須搭配逐項 waiver：owner、reason、expiry、removal issue。
-- 自動允許 shrink；increase 需要特定 label/approval，而非單純重寫 JSON。
-- 新增 regression test：驗證已知 cycle、domain→composition、private access、baseline rewrite 不會被放過。
-
-### 14.2 Waiver 太寬
-
-目前 waiver 以「evaluation/governance domains」等類別一次涵蓋大量檔案，沒有逐檔 owner 與具體 exit work item。這容易把技術債永久正常化。
-
-建議 waiver schema：
-
-```text
-path
-symbol（若為 function）
-current_size
-owner
-reason
-approved_at
-expires_at
-tracking_issue
-target_size
-```
-
-### 14.3 Generated/cache hygiene
-
-目前未追蹤 `__pycache__`，`.gitignore` 也正確忽略它們；這部分沒有 repository 污染問題。應持續讓檢查排除 caches 與 generated bundles，但 frontend bundle freshness 必須由 build 驗證。
-
-## 15. 設定、wildcard imports 與測試拓樸
-
-### 15.1 Settings 尚未收斂
-
-四個主要 settings classes 約有：
-
-- Agent：90 個 annotated fields。
-- Backoffice：103 個。
-- Portal：69 個。
-- Adapter：35 個。
-
-`BackofficeSettings.from_env()` 仍有約 367 行，Portal 約 286 行。原計畫的 settings section 拆分尚未執行。
-
-建議以 domain section dataclasses 分拆，並讓 web/worker 只載入所需 section；legacy env aliases 加 deprecation warning 與移除版本。
-
-### 15.2 Wildcard imports 仍存在
-
-example、prompt、quality、sync、budget domains 仍有 15 個 `from ... import *`。這會隱藏 domain API、增加循環與 dead-code 難度。
-
-建議逐 domain 建立明確 `__all__` 與 explicit imports，並在 Ruff 啟用對 wildcard import 的禁止，僅允許少數 compatibility facade 例外。
-
-### 15.3 大型測試檔尚未拆分
-
-目前仍有：
+Tests 約 60,061 行，仍有多個巨型檔案：
 
 - `test_ai_ops_backoffice.py`：2,616 行。
 - `test_spec_gap_p0_p1_followups.py`：2,279 行。
 - `test_workflow.py`：2,143 行。
-- 多個 1,000–1,600 行測試檔。
+- `test_phase1_reliability.py`：1,629 行。
 
-大型測試不是第一優先，但應在 domain 邊界穩定後按 unit/application/contract/integration/acceptance 重新分類，避免 mega fixtures 成為下一個耦合中心。
+不需要為行數立即拆測試；應在 domain boundary 穩定後，按 unit/application/contract/integration/acceptance 分類，縮小 mega fixtures 與 shared mutable setup。
 
-## 16. 建議執行路線
+## 17. 建議執行路線
 
-### Phase A：恢復可信的綠燈
+### Phase A：恢復可信的 required CI
 
-1. 拆小 `teams_agent/contracts.py` 與 `_handle_message()`，讓 architecture ratchet 通過。
-2. 決定 `/legacy` 是否正式 contract，修正 snapshot。
-3. 修正兩組 duplicate OpenAPI operation IDs。
-4. 將 architecture README 的 Wave 狀態改成複審後狀態。
-5. 在乾淨 checkout 跑 required CI jobs。
+1. 修正 Adapter 1 個 Ruff error。
+2. 修正 Agent production `F821` 與 correctness-related findings。
+3. 清理 safe unused imports/import ordering。
+4. 對 re-export facades 建立明確 `__all__`。
+5. 在乾淨 checkout 執行所有 CI jobs。
 
-**出口條件**：architecture、OpenAPI、wire、frontend、golden、release matrix 全部綠燈。
+**出口條件**：Ruff、architecture、OpenAPI、wire、frontend、full pytest 全綠。
 
-### Phase B：修正 composition 與 dependency graph
+### Phase B：消除 composition import side effects
 
-1. 建立 `composition.agent_app` 與 `composition.backoffice_app`。
-2. 移除所有 domain→composition imports。
-3. architecture checker 改用完整 allowed graph + SCC cycle detection。
-4. 新增 cycle fixture tests，證明 checker 能抓到現在這種循環。
+1. 清空 `composition/__init__.py` eager imports。
+2. 分離 factory modules 與 ASGI singleton modules。
+3. Domain `api.py` 不建立 global default app。
+4. Hook registration 改成 explicit dependencies。
+5. 新增 single-service import/initialization tests。
 
-**出口條件**：composition 只向內依賴，domain graph 無 SCC cycle。
+**出口條件**：import 任一服務不組裝其他服務；factory import 無 I/O side effects。
 
-### Phase C：重定義 shared domain ownership
+### Phase C：讓 architecture ratchet 真正單調
 
-1. 建立 `operations_core`，移出 Actor/audit/masking/events/taxonomy/scope contracts。
-2. 建立 `knowledge_core`，移出 documents/chunking/release artifacts/source identity。
-3. 把 Backoffice evaluation 對 Agent runtime 的 imports 集中在一個 adapter。
-4. 逐步禁止 Backoffice/Portal 直接 import Agent implementation。
+1. Baseline-from-main comparison。
+2. Shrink 自動成為新上限。
+3. Per-symbol waiver schema 與 expiry enforcement。
+4. Allowed-edge matrix + importer-count ratchet。
 
-**出口條件**：Backoffice 與 Portal 的 Agent imports 只存在於明確 integration adapters；一般 domain/application modules 為零。
+**出口條件**：已縮小檔案不能無聲回長；任何新增跨 domain import 都需明確允許。
 
-### Phase D：完成 application/persistence boundary
+### Phase D：收斂 shared ownership
 
-1. 建立 typed Workbench repositories/gateways。
-2. 移除 router package 的 JSON helpers。
-3. 建立 public SourceTrace/Metrics/Freshness APIs。
-4. 清除 router/bootstrap 跨 module private access。
+1. 抽出 `operations_core`。
+2. 抽出 `knowledge_core`。
+3. Backoffice Agent runtime imports 集中到 `adapters/agent_runtime.py`。
+4. Portal 不再 import Agent knowledge/release implementations。
 
-**出口條件**：routers 不做 filesystem/database I/O，不讀 private members。
+**出口條件**：Backoffice/Portal→Agent imports 只存在於少量 integration adapters，並持續下降至零 implementation imports。
 
-### Phase E：強化 pipeline 與 release ports
+### Phase E：完成 application/persistence boundary
 
-1. Knowledge retry strategies 拆成 policy chain。
-2. 用 typed context/ports 取代 callback explosion 與 `_HybridGenerationHost` private forwarding。
-3. Release 全面採用 typed store/reload/pointer/catalog ports。
-4. 擴充 release failure matrix。
+1. Workbench typed repositories。
+2. Source public application service。
+3. 移除 router filesystem I/O。
+4. 移除跨 module private access。
 
-**出口條件**：facade <300 行、一般 stage function <80 行，且無 `Any/object/hasattr` side-effect orchestration。
+**出口條件**：routers 不讀寫 filesystem/database，不存取 private members。
 
-### Phase F：建立 repo-ready 交付邊界
+### Phase F：建立 repo-ready contract seam
 
-1. 產生 canonical OpenAPI 與 versioned TypeScript client。
-2. frontend 移除手寫平行 DTO，只透過 generated client/application adapter 呼叫 API。
-3. backend/frontend 建立獨立 build、test、image、deployment 與 rollback 流程。
-4. 新增跨版本 compatibility 與 consumer-driven contract tests。
-5. 以 CI path ownership 隔離一般變更；contract 變更仍強制執行全系統驗證。
+1. Canonical OpenAPI breaking-change check。
+2. Generated TypeScript client/types。
+3. Consumer-driven contract tests。
+4. Frontend/API cross-version compatibility matrix。
 
-**出口條件**：前後端可獨立 checkout/build/test/deploy；任一方在 contract 未改變時可獨立發版；repository 內不存在跨邊界 source/runtime path coupling。
+**出口條件**：frontend 不維護平行 DTO；API 不相容變更會被 CI 阻擋。
 
-### Phase G：前端與 legacy 收尾
+### Phase G：Frontend 獨立交付與 legacy removal
 
-1. 真正的 component/store tests。
-2. 拆 server-state stores 與 route chunks。
-3. 建立 bundle budget。
-4. 經 telemetry 驗證後刪除 legacy UI。
-5. OpenAPI generated TypeScript types 成為單一來源。
+1. 獨立 frontend image/artifact/deploy/rollback。
+2. Store 與 API modules 分 domain。
+3. Behavioral component tests。
+4. Route code splitting 與 bundle budget。
+5. 移除 legacy UI/routes。
 
-**出口條件**：legacy application code 為零、React tests 驗證行為而非 source text、bundle budget 通過。
+**出口條件**：純 UI 變更不建置 Backoffice Python image；legacy application LOC 為零。
 
 ### Phase H：殘餘巨型 domain 收斂
 
 依風險順序：
 
 1. `governance_domain/eval_runtime.py`
-2. `agent_service/extractor.py`
-3. evaluation repository/runner/gate
-4. `teams_agent/source_routes.py`
-5. quality/FAQ services
-6. settings loaders
-7. workers/background runtime
-8. 大型 tests
+2. evaluation repository/runner/gate
+3. `teams_agent/source_routes.py`
+4. quality/FAQ services
+5. `agent_service/extractor.py`
+6. generation/retry functions
+7. settings loaders
+8. workers/background runtime
 
-每次只處理一個 bounded behavior，不與功能需求混合。
+每個 PR 只處理一個 bounded behavior，必須以 characterization/contract tests 保護。
 
-## 17. 建議 PR 切法
+## 18. 建議 PR 切法
 
 | PR | 內容 | 驗證 |
 |---:|---|---|
-| 1 | 修 architecture growth failures；拆 Adapter parser/handler | architecture + Adapter tests |
-| 2 | `/legacy` contract 決策、OpenAPI snapshot、unique operation IDs | OpenAPI + route tests |
-| 3 | `composition.agent_app`，移除 Agent→Composition | startup + architecture SCC test |
-| 4 | `composition.backoffice_app`，移除 Backoffice→Composition | Backoffice/Portal integration tests |
-| 5 | 完整 allowed-edge graph 與 baseline-from-main enforcement | checker unit tests |
-| 6 | `operations_core` 第一批：Actor/audit/masking contracts | Backoffice + Agent tests |
-| 7 | `knowledge_core` 第一批：manifest/artifacts/source identity | Portal + RAG tests |
-| 8 | Workbench typed repository；移除 router JSON I/O | workbench HTTP/contract tests |
-| 9 | SourceTrace public query interface；移除 private access | source route tests |
-| 10 | Knowledge retry policy chain | golden + generator policy tests |
-| 11 | Release typed ports + 完整 failure matrix | release tests |
-| 12 | Canonical OpenAPI + generated TypeScript client | schema compatibility + clean regeneration |
-| 13 | Frontend API adapters 全面改用 generated client | frontend typecheck + consumer contract tests |
-| 14 | Backend/frontend 獨立 images、build 與 deployment metadata | independent build + compatibility smoke |
-| 15 | Frontend Vitest/RTL + store split | component/store tests |
-| 16 | Route-level code splitting + bundle budget | build budget check |
-| 17 | Legacy UI 與 legacy routes removal | route E2E + deployment smoke |
-| 18 | 驗證 repo-split readiness；不執行搬遷 | clean-checkout builds + dependency/path audit |
+| 1 | 修 Adapter Ruff + Agent production `F821` | Ruff targeted + relevant tests |
+| 2 | Agent safe unused-import/import-order cleanup | Full Agent pytest + Ruff |
+| 3 | Test Ruff cleanup | Full pytest + Ruff |
+| 4 | Composition package/init side-effect removal | startup/import tests + architecture |
+| 5 | Monotonic baseline-from-main ratchet | checker unit/regression tests |
+| 6 | Full allowed-edge matrix + import-count ratchet | graph fixture tests |
+| 7 | `operations_core` first slice | Agent + Backoffice contract tests |
+| 8 | `knowledge_core` first slice | RAG + Portal release tests |
+| 9 | Workbench repository boundary | HTTP/application tests |
+| 10 | Source public query service | source route tests |
+| 11 | Canonical OpenAPI diff | API compatibility fixtures |
+| 12 | Generated TypeScript client | clean regeneration + frontend typecheck |
+| 13 | Frontend behavioral test foundation | Vitest/RTL tests |
+| 14 | Store split + production mock removal | store/component tests |
+| 15 | Independent frontend artifact/deploy | image + smoke + rollback tests |
+| 16 | Route code splitting + bundle budget | production build budget |
+| 17 | Legacy UI/routes removal | E2E + deployment smoke |
+| 18 | Repo-split readiness audit | clean checkout/path/dependency audit |
 
-## 18. 更新後量化護欄
+## 19. 更新後量化護欄
 
-| 指標 | 下一階段門檻 |
+| 指標 | 門檻 |
 |---|---:|
-| Required CI | 100% green；不可用 baseline rewrite 掩蓋 failure |
-| Package cycles | 0，由 SCC 檢查 |
+| Required CI | 100% green |
+| Package SCC cycles | 0 |
 | Domain→Composition imports | 0 |
-| Backoffice/Portal→Agent imports | 每個 Phase 必須下降；最終僅 integration adapter 可存在 |
-| 新 production file | <=500 行 |
-| 新 function | <=80 行 |
-| Router module | <=250 行；現有 3 個逐步清零 |
+| Import-time cross-service app creation | 0 |
+| Backoffice→Agent importer files | 每個 ownership PR 必須下降；最終 implementation imports 為 0 |
+| Portal→Agent importer files | 每個 ownership PR 必須下降；最終 implementation imports 為 0 |
+| New production file | <=500 行 |
+| New function | <=80 行 |
+| Ratchet | current main shrink 自動成為新上限 |
 | Router direct persistence | 0 |
 | Cross-module private access | 0 |
 | Wildcard imports | 0 |
-| Frontend behavioral tests | 覆蓋 routes、auth、stores、loading/error、citation/markdown |
-| Frontend entry bundle | gzip <350 KB，其他 feature chunks lazy load |
-| Legacy UI LOC | 下一個 release cycle 後歸零 |
-| Waiver | 每個 path/symbol 有 owner、expiry、tracking issue |
-| Frontend→Backend source imports | 0 |
-| Handwritten duplicate API DTO | 0；使用 generated client/types |
-| Independent build/test/image | RAG backend 與 frontend 各自通過 |
-| Contract compatibility | breaking change 必須被 CI 阻擋或走明確版本流程 |
-| Cross-version smoke | current/previous frontend 與 backend 組合通過 |
-| Repository split | 本階段不執行；只驗證 readiness |
+| Handwritten duplicate frontend DTO | 0 |
+| OpenAPI breaking changes | 未版本化時 0 |
+| Frontend behavioral tests | route/auth/store/loading/error/citation/markdown |
+| Frontend entry bundle | gzip <350 KB |
+| Single lazy feature chunk | gzip <200 KB |
+| Legacy UI LOC | 0 |
+| Waiver | 每個 path/symbol 有 owner、expiry、issue、target |
+| Repository split | 本階段不執行，只驗證 readiness |
 
-## 19. 本次實際驗證結果
+## 20. 不建議做的事
 
-| 驗證 | 結果 |
-|---|---|
-| `check_architecture.py` | **失敗**：1 個 oversized file growth、1 個 oversized function growth |
-| Architecture + release matrix pytest | **11 passed, 1 failed**；失敗原因為 architecture gate |
-| OpenAPI snapshot | **失敗**：Backoffice 213→215 routes；另有 duplicate operation ID warnings |
-| Wire-contract checker | **通過但有 1 warning**：`Citation.originalUrl` 只存在 Adapter |
-| Adapter contract tests | **23 passed** |
-| Knowledge selection/generator tests | **7 passed** |
-| Frontend tests | **2 passed**，但只驗證 source regex，不是 component behavior |
-| Frontend TypeScript/Vite build | **通過**，但有 2.12 MB chunk-size warning |
-| Full Python suite | 未執行 |
+- 不要因 Ruff errors 很多就把規則全部 ignore。
+- 不要直接用 `--write-baselines` 接受成長。
+- 不要只為降行數建立無語意的 `helpers2.py`。
+- 不要把所有 shared code 都塞進 `platform_kernel`。
+- 不要在 contract 未穩定前拆成兩個 repositories。
+- 不要導入通用 workflow framework 取代已清楚的 release state transitions。
+- 不要讓 frontend mock data 在 production API failure 時偽裝成真實資料。
+- 不要在同一 PR 同時做 ownership 搬遷、API breaking change 與 UI redesign。
 
-## 20. 最終判斷
+## 21. 最終判斷
 
-目前架構已從「數個無法審查的超大型檔案」進步到「模組已拆、邊界尚未完全落實」。這是實質進展，不需要推倒重來。
+本輪已經完成一個重要轉折：專案從「architecture checker 本身抓不到循環且 gates 為紅」進步到「循環已修、architecture/OpenAPI gates 可運作、完整測試通過」。這是實質成果。
 
-但若直接把現況視為完成，新的風險會是：
+但目前仍有三個不能忽略的事實：
 
-- composition 變成隱性 service locator 與 import cycle；
-- architecture baseline 變成可重寫的形式檢查；
-- Backoffice/Portal 仍綁定 Agent internals；
-- routes 雖拆檔，仍直接做 persistence；
-- React route 雖完成，測試與 bundle/legacy 治理未完成。
+1. Required Ruff CI 失敗，所以尚未具備可信的綠燈基準。
+2. Composition 方向正確，但 import-time app construction 仍可能造成跨服務 side effects。
+3. Backoffice/Portal 對 Agent implementation 的大量單向依賴仍存在；無 cycle 只代表 graph 是 DAG，不代表 bounded contexts 已正確。
 
-Repository 邊界的決策是：
+下一個 milestone 應是：
 
-> **邏輯、contract、build、test 與 deployment 立即拆開；Git repository 暫時不拆。**
+> **先恢復 required CI 全綠並消除 composition import side effects；接著讓 architecture ratchet 單調、收斂 shared ownership；最後以 canonical OpenAPI/generated client 建立前後端獨立交付邊界。**
 
-因此建議的下一個 milestone 是：
+Repository 策略維持：
 
-> **先讓 required CI 真正全綠，再修正 composition direction 與 full dependency graph；接著建立 generated API client 與獨立交付邊界，最後才處理 legacy removal、剩餘巨型 domain，以及是否真的需要拆 repo。**
+> **邏輯、contract、build、test、artifact 與 deployment 先拆開；Git repository 暫時不拆。**
 
-這個順序能保留 monorepo 在重構期的原子提交與整合驗證優勢，同時確保未來拆 repo 時只需搬遷與改變 artifact distribution，不必再次重寫架構。
+當 frontend 與 RAG backend 已能獨立 checkout、建置、測試、部署、回滾，且連續兩個 release cycles 大多數變更不需協調發版時，再評估 physical repo split。到那時，拆 repo 應只是搬遷與 artifact distribution 變更，不應再是一場架構重寫。
