@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .export_format import wrap_export_payload
 

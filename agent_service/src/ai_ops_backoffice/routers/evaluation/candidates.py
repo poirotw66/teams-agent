@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .context import EvaluationRouteContext
 from .models import CandidateJobPayload

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .periods import ResolvedPeriod
 from .query_helpers import _build_issue_hierarchy
@@ -145,13 +145,11 @@ class IssuesQueryMixin:
             )
 
         categories = sorted(
-            list(
-                {
-                    item["ownerUnitId"]
-                    for item in items
-                    if item.get("ownerUnitId")
-                }
-            )
+            {
+                item["ownerUnitId"]
+                for item in items
+                if item.get("ownerUnitId")
+            }
         )
 
         matched_issue_ids: set[str] | None = None

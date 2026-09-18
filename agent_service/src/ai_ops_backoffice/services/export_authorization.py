@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 
 class ExportAuthorizationError(RuntimeError):

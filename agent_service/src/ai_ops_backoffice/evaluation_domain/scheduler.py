@@ -3,14 +3,11 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
 from zoneinfo import ZoneInfo
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
-from .errors import EvaluationNotFoundError, EvaluationValidationError
 from .gate_models import (
-    EvalSchedule,
     ScheduleDispatchResult,
     ScheduleFrequency,
 )
@@ -18,7 +15,6 @@ from .gate_repository import QualityGateRepositoryProtocol
 from .gate_service import QualityGateService
 from .repository import EvaluationRepository
 from .run_service import EvaluationRunService
-from .runner_models import TargetManifest
 
 logger = logging.getLogger(__name__)
 

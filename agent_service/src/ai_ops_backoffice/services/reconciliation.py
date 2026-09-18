@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .periods import ResolvedPeriod, resolve_period
 from .query_service import BackofficeQueryService

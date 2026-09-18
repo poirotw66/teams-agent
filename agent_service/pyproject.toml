@@ -70,6 +70,7 @@ packages = [
     "src/knowledge_portal",
     "src/ai_ops_backoffice",
     "src/platform_kernel",
+    "src/operations_core",
     "src/composition",
 ]
 

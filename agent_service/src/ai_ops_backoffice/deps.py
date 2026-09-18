@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import Header, HTTPException
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .auth import BackofficeAuthError, resolve_actor
 from .services.query_audit import record_query_audit

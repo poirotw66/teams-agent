@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .constants import WORKFLOW_KINDS
 from .context import ConsoleRouteContext

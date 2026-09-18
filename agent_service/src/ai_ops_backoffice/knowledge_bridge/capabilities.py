@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 # Spec §8.2 minimum capability set.
 KNOWLEDGE_CAPABILITIES = frozenset(

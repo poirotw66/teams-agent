@@ -6,7 +6,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, FastAPI, Header, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from ..evaluation_domain import EvaluationRunService
 

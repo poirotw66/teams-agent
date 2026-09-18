@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 
 class ModelEffectError(Exception):

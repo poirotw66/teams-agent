@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .errors import (
     EvaluationDomainError,

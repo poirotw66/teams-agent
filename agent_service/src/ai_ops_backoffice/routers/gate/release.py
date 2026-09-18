@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from ...evaluation_domain.runner_models import TargetManifest
 from .context import GateRouteContext

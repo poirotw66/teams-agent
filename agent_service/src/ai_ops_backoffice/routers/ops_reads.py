@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import Depends, FastAPI, Response
 
@@ -76,7 +77,7 @@ def register_ops_read_routes(
 
     @app.get("/api/capabilities")
     async def capabilities(actor: Any = Depends(current_actor)) -> dict[str, object]:
-        from agent_service.operations.access import CAPABILITIES
+        from operations_core.access import CAPABILITIES
 
         knowledge_caps = sorted(knowledge_capabilities_for(actor))
         return {

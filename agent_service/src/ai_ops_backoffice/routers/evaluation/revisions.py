@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .context import EvaluationRouteContext
 from .models import ReviewRevisionPayload, RevisionCreatePayload, SubmitRevisionPayload

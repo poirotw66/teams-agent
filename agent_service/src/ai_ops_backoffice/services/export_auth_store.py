@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .export_authorization import (
     ExportAuthoritySource,

@@ -12,7 +12,7 @@ import json
 import time
 import uuid
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 from platform_kernel.delegation import (
     DelegationError,
     b64url,

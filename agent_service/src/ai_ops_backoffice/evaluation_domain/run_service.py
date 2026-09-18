@@ -8,7 +8,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .errors import (
     EvaluationAuthorizationError,

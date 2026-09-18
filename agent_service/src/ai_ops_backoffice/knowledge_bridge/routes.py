@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .capabilities import capability_for_portal_path, has_knowledge_capability
 from .client import KnowledgePortalClient

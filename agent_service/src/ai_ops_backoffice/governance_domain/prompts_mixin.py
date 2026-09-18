@@ -1,62 +1,37 @@
 from __future__ import annotations
 
 import uuid
-from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from agent_service.extractor import SYSTEM_PROMPT
-from agent_service.operations.access import CAPABILITIES, ActorContext
-from agent_service.operations.masking import MASKING_POLICY_VERSION, redact_secrets
-from agent_service.operations.masking_rules import resolve_masking_pack
+from operations_core.access import ActorContext
 
 from .constants import (
-    FALLBACK_TRIGGERS,
-    FLAG_CATALOG,
-    ISSUE_EXTRACTOR_PROMPT_ID,
-    MAX_PROMPT_LENGTH,
-    PROVIDER_MODELS,
     READ,
     WRITE,
 )
 from .errors import (
-    GovernanceAuthorizationError,
     GovernanceConflictError,
     GovernanceNotFoundError,
     GovernanceTransitionError,
     GovernanceValidationError,
 )
-from .eval_flow import PromptFlowHarness
-from .eval_runner import evaluate_model, evaluate_prompt_async
+from .eval_runner import evaluate_prompt_async
 from .helpers import (
     content_hash,
     fingerprint,
     public_prompt,
-    reject_secrets_and_injection,
     replay,
-    require_secret_ref,
     short_version,
     sticky_bucket,
     with_idempotency,
 )
 from .models import (
-    EvalRun,
-    FlagRecord,
-    FlagVersion,
-    GovernanceAuditEvent,
     GovernanceState,
-    MaskingPolicyVersion,
-    ModelConfigRecord,
-    ModelConfigVersion,
-    PromptRecord,
     PromptVersion,
-    RetentionPolicyVersion,
-    RoleMappingChange,
     replace_model,
-    utc_now,
 )
-from .repository import GovernanceRepository
 
 Clock = Callable[[], datetime]
 
@@ -64,28 +39,16 @@ Clock = Callable[[], datetime]
 
 
 from .service_helpers import (
-    _allowed,
-    _upsert,
+    _activate_prompt,
+    _active_prompt,
+    _approve_prompt,
+    _candidate_template,
     _find_prompt,
     _find_prompt_version,
-    _active_prompt,
-    _find_model,
-    _find_model_version,
-    _baseline_prompt,
-    _baseline_model,
-    _baseline_flags,
+    _upsert,
     _verified_examples,
-    _candidate_template,
-    _eval_for,
-    _approve_prompt,
-    _activate_prompt,
-    _validate_model,
-    _public_model,
-    _approve_model,
-    _activate_model,
-    _approve_flag,
-    _activate_flag,
 )
+
 
 class GovernancePromptsMixin:
     def list_prompts(self, *, actor: ActorContext) -> list[dict[str, Any]]:

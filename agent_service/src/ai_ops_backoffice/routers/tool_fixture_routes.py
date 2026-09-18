@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from ..evaluation_domain.tool_fixtures import ToolFixtureService
 

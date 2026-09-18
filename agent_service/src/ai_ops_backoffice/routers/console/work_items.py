@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .collection import (
     collect_knowledge_items,

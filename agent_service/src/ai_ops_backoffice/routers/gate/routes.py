@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, FastAPI
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from ...evaluation_domain.gate_service import QualityGateService
 from .context import GateRouteContext

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from agent_service.operations.access import ActorContext, BackofficeRole
+from operations_core.access import ActorContext, BackofficeRole
 
 from .entra_auth import EntraAuthError, resolve_actor_from_entra
 

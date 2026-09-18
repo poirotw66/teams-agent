@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from agent_service.operations.access import ActorContext, BackofficeRole
+from operations_core.access import ActorContext, BackofficeRole
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .errors import FaqAuthorizationError
 
