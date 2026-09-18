@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_service.layout_chunking import ChunkingProfile
+from knowledge_core.chunking_profile import ChunkingProfile
 
 from .models import (
     AssetRefSuggestion,

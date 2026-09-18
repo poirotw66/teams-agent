@@ -11,7 +11,7 @@ from fastapi import (
     HTTPException,
 )
 
-from agent_service.layout_chunking import ChunkingProfile
+from knowledge_core.chunking_profile import ChunkingProfile
 from knowledge_portal.models import (
     CreateDocumentRequest,
     PortalActor,

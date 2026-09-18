@@ -7,16 +7,11 @@ import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from knowledge_core.chunking_profile import ChunkingProfile
+
 from .document_parsing import BlockKind, ParsedBlock, ParsedDocument
 
 _TOKEN = re.compile(r"[\u3400-\u9fff]|[A-Za-z0-9_]+|[^\s]")
-
-
-class ChunkingProfile(StrEnum):
-    AUTO = "AUTO"
-    SLIDE_DECK = "SLIDE_DECK"
-    MANUAL = "MANUAL"
-    POLICY = "POLICY"
 
 
 @dataclass(frozen=True)

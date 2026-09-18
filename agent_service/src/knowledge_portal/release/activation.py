@@ -12,8 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
-from agent_service.knowledge_release import write_active_release_pointer
 from knowledge_core.release_gate import ReleaseGateBlockedError, require_release_gate
+from knowledge_core.release_pointer import write_active_release_pointer
 from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
 from knowledge_portal.models import (
     KnowledgeVersionRecord,

@@ -197,7 +197,7 @@ class KnowledgeMigrationService:
         except ReleaseBuildError as exc:
             raise ValueError(str(exc)) from exc
 
-        from agent_service.knowledge_release import write_active_release_pointer
+        from knowledge_core.release_pointer import write_active_release_pointer
 
         gate_hash = release.target_manifest_hash or knowledge_release_target_manifest_hash(
             release_id=release.release_id

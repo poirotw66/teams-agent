@@ -10,10 +10,10 @@ from typing import Any
 
 from agent_service.document_parsing import MarkdownLayoutParser
 from agent_service.layout_chunking import (
-    ChunkingProfile,
     chunk_parsed_document,
     chunk_quality_issues,
 )
+from knowledge_core.chunking_profile import ChunkingProfile
 from knowledge_core.front_matter import parse_front_matter, strip_excluded_markdown
 
 from ..draft_assets import DraftAssetStore, slug_from_title

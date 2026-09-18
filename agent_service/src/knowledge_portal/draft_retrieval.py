@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_service.documents import load_source_chunks
-from agent_service.knowledge_release import read_active_release_id, release_index_path
 from agent_service.retrieval import HybridIndex
+from knowledge_core.release_pointer import read_active_release_id, release_index_path
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord

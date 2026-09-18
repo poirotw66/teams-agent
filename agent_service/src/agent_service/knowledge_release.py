@@ -5,6 +5,13 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from knowledge_core.release_pointer import (
+    ACTIVE_RELEASE_FILENAME,
+    read_active_release_id,
+    release_index_path,
+    write_active_release_pointer,
+)
+
 from .knowledge_release_control import read_firestore_release_reference
 from .knowledge_release_gcs import download_release_metadata
 from .release_artifacts import (
@@ -17,7 +24,15 @@ from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_RELEASE_FILENAME = "active_release.json"
+__all__ = [
+    "ACTIVE_RELEASE_FILENAME",
+    "ResolvedKnowledgeIndex",
+    "manifest_file_search_store",
+    "read_active_release_id",
+    "release_index_path",
+    "resolve_knowledge_index",
+    "write_active_release_pointer",
+]
 
 
 @dataclass(frozen=True)
@@ -28,32 +43,6 @@ class ResolvedKnowledgeIndex:
     artifact: KnowledgeIndexArtifact | None = None
     release_dir: Path | None = None
     file_search_store: str | None = None
-
-
-def read_active_release_id(release_dir: Path) -> str | None:
-    pointer = release_dir / ACTIVE_RELEASE_FILENAME
-    if not pointer.is_file():
-        return None
-    payload = json.loads(pointer.read_text(encoding="utf-8"))
-    release_id = payload.get("releaseId") or payload.get("release_id")
-    return str(release_id) if release_id else None
-
-
-def write_active_release_pointer(release_dir: Path, release_id: str | None) -> None:
-    release_dir.mkdir(parents=True, exist_ok=True)
-    pointer = release_dir / ACTIVE_RELEASE_FILENAME
-    if release_id is None:
-        if pointer.exists():
-            pointer.unlink()
-        return
-    pointer.write_text(
-        json.dumps({"releaseId": release_id}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def release_index_path(release_dir: Path, release_id: str) -> Path:
-    return release_dir / release_id / "index" / "chunks.json"
 
 
 def resolve_knowledge_index(

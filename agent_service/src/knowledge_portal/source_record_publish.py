@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from agent_service.source_refs import make_source_ref_id, safe_source_path
+from knowledge_core.source_identity import make_source_ref_id, safe_source_path
 from platform_kernel.ports.source_catalog import SourceCatalogEntry, SourceCatalogWriter
 
 from .models import ReleaseRecord

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_service.knowledge_eligibility import is_generation_metadata_eligible
+from knowledge_core.eligibility import is_generation_metadata_eligible
 
 _FILE_SEARCH_MAX_CHUNK_TOKENS = 512
 
