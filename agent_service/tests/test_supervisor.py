@@ -59,6 +59,60 @@ async def test_supervisor_handles_pure_greeting_deterministically() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["你好呀", "你好牙", "謝謝喔", "哈囉啊"])
+async def test_supervisor_handles_greeting_particles_deterministically(
+    message: str,
+) -> None:
+    decision = await ConversationSupervisor(None).decide(message=message)
+
+    assert decision.intent == "GREETING"
+    assert decision.confidence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_supervisor_remaps_short_social_non_it_to_greeting() -> None:
+    class NonItModel:
+        def with_structured_output(self, _schema):
+            class Handle:
+                async def ainvoke(self, _messages):
+                    return ConversationSupervisorDecision(
+                        intent="NON_IT",
+                        confidence=0.94,
+                    )
+
+            return Handle()
+
+    decision = await ConversationSupervisor(NonItModel()).decide(
+        message="嗨嗨～",
+        recent_turns=["user: VPN 無法登入"],
+    )
+
+    assert decision.intent == "GREETING"
+    assert decision.confidence == 0.94
+
+
+@pytest.mark.asyncio
+async def test_supervisor_keeps_clear_non_it_for_food_chitchat() -> None:
+    class NonItModel:
+        def with_structured_output(self, _schema):
+            class Handle:
+                async def ainvoke(self, _messages):
+                    return ConversationSupervisorDecision(
+                        intent="NON_IT",
+                        confidence=0.9,
+                    )
+
+            return Handle()
+
+    decision = await ConversationSupervisor(NonItModel()).decide(
+        message="午餐呢",
+        recent_turns=["user: VPN 無法登入"],
+    )
+
+    assert decision.intent == "NON_IT"
+
+
+@pytest.mark.asyncio
 async def test_supervisor_rejects_unsubstantiated_ticket_creation() -> None:
     class TicketModel:
         def with_structured_output(self, _schema):

@@ -64,7 +64,10 @@ class ClarificationWorkflowMixin:
         if not can_terminate:
             return routing
 
-        if decision.intent in {"GREETING", "ASSISTANT_META"} and not (
+        # ASSISTANT_META stays gated by deterministic scope evidence. GREETING
+        # may terminate on high confidence alone — social false positives are
+        # cheaper than OOS rejects, and regex is only a zero-LLM fast path.
+        if decision.intent == "ASSISTANT_META" and not (
             self.supervisor.supports_terminal_intent(
                 request.message.text,
                 decision.intent,

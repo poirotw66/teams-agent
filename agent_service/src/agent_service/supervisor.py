@@ -70,12 +70,34 @@ Prefer explicit user meaning over keyword matching. Mixed IT and non-IT messages
 so downstream issue extraction can split them."""
 
 _PURE_GREETING = re.compile(
-    r"^(?:你好|您好|嗨|哈囉|hello|hi|早安|午安|晚安|謝謝|感謝)(?:你|您)?[！!。.．]*$",
+    r"^(?:你好|您好|嗨|哈囉|hello|hi|早安|午安|晚安|謝謝|感謝)"
+    r"(?:你|您)?"
+    r"(?:呀|啊|喔|哦|呢|哈|牙)?"
+    r"[！!。.．～~\s]*$",
+    re.IGNORECASE,
+)
+_SOCIAL_COURTESY = re.compile(
+    r"^(?:你好|您好|嗨|哈囉|hello|hi|早安|午安|晚安|謝謝|感謝|hey)+"
+    r"(?:你|您|呀|啊|喔|哦|呢|哈|牙)*"
+    r"[！!。.．～~\s]*$",
     re.IGNORECASE,
 )
 _CONTEXTUAL_REPLY = re.compile(
     r"^(?:是|不是|否|好|好的|可以|不可以|不知道|不清楚|沒有|有|它|這個|那個|上述|剛剛)[！!。.．]*$"
 )
+
+
+def looks_like_social_courtesy(message: str) -> bool:
+    """Return whether the utterance is short greeting/thanks-style courtesy."""
+    normalized = message.strip()
+    if not normalized:
+        return False
+    if _PURE_GREETING.fullmatch(normalized):
+        return True
+    compact = re.sub(r"\s+", "", normalized)
+    if len(compact) > 12:
+        return False
+    return bool(_SOCIAL_COURTESY.fullmatch(compact))
 
 
 class ConversationSupervisor:
@@ -180,6 +202,13 @@ class ConversationSupervisor:
             if _has_helpdesk_domain_evidence(message):
                 return ConversationSupervisorDecision(
                     intent="IT_SUPPORT",
+                    confidence=decision.confidence,
+                )
+            # Greetings are first-class social turns, not OOS rejects. Prefer
+            # remapping short courtesy mislabeled as NON_IT over hard refusal.
+            if looks_like_social_courtesy(message):
+                return ConversationSupervisorDecision(
+                    intent="GREETING",
                     confidence=decision.confidence,
                 )
         return decision

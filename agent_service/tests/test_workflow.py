@@ -723,6 +723,51 @@ async def test_greeting_skips_extractor_and_rag(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["你好呀", "你好牙"])
+async def test_greeting_particle_skips_extractor_and_rag(
+    tmp_path: Path,
+    message: str,
+) -> None:
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[issue(description="不應被使用")]],
+    )
+
+    response = await workflow.respond(make_request(message))
+
+    assert extractor_model.calls == 0
+    assert knowledge.calls == []
+    assert "你好！我是 IT 助手" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_short_social_non_it_is_remapped_to_greeting(tmp_path: Path) -> None:
+    first_issue = issue(description="VPN 無法登入")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue]],
+        supervisor_by_message={
+            "嗨嗨～": ConversationSupervisorDecision(
+                intent="NON_IT",
+                confidence=0.94,
+            )
+        },
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request(first_issue.description))
+    response = await workflow.respond(make_request("嗨嗨～"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [first_issue.description]
+    assert "你好！我是 IT 助手" in response.answer
+    assert "不屬於公司 IT 支援範圍" not in response.answer
+
+
+@pytest.mark.asyncio
 async def test_greeting_with_it_problem_continues_to_rag(tmp_path: Path) -> None:
     vpn_issue = issue(description="VPN 連不上")
     knowledge = FakeKnowledgeService(
@@ -778,7 +823,36 @@ async def test_low_confidence_terminal_decision_continues_to_extractor(
 
 
 @pytest.mark.asyncio
-async def test_unsubstantiated_greeting_decision_continues_to_extractor(
+async def test_high_confidence_greeting_terminates_without_regex_gate(
+    tmp_path: Path,
+) -> None:
+    """Model GREETING no longer needs a deterministic regex re-check to terminate."""
+    first_issue = issue(description="Outlook 無法寄信")
+    knowledge = FakeKnowledgeService(
+        default=KnowledgeResult(found=True, answer="已找到處理方式。", backend="HYBRID")
+    )
+    workflow, extractor_model, knowledge, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[first_issue]],
+        supervisor_by_message={
+            "嗨嗨": ConversationSupervisorDecision(
+                intent="GREETING",
+                confidence=0.99,
+            )
+        },
+        knowledge=knowledge,
+    )
+
+    await workflow.respond(make_request(first_issue.description))
+    response = await workflow.respond(make_request("嗨嗨"))
+
+    assert extractor_model.calls == 1
+    assert knowledge.calls == [first_issue.description]
+    assert "你好！我是 IT 助手" in response.answer
+
+
+@pytest.mark.asyncio
+async def test_unsubstantiated_assistant_meta_continues_to_extractor(
     tmp_path: Path,
 ) -> None:
     first_issue = issue(description="Outlook 無法寄信")
@@ -792,7 +866,7 @@ async def test_unsubstantiated_greeting_decision_continues_to_extractor(
         extractor_by_message={"VPN": [vpn_issue]},
         supervisor_by_message={
             "VPN": ConversationSupervisorDecision(
-                intent="GREETING",
+                intent="ASSISTANT_META",
                 confidence=0.99,
             )
         },
