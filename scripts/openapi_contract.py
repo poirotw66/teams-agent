@@ -1,13 +1,12 @@
 """Shared OpenAPI contract helpers for snapshots, breaking checks, and TS gen.
 
-Canonical artifact (Phase F first slice):
+Canonical artifact (Phase F):
   docs/architecture/baselines/openapi/ai_ops_backoffice.openapi.json
 
 Inventory snapshots (routes/schemas) remain the lightweight CI ratchet for all
 three FastAPI services. The canonical document preserves full schemas and real
-operationIds for TypeScript generation and breaking-change analysis.
+operationIds for TypeScript schema/client generation and breaking-change analysis.
 """
-
 from __future__ import annotations
 
 import json
@@ -17,13 +16,14 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_DIR = REPO_ROOT / "docs" / "architecture" / "baselines" / "openapi"
 
-# First Phase F seam: Backoffice is the Console frontend's primary HTTP surface.
+# Backoffice is the Console frontend's primary HTTP surface.
 CANONICAL_OPENAPI_SERVICES: tuple[str, ...] = ("ai_ops_backoffice",)
 
 GENERATED_TS_DIR = (
     REPO_ROOT / "console_frontend" / "src" / "shared" / "api" / "generated"
 )
 GENERATED_TS_FILE = GENERATED_TS_DIR / "backoffice-schemas.ts"
+GENERATED_TS_CLIENT_FILE = GENERATED_TS_DIR / "backoffice-client.ts"
 
 
 def rel_path(path: Path) -> str:

@@ -10,7 +10,7 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 | `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet |
 | `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories and the canonical Backoffice OpenAPI document (breaking-change report on drift) |
-| `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/generate_openapi_ts.py --check` | Verify generated Console TypeScript schemas match the canonical OpenAPI |
+| `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/generate_openapi_ts.py --check` | Verify generated Console TypeScript schemas + client match the canonical OpenAPI |
 | `python3 scripts/sync_console_v2.py --check` | Verify committed `static/console-v2` matches a fresh `console_frontend` production rebuild (hash parity) |
 | `PYTHONPATH=../src:src uv run --directory agent_service python ../scripts/check_wire_contracts.py` | Adapter ↔ Agent wire-field compatibility |
 | Golden / release / frontend steps | Named jobs in `.github/workflows/ci.yml` |
@@ -27,7 +27,8 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    Canonical full OpenAPI for the Console seam is
    `baselines/openapi/ai_ops_backoffice.openapi.json` (real `operationId`s + schemas).
    Generated TypeScript lives at
-   `console_frontend/src/shared/api/generated/backoffice-schemas.ts`.
+   `console_frontend/src/shared/api/generated/backoffice-schemas.ts` (schemas)
+   and `backoffice-client.ts` (typed `backofficeClient` operation wrappers).
    After intentional API changes:
    `snapshot_openapi.py --write` then `generate_openapi_ts.py --write`.
 6. Production React console assets live at

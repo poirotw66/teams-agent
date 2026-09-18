@@ -1,6 +1,8 @@
 import { DataProvider } from '@refinedev/core';
 import { apiClient } from '../../shared/api/client';
-import { WorkItemsResponse, WorkflowDetailResponse } from '../../shared/api/types';
+import { backofficeClient } from '../../shared/api/generated/backoffice-client';
+import type { WorkItemsResponse } from '../../shared/api/generated/backoffice-schemas';
+import { WorkflowDetailResponse } from '../../shared/api/types';
 
 export const dataProvider: DataProvider = {
   getList: async ({ resource, pagination, filters }) => {
@@ -12,15 +14,14 @@ export const dataProvider: DataProvider = {
       const cursorFilter = filters?.find((f) => 'field' in f && f.field === 'cursor');
       const cursor = cursorFilter && 'value' in cursorFilter ? String(cursorFilter.value) : '';
 
-      const queryParams = new URLSearchParams({
-        bucket,
-        limit: String(pageSize),
-      });
-      if (cursor) {
-        queryParams.set('cursor', cursor);
-      }
-
-      const res = await apiClient<WorkItemsResponse>(`/api/console/work-items?${queryParams.toString()}`);
+      const res: WorkItemsResponse =
+        await backofficeClient.list_work_items_api_console_work_items_get({
+          query: {
+            bucket,
+            limit: pageSize,
+            ...(cursor ? { cursor } : {}),
+          },
+        });
       return {
         data: res.items as unknown as any[],
         total: res.total,

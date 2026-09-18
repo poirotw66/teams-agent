@@ -20,19 +20,27 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `knowledge_core`: release gate/pointers, target manifest, front-matter, artifacts,
   chunking profile, eligibility, document chunks/layout, artifact ports, File Search ACL.
 - Portal ports + composition Agent adapters → **Portal→Agent = 0**.
-- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24 → 20 → 18 → 17**.
+- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24 → 20 → 18 → 17 → 13**.
 - Scope event filtering (`filter_events_by_scope` + helpers) + `TaxonomyLookup`
   Protocol live in `operations_core`; Agent `operations.scope` is a facade.
 - Security-policy catalog + marker matching (`SECURITY_POLICIES`,
   `known_policy_ids_in_text`) live in `operations_core`; Agent
   `security_policies` keeps Citation / advisory builders as a facade.
   Workbench `citations.py` retargeted off Agent.
+- `AuditStore` Protocol + `build_audit_event` live in `operations_core.audit`;
+  Agent keeps `build_audit_store` + store backends as a facade.
+- `TaxonomyRepository` lives in `operations_core.taxonomy`; Agent facade retained.
+  Pricing / export / query_audit / query_helpers retargeted; query_service
+  uses `knowledge_core` local artifact storage (GCS still Agent-backed).
 
 ### Phase E — Application / persistence boundaries
 - Workbench JSON store; public query/source/export/policy accessors; AST private-access gate.
 
-### Phase F — Canonical OpenAPI + generated TS (first slice)
+### Phase F — Canonical OpenAPI + generated TS (second slice)
 - Canonical Backoffice OpenAPI + breaking-change report + generated TS schemas + CI freshness.
+- Typed `backofficeClient` operation wrappers (`backoffice-client.ts`) from the same
+  generator (`generate_openapi_ts.py --write` / `--check`). Optional consumer example:
+  `dataProvider` work-items list.
 
 ### Phase G — Independent frontend deliver (first slice)
 - `sync_console_v2.py` hash gate for committed `static/console-v2`.
@@ -40,20 +48,21 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 ### Phase H — Oversized domain convergence
 - `draft_assets` / `export_service` / `eval_runtime` (1018→562) / `evaluation repository` (975→330).
 - `evaluation_domain/runner.py` (973→478): extracted retrieval / multi-turn / side-execution helpers.
+- `quality_domain/service.py` (902→713): extracted `clustering.py` + `case_ops.py`; facade kept.
 
 ## Still open (goal continues)
 
 | Phase | Status |
 |---|---|
-| D Backoffice→Agent (17 files) | In progress — remaining: audit/taxonomy/stores, eval/graph wiring, artifacts, prompts |
+| D Backoffice→Agent (13 files) | In progress — remaining: eval/graph wiring, artifacts GCS, prompts, freshness, firestore repos |
 | D Portal→Agent | **Done (0)** |
 | E polish beyond hotspot paths | Mostly done |
-| F full TS client + DTO migration | First slice done |
+| F full TS client + DTO migration | Client generated; DTO migration still open |
 | G legacy-js removal / independent deploy | First slice done |
 | H more oversized offenders | Continues |
 
 Repository strategy: modular monorepo; no physical repo split.
 
 Current ownership importer caps:
-- `ai_ops_backoffice→agent_service`: **17**
+- `ai_ops_backoffice→agent_service`: **13**
 - `knowledge_portal→agent_service`: **0**

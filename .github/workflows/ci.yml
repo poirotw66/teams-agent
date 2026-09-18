@@ -47,7 +47,8 @@ jobs:
         run: PYTHONPATH=src uv run python ../scripts/snapshot_openapi.py --check
       - name: Generated OpenAPI TypeScript freshness
         # Ensures console_frontend/src/shared/api/generated matches the canonical
-        # Backoffice OpenAPI. Regenerate with scripts/generate_openapi_ts.py --write.
+        # Backoffice OpenAPI schemas + client. Regenerate with
+        # scripts/generate_openapi_ts.py --write.
         run: PYTHONPATH=src uv run python ../scripts/generate_openapi_ts.py --check
       - name: Wire-contract compatibility
         run: PYTHONPATH=../src:src uv run python ../scripts/check_wire_contracts.py
