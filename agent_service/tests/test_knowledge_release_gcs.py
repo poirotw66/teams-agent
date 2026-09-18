@@ -154,7 +154,7 @@ def test_portal_release_record_persists_gcs_integrity_metadata(
             )
 
     with patch(
-        "knowledge_portal.publisher.get_release_directory_publisher",
+        "knowledge_portal.publisher_finalize.get_release_directory_publisher",
         return_value=_Publisher(),
     ):
         release = ReleasePublisher(settings).build_release(
