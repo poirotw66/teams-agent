@@ -92,6 +92,8 @@ class RetrievalTrace(StrictModel):
     terminalReason: str | None = None
     # Stage timings in milliseconds (embedding, retrieval, relevance, generate, …).
     stageTimingsMs: dict[str, float] = Field(default_factory=dict)
+    # Adaptive post-retrieve tier: trivial | standard | hard.
+    queryTier: str | None = None
 
 
 class Citation(StrictModel):

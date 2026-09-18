@@ -99,6 +99,7 @@ def test_from_env_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert settings.supervisor_terminal_confidence == 0.9
     assert settings.max_llm_calls_per_request == 6
     assert settings.max_retrieval_rewrites == 1
+    assert settings.enable_adaptive_query_tiers is True
     assert settings.knowledge_service_mode == "HYBRID"
     assert settings.gemini_file_search_store is None
     assert settings.knowledge_backend_state_mode == "MEMORY"

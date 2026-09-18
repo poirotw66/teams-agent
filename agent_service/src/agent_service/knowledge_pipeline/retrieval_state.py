@@ -20,6 +20,8 @@ class RetrievalState:
     trace_attempts: list[RetrievalAttempt] = field(default_factory=list)
     attempt: int = 0
     stage_timings_ms: dict[str, float] = field(default_factory=dict)
+    query_tier: str | None = None
+    enable_generation_retries: bool = True
 
 
 __all__ = ["RetrievalState"]

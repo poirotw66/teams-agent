@@ -46,6 +46,8 @@ def make_settings(tmp_path: Path, **overrides) -> RagSettings:
         "min_score": 0.05,
         "max_retrieval_rewrites": 1,
         "skip_relevance_llm_on_high_confidence": False,
+        # Keep legacy rewrite/retry expectations unless a test opts in.
+        "enable_adaptive_query_tiers": False,
     }
     defaults.update(overrides)
     return RagSettings(**defaults)
@@ -1037,6 +1039,52 @@ async def test_hybrid_sap_answer_never_falls_back_to_an_unrelated_dazhou_source(
     assert result.found is True
     assert [source.title for source in result.sources] == ["SAP 密碼重設"]
     assert all("大州" not in source.title for source in result.sources)
+
+
+@pytest.mark.asyncio
+async def test_adaptive_tiers_skip_rewrite_on_standard_relevance_reject(
+    tmp_path: Path,
+) -> None:
+    index = CountingIndex([vpn_chunk(content="完全無關的內容 xyz")])
+    settings = make_settings(
+        tmp_path,
+        max_retrieval_rewrites=1,
+        min_score=0.0,
+        enable_adaptive_query_tiers=True,
+    )
+    model = FakeChatModel(relevant=False, rewritten_query="VPN 密碼")
+    service = HybridKnowledgeService(settings, index, model=model)
+
+    result = await service.search("這個問題找不到答案", make_user())
+
+    assert result.found is False
+    # Mid/low-confidence reject stays standard → no rewrite retrieve.
+    assert index.search_calls == 1
+    assert model.structured_output_calls.count("RewrittenQuery") == 0
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.queryTier in {"standard", "hard", "trivial"}
+
+
+@pytest.mark.asyncio
+async def test_adaptive_tiers_hard_path_still_rewrites(tmp_path: Path) -> None:
+    index = CountingIndex([])
+    settings = make_settings(
+        tmp_path,
+        max_retrieval_rewrites=1,
+        min_score=0.5,
+        enable_adaptive_query_tiers=True,
+    )
+    model = FakeChatModel(relevant=False, rewritten_query="VPN 密碼")
+    service = HybridKnowledgeService(settings, index, model=model)
+
+    result = await service.search("這個問題找不到答案", make_user())
+
+    assert result.found is False
+    # Empty retrieval → hard → rewrite still allowed.
+    assert index.search_calls == 2
+    assert model.structured_output_calls.count("RewrittenQuery") == 1
+    assert result.retrievalTrace is not None
+    assert result.retrievalTrace.queryTier == "hard"
 
 
 @pytest.mark.asyncio

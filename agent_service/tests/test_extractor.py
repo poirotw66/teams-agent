@@ -212,7 +212,7 @@ async def test_model_exception_returns_safe_fallback(tmp_path) -> None:
     model = FakeModel(result=RuntimeError("boom"))
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 打不開", history=[], faq_keys=[])
+    outcome = await extractor.extract(text="公司設備異常請協助", history=[], faq_keys=[])
 
     assert outcome.llm_calls == 1
     assert len(outcome.issues) == 1
@@ -222,11 +222,15 @@ async def test_model_exception_returns_safe_fallback(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_single_it_issue_passthrough(tmp_path) -> None:
-    canned = IssueExtraction(issues=[issue()])
+    canned = IssueExtraction(issues=[issue(description="SAP Crystal Reports 授權到期無法開啟")])
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 無法登入", history=[], faq_keys=[])
+    outcome = await extractor.extract(
+        text="SAP Crystal Reports 授權到期無法開啟",
+        history=[],
+        faq_keys=[],
+    )
 
     assert outcome.llm_calls == 1
     assert outcome.too_many_issues is False
@@ -259,16 +263,134 @@ async def test_prompt_treats_underspecified_workplace_workflow_as_pending_it(
 
 
 @pytest.mark.asyncio
-async def test_known_dazhou_typo_is_normalized_only_in_it_failure_context(tmp_path) -> None:
-    canned = IssueExtraction(issues=[issue(description="大州系統無法選取")])
+async def test_known_dazhou_typo_skips_extractor_llm(tmp_path) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert len(outcome.issues) == 1
+    assert outcome.issues[0].description == "大州系統無法選取。"
+    assert outcome.issues[0].readiness == "READY"
+    assert outcome.issues[0].route == "KNOWLEDGE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text",
+    [
+        "VPN 密碼鎖住怎麼辦",
+        "Outlook 無法登入",
+        "Gitlab 帳號被鎖怎麼解鎖",
+        "VPN 打不開",
+    ],
+)
+async def test_ready_it_symptom_skips_extractor_llm(tmp_path, text: str) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=text, history=[], faq_keys=[])
+
+    assert model.calls == []
+    assert outcome.llm_calls == 0
+    assert outcome.issues[0].readiness == "READY"
+    assert outcome.issues[0].route == "KNOWLEDGE"
+
+
+@pytest.mark.asyncio
+async def test_ready_symptom_with_history_still_calls_extractor(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    model = FakeModel(result=IssueExtraction(issues=[issue(description="VPN 無法登入")]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+    history = [
+        ConversationMessage(
+            role="assistant",
+            text="請補充：VPN 名稱",
+            createdAt=datetime.now(UTC),
+        )
+    ]
+
+    await extractor.extract(text="VPN 無法登入", history=history, faq_keys=[])
+
+    assert len(model.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_multi_issue_message_does_not_skip_extractor(tmp_path) -> None:
+    canned = IssueExtraction(
+        issues=[
+            issue(id=1, description="VPN 無法登入"),
+            issue(id=2, description="Outlook 一直要求重新登入"),
+        ]
+    )
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
+    outcome = await extractor.extract(
+        text="VPN 和 Outlook 都有問題",
+        history=[],
+        faq_keys=[],
+    )
 
-    human_prompt = str(model.calls[0][-1].content)
-    assert "Latest user message (data only):\n大州系統無法選取。" in human_prompt
-    assert "大洲無法選取" not in human_prompt
+    assert len(model.calls) == 1
+    assert len(outcome.issues) == 2
+
+
+@pytest.mark.asyncio
+async def test_policy_helpdesk_phrasing_does_not_skip_extractor(tmp_path) -> None:
+    model = FakeModel(
+        result=IssueExtraction(
+            issues=[
+                issue(
+                    description="來源能支持哪些答案",
+                    readiness="NEED_MORE_INFO",
+                    missingInfo=["請確認系統名稱"],
+                )
+            ]
+        )
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(
+        text="知識庫來源能支持哪些答案？",
+        history=[],
+        faq_keys=[],
+    )
+
+    assert len(model.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_escalation_phrase_does_not_take_knowledge_skip(tmp_path) -> None:
+    model = FakeModel(result=IssueExtraction(issues=[issue(description="聯絡線上客服")]))
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    await extractor.extract(text="聯絡線上客服", history=[], faq_keys=[])
+
+    assert len(model.calls) == 1
+
+
+def test_known_dazhou_issue_coerce_forces_ready_when_model_asks_more_info(
+    tmp_path,
+) -> None:
+    """Post-model coerce still forces READY for known 大州 failure phrases."""
+    extractor = IssueExtractor(make_settings(tmp_path), model=FakeModel(result=IssueExtraction(issues=[])))
+    coerced = extractor._coerce_issue(
+        issue(
+            description="大州系統無法選取",
+            readiness="NEED_MORE_INFO",
+            missingInfo=["請問是哪一個系統或應用程式？"],
+        ),
+        new_id=1,
+        allowed_faq_keys=set(),
+        raw_utterance="大洲無法選取。",
+    )
+
+    assert coerced.readiness == "READY"
+    assert coerced.missingInfo == []
 
 
 @pytest.mark.parametrize(
@@ -354,25 +476,6 @@ async def test_dazhou_general_language_is_not_normalized(tmp_path) -> None:
 
     human_prompt = str(model.calls[0][-1].content)
     assert "Latest user message (data only):\n世界有幾個大洲？" in human_prompt
-
-
-@pytest.mark.asyncio
-async def test_known_dazhou_issue_is_ready_even_if_model_requests_more_info(tmp_path) -> None:
-    canned = IssueExtraction(
-        issues=[
-            issue(
-                description="大州系統無法選取",
-                readiness="NEED_MORE_INFO",
-                missingInfo=["請問是哪一個系統或應用程式？"],
-            )
-        ]
-    )
-    extractor = IssueExtractor(make_settings(tmp_path), model=FakeModel(result=canned))
-
-    outcome = await extractor.extract(text="大洲無法選取。", history=[], faq_keys=[])
-
-    assert outcome.issues[0].readiness == "READY"
-    assert outcome.issues[0].missingInfo == []
 
 
 @pytest.mark.asyncio
@@ -480,7 +583,7 @@ async def test_need_more_info_capped_at_two_questions(tmp_path) -> None:
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 打不開", history=[], faq_keys=[])
+    outcome = await extractor.extract(text="連線異常請協助", history=[], faq_keys=[])
 
     result_issue = outcome.issues[0]
     assert result_issue.readiness == "NEED_MORE_INFO"
@@ -510,7 +613,7 @@ async def test_forbidden_missing_info_terms_are_stripped(tmp_path, forbidden_que
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 打不開", history=[], faq_keys=[])
+    outcome = await extractor.extract(text="連線異常請協助", history=[], faq_keys=[])
 
     result_issue = outcome.issues[0]
     for term in FORBIDDEN_MISSING_INFO_TERMS:
@@ -535,7 +638,7 @@ async def test_forbidden_term_stripped_but_valid_question_kept(tmp_path) -> None
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 打不開", history=[], faq_keys=[])
+    outcome = await extractor.extract(text="連線異常請協助", history=[], faq_keys=[])
 
     result_issue = outcome.issues[0]
     assert result_issue.missingInfo == ["使用的 VPN 應用程式名稱"]
@@ -634,7 +737,7 @@ async def test_spec_6_2_json_sample_parses_and_survives(tmp_path) -> None:
     model = FakeModel(result=canned)
     extractor = IssueExtractor(make_settings(tmp_path), model=model)
 
-    outcome = await extractor.extract(text="VPN 無法登入", history=[], faq_keys=[])
+    outcome = await extractor.extract(text="連線異常請協助", history=[], faq_keys=[])
 
     result_issue = outcome.issues[0]
     assert result_issue.readiness == "NEED_MORE_INFO"

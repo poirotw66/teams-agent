@@ -56,6 +56,7 @@ def attach_retrieval_trace(
     fallback_path: str,
     terminal_reason: str | None,
     actual_backend: str = "HYBRID",
+    query_tier: str | None = None,
 ) -> KnowledgeResult:
     """Attach a ``RetrievalTrace`` and terminal reason onto a knowledge result."""
     trace = RetrievalTrace(
@@ -74,6 +75,7 @@ def attach_retrieval_trace(
         fallbackPath=fallback_path,
         terminalReason=terminal_reason,
         stageTimingsMs=dict(stage_timings_ms),
+        queryTier=query_tier,
     )
     return result.model_copy(
         update={

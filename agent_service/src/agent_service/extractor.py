@@ -167,6 +167,51 @@ Return ONLY the structured issues schema. Do not include any other commentary.
 _SAFE_FALLBACK_DESCRIPTION_MAX_LEN = 4000
 _GENERIC_TICKET_DESCRIPTION = "使用者提出的 IT 支援請求"
 _DAZHOU_FAILURE_TERMS = ("無法", "不能", "選取", "點選", "登入", "功能")
+# Operational symptom verbs/phrases for the READY skip-extractor.
+_READY_SYMPTOM_FAILURE_TERMS = (
+    "無法登入",
+    "無法連線",
+    "無法點選",
+    "無法選取",
+    "打不開",
+    "斷線",
+    "鎖住",
+    "被鎖",
+    "連不上",
+    "功能無法",
+    "無法開啟",
+    "無法使用",
+)
+# Concrete product/system names only — bare 系統/客戶 are too broad for READY.
+_READY_SYMPTOM_SYSTEM_TERMS = (
+    "vpn",
+    "outlook",
+    "teams",
+    "xq",
+    "proxy",
+    "gitlab",
+    "大州",
+    "forticlient",
+    "webex",
+    "sharepoint",
+    "powerpivot",
+    "入口網",
+    "樹精靈",
+    "金控入口",
+    "cteam",
+    "e點名",
+)
+_MULTI_ISSUE_CONNECTOR_RE = re.compile(r"和|與|還有|另外|同時|以及|兩邊|兩個")
+_POLICY_OR_META_QUESTION_MARKERS = (
+    "原則",
+    "為何",
+    "為什麼",
+    "哪些",
+    "什麼處置",
+    "來源能支持",
+    "能支持哪些",
+    "今天天氣",
+)
 _STANDALONE_HELPDESK_SIGNALS = (
     "powerpivot",
     "xq",
@@ -393,6 +438,40 @@ def _is_known_dazhou_issue(description: str) -> bool:
     return "大州" in description and any(term in description for term in _DAZHOU_FAILURE_TERMS)
 
 
+def _looks_like_multi_issue_message(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text)
+    return bool(_MULTI_ISSUE_CONNECTOR_RE.search(compact))
+
+
+def _is_ready_known_it_symptom(description: str) -> bool:
+    """Closed-set READY knowledge hits that do not need the extractor LLM."""
+    if _is_known_dazhou_issue(description):
+        return True
+    if any(marker in description for marker in _POLICY_OR_META_QUESTION_MARKERS):
+        return False
+    normalized = re.sub(r"\s+", " ", description).strip().casefold()
+    has_named_system = any(
+        term.casefold() in normalized for term in _READY_SYMPTOM_SYSTEM_TERMS
+    )
+    has_failure = any(term in description for term in _READY_SYMPTOM_FAILURE_TERMS)
+    return has_named_system and has_failure
+
+
+def _can_skip_extractor_for_ready_symptom(
+    text: str,
+    *,
+    history: list[ConversationMessage],
+) -> bool:
+    """Safety gates around the ready-symptom zero-LLM path."""
+    if history:
+        return False
+    if _looks_like_multi_issue_message(text):
+        return False
+    if _is_human_escalation_request(text) or _is_assistant_scope_question(text):
+        return False
+    return _is_ready_known_it_symptom(text)
+
+
 def _strip_ticket_command(text: str) -> str:
     stripped = _TICKET_COMMAND_RE.sub("", text).strip(_TICKET_COMMAND_PUNCTUATION)
     if _is_courtesy_only(stripped):
@@ -500,6 +579,19 @@ class IssueExtractor:
         }:
             return ExtractionOutcome(
                 issues=[self._ticket_intent_issue(normalized_text, ticket_intent)],
+                too_many_issues=False,
+                llm_calls=0,
+            )
+
+        # Ready IT symptoms (named system + failure, dazhou, error codes) are a
+        # closed READY knowledge set. Skip the extractor LLM when history and
+        # multi-issue gates pass — same shape as ticket-intent short circuits.
+        if _can_skip_extractor_for_ready_symptom(
+            normalized_text,
+            history=history,
+        ):
+            return ExtractionOutcome(
+                issues=[self._fallback_issue(normalized_text)],
                 too_many_issues=False,
                 llm_calls=0,
             )

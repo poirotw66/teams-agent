@@ -66,6 +66,7 @@ class RagSettings:
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
     skip_relevance_llm_on_high_confidence: bool = True
+    enable_adaptive_query_tiers: bool = True
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"
@@ -223,6 +224,9 @@ class RagSettings:
             ),
             skip_relevance_llm_on_high_confidence=_bool_env(
                 "RAG_SKIP_RELEVANCE_LLM_ON_HIGH_CONFIDENCE", True
+            ),
+            enable_adaptive_query_tiers=_bool_env(
+                "ENABLE_ADAPTIVE_QUERY_TIERS", True
             ),
             ticket_service_mode=environ.get("TICKET_SERVICE_MODE", "DISABLED").strip()
             or "DISABLED",

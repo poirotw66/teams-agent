@@ -111,6 +111,8 @@ class HybridKnowledgeService:
             request=request,
             default_model=self.model,
             max_retrieval_rewrites=self.settings.max_retrieval_rewrites,
+            min_score=self.settings.min_score,
+            enable_adaptive_query_tiers=self.settings.enable_adaptive_query_tiers,
             retrieve=self._retrieve,
             documents_are_relevant=self._documents_are_relevant,
             generate=self._generate,
@@ -159,6 +161,7 @@ class HybridKnowledgeService:
             stage_timings_ms=state.stage_timings_ms,
             fallback_path=fallback_path,
             terminal_reason=terminal_reason,
+            query_tier=state.query_tier,
         )
 
     async def _retrieve(

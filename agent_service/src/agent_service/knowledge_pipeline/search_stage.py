@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from langchain_core.language_models import BaseChatModel
 
@@ -22,6 +23,7 @@ from agent_service.execution_context import (
 from agent_service.llm_call_counter import LlmCallCounter
 
 from .planner import bounded_facet_queries, missing_diagnosis_facet_queries
+from .query_tier import classify_query_tier
 from .retrieval_state import RetrievalState
 
 _KNOWLEDGE_REWRITE_PATH_SLOTS = 3
@@ -43,8 +45,6 @@ async def prepare_retrieval_state(
     groups: set[str],
     retrieve: Callable[..., Awaitable[RetrievalState]],
 ) -> RetrievalState:
-    from dataclasses import replace
-
     facet_queries = bounded_facet_queries(query)
     if not facet_queries and raw_user_utterance and raw_user_utterance != query:
         facet_queries = bounded_facet_queries(raw_user_utterance)
@@ -289,6 +289,8 @@ async def run_search_loop(
     request: AgentRequest | None,
     default_model: BaseChatModel | None,
     max_retrieval_rewrites: int,
+    min_score: float,
+    enable_adaptive_query_tiers: bool,
     retrieve: Callable[..., Awaitable[RetrievalState]],
     documents_are_relevant: Callable[..., Awaitable[bool]],
     generate: Callable[..., Awaitable[KnowledgeResult]],
@@ -312,6 +314,19 @@ async def run_search_loop(
         groups=groups,
         retrieve=retrieve,
     )
+    effective_rewrites = max_retrieval_rewrites
+    if enable_adaptive_query_tiers:
+        decision = classify_query_tier(
+            state,
+            min_score=min_score,
+            max_retrieval_rewrites=max_retrieval_rewrites,
+        )
+        state = replace(
+            state,
+            query_tier=decision.tier.value,
+            enable_generation_retries=decision.enable_generation_retries,
+        )
+        effective_rewrites = decision.max_retrieval_rewrites
     hit = await run_search_with_limits(
         state=state,
         counter=counter,
@@ -320,7 +335,7 @@ async def run_search_loop(
         include_retrieval_evidence=include_evidence,
         total_started=total_started,
         groups=groups,
-        max_retrieval_rewrites=max_retrieval_rewrites,
+        max_retrieval_rewrites=effective_rewrites,
         documents_are_relevant=documents_are_relevant,
         generate=generate,
         rewrite=rewrite,

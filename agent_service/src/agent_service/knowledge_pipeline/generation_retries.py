@@ -49,7 +49,10 @@ async def apply_generation_retries(
     answer: str,
     counter: LlmCallCounter,
     execution_context: ExecutionContext | None,
+    enable_generation_retries: bool = True,
 ) -> tuple[StructuredKnowledgeAnswer, str]:
+    if not enable_generation_retries:
+        return response, answer
     confidence_label, _ = host.evaluate_retrieval_confidence(state)
     if should_retry_false_none(
         answerability=response.answerability,

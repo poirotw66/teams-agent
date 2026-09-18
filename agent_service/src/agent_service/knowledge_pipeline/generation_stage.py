@@ -192,6 +192,7 @@ async def generate_grounded_answer(
         answer=answer,
         counter=counter,
         execution_context=execution_context,
+        enable_generation_retries=getattr(state, "enable_generation_retries", True),
     )
     if not structured_answer_is_grounded(response, results):
         logger.warning(
