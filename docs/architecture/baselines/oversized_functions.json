@@ -1,7 +1,6 @@
 {
   "functions": {
     "agent_service/src/agent_service/deps.py::sync_knowledge_to_active_pointer": 100,
-    "agent_service/src/agent_service/document_authorization.py::authorize_document_access": 128,
     "agent_service/src/agent_service/eval_agent_harness.py::_infer_route_and_behaviors": 97,
     "agent_service/src/agent_service/eval_agent_harness.py::aexecute": 92,
     "agent_service/src/agent_service/extractor.py::_postprocess": 83,

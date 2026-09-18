@@ -533,8 +533,8 @@ def test_core_agent_service_has_no_backoffice_reverse_dependencies():
     from agent_service.artifact_models import ArtifactRecord
     from agent_service.document_authorization import DocumentAccessDecision
 
-    assert DocumentAccessDecision.__module__ == "agent_service.document_authorization"
-    assert ArtifactRecord.__module__ == "agent_service.artifact_models"
+    assert DocumentAccessDecision.__module__ == "operations_core.document_authorization"
+    assert ArtifactRecord.__module__ == "knowledge_core.artifact_models"
 
 
 
