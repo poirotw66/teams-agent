@@ -65,7 +65,13 @@ knowledge-portal = "knowledge_portal.main:main"
 ai-ops-backoffice = "ai_ops_backoffice.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_service", "src/knowledge_portal", "src/ai_ops_backoffice"]
+packages = [
+    "src/agent_service",
+    "src/knowledge_portal",
+    "src/ai_ops_backoffice",
+    "src/platform_kernel",
+    "src/composition",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

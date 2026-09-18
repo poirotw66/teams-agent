@@ -11,8 +11,8 @@ from agent_service.operations.access import ActorContext
 from agent_service.prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime
 from agent_service.settings import RagSettings
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
-from ai_ops_backoffice.governance_domain.constants import ISSUE_EXTRACTOR_PROMPT_ID
-from ai_ops_backoffice.governance_domain.helpers import content_hash
+from platform_kernel.governance_catalog import ISSUE_EXTRACTOR_PROMPT_ID
+from platform_kernel.hashing import content_hash
 
 AI = ActorContext("ai-admin", "AI Admin", "AI_ADMIN", ())
 APPROVER = ActorContext("approver", "Approver", "AI_ADMIN", ())

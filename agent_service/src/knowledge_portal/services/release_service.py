@@ -29,6 +29,7 @@ from ..models import (
     RollbackRequest,
     utc_now,
 )
+from .. import release as release_workflow
 from ..publisher import ReleaseBuildError
 from ..rbac import (
     PortalPermissionError,
@@ -41,17 +42,6 @@ from ..repository import new_id
 from ..role_capabilities import ensure_can_list_releases
 from .context import PortalServiceContext
 from .document_service import DocumentService
-
-
-def _fetch_google_id_token(audience: str) -> str:
-    try:
-        from google.auth.transport.requests import Request
-        from google.oauth2.id_token import fetch_id_token
-    except ImportError as error:  # pragma: no cover - deployment dependency
-        raise RuntimeError(
-            "google-auth is required for Portal-to-Agent identity tokens."
-        ) from error
-    return fetch_id_token(Request(), audience)
 
 
 class ReleaseService:
@@ -400,7 +390,9 @@ class ReleaseService:
         ensure_not_found("release", release_id, release)
         self._require_release_allowed(release)
         active_id = await self._ctx.repository.get_active_release_id()
-        is_initial_failed = active_id is None and release.status == "RELOAD_FAILED"
+        is_initial_failed = (
+            active_id is None and release.status == release_workflow.RELOAD_FAILED
+        )
         if release_id != active_id and not is_initial_failed:
             raise ValueError(
                 f"Cannot sync release '{release_id}' because it is not the current active release ('{active_id}'). Use rollback to switch versions."
@@ -465,7 +457,7 @@ class ReleaseService:
         }
         if self._ctx.settings.agent_api_auth_mode == "GOOGLE_ID_TOKEN":
             identity_token = await asyncio.to_thread(
-                _fetch_google_id_token,
+                release_workflow.fetch_google_id_token,
                 agent_url,
             )
             headers["Authorization"] = f"Bearer {identity_token}"
@@ -769,7 +761,11 @@ class ReleaseService:
         try:
             from ..source_record_publish import persist_release_source_records
 
-            saved = await persist_release_source_records(self._ctx.settings, release)
+            saved = await persist_release_source_records(
+                self._ctx.settings,
+                release,
+                writer=getattr(self._ctx, "source_catalog_writer", None),
+            )
             if saved:
                 logger.info(
                     "Release %s SourceRecords persisted: %s",
@@ -812,7 +808,7 @@ class ReleaseService:
         if current_active == release.release_id and not reload_success:
             release = release.model_copy(
                 update={
-                    "status": "RELOAD_FAILED",
+                    "status": release_workflow.compensation_target_status(),
                     "failure_summary": reload_error or "Agent reload failed",
                     "activated_at": None,
                 }
@@ -828,7 +824,7 @@ class ReleaseService:
                     await self._ctx.repository.save_release(
                         previous_release.model_copy(
                             update={
-                                "status": "ACTIVE",
+                                "status": release_workflow.restored_previous_status(),
                                 "activated_at": utc_now(),
                             }
                         )
@@ -888,10 +884,9 @@ class ReleaseService:
         target = await self._ctx.repository.get_release(release_id)
         ensure_not_found("release", release_id, target)
         self._require_release_allowed(target)
-        if target.status not in {"GATE_BLOCKED", "READY", "RELOAD_FAILED", "ROLLED_BACK"}:
+        if not release_workflow.can_promote(target.status):
             raise PortalPermissionError(
-                f"Release '{release_id}' status {target.status} cannot be promoted; "
-                "expected GATE_BLOCKED, READY, RELOAD_FAILED, or ROLLED_BACK."
+                release_workflow.promote_rejection_message(release_id=release_id, status=target.status)
             )
 
         corr = correlation_id or new_id("corr")
@@ -990,9 +985,9 @@ class ReleaseService:
         for item in await self._ctx.repository.list_releases():
             if item.release_id == active_release_id:
                 continue
-            if item.status in {"ACTIVE", "DEPLOYING", "RELOAD_FAILED"}:
+            if release_workflow.should_mark_rolled_back(item.status):
                 await self._ctx.repository.save_release(
-                    item.model_copy(update={"status": "ROLLED_BACK"})
+                    item.model_copy(update={"status": release_workflow.deactivated_status()})
                 )
 
     def _require_release_allowed(

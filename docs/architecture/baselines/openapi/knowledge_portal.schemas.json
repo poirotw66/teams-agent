@@ -1,0 +1,243 @@
+{
+  "schemaCount": 18,
+  "schemas": [
+    {
+      "name": "Body_import_docx_api_documents_import_docx_post",
+      "properties": [
+        "file"
+      ],
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "Body_import_markdown_api_documents_import_markdown_post",
+      "properties": [
+        "file"
+      ],
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "Body_import_pdf_api_documents_import_pdf_post",
+      "properties": [
+        "file"
+      ],
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "Body_upload_draft_assets_api_documents__document_id__draft_assets_post",
+      "properties": [
+        "files"
+      ],
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "BootstrapReleaseRequest",
+      "properties": [
+        "release_id",
+        "sources_dir"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ChunkingProfile",
+      "properties": [],
+      "required": [],
+      "type": "string"
+    },
+    {
+      "name": "CreateDocumentAsset",
+      "properties": [
+        "content_base64",
+        "filename"
+      ],
+      "required": [
+        "content_base64",
+        "filename"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateDocumentRequest",
+      "properties": [
+        "applicable_environments",
+        "assets",
+        "audience_group_ids",
+        "audience_type",
+        "business_contact",
+        "category",
+        "change_reason",
+        "change_summary",
+        "content_state",
+        "effective_at",
+        "expires_at",
+        "markdown_content",
+        "original_asset_token",
+        "owner_unit_id",
+        "review_due_at",
+        "source_aliases",
+        "source_type",
+        "summary",
+        "title"
+      ],
+      "required": [
+        "change_reason",
+        "effective_at",
+        "markdown_content",
+        "owner_unit_id",
+        "review_due_at",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateTestCaseRequest",
+      "properties": [
+        "notes",
+        "question",
+        "simulated_audience"
+      ],
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "DraftSearchRequest",
+      "properties": [
+        "groups",
+        "limit",
+        "query"
+      ],
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "HTTPValidationError",
+      "properties": [
+        "detail"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "PublishRequest",
+      "properties": [
+        "reason",
+        "version_id"
+      ],
+      "required": [
+        "reason",
+        "version_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RemoveDocumentRequest",
+      "properties": [
+        "reason"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ReviewDecisionRequest",
+      "properties": [
+        "comment",
+        "decision",
+        "policy_exceptions"
+      ],
+      "required": [
+        "comment",
+        "decision"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RollbackRequest",
+      "properties": [
+        "reason",
+        "release_id"
+      ],
+      "required": [
+        "reason",
+        "release_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SubmitReviewRequest",
+      "properties": [
+        "change_reason",
+        "etag"
+      ],
+      "required": [
+        "change_reason",
+        "etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "UpdateDraftRequest",
+      "properties": [
+        "applicable_environments",
+        "audience_group_ids",
+        "audience_type",
+        "business_contact",
+        "category",
+        "change_reason",
+        "change_summary",
+        "content_state",
+        "effective_at",
+        "etag",
+        "expires_at",
+        "markdown_content",
+        "owner_unit_id",
+        "review_due_at",
+        "source_aliases",
+        "summary",
+        "title"
+      ],
+      "required": [
+        "change_reason",
+        "effective_at",
+        "etag",
+        "markdown_content",
+        "owner_unit_id",
+        "review_due_at",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ValidationError",
+      "properties": [
+        "ctx",
+        "input",
+        "loc",
+        "msg",
+        "type"
+      ],
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ],
+      "type": "object"
+    }
+  ],
+  "service": "knowledge_portal"
+}

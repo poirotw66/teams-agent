@@ -2,6 +2,8 @@
 
 Shares the same store defaults as the AI Ops backoffice so emit-time costs and
 budget evaluation read one PricingService truth.
+
+Concrete Backoffice repositories are wired via composition.install_agent_hooks().
 """
 
 from __future__ import annotations
@@ -10,8 +12,6 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
-
-from agent_service.usage import configure_pricing_provider
 
 logger = logging.getLogger(__name__)
 
@@ -32,48 +32,18 @@ def build_and_configure_pricing_service(
     audit_store: Any | None = None,
     environment: str = "dev",
 ) -> Any:
-    """Construct PricingService from env/store defaults and install as provider."""
-    from ai_ops_backoffice.pricing_domain import (
-        FilePricingRepository,
-        FirestorePricingRepository,
-        InMemoryPricingRepository,
-        PricingService,
-    )
+    """Construct PricingService from the registered composition builder."""
 
-    mode = (os.environ.get("AI_OPS_PRICING_STORE_MODE", "FILE") or "FILE").upper()
-    store_path = resolve_pricing_store_path(ops_store_path)
-    collection = (
-        os.environ.get("AIOPS_PRICING_FIRESTORE_COLLECTION")
-        or os.environ.get("AI_OPS_PRICING_FIRESTORE_COLLECTION")
-        or "ai_ops_pricing_state"
-    )
-    if mode == "FILE":
-        repository = FilePricingRepository(store_path)
-    elif mode == "FIRESTORE":
-        from google.cloud import firestore
+    from agent_service.runtime_hooks import build_pricing_service
 
-        project = (
-            os.environ.get("AI_OPS_GCP_PROJECT")
-            or os.environ.get("GCP_PROJECT_ID")
-            or os.environ.get("OPS_FIRESTORE_PROJECT")
-        )
-        repository = FirestorePricingRepository(
-            firestore.Client(project=project),
-            collection=collection,
-        )
-    else:
-        repository = InMemoryPricingRepository()
-
-    service = PricingService(
-        repository,
+    service = build_pricing_service(
+        ops_store_path=ops_store_path,
         audit_store=audit_store,
         environment=environment,
     )
-    configure_pricing_provider(service)
-    logger.info(
-        "Governed pricing provider configured: mode=%s version=%s path=%s",
-        mode,
-        service.get_pricing_version(),
-        store_path if mode == "FILE" else collection if mode == "FIRESTORE" else "memory",
-    )
+    if service is None:
+        raise RuntimeError(
+            "Pricing bootstrap requires composition.install_agent_hooks(); "
+            "no pricing builder is registered."
+        )
     return service

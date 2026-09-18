@@ -1,0 +1,213 @@
+{
+  "routeCount": 15,
+  "routes": [
+    {
+      "method": "GET",
+      "operationId": "get_admin_knowledge_backend",
+      "path": "/admin/knowledge-backend",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_admin_knowledge_backend",
+      "path": "/admin/knowledge-backend",
+      "requestSchema": "KnowledgeBackendUpdate",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_admin_knowledge_status",
+      "path": "/admin/knowledge-status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_admin_model_control_embedding_adopt",
+      "path": "/admin/model-control/embedding/adopt",
+      "requestSchema": "EmbeddingAdoptBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_admin_model_control_file_search_apply",
+      "path": "/admin/model-control/file-search/apply",
+      "requestSchema": "FileSearchModelBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_admin_model_control_file_search_restore",
+      "path": "/admin/model-control/file-search/restore",
+      "requestSchema": "FileSearchModelBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_admin_reload_knowledge",
+      "path": "/admin/reload-knowledge",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_agent_chat",
+      "path": "/agent/chat",
+      "requestSchema": "AgentRequest",
+      "responseSchemas": [
+        "AgentResponse",
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_agent_chat_stream",
+      "path": "/agent/chat/stream",
+      "requestSchema": "AgentRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_agent_evaluation_chat",
+      "path": "/agent/evaluation/chat",
+      "requestSchema": "AgentRequest",
+      "responseSchemas": [
+        "AgentEvaluationResponse",
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_agent_ops_health_telemetry",
+      "path": "/agent/ops/health-telemetry",
+      "requestSchema": "HealthTelemetryPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_feedback",
+      "path": "/feedback",
+      "requestSchema": "FeedbackRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_healthz",
+      "path": "/healthz",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_readyz",
+      "path": "/readyz",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_retrieval_search",
+      "path": "/retrieval/search",
+      "requestSchema": "SearchRequest",
+      "responseSchemas": [
+        "HTTPValidationError",
+        "SearchResponse"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    }
+  ],
+  "service": "agent_service"
+}

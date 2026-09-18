@@ -1,0 +1,1285 @@
+{
+  "schemaCount": 84,
+  "schemas": [
+    {
+      "name": "ActivatePolicyVersionPayload",
+      "properties": [
+        "mode"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ActivateTargetPayload",
+      "properties": [
+        "active_version_ref",
+        "break_glass_id",
+        "candidate_manifest",
+        "environment",
+        "expected_pointer_etag",
+        "policy_id",
+        "target_type"
+      ],
+      "required": [
+        "active_version_ref",
+        "candidate_manifest",
+        "target_type"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ApproveFixtureVersionPayload",
+      "properties": [
+        "reason"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "Body_upload_workbench_document_api_console_workbench_documents_upload_post",
+      "properties": [
+        "category",
+        "deprecateOlderVersion",
+        "file",
+        "title",
+        "version"
+      ],
+      "required": [
+        "file",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "BroadcastRequest",
+      "properties": [
+        "durationHours",
+        "message"
+      ],
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "BudgetPolicyCreateRequest",
+      "properties": [
+        "critical_threshold",
+        "measure",
+        "notification_target_ids",
+        "owner_unit_id",
+        "period",
+        "scope_id",
+        "scope_type",
+        "warning_threshold"
+      ],
+      "required": [
+        "critical_threshold",
+        "measure",
+        "notification_target_ids",
+        "owner_unit_id",
+        "period",
+        "scope_id",
+        "scope_type",
+        "warning_threshold"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "BudgetPolicyStateRequest",
+      "properties": [
+        "enabled",
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "enabled",
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "BudgetPolicyUpdateRequest",
+      "properties": [
+        "critical_threshold",
+        "expected_etag",
+        "notification_target_ids",
+        "warning_threshold"
+      ],
+      "required": [
+        "critical_threshold",
+        "expected_etag",
+        "notification_target_ids",
+        "warning_threshold"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CancelRunPayload",
+      "properties": [
+        "reason"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "CandidateJobPayload",
+      "properties": [
+        "limits",
+        "owner_unit_id",
+        "requested_count",
+        "source_refs",
+        "target_types"
+      ],
+      "required": [
+        "owner_unit_id",
+        "source_refs"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CaseCreatePayload",
+      "properties": [
+        "behavior",
+        "criticality",
+        "evidence",
+        "forbidden_claims",
+        "metadata",
+        "owner_unit_id",
+        "query",
+        "reference_answer",
+        "required_facts",
+        "source_id",
+        "source_type",
+        "source_version_id",
+        "tags",
+        "title"
+      ],
+      "required": [
+        "owner_unit_id",
+        "query",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ConversationActionRequest",
+      "properties": [
+        "action",
+        "root_cause"
+      ],
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateFixtureVersionPayload",
+      "properties": [
+        "allowlist_enabled",
+        "default_response",
+        "description",
+        "input_schema",
+        "is_mutation",
+        "is_sandbox_safe",
+        "mock_responses"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "CreateGatePolicyPayload",
+      "properties": [
+        "description",
+        "max_regression_count",
+        "minimum_coverage",
+        "minimum_pass_rate",
+        "mode",
+        "name",
+        "policy_id",
+        "required_set_version_ids"
+      ],
+      "required": [
+        "name",
+        "policy_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreatePolicyVersionPayload",
+      "properties": [
+        "description",
+        "max_regression_count",
+        "minimum_coverage",
+        "minimum_pass_rate",
+        "mode",
+        "name",
+        "required_set_version_ids"
+      ],
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateQualityCasePayload",
+      "properties": [
+        "root_cause"
+      ],
+      "required": [
+        "root_cause"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateRunPayload",
+      "properties": [
+        "baseline_target",
+        "candidate_target",
+        "execute_inline",
+        "idempotency_key",
+        "limits",
+        "mode",
+        "quality_case_id",
+        "repetitions",
+        "set_version_id"
+      ],
+      "required": [
+        "baseline_target",
+        "candidate_target",
+        "set_version_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateSchedulePayload",
+      "properties": [
+        "budget_limit_usd",
+        "frequency",
+        "name",
+        "schedule_id",
+        "set_version_id",
+        "target_refs"
+      ],
+      "required": [
+        "name",
+        "schedule_id",
+        "set_version_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CreateToolFixturePayload",
+      "properties": [
+        "allowlist_enabled",
+        "default_response",
+        "description",
+        "fixture_id",
+        "input_schema",
+        "is_mutation",
+        "is_sandbox_safe",
+        "mock_responses",
+        "tool_name"
+      ],
+      "required": [
+        "fixture_id",
+        "tool_name"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "EvaluateDecisionPayload",
+      "properties": [
+        "policy_id",
+        "policy_version",
+        "run_id",
+        "target_manifest_hash"
+      ],
+      "required": [
+        "policy_id",
+        "run_id",
+        "target_manifest_hash"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "EvidenceRef",
+      "properties": [
+        "occurred_at",
+        "relation",
+        "retrieved_at",
+        "source_id",
+        "source_type",
+        "validity",
+        "version_hash"
+      ],
+      "required": [
+        "relation",
+        "retrieved_at",
+        "source_id",
+        "source_type",
+        "validity"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ExampleCreateRequest",
+      "properties": [
+        "expected_issue_type_id",
+        "expected_route",
+        "label",
+        "reason",
+        "source_correlation_id",
+        "text"
+      ],
+      "required": [
+        "expected_issue_type_id",
+        "expected_route",
+        "label",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ExampleRetireRequest",
+      "properties": [
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ExampleReviewRequest",
+      "properties": [
+        "approve",
+        "dataset_version",
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "approve",
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ExampleUpdateRequest",
+      "properties": [
+        "expected_etag",
+        "expected_issue_type_id",
+        "expected_route",
+        "label",
+        "reason",
+        "source_correlation_id",
+        "text"
+      ],
+      "required": [
+        "expected_etag",
+        "expected_issue_type_id",
+        "expected_route",
+        "label",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ExportPayload",
+      "properties": [
+        "file_format",
+        "set_id"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ExportRequest",
+      "properties": [
+        "actor_ref",
+        "channel_scope",
+        "conversation_id",
+        "days",
+        "end_date",
+        "export_format",
+        "export_type",
+        "feedback_reason",
+        "format_type",
+        "handoff",
+        "has_feedback",
+        "idempotency_key",
+        "issue_type_id",
+        "model",
+        "owner_unit_id",
+        "preset",
+        "query",
+        "rating",
+        "reason",
+        "resolved_status",
+        "route",
+        "source",
+        "start_date",
+        "status"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FallbackBody",
+      "properties": [
+        "error"
+      ],
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqCreateRequest",
+      "properties": [
+        "answer",
+        "audience_group_ids",
+        "audience_type",
+        "business_contact",
+        "category",
+        "effective_at",
+        "faq_key",
+        "issue_type_ids",
+        "keywords",
+        "owner_unit_id",
+        "question",
+        "related_document_ids",
+        "review_due_at"
+      ],
+      "required": [
+        "answer",
+        "audience_type",
+        "business_contact",
+        "category",
+        "faq_key",
+        "issue_type_ids",
+        "keywords",
+        "owner_unit_id",
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqEditRequest",
+      "properties": [
+        "answer",
+        "audience_group_ids",
+        "audience_type",
+        "business_contact",
+        "category",
+        "effective_at",
+        "expected_etag",
+        "faq_key",
+        "issue_type_ids",
+        "keywords",
+        "owner_unit_id",
+        "question",
+        "related_document_ids",
+        "review_due_at"
+      ],
+      "required": [
+        "answer",
+        "audience_type",
+        "business_contact",
+        "category",
+        "expected_etag",
+        "faq_key",
+        "issue_type_ids",
+        "keywords",
+        "owner_unit_id",
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqReasonRequest",
+      "properties": [
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqReviewRequest",
+      "properties": [
+        "approve",
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "approve",
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqTestCreateRequest",
+      "properties": [
+        "expected_audience_group_ids",
+        "expected_etag",
+        "kind",
+        "source_correlation_id",
+        "source_type",
+        "utterance"
+      ],
+      "required": [
+        "expected_etag",
+        "kind",
+        "utterance"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FaqTransitionRequest",
+      "properties": [
+        "expected_etag"
+      ],
+      "required": [
+        "expected_etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FlagCandidateBody",
+      "properties": [
+        "environment",
+        "expires_at",
+        "flag_id",
+        "percent",
+        "reason",
+        "value"
+      ],
+      "required": [
+        "flag_id",
+        "reason",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "HTTPValidationError",
+      "properties": [
+        "detail"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ImportValidatePayload",
+      "properties": [
+        "content",
+        "file_format",
+        "owner_unit_id"
+      ],
+      "required": [
+        "content",
+        "owner_unit_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "MaskingBody",
+      "properties": [
+        "policy_version",
+        "reason"
+      ],
+      "required": [
+        "policy_version",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ModelCandidateBody",
+      "properties": [
+        "change_reason",
+        "component",
+        "config_id",
+        "fallback_model_id",
+        "fallback_on",
+        "max_output_tokens",
+        "model_id",
+        "pricing_version",
+        "provider",
+        "region",
+        "retry",
+        "secret_ref",
+        "temperature",
+        "timeout_seconds"
+      ],
+      "required": [
+        "change_reason",
+        "model_id",
+        "provider",
+        "secret_ref"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PreflightRunPayload",
+      "properties": [
+        "baseline_target",
+        "candidate_target",
+        "limits",
+        "set_version_id"
+      ],
+      "required": [
+        "baseline_target",
+        "candidate_target",
+        "set_version_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptActivateBody",
+      "properties": [
+        "emergency",
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptApproveBody",
+      "properties": [
+        "approved",
+        "policy_exception_expires_at",
+        "policy_exception_reason",
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptCanaryBody",
+      "properties": [
+        "environment",
+        "percent",
+        "reason"
+      ],
+      "required": [
+        "percent",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptCanaryEvaluateBody",
+      "properties": [
+        "error_rate",
+        "handoff_rate",
+        "negative_feedback_rate",
+        "safety_alerts",
+        "sample_size"
+      ],
+      "required": [
+        "error_rate",
+        "handoff_rate",
+        "negative_feedback_rate",
+        "sample_size"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptCanaryStopBody",
+      "properties": [
+        "reason",
+        "rollback"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptCandidateBody",
+      "properties": [
+        "dataset_version",
+        "knowledge_release_id",
+        "taxonomy_version"
+      ],
+      "required": [
+        "dataset_version",
+        "taxonomy_version"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptCandidateRequest",
+      "properties": [
+        "active_prompt_version",
+        "data_range_end",
+        "data_range_start",
+        "dataset_version",
+        "masking_policy_version",
+        "taxonomy_version"
+      ],
+      "required": [
+        "active_prompt_version",
+        "data_range_end",
+        "data_range_start",
+        "dataset_version",
+        "masking_policy_version",
+        "taxonomy_version"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PromptRollbackBody",
+      "properties": [
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PublishSetVersionPayload",
+      "properties": [
+        "expected_etag"
+      ],
+      "required": [
+        "expected_etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityCandidateMergeRequest",
+      "properties": [
+        "assignee_id",
+        "candidate_ids",
+        "description",
+        "priority",
+        "target_due_at",
+        "title"
+      ],
+      "required": [
+        "candidate_ids",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityCandidateRefreshRequest",
+      "properties": [
+        "days"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "QualityCaseTransitionRequest",
+      "properties": [
+        "expected_etag",
+        "reason",
+        "resolution_type",
+        "status"
+      ],
+      "required": [
+        "expected_etag",
+        "status"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityCaseUpdateRequest",
+      "properties": [
+        "assignee_id",
+        "description",
+        "expected_etag",
+        "priority",
+        "target_due_at",
+        "title"
+      ],
+      "required": [
+        "expected_etag",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityContentLinkRequest",
+      "properties": [
+        "document_id",
+        "expected_etag",
+        "faq_id"
+      ],
+      "required": [
+        "expected_etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityDocumentDraftRequest",
+      "properties": [
+        "business_contact",
+        "category",
+        "expected_case_etag",
+        "markdown_content",
+        "summary",
+        "title"
+      ],
+      "required": [
+        "expected_case_etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QualityFaqDraftRequest",
+      "properties": [
+        "answer",
+        "audience_group_ids",
+        "audience_type",
+        "business_contact",
+        "category",
+        "effective_at",
+        "expected_case_etag",
+        "faq_key",
+        "keywords",
+        "question",
+        "related_document_ids",
+        "review_due_at"
+      ],
+      "required": [
+        "answer",
+        "audience_type",
+        "business_contact",
+        "category",
+        "expected_case_etag",
+        "faq_key",
+        "keywords",
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QuestionClusterCorrectionRequest",
+      "properties": [
+        "action",
+        "candidate_groups",
+        "cluster_ids",
+        "name"
+      ],
+      "required": [
+        "action",
+        "cluster_ids"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "QuickFaqSaveRequest",
+      "properties": [
+        "answer",
+        "category",
+        "id",
+        "question",
+        "resolveConversationId"
+      ],
+      "required": [
+        "answer",
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ReasonBody",
+      "properties": [
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RequestExceptionPayload",
+      "properties": [
+        "reason",
+        "validity_hours"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RescoreRunPayload",
+      "properties": [
+        "judge_version",
+        "metric_version"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "RetentionBody",
+      "properties": [
+        "migration_plan",
+        "policy_id",
+        "reason",
+        "ttl_days"
+      ],
+      "required": [
+        "migration_plan",
+        "reason",
+        "ttl_days"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RetireCasePayload",
+      "properties": [
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ReviewExecutionPayload",
+      "properties": [
+        "decision",
+        "execution_id",
+        "metric_id",
+        "reason"
+      ],
+      "required": [
+        "decision",
+        "execution_id",
+        "metric_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ReviewRevisionPayload",
+      "properties": [
+        "approve",
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "approve",
+        "expected_etag",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RevisionCreatePayload",
+      "properties": [
+        "base_revision_id",
+        "behavior",
+        "criticality",
+        "forbidden_claims",
+        "query",
+        "reference_answer",
+        "required_facts",
+        "tags"
+      ],
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RevokeBody",
+      "properties": [
+        "principal",
+        "reason"
+      ],
+      "required": [
+        "principal",
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RoleRequestBody",
+      "properties": [
+        "add_capabilities",
+        "reason",
+        "remove_capabilities",
+        "target_principal",
+        "target_role"
+      ],
+      "required": [
+        "reason",
+        "target_principal"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SetCreatePayload",
+      "properties": [
+        "description",
+        "name",
+        "owner_unit_ids",
+        "purpose"
+      ],
+      "required": [
+        "name",
+        "owner_unit_ids"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SetVersionDraftPayload",
+      "properties": [
+        "case_revision_ids"
+      ],
+      "required": [
+        "case_revision_ids"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SimulationRequest",
+      "properties": [
+        "query"
+      ],
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SubmitRevisionPayload",
+      "properties": [
+        "expected_etag"
+      ],
+      "required": [
+        "expected_etag"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SyncJobActionRequest",
+      "properties": [
+        "expected_etag",
+        "reason"
+      ],
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SyncJobCreateRequest",
+      "properties": [
+        "reason",
+        "scope_ids",
+        "scope_type"
+      ],
+      "required": [
+        "reason",
+        "scope_type"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "TicketCreateRequest",
+      "properties": [
+        "assignedTeam",
+        "category",
+        "conversationId",
+        "notes",
+        "reporterDept",
+        "reporterExt",
+        "reporterName",
+        "title"
+      ],
+      "required": [
+        "reporterDept",
+        "reporterName",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "UpdateSchedulePayload",
+      "properties": [
+        "budget_limit_usd",
+        "frequency",
+        "is_enabled",
+        "target_refs"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ValidationError",
+      "properties": [
+        "ctx",
+        "input",
+        "loc",
+        "msg",
+        "type"
+      ],
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "VerifyReleasePayload",
+      "properties": [
+        "policy_id",
+        "target_manifest_hash"
+      ],
+      "required": [
+        "target_manifest_hash"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkItem",
+      "properties": [
+        "assignee_id",
+        "blocked_reason",
+        "due_at",
+        "key",
+        "next_action",
+        "owner_unit_id",
+        "revision",
+        "source_id",
+        "source_status",
+        "source_type",
+        "step",
+        "title",
+        "updated_at",
+        "workflow"
+      ],
+      "required": [
+        "key",
+        "next_action",
+        "owner_unit_id",
+        "revision",
+        "source_id",
+        "source_status",
+        "source_type",
+        "step",
+        "title",
+        "updated_at",
+        "workflow"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkItemAction",
+      "properties": [
+        "id",
+        "route"
+      ],
+      "required": [
+        "id",
+        "route"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkItemsResponse",
+      "properties": [
+        "generated_at",
+        "items",
+        "next_cursor",
+        "partial",
+        "snapshot_id",
+        "sources",
+        "total"
+      ],
+      "required": [
+        "generated_at",
+        "items",
+        "partial",
+        "snapshot_id",
+        "sources",
+        "total"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkSummaryResponse",
+      "properties": [
+        "by_bucket",
+        "by_workflow",
+        "generated_at",
+        "snapshot_id",
+        "sources",
+        "total"
+      ],
+      "required": [
+        "by_bucket",
+        "by_workflow",
+        "generated_at",
+        "snapshot_id",
+        "sources",
+        "total"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkflowDetailResponse",
+      "properties": [
+        "allowed_actions",
+        "evidence_refs",
+        "id",
+        "kind",
+        "return_route",
+        "stages",
+        "status",
+        "title"
+      ],
+      "required": [
+        "allowed_actions",
+        "evidence_refs",
+        "id",
+        "kind",
+        "return_route",
+        "stages",
+        "status",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "WorkflowStage",
+      "properties": [
+        "id",
+        "status",
+        "title"
+      ],
+      "required": [
+        "id",
+        "status",
+        "title"
+      ],
+      "type": "object"
+    }
+  ],
+  "service": "ai_ops_backoffice"
+}

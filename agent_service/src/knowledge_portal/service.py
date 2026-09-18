@@ -44,10 +44,16 @@ class PortalService:
         repository: PortalRepository,
         *,
         release_gate_checker: object | None = None,
+        source_catalog_writer: object | None = None,
     ) -> None:
         # Optional gate checker: None keeps local/test allow path (REPORT_ONLY-compatible).
         # When injected, publish/activate/migration consult it before flipping pointers.
-        ctx = PortalServiceContext(settings, repository, release_gate_checker=release_gate_checker)
+        ctx = PortalServiceContext(
+            settings,
+            repository,
+            release_gate_checker=release_gate_checker,
+            source_catalog_writer=source_catalog_writer,
+        )
         self._ctx = ctx
         self._documents = DocumentService(ctx)
         self._reviews = ReviewService(ctx, self._documents)

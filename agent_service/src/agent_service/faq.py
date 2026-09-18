@@ -171,33 +171,19 @@ class GovernedFaqRepository:
 
     @classmethod
     def from_settings(cls, settings: RagSettings) -> "GovernedFaqRepository":
-        from ai_ops_backoffice.faq_domain.repository import (
-            FileFaqRepository,
-            FirestoreFaqRepository,
-        )
-        from ai_ops_backoffice.faq_domain.service import FaqDomainService
+        from agent_service.runtime_hooks import build_faq_service
 
-        store_mode = settings.faq_governed_store_mode.upper()
-        if store_mode == "FILE":
-            path = settings.faq_governed_store_path or (
-                settings.data_dir / "ops" / "phase2" / "faqs.json"
+        service = build_faq_service(settings)
+        if service is None:
+            raise FaqConfigError(
+                "GOVERNED FAQ mode requires composition.install_agent_hooks(); "
+                "no FAQ service builder is registered."
             )
-            repository = FileFaqRepository(path)
-        elif store_mode == "FIRESTORE":
-            from google.cloud import firestore
-
-            client_kwargs = {}
-            if settings.faq_firestore_project:
-                client_kwargs["project"] = settings.faq_firestore_project
-            if settings.faq_firestore_database:
-                client_kwargs["database"] = settings.faq_firestore_database
-            repository = FirestoreFaqRepository(
-                firestore.Client(**client_kwargs),
-                collection_prefix=settings.faq_firestore_collection_prefix,
-            )
-        else:
-            raise FaqConfigError(f"Unsupported governed FAQ store mode: {store_mode}")
-        return cls(FaqDomainService(repository))
+        # build_faq_service returns a full FaqService; unwrap its repository.
+        repository = getattr(service, "_repository", None)
+        if isinstance(repository, cls):
+            return repository
+        raise FaqConfigError("registered FAQ builder did not produce a GovernedFaqRepository")
 
 
 class FaqService:
@@ -221,7 +207,15 @@ class FaqService:
     def from_settings(cls, settings: RagSettings) -> "FaqService":
         runtime_mode = settings.faq_runtime_mode.upper()
         if runtime_mode == "GOVERNED":
-            return cls(GovernedFaqRepository.from_settings(settings))
+            from agent_service.runtime_hooks import build_faq_service
+
+            service = build_faq_service(settings)
+            if service is None:
+                raise FaqConfigError(
+                    "GOVERNED FAQ mode requires composition.install_agent_hooks(); "
+                    "no FAQ service builder is registered."
+                )
+            return service
         if runtime_mode != "LEGACY_JSON":
             raise FaqConfigError(f"Unsupported FAQ runtime mode: {runtime_mode}")
         path = settings.faq_path or (settings.data_dir / "faq.json")

@@ -1,0 +1,93 @@
+"""Release workflow skeleton (Wave 3 / P1).
+
+Incremental extraction from ``knowledge_portal.services.release_service``.
+Later slices will move activation saga steps behind ports and a coordinator.
+"""
+
+from __future__ import annotations
+
+from .coordinator import (
+    assert_promotable,
+    compensation_target_status,
+    deactivated_status,
+    decide_reload_branch,
+    is_allowed_status_hop,
+    resolve_post_reload_status,
+    restored_previous_status,
+    should_compensate_reload_failure,
+    should_finalize_as_active,
+    should_mark_rolled_back,
+    validate_status_hop,
+)
+from .ports import (
+    ActivationStorePort,
+    AgentReloadPort,
+    ReleaseGateBlockedError,
+    ReleaseGateChecker,
+    SourceCatalogEntry,
+    SourceCatalogPort,
+    SourceCatalogWriter,
+    fetch_google_id_token,
+)
+from .transitions import (
+    ACTIVE,
+    ALL_RELEASE_STATUSES,
+    ALLOWED_TRANSITIONS,
+    BUILDING,
+    DEACTIVATABLE_STATUSES,
+    DEPLOYING,
+    FAILED,
+    GATE_BLOCKED,
+    PROMOTABLE_STATUSES,
+    READY,
+    RELOAD_FAILED,
+    ROLLED_BACK,
+    can_promote,
+    can_transition,
+    ensure_can_transition,
+    is_deactivatable,
+    is_known_status,
+    promote_rejection_message,
+    status_after_reload,
+)
+
+__all__ = [
+    "ACTIVE",
+    "ALL_RELEASE_STATUSES",
+    "ALLOWED_TRANSITIONS",
+    "BUILDING",
+    "DEACTIVATABLE_STATUSES",
+    "DEPLOYING",
+    "FAILED",
+    "GATE_BLOCKED",
+    "PROMOTABLE_STATUSES",
+    "READY",
+    "RELOAD_FAILED",
+    "ROLLED_BACK",
+    "ActivationStorePort",
+    "AgentReloadPort",
+    "ReleaseGateBlockedError",
+    "ReleaseGateChecker",
+    "SourceCatalogEntry",
+    "SourceCatalogPort",
+    "SourceCatalogWriter",
+    "assert_promotable",
+    "can_promote",
+    "can_transition",
+    "compensation_target_status",
+    "deactivated_status",
+    "decide_reload_branch",
+    "ensure_can_transition",
+    "fetch_google_id_token",
+    "is_allowed_status_hop",
+    "is_deactivatable",
+    "is_known_status",
+    "promote_rejection_message",
+    "resolve_post_reload_status",
+    "restored_previous_status",
+    "should_compensate_reload_failure",
+    "should_finalize_as_active",
+    "should_mark_rolled_back",
+    "status_after_reload",
+    "validate_status_hop",
+]

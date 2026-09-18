@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
 from agent_service.operations.contracts import MASKING_POLICY_VERSION
@@ -269,42 +268,6 @@ def active_masking_policy_version() -> str:
 
 
 def _try_build_governance(settings: OpsSettings) -> GovernancePolicySource | None:
-    import os
+    from agent_service.runtime_hooks import build_ops_governance
 
-    store_mode = (os.environ.get("AI_OPS_GOVERNANCE_STORE_MODE", "FILE") or "FILE").upper()
-    try:
-        from ai_ops_backoffice.governance_domain.service import GovernanceService
-        from ai_ops_backoffice.governance_domain.store_factory import (
-            SUPPORTED_GOVERNANCE_STORE_MODES,
-            build_governance_repository,
-        )
-    except Exception:  # noqa: BLE001
-        logger.warning("governance packages unavailable; policy runtime uses defaults")
-        return None
-    if store_mode not in SUPPORTED_GOVERNANCE_STORE_MODES:
-        logger.warning("unsupported governance store mode %s; using defaults", store_mode)
-        return None
-    path = Path(
-        os.environ.get(
-            "AI_OPS_GOVERNANCE_STORE_PATH",
-            str(settings.store_path.parent / "phase3" / "governance.json"),
-        )
-    )
-    project = os.environ.get("AI_OPS_GCP_PROJECT") or settings.firestore_project
-    collection = (
-        os.environ.get("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION") or "ai_ops_governance_state"
-    )
-    try:
-        repository = build_governance_repository(
-            store_mode=store_mode,
-            file_path=path,
-            firestore_project=project,
-            firestore_collection=collection,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "governance repository unavailable (%s); policy runtime uses defaults",
-            type(exc).__name__,
-        )
-        return None
-    return GovernanceService(repository)
+    return build_ops_governance(settings)

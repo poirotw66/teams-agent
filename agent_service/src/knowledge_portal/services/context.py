@@ -146,6 +146,7 @@ class PortalServiceContext:
         repository: PortalRepository,
         *,
         release_gate_checker: Any | None = None,
+        source_catalog_writer: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -160,6 +161,7 @@ class PortalServiceContext:
         # Optional Quality Gate checker. None keeps local/test allow path;
         # when injected, publish/activate must consult it before pointer flip.
         self.release_gate_checker = release_gate_checker
+        self.source_catalog_writer = source_catalog_writer
 
     async def claim_idempotency(
         self, key: str, payload_hash: str

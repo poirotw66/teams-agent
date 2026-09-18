@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from typing import Any
 
 from agent_service.operations.masking import mask_text
+from platform_kernel.hashing import content_hash, fingerprint, short_version, sticky_bucket
 
 from .constants import INJECTION_SIGNATURES, SECRET_REF_PREFIX
 from .errors import GovernanceConflictError, GovernanceValidationError
@@ -16,23 +15,17 @@ SECRET_VALUE_PATTERN = re.compile(
 )
 RAW_KEY_PATTERN = re.compile(r"(?i)^(sk-|AIza|ghp_|ya29\.)")
 
-
-def content_hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def short_version(value: str) -> str:
-    return content_hash(value)[:12]
-
-
-def fingerprint(payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    return content_hash(encoded)
-
-
-def sticky_bucket(tenant: str, conversation_id: str) -> int:
-    digest = content_hash(f"{tenant}:{conversation_id}")
-    return int(digest[:8], 16) % 100
+__all__ = [
+    "content_hash",
+    "fingerprint",
+    "public_prompt",
+    "reject_secrets_and_injection",
+    "replay",
+    "require_secret_ref",
+    "short_version",
+    "sticky_bucket",
+    "with_idempotency",
+]
 
 
 def require_secret_ref(value: str) -> str:

@@ -146,7 +146,7 @@ def _actor_from_delegation(
             if scheme.lower() != "bearer" or not hmac.compare_digest(token, expected):
                 raise PortalAuthError("Delegation requires a valid service bearer token.")
     try:
-        from ai_ops_backoffice.knowledge_bridge.delegation import verify_delegation_envelope
+        from platform_kernel.delegation import verify_delegation_envelope
 
         payload = verify_delegation_envelope(
             delegation_header,

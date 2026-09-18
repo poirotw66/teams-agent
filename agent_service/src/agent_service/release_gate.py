@@ -2,62 +2,25 @@
 
 Publish and activate entry points must consult this checker before flipping an
 active pointer so ``/activate-target`` is not the only gated path (Spec 7.1).
+
+The protocol and blocked error live in ``platform_kernel``. Backoffice-specific
+adapters live under ``ai_ops_backoffice.adapters``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
+from platform_kernel.ports.release_gate import (
+    ReleaseGateBlockedError,
+    ReleaseGateChecker,
+)
 
-class ReleaseGateBlockedError(Exception):
-    """Raised when an ENFORCE gate blocks activation or publish."""
-
-
-class ReleaseGateChecker(Protocol):
-    def check_activation(
-        self,
-        *,
-        target_manifest_hash: str,
-        target_type: str,
-        policy_id: str = "default-gate-policy",
-        tenant_id: str | None = None,
-        environment: str = "prod",
-        policy_version: int | None = None,
-    ) -> dict[str, Any]:
-        """Return gate status dict, or raise ReleaseGateBlockedError when blocked."""
-        ...
-
-
-class QualityGateReleaseChecker:
-    """Adapts QualityGateService.verify_release_gate into the shared checker."""
-
-    def __init__(self, gate_service: Any) -> None:
-        self._gate_service = gate_service
-
-    def check_activation(
-        self,
-        *,
-        target_manifest_hash: str,
-        target_type: str,
-        policy_id: str = "default-gate-policy",
-        tenant_id: str | None = None,
-        environment: str = "prod",
-        policy_version: int | None = None,
-    ) -> dict[str, Any]:
-        from ai_ops_backoffice.evaluation_domain.gate_service import GateBlockedError
-
-        try:
-            result = self._gate_service.verify_release_gate(
-                target_manifest_hash=target_manifest_hash,
-                policy_id=policy_id,
-                tenant_id=tenant_id,
-                environment=environment,
-                policy_version=policy_version,
-                target_type=target_type,
-            )
-        except GateBlockedError as exc:
-            raise ReleaseGateBlockedError(str(exc)) from exc
-        return {**result, "target_type": target_type}
+__all__ = [
+    "ReleaseGateBlockedError",
+    "ReleaseGateChecker",
+    "require_release_gate",
+]
 
 
 def require_release_gate(

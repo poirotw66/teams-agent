@@ -1,0 +1,407 @@
+{
+  "schemaCount": 26,
+  "schemas": [
+    {
+      "name": "AgentEvaluationResponse",
+      "properties": [
+        "answer",
+        "citations",
+        "correlationId",
+        "costComplete",
+        "estimatedCostTwd",
+        "estimatedCostUsd",
+        "feedbackEnabled",
+        "images",
+        "issueResults",
+        "llmCallCount",
+        "retrievalTraces",
+        "traceId"
+      ],
+      "required": [
+        "answer",
+        "traceId"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "AgentImage",
+      "properties": [
+        "altText",
+        "path",
+        "releaseId",
+        "sourceChunkId",
+        "title"
+      ],
+      "required": [
+        "altText",
+        "path",
+        "sourceChunkId",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "AgentRequest",
+      "properties": [
+        "channel",
+        "conversation",
+        "correlationId",
+        "evaluationKnowledgeBackend",
+        "message",
+        "requestId",
+        "user"
+      ],
+      "required": [
+        "channel",
+        "conversation",
+        "message",
+        "requestId",
+        "user"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "AgentResponse",
+      "properties": [
+        "answer",
+        "citations",
+        "correlationId",
+        "costComplete",
+        "estimatedCostTwd",
+        "estimatedCostUsd",
+        "feedbackEnabled",
+        "images",
+        "issueResults",
+        "traceId"
+      ],
+      "required": [
+        "answer",
+        "traceId"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "Citation",
+      "properties": [
+        "canonicalSourceId",
+        "chunkId",
+        "documentId",
+        "evidence",
+        "originalAssetAvailable",
+        "originalAssetName",
+        "page",
+        "releaseId",
+        "section",
+        "sourceAliases",
+        "sourcePath",
+        "sourceRefId",
+        "sourceType",
+        "title",
+        "url",
+        "versionId"
+      ],
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ConversationIdentity",
+      "properties": [
+        "channelId",
+        "conversationId",
+        "teamId",
+        "tenantId"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "EmbeddingAdoptBody",
+      "properties": [
+        "expectedModelId"
+      ],
+      "required": [
+        "expectedModelId"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FeedbackRequest",
+      "properties": [
+        "conversationId",
+        "correlationId",
+        "issueId",
+        "rating",
+        "reason",
+        "resolvedStatus",
+        "userId"
+      ],
+      "required": [
+        "correlationId",
+        "rating"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "FileSearchModelBody",
+      "properties": [
+        "modelId"
+      ],
+      "required": [
+        "modelId"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "GroundedClaim",
+      "properties": [
+        "chunkIds",
+        "text"
+      ],
+      "required": [
+        "chunkIds",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "HTTPValidationError",
+      "properties": [
+        "detail"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "HealthTelemetryPayload",
+      "properties": [
+        "attributionScope",
+        "channel",
+        "component",
+        "correlationId",
+        "elapsedMs",
+        "errorType",
+        "status"
+      ],
+      "required": [
+        "component"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "IssueResult",
+      "properties": [
+        "answer",
+        "backend",
+        "error",
+        "faqId",
+        "faqKey",
+        "faqVersionId",
+        "images",
+        "issueId",
+        "questions",
+        "resultType",
+        "sources",
+        "terminalReason",
+        "ticketId"
+      ],
+      "required": [
+        "issueId",
+        "resultType"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "IssueRetrievalTrace",
+      "properties": [
+        "issueId",
+        "trace"
+      ],
+      "required": [
+        "issueId",
+        "trace"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "KnowledgeBackendUpdate",
+      "properties": [
+        "backend"
+      ],
+      "required": [
+        "backend"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "MessageContent",
+      "properties": [
+        "locale",
+        "text"
+      ],
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PolicyAdvisory",
+      "properties": [
+        "policyIds",
+        "text"
+      ],
+      "required": [
+        "policyIds",
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ReloadKnowledgeRequest",
+      "properties": [
+        "reason",
+        "releaseId",
+        "release_id"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "RetrievalAttempt",
+      "properties": [
+        "candidates",
+        "decision",
+        "isRelevant",
+        "rewriteQuery",
+        "searchQuery"
+      ],
+      "required": [
+        "searchQuery"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RetrievalCandidate",
+      "properties": [
+        "canonicalSourceId",
+        "chunkId",
+        "denseScore",
+        "documentId",
+        "rank",
+        "rejectionReason",
+        "score",
+        "scoreOrigin",
+        "selectedForContext",
+        "sparseScore",
+        "title"
+      ],
+      "required": [
+        "chunkId",
+        "rank",
+        "scoreOrigin",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "RetrievalTrace",
+      "properties": [
+        "actualBackend",
+        "answerability",
+        "attempts",
+        "claims",
+        "facetQueries",
+        "fallbackPath",
+        "policyAdvisories",
+        "rawUserUtterance",
+        "resolvedIssueQuery",
+        "searchQuery",
+        "selectedBackend",
+        "selectedChunkIds",
+        "stageTimingsMs",
+        "terminalReason",
+        "unknowns"
+      ],
+      "required": [
+        "actualBackend",
+        "fallbackPath",
+        "rawUserUtterance",
+        "resolvedIssueQuery",
+        "searchQuery",
+        "selectedBackend"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SearchHit",
+      "properties": [
+        "chunkId",
+        "content",
+        "score",
+        "sourcePath",
+        "title"
+      ],
+      "required": [
+        "chunkId",
+        "content",
+        "score",
+        "sourcePath",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SearchRequest",
+      "properties": [
+        "groups",
+        "limit",
+        "query",
+        "tenantId"
+      ],
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SearchResponse",
+      "properties": [
+        "hits"
+      ],
+      "required": [
+        "hits"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "UserIdentity",
+      "properties": [
+        "displayName",
+        "email",
+        "entraObjectId",
+        "groups",
+        "teamsUserId"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "ValidationError",
+      "properties": [
+        "ctx",
+        "input",
+        "loc",
+        "msg",
+        "type"
+      ],
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ],
+      "type": "object"
+    }
+  ],
+  "service": "agent_service"
+}

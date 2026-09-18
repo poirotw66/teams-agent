@@ -30,11 +30,10 @@ logger = logging.getLogger(__name__)
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
-from typing import Literal, Protocol, TypeVar, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 
 from .contracts import (
     EVALUATION_EVIDENCE_CHANNEL,
@@ -43,10 +42,7 @@ from .contracts import (
     Citation,
     GroundedClaim,
     KnowledgeResult,
-    PolicyAdvisory,
     RetrievalAttempt,
-    RetrievalCandidate,
-    RetrievalTrace,
     UserContext,
 )
 from .documents import DocumentChunk
@@ -56,19 +52,62 @@ from .execution_context import (
     RequestModelBudgetExceeded,
     RequestOperationTimedOut,
 )
-from .llm_call_counter import LlmCallCounter
 from .knowledge_eligibility import is_chunk_generation_eligible
+from .knowledge_pipeline import (
+    GroundedClaimRepair,
+    RelevanceDecision,
+    RewrittenQuery,
+    StructuredKnowledgeAnswer,
+    answer_covers_error_branches,
+    answer_covers_procedure_steps,
+    answer_covers_visual_evidence_plates,
+    answer_passes_safety_checks,
+    bounded_facet_queries,
+    error_branch_codes_in_text,
+    filter_cross_scenario_chunks,
+    merge_policy_advisories,
+    missing_diagnosis_facet_queries,
+    missing_procedure_steps,
+    missing_visual_evidence_plates,
+    normalize_composite_citation_markers,
+    procedure_steps_in_text,
+    prune_unbacked_sentences_and_citations,
+    prune_uncited_material_sentences,
+    query_asks_for_procedure,
+    query_asks_for_visual_evidence,
+    remap_claim_marker_ids_to_chunk_ids,
+    repair_structured_answer,
+    sanitize_answer_security,
+    structured_answer_is_grounded,
+    visual_evidence_plates_in_text,
+)
+from .knowledge_pipeline.relevance import (
+    GRADE_PROMPT,
+    annotate_relevance_attempts,
+    answer_indicates_insufficient_information,
+    build_relevance_grade_context,
+    deterministic_relevance_without_model,
+    evaluate_retrieval_confidence,
+    format_grade_prompt,
+    high_confidence_retrieval_hit,
+    primary_distinctive_tokens,
+    query_lexically_matches_results,
+)
+from .knowledge_pipeline.retriever import (
+    MAX_RETRIEVAL_CACHE_SIZE,
+    RETRIEVAL_CANDIDATE_MULTIPLIER,
+    accumulate_stage_timings,
+    make_retrieval_cache_key,
+    merge_best_chunk_results,
+    resolve_retrieval_queries,
+)
+from .knowledge_pipeline.trace import attach_retrieval_trace, build_retrieval_attempt
+from .llm_call_counter import LlmCallCounter
 from .retrieval import HybridIndex, SearchResult, is_chunk_visible_to_groups, tokenize
 from .security_policies import (
     ANSWER_PROMPT_SECURITY_RULES,
-    PROXY_ADVISORY_TEXT,
-    SEC003_APPLICABLE_SCOPE_RE,
-    SECURITY_POLICIES,
     advisories_from_text,
     citations_for_policy_ids,
-    ensure_policy_text_and_id_paired,
-    ensure_visual_security_inventory_caveats,
-    is_policy_id,
     policy_ids_in_text,
     split_claims_by_provenance,
     strip_unknown_policy_markers,
@@ -84,16 +123,9 @@ KnowledgeLLM = TypeVar("KnowledgeLLM")
 
 # rewrite + post-rewrite relevance grade + grounded answer generation
 _KNOWLEDGE_REWRITE_PATH_SLOTS = 3
-_RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 _MAX_CONTEXT_DOCUMENTS = 3
 _MAX_ACCESS_SCOPE_CONTEXT_DOCUMENTS = 4
 _MAX_CHUNKS_PER_DOCUMENT = 2
-_NON_PRODUCTION_TITLE_MARKERS: tuple[str, ...] = (
-    "[UX-AUDIT]",
-    "[TEST]",
-    "UX-AUDIT",
-)
-_ERROR_CODE_TOKEN_RE = re.compile(r"\((-?\d{1,5})\)")
 _ACCESS_SCOPE_QUERY_MARKERS: tuple[str, ...] = (
     "權限",
     "存取",
@@ -105,375 +137,9 @@ _ACCESS_SCOPE_QUERY_MARKERS: tuple[str, ...] = (
     "能否存取",
     "連線後是否",
 )
-_MAX_RETRIEVAL_CACHE_SIZE = 500
 _DOCUMENT_SELECTION_SCORE_RATIO = 0.7
 _DOCUMENT_SELECTION_OVERLAP_RATIO = 0.5
-_FACET_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("申請方式", ("如何申請", "申請方式", "申請步驟")),
-    ("核准人", ("核准人", "核准單位", "審核人", "審核單位")),
-    ("處理時間", ("處理時間", "多久", "作業時間", "期限")),
-    ("必要資料", ("哪些資料", "必要資料", "附件", "欄位")),
-    ("限制", ("限制", "不能", "避免", "不得", "未定義")),
-)
-# Multi-aspect diagnosis questions (e.g. distinguish version / network / settings).
-_DIAGNOSIS_FACETS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
-    ("版本", ("版本",), ("版本", "-14", "過舊", "升級客戶端", "客戶端版本")),
-    ("網路", ("網路",), ("網路", "熱點", "Wi-Fi", "WiFi", "連線是否正常")),
-    ("設定", ("設定",), ("設定", "齒輪", "組態", "VPN 設定")),
-)
-_DIAGNOSIS_ANCHOR_RE = re.compile(
-    r"(FortiClient|Outlook|Intune|Teams|AccessFlow|VPN|AD)",
-    re.IGNORECASE,
-)
-_UNSAFE_ACTION_CLAIM = re.compile(
-    r"(?:我|系統)?已(?:為您|替您|幫您)(?:建立|修改|重設|刪除|提交|核准)"
-)
-_PROMPT_DISCLOSURE_MARKERS = ("system prompt", "系統提示詞", "developer message")
-_PLACEHOLDER_URL_PATTERN = re.compile(
-    r"https?://(?:[a-zA-Z0-9_-]+\.)*(?:pages\.dev|example\.com|test[a-zA-Z0-9_-]*\.[a-z]+)[^\s)\]]*"
-    r"|https?://[^\s)\]]*(?:Sorry\.Only\.For\.TEST|test-vpn)[^\s)\]]*",
-    re.IGNORECASE,
-)
-_INTERNAL_UNC_PATTERN = re.compile(
-    r"\\\\(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}[^\s)\]]*"
-)
-_INTERNAL_URL_PATTERN = re.compile(
-    r"https?://(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?::\d+)?[^\s)\]]*"
-)
-_INTERNAL_IP_PATTERN = re.compile(
-    r"\b(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b"
-)
-_PROXY_DISABLE_PATTERN = re.compile(
-    r"(?:(?:關閉|停用).{0,12}(?:Proxy|代理伺服器)|(?:Proxy|代理伺服器).{0,12}(?:關閉|停用))",
-    re.IGNORECASE,
-)
-_CERT_BYPASS_PATTERN = re.compile(
-    r"(?:(?:忽略|略過|繞過|停用|關閉|取消).{0,12}(?:憑證|證書|簽章|安全警告|安全檢查)|"
-    r"(?:憑證|證書|簽章).{0,12}(?:忽略|略過|繞過|停用|關閉|失效繼續)|"
-    r"即使簽章無效|簽章無效也允許|簽章無效也(?:可|能)?執行)",
-    re.IGNORECASE,
-)
-_IE_SECURITY_LOWERING_PATTERN = re.compile(
-    r"(?:(?:降低|調低|放寬|停用|關閉).{0,12}(?:安全性|受保護模式|安全等級|保護模式)|"
-    r"(?:將網址|新增至|加入).{0,12}(?:信任的網站|信任網站))",
-    re.IGNORECASE,
-)
-_SEC001_APPLICABLE_SCOPE_RE = re.compile(
-    r"(?:畫面|截圖|附件|敏感資訊|資料最小化|個人及敏感|與問題無關的個人)",
-    re.IGNORECASE,
-)
-_SEC003_APPLICABLE_SCOPE_RE = SEC003_APPLICABLE_SCOPE_RE
-_TEST_LINK_POLICY_SENTENCE_RE = re.compile(
-    r"(?:此外[，,]?\s*)?(?:請注意)?(?:文件中的)?(?:測試連結|佔位(?:用途|網址|連結)|"
-    r"非正式連結|正式網址)[^。\n]*\[POLICY-SEC-\d{3}\][。.]?",
-    re.IGNORECASE,
-)
-# IP-phone style keys use [0]/[電話號碼]; keep [S#] from looking like another key.
-_KEY_BRACKET_CITATION_RE = re.compile(
-    r"(按\s*\[[^\]]+\])\s*(\[S\d+\])",
-    re.IGNORECASE,
-)
-_OVERBROAD_SEC002_BAN_RE = re.compile(
-    r"(?:並?[，,]?\s*)?(?:嚴禁|不得)[^。\n]*?(?:任何密碼|所有密碼)[^。\n]*?\[POLICY-SEC-002\][。.]?",
-    re.IGNORECASE,
-)
-_PRECISE_SEC002_ADVISORY = "嚴禁於回報中提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。"
-_SECURITY_POLICY_ADVISORY = f"\n\n{PROXY_ADVISORY_TEXT}"
-_POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
-_CITATION_OR_POLICY_MARKER = re.compile(r"\[(?:S\d+|POLICY-SEC-\d{3})\]")
-_UNCITED_POLICY_LEAK_RE = re.compile(
-    r"(?:"
-    r"資料最小化|機敏資訊|登入密碼|憑證密碼|動態驗證碼|"
-    r"遮蔽或移除|無關的個人|無關敏感|"
-    r"變更(?:前|安全性設定前)(?:需|須)(?:先)?向|"
-    r"切勿擅自變更|關閉\s*Proxy|停用\s*Proxy|"
-    r"系統(?:資安|安全)政策|全域資安"
-    r")",
-    re.IGNORECASE,
-)
-
-_COMPOSITE_S_MARKER_RE = re.compile(
-    r"\[\s*((?:S\d+\s*[,，、]\s*)+S\d+)\s*\]",
-    re.IGNORECASE,
-)
-
-
-def error_branch_codes_in_text(text: str) -> list[str]:
-    """Extract parenthetical error codes like ``(-455)`` from knowledge context."""
-    return list(dict.fromkeys(_ERROR_CODE_TOKEN_RE.findall(text)))
-
-
-def answer_covers_error_branches(answer: str, codes: list[str]) -> bool:
-    """Whether the answer mentions enough error-code branches from the context."""
-    if len(codes) < 2:
-        return True
-    hits = sum(1 for code in codes if code in answer)
-    required = max(2, (len(codes) + 1) // 2)
-    return hits >= required
-
-
-_PROCEDURE_QUERY_MARKERS: tuple[str, ...] = (
-    "順序",
-    "步驟",
-    "首次設定",
-    "視覺順序",
-    "安裝步驟",
-    "Visual Evidence",
-    "先後順序",
-    "操作章節",
-    "如何設定",
-    "設定順序",
-)
-
-# Distinctive executable steps that summarization often drops.
-_PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("intune_company_portal", ("intune", "公司入口網站")),
-    ("qr_code_scan", ("qr code", "qrcode", "掃描電腦畫面")),
-    ("number_matching", ("number matching", "數字匹配")),
-    (
-        "restart_outlook",
-        ("重啟 outlook", "重新啟動 outlook", "重新開啟 outlook", "重啟app", "重啟 app"),
-    ),
-    ("second_device_verify", ("第二次", "再次驗證", "後續驗證", "裝置驗證")),
-    # Avoid matching 「焦點收件匣」 alone; require completion/entry phrasing.
-    ("reach_inbox", ("進入收件匣", "主介面", "收件匣使用", "進入 outlook 主")),
-    ("bind_phone", ("綁定電話", "簡訊驗證")),
-    ("authenticator", ("authenticator", "驗證器")),
-)
-
-
-def query_asks_for_procedure(query: str) -> bool:
-    return any(marker in query for marker in _PROCEDURE_QUERY_MARKERS)
-
-
-def procedure_steps_in_text(text: str) -> list[str]:
-    """Return distinctive procedure-step ids present in ``text``."""
-    folded = text.casefold()
-    found: list[str] = []
-    for step_id, variants in _PROCEDURE_STEP_MARKERS:
-        if any(variant.casefold() in folded for variant in variants):
-            found.append(step_id)
-    return found
-
-
-def answer_covers_procedure_steps(answer: str, step_ids: list[str]) -> bool:
-    """Whether the answer retains enough distinctive steps from the context."""
-    if len(step_ids) < 2:
-        return True
-    answer_steps = set(procedure_steps_in_text(answer))
-    hits = sum(1 for step_id in step_ids if step_id in answer_steps)
-    required = max(2, (len(step_ids) + 1) // 2)
-    return hits >= required
-
-
-_VISUAL_EVIDENCE_PLATE_RE = re.compile(r"\bp0(\d{2})\b", re.IGNORECASE)
-_VISUAL_CHAPTER_RE = re.compile(r"###\s*(\d+)\.")
-_VISUAL_HANDBOOK_PAGE_RE = re.compile(r"手冊第\s*(\d+)\s*頁")
-_VISUAL_EVIDENCE_QUERY_MARKERS: tuple[str, ...] = (
-    "Visual Evidence",
-    "視覺順序",
-    "視覺證據",
-    "操作章節",
-)
-
-
-def query_asks_for_visual_evidence(query: str) -> bool:
-    return any(marker in query for marker in _VISUAL_EVIDENCE_QUERY_MARKERS)
-
-
-def visual_evidence_plates_in_text(text: str) -> list[str]:
-    """Return handbook visual-structure markers from retrieved context.
-
-    Indexed Outlook manuals use chapter headings (``### N.``) and
-    ``手冊第 N 頁`` labels rather than raw ``p0N.png`` asset names. Prefer
-    those stable markers; only keep ``p0N`` plates that appear beside
-    Visual Evidence captions so unrelated PDFs do not pollute coverage.
-    """
-    markers: list[str] = []
-    for match in _VISUAL_CHAPTER_RE.finditer(text):
-        markers.append(f"chapter:{match.group(1)}")
-    for match in _VISUAL_HANDBOOK_PAGE_RE.finditer(text):
-        markers.append(f"page:{match.group(1)}")
-    for match in _VISUAL_EVIDENCE_PLATE_RE.finditer(text):
-        start = max(0, match.start() - 80)
-        window = text[start : match.end() + 20]
-        if "Visual Evidence" in window or "手冊" in window or "assets/" in window:
-            markers.append(f"p0{match.group(1)}")
-    return list(dict.fromkeys(markers))
-
-
-def _answer_mentions_visual_marker(answer: str, marker: str) -> bool:
-    kind, _, value = marker.partition(":")
-    if kind == "chapter":
-        # Do not treat ordinary numbered steps ("1. ...") as chapter citations.
-        patterns = (
-            rf"章節\s*{value}\b",
-            rf"第\s*{value}\s*章",
-            rf"###\s*{value}\.",
-        )
-        return any(re.search(pattern, answer) for pattern in patterns)
-    if kind == "page":
-        patterns = (
-            rf"手冊第\s*{value}\s*頁",
-            rf"第\s*{value}\s*頁",
-            rf"\bp0{int(value):02d}\b",
-        )
-        return any(re.search(pattern, answer, flags=re.IGNORECASE) for pattern in patterns)
-    # Raw p0N plate id.
-    return re.search(rf"\b{re.escape(marker)}\b", answer, flags=re.IGNORECASE) is not None
-
-
-def answer_covers_visual_evidence_plates(answer: str, plates: list[str]) -> bool:
-    """Whether the answer cites enough visual-structure markers from context."""
-    if len(plates) < 2:
-        return True
-    hits = sum(1 for plate in plates if _answer_mentions_visual_marker(answer, plate))
-    required = max(2, (len(plates) + 1) // 2)
-    return hits >= required
-
-
-def missing_visual_evidence_plates(answer: str, plates: list[str]) -> list[str]:
-    return [plate for plate in plates if not _answer_mentions_visual_marker(answer, plate)]
-
-
-def missing_procedure_steps(answer: str, step_ids: list[str]) -> list[str]:
-    answer_steps = set(procedure_steps_in_text(answer))
-    return [step_id for step_id in step_ids if step_id not in answer_steps]
-
-
-def _is_non_production_knowledge_chunk(chunk: DocumentChunk) -> bool:
-    title = chunk.title or ""
-    return any(marker in title for marker in _NON_PRODUCTION_TITLE_MARKERS)
-
-
-def normalize_composite_citation_markers(text: str) -> str:
-    """Expand ``[S2, S3]`` style composites into discrete ``[S2][S3]`` markers."""
-
-    def _expand(match: re.Match[str]) -> str:
-        numbers = re.findall(r"S(\d+)", match.group(1), flags=re.IGNORECASE)
-        return "".join(f"[S{number}]" for number in numbers)
-
-    return _COMPOSITE_S_MARKER_RE.sub(_expand, text)
-
-
-def _claim_text_overlaps_chunk(claim_text: str, chunk_content: str) -> bool:
-    """Require substantive overlap so S# remaps cannot cite an unrelated first chunk."""
-    stop = {
-        "可使",
-        "使用",
-        "可以",
-        "進行",
-        "相關",
-        "問題",
-        "內容",
-        "說明",
-        "根據",
-        "以及",
-        "或者",
-        "若",
-        "請",
-        "需",
-        "應",
-    }
-    claim_tokens = {
-        token.casefold()
-        for token in tokenize(claim_text)
-        if len(token) >= 2 and token.casefold() not in stop
-    }
-    if not claim_tokens:
-        return False
-    content_tokens = {
-        token.casefold()
-        for token in tokenize(chunk_content)
-        if len(token) >= 2 and token.casefold() not in stop
-    }
-    if not content_tokens:
-        return False
-    overlap = claim_tokens & content_tokens
-    if not overlap:
-        return False
-    return len(overlap) / len(claim_tokens) >= 0.34 or len(overlap) >= 2
-
-
-def remap_claim_marker_ids_to_chunk_ids(
-    claims: list[GroundedClaim],
-    *,
-    marker_to_chunk_ids: dict[str, list[str]],
-    chunk_content_by_id: dict[str, str] | None = None,
-) -> list[GroundedClaim]:
-    """Replace claim chunkIds like ``S1`` with supporting retrieved chunk ids.
-
-    Concrete chunk ids emitted by the model are kept as-is. Marker ids (``S1``)
-    expand to every chunk under that document marker and keep only chunks whose
-    content overlaps the claim text—legal id remapping alone is not sufficient.
-    """
-    remapped: list[GroundedClaim] = []
-    contents = chunk_content_by_id or {}
-    for claim in claims:
-        resolved_ids: list[str] = []
-        for chunk_id in claim.chunkIds:
-            key = chunk_id.strip()
-            if is_policy_id(key):
-                resolved_ids.append(key)
-                continue
-            if key.startswith("POLICY-SEC-"):
-                # Unknown policy ids are dropped rather than treated as knowledge.
-                continue
-            is_marker = bool(re.fullmatch(r"[Ss]\d+", key))
-            if not is_marker:
-                # Model already cited a concrete chunk id; do not re-filter by overlap.
-                if not contents or key in contents:
-                    resolved_ids.append(key)
-                continue
-            candidates = (
-                marker_to_chunk_ids.get(key) or marker_to_chunk_ids.get(key.upper()) or []
-            )
-            if contents:
-                supported = [
-                    candidate
-                    for candidate in candidates
-                    if candidate in contents
-                    and _claim_text_overlaps_chunk(claim.text, contents[candidate])
-                ]
-                resolved_ids.extend(supported)
-            else:
-                resolved_ids.extend(candidates)
-        deduped = list(dict.fromkeys(cid for cid in resolved_ids if cid))
-        if not deduped:
-            continue
-        remapped.append(claim.model_copy(update={"chunkIds": deduped}))
-    return remapped
-
-
-def _merge_policy_advisories(*groups: list[PolicyAdvisory]) -> list[PolicyAdvisory]:
-    merged: list[PolicyAdvisory] = []
-    seen: set[tuple[str, ...]] = set()
-    for group in groups:
-        for advisory in group:
-            key = tuple(advisory.policyIds)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(advisory)
-    return merged
-
-
 # --- Prompts (verbatim from graph.py; tuned for Traditional Chinese) -------
-
-GRADE_PROMPT = """\
-Determine whether the retrieved internal documents contain information relevant to the
-user question. Be lenient about synonyms but reject unrelated documents.
-
-Special Instructions:
-- For questions asking what a source can support, its coverage, boundaries, or limitations (e.g. 來源能支持哪些答案, 支援範圍, 限制, 單一窗口), the document describing that system or its responsible window IS RELEVANT, even if the document only designates an escalation unit or contact.
-- If any retrieved document directly discusses the specific system, feature, or error mentioned in the question, mark relevant=True.
-
-Question:
-{question}
-
-Retrieved context:
-{context}
-"""
 
 REWRITE_PROMPT = """\
 Rewrite the following internal IT support question into one concise search query.
@@ -571,308 +237,9 @@ CLAIM_REPAIR_PROMPT = """\
 {context}
 """
 
-_INSUFFICIENT_INFORMATION_MARKERS: tuple[str, ...] = (
-    "資訊不足",
-    "信息不足",
-    "資料不足",
-    "沒有足夠資訊",
-    "沒有足夠信息",
-    "無法提供答案",
-    "無法回答",
-    "查無相關資訊",
-    "查無相關信息",
-    "沒有相關資訊",
-    "沒有相關信息",
-    "找不到相關資訊",
-    "找不到相關信息",
-    "並未記載",
-    "未記載",
-    "未特別說明",
-    "未提供相關",
-    "無法從企業知識庫",
-    "無法從知識庫",
-    "找不到可確認",
-    "尚無可確認",
-    "知識庫未提供",
-    "知識庫中並無",
-    "知識庫中並未",
-    "目前知識庫中並無",
-    "目前知識庫中並未",
-)
-_KNOWLEDGE_GAP_PATTERN = re.compile(
-    r"(?:知識庫|知識內容|企業知識庫)(?:中|內)?"
-    r"(?:沒有足夠|缺乏|不足|並未記載|未記載|並無|並未|未提供|找不到)"
-)
-# ponytail: without an LLM grader, BM25 alone over-matches the sample corpus.
-# Require distinctive query tokens to overlap the retrieved text before accepting
-# a hit; upgrade path is enabling RAG_MODEL relevance grading.
-_GENERIC_LEXICAL_TOKENS = frozenset(
-    {
-        "vpn",
-        "it",
-        "ai",
-        "bot",
-        "teams",
-        "agent",
-        "demo",
-        "test",
-        "help",
-        "cancel",
-        "close",
-        "請",
-        "協",
-        "助",
-        "幫",
-        "我",
-        "要",
-        "想",
-        "問",
-        "查",
-        "詢",
-        "怎",
-        "麼",
-        "如",
-        "何",
-        "為",
-        "什",
-        "可",
-        "以",
-        "不",
-        "能",
-        "無",
-        "法",
-        "有",
-        "沒",
-        "是",
-        "的",
-        "了",
-        "嗎",
-        "呢",
-        "在",
-        "和",
-        "或",
-        "及",
-        "與",
-        "開",
-        "建",
-        "立",
-        "工",
-        "單",
-        "派",
-        "取",
-        "消",
-        "公",
-        "司",
-        "內",
-        "部",
-        "企",
-        "業",
-        "知",
-        "識",
-        "庫",
-        "測",
-        "試",
-        "問題",
-        "資訊",
-        "系統",
-        "無法",
-        "怎麼",
-        "如何",
-        "請問",
-        "協助",
-        "建立",
-        "開工",
-        "工單",
-        "派工",
-        "取消",
-    }
-)
-_OFFLINE_RELEVANCE_MIN_OVERLAP = 2
-_OFFLINE_RELEVANCE_MIN_RATIO = 0.34
-_OFFLINE_SINGLE_TOKEN_MIN_SCORE = 0.5
-_HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE = 0.78
-_SUBJECT_CHAR_STOP = frozenset("解鎖無法怎嗎呢的了是在和或及與請協助建立開取消")
-
-
-class RelevanceDecision(BaseModel):
-    relevant: bool
-
-
-class RewrittenQuery(BaseModel):
-    query: str
-
-
-class StructuredKnowledgeAnswer(BaseModel):
-    answerability: Literal["FULL", "PARTIAL", "NONE"]
-    answer: str
-    claims: list[GroundedClaim]
-    unknowns: list[str]
-
-
-class GroundedClaimRepair(BaseModel):
-    claims: list[GroundedClaim] = Field(
-        default_factory=list,
-        description="List of atomic factual claims supported by context chunks.",
-    )
-
 
 def message_text(message: BaseMessage) -> str:
     return str(message.text).strip()
-
-
-def bounded_facet_queries(query: str) -> tuple[str, ...]:
-    matched_facets = [
-        facet for facet, markers in _FACET_PATTERNS if any(marker in query for marker in markers)
-    ]
-    if len(matched_facets) >= 2:
-        identifier = re.search(r"\b[A-Za-z][A-Za-z0-9._-]*\b", query)
-        anchor = identifier.group(0) if identifier else query[:16].rstrip("，,、；;。？?")
-        return tuple(f"{anchor} {facet}" for facet in matched_facets[:3])
-
-    diagnosis_facets = requested_diagnosis_facets(query)
-    if len(diagnosis_facets) >= 2:
-        return tuple(
-            f"{_diagnosis_query_anchor(query)} {facet}" for facet in diagnosis_facets[:3]
-        )
-
-    m1 = re.search(r"(?:錯誤|error|代碼|code)\s*[:：]?\s*(-?[A-Za-z0-9_]+)", query, re.IGNORECASE)
-    if m1:
-        code = m1.group(1).strip()
-        if code and code not in ("有哪些", "處理", "如何"):
-            return (f"錯誤 {code}", code)
-    m2 = re.search(r"(-?[A-Za-z0-9_]+)\s*(?:錯誤|error)", query, re.IGNORECASE)
-    if m2:
-        code = m2.group(1).strip()
-        if code and len(code) >= 2:
-            return (f"錯誤 {code}", code)
-    m3 = re.search(r"[\(（](-?\d{2,6})[\)）]", query)
-    if m3:
-        code = m3.group(1).strip()
-        return (f"錯誤 {code}", code)
-    m4 = re.search(r"(?<![A-Za-z0-9])(-\d{2,5}|\d{4,5})(?![A-Za-z0-9])", query)
-    if m4:
-        code = m4.group(1).strip()
-        return (f"錯誤 {code}", code)
-    return ()
-
-
-def requested_diagnosis_facets(query: str) -> list[str]:
-    """Return diagnosis facets named in the query when at least two are present."""
-    return [
-        name
-        for name, markers, _evidence in _DIAGNOSIS_FACETS
-        if any(marker in query for marker in markers)
-    ]
-
-
-def _diagnosis_query_anchor(query: str) -> str:
-    match = _DIAGNOSIS_ANCHOR_RE.search(query)
-    if match is not None:
-        return match.group(1)
-    identifier = re.search(r"\b[A-Za-z][A-Za-z0-9._-]*\b", query)
-    if identifier is not None:
-        return identifier.group(0)
-    return query[:16].rstrip("，,、；;。？?")
-
-
-def missing_diagnosis_facet_queries(query: str, context: str) -> tuple[str, ...]:
-    """Build targeted follow-up searches for diagnosis facets absent from context."""
-    requested = requested_diagnosis_facets(query)
-    if len(requested) < 2:
-        return ()
-    context_fold = context.casefold()
-    anchor = _diagnosis_query_anchor(query)
-    missing: list[str] = []
-    for name, _markers, evidence_markers in _DIAGNOSIS_FACETS:
-        if name not in requested:
-            continue
-        if any(marker.casefold() in context_fold for marker in evidence_markers):
-            continue
-        if name == "版本":
-            missing.append(f"{anchor} 錯誤 -14")
-        missing.append(f"{anchor} {name}")
-    return tuple(list(dict.fromkeys(missing))[:3])
-
-
-def _distinctive_query_tokens(query: str) -> set[str]:
-    tokens: set[str] = set()
-    for token in tokenize(query):
-        if token in _GENERIC_LEXICAL_TOKENS:
-            continue
-        if re.fullmatch(r"[a-z0-9_./:-]+", token):
-            if len(token) >= 2:
-                tokens.add(token)
-            continue
-        if len(token) >= 2:
-            tokens.add(token)
-            continue
-        if re.fullmatch(r"[\u3400-\u9fff]", token):
-            tokens.add(token)
-    return tokens
-
-
-def _primary_distinctive_tokens(query: str) -> set[str]:
-    primary: set[str] = set()
-    for token in _distinctive_query_tokens(query):
-        if re.fullmatch(r"[a-z0-9_./:-]+", token):
-            primary.add(token)
-            continue
-        if len(token) >= 2 and not all(character in _SUBJECT_CHAR_STOP for character in token):
-            primary.add(token)
-    return primary
-
-
-def high_confidence_retrieval_hit(query: str, top: SearchResult) -> bool:
-    """Accept a strong top hit without LLM grading when terms clearly overlap."""
-
-    if top.score < _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE:
-        return False
-    document_tokens = set(tokenize(f"{top.chunk.title}\n{top.chunk.content}"))
-    primary = _primary_distinctive_tokens(query)
-    if not primary:
-        return False
-    return bool(primary & document_tokens)
-
-
-def query_lexically_matches_results(query: str, results: list[SearchResult]) -> bool:
-    """Conservative offline relevance guard when no LLM grader is configured."""
-    if not results:
-        return False
-
-    distinctive = _distinctive_query_tokens(query)
-    primary = _primary_distinctive_tokens(query)
-    if not distinctive or not primary:
-        return False
-
-    document_tokens: set[str] = set()
-    for result in results:
-        document_tokens.update(tokenize(f"{result.chunk.title}\n{result.chunk.content}"))
-    if not primary & document_tokens:
-        return False
-
-    overlap = distinctive & document_tokens
-    if len(distinctive) == 1:
-        token = next(iter(distinctive))
-        return token in document_tokens and results[0].score >= _OFFLINE_SINGLE_TOKEN_MIN_SCORE
-
-    overlap_count = len(overlap)
-    overlap_ratio = overlap_count / len(distinctive)
-    return (
-        overlap_count >= _OFFLINE_RELEVANCE_MIN_OVERLAP
-        and overlap_ratio >= _OFFLINE_RELEVANCE_MIN_RATIO
-    )
-
-
-def answer_indicates_insufficient_information(answer: str) -> bool:
-    """Whether a generated answer explicitly says the KB cannot answer.
-
-    In that case sources and images would imply support that the answer just
-    denied, so HYBRID reports a strict miss instead.
-    """
-    normalized = answer.lower()
-    return bool(_KNOWLEDGE_GAP_PATTERN.search(normalized)) or any(
-        marker in normalized for marker in _INSUFFICIENT_INFORMATION_MARKERS
-    )
 
 
 @runtime_checkable
@@ -1090,48 +457,38 @@ class HybridKnowledgeService:
             if execution_context is not None
             else "HYBRID"
         )
-        trace = RetrievalTrace(
-            rawUserUtterance=state.raw_user_utterance,
-            resolvedIssueQuery=state.resolved_issue_query,
-            searchQuery=state.search_query,
-            facetQueries=list(state.facet_queries),
-            selectedBackend=selected_backend or "HYBRID",
-            actualBackend="HYBRID",
+        return attach_retrieval_trace(
+            result,
+            raw_user_utterance=state.raw_user_utterance,
+            resolved_issue_query=state.resolved_issue_query,
+            search_query=state.search_query,
+            facet_queries=state.facet_queries,
+            selected_backend=selected_backend,
             attempts=state.trace_attempts,
-            selectedChunkIds=[source.chunkId for source in result.sources if source.chunkId],
-            answerability=result.answerability,
-            claims=result.claims,
-            policyAdvisories=result.policyAdvisories,
-            unknowns=result.unknowns,
-            fallbackPath=fallback_path,
-            terminalReason=terminal_reason,
-            stageTimingsMs=dict(state.stage_timings_ms),
-        )
-        return result.model_copy(
-            update={
-                "terminalReason": terminal_reason,
-                "retrievalTrace": trace,
-            }
+            stage_timings_ms=state.stage_timings_ms,
+            fallback_path=fallback_path,
+            terminal_reason=terminal_reason,
         )
 
     # --- retrieval -----------------------------------------------------
 
     async def _retrieve(self, state: _RetrievalState, groups: set[str]) -> _RetrievalState:
-        queries_to_run = [state.search_query]
-        if state.attempt == 0 and state.facet_queries:
-            queries_to_run.extend(state.facet_queries)
-        retrieval_queries = tuple(dict.fromkeys(q for q in queries_to_run if q.strip()))
+        retrieval_queries = resolve_retrieval_queries(
+            state.search_query,
+            state.facet_queries,
+            attempt=state.attempt,
+        )
         frozen_groups = frozenset(groups)
         env = self.settings.deployment_environment
 
         async def _search_one(query: str) -> tuple[list[SearchResult], dict[str, float]]:
-            cache_key = (
-                query.strip().casefold(),
-                frozen_groups,
-                env,
-                self.release_id or "",
-                self.settings.top_k,
-                self.settings.min_score,
+            cache_key = make_retrieval_cache_key(
+                query,
+                groups=frozen_groups,
+                environment=env,
+                release_id=self.release_id or "",
+                top_k=self.settings.top_k,
+                min_score=self.settings.min_score,
             )
             if cache_key in self._retrieval_cache:
                 self._retrieval_cache.move_to_end(cache_key)
@@ -1139,36 +496,20 @@ class HybridKnowledgeService:
             res, timings = await asyncio.to_thread(
                 self.index.search_with_timings,
                 query,
-                self.settings.top_k * _RETRIEVAL_CANDIDATE_MULTIPLIER,
+                self.settings.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
                 groups,
                 environment=env,
             )
             self._retrieval_cache[cache_key] = res
-            if len(self._retrieval_cache) > _MAX_RETRIEVAL_CACHE_SIZE:
+            if len(self._retrieval_cache) > MAX_RETRIEVAL_CACHE_SIZE:
                 self._retrieval_cache.popitem(last=False)
             return res, timings
 
         search_outcomes = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
         result_sets = [outcome[0] for outcome in search_outcomes]
         for _results, timings in search_outcomes:
-            for key, value in timings.items():
-                # Sum of work across parallel facet searches; wall clock is retrievalMs.
-                state.stage_timings_ms[key] = round(
-                    state.stage_timings_ms.get(key, 0.0) + value, 1
-                )
-        best_by_chunk: dict[str, SearchResult] = {}
-        for prev_res in state.results:
-            best_by_chunk[prev_res.chunk.chunk_id] = prev_res
-
-        for result in (item for result_set in result_sets for item in result_set):
-            current = best_by_chunk.get(result.chunk.chunk_id)
-            if current is None or result.score > current.score:
-                best_by_chunk[result.chunk.chunk_id] = result
-        results = sorted(
-            best_by_chunk.values(),
-            key=lambda result: result.score,
-            reverse=True,
-        )
+            accumulate_stage_timings(state.stage_timings_ms, timings)
+        results = merge_best_chunk_results(*result_sets, previous=state.results)
         results = self._inject_enterprise_app_evidence(
             state.resolved_issue_query,
             results,
@@ -1185,28 +526,10 @@ class HybridKnowledgeService:
             strict=True,
         ):
             state.trace_attempts.append(
-                RetrievalAttempt(
-                    searchQuery=retrieval_query,
-                    candidates=[
-                        RetrievalCandidate(
-                            rank=rank,
-                            chunkId=result.chunk.chunk_id,
-                            documentId=result.chunk.document_id,
-                            canonicalSourceId=result.chunk.document_id,
-                            title=result.chunk.title,
-                            score=result.score,
-                            sparseScore=result.sparse_score,
-                            denseScore=result.dense_score,
-                            scoreOrigin="HYBRID",
-                            selectedForContext=(result.chunk.chunk_id in selected_chunk_ids),
-                            rejectionReason=(
-                                None
-                                if result.chunk.chunk_id in selected_chunk_ids
-                                else "DOCUMENT_OR_CHUNK_LIMIT"
-                            ),
-                        )
-                        for rank, result in enumerate(result_set, start=1)
-                    ],
+                build_retrieval_attempt(
+                    retrieval_query,
+                    result_set,
+                    selected_chunk_ids,
                 )
             )
         return _RetrievalState(
@@ -1228,192 +551,7 @@ class HybridKnowledgeService:
         query: str,
         results: list[SearchResult],
     ) -> list[SearchResult]:
-        if not results:
-            return results
-
-        # Drop informal audit/test docs before any scenario isolation.
-        results = [
-            result
-            for result in results
-            if not _is_non_production_knowledge_chunk(result.chunk)
-        ]
-        if not results:
-            return results
-
-        normalized_query = query.casefold()
-
-        # Check explicit specific product/service intent
-        is_webex_query = "webex" in normalized_query
-        is_xq_query = "xq" in normalized_query
-        is_outlook_query = any(t in normalized_query for t in ("outlook", "郵件", "authenticator"))
-        is_phone_query = any(t in normalized_query for t in ("ip話機", "話機", "分機", "轉接"))
-        is_ad_query = any(t in normalized_query for t in ("ad", "自助解鎖", "帳號鎖定", "網域"))
-        is_vpn_query = any(t in normalized_query for t in ("vpn", "跳板機", "forticlient"))
-        is_accessflow_query = any(
-            t in normalized_query for t in ("accessflow", "門禁", "打卡", "e點名")
-        )
-        is_share_drive_query = any(t in normalized_query for t in ("公槽", "共用公槽"))
-        is_enterprise_app_query = any(
-            term in query
-            for term in (
-                "企業 App",
-                "企業App",
-                "企業級APP",
-                "企業級 App",
-                "來源所述的企業",
-            )
-        )
-
-        # 1. Topic FAQ scenario isolation
-        target_scenario: str | None = None
-        if any(
-            term in normalized_query
-            for term in ("報價", "五檔", "走勢圖", "行情", "k線", "faq-004")
-        ):
-            target_scenario = "QUOTE"
-        elif any(term in normalized_query for term in ("交易", "下單", "委託", "faq-002")):
-            target_scenario = "TRADE"
-        elif any(term in normalized_query for term in ("帳務", "庫存", "損益", "交割", "faq-003")):
-            target_scenario = "ACCOUNTING"
-        elif any(
-            term in normalized_query for term in ("線上服務", "線上問題", "登入異常", "faq-001")
-        ):
-            target_scenario = "GENERAL_ONLINE"
-
-        if target_scenario:
-
-            def _chunk_scenario(chunk: DocumentChunk) -> str | None:
-                text = f"{chunk.section or ''} {chunk.title} {chunk.content}"
-                text_lower = text.lower()
-                if "faq-004" in text_lower or "報價問題" in text:
-                    return "QUOTE"
-                if "faq-002" in text_lower or "交易問題" in text:
-                    return "TRADE"
-                if "faq-003" in text_lower or "帳務問題" in text:
-                    return "ACCOUNTING"
-                if "faq-001" in text_lower or "外部客戶線上問題如何回報" in text:
-                    return "GENERAL_ONLINE"
-                return None
-
-            matching_results = [r for r in results if _chunk_scenario(r.chunk) == target_scenario]
-            if matching_results:
-                results = [
-                    r for r in results if _chunk_scenario(r.chunk) in (target_scenario, None)
-                ]
-
-        # 2. Audience domain isolation: internal IT systems vs external customer FAQ
-        # Do not treat "客戶反映" as explicit external FAQ request; internal IT support often handles tickets from clients.
-        is_explicit_external_faq_query = any(
-            term in normalized_query for term in ("外部客戶", "外部客戶線上問題", "外網交易客")
-        )
-        is_internal_it_query = (
-            is_webex_query
-            or is_xq_query
-            or is_outlook_query
-            or is_phone_query
-            or is_ad_query
-            or is_vpn_query
-            or is_accessflow_query
-            or is_share_drive_query
-            or is_enterprise_app_query
-            or any(
-                term in normalized_query
-                for term in (
-                    "同仁",
-                    "員工",
-                    "內網",
-                    "打卡",
-                    "門禁",
-                    "派工單",
-                    "資訊問題",
-                )
-            )
-        )
-
-        if is_internal_it_query and not is_explicit_external_faq_query:
-
-            def _is_external_faq_chunk(r: SearchResult) -> bool:
-                # Specific product matches like Webex or XQ are NEVER external customer FAQ!
-                c_title_source = f"{r.chunk.title} {r.chunk.source_path or ''}".lower()
-                if "webex" in c_title_source or "xq" in c_title_source:
-                    return False
-                return "外部客戶" in r.chunk.title or "外部客戶線上問題" in (
-                    r.chunk.source_path or ""
-                )
-
-            internal_only = [r for r in results if not _is_external_faq_chunk(r)]
-            if internal_only:
-                results = internal_only
-        elif is_explicit_external_faq_query:
-            ext_results = [
-                r
-                for r in results
-                if "外部客戶" in r.chunk.title
-                or "外部客戶" in (r.chunk.section or "")
-                or (is_xq_query and "xq" in f"{r.chunk.title} {r.chunk.content}".lower())
-                or (is_webex_query and "webex" in f"{r.chunk.title} {r.chunk.content}".lower())
-            ]
-            if ext_results:
-                results = ext_results
-
-        # 3. Product domain isolation: Outlook vs IP Phone
-        if is_outlook_query and not is_phone_query:
-            no_phone = [
-                r
-                for r in results
-                if "ip話機" not in r.chunk.title.lower() and "話機" not in r.chunk.title
-            ]
-            if no_phone:
-                results = no_phone
-        elif is_phone_query and not is_outlook_query:
-            no_outlook = [r for r in results if "outlook" not in r.chunk.title.lower()]
-            if no_outlook:
-                results = no_outlook
-
-        # 4. Platform domain isolation: iOS vs Android
-        if "ios" in normalized_query and "android" not in normalized_query:
-            ios_results = [
-                r
-                for r in results
-                if "ios" in r.chunk.title.lower() or "ios" in (r.chunk.section or "").lower()
-            ]
-            if ios_results:
-                results = [r for r in results if "android" not in r.chunk.title.lower()]
-        elif "android" in normalized_query and "ios" not in normalized_query:
-            android_results = [
-                r
-                for r in results
-                if "android" in r.chunk.title.lower()
-                or "android" in (r.chunk.section or "").lower()
-            ]
-            if android_results:
-                results = [r for r in results if "ios" not in r.chunk.title.lower()]
-
-        # 5. Enterprise App trust/profile checks belong to portal/MDM docs, not
-        # external customer FAQ or generic AD unlock hits.
-        if is_enterprise_app_query:
-            preferred = [
-                result
-                for result in results
-                if any(
-                    marker in f"{result.chunk.title}\n{result.chunk.content}"
-                    for marker in (
-                        "企業級APP",
-                        "企業級 App",
-                        "CATHAY LIFE",
-                    )
-                )
-            ]
-            if preferred:
-                preferred_ids = {result.chunk.chunk_id for result in preferred}
-                results = preferred + [
-                    result
-                    for result in results
-                    if result.chunk.chunk_id not in preferred_ids
-                ]
-            results = [result for result in results if "外部客戶" not in result.chunk.title]
-
-        return results
+        return filter_cross_scenario_chunks(query, results)
 
     def _inject_enterprise_app_evidence(
         self,
@@ -1639,7 +777,7 @@ class HybridKnowledgeService:
         leader: SearchResult,
         candidates: list[SearchResult],
     ) -> bool:
-        query_tokens = _primary_distinctive_tokens(query)
+        query_tokens = primary_distinctive_tokens(query)
         leader_tokens = set(tokenize(f"{leader.chunk.title}\n{leader.chunk.content}"))
         leader_overlap = len(query_tokens & leader_tokens)
         if not leader_overlap:
@@ -1667,50 +805,12 @@ class HybridKnowledgeService:
         self,
         state: _RetrievalState,
     ) -> tuple[str, bool]:
-        results = state.results
-        if not results or results[0].score < self.settings.min_score:
-            return ("BELOW_MIN_SCORE", False)
-
-        top = results[0]
-        query = state.resolved_issue_query
-
-        # If raw top-1 was displaced or significantly degraded by filtering,
-        # never bypass LLM relevance grading!
-        if state.filter_displaced_top1:
-            return ("LLM_RELEVANCE", False)
-
-        # Check if top-1 and top-2 have close scores but conflicting domain/product context
-        if len(results) >= 2:
-            top1 = results[0]
-            top2 = results[1]
-            if top1.score - top2.score < 0.08:
-                t1 = f"{top1.chunk.title} {top1.chunk.section or ''}".lower()
-                t2 = f"{top2.chunk.title} {top2.chunk.section or ''}".lower()
-                conflicting = (
-                    ("outlook" in t1 and ("話機" in t2 or "ip話機" in t2))
-                    or ("outlook" in t2 and ("話機" in t1 or "ip話機" in t1))
-                    or ("外部客戶" in t1 and "外部客戶" not in t2)
-                    or ("外部客戶" in t2 and "外部客戶" not in t1)
-                    or ("webex" in t1 and "webex" not in t2)
-                    or ("webex" in t2 and "webex" not in t1)
-                    or ("xq" in t1 and "xq" not in t2)
-                    or ("xq" in t2 and "xq" not in t1)
-                )
-                if conflicting:
-                    return ("LLM_RELEVANCE", False)
-
-        # High confidence retrieval pass when score is strong and distinctive terms overlap
-        if top.score >= _HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE and (
-            high_confidence_retrieval_hit(query, top)
-            or query_lexically_matches_results(query, results)
-        ):
-            return ("HIGH_CONFIDENCE_PASS", True)
-
-        # Low confidence retrieval fail when score is poor or has no lexical match
-        if top.score < 0.60 and not query_lexically_matches_results(query, results):
-            return ("LOW_CONFIDENCE_FAIL", False)
-
-        return ("LLM_RELEVANCE", False)
+        return evaluate_retrieval_confidence(
+            query=state.resolved_issue_query,
+            results=state.results,
+            min_score=self.settings.min_score,
+            filter_displaced_top1=state.filter_displaced_top1,
+        )
 
     async def _documents_are_relevant(
         self,
@@ -1722,45 +822,45 @@ class HybridKnowledgeService:
     ) -> bool:
         decision_label, is_deterministic = self._evaluate_retrieval_confidence(state)
         if decision_label in ("BELOW_MIN_SCORE", "LOW_CONFIDENCE_FAIL"):
-            for attempt in state.trace_attempts:
-                if attempt.decision is None:
-                    attempt.decision = decision_label
-                    attempt.isRelevant = False
+            annotate_relevance_attempts(
+                state.trace_attempts,
+                decision=decision_label,
+                is_relevant=False,
+            )
             return False
 
         skip_llm = getattr(self.settings, "skip_relevance_llm_on_high_confidence", True)
         if decision_label == "HIGH_CONFIDENCE_PASS" and skip_llm:
-            for attempt in state.trace_attempts:
-                if attempt.decision is None:
-                    attempt.decision = "HIGH_CONFIDENCE_PASS"
-                    attempt.isRelevant = True
+            annotate_relevance_attempts(
+                state.trace_attempts,
+                decision="HIGH_CONFIDENCE_PASS",
+                is_relevant=True,
+            )
             return True
 
         answer_model = self.model if model is None else model
         if not answer_model:
-            is_relevant = (
-                is_deterministic
-                or query_lexically_matches_results(state.resolved_issue_query, state.results)
-                or high_confidence_retrieval_hit(state.resolved_issue_query, state.results[0])
+            is_relevant = deterministic_relevance_without_model(
+                query=state.resolved_issue_query,
+                results=state.results,
+                is_deterministic=is_deterministic,
             )
-            for attempt in state.trace_attempts:
-                if attempt.decision is None:
-                    attempt.decision = "DETERMINISTIC_RELEVANCE"
-                    attempt.isRelevant = is_relevant
+            annotate_relevance_attempts(
+                state.trace_attempts,
+                decision="DETERMINISTIC_RELEVANCE",
+                is_relevant=is_relevant,
+            )
             return is_relevant
 
         # Grade only the top candidates: wall-clock stageTimings show relevance is
         # secondary to generate, but full-pool grading still adds token latency.
-        grade_results = state.results[:3]
-        context = "\n\n".join(
-            f"[{result.chunk.title}]\n{result.chunk.content}" for result in grade_results
-        )
+        context = build_relevance_grade_context(state.results)
 
         async def _grade() -> RelevanceDecision:
             return await answer_model.with_structured_output(RelevanceDecision).ainvoke(
                 [
                     HumanMessage(
-                        content=GRADE_PROMPT.format(
+                        content=format_grade_prompt(
                             question=state.resolved_issue_query,
                             context=context,
                         )
@@ -1774,10 +874,11 @@ class HybridKnowledgeService:
             execution_context=execution_context,
             counter=counter,
         )
-        for attempt in state.trace_attempts:
-            if attempt.decision is None:
-                attempt.decision = "LLM_RELEVANCE"
-                attempt.isRelevant = decision.relevant
+        annotate_relevance_attempts(
+            state.trace_attempts,
+            decision="LLM_RELEVANCE",
+            is_relevant=decision.relevant,
+        )
         return decision.relevant
 
     async def _rewrite(
@@ -2030,129 +1131,13 @@ class HybridKnowledgeService:
         common_doc_keys: set[str],
         resolve_doc_key: Callable[[int], str | None],
     ) -> str:
-        markers = set(re.findall(r"\[S(\d+)\]", text))
-        unbacked_numbers = {
-            int(m) for m in markers if resolve_doc_key(int(m)) not in common_doc_keys
-        }
-        cleaned = text
-        if unbacked_numbers:
-            lines = text.splitlines()
-            cleaned_lines: list[str] = []
-
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    cleaned_lines.append("")
-                    continue
-
-                if _POLICY_MARKER_TOKEN.search(line) and not re.search(r"\[S\d+\]", line):
-                    cleaned_lines.append(line)
-                    continue
-
-                line_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", line)]
-                if not line_cites:
-                    cleaned_lines.append(line)
-                    continue
-
-                if all(c in unbacked_numbers for c in line_cites):
-                    continue
-
-                sentences = re.split(r"(?<=[。！？\n])", line)
-                cleaned_sentences: list[str] = []
-                for sentence in sentences:
-                    if not sentence.strip():
-                        continue
-                    if _POLICY_MARKER_TOKEN.search(sentence) and not re.search(
-                        r"\[S\d+\]", sentence
-                    ):
-                        cleaned_sentences.append(sentence)
-                        continue
-                    s_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", sentence)]
-                    if not s_cites:
-                        cleaned_sentences.append(sentence)
-                        continue
-                    if all(c in unbacked_numbers for c in s_cites):
-                        continue
-
-                    clauses = re.split(r"(?<=[，；,;])", sentence)
-                    cleaned_clauses: list[str] = []
-                    for clause in clauses:
-                        c_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", clause)]
-                        if c_cites and all(c in unbacked_numbers for c in c_cites):
-                            continue
-                        cleaned_clauses.append(clause)
-
-                    rebuilt = "".join(cleaned_clauses).strip()
-                    rebuilt = re.sub(r"[，；,;]+([。！？]?)$", r"\1", rebuilt)
-                    if rebuilt and not rebuilt.endswith(("。", "！", "？", "；", "，")):
-                        rebuilt += "。"
-                    if rebuilt and (
-                        _POLICY_MARKER_TOKEN.search(rebuilt)
-                        or any(
-                            int(m) not in unbacked_numbers
-                            for m in re.findall(r"\[S(\d+)\]", rebuilt)
-                        )
-                    ):
-                        cleaned_sentences.append(rebuilt)
-
-                if cleaned_sentences:
-                    cleaned_lines.append("".join(cleaned_sentences))
-
-            cleaned_text = "\n".join(cleaned_lines)
-
-            def _strip_any_remaining(match: re.Match[str]) -> str:
-                val = int(match.group(1))
-                if val in unbacked_numbers:
-                    return ""
-                return match.group(0)
-
-            cleaned = re.sub(r"\[S(\d+)\]", _strip_any_remaining, cleaned_text)
-
-        return HybridKnowledgeService._prune_uncited_material_sentences(cleaned)
+        return prune_unbacked_sentences_and_citations(
+            text, common_doc_keys, resolve_doc_key
+        )
 
     @staticmethod
     def _prune_uncited_material_sentences(text: str) -> str:
-        """Remove uncited security-policy leaks clause-by-clause.
-
-        A sibling clause that carries ``[S1]`` must not preserve a later
-        uncited policy sentence on the same line. Procedure steps and ordinary
-        knowledge prose without markers remain allowed.
-        """
-        lines = text.splitlines()
-        kept_lines: list[str] = []
-        for line in lines:
-            if not line.strip():
-                kept_lines.append("")
-                continue
-            sentences = re.split(r"(?<=[。！？\n])", line)
-            kept_sentences: list[str] = []
-            for sentence in sentences:
-                if not sentence.strip():
-                    continue
-                clauses = re.split(r"(?<=[，；,;])", sentence)
-                kept_clauses: list[str] = []
-                for clause in clauses:
-                    if not clause.strip():
-                        continue
-                    if _CITATION_OR_POLICY_MARKER.search(clause):
-                        kept_clauses.append(clause)
-                        continue
-                    if _UNCITED_POLICY_LEAK_RE.search(clause):
-                        continue
-                    kept_clauses.append(clause)
-                if kept_clauses:
-                    kept_sentences.append("".join(kept_clauses))
-            if kept_sentences:
-                kept_lines.append("".join(kept_sentences))
-        collapsed: list[str] = []
-        previous_blank = False
-        for line in kept_lines:
-            is_blank = not line.strip()
-            if is_blank and previous_blank:
-                continue
-            collapsed.append(line)
-            previous_blank = is_blank
-        return "\n".join(collapsed).strip()
+        return prune_uncited_material_sentences(text)
 
     # --- answer generation -----------------------------------------------
 
@@ -2656,7 +1641,7 @@ class HybridKnowledgeService:
         knowledge_claims, claim_policy_advisories = split_claims_by_provenance(response.claims)
         response.claims = knowledge_claims
         text_policy_advisories = advisories_from_text(normalized_answer)
-        policy_advisories = _merge_policy_advisories(
+        policy_advisories = merge_policy_advisories(
             claim_policy_advisories,
             text_policy_advisories,
         )
@@ -2749,117 +1734,25 @@ class HybridKnowledgeService:
 
     @classmethod
     def _sanitize_answer_security(cls, answer: str) -> str:
-        # 1. Replace placeholder/test URLs with safe formal portal guidance
-        sanitized = _PLACEHOLDER_URL_PATTERN.sub(
-            "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）", answer
-        )
-        # 2. Redact internal UNC paths and internal IPs
-        sanitized = _INTERNAL_UNC_PATTERN.sub("內部公槽資料夾", sanitized)
-        sanitized = _INTERNAL_URL_PATTERN.sub("內部系統伺服器路徑", sanitized)
-        sanitized = _INTERNAL_IP_PATTERN.sub("內部伺服器位址", sanitized)
-        # 3. Security-sensitive bypass / lowering needs POLICY-SEC-003 text+ID.
-        # Keyword hedges like「權責單位」alone are not enough without the marker.
-        needs_advisory = bool(
-            _PROXY_DISABLE_PATTERN.search(sanitized)
-            or _CERT_BYPASS_PATTERN.search(sanitized)
-            or _IE_SECURITY_LOWERING_PATTERN.search(sanitized)
-        )
-        if needs_advisory and "[POLICY-SEC-003]" not in sanitized:
-            sanitized = ensure_policy_text_and_id_paired(sanitized)
-        if needs_advisory and "[POLICY-SEC-003]" not in sanitized:
-            sanitized = f"{sanitized}{_SECURITY_POLICY_ADVISORY}"
-        # 4. Drop fabricated test-link "policy" sentences (not any POLICY-SEC scope).
-        sanitized = _TEST_LINK_POLICY_SENTENCE_RE.sub("", sanitized)
-        # 4b. Separate citation markers from UI key brackets (QB-055).
-        sanitized = _KEY_BRACKET_CITATION_RE.sub(r"\1。\2", sanitized)
-        # 4c. SEC-002 must not ban "any password" (QB-052: conflicts with 會議密碼 fields).
-        if _OVERBROAD_SEC002_BAN_RE.search(sanitized):
-            sanitized = _OVERBROAD_SEC002_BAN_RE.sub(_PRECISE_SEC002_ADVISORY, sanitized)
-        # 5. POLICY-SEC-001 may only remain when the answer discusses its scope.
-        if "[POLICY-SEC-001]" in sanitized and not _SEC001_APPLICABLE_SCOPE_RE.search(
-            sanitized
-        ):
-            sanitized = sanitized.replace("[POLICY-SEC-001]", "")
-        # 6. POLICY-SEC-003 may only remain when the answer discusses its scope.
-        if "[POLICY-SEC-003]" in sanitized and not _SEC003_APPLICABLE_SCOPE_RE.search(
-            sanitized
-        ):
-            sanitized = sanitized.replace("[POLICY-SEC-003]", "")
-        sanitized = re.sub(r"[ \t]{2,}", " ", sanitized)
-        sanitized = re.sub(r"[。]{2,}", "。", sanitized)
-        # Pair bare policy wording with IDs before pruning uncited policy prose.
-        sanitized = ensure_policy_text_and_id_paired(sanitized)
-        sanitized = ensure_visual_security_inventory_caveats(sanitized)
-        # Marker stripping can leave uncited policy prose; prune again.
-        sanitized = HybridKnowledgeService._prune_uncited_material_sentences(
-            sanitized.strip()
-        )
-        # Unpack inline numbered steps that were merged on a single line
-        sanitized = re.sub(
-            r"(?<!\n)(?:([：:。；;!?！？])\s*|(\s+))(\d+)\.\s+",
-            r"\1\n\3. ",
-            sanitized,
-        )
-        return sanitized.strip()
+        return sanitize_answer_security(answer)
 
     @classmethod
     def _repair_structured_answer(
         cls,
         response: StructuredKnowledgeAnswer,
     ) -> StructuredKnowledgeAnswer:
-        # Align answerability and unknowns
-        if response.answerability == "NONE" and response.claims:
-            response.answerability = "PARTIAL" if response.unknowns else "FULL"
-        elif response.answerability == "PARTIAL" and not response.unknowns:
-            response.unknowns = ["未盡事宜或特定限制以權責單位規範為準"]
-        elif response.answerability == "FULL" and response.unknowns:
-            response.answerability = "PARTIAL"
-        elif response.answerability is None:
-            response.answerability = "FULL" if not response.unknowns else "PARTIAL"
-        return response
+        return repair_structured_answer(response)
 
     @staticmethod
     def _structured_answer_is_grounded(
         answer: StructuredKnowledgeAnswer,
         results: list[SearchResult],
     ) -> bool:
-        if (
-            answer.answerability == "NONE"
-            or not answer.answer.strip()
-            or not HybridKnowledgeService._answer_passes_safety_checks(answer.answer)
-        ):
-            return False
-        if answer.answerability == "PARTIAL" and not answer.unknowns:
-            return False
-        if answer.answerability == "FULL" and answer.unknowns:
-            return False
-        valid_chunk_ids = {result.chunk.chunk_id for result in results}
-        valid_policy_ids = set(SECURITY_POLICIES)
-        if not answer.claims:
-            return False
-        valid_claims: list[GroundedClaim] = []
-        has_knowledge_claim = False
-        for claim in answer.claims:
-            if not claim.text.strip() or not claim.chunkIds:
-                continue
-            knowledge_ids = [chunk_id for chunk_id in claim.chunkIds if not is_policy_id(chunk_id)]
-            policy_ids = [chunk_id for chunk_id in claim.chunkIds if is_policy_id(chunk_id)]
-            if knowledge_ids and set(knowledge_ids) <= valid_chunk_ids:
-                valid_claims.append(claim)
-                has_knowledge_claim = True
-            elif not knowledge_ids and policy_ids and set(policy_ids) <= valid_policy_ids:
-                valid_claims.append(claim)
-        if not valid_claims or not has_knowledge_claim:
-            return False
-        answer.claims = valid_claims
-        return True
+        return structured_answer_is_grounded(answer, results)
 
     @staticmethod
     def _answer_passes_safety_checks(answer: str) -> bool:
-        normalized = answer.casefold()
-        return not _UNSAFE_ACTION_CLAIM.search(answer) and not any(
-            marker in normalized for marker in _PROMPT_DISCLOSURE_MARKERS
-        )
+        return answer_passes_safety_checks(answer)
 
     def _limit_result(self, terminal_reason: str) -> KnowledgeResult:
         return KnowledgeResult(

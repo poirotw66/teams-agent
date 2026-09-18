@@ -1,0 +1,18 @@
+{
+  "allowlist": {},
+  "forbidden_edges": [
+    "agent_service->ai_ops_backoffice",
+    "agent_service->knowledge_portal",
+    "knowledge_portal->ai_ops_backoffice",
+    "platform_kernel->agent_service",
+    "platform_kernel->ai_ops_backoffice",
+    "platform_kernel->composition",
+    "platform_kernel->knowledge_portal",
+    "platform_kernel->teams_agent",
+    "teams_agent->agent_service",
+    "teams_agent->ai_ops_backoffice",
+    "teams_agent->composition",
+    "teams_agent->knowledge_portal",
+    "teams_agent->platform_kernel"
+  ]
+}

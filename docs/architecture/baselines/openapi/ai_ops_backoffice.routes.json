@@ -1,0 +1,3090 @@
+{
+  "routeCount": 213,
+  "routes": [
+    {
+      "method": "GET",
+      "operationId": "get_root",
+      "path": "/",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_admin_reconciliation_costs_summary",
+      "path": "/api/admin/reconciliation/costs-summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_admin_reconciliation_issues_summary",
+      "path": "/api/admin/reconciliation/issues-summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_admin_reconciliation_operations_summary",
+      "path": "/api/admin/reconciliation/operations-summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_admin_retention_purge",
+      "path": "/api/admin/retention/purge",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_admin_retention_status",
+      "path": "/api/admin/retention/status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_aggregates_rebuild",
+      "path": "/api/aggregates/rebuild",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_aggregates_summary",
+      "path": "/api/aggregates/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_alerts",
+      "path": "/api/alerts",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_alerts_alert_id",
+      "path": "/api/alerts/{alert_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_alerts_alert_id_acknowledge",
+      "path": "/api/alerts/{alert_id}/acknowledge",
+      "requestSchema": "FaqReasonRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_alerts_alert_id_deliveries_delivery_id_retry",
+      "path": "/api/alerts/{alert_id}/deliveries/{delivery_id}/retry",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_alerts_alert_id_resolve",
+      "path": "/api/alerts/{alert_id}/resolve",
+      "requestSchema": "FaqReasonRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_audit_events",
+      "path": "/api/audit-events",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_auth_config",
+      "path": "/api/auth/config",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_budget_policies",
+      "path": "/api/budget-policies",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_budget_policies",
+      "path": "/api/budget-policies",
+      "requestSchema": "BudgetPolicyCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_budget_policies_evaluate_all",
+      "path": "/api/budget-policies/evaluate-all",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_budget_policies_policy_id",
+      "path": "/api/budget-policies/{policy_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_budget_policies_policy_id",
+      "path": "/api/budget-policies/{policy_id}",
+      "requestSchema": "BudgetPolicyUpdateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_budget_policies_policy_id_evaluate",
+      "path": "/api/budget-policies/{policy_id}/evaluate",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_budget_policies_policy_id_state",
+      "path": "/api/budget-policies/{policy_id}/state",
+      "requestSchema": "BudgetPolicyStateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_capabilities",
+      "path": "/api/capabilities",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_work_items",
+      "path": "/api/console/work-items",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError",
+        "WorkItemsResponse"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_work_summary",
+      "path": "/api/console/work-summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError",
+        "WorkSummaryResponse"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_broadcast",
+      "path": "/api/console/workbench/broadcast",
+      "requestSchema": "BroadcastRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workbench_conversations",
+      "path": "/api/console/workbench/conversations",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_conversations_conversation_id_action",
+      "path": "/api/console/workbench/conversations/{conversation_id}/action",
+      "requestSchema": "ConversationActionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workbench_documents",
+      "path": "/api/console/workbench/documents",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_documents_upload",
+      "path": "/api/console/workbench/documents/upload",
+      "requestSchema": "Body_upload_workbench_document_api_console_workbench_documents_upload_post",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "DELETE",
+      "operationId": "delete_api_console_workbench_documents_document_id",
+      "path": "/api/console/workbench/documents/{document_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workbench_faqs",
+      "path": "/api/console/workbench/faqs",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_faqs",
+      "path": "/api/console/workbench/faqs",
+      "requestSchema": "QuickFaqSaveRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "DELETE",
+      "operationId": "delete_api_console_workbench_faqs_faq_id",
+      "path": "/api/console/workbench/faqs/{faq_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workbench_overview",
+      "path": "/api/console/workbench/overview",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_simulate",
+      "path": "/api/console/workbench/simulate",
+      "requestSchema": "SimulationRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workbench_tickets",
+      "path": "/api/console/workbench/tickets",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_console_workbench_tickets",
+      "path": "/api/console/workbench/tickets",
+      "requestSchema": "TicketCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_console_workflows_kind_item_id",
+      "path": "/api/console/workflows/{kind}/{item_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError",
+        "WorkflowDetailResponse"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_conversations",
+      "path": "/api/conversations",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_conversations_conversation_id",
+      "path": "/api/conversations/{conversation_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_conversations_conversation_id_examples",
+      "path": "/api/conversations/{conversation_id}/examples",
+      "requestSchema": "ExampleCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_costs_rates",
+      "path": "/api/costs/rates",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_costs_rates",
+      "path": "/api/costs/rates",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_costs_rates_history",
+      "path": "/api/costs/rates/history",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_costs_summary",
+      "path": "/api/costs/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_activate_target",
+      "path": "/api/evaluations/activate-target",
+      "requestSchema": "ActivateTargetPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_candidate_jobs",
+      "path": "/api/evaluations/candidate-jobs",
+      "requestSchema": "CandidateJobPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "202",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_candidate_jobs_job_id",
+      "path": "/api/evaluations/candidate-jobs/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_candidate_jobs_job_id_cancel",
+      "path": "/api/evaluations/candidate-jobs/{job_id}/cancel",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_cases",
+      "path": "/api/evaluations/cases",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_cases",
+      "path": "/api/evaluations/cases",
+      "requestSchema": "CaseCreatePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "201",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_cases_case_id",
+      "path": "/api/evaluations/cases/{case_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_cases_case_id_retire",
+      "path": "/api/evaluations/cases/{case_id}/retire",
+      "requestSchema": "RetireCasePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_cases_case_id_revisions",
+      "path": "/api/evaluations/cases/{case_id}/revisions",
+      "requestSchema": "RevisionCreatePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "201",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_cases_case_id_revisions_revision_id_review",
+      "path": "/api/evaluations/cases/{case_id}/revisions/{revision_id}/review",
+      "requestSchema": "ReviewRevisionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_cases_case_id_revisions_revision_id_submit",
+      "path": "/api/evaluations/cases/{case_id}/revisions/{revision_id}/submit",
+      "requestSchema": "SubmitRevisionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_exceptions_exception_id_approve",
+      "path": "/api/evaluations/exceptions/{exception_id}/approve",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_exports",
+      "path": "/api/evaluations/exports",
+      "requestSchema": "ExportPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_gate_decisions",
+      "path": "/api/evaluations/gate-decisions",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_decisions",
+      "path": "/api/evaluations/gate-decisions",
+      "requestSchema": "EvaluateDecisionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_gate_decisions_decision_id",
+      "path": "/api/evaluations/gate-decisions/{decision_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_decisions_decision_id_exceptions",
+      "path": "/api/evaluations/gate-decisions/{decision_id}/exceptions",
+      "requestSchema": "RequestExceptionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_gate_policies",
+      "path": "/api/evaluations/gate-policies",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_policies",
+      "path": "/api/evaluations/gate-policies",
+      "requestSchema": "CreateGatePolicyPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_gate_policies_policy_id",
+      "path": "/api/evaluations/gate-policies/{policy_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_policies_policy_id_versions",
+      "path": "/api/evaluations/gate-policies/{policy_id}/versions",
+      "requestSchema": "CreatePolicyVersionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_policies_policy_id_versions_version_activate",
+      "path": "/api/evaluations/gate-policies/{policy_id}/versions/{version}/activate",
+      "requestSchema": "ActivatePolicyVersionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_gate_policies_policy_id_versions_version_approve",
+      "path": "/api/evaluations/gate-policies/{policy_id}/versions/{version}/approve",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_imports_validate",
+      "path": "/api/evaluations/imports/validate",
+      "requestSchema": "ImportValidatePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_imports_staged_id_commit",
+      "path": "/api/evaluations/imports/{staged_id}/commit",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_runs",
+      "path": "/api/evaluations/runs",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs",
+      "path": "/api/evaluations/runs",
+      "requestSchema": "CreateRunPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "202",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs_preflight",
+      "path": "/api/evaluations/runs/preflight",
+      "requestSchema": "PreflightRunPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_runs_run_id",
+      "path": "/api/evaluations/runs/{run_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs_run_id_cancel",
+      "path": "/api/evaluations/runs/{run_id}/cancel",
+      "requestSchema": "CancelRunPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_runs_run_id_cases",
+      "path": "/api/evaluations/runs/{run_id}/cases",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_runs_run_id_cases_execution_id",
+      "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs_run_id_cases_execution_id_quality_case",
+      "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}/quality-case",
+      "requestSchema": "CreateQualityCasePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_runs_run_id_cases_execution_id_trajectory",
+      "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}/trajectory",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs_run_id_rescore",
+      "path": "/api/evaluations/runs/{run_id}/rescore",
+      "requestSchema": "RescoreRunPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_runs_run_id_reviews",
+      "path": "/api/evaluations/runs/{run_id}/reviews",
+      "requestSchema": "ReviewExecutionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Evaluation Runs"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_schedules",
+      "path": "/api/evaluations/schedules",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_schedules",
+      "path": "/api/evaluations/schedules",
+      "requestSchema": "CreateSchedulePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "operationId": "patch_api_evaluations_schedules_schedule_id",
+      "path": "/api/evaluations/schedules/{schedule_id}",
+      "requestSchema": "UpdateSchedulePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_sets",
+      "path": "/api/evaluations/sets",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_sets",
+      "path": "/api/evaluations/sets",
+      "requestSchema": "SetCreatePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "201",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_sets_set_id",
+      "path": "/api/evaluations/sets/{set_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_sets_set_id_versions",
+      "path": "/api/evaluations/sets/{set_id}/versions",
+      "requestSchema": "SetVersionDraftPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "201",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_sets_set_id_versions_version_id_publish",
+      "path": "/api/evaluations/sets/{set_id}/versions/{version_id}/publish",
+      "requestSchema": "PublishSetVersionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Golden Eval Set"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_source_impacts",
+      "path": "/api/evaluations/source-impacts",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_tool_fixtures",
+      "path": "/api/evaluations/tool-fixtures",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_tool_fixtures",
+      "path": "/api/evaluations/tool-fixtures",
+      "requestSchema": "CreateToolFixturePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_tool_fixtures_fixture_id",
+      "path": "/api/evaluations/tool-fixtures/{fixture_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_tool_fixtures_fixture_id_versions",
+      "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions",
+      "requestSchema": "CreateFixtureVersionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_evaluations_tool_fixtures_fixture_id_versions_version",
+      "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions/{version}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_tool_fixtures_fixture_id_versions_version_approve",
+      "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions/{version}/approve",
+      "requestSchema": "ApproveFixtureVersionPayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "evaluations.tool_fixtures"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_evaluations_verify_release",
+      "path": "/api/evaluations/verify-release",
+      "requestSchema": "VerifyReleasePayload",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "Quality Gates"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_examples",
+      "path": "/api/examples",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_examples_manual",
+      "path": "/api/examples/manual",
+      "requestSchema": "ExampleCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_examples_example_id",
+      "path": "/api/examples/{example_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_examples_example_id",
+      "path": "/api/examples/{example_id}",
+      "requestSchema": "ExampleUpdateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_examples_example_id_retire",
+      "path": "/api/examples/{example_id}/retire",
+      "requestSchema": "ExampleRetireRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_examples_example_id_review",
+      "path": "/api/examples/{example_id}/review",
+      "requestSchema": "ExampleReviewRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_exports",
+      "path": "/api/exports",
+      "requestSchema": "ExportRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_exports_job_id",
+      "path": "/api/exports/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_exports_job_id_download",
+      "path": "/api/exports/{job_id}/download",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_faqs",
+      "path": "/api/faqs",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs",
+      "path": "/api/faqs",
+      "requestSchema": "FaqCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_faqs_faq_id",
+      "path": "/api/faqs/{faq_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_faqs_faq_id",
+      "path": "/api/faqs/{faq_id}",
+      "requestSchema": "FaqEditRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_disable",
+      "path": "/api/faqs/{faq_id}/disable",
+      "requestSchema": "FaqReasonRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_faqs_faq_id_performance",
+      "path": "/api/faqs/{faq_id}/performance",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_activate",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/activate",
+      "requestSchema": "FaqReasonRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_examples",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/examples",
+      "requestSchema": "ExampleCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_review",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/review",
+      "requestSchema": "FaqReviewRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_rollback",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/rollback",
+      "requestSchema": "FaqReasonRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_submit",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/submit",
+      "requestSchema": "FaqTransitionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_faqs_faq_id_versions_version_id_tests",
+      "path": "/api/faqs/{faq_id}/versions/{version_id}/tests",
+      "requestSchema": "FaqTestCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_feature_flags",
+      "path": "/api/feature-flags",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_feedback",
+      "path": "/api/feedback",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_gaps_summary",
+      "path": "/api/gaps/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_audit",
+      "path": "/api/governance/audit",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_audit_export",
+      "path": "/api/governance/audit/export",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_eval_harness",
+      "path": "/api/governance/eval-harness",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_flags",
+      "path": "/api/governance/flags",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_flags_candidates",
+      "path": "/api/governance/flags/candidates",
+      "requestSchema": "FlagCandidateBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_flags_flag_id_effective",
+      "path": "/api/governance/flags/{flag_id}/effective",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_flags_flag_id_versions_version_id_activate",
+      "path": "/api/governance/flags/{flag_id}/versions/{version_id}/activate",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_flags_flag_id_versions_version_id_approve",
+      "path": "/api/governance/flags/{flag_id}/versions/{version_id}/approve",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_masking",
+      "path": "/api/governance/masking",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_masking_candidates",
+      "path": "/api/governance/masking/candidates",
+      "requestSchema": "MaskingBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_masking_version_id_activate",
+      "path": "/api/governance/masking/{version_id}/activate",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_masking_version_id_approve",
+      "path": "/api/governance/masking/{version_id}/approve",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_models",
+      "path": "/api/governance/models",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_candidates",
+      "path": "/api/governance/models/candidates",
+      "requestSchema": "ModelCandidateBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_rollback",
+      "path": "/api/governance/models/{config_id}/rollback",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_simulate_fallback",
+      "path": "/api/governance/models/{config_id}/simulate-fallback",
+      "requestSchema": "FallbackBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_versions_version_id_activate",
+      "path": "/api/governance/models/{config_id}/versions/{version_id}/activate",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_versions_version_id_approve",
+      "path": "/api/governance/models/{config_id}/versions/{version_id}/approve",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_versions_version_id_eval",
+      "path": "/api/governance/models/{config_id}/versions/{version_id}/eval",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_models_config_id_versions_version_id_schedule",
+      "path": "/api/governance/models/{config_id}/versions/{version_id}/schedule",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_prompts",
+      "path": "/api/governance/prompts",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_prompts_prompt_id",
+      "path": "/api/governance/prompts/{prompt_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_canary_evaluate",
+      "path": "/api/governance/prompts/{prompt_id}/canary/evaluate",
+      "requestSchema": "PromptCanaryEvaluateBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_canary_stop",
+      "path": "/api/governance/prompts/{prompt_id}/canary/stop",
+      "requestSchema": "PromptCanaryStopBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_candidates",
+      "path": "/api/governance/prompts/{prompt_id}/candidates",
+      "requestSchema": "PromptCandidateBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_rollback",
+      "path": "/api/governance/prompts/{prompt_id}/rollback",
+      "requestSchema": "PromptRollbackBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_prompts_prompt_id_runtime",
+      "path": "/api/governance/prompts/{prompt_id}/runtime",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_activate",
+      "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/activate",
+      "requestSchema": "PromptActivateBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_approve",
+      "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/approve",
+      "requestSchema": "PromptApproveBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_canary",
+      "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/canary",
+      "requestSchema": "PromptCanaryBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_prompts_prompt_id_versions_version_id_diff",
+      "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/diff",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_eval",
+      "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/eval",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_retention",
+      "path": "/api/governance/retention",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_retention_candidates",
+      "path": "/api/governance/retention/candidates",
+      "requestSchema": "RetentionBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_retention_version_id_activate",
+      "path": "/api/governance/retention/{version_id}/activate",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_retention_version_id_approve",
+      "path": "/api/governance/retention/{version_id}/approve",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_roles",
+      "path": "/api/governance/roles",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_roles_requests",
+      "path": "/api/governance/roles/requests",
+      "requestSchema": "RoleRequestBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_roles_revoke",
+      "path": "/api/governance/roles/revoke",
+      "requestSchema": "RevokeBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_governance_roles_change_id_approve",
+      "path": "/api/governance/roles/{change_id}/approve",
+      "requestSchema": "ReasonBody",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_governance_search",
+      "path": "/api/governance/search",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_health_check_alerts",
+      "path": "/api/health/check-alerts",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_health_summary",
+      "path": "/api/health/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_issues_summary",
+      "path": "/api/issues/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_issues_issue_type_id_routes",
+      "path": "/api/issues/{issue_type_id}/routes",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_knowledge",
+      "path": "/api/knowledge",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_knowledge_status",
+      "path": "/api/knowledge/status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "knowledge-bridge"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_knowledge_document_id_performance",
+      "path": "/api/knowledge/{document_id}/performance",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_knowledge_document_id_versions_version_id_examples",
+      "path": "/api/knowledge/{document_id}/versions/{version_id}/examples",
+      "requestSchema": "ExampleCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "DELETE",
+      "operationId": "delete_api_knowledge_full_path",
+      "path": "/api/knowledge/{full_path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "knowledge-bridge"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_knowledge_full_path",
+      "path": "/api/knowledge/{full_path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "knowledge-bridge"
+      ]
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_knowledge_full_path",
+      "path": "/api/knowledge/{full_path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "knowledge-bridge"
+      ]
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_knowledge_full_path",
+      "path": "/api/knowledge/{full_path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": [
+        "knowledge-bridge"
+      ]
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_metrics_definitions",
+      "path": "/api/metrics/definitions",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_operations_summary",
+      "path": "/api/operations/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_prompts_active",
+      "path": "/api/prompts/active",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_prompts_candidates",
+      "path": "/api/prompts/candidates",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_prompts_candidates",
+      "path": "/api/prompts/candidates",
+      "requestSchema": "PromptCandidateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_prompts_candidates_candidate_id",
+      "path": "/api/prompts/candidates/{candidate_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_prompts_candidates_candidate_id_compare",
+      "path": "/api/prompts/candidates/{candidate_id}/compare",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_quality_candidates",
+      "path": "/api/quality-candidates",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_candidates_merge",
+      "path": "/api/quality-candidates/merge",
+      "requestSchema": "QualityCandidateMergeRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_candidates_refresh",
+      "path": "/api/quality-candidates/refresh",
+      "requestSchema": "QualityCandidateRefreshRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_quality_cases",
+      "path": "/api/quality-cases",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_quality_cases_case_id",
+      "path": "/api/quality-cases/{case_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_quality_cases_case_id",
+      "path": "/api/quality-cases/{case_id}",
+      "requestSchema": "QualityCaseUpdateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_cases_case_id_content",
+      "path": "/api/quality-cases/{case_id}/content",
+      "requestSchema": "QualityContentLinkRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_cases_case_id_document_draft",
+      "path": "/api/quality-cases/{case_id}/document-draft",
+      "requestSchema": "QualityDocumentDraftRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_cases_case_id_faq_draft",
+      "path": "/api/quality-cases/{case_id}/faq-draft",
+      "requestSchema": "QualityFaqDraftRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_cases_case_id_observation_refresh",
+      "path": "/api/quality-cases/{case_id}/observation/refresh",
+      "requestSchema": "FaqTransitionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_quality_cases_case_id_transition",
+      "path": "/api/quality-cases/{case_id}/transition",
+      "requestSchema": "QualityCaseTransitionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_question_clusters",
+      "path": "/api/question-clusters",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_question_clusters_correct",
+      "path": "/api/question-clusters/correct",
+      "requestSchema": "QuestionClusterCorrectionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_question_clusters_generate",
+      "path": "/api/question-clusters/generate",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_routes_summary",
+      "path": "/api/routes/summary",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_sources",
+      "path": "/api/sources",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_sources_source_ref_id",
+      "path": "/api/sources/{source_ref_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_sources_source_ref_id_file",
+      "path": "/api/sources/{source_ref_id}/file",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "HEAD",
+      "operationId": "head_api_sources_source_ref_id_file",
+      "path": "/api/sources/{source_ref_id}/file",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_sync_jobs",
+      "path": "/api/sync-jobs",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_sync_jobs",
+      "path": "/api/sync-jobs",
+      "requestSchema": "SyncJobCreateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_sync_jobs_job_id",
+      "path": "/api/sync-jobs/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_sync_jobs_job_id_cancel",
+      "path": "/api/sync-jobs/{job_id}/cancel",
+      "requestSchema": "SyncJobActionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_sync_jobs_job_id_retry",
+      "path": "/api/sync-jobs/{job_id}/retry",
+      "requestSchema": "SyncJobActionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_taxonomy",
+      "path": "/api/taxonomy",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_v2",
+      "path": "/console-v2",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_v2",
+      "path": "/console-v2/",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_v2_full_path",
+      "path": "/console-v2/{full_path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_healthz",
+      "path": "/healthz",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_knowledge_ui",
+      "path": "/knowledge-ui",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_knowledge_ui",
+      "path": "/knowledge-ui/",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    }
+  ],
+  "service": "ai_ops_backoffice"
+}

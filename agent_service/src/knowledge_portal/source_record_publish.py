@@ -1,8 +1,11 @@
-"""Persist SourceRecords when a knowledge release becomes active.
+"""Persist source catalog entries when a knowledge release becomes active.
 
 Backoffice originally created SourceRecords lazily on resolve. Portal publish
 must write durable identity + artifact_ref so Cloud Run Adapter/Console can
 open the exact version original without scanning container-local releases.
+
+Persistence goes through ``SourceCatalogWriter`` so Portal does not import
+Backoffice repository implementations.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_service.source_refs import make_source_ref_id, safe_source_path
+from platform_kernel.ports.source_catalog import SourceCatalogEntry, SourceCatalogWriter
 
 from .models import ReleaseRecord
 from .settings import PortalSettings
@@ -40,13 +44,11 @@ def build_source_records_for_release(
     release: ReleaseRecord,
     *,
     tenant_id: str,
-) -> list[Any]:
-    """Build SourceRecord models for every indexed chunk in the release."""
-
-    from ai_ops_backoffice.services.source_models import MappingStatus, SourceRecord
+) -> list[SourceCatalogEntry]:
+    """Build neutral catalog entries for every indexed chunk in the release."""
 
     manifest_by_doc = {entry.document_id: entry for entry in release.manifest}
-    records: list[SourceRecord] = []
+    records: list[SourceCatalogEntry] = []
     seen: set[str] = set()
     doc_chunk_acls: dict[str, list[str]] = {}
 
@@ -87,19 +89,20 @@ def build_source_records_for_release(
         artifact_ref = entry.artifact_ref if entry else None
         original_name = entry.original_asset_name if entry else None
         if artifact_ref or (entry and entry.original_asset_available):
-            mapping_status = MappingStatus.AVAILABLE
+            mapping_status = "AVAILABLE"
         else:
-            mapping_status = MappingStatus.ORIGINAL_NOT_PRESERVED
+            mapping_status = "ORIGINAL_NOT_PRESERVED"
 
-        # Authoritative ACL inheritance for chunk
         raw_acl = chunk.get("acl_groups")
         if raw_acl is None:
             raw_acl = chunk.get("allowed_groups")
         if raw_acl is not None:
-            cleaned = [str(g).strip() for g in raw_acl if str(g).strip()]
+            cleaned = [str(group).strip() for group in raw_acl if str(group).strip()]
             chunk_acl = cleaned if cleaned else ["grp_public"]
         elif entry and getattr(entry, "acl_groups", None):
-            chunk_acl = [str(g).strip() for g in entry.acl_groups if str(g).strip()] or ["grp_restricted"]
+            chunk_acl = [
+                str(group).strip() for group in entry.acl_groups if str(group).strip()
+            ] or ["grp_restricted"]
         else:
             chunk_acl = ["grp_restricted"]
 
@@ -107,7 +110,7 @@ def build_source_records_for_release(
             doc_chunk_acls.setdefault(document_id, []).extend(chunk_acl)
 
         records.append(
-            SourceRecord(
+            SourceCatalogEntry(
                 source_ref_id=source_ref_id,
                 tenant_id=tenant_id,
                 document_id=document_id or "unknown",
@@ -122,18 +125,18 @@ def build_source_records_for_release(
                 ),
                 mapping_status=mapping_status,
                 source_type=str(
-                    (entry.source_type if entry else None) or chunk.get("source_type") or "DERIVED_MARKDOWN"
+                    (entry.source_type if entry else None)
+                    or chunk.get("source_type")
+                    or "DERIVED_MARKDOWN"
                 ),
                 title=str((entry.title if entry else None) or chunk.get("title") or document_id),
                 source_path=source_path or (entry.source_path if entry else None),
                 excerpt=str(chunk.get("text") or chunk.get("content") or "")[:500] or None,
                 original_asset_name=original_name,
-                acl_groups=chunk_acl,
+                acl_groups=tuple(chunk_acl),
             )
         )
 
-    # Ensure every manifest document has at least one identity even if the index
-    # omitted chunks (empty embedding path).
     for entry in release.manifest:
         source_ref_id = make_source_ref_id(
             release_id=release.release_id,
@@ -146,23 +149,23 @@ def build_source_records_for_release(
             continue
         seen.add(source_ref_id)
         mapping_status = (
-            MappingStatus.AVAILABLE
+            "AVAILABLE"
             if entry.artifact_ref or entry.original_asset_available
-            else MappingStatus.ORIGINAL_NOT_PRESERVED
+            else "ORIGINAL_NOT_PRESERVED"
         )
 
-        # Document-level source MUST inherit authoritative document ACL
         if getattr(entry, "acl_groups", None):
-            doc_acl = [str(g).strip() for g in entry.acl_groups if str(g).strip()] or ["grp_restricted"]
+            doc_acl = [
+                str(group).strip() for group in entry.acl_groups if str(group).strip()
+            ] or ["grp_restricted"]
         elif doc_chunk_acls.get(entry.document_id):
             unique_groups = list(dict.fromkeys(doc_chunk_acls[entry.document_id]))
             doc_acl = unique_groups if unique_groups else ["grp_restricted"]
         else:
-            # Data missing: fail closed, do not default to grp_public
             doc_acl = ["grp_restricted"]
 
         records.append(
-            SourceRecord(
+            SourceCatalogEntry(
                 source_ref_id=source_ref_id,
                 tenant_id=tenant_id,
                 document_id=entry.document_id,
@@ -175,7 +178,7 @@ def build_source_records_for_release(
                 title=entry.title,
                 source_path=entry.source_path,
                 original_asset_name=entry.original_asset_name,
-                acl_groups=doc_acl,
+                acl_groups=tuple(doc_acl),
             )
         )
     return records
@@ -184,14 +187,16 @@ def build_source_records_for_release(
 async def persist_release_source_records(
     settings: PortalSettings,
     release: ReleaseRecord,
+    *,
+    writer: SourceCatalogWriter | None = None,
 ) -> int:
-    """Write SourceRecords for an activated release. Returns saved count."""
+    """Write catalog entries for an activated release. Returns saved count.
 
-    mode = (
-        getattr(settings, "source_store_mode", None)
-        or "NONE"
-    ).upper()
-    if mode in {"", "NONE", "OFF"}:
+    The writer must be supplied by the composition root. When absent, persistence
+    is skipped (source_store_mode NONE / local tests without wiring).
+    """
+
+    if writer is None:
         return 0
 
     tenant_id = getattr(settings, "default_tenant_id", None) or "default"
@@ -200,35 +205,10 @@ async def persist_release_source_records(
         logger.info("No SourceRecords to persist for release %s", release.release_id)
         return 0
 
-    if mode == "FIRESTORE":
-        from google.cloud import firestore
-
-        from ai_ops_backoffice.services.source_repository import (
-            FirestoreSourceRecordRepository,
-        )
-
-        project = settings.firestore_project_id
-        repo = FirestoreSourceRecordRepository(
-            client=firestore.Client(project=project) if project else firestore.Client(),
-            project_id=project,
-        )
-        await repo.save_source_records(records)
-    elif mode == "FILE":
-        from ai_ops_backoffice.services.source_repository import FileSourceRecordRepository
-
-        root = getattr(settings, "source_store_path", None) or (
-            settings.data_dir / "ops" / "sources" / "records"
-        )
-        repo = FileSourceRecordRepository(Path(root))
-        await repo.save_source_records(records)
-    else:
-        logger.warning("Unsupported source_store_mode=%s; skipping SourceRecord persist", mode)
-        return 0
-
+    saved = await writer.save_entries(records)
     logger.info(
-        "Persisted %s SourceRecords for release %s (mode=%s)",
-        len(records),
+        "Persisted %s SourceRecords for release %s",
+        saved,
         release.release_id,
-        mode,
     )
-    return len(records)
+    return saved

@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from time import perf_counter
 from typing import Any, Protocol
 
-from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
+from platform_kernel.eval import FlowObservation
 
 _INJECTION = re.compile(r"(?i)ignore previous|reveal the system prompt|忽略先前|system prompt")
 _GREETING = re.compile(r"(?i)^(你好|您好|嗨|hello|hi)[\s!！。.?？]*$")

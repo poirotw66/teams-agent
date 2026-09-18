@@ -83,6 +83,7 @@ from .source_trace import SourceTraceResolver
 from .source_repository import (
     FileSourceRecordRepository,
     FirestoreSourceRecordRepository,
+    SourceRecordRepository,
 )
 from .freshness_service import FreshnessTracker
 
@@ -287,6 +288,11 @@ class BackofficeQueryService(
     def environment(self) -> str:
         return self._environment
 
+    @property
+    def source_repository(self) -> SourceRecordRepository:
+        """Public accessor for the source-record store used by quality and sources routes."""
+        return self._source_trace.source_repository
+
     def metrics_definitions(self) -> dict[str, Any]:
         pricing_svc = self._pricing_service
         pricing_version = (
@@ -470,3 +476,18 @@ class BackofficeQueryService(
         if loader is None:
             return False
         return str(user_id) in {str(item) for item in (loader() or set())}
+
+    def resolve_source_content_excerpt(
+        self,
+        source_ref_id: str,
+        *,
+        max_chars: int = 2400,
+    ) -> str | None:
+        """Return a truncated content excerpt for a source ref, if resolvable."""
+        try:
+            source = self._source_trace.resolve_source_ref(source_ref_id)
+        except Exception:
+            return None
+        if source is None or not source.content:
+            return None
+        return source.content[:max_chars]

@@ -55,7 +55,7 @@ def test_build_source_records_for_release_includes_artifact(tmp_path: Path) -> N
     assert records
     assert any(rec.artifact_ref == "art-doc-portal-1-ver-1" for rec in records)
     assert all(str(rec.source_ref_id).startswith("src-") for rec in records)
-    assert any(rec.mapping_status.value == "AVAILABLE" for rec in records)
+    assert any(rec.mapping_status == "AVAILABLE" for rec in records)
 
 
 def test_build_source_records_inherits_restricted_acl(tmp_path: Path) -> None:
@@ -106,8 +106,8 @@ def test_build_source_records_inherits_restricted_acl(tmp_path: Path) -> None:
     doc_record = next(r for r in records if r.chunk_id is None)
 
     # Both chunk AND document-level source record MUST inherit hr-private!
-    assert chunk_record.acl_groups == ["hr-private"]
-    assert doc_record.acl_groups == ["hr-private"], (
+    assert list(chunk_record.acl_groups) == ["hr-private"]
+    assert list(doc_record.acl_groups) == ["hr-private"], (
         f"Document-level record must inherit chunk ACL, got: {doc_record.acl_groups}"
     )
 
@@ -137,7 +137,7 @@ def test_build_source_records_missing_acl_fails_closed(tmp_path: Path) -> None:
     assert len(records) == 1
     doc_record = records[0]
     # Missing ACL must fail closed to grp_restricted, NOT grp_public
-    assert doc_record.acl_groups == ["grp_restricted"]
+    assert list(doc_record.acl_groups) == ["grp_restricted"]
 
 
 def test_publish_aborts_and_marks_failed_if_source_records_fail(tmp_path: Path) -> None:

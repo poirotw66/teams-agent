@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from platform_kernel.eval import FlowObservation
 
 from .constants import INJECTION_SIGNATURES, PROVIDER_MODELS, is_allowlisted_model
 
@@ -24,20 +25,6 @@ _FORCE_UNKNOWN = re.compile(
 _ALLOWED_MODELS = frozenset(
     model_id for models in PROVIDER_MODELS.values() for model_id in models
 )
-
-
-@dataclass(frozen=True)
-class FlowObservation:
-    route: str
-    label: str
-    refused_injection: bool
-    detail: str
-    used_template_chars: int
-    reply_text: str = ""
-    observed_behaviors: frozenset[str] = field(default_factory=frozenset)
-    model_id_used: str | None = None
-    llm_call_count: int | None = None
-    latency_ms: float | None = None
 
 
 class PromptFlowHarness(Protocol):

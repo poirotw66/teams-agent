@@ -1,0 +1,725 @@
+{
+  "routeCount": 52,
+  "routes": [
+    {
+      "method": "GET",
+      "operationId": "get_root",
+      "path": "/",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_admin_bootstrap_release_0001",
+      "path": "/api/admin/bootstrap-release-0001",
+      "requestSchema": "BootstrapReleaseRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_audit_events",
+      "path": "/api/audit-events",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_dashboard",
+      "path": "/api/dashboard",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents",
+      "path": "/api/documents",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents",
+      "path": "/api/documents",
+      "requestSchema": "CreateDocumentRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_import_docx",
+      "path": "/api/documents/import-docx",
+      "requestSchema": "Body_import_docx_api_documents_import_docx_post",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_import_markdown",
+      "path": "/api/documents/import-markdown",
+      "requestSchema": "Body_import_markdown_api_documents_import_markdown_post",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_import_pdf",
+      "path": "/api/documents/import-pdf",
+      "requestSchema": "Body_import_pdf_api_documents_import_pdf_post",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_pdf_jobs_job_id",
+      "path": "/api/documents/pdf-jobs/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "DELETE",
+      "operationId": "delete_api_documents_document_id",
+      "path": "/api/documents/{document_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id",
+      "path": "/api/documents/{document_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id_chunk_preview",
+      "path": "/api/documents/{document_id}/chunk-preview",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_discard_draft",
+      "path": "/api/documents/{document_id}/discard-draft",
+      "requestSchema": "RemoveDocumentRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_api_documents_document_id_draft",
+      "path": "/api/documents/{document_id}/draft",
+      "requestSchema": "UpdateDraftRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_draft_search",
+      "path": "/api/documents/{document_id}/draft-search",
+      "requestSchema": "DraftSearchRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_draft_asset_ref",
+      "path": "/api/documents/{document_id}/draft/asset-ref",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id_draft_assets",
+      "path": "/api/documents/{document_id}/draft/assets",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_draft_assets",
+      "path": "/api/documents/{document_id}/draft/assets",
+      "requestSchema": "Body_upload_draft_assets_api_documents__document_id__draft_assets_post",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "DELETE",
+      "operationId": "delete_api_documents_document_id_draft_assets_filename",
+      "path": "/api/documents/{document_id}/draft/assets/{filename}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id_draft_assets_filename",
+      "path": "/api/documents/{document_id}/draft/assets/{filename}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_evaluate",
+      "path": "/api/documents/{document_id}/evaluate",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_publish",
+      "path": "/api/documents/{document_id}/publish",
+      "requestSchema": "PublishRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_rechunk",
+      "path": "/api/documents/{document_id}/rechunk",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_start_revision",
+      "path": "/api/documents/{document_id}/start-revision",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_submit_review",
+      "path": "/api/documents/{document_id}/submit-review",
+      "requestSchema": "SubmitReviewRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id_test_cases",
+      "path": "/api/documents/{document_id}/test-cases",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_test_cases",
+      "path": "/api/documents/{document_id}/test-cases",
+      "requestSchema": "CreateTestCaseRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_test_cases_test_case_id_run",
+      "path": "/api/documents/{document_id}/test-cases/{test_case_id}/run",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_documents_document_id_test_runs",
+      "path": "/api/documents/{document_id}/test-runs",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_unpublish",
+      "path": "/api/documents/{document_id}/unpublish",
+      "requestSchema": "RemoveDocumentRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_documents_document_id_validate",
+      "path": "/api/documents/{document_id}/validate",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_ingestion_jobs_job_id",
+      "path": "/api/ingestion-jobs/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_ingestion_jobs_job_id_cancel",
+      "path": "/api/ingestion-jobs/{job_id}/cancel",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_internal_v1_ingestion_jobs_job_id_run",
+      "path": "/api/internal/v1/ingestion-jobs/{job_id}/run",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_releases",
+      "path": "/api/releases",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_releases_compare",
+      "path": "/api/releases/compare",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_releases_rollback",
+      "path": "/api/releases/rollback",
+      "requestSchema": "RollbackRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_releases_release_id_promote",
+      "path": "/api/releases/{release_id}/promote",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_releases_release_id_sync_agent",
+      "path": "/api/releases/{release_id}/sync-agent",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_reviews_pending",
+      "path": "/api/reviews/pending",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_reviews_review_id_decision",
+      "path": "/api/reviews/{review_id}/decision",
+      "requestSchema": "ReviewDecisionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_sync",
+      "path": "/api/sync",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_v1_documents_document_id_chunk_preview",
+      "path": "/api/v1/documents/{document_id}/chunk-preview",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_v1_documents_document_id_evaluate",
+      "path": "/api/v1/documents/{document_id}/evaluate",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_v1_documents_document_id_rechunk",
+      "path": "/api/v1/documents/{document_id}/rechunk",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_v1_documents_document_id_versions_version_id_assets_filename",
+      "path": "/api/v1/documents/{document_id}/versions/{version_id}/assets/{filename}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_v1_documents_document_id_versions_version_id_chunk_preview",
+      "path": "/api/v1/documents/{document_id}/versions/{version_id}/chunk-preview",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_api_v1_ingestion_jobs_job_id",
+      "path": "/api/v1/ingestion-jobs/{job_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_api_v1_ingestion_jobs_job_id_cancel",
+      "path": "/api/v1/ingestion-jobs/{job_id}/cancel",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_health",
+      "path": "/health",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_healthz",
+      "path": "/healthz",
+      "requestSchema": null,
+      "responseSchemas": [],
+      "statusCodes": [
+        "200"
+      ],
+      "tags": []
+    }
+  ],
+  "service": "knowledge_portal"
+}

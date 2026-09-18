@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 def build_lifespan(resolved_settings: RagSettings):
     """Return a FastAPI lifespan context manager bound to ``resolved_settings``."""
 
+    from composition.agent_hooks import install_agent_hooks
+
+    install_agent_hooks()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resolved_index = resolve_knowledge_index(resolved_settings)

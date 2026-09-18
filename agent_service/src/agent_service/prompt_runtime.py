@@ -7,17 +7,19 @@ from dataclasses import dataclass
 from typing import Literal
 
 from agent_service.extractor import SYSTEM_PROMPT
+from agent_service.runtime_hooks import build_governance_provider
 from agent_service.settings import RagSettings
-from ai_ops_backoffice.governance_domain.constants import (
+from platform_kernel.governance_catalog import (
     DEFAULT_AGENT_MODEL_ID,
     DEFAULT_FILE_SEARCH_MODEL_ID,
     DEFAULT_RAG_MODEL_ID,
     FLAG_CATALOG,
     ISSUE_EXTRACTOR_PROMPT_ID,
+    MODEL_COMPONENTS,
+    ModelComponentSpec,
 )
-from ai_ops_backoffice.governance_domain.helpers import content_hash
-from ai_ops_backoffice.governance_domain.model_catalog import MODEL_COMPONENTS, ModelComponentSpec
-from ai_ops_backoffice.governance_domain.service import GovernanceService
+from platform_kernel.hashing import content_hash
+from platform_kernel.ports.governance import GovernanceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -53,27 +55,19 @@ class ResolvedModelConfig:
     max_attempts: int = 1
 
 
-def _build_governance(settings: RagSettings) -> GovernanceService | None:
+def _build_governance(settings: RagSettings) -> GovernanceProvider | None:
     mode = settings.prompt_runtime_mode.upper()
     if mode == "CODE_BASELINE":
         return None
     if mode != "GOVERNED":
         raise ValueError(f"Unsupported prompt runtime mode: {mode}")
-    from ai_ops_backoffice.governance_domain.service import GovernanceService
-    from ai_ops_backoffice.governance_domain.store_factory import build_governance_repository
-
-    store_mode = settings.prompt_governance_store_mode.upper()
-    path = settings.prompt_governance_store_path or (
-        settings.data_dir / "ops" / "phase3" / "governance.json"
-    )
-    repository = build_governance_repository(
-        store_mode=store_mode,
-        file_path=path,
-        firestore_project=settings.prompt_governance_firestore_project,
-        firestore_database=settings.prompt_governance_firestore_database,
-        firestore_collection=settings.prompt_governance_firestore_collection,
-    )
-    return GovernanceService(repository)
+    provider = build_governance_provider(settings)
+    if provider is None:
+        raise RuntimeError(
+            "GOVERNED prompt runtime requires composition.install_agent_hooks(); "
+            "no governance provider builder is registered."
+        )
+    return provider
 
 
 class GovernanceRuntime:
@@ -84,7 +78,7 @@ class GovernanceRuntime:
         *,
         mode: str,
         settings: RagSettings,
-        governance: GovernanceService | None = None,
+        governance: GovernanceProvider | None = None,
         environment: str = "lab",
     ) -> None:
         self._mode = mode.upper()

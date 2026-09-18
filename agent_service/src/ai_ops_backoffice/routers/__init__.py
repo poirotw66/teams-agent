@@ -1,19 +1,19 @@
-from .analytics_router import register_analytics_routes
+from .analytics import register_analytics_routes
 from .budget_routes import register_budget_routes
-from .console_routes import register_console_routes
+from .console import register_console_routes
 from .conversations_router import register_conversations_routes
-from .evaluation_routes import register_evaluation_routes
+from .evaluation import register_evaluation_routes
 from .evaluation_run_routes import register_evaluation_run_routes
 from .example_routes import register_example_routes
-from .faq_routes import register_faq_routes
-from .gate_routes import register_gate_routes
+from .faq import register_faq_routes
+from .gate import register_gate_routes
 from .ops_reads import register_ops_read_routes
 from .prompt_poc_routes import register_prompt_poc_routes
-from .quality_routes import register_quality_routes
-from .sources_router import register_sources_routes
+from .quality import register_quality_routes
+from .sources import register_sources_routes
 from .sync_routes import register_sync_routes
 from .tool_fixture_routes import register_tool_fixture_routes
-from .workbench_router import register_workbench_routes
+from .workbench import register_workbench_routes
 
 __all__ = [
     "register_analytics_routes",

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from platform_kernel.governance_catalog import (
+    MODEL_COMPONENTS,
+    ModelComponentSpec,
+    ModelEffect,
+    ModelFamily,
+)
 
 from .constants import PROVIDER_MODELS
 from .errors import GovernanceValidationError
-
-ModelEffect = Literal["next_request", "reindex", "service_refresh"]
-ModelFamily = Literal["chat", "embedding", "file_search"]
 
 CHAT_MODELS: dict[str, frozenset[str]] = {
     "google_genai": frozenset(
@@ -37,52 +38,6 @@ FILE_SEARCH_MODELS: dict[str, frozenset[str]] = {
         }
     ),
 }
-
-
-@dataclass(frozen=True)
-class ModelComponentSpec:
-    config_id: str
-    component: str
-    role: str
-    label: str
-    effect: ModelEffect
-    family: ModelFamily
-
-
-MODEL_COMPONENTS: tuple[ModelComponentSpec, ...] = (
-    ModelComponentSpec(
-        config_id="issue-extractor-model",
-        component="issue-extractor",
-        role="agent",
-        label="主代理／議題拆解",
-        effect="next_request",
-        family="chat",
-    ),
-    ModelComponentSpec(
-        config_id="rag-answer-model",
-        component="rag-answer",
-        role="answer",
-        label="回答生成",
-        effect="next_request",
-        family="chat",
-    ),
-    ModelComponentSpec(
-        config_id="embedding-model",
-        component="embedding",
-        role="embedding",
-        label="向量檢索 Embedding",
-        effect="reindex",
-        family="embedding",
-    ),
-    ModelComponentSpec(
-        config_id="file-search-model",
-        component="file-search",
-        role="file_search",
-        label="Gemini File Search",
-        effect="service_refresh",
-        family="file_search",
-    ),
-)
 
 _BY_CONFIG_ID = {item.config_id: item for item in MODEL_COMPONENTS}
 _BY_COMPONENT = {item.component: item for item in MODEL_COMPONENTS}
