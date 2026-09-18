@@ -11,6 +11,7 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 | `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories and the canonical Backoffice OpenAPI document (breaking-change report on drift) |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/generate_openapi_ts.py --check` | Verify generated Console TypeScript schemas match the canonical OpenAPI |
+| `python3 scripts/sync_console_v2.py --check` | Verify committed `static/console-v2` matches a fresh `console_frontend` production rebuild (hash parity) |
 | `PYTHONPATH=../src:src uv run --directory agent_service python ../scripts/check_wire_contracts.py` | Adapter ↔ Agent wire-field compatibility |
 | Golden / release / frontend steps | Named jobs in `.github/workflows/ci.yml` |
 
@@ -29,8 +30,13 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    `console_frontend/src/shared/api/generated/backoffice-schemas.ts`.
    After intentional API changes:
    `snapshot_openapi.py --write` then `generate_openapi_ts.py --write`.
-6. `platform_kernel` holds shared ports only and must not import domain packages.
-7. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
+6. Production React console assets live at
+   `agent_service/src/ai_ops_backoffice/static/console-v2/` and must match
+   `console_frontend` via `python3 scripts/sync_console_v2.py --check`.
+   After intentional UI changes: `python3 scripts/sync_console_v2.py --write`
+   and commit the refreshed hashed assets.
+7. `platform_kernel` holds shared ports only and must not import domain packages.
+8. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
 
 ## Characterization suites
 

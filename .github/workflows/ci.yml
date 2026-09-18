@@ -91,5 +91,13 @@ jobs:
         run: npm ci
       - name: Component smoke tests
         run: npm test
-      - name: Typecheck and build
-        run: npm run build
+      - name: Sync helper unit tests
+        working-directory: ${{ github.workspace }}
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Typecheck, build, and production bundle freshness
+        # Rebuilds to a temp dir (tsc + vite) and requires SHA-256 parity with
+        # the committed agent_service/.../static/console-v2 artifact. Must run
+        # before any step that writes the canonical outDir.
+        # Regenerate locally: python3 scripts/sync_console_v2.py --write
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/sync_console_v2.py --check

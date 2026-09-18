@@ -28,7 +28,13 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `knowledge_core` first + second slices:
   - release gate, target-manifest hashing, front-matter, artifact path constants
   - release pointers, source identity, generation eligibility, `ChunkingProfile`
-- Portal→Agent importer files **18 → 9**.
+- `knowledge_core` third slice (Portal importer 9 → 5):
+  - `DocumentChunk` / markdown chunking (layout path stays Agent via callback)
+  - artifact models + `ArtifactStorage` protocol + local-file storage
+  - pure release-artifact validators
+  - File Search ACL encoding
+  - Portal GCS dual-write wired through composition provider (no Portal→Agent import)
+- Portal→Agent importer files **18 → 9 → 5**.
 - Agent modules keep compatibility facades.
 
 ### Phase E — Application / persistence boundaries
@@ -44,23 +50,30 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - CI: `snapshot_openapi.py --check` + `generate_openapi_ts.py --check`
 - Still open: full TS client (paths/operations), migrate hand-written DTOs, consumer-driven tests, cross-version matrix, portal/agent canonical docs
 
+### Phase G — Independent frontend deliver + legacy removal (first slice)
+- `scripts/sync_console_v2.py --write` / `--check`: rebuild `console_frontend` and gate
+  SHA-256 parity of committed `ai_ops_backoffice/static/console-v2/`
+- CI `console-frontend` job runs helper unit tests + freshness check (no Agent Python runtime)
+- Docs: `console_frontend/README.md` + architecture baseline checklist
+- Still open: independent frontend image/artifact/deploy/rollback, store/API domain split,
+  behavioral component tests, route code splitting / bundle budget, delete `static/legacy-js`
+
 ## Still open (goal continues)
 
 | Phase | Status |
 |---|---|
-| D remaining Portal→Agent implementation imports (9 files) | In progress |
+| D remaining Portal→Agent implementation imports (5 files) | In progress |
 | E broader private-access / source query service polish | Mostly done for hotspot paths |
 | F canonical OpenAPI + generated TS client | First slice started: canonical Backoffice OpenAPI + TS schemas + CI freshness |
-| G independent frontend deliver + legacy removal | Not started |
+| G independent frontend deliver + legacy removal | First slice started: bundle sync script + CI hash freshness gate |
 | H residual oversized domains | Not started |
 
 Repository strategy unchanged: modular monorepo; no physical repo split yet.
 
 Current ownership importer caps:
 - `ai_ops_backoffice→agent_service`: **52**
-- `knowledge_portal→agent_service`: **9**
+- `knowledge_portal→agent_service`: **5**
 
 Remaining Portal→Agent importers:
-`draft_retrieval.py`, `file_search_release.py`, `original_assets.py`, `pdf_convert_jobs.py`,
-`pdf_staging.py`, `persistent_pdf_jobs.py`, `publisher.py`, `services/document_service.py`,
-`validation.py`.
+`draft_retrieval.py`, `pdf_convert_jobs.py`, `persistent_pdf_jobs.py`,
+`publisher.py`, `services/document_service.py`.
