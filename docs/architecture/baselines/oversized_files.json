@@ -9,7 +9,6 @@
     "agent_service/src/agent_service/workflow_handoff_nodes.py": 781,
     "agent_service/src/agent_service/workflow_helpers.py": 567,
     "agent_service/src/agent_service/workflow_issue_processing.py": 579,
-    "agent_service/src/ai_ops_backoffice/budget_domain/service.py": 736,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/job_repository.py": 698,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/run_service.py": 657,
     "agent_service/src/ai_ops_backoffice/evaluation_domain/service.py": 813,
