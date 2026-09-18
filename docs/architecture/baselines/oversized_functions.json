@@ -3,7 +3,6 @@
     "agent_service/src/agent_service/deps.py::sync_knowledge_to_active_pointer": 100,
     "agent_service/src/agent_service/eval_agent_harness.py::_infer_route_and_behaviors": 97,
     "agent_service/src/agent_service/eval_agent_harness.py::aexecute": 92,
-    "agent_service/src/agent_service/gemini_file_search.py::search": 242,
     "agent_service/src/agent_service/knowledge_pipeline/candidate_policy.py::filter_cross_scenario_chunks": 188,
     "agent_service/src/agent_service/knowledge_pipeline/document_selection.py::select_document_chunks": 109,
     "agent_service/src/agent_service/knowledge_pipeline/generation_retries.py::apply_generation_retries": 261,

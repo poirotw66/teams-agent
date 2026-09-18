@@ -471,9 +471,9 @@ async def test_usage_logged_at_info_with_correlation_id(caplog):
 
 
 def test_gemini_adapter_always_sends_grounding_system_instruction():
-    source = inspect.getsource(GeminiFileSearchKnowledgeService.search)
+    source = inspect.getsource(GeminiFileSearchKnowledgeService._generate_content)
     assert "system_instruction=GROUNDING_SYSTEM_INSTRUCTION" in source, (
-        "GeminiFileSearchKnowledgeService.search must pass "
+        "GeminiFileSearchKnowledgeService._generate_content must pass "
         "GROUNDING_SYSTEM_INSTRUCTION to GenerateContentConfig."
     )
     assert "不得以一般常識或模型既有知識補充公司流程" in GROUNDING_SYSTEM_INSTRUCTION
