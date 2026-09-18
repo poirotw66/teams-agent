@@ -1,6 +1,6 @@
 {
   "files": {
-    "agent_service/src/agent_service/documents.py": 570,
+    "agent_service/src/agent_service/documents.py": 514,
     "agent_service/src/agent_service/extractor.py": 799,
     "agent_service/src/agent_service/gemini_file_search.py": 555,
     "agent_service/src/agent_service/handoff_flow.py": 516,

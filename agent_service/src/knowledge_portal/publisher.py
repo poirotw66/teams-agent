@@ -11,13 +11,13 @@ from agent_service.documents import DocumentChunk, load_source_chunks
 from agent_service.knowledge_eligibility import is_generation_metadata_eligible
 from agent_service.knowledge_release_gcs import publish_release_directory
 from agent_service.release_artifacts import (
-    INDEX_RELATIVE_PATH,
     KnowledgeReleaseValidationError,
     inspect_index_artifact,
     validate_release_artifacts,
 )
 from agent_service.retrieval import HybridIndex
-from agent_service.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_core.artifacts import INDEX_RELATIVE_PATH
+from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now

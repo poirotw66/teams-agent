@@ -5,9 +5,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agent_service.documents import parse_front_matter
-from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
-from agent_service.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_core.front_matter import parse_front_matter
+from knowledge_core.release_gate import ReleaseGateBlockedError, require_release_gate
+from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
 
 from .draft_assets import slug_from_title
 from .models import (

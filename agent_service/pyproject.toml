@@ -71,6 +71,7 @@ packages = [
     "src/ai_ops_backoffice",
     "src/platform_kernel",
     "src/operations_core",
+    "src/knowledge_core",
     "src/composition",
 ]
 

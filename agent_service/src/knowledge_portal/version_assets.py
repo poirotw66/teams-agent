@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from agent_service.release_artifacts import INDEX_RELATIVE_PATH
+from knowledge_core.artifacts import INDEX_RELATIVE_PATH
 
 from .draft_assets import (
     ALLOWED_IMAGE_SUFFIXES,

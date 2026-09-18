@@ -5,7 +5,8 @@ import re
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from agent_service.documents import chunk_markdown, parse_front_matter
+from agent_service.documents import chunk_markdown
+from knowledge_core.front_matter import parse_front_matter
 
 from .draft_assets import validate_asset_bundle
 from .models import (

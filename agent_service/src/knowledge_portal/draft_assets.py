@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from agent_service.documents import parse_front_matter
+from knowledge_core.front_matter import parse_front_matter
 
 from .asset_validation import (
     _IMAGE_REF_PATTERN,

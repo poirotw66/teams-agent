@@ -5,8 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-INDEX_RELATIVE_PATH = "index/chunks.json"
-MANIFEST_FILENAME = "manifest.json"
+from knowledge_core.artifacts import INDEX_RELATIVE_PATH, MANIFEST_FILENAME
 
 
 class KnowledgeReleaseValidationError(ValueError):

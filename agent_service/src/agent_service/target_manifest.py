@@ -3,34 +3,25 @@
 Knowledge / FAQ activation and Quality Gate decisions must use the same
 ``target_manifest_hash`` contract (Spec 7.1). Passing a corpus or content hash
 alone is not sufficient.
+
+Pure hashing and env-based gate helpers live in ``knowledge_core.target_manifest``.
+This module keeps Agent-enriched ``resolve_publish_manifest_defaults`` (RagSettings)
+and re-exports the shared helpers for compatibility.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from typing import Any
 
-
-def calculate_target_manifest_hash(payload: dict[str, Any]) -> str:
-    """Computes an immutable SHA-256 hash from canonical manifest fields."""
-    canonical = {
-        "target_id": payload.get("target_id", ""),
-        "target_side": payload.get("target_side", ""),
-        "app_revision": payload.get("app_revision", "v1"),
-        "prompt_version": payload.get("prompt_version", "default"),
-        "model_id": payload.get("model_id", "google_genai:gemini-3.8-flash"),
-        "temperature": payload.get("temperature", 0.0),
-        "knowledge_release_id": payload.get("knowledge_release_id"),
-        "faq_version_id": payload.get("faq_version_id"),
-        "retriever_config": payload.get("retriever_config", {}),
-        "persona_fixture_id": payload.get("persona_fixture_id"),
-        "acl_policy": payload.get("acl_policy", "STRICT"),
-        "environment": payload.get("environment", "test"),
-    }
-    dumped = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(dumped.encode("utf-8")).hexdigest()
+from knowledge_core.target_manifest import (
+    calculate_target_manifest_hash,
+    faq_version_gate_manifest,
+    faq_version_target_manifest_hash,
+    knowledge_release_gate_manifest,
+    knowledge_release_target_manifest_hash,
+)
 
 
 def resolve_publish_manifest_defaults() -> dict[str, Any]:
@@ -118,110 +109,6 @@ def _load_rag_settings() -> Any | None:
         return RagSettings.from_env()
     except Exception:
         return None
-
-
-def knowledge_release_gate_manifest(
-    *,
-    release_id: str,
-    environment: str = "prod",
-    app_revision: str | None = None,
-    prompt_version: str | None = None,
-    model_id: str | None = None,
-    retriever_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Canonical candidate target used when gating a knowledge release activation."""
-    defaults = resolve_publish_manifest_defaults()
-    return {
-        "target_id": f"knowledge:{release_id}",
-        "target_side": "CANDIDATE",
-        "app_revision": app_revision or defaults["app_revision"],
-        "prompt_version": prompt_version or defaults["prompt_version"],
-        "model_id": model_id or defaults["model_id"],
-        "temperature": 0.0,
-        "knowledge_release_id": release_id,
-        "faq_version_id": None,
-        "retriever_config": (
-            retriever_config
-            if retriever_config is not None
-            else defaults["retriever_config"]
-        ),
-        "persona_fixture_id": None,
-        "acl_policy": "STRICT",
-        "environment": environment,
-    }
-
-
-def faq_version_gate_manifest(
-    *,
-    faq_version_id: str,
-    environment: str = "prod",
-    app_revision: str | None = None,
-    prompt_version: str | None = None,
-    model_id: str | None = None,
-    retriever_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Canonical candidate target used when gating FAQ activation."""
-    defaults = resolve_publish_manifest_defaults()
-    return {
-        "target_id": f"faq:{faq_version_id}",
-        "target_side": "CANDIDATE",
-        "app_revision": app_revision or defaults["app_revision"],
-        "prompt_version": prompt_version or defaults["prompt_version"],
-        "model_id": model_id or defaults["model_id"],
-        "temperature": 0.0,
-        "knowledge_release_id": None,
-        "faq_version_id": faq_version_id,
-        "retriever_config": (
-            retriever_config
-            if retriever_config is not None
-            else defaults["retriever_config"]
-        ),
-        "persona_fixture_id": None,
-        "acl_policy": "STRICT",
-        "environment": environment,
-    }
-
-
-def knowledge_release_target_manifest_hash(
-    *,
-    release_id: str,
-    environment: str = "prod",
-    app_revision: str | None = None,
-    prompt_version: str | None = None,
-    model_id: str | None = None,
-    retriever_config: dict[str, Any] | None = None,
-) -> str:
-    return calculate_target_manifest_hash(
-        knowledge_release_gate_manifest(
-            release_id=release_id,
-            environment=environment,
-            app_revision=app_revision,
-            prompt_version=prompt_version,
-            model_id=model_id,
-            retriever_config=retriever_config,
-        )
-    )
-
-
-def faq_version_target_manifest_hash(
-    *,
-    faq_version_id: str,
-    environment: str = "prod",
-    app_revision: str | None = None,
-    prompt_version: str | None = None,
-    model_id: str | None = None,
-    retriever_config: dict[str, Any] | None = None,
-) -> str:
-    return calculate_target_manifest_hash(
-        faq_version_gate_manifest(
-            faq_version_id=faq_version_id,
-            environment=environment,
-            app_revision=app_revision,
-            prompt_version=prompt_version,
-            model_id=model_id,
-            retriever_config=retriever_config,
-        )
-    )
 
 
 __all__ = [

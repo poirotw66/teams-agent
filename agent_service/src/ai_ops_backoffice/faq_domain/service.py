@@ -6,8 +6,8 @@ from typing import Any
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import MASKING_POLICY_VERSION, mask_text
-from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
-from agent_service.target_manifest import faq_version_target_manifest_hash
+from knowledge_core.release_gate import ReleaseGateBlockedError, require_release_gate
+from knowledge_core.target_manifest import faq_version_target_manifest_hash
 
 from .artifacts import write_faq_activation_artifact
 from .authorization import (

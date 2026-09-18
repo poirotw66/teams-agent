@@ -10,8 +10,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol
 
-from agent_service.release_gate import ReleaseGateBlockedError, require_release_gate
-from agent_service.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_core.release_gate import ReleaseGateBlockedError, require_release_gate
+from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
 from knowledge_portal.models import PortalActor, ReleaseRecord, utc_now
 from knowledge_portal.rbac import PortalPermissionError, ensure_can_publish, ensure_not_found
 from knowledge_portal.repository import new_id
