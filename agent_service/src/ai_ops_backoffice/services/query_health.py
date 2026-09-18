@@ -2,200 +2,28 @@
 
 from __future__ import annotations
 
-import json
-from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
-import httpx
+from operations_core.contracts import utc_now
 
-from operations_core.contracts import DEFAULT_TIMEZONE, utc_now
+from .query_health_probes import HealthProbeMixin
+from .query_health_summary import (
+    apply_historical_statuses,
+    build_monitoring_links,
+    build_raw_components,
+    is_historical_target,
+)
+from .query_health_telemetry import compute_health_telemetry
+from .query_health_window import resolve_taipei_day_window
 
-from .query_math import percentile as _percentile
-from .usage_projection import project_usage
-
-
-def resolve_taipei_day_window(target_date: str) -> tuple[datetime, datetime, date]:
-    """Resolve a calendar day in Asia/Taipei regardless of input timezone offsets.
-
-    Health historical queries must match other ops day boundaries (Taipei), so a
-    UTC midnight ISO string still maps to the Taipei calendar date it represents.
-    """
-    raw = target_date.strip()
-    tz = ZoneInfo(DEFAULT_TIMEZONE)
-    if "T" in raw:
-        normalized = raw.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(normalized)
-        if parsed.tzinfo is None:
-            local_day = parsed.date()
-        else:
-            local_day = parsed.astimezone(tz).date()
-    else:
-        local_day = date.fromisoformat(raw[:10])
-    local_start = datetime(
-        local_day.year, local_day.month, local_day.day, 0, 0, 0, 0, tzinfo=tz
-    )
-    window_start = local_start.astimezone(UTC)
-    window_end = (local_start + timedelta(days=1)).astimezone(UTC)
-    return window_start, window_end, local_day
+__all__ = [
+    "HealthQueryMixin",
+    "resolve_taipei_day_window",
+]
 
 
-class HealthQueryMixin:
+class HealthQueryMixin(HealthProbeMixin):
     """Mixin providing system-health query helpers for BackofficeQueryService."""
-
-    async def _probe_url(self, url: str | None, path: str = "/healthz") -> dict[str, str]:
-        if not url:
-            return {"status": "UNKNOWN", "note": "URL not configured."}
-        target = f"{url.rstrip('/')}{path}"
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(target)
-            if response.status_code < 400:
-                return {"status": "READY", "note": f"HTTP {response.status_code}"}
-            return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
-        except httpx.HTTPError as exc:
-            return {"status": "DOWN", "note": str(exc)}
-
-
-    async def _probe_agent_functional(self, url: str | None) -> dict[str, str]:
-        if not url:
-            return {"status": "UNKNOWN", "note": "Agent API URL not configured."}
-        target = f"{url.rstrip('/')}/healthz"
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(target)
-            if response.status_code >= 400:
-                return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
-            payload = response.json()
-            retrieval = str(payload.get("retrieval") or "")
-            chunks = int(payload.get("chunks") or 0)
-            if retrieval and chunks > 0:
-                return {
-                    "status": "READY",
-                    "note": f"retrieval={retrieval}, chunks={chunks}",
-                }
-            return {"status": "DEGRADED", "note": "Agent health ok but retrieval index is empty."}
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            return {"status": "DOWN", "note": str(exc)}
-
-
-    async def _probe_retrieval_search(self, url: str | None) -> dict[str, str]:
-        if not url:
-            return {"status": "UNKNOWN", "note": "Agent API URL not configured."}
-        target = f"{url.rstrip('/')}/retrieval/search"
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.post(
-                    target,
-                    json={"query": "vpn", "limit": 1, "groups": []},
-                )
-            if response.status_code == 401:
-                return {"status": "READY", "note": "Retrieval endpoint reachable (auth required)."}
-            if response.status_code >= 400:
-                return {"status": "DEGRADED", "note": f"HTTP {response.status_code}"}
-            hits = response.json().get("hits") or []
-            return {"status": "READY", "note": f"hits={len(hits)}"}
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            return {"status": "DOWN", "note": str(exc)}
-
-
-    async def _probe_knowledge_release(self, url: str | None) -> dict[str, Any]:
-        if not url:
-            return {
-                "status": "UNKNOWN",
-                "note": "Knowledge Portal URL not configured.",
-                "releaseId": None,
-                "publishedAt": None,
-                "indexStatus": "UNKNOWN",
-                "documentCount": 0,
-            }
-        headers = {
-            "X-Portal-User-Id": "ai-ops-backoffice",
-            "X-Portal-User-Name": "AI%20Ops%20Backoffice",
-            "X-Portal-Role": "PLATFORM",
-            "X-Portal-Owner-Units": self._settings.default_owner_unit_id,
-        }
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(
-                    f"{url.rstrip('/')}/api/releases",
-                    headers=headers,
-                )
-            if response.status_code >= 400:
-                return {
-                    "status": "DOWN",
-                    "note": f"Portal returned HTTP {response.status_code}",
-                    "releaseId": None,
-                    "publishedAt": None,
-                    "indexStatus": "UNKNOWN",
-                    "documentCount": 0,
-                }
-            payload = response.json()
-            releases = payload.get("items") if isinstance(payload, dict) else payload
-            releases = [item for item in (releases or []) if isinstance(item, dict)]
-            active = next(
-                (item for item in releases if item.get("status") == "ACTIVE"),
-                None,
-            )
-            if active is None:
-                return {
-                    "status": "DEGRADED",
-                    "note": "No active Knowledge release.",
-                    "releaseId": None,
-                    "publishedAt": None,
-                    "indexStatus": "NOT_ACTIVE",
-                    "documentCount": 0,
-                }
-            return {
-                "status": "READY",
-                "note": "Active Knowledge release is available.",
-                "releaseId": active.get("release_id"),
-                "publishedAt": active.get("activated_at") or active.get("created_at"),
-                "indexStatus": "READY",
-                "documentCount": len(active.get("manifest") or []),
-                "indexSettingVersion": active.get("index_setting_version"),
-            }
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            return {
-                "status": "DOWN",
-                "note": str(exc),
-                "releaseId": None,
-                "publishedAt": None,
-                "indexStatus": "UNKNOWN",
-                "documentCount": 0,
-            }
-
-    @staticmethod
-    def _health_metric_summary(
-        samples: list[tuple[str, float | None]],
-    ) -> dict[str, Any]:
-        if not samples:
-            return {
-                "telemetryStatus": "NO_DATA",
-                "requestCount": 0,
-                "availabilityRate": None,
-                "errorRate": None,
-                "timeoutRate": None,
-                "p50LatencyMs": None,
-                "p95LatencyMs": None,
-                "latencySampleCount": 0,
-            }
-        statuses = [status.upper() for status, _ in samples]
-        latencies = [latency for _, latency in samples if latency is not None]
-        failures = sum(status == "FAILED" for status in statuses)
-        timeouts = sum(status == "TIMEOUT" for status in statuses)
-        successful = len(samples) - failures - timeouts
-        return {
-            "telemetryStatus": "AVAILABLE",
-            "requestCount": len(samples),
-            "availabilityRate": round(successful / len(samples), 4),
-            "errorRate": round(failures / len(samples), 4),
-            "timeoutRate": round(timeouts / len(samples), 4),
-            "p50LatencyMs": _percentile(latencies, 0.5),
-            "p95LatencyMs": _percentile(latencies, 0.95),
-            "latencySampleCount": len(latencies),
-        }
-
 
     async def _health_telemetry(
         self,
@@ -203,239 +31,11 @@ class HealthQueryMixin:
     ) -> tuple[
         dict[str, dict[str, Any]],
         list[dict[str, Any]],
-        datetime,
-        datetime,
+        Any,
+        Any,
         dict[str, Any],
     ]:
-        if target_date:
-            try:
-                window_start, window_end, _local_day = resolve_taipei_day_window(target_date)
-                events = [
-                    event for event in await self._events()
-                    if window_start <= event.occurred_at < window_end
-                ]
-            except Exception:
-                window_end = utc_now()
-                window_start = window_end - timedelta(hours=24)
-                events = [
-                    event for event in await self._events()
-                    if event.occurred_at >= window_start
-                ]
-        else:
-            window_end = utc_now()
-            window_start = window_end - timedelta(hours=24)
-            events = [
-                event for event in await self._events()
-                if event.occurred_at >= window_start
-            ]
-        failures = [
-            event for event in events
-            if event.event_type.endswith(".failed") or event.event_type == "request.failed"
-        ]
-        anomalies = [
-            {
-                "occurredAt": event.occurred_at.isoformat(),
-                "component": str(event.payload.get("component") or "agent-service"),
-                "status": "TIMEOUT"
-                if "timeout" in json.dumps(event.payload).lower()
-                else "FAILED",
-                "errorType": event.payload.get("errorType")
-                or event.payload.get("errorCode")
-                or "REQUEST_FAILED",
-                "correlationId": event.correlation_id,
-            }
-            for event in failures
-        ]
-        request_latencies = {
-            event.request_id or event.turn_id or event.correlation_id: float(
-                event.payload["elapsedMs"]
-            )
-            for event in project_usage(events).request_latency_events
-            if event.payload.get("elapsedMs") is not None
-        }
-        agent_samples: list[tuple[str, float | None]] = []
-        for turn in (event for event in events if event.event_type == "turn.received"):
-            failure = next(
-                (
-                    item for item in failures
-                    if any(
-                        (
-                            bool(turn.request_id and item.request_id == turn.request_id),
-                            bool(turn.turn_id and item.turn_id == turn.turn_id),
-                            item.correlation_id == turn.correlation_id,
-                        )
-                    )
-                ),
-                None,
-            )
-            failure_text = json.dumps(failure.payload).lower() if failure else ""
-            status = "TIMEOUT" if "timeout" in failure_text else "FAILED" if failure else "SUCCESS"
-            request_key = turn.request_id or turn.turn_id or turn.correlation_id
-            agent_samples.append((status, request_latencies.get(request_key)))
-
-        usage_samples: list[tuple[str, str, float | None, str]] = []
-        for event in events:
-            if event.event_type != "usage.recorded":
-                continue
-            scope = str(event.payload.get("attributionScope") or "LEGACY")
-            if scope == "REQUEST_SUMMARY":
-                continue
-            elapsed = event.payload.get("elapsedMs")
-            usage_samples.append(
-                (
-                    str(event.payload.get("component") or "unknown"),
-                    str(event.payload.get("status") or "SUCCESS"),
-                    float(elapsed) if elapsed is not None else None,
-                    scope,
-                )
-            )
-            usage_status = str(event.payload.get("status") or "SUCCESS").upper()
-            if usage_status in {"FAILED", "TIMEOUT"}:
-                anomalies.append(
-                    {
-                        "occurredAt": event.occurred_at.isoformat(),
-                        "component": str(event.payload.get("component") or "unknown"),
-                        "status": usage_status,
-                        "errorType": event.payload.get("errorType")
-                        or event.payload.get("errorCode")
-                        or "UPSTREAM_FAILURE",
-                        "correlationId": event.correlation_id,
-                    }
-                )
-
-        def usage_for(
-            prefixes: tuple[str, ...],
-            *,
-            exclude_scopes: frozenset[str] | None = None,
-            include_scopes: frozenset[str] | None = None,
-        ) -> list[tuple[str, float | None]]:
-            selected: list[tuple[str, float | None]] = []
-            for component, status, latency, scope in usage_samples:
-                if not component.startswith(prefixes):
-                    continue
-                if exclude_scopes and scope in exclude_scopes:
-                    continue
-                if include_scopes and scope not in include_scopes:
-                    continue
-                selected.append((status, latency))
-            return selected
-
-        faq_samples = [
-            ("SUCCESS", None)
-            for event in events
-            if event.event_type == "faq.answered"
-        ]
-        ticket_samples = [
-            (
-                "TIMEOUT"
-                if "timeout" in json.dumps(event.payload).lower()
-                else "FAILED" if event.event_type == "ticket.failed" else "SUCCESS",
-                None,
-            )
-            for event in events
-            if event.event_type in {"ticket.created", "ticket.failed"}
-        ]
-        # Reply-path metrics only. ADAPTER_INGRESS SUCCESS without elapsedMs is
-        # intentionally excluded so ingress ≠ full Teams Bot reply health.
-        adapter_usage = usage_for(
-            ("teams_", "adapter_", "teams-adapter", "teams_bot"),
-            exclude_scopes=frozenset({"ADAPTER_INGRESS"}),
-        )
-        ingress_count = sum(
-            1
-            for component, _status, _latency, scope in usage_samples
-            if component.startswith(("teams_", "adapter_", "teams-adapter", "teams_bot"))
-            and scope == "ADAPTER_INGRESS"
-        )
-        teams_events = [
-            (
-                "TIMEOUT"
-                if "timeout" in json.dumps(event.payload).lower()
-                else "FAILED"
-                if str(event.payload.get("status") or "").upper() in {"FAILED", "ERROR"}
-                else "SUCCESS",
-                float(event.payload.get("elapsedMs"))
-                if event.payload.get("elapsedMs") is not None
-                else request_latencies.get(event.request_id or event.turn_id or event.correlation_id),
-            )
-            for event in events
-            if event.event_type in {"adapter.turn_received", "teams.message_received", "teams.inbound"}
-        ]
-        teams_samples = adapter_usage + teams_events
-        index_samples = usage_for(
-            ("knowledge_index", "indexer", "index", "retrieval_index", "embedding")
-        )
-        index_events = [
-            (
-                "TIMEOUT"
-                if "timeout" in json.dumps(event.payload).lower()
-                else "FAILED"
-                if event.event_type.endswith(".failed")
-                or str(event.payload.get("status") or "").upper() in {"FAILED", "ERROR"}
-                else "SUCCESS",
-                float(event.payload.get("elapsedMs"))
-                if event.payload.get("elapsedMs") is not None
-                else None,
-            )
-            for event in events
-            if event.event_type in {"knowledge.indexed", "index.built", "sync.completed", "sync.failed"}
-        ]
-        index_samples = index_samples + index_events
-
-        all_usage = [
-            (status, latency)
-            for _component, status, latency, scope in usage_samples
-            if scope not in {"ADAPTER_INGRESS", "RETRIEVAL_INDEX", "HEALTH_TELEMETRY", "ADAPTER_REPLY"}
-        ]
-        telemetry = {
-            "teams-adapter": self._health_metric_summary(teams_samples),
-            "agent-service": self._health_metric_summary(agent_samples),
-            "llm-api": self._health_metric_summary(all_usage),
-            "issue-extractor": self._health_metric_summary(
-                usage_for(("issue_extractor",))
-            ),
-            "faq-service": self._health_metric_summary(faq_samples),
-            "agent-retrieval-index": self._health_metric_summary(index_samples),
-            "agent-retrieval-search": self._health_metric_summary(
-                usage_for(("knowledge_", "gemini_file_search"))
-            ),
-            "ticket-service": self._health_metric_summary(ticket_samples),
-        }
-        monitoring_scope = {
-            "teamsAdapter": {
-                "includes": [
-                    "ADAPTER_REPLY success/fail/timeout with elapsedMs",
-                    "legacy teams_* usage without ADAPTER_INGRESS",
-                ],
-                "excludes": [
-                    "ADAPTER_INGRESS (agent inbound SUCCESS without reply latency)",
-                ],
-                "ingressSampleCount": ingress_count,
-                "replySampleCount": telemetry["teams-adapter"]["requestCount"],
-                "latencySampleCount": telemetry["teams-adapter"]["latencySampleCount"],
-                "note": (
-                    "Ingress SUCCESS samples are not full-chain Teams Bot health. "
-                    "Availability/latency use reply-path producers only."
-                ),
-            },
-            "retrievalIndex": {
-                "includes": [
-                    "knowledge_index sync SUCCESS/FAILED/TIMEOUT with elapsedMs",
-                    "RETRIEVAL_INDEX retrieval outcomes (latency optional)",
-                ],
-                "latencySampleCount": telemetry["agent-retrieval-index"]["latencySampleCount"],
-                "note": (
-                    "Samples without elapsedMs still affect availability but leave P50/P95 empty."
-                ),
-            },
-            "retrievalSearch": {
-                "includes": ["knowledge_* and gemini_file_search CALL/usage samples"],
-                "latencySampleCount": telemetry["agent-retrieval-search"]["latencySampleCount"],
-            },
-        }
-        anomalies.sort(key=lambda item: item["occurredAt"], reverse=True)
-        return telemetry, anomalies[:10], window_start, window_end, monitoring_scope
-
+        return await compute_health_telemetry(self._events, target_date=target_date)
 
     async def health_summary(self, target_date: str | None = None) -> dict[str, Any]:
         agent = await self._probe_url(self._settings.agent_api_url)
@@ -448,149 +48,51 @@ class HealthQueryMixin:
         adapter = await self._probe_url(self._settings.adapter_api_url)
         ticket = await self._probe_url(self._settings.ticket_service_url, path="/healthz")
 
-        telemetry, recent_anomalies, window_start, window_end, monitoring_scope = (
-            await self._health_telemetry(target_date=target_date)
-        )
-        no_telemetry = self._health_metric_summary([])
+        (
+            telemetry,
+            recent_anomalies,
+            _window_start,
+            _window_end,
+            monitoring_scope,
+        ) = await self._health_telemetry(target_date=target_date)
         retrieval = dict(agent_functional)
         if self._settings.simulate_health_anomalies:
             agent = {"status": "DEGRADED", "note": "Simulated LLM API latency spike."}
             retrieval = {"status": "DOWN", "note": "Simulated RAG index unreachable."}
             ticket = {"status": "DOWN", "note": "Simulated Ticket API timeout."}
 
-        is_historical = False
-        if target_date:
-            try:
-                _start, _end, local_target = resolve_taipei_day_window(target_date)
-                local_now_date = utc_now().astimezone(ZoneInfo(DEFAULT_TIMEZONE)).date()
-                is_historical = local_target < local_now_date
-            except Exception:
-                pass
-
-        def with_scope_note(component_id: str, base: dict[str, Any]) -> dict[str, Any]:
-            item = dict(base)
-            latency_count = int(item.get("latencySampleCount") or 0)
-            request_count = int(item.get("requestCount") or 0)
-            if request_count > 0 and latency_count == 0:
-                existing = str(item.get("note") or "").strip()
-                suffix = "有成功率樣本但無延遲樣本；P50/P95 為空不代表全鏈路延遲健康。"
-                item["note"] = f"{existing} {suffix}".strip() if existing else suffix
-            if component_id == "teams-adapter":
-                ingress = monitoring_scope["teamsAdapter"]["ingressSampleCount"]
-                if ingress and int(item.get("requestCount") or 0) == 0:
-                    item["note"] = (
-                        f"僅有入站 ADAPTER_INGRESS 樣本 ({ingress})；"
-                        "回覆路徑尚無 ADAPTER_REPLY，不計入 teams-adapter 可用性。"
-                    )
-            return item
-
-        raw_components = [
-            {"id": "agent-service", **agent, **telemetry["agent-service"]},
-            {"id": "agent-functional", **agent_functional, **no_telemetry},
-            with_scope_note(
-                "teams-adapter",
-                {"id": "teams-adapter", **adapter, **telemetry["teams-adapter"]},
-            ),
-            with_scope_note(
-                "agent-retrieval-index",
-                {
-                    "id": "agent-retrieval-index",
-                    "status": knowledge_release.get("indexStatus")
-                    or agent_functional.get("status", "UNKNOWN"),
-                    "note": knowledge_release.get("note") or agent_functional.get("note"),
-                    **telemetry["agent-retrieval-index"],
-                },
-            ),
-            with_scope_note(
-                "agent-retrieval-search",
-                {
-                    "id": "agent-retrieval-search",
-                    **retrieval,
-                    **telemetry["agent-retrieval-search"],
-                },
-            ),
-            {
-                "id": "llm-api",
-                **agent,
-                **telemetry["llm-api"],
-            },
-            {
-                "id": "issue-extractor",
-                **agent,
-                **telemetry["issue-extractor"],
-            },
-            {"id": "faq-service", **agent, **telemetry["faq-service"]},
-            {
-                "id": "analytics-store",
-                "status": "READY",
-                "note": f"mode={self._settings.ops_store_mode}",
-                **no_telemetry,
-            },
-            {"id": "knowledge-portal", **portal, **no_telemetry},
-            {"id": "knowledge-release", **knowledge_release, **no_telemetry},
-            {"id": "ticket-service", **ticket, **telemetry["ticket-service"]},
-        ]
-
-        components: list[dict[str, Any]] = []
-        for comp in raw_components:
-            live_status = str(comp.get("status") or "UNKNOWN")
-            live_note = comp.get("note")
-            if is_historical:
-                telem_status = comp.get("telemetryStatus")
-                avail_rate = comp.get("availabilityRate")
-                err_rate = comp.get("errorRate") or 0.0
-                timeout_rate = comp.get("timeoutRate") or 0.0
-                req_count = comp.get("requestCount") or 0
-
-                if telem_status == "AVAILABLE" and req_count > 0:
-                    if err_rate == 0.0 and timeout_rate == 0.0:
-                        hist_status = "READY"
-                    elif avail_rate == 0.0:
-                        hist_status = "DOWN"
-                    else:
-                        hist_status = "DEGRADED"
-                    hist_note = f"依歷史遙測判定 ({target_date})"
-                else:
-                    hist_status = "NO_DATA"
-                    hist_note = f"歷史日期無遙測紀錄；即時探測為 {live_status}"
-
-                components.append({
-                    **comp,
-                    "status": hist_status,
-                    "liveProbeStatus": live_status,
-                    "liveProbeNote": live_note,
-                    "isHistorical": True,
-                    "note": hist_note,
-                })
-            else:
-                components.append(comp)
-
-        monitoring_links: dict[str, str] = {}
-        project_id = self._settings.gcp_project_id
-        if project_id:
-            monitoring_links["cloudMonitoring"] = (
-                f"https://console.cloud.google.com/monitoring/dashboards"
-                f"?project={project_id}"
-            )
-            monitoring_links["cloudLogging"] = (
-                f"https://console.cloud.google.com/logs/query;query=resource.type%3D"
-                f"%22cloud_run_revision%22%0Aseverity%3E%3DERROR;"
-                f"?project={project_id}"
-            )
+        is_historical = is_historical_target(target_date)
+        raw_components = build_raw_components(
+            agent=agent,
+            agent_functional=agent_functional,
+            adapter=adapter,
+            portal=portal,
+            knowledge_release=knowledge_release,
+            ticket=ticket,
+            retrieval=retrieval,
+            telemetry=telemetry,
+            monitoring_scope=monitoring_scope,
+            ops_store_mode=self._settings.ops_store_mode,
+        )
+        components = apply_historical_statuses(
+            raw_components,
+            is_historical=is_historical,
+            target_date=target_date,
+        )
         return {
             "components": components,
             "targetDate": target_date,
             "isHistorical": is_historical,
             "historicalNotice": (
-                f"您正在檢視歷史日期（{target_date}）之遙測資料。狀態欄依當日遙測判定，即時探測狀態僅代表當前連線狀態。"
+                f"您正在檢視歷史日期（{target_date}）之遙測資料。"
+                "狀態欄依當日遙測判定，即時探測狀態僅代表當前連線狀態。"
                 if is_historical
                 else None
             ),
             "telemetryWindowHours": 24 if not target_date else None,
             "monitoringScope": monitoring_scope,
             "recentAnomalies": recent_anomalies,
-            "monitoringLinks": monitoring_links,
+            "monitoringLinks": build_monitoring_links(self._settings.gcp_project_id),
             "simulatedAnomalies": self._settings.simulate_health_anomalies,
             "updatedAt": utc_now().isoformat(),
         }
-

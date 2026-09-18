@@ -73,8 +73,6 @@
     "agent_service/src/ai_ops_backoffice/services/query_feedback.py::_build_feedback_trace": 121,
     "agent_service/src/ai_ops_backoffice/services/query_feedback.py::faq_performance": 99,
     "agent_service/src/ai_ops_backoffice/services/query_feedback.py::list_feedback": 103,
-    "agent_service/src/ai_ops_backoffice/services/query_health.py::_health_telemetry": 238,
-    "agent_service/src/ai_ops_backoffice/services/query_health.py::health_summary": 156,
     "agent_service/src/ai_ops_backoffice/services/query_helpers.py::_summarize_turn_events": 168,
     "agent_service/src/ai_ops_backoffice/services/query_issues.py::issue_routes": 119,
     "agent_service/src/ai_ops_backoffice/services/query_issues.py::issues_summary": 199,
