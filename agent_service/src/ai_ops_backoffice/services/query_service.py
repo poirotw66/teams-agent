@@ -23,19 +23,8 @@ from operations_core.settings import OpsSettings
 from operations_core.taxonomy import TaxonomyRepository
 from operations_core.usage import configure_pricing_provider
 
-from ..pricing_domain import (
-    FilePricingRepository,
-    FirestorePricingRepository,
-    InMemoryPricingRepository,
-    PricingService,
-)
+from ..pricing_domain import PricingService
 from ..settings import BackofficeSettings
-from .daily_aggregates import (
-    FileDailyAggregateStore,
-)
-from .export_content import FileExportContentStore, GcsExportContentStore
-from .export_job_store import FileExportJobStore, FirestoreExportJobStore
-from .export_service import ExportJobService
 from .freshness_service import FreshnessTracker
 from .periods import ResolvedPeriod, event_in_period, resolve_period
 from .query_budget import BudgetQueryMixin
@@ -43,7 +32,6 @@ from .query_collaborators import (
     OpsRuntimePort,
     build_backoffice_ops_settings,
     configure_query_service_collaborators,
-    resolve_artifact_storage,
     resolve_ops_runtime,
 )
 from .query_conversations import ConversationsQueryMixin
@@ -54,11 +42,13 @@ from .query_health import HealthQueryMixin
 from .query_issues import IssuesQueryMixin
 from .query_knowledge import KnowledgeQueryMixin
 from .query_operations import OperationsQueryMixin
-from .source_repository import (
-    FileSourceRecordRepository,
-    FirestoreSourceRecordRepository,
-    SourceRecordRepository,
+from .query_service_wiring import (
+    build_export_job_service,
+    build_freshness_tracker,
+    build_pricing_service,
+    build_source_trace,
 )
+from .source_repository import SourceRecordRepository
 from .source_trace import SourceTraceResolver
 
 __all__ = [
@@ -99,127 +89,23 @@ class BackofficeQueryService(
         )
         self._runtime = runtime
         self._environment = ops_settings.environment
-        releases_dir = getattr(settings, "knowledge_release_dir", None) or (
-            settings.ops_store_path.parent.parent / "releases"
+        self._source_trace = build_source_trace(settings, artifact_storage=artifact_storage)
+        self._freshness_tracker = build_freshness_tracker(
+            settings, runtime=runtime, freshness_tracker=freshness_tracker
         )
-        source_store_mode = (getattr(settings, "source_store_mode", None) or "FILE").upper()
-        if source_store_mode == "FIRESTORE":
-            from google.cloud import firestore
-
-            source_repository = FirestoreSourceRecordRepository(
-                client=firestore.Client(project=settings.gcp_project_id),
-                project_id=settings.gcp_project_id,
-            )
-        else:
-            source_path = getattr(settings, "source_store_path", None) or (
-                settings.ops_store_path.parent / "sources" / "records"
-            )
-            source_repository = FileSourceRecordRepository(source_path)
-
-        resolved_artifact_storage = resolve_artifact_storage(
-            settings, artifact_storage=artifact_storage
-        )
-
-        self._source_trace = SourceTraceResolver(
-            releases_dir,
-            source_repository=source_repository,
-            artifact_storage=resolved_artifact_storage,
-        )
-        if freshness_tracker is not None:
-            self._freshness_tracker = freshness_tracker
-        elif getattr(self._runtime, "freshness_recorder", None) is not None and isinstance(
-            self._runtime.freshness_recorder, FreshnessTracker
-        ):
-            self._freshness_tracker = self._runtime.freshness_recorder
-        else:
-            freshness_firestore_client = None
-            if settings.ops_store_mode == "FIRESTORE" or getattr(settings, "source_store_mode", "").upper() == "FIRESTORE":
-                try:
-                    from google.cloud import firestore
-
-                    freshness_firestore_client = firestore.Client(project=settings.gcp_project_id)
-                except Exception as exc:
-                    if settings.ops_store_mode == "FIRESTORE":
-                        raise RuntimeError(
-                            f"Failed to initialize Firestore client for freshness tracking: {exc}"
-                        ) from exc
-            shared_store = getattr(getattr(self._runtime, "freshness_recorder", None), "_store", None)
-            collection = getattr(settings, "freshness_firestore_collection", "freshness_state")
-            self._freshness_tracker = FreshnessTracker(
-                persistent_path=settings.ops_store_path.parent / "freshness" / "sync_watermarks.json",
-                firestore_client=freshness_firestore_client,
-                firestore_collection=collection,
-                store=shared_store,
-            )
         self._revoked_principals_loader: Callable[[], set[str]] | None = None
         self._metrics = json.loads(settings.ops_metrics_path.read_text(encoding="utf-8"))
         self._event_caches: dict[str, tuple[datetime, list[OperationalEvent]]] = {}
         self._event_cache_lock = asyncio.Lock()
-        export_store_path = settings.ops_store_path.parent / "exports"
-        if settings.export_job_store_mode == "FILE":
-            export_job_store = FileExportJobStore(export_store_path)
-        elif settings.export_job_store_mode == "FIRESTORE":
-            try:
-                from google.cloud.firestore_v1.async_client import AsyncClient
-            except ImportError as exc:  # pragma: no cover - optional deployment dependency
-                raise RuntimeError("Firestore export jobs require google-cloud-firestore.") from exc
-            firestore_client = AsyncClient(project=settings.gcp_project_id)
-            export_job_store = FirestoreExportJobStore(
-                firestore_client,
-                settings.export_job_collection,
-            )
-        else:
-            raise ValueError(
-                f"Unsupported export job store mode: {settings.export_job_store_mode}"
-            )
-        if settings.export_content_backend == "FILE":
-            export_content_store = FileExportContentStore(
-                settings.export_content_path or export_store_path / "content"
-            )
-        elif settings.export_content_backend == "GCS":
-            if not settings.export_gcs_bucket:
-                raise ValueError("AI_OPS_EXPORT_GCS_BUCKET is required for GCS exports.")
-            export_content_store = GcsExportContentStore(
-                bucket_name=settings.export_gcs_bucket
-            )
-        else:
-            raise ValueError(
-                f"Unsupported export content backend: {settings.export_content_backend}"
-            )
-        self.export_jobs = ExportJobService(
-            audit_store=self._runtime.audit_store,
-            store_path=export_store_path,
-            environment=ops_settings.environment,
-            job_store=export_job_store,
-            content_store=export_content_store,
-            ttl_seconds=settings.export_ttl_seconds,
-            max_records=settings.export_max_records,
-            run_inline=(
-                ops_settings.environment.lower() in {"dev", "test"}
-                or settings.ops_store_mode == "MEMORY"
-            ),
+        self.export_jobs = build_export_job_service(
+            settings, runtime=runtime, environment=ops_settings.environment
         )
-        self._aggregate_store = FileDailyAggregateStore(
-            settings.ops_store_path.parent / "aggregates" / "daily_ops.json"
-        )
-        pricing_store_path = settings.pricing_store_path or (
-            settings.ops_store_path.parent / "phase2" / "pricing_rules.json"
-        )
-        if settings.pricing_store_mode == "FILE":
-            self._pricing_repository = FilePricingRepository(pricing_store_path)
-        elif settings.pricing_store_mode == "FIRESTORE":
-            from google.cloud import firestore
-
-            self._pricing_repository = FirestorePricingRepository(
-                firestore.Client(project=settings.gcp_project_id),
-                collection=settings.pricing_firestore_collection,
-            )
-        else:
-            self._pricing_repository = InMemoryPricingRepository()
-        self._pricing_service = PricingService(
+        (
             self._pricing_repository,
-            audit_store=self._runtime.audit_store,
-            environment=self._environment,
+            self._pricing_service,
+            self._aggregate_store,
+        ) = build_pricing_service(
+            settings, runtime=runtime, environment=self._environment
         )
         configure_pricing_provider(self._pricing_service)
 

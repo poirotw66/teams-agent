@@ -66,126 +66,15 @@ class AgentSettings:
         return settings
 
     def validate(self) -> None:
-        if self.viewer_membership_backend not in {"memory", "file", "gcs"}:
-            raise SettingsError("VIEWER_MEMBERSHIP_BACKEND must be 'memory', 'file', or 'gcs'.")
-        if self.viewer_membership_backend == "gcs" and not self.viewer_membership_gcs_bucket:
-            raise SettingsError(
-                "VIEWER_MEMBERSHIP_GCS_BUCKET is required when VIEWER_MEMBERSHIP_BACKEND is 'gcs'."
-            )
-        if self.mode not in {"echo", "api"}:
-            raise SettingsError("AGENT_MODE must be either 'echo' or 'api'.")
-        if self.user_directory_mode not in {"disabled", "graph"}:
-            raise SettingsError(
-                "USER_DIRECTORY_MODE must be either 'disabled' or 'graph'."
-            )
-        if self.teams_inbound_auth_mode not in {"botframework", "entra", "both"}:
-            raise SettingsError(
-                "TEAMS_INBOUND_AUTH_MODE must be 'botframework', 'entra', or 'both'."
-            )
-        if self.teams_inbound_auth_mode in {"entra", "both"} and not (
-            self.client_id and self.tenant_id
-        ):
-            raise SettingsError(
-                "CLIENT_ID and TENANT_ID are required when "
-                "TEAMS_INBOUND_AUTH_MODE is 'entra' or 'both'."
-            )
-        if self.playground_test_user_email and not (
-            self.allow_unauthenticated_requests
-            or self.teams_inbound_auth_mode in {"entra", "both"}
-        ):
-            raise SettingsError(
-                "PLAYGROUND_TEST_USER_EMAIL is allowed only for a local "
-                "unauthenticated Playground or TEAMS_INBOUND_AUTH_MODE "
-                "'entra'/'both'."
-            )
-        if self.user_directory_cache_ttl_seconds <= 0:
-            raise SettingsError(
-                "USER_DIRECTORY_CACHE_TTL_SECONDS must be greater than zero."
-            )
-        if self.api_auth_mode not in {"none", "service_token", "google_id_token"}:
-            raise SettingsError(
-                "AGENT_API_AUTH_MODE must be none, service_token, or google_id_token."
-            )
-        if self.api_auth_mode == "service_token" and not self.api_token:
-            raise SettingsError(
-                "AGENT_API_TOKEN is required when AGENT_API_AUTH_MODE=service_token."
-            )
-        if self.api_timeout_seconds <= 0:
-            raise SettingsError("AGENT_API_TIMEOUT_SECONDS must be greater than zero.")
-        if self.source_api_timeout_seconds <= 0:
-            raise SettingsError("SOURCE_API_TIMEOUT_SECONDS must be greater than zero.")
-        source_api_fields = (
-            self.source_api_base_url,
-            self.source_api_token,
-            self.source_delegation_secret,
+        from .settings_validate import (
+            validate_identity_and_auth,
+            validate_public_url_and_api_mode,
+            validate_source_and_asset_settings,
         )
-        if any(source_api_fields) and not all(source_api_fields):
-            raise SettingsError(
-                "SOURCE_API_BASE_URL, SOURCE_API_TOKEN, and "
-                "SOURCE_DELEGATION_SECRET (or RAG_ASSET_SIGNING_KEY) must be "
-                "configured together for original-source delivery."
-            )
-        if self.asset_url_ttl_seconds < 60 or self.asset_url_ttl_seconds > 86400:
-            raise SettingsError(
-                "RAG_ASSET_URL_TTL_SECONDS must be between 60 and 86400."
-            )
-        if self.asset_max_dimension < 128 or self.asset_max_dimension > 1024:
-            raise SettingsError(
-                "RAG_ASSET_MAX_DIMENSION must be between 128 and 1024."
-            )
-        if self.asset_max_bytes < 100_000 or self.asset_max_bytes > 1_000_000:
-            raise SettingsError(
-                "RAG_ASSET_MAX_BYTES must be between 100000 and 1000000."
-            )
-        if self.client_id and not self.tenant_id:
-            raise SettingsError(
-                "TENANT_ID is required alongside CLIENT_ID for a single-tenant "
-                "Teams app registration."
-            )
-        if self.public_base_url:
-            parsed_public_url = urlparse(self.public_base_url)
-            is_local_playground_url = (
-                parsed_public_url.scheme == "http"
-                and parsed_public_url.hostname in {"localhost", "127.0.0.1", "::1"}
-                and self.allow_unauthenticated_requests
-            )
-            if (
-                not parsed_public_url.netloc
-                or (
-                    parsed_public_url.scheme != "https"
-                    and not is_local_playground_url
-                )
-            ):
-                raise SettingsError(
-                    "BOT_PUBLIC_BASE_URL must use HTTPS, except for a localhost "
-                    "Playground URL when DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS "
-                    "is enabled."
-                )
-            if not self.asset_signing_key or len(self.asset_signing_key) < 16:
-                raise SettingsError(
-                    "RAG_ASSET_SIGNING_KEY must contain at least 16 characters "
-                    "when BOT_PUBLIC_BASE_URL is configured."
-                )
-        if self.mode != "api":
-            return
-        if not self.api_url:
-            raise SettingsError("AGENT_API_URL is required when AGENT_MODE=api.")
 
-        parsed_url = urlparse(self.api_url)
-        is_local_http = parsed_url.scheme == "http" and parsed_url.hostname in {
-            "localhost",
-            "127.0.0.1",
-        }
-        if parsed_url.scheme != "https" and not is_local_http:
-            raise SettingsError(
-                "AGENT_API_URL must use HTTPS, except for localhost development."
-            )
-        if self.api_auth_mode == "google_id_token":
-            audience = self.api_audience or f"{parsed_url.scheme}://{parsed_url.netloc}"
-            if not audience.startswith("https://"):
-                raise SettingsError(
-                    "AGENT_API_AUDIENCE must be an HTTPS Cloud Run service URL."
-                )
+        validate_identity_and_auth(self)
+        validate_source_and_asset_settings(self)
+        validate_public_url_and_api_mode(self)
 
     @property
     def resolved_api_audience(self) -> str | None:

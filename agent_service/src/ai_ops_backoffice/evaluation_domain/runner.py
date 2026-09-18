@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,9 +14,15 @@ from .errors import (
     EvaluationValidationError,
     EvaluationVersionConflictError,
 )
-from .models import CaseRevision, EvaluationAuditEvent
+from .models import CaseRevision
 from .real_rag_adapters import RealRagAnswerAdapter, RealRagRetrieverAdapter
 from .repository import EvaluationRepository
+from .runner_execute import (
+    build_final_run,
+    commit_run_completion,
+    execute_case_loop,
+    resolve_case_revisions,
+)
 from .runner_models import (
     CaseExecution,
     EvaluationRun,
@@ -142,133 +147,47 @@ class EvaluationRunner:
         updated_run = run.model_copy(update={"status": "RUNNING", "started_at": now})
         self._save_run_state(updated_run)
 
-        revision_map = {r.revision_id: r for r in state.revisions}
-        case_revisions: list[CaseRevision] = []
-        for r_id in set_version.case_revision_ids:
-            if r_id in revision_map:
-                case_revisions.append(revision_map[r_id])
-
         limits = run.limits or {}
-        max_cases = limits.get("max_cases")
-        if max_cases:
-            case_revisions = case_revisions[:max_cases]
-
-        max_tokens = limits.get("max_tokens", float("inf"))
-        max_cost_usd = limits.get("max_cost_usd", float("inf"))
-
-        executed_cases: list[CaseExecution] = []
-        total_tokens = 0
-        total_cost = 0.0
-        cancel_reason = None
-
-        # Resume from per-case/side checkpoints when present.
+        case_revisions = resolve_case_revisions(
+            state=state,
+            set_version=set_version,
+            max_cases=limits.get("max_cases"),
+        )
         prior_state = self._repo.load()
         completed_sides = {
             (e.case_id, e.target_side): e
             for e in prior_state.case_executions
             if e.run_id == run_id and e.status in {"COMPLETED", "FAILED"}
         }
-
-        for revision in case_revisions:
-            fresh_run = self._repo.get_run(run_id)
-            if fresh_run and fresh_run.status in {"CANCELLING", "CANCELLED"}:
-                cancel_reason = fresh_run.cancel_reason or "User cancelled run"
-                break
-
-            if total_tokens >= max_tokens or total_cost >= max_cost_usd:
-                cancel_reason = "Budget limit reached: max_cost_usd or max_tokens exceeded"
-                break
-
-            b_exec = self._execute_or_resume_side(
-                run=run,
-                revision=revision,
-                side="BASELINE",
-                manifest=run.baseline_manifest,
-                completed_sides=completed_sides,
-            )
-            executed_cases.append(b_exec)
-            total_tokens += b_exec.used_tokens
-            total_cost += b_exec.estimated_cost_usd
-
-            c_exec = self._execute_or_resume_side(
-                run=run,
-                revision=revision,
-                side="CANDIDATE",
-                manifest=run.candidate_manifest,
-                completed_sides=completed_sides,
-            )
-            executed_cases.append(c_exec)
-            total_tokens += c_exec.used_tokens
-            total_cost += c_exec.estimated_cost_usd
-
-        summary = self._compute_comparison_summary(
-            total_cases=len(case_revisions),
+        executed_cases, total_tokens, total_cost, cancel_reason = execute_case_loop(
+            run=run,
+            run_id=run_id,
+            case_revisions=case_revisions,
+            completed_sides=completed_sides,
+            max_tokens=limits.get("max_tokens", float("inf")),
+            max_cost_usd=limits.get("max_cost_usd", float("inf")),
+            repo=self._repo,
+            execute_or_resume_side=self._execute_or_resume_side,
+        )
+        final_run = build_final_run(
+            run=run,
+            executed_cases=executed_cases,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            cancel_reason=cancel_reason,
+            case_revision_count=len(case_revisions),
+            compute_comparison_summary=self._compute_comparison_summary,
+        )
+        return commit_run_completion(
+            repo=self._repo,
+            run=run,
+            run_id=run_id,
+            final_run=final_run,
             executed_cases=executed_cases,
             total_cost=total_cost,
+            cancel_reason=cancel_reason,
+            check_lease=self._check_lease,
         )
-
-        completed_at = datetime.now(timezone.utc)
-        final_status = "CANCELLED" if cancel_reason else "COMPLETED"
-        has_unknown_tokens = any(e.usage_status == "UNKNOWN" for e in executed_cases)
-        cost_status = "PARTIAL_UNKNOWN" if has_unknown_tokens else "EXACT"
-        is_eval_eligible = run.mode != "OFFLINE_BENCHMARK"
-
-        final_run = run.model_copy(
-            update={
-                "status": final_status,
-                "completed_at": completed_at,
-                "summary": summary,
-                "cancel_reason": cancel_reason,
-                "actual_cost_usd": round(total_cost, 4),
-                "actual_tokens": total_tokens,
-                "cost_status": cost_status,
-                "is_eval_eligible": is_eval_eligible,
-            }
-        )
-
-        last_conflict: EvaluationVersionConflictError | None = None
-        for attempt in range(_CAS_MAX_ATTEMPTS):
-            self._check_lease()
-            current_state = self._repo.load()
-            runs = [r for r in current_state.runs if r.run_id != run_id]
-            runs.append(final_run)
-            other_executions = [e for e in current_state.case_executions if e.run_id != run_id]
-            new_state = current_state.model_copy(
-                update={
-                    "runs": tuple(runs),
-                    "case_executions": tuple(other_executions + executed_cases),
-                }
-            )
-            audit = EvaluationAuditEvent(
-                audit_id=str(uuid.uuid4()),
-                entity_type="EVAL_RUN",
-                entity_id=run_id,
-                action="RUN_COMPLETED" if final_status == "COMPLETED" else "RUN_CANCELLED",
-                actor_id=run.requested_by,
-                actor_role="SYSTEM",
-                owner_unit_id=run.owner_unit_id,
-                tenant_id=run.tenant_id,
-                before={"status": run.status},
-                after={"status": final_status, "actual_cost_usd": total_cost},
-                reason=cancel_reason or "Evaluation run finished successfully",
-                occurred_at=completed_at,
-                correlation_id=run.correlation_id,
-            )
-            try:
-                self._repo.commit_mutation(
-                    new_state, audit=audit, expected_revision=current_state.revision
-                )
-                return final_run
-            except EvaluationVersionConflictError as exc:
-                last_conflict = exc
-                logger.warning(
-                    "CAS conflict completing run %s (attempt %s/%s)",
-                    run_id,
-                    attempt + 1,
-                    _CAS_MAX_ATTEMPTS,
-                )
-        assert last_conflict is not None
-        raise last_conflict
 
     def _execute_or_resume_side(
         self,

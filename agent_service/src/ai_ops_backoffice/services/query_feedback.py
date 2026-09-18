@@ -16,6 +16,7 @@ from operations_core.contracts import (
 from operations_core.scope import filter_events_by_scope
 
 from .periods import event_in_period
+from .query_feedback_trace import collect_feedback_trace_signals, empty_feedback_trace
 
 
 class FeedbackQueryMixin:
@@ -235,20 +236,7 @@ class FeedbackQueryMixin:
         correlation_id = feedback_event.correlation_id
         issue_id = feedback_event.payload.get("issueId")
         if not conversation_id:
-            return {
-                "turnId": feedback_event.turn_id,
-                "issueTypeId": None,
-                "issueDescriptionMasked": None,
-                "classificationSource": None,
-                "faqKey": None,
-                "documentIds": [],
-                "releaseIds": [],
-                "sourceRefs": [],
-                "handoffOccurred": False,
-                "handoffStatus": None,
-                "route": None,
-                "model": None,
-            }
+            return empty_feedback_trace(feedback_event)
 
         conv_events = conversation_cache.get(conversation_id, [])
         scoped = [
@@ -259,62 +247,9 @@ class FeedbackQueryMixin:
         if not scoped:
             scoped = conv_events
 
-        issue_extracted = None
-        issue_classified = None
-        faq_key = None
-        document_ids: list[str] = []
-        release_ids: list[str] = []
-        handoff_status = None
-        handoff_occurred = False
-        detected_route = None
-        detected_model = None
-
-        for event in scoped:
-            if event.event_type == "route.selected" and event.payload.get("route"):
-                detected_route = str(event.payload.get("route"))
-            elif event.event_type == "issue.extracted":
-                payload_issue_id = event.payload.get("issueId")
-                if issue_id is None or payload_issue_id == issue_id:
-                    issue_extracted = event
-                if event.payload.get("route") and not detected_route:
-                    detected_route = str(event.payload.get("route"))
-            if (
-                event.event_type == "issue.classified"
-                and issue_extracted
-                and event.issue_occurrence_id == issue_extracted.issue_occurrence_id
-            ):
-                issue_classified = event
-            if (event.event_type == "usage.recorded" and event.payload.get("model")) or (
-                "model" in event.payload and not detected_model
-            ):
-                detected_model = str(event.payload.get("model"))
-            if event.event_type == "faq.answered":
-                faq_key = event.payload.get("faqKey") or faq_key
-            if event.event_type in {"knowledge.retrieved", "knowledge.answered"}:
-                document_id = event.payload.get("documentId")
-                if document_id and document_id not in document_ids:
-                    document_ids.append(str(document_id))
-                release_id = event.payload.get("releaseId")
-                if release_id and release_id not in release_ids:
-                    release_ids.append(str(release_id))
-                for citation in event.payload.get("citations") or []:
-                    if not isinstance(citation, dict):
-                        continue
-                    citation_doc = citation.get("documentId")
-                    if citation_doc and citation_doc not in document_ids:
-                        document_ids.append(str(citation_doc))
-            if event.event_type.startswith("handoff."):
-                handoff_occurred = True
-                handoff_status = event.payload.get("status") or event.event_type
-
-        if not detected_route:
-            if faq_key:
-                detected_route = "FAQ"
-            elif document_ids:
-                detected_route = "KNOWLEDGE"
-            elif handoff_occurred:
-                detected_route = "ESCALATE"
-
+        signals = collect_feedback_trace_signals(scoped, issue_id=issue_id)
+        issue_extracted = signals["issue_extracted"]
+        issue_classified = signals["issue_classified"]
         issue_type_id = None
         classification_source = None
         if issue_classified is not None:
@@ -333,16 +268,16 @@ class FeedbackQueryMixin:
                 issue_extracted.payload.get("descriptionMasked") if issue_extracted else None
             ),
             "classificationSource": classification_source,
-            "faqKey": faq_key,
-            "documentIds": document_ids,
-            "releaseIds": release_ids,
+            "faqKey": signals["faq_key"],
+            "documentIds": signals["document_ids"],
+            "releaseIds": signals["release_ids"],
             "sourceRefs": (
                 source_trace.references_for_events(scoped)
                 if source_trace is not None
                 else []
             ),
-            "handoffOccurred": handoff_occurred,
-            "handoffStatus": handoff_status,
-            "route": detected_route,
-            "model": detected_model,
+            "handoffOccurred": signals["handoff_occurred"],
+            "handoffStatus": signals["handoff_status"],
+            "route": signals["detected_route"],
+            "model": signals["detected_model"],
         }

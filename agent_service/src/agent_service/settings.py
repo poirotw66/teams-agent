@@ -143,133 +143,14 @@ class RagSettings:
         return self.show_turn_cost
 
     def validate(self) -> None:
-        if self.top_k < 1 or self.top_k > 20:
-            raise ValueError("RAG_TOP_K must be between 1 and 20.")
-        if not 0 <= self.min_score <= 1:
-            raise ValueError("RAG_MIN_SCORE must be between 0 and 1.")
-        if self.max_rewrites < 0 or self.max_rewrites > 3:
-            raise ValueError("RAG_MAX_REWRITES must be between 0 and 3.")
-        if self.chunk_size < 200:
-            raise ValueError("RAG_CHUNK_SIZE must be at least 200.")
-        if self.chunk_overlap < 0 or self.chunk_overlap >= self.chunk_size:
-            raise ValueError("RAG_CHUNK_OVERLAP must be smaller than RAG_CHUNK_SIZE.")
-        if self.max_images < 0 or self.max_images > 4:
-            raise ValueError("RAG_MAX_IMAGES must be between 0 and 4.")
+        from .settings_validate import (
+            validate_faq_and_prompt_modes,
+            validate_knowledge_and_ticket_modes,
+            validate_persistence_and_release_modes,
+            validate_rag_and_conversation_limits,
+        )
 
-        if not 1 <= self.max_issues_per_message <= 5:
-            raise ValueError("MAX_ISSUES_PER_MESSAGE must be between 1 and 5.")
-        if not 1 <= self.max_missing_info_per_issue <= 3:
-            raise ValueError("MAX_MISSING_INFO_PER_ISSUE must be between 1 and 3.")
-        if not 0 <= self.max_history_messages <= 50:
-            raise ValueError("MAX_HISTORY_MESSAGES must be between 0 and 50.")
-        if not 1 <= self.conversation_history_rounds <= 20:
-            raise ValueError("CONVERSATION_HISTORY_ROUNDS must be between 1 and 20.")
-        if not 1 <= self.max_clarification_rounds <= 3:
-            raise ValueError("MAX_CLARIFICATION_ROUNDS must be between 1 and 3.")
-        if not 1 <= self.conversation_timeout_hours <= 168:
-            raise ValueError("CONVERSATION_TIMEOUT_HOURS must be between 1 and 168.")
-        if not 1 <= self.conversation_retention_days <= 365:
-            raise ValueError("CONVERSATION_RETENTION_DAYS must be between 1 and 365.")
-        if not 0.5 <= self.supervisor_terminal_confidence <= 1:
-            raise ValueError("SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1.")
-        if not 1 <= self.max_llm_calls_per_request <= 20:
-            raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
-        if not 0 <= self.max_retrieval_rewrites <= 3:
-            raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
-
-        if self.faq_runtime_mode not in {"LEGACY_JSON", "GOVERNED"}:
-            raise ValueError("FAQ_RUNTIME_MODE must be one of LEGACY_JSON or GOVERNED.")
-        if self.faq_governed_store_mode not in {"FILE", "FIRESTORE"}:
-            raise ValueError("AI_OPS_FAQ_STORE_MODE must be one of FILE or FIRESTORE.")
-        if not self.faq_firestore_collection_prefix.strip():
-            raise ValueError("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not be blank.")
-        if "/" in self.faq_firestore_collection_prefix:
-            raise ValueError("AI_OPS_FAQ_FIRESTORE_COLLECTION_PREFIX must not contain '/'.")
-        if self.prompt_runtime_mode not in {"CODE_BASELINE", "GOVERNED"}:
-            raise ValueError("PROMPT_RUNTIME_MODE must be one of CODE_BASELINE or GOVERNED.")
-        if self.prompt_governance_store_mode not in {
-            "FILE",
-            "FIRESTORE",
-            "FIRESTORE_SHARDED",
-            "FIRESTORE_SPLIT",
-        }:
-            raise ValueError(
-                "AI_OPS_GOVERNANCE_STORE_MODE must be one of FILE, FIRESTORE, "
-                "FIRESTORE_SHARDED, or FIRESTORE_SPLIT."
-            )
-        if not self.prompt_governance_firestore_collection.strip():
-            raise ValueError("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not be blank.")
-        if "/" in self.prompt_governance_firestore_collection:
-            raise ValueError("AI_OPS_GOVERNANCE_FIRESTORE_COLLECTION must not contain '/'.")
-
-        if self.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
-            raise ValueError("KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH.")
-        if (
-            self.rag_require_file_search_acl
-            and self.gemini_file_search_store
-            and not self.gemini_file_search_enforce_acl
-        ):
-            raise ValueError(
-                "RAG_REQUIRE_FILE_SEARCH_ACL=true requires GEMINI_FILE_SEARCH_ENFORCE_ACL=true "
-                "when GEMINI_FILE_SEARCH_STORE is configured."
-            )
-        if self.knowledge_backend_state_mode not in {"MEMORY", "FIRESTORE"}:
-            raise ValueError("KNOWLEDGE_BACKEND_STATE_MODE must be one of MEMORY or FIRESTORE.")
-        if not self.knowledge_backend_state_collection.strip():
-            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not be blank.")
-        if "/" in self.knowledge_backend_state_collection:
-            raise ValueError("KNOWLEDGE_BACKEND_STATE_COLLECTION must not contain '/'.")
-
-        if self.ticket_service_mode not in {"DISABLED", "HTTP"}:
-            raise ValueError("TICKET_SERVICE_MODE must be one of DISABLED or HTTP.")
-        if self.ticket_service_mode == "HTTP":
-            if not self.ticket_service_base_url:
-                raise ValueError(
-                    "TICKET_SERVICE_BASE_URL is required when TICKET_SERVICE_MODE=HTTP."
-                )
-            if not self.ticket_service_base_url.startswith(("http://", "https://")):
-                raise ValueError("TICKET_SERVICE_BASE_URL must be an http(s) URL.")
-        if not 1 <= self.ticket_service_timeout_seconds <= 60:
-            raise ValueError("TICKET_SERVICE_TIMEOUT_SECONDS must be between 1 and 60.")
-        if self.ticket_request_dedupe_mode not in {"MEMORY", "FIRESTORE"}:
-            raise ValueError("TICKET_REQUEST_DEDUPE_MODE must be one of MEMORY or FIRESTORE.")
-        if not self.ticket_request_dedupe_collection.strip():
-            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not be blank.")
-        if "/" in self.ticket_request_dedupe_collection:
-            raise ValueError("TICKET_REQUEST_DEDUPE_COLLECTION must not contain '/'.")
-        if not 1 <= self.ticket_request_dedupe_retention_days <= 365:
-            raise ValueError("TICKET_REQUEST_DEDUPE_RETENTION_DAYS must be between 1 and 365.")
-
-        if self.conversation_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
-            raise ValueError(
-                "CONVERSATION_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE."
-            )
-        if not self.conversation_firestore_collection.strip():
-            raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not be blank.")
-        # Firestore rejects these in a collection id; catching it here turns a
-        # runtime write failure into a startup failure.
-        if "/" in self.conversation_firestore_collection:
-            raise ValueError("CONVERSATION_FIRESTORE_COLLECTION must not contain '/'.")
-
-        if self.handoff_repository_mode not in {"MEMORY", "FILE", "FIRESTORE"}:
-            raise ValueError("HANDOFF_REPOSITORY_MODE must be one of MEMORY, FILE or FIRESTORE.")
-        if not self.handoff_firestore_collection.strip():
-            raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not be blank.")
-        if "/" in self.handoff_firestore_collection:
-            raise ValueError("HANDOFF_FIRESTORE_COLLECTION must not contain '/'.")
-        if self.handoff_demo_timeout_hours < 1:
-            raise ValueError("HANDOFF_DEMO_TIMEOUT_HOURS must be at least 1.")
-        if not 1 <= self.handoff_retention_days <= 365:
-            raise ValueError("HANDOFF_RETENTION_DAYS must be between 1 and 365.")
-        if self.knowledge_release_mode not in {"BUNDLED", "PORTAL", "AUTO"}:
-            raise ValueError("KNOWLEDGE_RELEASE_MODE must be one of BUNDLED, PORTAL, or AUTO.")
-        if self.knowledge_release_store_mode not in {"FILE", "GCS"}:
-            raise ValueError("KNOWLEDGE_RELEASE_STORE_MODE must be one of FILE or GCS.")
-        if self.knowledge_release_store_mode == "GCS" and not self.knowledge_release_gcs_bucket:
-            raise ValueError(
-                "KNOWLEDGE_RELEASE_GCS_BUCKET is required when KNOWLEDGE_RELEASE_STORE_MODE=GCS."
-            )
-        if self.deployment_environment not in {"dev", "test", "poc", "prod"}:
-            raise ValueError("AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod.")
-        if self.usd_twd_exchange_rate <= 0:
-            raise ValueError("USD_TWD_EXCHANGE_RATE must be greater than 0.")
+        validate_rag_and_conversation_limits(self)
+        validate_faq_and_prompt_modes(self)
+        validate_knowledge_and_ticket_modes(self)
+        validate_persistence_and_release_modes(self)
