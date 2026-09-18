@@ -130,7 +130,6 @@
     "agent_service/src/knowledge_portal/settings.py::from_env": 286,
     "agent_service/src/knowledge_portal/source_record_publish.py::build_source_records_for_release": 142,
     "agent_service/src/knowledge_portal/validation.py::validate_draft": 155,
-    "agent_service/src/operations_core/freshness_store.py::load_firestore": 84,
     "agent_service/src/operations_core/scope.py::filter_events_by_scope": 82,
     "src/teams_agent/agent.py::_handle_message": 109,
     "src/teams_agent/cards.py::build_agent_activity": 112,
