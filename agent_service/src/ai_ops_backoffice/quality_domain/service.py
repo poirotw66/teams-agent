@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import re
-import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel
-
 from operations_core.access import ActorContext
-from operations_core.masking import mask_text, redact_secrets
+from operations_core.masking import mask_text
 
 from ..faq_domain.errors import (
     FaqAuthorizationError,
@@ -18,46 +13,37 @@ from ..faq_domain.errors import (
     FaqValidationError,
     FaqVersionConflictError,
 )
+from .case_ops import (
+    TERMINAL_CASE_STATUSES,
+    apply_case_status_update,
+    build_case_from_candidates,
+    build_quality_audit,
+    candidate_identity_hash,
+    empty_purge_result,
+    find_associated_active_case,
+    purge_expired_quality_state,
+    quality_has_expired_records,
+    quality_retention_cutoff,
+)
+from .clustering import (
+    build_corrected_clusters,
+    build_generated_clusters,
+    cluster_candidates_by_similarity,
+    group_open_candidates_by_owner_issue,
+    require_active_clusters,
+    resolve_correction_groups,
+)
 from .models import *  # noqa: F403
 from .repository import *  # noqa: F403
 
+# Compatibility alias for existing test imports.
+_cluster_candidates_by_similarity = cluster_candidates_by_similarity
 
-def _cluster_candidates_by_similarity(
-    candidates: list[QualityCandidate],
-) -> list[list[QualityCandidate]]:
-    """Cluster candidates based on normalized token overlap of their question texts."""
-    if len(candidates) <= 1:
-        return [candidates]
-
-    def tokenize(text: str) -> set[str]:
-        tokens = set(re.findall(r"[a-zA-Z0-9]+", text.lower()))
-        cjk_chars = [ch for ch in text if "\u4e00" <= ch <= "\u9fff"]
-        tokens.update(cjk_chars)
-        for i in range(len(cjk_chars) - 1):
-            tokens.add(cjk_chars[i] + cjk_chars[i + 1])
-        return {t for t in tokens if len(t) > 1 or ("\u4e00" <= t <= "\u9fff")}
-
-    clusters: list[list[QualityCandidate]] = []
-    cluster_tokens: list[set[str]] = []
-
-    for candidate in candidates:
-        text = f"{candidate.title} {candidate.description}"
-        cand_tokens = tokenize(text)
-        assigned = False
-        for idx, c_tokens in enumerate(cluster_tokens):
-            intersection = cand_tokens & c_tokens
-            union = cand_tokens | c_tokens
-            jaccard = len(intersection) / len(union) if union else 0.0
-            if jaccard >= 0.3 or len(intersection) >= 2:
-                clusters[idx].append(candidate)
-                c_tokens.update(cand_tokens)
-                assigned = True
-                break
-        if not assigned:
-            clusters.append([candidate])
-            cluster_tokens.append(set(cand_tokens))
-
-    return clusters
+__all__ = [
+    "QualityService",
+    "_cluster_candidates_by_similarity",
+    "cluster_candidates_by_similarity",
+]
 
 
 class QualityService:
@@ -88,22 +74,19 @@ class QualityService:
         action: str,
         actor: ActorContext,
         owner_unit_id: str,
-        before: BaseModel | None,
-        after: BaseModel | None,
+        before: Any,
+        after: Any,
         reason: str | None = None,
     ) -> QualityAuditEvent:
-        return QualityAuditEvent(
-            audit_id=str(uuid.uuid4()),
+        return build_quality_audit(
             target_type=target_type,
             target_id=target_id,
             action=action,
-            actor_id=actor.user_id,
-            actor_role=actor.role,
+            actor=actor,
             owner_unit_id=owner_unit_id,
-            before=redact_secrets(before.model_dump(mode="json")) if before else None,
-            after=redact_secrets(after.model_dump(mode="json")) if after else None,
-            reason=mask_text(reason).text if reason else None,
-            occurred_at=datetime.now(UTC),
+            before=before,
+            after=after,
+            reason=reason,
         )
 
     def list_candidates(self, *, actor: ActorContext, status: str | None = None) -> list[dict[str, Any]]:
@@ -193,10 +176,12 @@ class QualityService:
         masked = mask_text(description)
         if masked.contains_credential:
             raise FaqValidationError("credentials are not allowed in quality candidates")
-        identity = "|".join(
-            [source_type, case_type, issue_type_id or "", *sorted(source_event_ids)]
+        candidate_id = candidate_identity_hash(
+            source_type=source_type,
+            case_type=case_type,
+            issue_type_id=issue_type_id,
+            source_event_ids=source_event_ids,
         )
-        candidate_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
         now = datetime.now(UTC)
         candidate = QualityCandidate(
             candidate_id=candidate_id,
@@ -220,69 +205,68 @@ class QualityService:
         )
 
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
-            existing = next(
-                (item for item in state.candidates if item.candidate_id == candidate_id),
-                None,
-            )
-            if existing is not None:
-                return state.model_copy(update={"revision": state.revision + 1}), {
-                    "candidate": existing.model_dump(mode="json")
-                }
-
-            # Check if an in-progress case already covers these conversation refs or source events
-            active_cases = [
-                c
-                for c in state.cases
-                if c.status in ("NEW", "TRIAGED", "IN_PROGRESS", "WAITING_REVIEW", "OBSERVING")
-            ]
-            associated_case = next(
-                (
-                    c
-                    for c in active_cases
-                    if (
-                        any(ref in c.conversation_refs for ref in conversation_refs)
-                        if conversation_refs
-                        else False
-                    )
-                    or (
-                        any(eid in c.source_event_ids for eid in source_event_ids)
-                        if source_event_ids
-                        else False
-                    )
-                ),
-                None,
-            )
-
-            resolved_candidate = candidate
-            if associated_case is not None:
-                resolved_candidate = candidate.model_copy(
-                    update={"status": "MERGED", "merged_case_id": associated_case.case_id}
-                )
-
-            audit = self._audit(
-                target_type="QUALITY_CANDIDATE",
-                target_id=candidate_id,
-                action="QUALITY_CANDIDATE_CREATED",
+            return self._insert_candidate(
+                state,
+                candidate=candidate,
+                conversation_refs=conversation_refs,
+                source_event_ids=source_event_ids,
                 actor=actor,
                 owner_unit_id=owner_unit_id,
-                before=None,
-                after=resolved_candidate,
-                reason=(
-                    f"auto_linked_to_in_progress_case:{associated_case.case_id}"
-                    if associated_case
-                    else None
-                ),
             )
-            next_state = QualityState(
-                revision=state.revision + 1,
-                candidates=(*state.candidates, resolved_candidate),
-                cases=state.cases,
-                clusters=state.clusters,
-                audits=(*state.audits, audit),
-            )
-            return next_state, {"candidate": resolved_candidate.model_dump(mode="json")}
 
         return self._repository.mutate(operation)
+
+    def _insert_candidate(
+        self,
+        state: QualityState,
+        *,
+        candidate: QualityCandidate,
+        conversation_refs: tuple[str, ...],
+        source_event_ids: tuple[str, ...],
+        actor: ActorContext,
+        owner_unit_id: str,
+    ) -> tuple[QualityState, dict[str, Any]]:
+        existing = next(
+            (item for item in state.candidates if item.candidate_id == candidate.candidate_id),
+            None,
+        )
+        if existing is not None:
+            return state.model_copy(update={"revision": state.revision + 1}), {
+                "candidate": existing.model_dump(mode="json")
+            }
+
+        associated_case = find_associated_active_case(
+            state.cases,
+            conversation_refs=conversation_refs,
+            source_event_ids=source_event_ids,
+        )
+        resolved_candidate = candidate
+        if associated_case is not None:
+            resolved_candidate = candidate.model_copy(
+                update={"status": "MERGED", "merged_case_id": associated_case.case_id}
+            )
+        audit = self._audit(
+            target_type="QUALITY_CANDIDATE",
+            target_id=candidate.candidate_id,
+            action="QUALITY_CANDIDATE_CREATED",
+            actor=actor,
+            owner_unit_id=owner_unit_id,
+            before=None,
+            after=resolved_candidate,
+            reason=(
+                f"auto_linked_to_in_progress_case:{associated_case.case_id}"
+                if associated_case
+                else None
+            ),
+        )
+        next_state = QualityState(
+            revision=state.revision + 1,
+            candidates=(*state.candidates, resolved_candidate),
+            cases=state.cases,
+            clusters=state.clusters,
+            audits=(*state.audits, audit),
+        )
+        return next_state, {"candidate": resolved_candidate.model_dump(mode="json")}
 
     def merge_candidates(
         self,
@@ -309,40 +293,24 @@ class QualityService:
                 raise FaqValidationError("candidates from different owner units cannot be merged")
             owner_unit_id = next(iter(owners))
             self._authorize(actor, "ops.quality.write", owner_unit_id)
-            case_types = {item.case_type for item in selected}
-            issue_types = {item.issue_type_id for item in selected if item.issue_type_id}
             now = datetime.now(UTC)
-            case_id = str(uuid.uuid4())
-            frequency = sum(item.frequency for item in selected)
-            case = QualityCase(
-                case_id=case_id,
+            case = build_case_from_candidates(
+                selected,
+                candidate_ids=candidate_ids,
                 title=title,
-                description=mask_text(description).text,
-                case_type=next(iter(case_types)) if len(case_types) == 1 else "OTHER",
-                issue_type_id=next(iter(issue_types)) if len(issue_types) == 1 else None,
+                description=description,
                 priority=priority,
-                owner_unit_id=owner_unit_id,
                 assignee_id=assignee_id,
-                source_candidate_ids=tuple(candidate_ids),
-                source_event_ids=tuple(dict.fromkeys(event for item in selected for event in item.source_event_ids)),
-                conversation_refs=tuple(dict.fromkeys(ref for item in selected for ref in item.conversation_refs)),
-                faq_ids=tuple(dict.fromkeys(ref for item in selected for ref in item.faq_ids)),
-                document_ids=tuple(dict.fromkeys(ref for item in selected for ref in item.document_ids)),
-                frequency=frequency,
-                negative_rate=sum(item.negative_rate * item.frequency for item in selected) / frequency,
-                handoff_rate=sum(item.handoff_rate * item.frequency for item in selected) / frequency,
-                estimated_cost_impact=sum(item.estimated_cost_impact for item in selected),
                 target_due_at=target_due_at,
-                created_by=actor.user_id,
-                created_at=now,
-                updated_by=actor.user_id,
-                updated_at=now,
+                actor=actor,
+                owner_unit_id=owner_unit_id,
+                now=now,
             )
             candidates = tuple(
                 item.model_copy(
                     update={
                         "status": "MERGED",
-                        "merged_case_id": case_id,
+                        "merged_case_id": case.case_id,
                         "etag": item.etag + 1,
                         "updated_at": now,
                     }
@@ -353,7 +321,7 @@ class QualityService:
             )
             audit = self._audit(
                 target_type="QUALITY_CASE",
-                target_id=case_id,
+                target_id=case.case_id,
                 action="QUALITY_CASE_CREATED_FROM_CANDIDATES",
                 actor=actor,
                 owner_unit_id=owner_unit_id,
@@ -409,7 +377,7 @@ class QualityService:
         expected_etag: int,
         actor: ActorContext,
     ) -> dict[str, Any]:
-        terminal = status in {"RESOLVED", "WONT_FIX", "DUPLICATE"}
+        terminal = status in TERMINAL_CASE_STATUSES
         if terminal and not (reason or "").strip():
             raise FaqValidationError("terminal quality case transitions require a reason")
         return self._change_case(
@@ -485,7 +453,10 @@ class QualityService:
             changed: dict[str, QualityCase] = {}
             audits = list(state.audits)
             for current in state.cases:
-                if faq_id not in current.faq_ids or current.status not in {"IN_PROGRESS", "WAITING_REVIEW"}:
+                if faq_id not in current.faq_ids or current.status not in {
+                    "IN_PROGRESS",
+                    "WAITING_REVIEW",
+                }:
                     continue
                 self._authorize(actor, "ops.quality.write", current.owner_unit_id)
                 baseline = baseline_by_issue.get(current.issue_type_id or "", {})
@@ -565,29 +536,18 @@ class QualityService:
             if current.etag != expected_etag:
                 raise FaqVersionConflictError("quality case was changed by another request")
             if status is not None and status not in self.TRANSITIONS[current.status]:
-                raise FaqTransitionError(f"invalid quality case transition: {current.status} -> {status}")
-            now = datetime.now(UTC)
-            update = {
-                **(changes or {}),
-                "etag": current.etag + 1,
-                "updated_by": actor.user_id,
-                "updated_at": now,
-            }
-            if status is not None:
-                observation_started = current.observation_started_at
-                if status == "OBSERVING" and observation_started is None:
-                    observation_started = now
-                update.update(
-                    {
-                        "status": status,
-                        "resolution_type": resolution_type,
-                        "resolution_note": mask_text(reason).text if reason else None,
-                        "resolved_at": now if status in {"RESOLVED", "WONT_FIX", "DUPLICATE"} else None,
-                        "observation_started_at": observation_started,
-                    }
+                raise FaqTransitionError(
+                    f"invalid quality case transition: {current.status} -> {status}"
                 )
-            updated = QualityCase.model_validate(
-                {**current.model_dump(mode="python"), **update}
+            now = datetime.now(UTC)
+            updated = apply_case_status_update(
+                current,
+                status=status,
+                resolution_type=resolution_type,
+                reason=reason,
+                changes=changes,
+                actor=actor,
+                now=now,
             )
             cases = tuple(updated if item.case_id == case_id else item for item in state.cases)
             audit = self._audit(
@@ -615,63 +575,40 @@ class QualityService:
         """Group open candidates by owner unit + issue type and question similarity."""
 
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
-            groups: dict[tuple[str, str], list[QualityCandidate]] = {}
-            for candidate in state.candidates:
-                if candidate.status != "OPEN":
-                    continue
-                self._authorize(actor, "ops.quality.write", candidate.owner_unit_id)
-                key = (candidate.owner_unit_id, candidate.issue_type_id or "other.unclassified")
-                groups.setdefault(key, []).append(candidate)
+            groups = group_open_candidates_by_owner_issue(state.candidates)
+            for owner_unit_id, _issue_type_id in groups:
+                self._authorize(actor, "ops.quality.write", owner_unit_id)
             active_keys = {
                 item.cluster_key
                 for item in state.clusters
                 if item.status in {"CANDIDATE", "ACCEPTED"}
             }
             now = datetime.now(UTC)
-            created = []
+            created = build_generated_clusters(
+                groups=groups,
+                active_keys=active_keys,
+                actor_user_id=actor.user_id,
+                now=now,
+            )
             audits = list(state.audits)
-            for (owner_unit_id, issue_type_id), group_candidates in groups.items():
-                sub_clusters = _cluster_candidates_by_similarity(group_candidates)
-                for sub_idx, candidates in enumerate(sub_clusters):
-                    candidate_ids = tuple(sorted(item.candidate_id for item in candidates))
-                    cluster_key = hashlib.sha256(
-                        f"{owner_unit_id}|{issue_type_id}|{'|'.join(candidate_ids)}".encode()
-                    ).hexdigest()[:24]
-                    if cluster_key in active_keys:
-                        continue
-                    issue_distribution: dict[str, int] = {}
-                    for candidate in candidates:
-                        issue = candidate.issue_type_id or "other.unclassified"
-                        issue_distribution[issue] = issue_distribution.get(issue, 0) + candidate.frequency
-                    name_suffix = f" #{sub_idx + 1}" if len(sub_clusters) > 1 else ""
-                    method = "LEXICAL_SIMILARITY" if len(sub_clusters) > 1 else "OWNER_UNIT_ISSUE_TYPE"
-                    cluster = QuestionCluster(
-                        cluster_id=str(uuid.uuid4()),
-                        cluster_key=cluster_key,
-                        revision=1,
-                        name=f"{owner_unit_id}｜{issue_type_id}{name_suffix}",
-                        representative_question=candidates[0].description or candidates[0].title,
-                        owner_unit_id=owner_unit_id,
-                        source_candidate_ids=candidate_ids,
-                        issue_type_distribution=issue_distribution,
-                        frequency=sum(item.frequency for item in candidates),
-                        grouping_method=method,
-                        created_by=actor.user_id,
-                        created_at=now,
+            for cluster in created:
+                reason = (
+                    "lexical_similarity_grouping"
+                    if " #" in cluster.name
+                    else "owner_unit_issue_type_grouping"
+                )
+                audits.append(
+                    self._audit(
+                        target_type="QUESTION_CLUSTER",
+                        target_id=cluster.cluster_id,
+                        action="QUESTION_GROUP_GENERATED",
+                        actor=actor,
+                        owner_unit_id=cluster.owner_unit_id,
+                        before=None,
+                        after=cluster,
+                        reason=reason,
                     )
-                    created.append(cluster)
-                    audits.append(
-                        self._audit(
-                            target_type="QUESTION_CLUSTER",
-                            target_id=cluster.cluster_id,
-                            action="QUESTION_GROUP_GENERATED",
-                            actor=actor,
-                            owner_unit_id=owner_unit_id,
-                            before=None,
-                            after=cluster,
-                            reason="lexical_similarity_grouping" if len(sub_clusters) > 1 else "owner_unit_issue_type_grouping",
-                        )
-                    )
+                )
             next_state = QualityState(
                 revision=state.revision + 1,
                 candidates=state.candidates,
@@ -701,66 +638,24 @@ class QualityService:
 
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
             selected = [item for item in state.clusters if item.cluster_id in cluster_ids]
-            if len(selected) != len(set(cluster_ids)):
-                raise FaqNotFoundError("one or more clusters were not found")
-            if any(item.status not in {"CANDIDATE", "ACCEPTED"} for item in selected):
-                raise FaqTransitionError("only active cluster revisions can be corrected")
-            owners = {item.owner_unit_id for item in selected}
-            if len(owners) != 1:
-                raise FaqValidationError("clusters from different owner units cannot be combined")
-            owner_unit_id = next(iter(owners))
+            owner_unit_id = require_active_clusters(selected, cluster_ids)
             self._authorize(actor, "ops.quality.write", owner_unit_id)
-            if action in {"RENAME", "ACCEPT", "REJECT", "SPLIT"} and len(selected) != 1:
-                raise FaqValidationError(f"{action} requires exactly one cluster")
-            if action == "MERGE" and len(selected) < 2:
-                raise FaqValidationError("MERGE requires at least two clusters")
-            all_candidate_ids = tuple(
-                dict.fromkeys(candidate for item in selected for candidate in item.source_candidate_ids)
+            groups = resolve_correction_groups(
+                action=action,
+                selected=selected,
+                candidate_groups=candidate_groups,
             )
-            if action == "SPLIT":
-                flattened = [candidate for group in candidate_groups for candidate in group]
-                if any(not group for group in candidate_groups) or sorted(flattened) != sorted(all_candidate_ids):
-                    raise FaqValidationError("split groups must partition all source candidates")
-                groups = candidate_groups
-            else:
-                groups = (all_candidate_ids,)
-            candidates_by_id = {item.candidate_id: item for item in state.candidates}
-            if any(candidate not in candidates_by_id for group in groups for candidate in group):
-                raise FaqNotFoundError("cluster references an unknown candidate")
             now = datetime.now(UTC)
-            new_clusters = []
-            for index, group in enumerate(groups, start=1):
-                source_candidates = [candidates_by_id[candidate] for candidate in group]
-                issue_distribution: dict[str, int] = {}
-                for candidate in source_candidates:
-                    issue = candidate.issue_type_id or "other.unclassified"
-                    issue_distribution[issue] = issue_distribution.get(issue, 0) + candidate.frequency
-                status = (
-                    "ACCEPTED" if action == "ACCEPT" else "REJECTED" if action == "REJECT" else "CANDIDATE"
-                )
-                cluster_name = name or selected[0].name
-                if action == "SPLIT" and len(groups) > 1:
-                    cluster_name = f"{cluster_name} {index}"
-                new_clusters.append(
-                    QuestionCluster(
-                        cluster_id=str(uuid.uuid4()),
-                        cluster_key=hashlib.sha256(
-                            f"correction|{action}|{'|'.join(group)}|{now.isoformat()}".encode()
-                        ).hexdigest()[:24],
-                        revision=max(item.revision for item in selected) + 1,
-                        status=status,
-                        name=cluster_name,
-                        representative_question=source_candidates[0].description or source_candidates[0].title,
-                        owner_unit_id=owner_unit_id,
-                        source_candidate_ids=group,
-                        issue_type_distribution=issue_distribution,
-                        frequency=sum(item.frequency for item in source_candidates),
-                        grouping_method=selected[0].grouping_method,
-                        parent_cluster_ids=cluster_ids,
-                        created_by=actor.user_id,
-                        created_at=now,
-                    )
-                )
+            new_clusters = build_corrected_clusters(
+                action=action,
+                selected=selected,
+                cluster_ids=cluster_ids,
+                groups=groups,
+                candidates_by_id={item.candidate_id: item for item in state.candidates},
+                name=name,
+                actor_user_id=actor.user_id,
+                now=now,
+            )
             superseded = tuple(
                 item.model_copy(update={"status": "SUPERSEDED"})
                 if item.cluster_id in cluster_ids
@@ -801,102 +696,18 @@ class QualityService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         target_now = now or datetime.now(UTC)
-        cutoff = target_now - timedelta(days=retention_days)
-
+        cutoff = quality_retention_cutoff(retention_days=retention_days, now=target_now)
         current = self._repository.load()
-        has_expired_candidates = any(
-            c.status in ("MERGED", "REJECTED") and c.updated_at < cutoff
-            for c in current.candidates
-        )
-        has_expired_cases = any(
-            cs.status in ("RESOLVED", "WONT_FIX", "DUPLICATE")
-            and (cs.resolved_at or cs.updated_at) < cutoff
-            for cs in current.cases
-        )
-        has_expired_clusters = any(
-            cl.status in ("REJECTED", "SUPERSEDED") and cl.created_at < cutoff
-            for cl in current.clusters
-        )
-        if not (has_expired_candidates or has_expired_cases or has_expired_clusters):
-            return {
-                "purged_candidates": 0,
-                "purged_cases": 0,
-                "purged_clusters": 0,
-                "total": 0,
-            }
+        if not quality_has_expired_records(current, cutoff=cutoff):
+            return empty_purge_result()
 
         def operation(state: QualityState) -> tuple[QualityState, dict[str, Any]]:
-            kept_candidates: list[QualityCandidate] = []
-            purged_candidate_ids: list[str] = []
-            for c in state.candidates:
-                if c.status in ("MERGED", "REJECTED") and c.updated_at < cutoff:
-                    purged_candidate_ids.append(c.candidate_id)
-                else:
-                    kept_candidates.append(c)
-
-            kept_cases: list[QualityCase] = []
-            purged_case_ids: list[str] = []
-            for cs in state.cases:
-                if cs.status in ("RESOLVED", "WONT_FIX", "DUPLICATE"):
-                    ret_time = cs.resolved_at or cs.updated_at
-                    if ret_time < cutoff:
-                        purged_case_ids.append(cs.case_id)
-                        continue
-                kept_cases.append(cs)
-
-            kept_clusters: list[QuestionCluster] = []
-            purged_cluster_ids: list[str] = []
-            for cl in state.clusters:
-                if cl.status in ("REJECTED", "SUPERSEDED") and cl.created_at < cutoff:
-                    purged_cluster_ids.append(cl.cluster_id)
-                else:
-                    kept_clusters.append(cl)
-
-            total_purged = len(purged_candidate_ids) + len(purged_case_ids) + len(purged_cluster_ids)
-            if total_purged == 0:
-                return state.model_copy(update={"revision": state.revision + 1}), {
-                    "purged_candidates": 0,
-                    "purged_cases": 0,
-                    "purged_clusters": 0,
-                    "total": 0,
-                }
-
-            audit = QualityAuditEvent(
-                audit_id=str(uuid.uuid4()),
-                target_type="QUALITY_CASE",
-                target_id="RETENTION_PURGE",
-                action="QUALITY_RETENTION_PURGED",
-                actor_id=actor.user_id if actor else "system.retention",
-                actor_role=actor.role if actor else "SYSTEM",
-                owner_unit_id="ALL",
-                before={
-                    "candidate_count": len(state.candidates),
-                    "case_count": len(state.cases),
-                    "cluster_count": len(state.clusters),
-                },
-                after={
-                    "purged_candidates": purged_candidate_ids,
-                    "purged_cases": purged_case_ids,
-                    "purged_clusters": purged_cluster_ids,
-                },
-                reason=f"Purged {total_purged} quality records past {retention_days} days retention.",
+            return purge_expired_quality_state(
+                state,
+                cutoff=cutoff,
+                retention_days=retention_days,
+                actor=actor,
                 occurred_at=target_now,
             )
 
-            next_state = QualityState(
-                revision=state.revision + 1,
-                candidates=tuple(kept_candidates),
-                cases=tuple(kept_cases),
-                clusters=tuple(kept_clusters),
-                audits=(*state.audits, audit),
-            )
-            return next_state, {
-                "purged_candidates": len(purged_candidate_ids),
-                "purged_cases": len(purged_case_ids),
-                "purged_clusters": len(purged_cluster_ids),
-                "total": total_purged,
-            }
-
         return self._repository.mutate(operation)
-
-
