@@ -63,5 +63,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 
 ## Goal blockers (not closed)
 - **G:** `static/legacy-js` still present (~73 files). Quarantine CI is green; tree delete waits one unused release cycle.
-- **H:** 0 oversized *files*; ~79 oversized *functions* remain under the function ratchet.
+- **H:** 0 oversized *files*; ~71 oversized *functions* remain under the function ratchet.
 - **F residual (optional):** hand-written frontend DTOs may still parallel generated client.
