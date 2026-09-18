@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 
 from agent_service.operations.audit import AuditStore
 from agent_service.operations.runtime import build_ops_runtime
-from agent_service.operations.scope import (
-    filter_events_by_scope,
-)
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 from operations_core.access import ActorContext
@@ -24,6 +21,7 @@ from operations_core.contracts import (
     OperationalEvent,
     utc_now,
 )
+from operations_core.scope import filter_events_by_scope
 from operations_core.usage import configure_pricing_provider
 
 from ..pricing_domain import (

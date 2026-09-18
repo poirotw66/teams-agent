@@ -7,9 +7,9 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from agent_service.operations.scope import filter_events_by_scope
 from operations_core.access import ActorContext
 from operations_core.contracts import OperationalEvent
+from operations_core.scope import filter_events_by_scope
 
 from .query_helpers import _summarize_turn_events
 
