@@ -6,7 +6,6 @@
     "agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py": 526,
     "agent_service/src/ai_ops_backoffice/services/query_conversations.py": 534,
     "agent_service/src/ai_ops_backoffice/services/query_knowledge.py": 542,
-    "agent_service/src/knowledge_portal/models.py": 569,
     "agent_service/src/knowledge_portal/pdf_convert_jobs.py": 508,
     "src/teams_agent/source_viewer.py": 544
   },
