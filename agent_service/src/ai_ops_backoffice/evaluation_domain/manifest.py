@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent_service.target_manifest import calculate_target_manifest_hash
+from knowledge_core.target_manifest import calculate_target_manifest_hash
 
 from .repository import EvaluationRepository
 from .runner_models import RunPreflightResult, TargetManifest, TargetSide

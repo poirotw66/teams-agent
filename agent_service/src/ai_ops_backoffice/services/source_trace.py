@@ -12,15 +12,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from agent_service.artifact_storage import ArtifactStorage
-from agent_service.source_refs import (
+from knowledge_core.artifact_ports import ArtifactStorage
+from knowledge_core.source_identity import make_source_ref_id, safe_source_path, source_path_stem
+from knowledge_core.source_resolution import (
     ResolvedSource,
     _find_manifest_entry,
     _manifest_by_key,
     _original_asset_path,
-    make_source_ref_id,
-    safe_source_path,
-    source_path_stem,
 )
 
 from .source_models import (

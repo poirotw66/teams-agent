@@ -4,22 +4,28 @@ The retrieval index deliberately stores derived Markdown because it is the
 search artifact.  A citation must still identify the exact document version
 and release that produced the hit.  This module keeps that identity opaque in
 URLs while allowing a trusted backend to resolve it back to a release artifact.
+
+Pure resolution helpers live in ``knowledge_core.source_resolution``;
+identity helpers live in ``knowledge_core.source_identity``.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote
 
 from knowledge_core.source_identity import (
     make_source_ref_id,
     safe_source_path,
     source_path_stem,
+)
+from knowledge_core.source_resolution import (
+    ResolvedSource,
+    _find_manifest_entry,
+    _manifest_by_key,
+    _original_asset_path,
 )
 
 from .documents import DocumentChunk, DocumentImage, extract_images
@@ -49,74 +55,6 @@ def build_citation_url(
         return f"{base}/{quote(safe_path, safe='/')}"
     if source_ref_id and str(source_ref_id).strip():
         return f"{base}/citations/{quote(str(source_ref_id).strip(), safe='')}"
-    return None
-
-
-def _manifest_by_key(
-    release_dir: Path,
-) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
-    manifest_path = release_dir / "manifest.json"
-    if not manifest_path.is_file():
-        return {}, {}
-    try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}, {}
-    documents = payload.get("documents") or []
-    by_id: dict[str, dict[str, Any]] = {}
-    by_title: dict[str, list[dict[str, Any]]] = {}
-    for item in documents:
-        if not isinstance(item, dict):
-            continue
-        document_id = item.get("document_id") or item.get("documentId")
-        title = item.get("title")
-        if document_id:
-            by_id[str(document_id)] = item
-        if title:
-            by_title.setdefault(str(title).casefold(), []).append(item)
-    return by_id, by_title
-
-
-def _find_manifest_entry(
-    *,
-    source_path: str | None,
-    title: str | None,
-    document_id: str | None,
-    by_id: dict[str, dict[str, Any]],
-    by_title: dict[str, list[dict[str, Any]]],
-) -> dict[str, Any] | None:
-    if document_id and document_id in by_id:
-        return by_id[document_id]
-    stem = source_path_stem(source_path)
-    if stem and stem in by_id:
-        return by_id[stem]
-    matches = by_title.get(str(title or "").casefold(), [])
-    return matches[0] if len(matches) == 1 else None
-
-
-def _original_asset_path(
-    release_dir: Path,
-    *,
-    document_id: str | None,
-    version_id: str | None,
-) -> Path | None:
-    """Find a future/private original asset without exposing its path."""
-
-    if not document_id or not version_id:
-        return None
-    original_root = release_dir / "original"
-    if not original_root.is_dir():
-        return None
-    candidate_root = (original_root / document_id / version_id).resolve()
-    try:
-        candidate_root.relative_to(original_root.resolve())
-    except ValueError:
-        return None
-    if not candidate_root.is_dir():
-        return None
-    for candidate in sorted(candidate_root.iterdir()):
-        if candidate.is_file():
-            return candidate
     return None
 
 
@@ -292,35 +230,11 @@ def _safe_release_file(release_root: Path, source_path: str) -> Path | None:
     return candidate
 
 
-@dataclass(frozen=True)
-class ResolvedSource:
-    """A source reference resolved from a release index."""
-
-    source_ref_id: str
-    title: str | None
-    document_id: str | None
-    version_id: str | None
-    release_id: str | None
-    chunk_id: str | None
-    source_path: str | None
-    content: str | None
-    source_type: str
-    original_asset_available: bool
-    original_asset_name: str | None
-    original_asset_path: Path | None
-    trace_status: str
-    tenant_id: str | None = None
-    artifact_ref: str | None = None
-    mapping_status: str = "AVAILABLE"
-    locator: Any = None
-    owner_unit_id: str | None = None
-    acl_groups: tuple[str, ...] = ()
-    is_archived: bool = False
-    is_deleted: bool = False
-
-
 __all__ = [
     "ResolvedSource",
+    "_find_manifest_entry",
+    "_manifest_by_key",
+    "_original_asset_path",
     "hydrate_index_sources",
     "make_source_ref_id",
     "safe_source_path",

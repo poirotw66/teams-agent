@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 
-from agent_service.artifact_storage import sanitize_filename
+from knowledge_core.artifact_ports import sanitize_filename
 from operations_core.document_authorization import (
     DocumentAccessDeniedError,
     ensure_document_access,

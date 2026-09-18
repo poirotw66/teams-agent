@@ -20,7 +20,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `knowledge_core`: release gate/pointers, target manifest, front-matter, artifacts,
   chunking profile, eligibility, document chunks/layout, artifact ports, File Search ACL.
 - Portal ports + composition Agent adapters → **Portal→Agent = 0**.
-- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24**.
+- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24 → 20**.
 
 ### Phase E — Application / persistence boundaries
 - Workbench JSON store; public query/source/export/policy accessors; AST private-access gate.
@@ -33,12 +33,13 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 
 ### Phase H — Oversized domain convergence
 - `draft_assets` / `export_service` / `eval_runtime` (1018→562) / `evaluation repository` (975→330).
+- `evaluation_domain/runner.py` (973→478): extracted retrieval / multi-turn / side-execution helpers.
 
 ## Still open (goal continues)
 
 | Phase | Status |
 |---|---|
-| D Backoffice→Agent (24 files) | In progress — remaining: audit/scope/taxonomy/stores, document_authorization, eval/graph wiring, artifacts |
+| D Backoffice→Agent (20 files) | In progress — remaining: audit/scope/taxonomy/stores, document_authorization, eval/graph wiring, artifacts |
 | D Portal→Agent | **Done (0)** |
 | E polish beyond hotspot paths | Mostly done |
 | F full TS client + DTO migration | First slice done |
@@ -48,5 +49,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 Repository strategy: modular monorepo; no physical repo split.
 
 Current ownership importer caps:
-- `ai_ops_backoffice→agent_service`: **24**
+- `ai_ops_backoffice→agent_service`: **20**
 - `knowledge_portal→agent_service`: **0**

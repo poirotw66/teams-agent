@@ -11,7 +11,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_service.artifact_models import (
+from knowledge_core.artifact_models import (
     ArtifactKind,
     ArtifactRecord,
     ArtifactScanStatus,
