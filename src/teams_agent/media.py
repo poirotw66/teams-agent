@@ -20,6 +20,48 @@ def sign_asset_path(path: str, expires: int, key: str) -> str:
     return hmac.new(key.encode(), payload, hashlib.sha256).hexdigest()
 
 
+def storage_relative_from_delivery(delivery_path: str) -> tuple[str, bool]:
+    """Map a signed delivery path to the on-disk / GCS-relative storage path.
+
+    Delivery URLs never include the ``assets/`` segment (HMAC stays stable).
+    Release storage always inserts ``assets/`` between the release id and the
+    chunk-relative image path — the same rule for local files and GCS objects.
+
+    Returns ``(storage_relative, is_release)``.
+    """
+    pure_path = PurePosixPath(delivery_path)
+    if pure_path.is_absolute() or ".." in pure_path.parts or not pure_path.parts:
+        raise PermissionError("Invalid asset path.")
+    parts = pure_path.parts
+    if len(parts) >= 3 and parts[0] == "releases":
+        release_id = parts[1]
+        if not _SAFE_IDENTIFIER.fullmatch(release_id):
+            raise PermissionError("Invalid asset path.")
+        rest = PurePosixPath(*parts[2:]).as_posix()
+        if not rest or rest.startswith("assets/"):
+            # Reject empty rest or delivery paths that already embed assets/
+            # so callers cannot bypass the canonical contract.
+            raise PermissionError("Invalid asset path.")
+        return f"releases/{release_id}/assets/{rest}", True
+    return pure_path.as_posix(), False
+
+
+def resolve_local_asset_path(delivery_path: str, settings: AgentSettings) -> Path:
+    """Resolve a delivery path against local source_dir (release) or asset_dir."""
+    storage_relative, is_release = storage_relative_from_delivery(delivery_path)
+    root = (
+        (settings.source_dir or Path()).resolve()
+        if is_release
+        else (settings.asset_dir or Path()).resolve()
+    )
+    resolved = (root / storage_relative).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise PermissionError("Invalid asset path.") from error
+    return resolved
+
+
 def build_asset_url(
     path: str,
     settings: AgentSettings,
@@ -27,6 +69,11 @@ def build_asset_url(
     *,
     release_id: str | None = None,
 ) -> str | None:
+    """Build a signed /rag-assets URL.
+
+    Delivery paths never contain ``assets/``. Storage backends insert that
+    segment via ``storage_relative_from_delivery``.
+    """
     if not settings.images_ready:
         return None
     delivery_path = path
@@ -72,35 +119,31 @@ def resolve_asset(
     if not signature or not hmac.compare_digest(signature, expected):
         raise PermissionError("Invalid asset signature.")
 
-    asset_dir = (settings.asset_dir or Path()).resolve()
-    resolved = (asset_dir / pure_path).resolve()
-    try:
-        resolved.relative_to(asset_dir)
-    except ValueError as error:
-        raise PermissionError("Invalid asset path.") from error
+    resolved = resolve_local_asset_path(pure_path.as_posix(), settings)
     if not resolved.is_file():
         raise FileNotFoundError(path)
     return resolved
+
+
+def gcs_object_name_from_delivery(delivery_path: str, settings: AgentSettings) -> str:
+    """Build the private GCS object name for a release delivery path."""
+    storage_relative, is_release = storage_relative_from_delivery(delivery_path)
+    if not is_release:
+        raise FileNotFoundError(delivery_path)
+    prefix = settings.asset_gcs_prefix.strip("/")
+    return (
+        f"{prefix}/tenants/{settings.asset_gcs_tenant_id}/{storage_relative}"
+    ).lstrip("/")
 
 
 def fetch_gcs_asset(path: str, settings: AgentSettings) -> bytes:
     """Fetch a release-pinned image from the private knowledge bucket."""
     if not settings.asset_gcs_bucket:
         raise FileNotFoundError(path)
-    pure_path = PurePosixPath(path)
-    parts = pure_path.parts
-    if (
-        len(parts) < 3
-        or parts[0] != "releases"
-        or not _SAFE_IDENTIFIER.fullmatch(parts[1])
-    ):
-        raise FileNotFoundError(path)
-    relative_path = PurePosixPath(*parts[2:]).as_posix()
-    prefix = settings.asset_gcs_prefix.strip("/")
-    object_name = (
-        f"{prefix}/tenants/{settings.asset_gcs_tenant_id}/releases/"
-        f"{parts[1]}/assets/{relative_path}"
-    ).lstrip("/")
+    try:
+        object_name = gcs_object_name_from_delivery(path, settings)
+    except PermissionError as error:
+        raise FileNotFoundError(path) from error
 
     try:
         from google.api_core.exceptions import Forbidden, GoogleAPIError, NotFound

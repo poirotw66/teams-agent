@@ -845,7 +845,8 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `AGENT_STREAMING_ENABLED` | `true` | 是否在 1:1 私訊串流進度（見第 4.3 節）；頻道／群組聊天不受影響（Teams 不支援） |
 | `AGENT_API_TIMEOUT_SECONDS` | `10` | 非 localhost 的 `AGENT_API_URL` 會強制要求 HTTPS |
 | `BOT_PUBLIC_BASE_URL` | — | 用於簽出來源圖片 URL 的公開網域（只填 domain，不加 `/api/messages`） |
-| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | 來源圖片根目錄 |
+| `RAG_SOURCE_DIR` | `<repo>/data` | 知識根目錄；**release 圖片**解析為 `RAG_SOURCE_DIR/releases/<id>/assets/...`（URL／簽章路徑不含 `assets/`） |
+| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | **無 release** 的舊 corpus 圖片根目錄 |
 | `RAG_ASSET_SIGNING_KEY` | — | 至少 16 字元；HMAC 簽章金鑰，正式環境放 Secret Manager |
 | `RAG_ASSET_URL_TTL_SECONDS` | `3600` | 簽名 URL 有效秒數 |
 | `RAG_ASSET_MAX_DIMENSION` | `1024` | 圖片最長邊（pixels） |

@@ -849,7 +849,8 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `AGENT_STREAMING_ENABLED` | `true` | Whether to stream progress in 1:1 DMs (see section 4.3); channels / group chats unaffected (Teams unsupported) |
 | `AGENT_API_TIMEOUT_SECONDS` | `10` | Non-localhost `AGENT_API_URL` values are forced to HTTPS |
 | `BOT_PUBLIC_BASE_URL` | — | Public domain used to sign source-image URLs (domain only; no `/api/messages`) |
-| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | Source image root directory |
+| `RAG_SOURCE_DIR` | `<repo>/data` | Knowledge root; **release images** resolve as `RAG_SOURCE_DIR/releases/<id>/assets/...` (URL/HMAC delivery paths omit `assets/`) |
+| `RAG_ASSET_DIR` | `<repo>/data/sources/assets` | Legacy corpus image root when no release id is present |
 | `RAG_ASSET_SIGNING_KEY` | — | At least 16 characters; HMAC signing key—put in Secret Manager for production |
 | `RAG_ASSET_URL_TTL_SECONDS` | `3600` | Signed URL lifetime in seconds |
 | `RAG_ASSET_MAX_DIMENSION` | `1024` | Longest image side (pixels) |

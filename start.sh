@@ -568,6 +568,7 @@ start_background bash -c "
   export AGENT_MODE=api
   export AGENT_API_URL=\"http://127.0.0.1:\$3/agent/chat\"
   export BOT_PUBLIC_BASE_URL=\"http://127.0.0.1:\$2\"
+  export RAG_SOURCE_DIR=\"\$1/data\"
   export DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
   export PLAYGROUND_TEST_USER_EMAIL=\"\$4\"
   export TEAMS_CITATION_OPEN_ACTIONS=\"\${TEAMS_CITATION_OPEN_ACTIONS:-false}\"
