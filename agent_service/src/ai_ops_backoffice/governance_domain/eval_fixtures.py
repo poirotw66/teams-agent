@@ -340,3 +340,109 @@ class _EvalTicketService:
         calls = list(self.tool_calls)
         self.tool_calls = []
         return calls
+
+
+def resolve_eval_candidate_prompt(*, template: str, model_id: str) -> Any:
+    """Build the immutable ResolvedExtractorPrompt used by eval candidate binding."""
+    from agent_service.prompt_runtime import ResolvedExtractorPrompt
+
+    return ResolvedExtractorPrompt(
+        template=template,
+        source="governance",
+        version_id=f"eval-{model_id}",
+        version="eval-candidate",
+        content_hash=None,
+        canary=False,
+    )
+
+
+def rebind_eval_workflow_models(workflow: Any, model: Any) -> None:
+    """Install the candidate model on supervisor, handoff router, and ticket selector."""
+    from agent_service.handoff_flow import AgenticHandoffRouter
+    from agent_service.supervisor import ConversationSupervisor
+    from agent_service.ticket import AgenticTicketItemSelector
+
+    workflow.supervisor = ConversationSupervisor(model)
+    workflow.handoff_router = AgenticHandoffRouter(model)
+    workflow.ticket_item_selector = AgenticTicketItemSelector(model)
+
+
+def build_eval_active_handoff_case(
+    *,
+    tenant_id: str,
+    conversation_id: str,
+    requester_id: str,
+    case_id: str,
+    session_id: str,
+    correlation_id: str,
+    created_at: Any,
+    session_expires_at: Any,
+    retention_expires_at: Any,
+) -> Any:
+    """Seed fixture for active SUMMARY_REVIEW handoff state."""
+    from agent_service.handoff import CaseSummary, HandoffCase, HandoffStatus
+
+    summary = CaseSummary(
+        issue="帳號無法登入",
+        userNeed="需要人工協助解鎖",
+        conversationHighlights=["是否轉接專人？"],
+        attemptedSolutions=["線上指引"],
+        unresolvedReason="使用者仍無法完成",
+        requestedOutcome="轉接專人",
+        generatedAt=created_at,
+    )
+    return HandoffCase(
+        caseId=case_id,
+        sessionId=session_id,
+        tenantId=tenant_id,
+        conversationId=conversation_id,
+        requesterId=requester_id,
+        requesterName="Eval User",
+        status=HandoffStatus.SUMMARY_REVIEW,
+        summary=summary,
+        createdAt=created_at,
+        updatedAt=created_at,
+        sessionExpiresAt=session_expires_at,
+        retentionExpiresAt=retention_expires_at,
+        correlationId=correlation_id,
+    )
+
+
+def build_eval_agent_request(
+    *,
+    request_id: str,
+    tenant_id: str,
+    conversation_id: str,
+    teams_user_id: str,
+    entra_object_id: str,
+    display_name: str,
+    email: str,
+    groups: list[str],
+    text: str,
+    correlation_id: str,
+) -> Any:
+    """Build the AgentRequest envelope used by isolated eval turns."""
+    from agent_service.contracts import (
+        AgentRequest,
+        ConversationIdentity,
+        MessageContent,
+        UserIdentity,
+    )
+
+    return AgentRequest(
+        requestId=request_id,
+        channel="eval",
+        conversation=ConversationIdentity(
+            tenantId=tenant_id,
+            conversationId=conversation_id,
+        ),
+        user=UserIdentity(
+            teamsUserId=teams_user_id,
+            entraObjectId=entra_object_id,
+            displayName=display_name,
+            email=email,
+            groups=list(groups),
+        ),
+        message=MessageContent(text=text, locale="zh-TW"),
+        correlationId=correlation_id,
+    )

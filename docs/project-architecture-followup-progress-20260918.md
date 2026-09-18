@@ -34,7 +34,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
   - pure release-artifact validators
   - File Search ACL encoding
   - Portal GCS dual-write wired through composition provider (no Portal→Agent import)
-- Portal→Agent importer files **18 → 9 → 5**.
+- Portal→Agent importer files **18 → 9 → 5 → 0** (ports + composition adapters).
 - Agent modules keep compatibility facades.
 
 ### Phase E — Application / persistence boundaries
