@@ -16,7 +16,6 @@
     "agent_service/src/ai_ops_backoffice/services/query_knowledge.py": 542,
     "agent_service/src/knowledge_portal/models.py": 569,
     "agent_service/src/knowledge_portal/pdf_convert_jobs.py": 508,
-    "agent_service/src/knowledge_portal/services/version_service.py": 652,
     "console_frontend/src/features/knowledge/components/ChunkInspectorModal.tsx": 580,
     "src/teams_agent/source_viewer.py": 544
   },
