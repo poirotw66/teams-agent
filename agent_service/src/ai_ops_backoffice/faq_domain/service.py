@@ -4,12 +4,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from knowledge_core.release_gate import ReleaseGateBlockedError, require_release_gate
-from knowledge_core.target_manifest import faq_version_target_manifest_hash
 from operations_core.access import ActorContext
-from operations_core.masking import MASKING_POLICY_VERSION, mask_text
+from operations_core.masking import mask_text
 
-from .artifacts import write_faq_activation_artifact
 from .authorization import (
     AccessPolicyAuthorization,
     DenySelfApprovalException,
@@ -18,26 +15,36 @@ from .authorization import (
     FaqSelfApprovalExceptionPort,
     FaqTaxonomyPort,
 )
-from .errors import FaqAuthorizationError, FaqNotFoundError, FaqTransitionError, FaqValidationError
+from .errors import FaqAuthorizationError, FaqNotFoundError, FaqValidationError
+from .lifecycle_ops import FaqPublishOpsMixin
 from .models import (
-    FaqAuditEvent,
     FaqContent,
     FaqRecord,
     FaqRuntimeSnapshot,
-    FaqTestCase,
     FaqVersion,
     utc_now,
 )
-from .repository import FaqCommit, FaqRepository, fingerprint
+from .repository import FaqCommit, FaqRepository
+from .transitions import (
+    READ,
+    WRITE,
+    build_audit_event,
+    build_edit_draft,
+    build_faq_result,
+    build_faq_test_case,
+    collect_release_owner_unit_ids,
+    command_fingerprint,
+    commit_transition,
+    ensure_draft_accepts_test,
+    replace_model,
+    replay_capability,
+    require_faq_version,
+    validate_faq_content,
+    validate_faq_submission,
+)
 
-READ = "ops.faq.read"
-WRITE = "ops.faq.write"
-REVIEW = "ops.faq.review"
-ACTIVATE = "ops.faq.activate"
-DISABLE = "ops.faq.disable"
 
-
-class FaqDomainService:
+class FaqDomainService(FaqPublishOpsMixin):
     """Governed FAQ lifecycle; it intentionally exposes no HTTP or UI concerns."""
 
     def __init__(
@@ -63,40 +70,26 @@ class FaqDomainService:
     def _authorize(self, actor: ActorContext, capability: str, owner_unit_id: str) -> None:
         self._authorization.require(actor=actor, capability=capability, owner_unit_id=owner_unit_id)
 
-    def _authorize_release(self, actor: ActorContext, capability: str, faq: FaqRecord, target: FaqVersion) -> None:
-        """Historical versions cannot bypass the current owner's scope."""
-        owners = {target.content.owner_unit_id}
-        for version_id in (faq.draft_version_id, faq.published_version_id):
-            if version_id:
-                version = self._repository.get_version(version_id)
-                if version is None:
-                    raise FaqNotFoundError(version_id)
-                owners.add(version.content.owner_unit_id)
-        for owner in owners:
-            self._authorize(actor, capability, owner)
-
     @staticmethod
     def _replace(model: Any, **changes: Any) -> Any:
-        return type(model).model_validate({**model.model_dump(), **changes})
+        return replace_model(model, **changes)
+
+    def _authorize_release(
+        self, actor: ActorContext, capability: str, faq: FaqRecord, target: FaqVersion
+    ) -> None:
+        for owner in collect_release_owner_unit_ids(self._repository, faq, target):
+            self._authorize(actor, capability, owner)
 
     def _validate_content(self, content: FaqContent) -> None:
-        for issue_type_id in content.issue_type_ids:
-            self._taxonomy.require_active(issue_type_id)
-        for label, value in (
-            ("question", content.question),
-            ("answer", content.answer),
-            ("category", content.category),
-            ("business_contact", content.business_contact),
-            ("owner_unit_id", content.owner_unit_id),
-            *[("keyword", item) for item in content.keywords],
-        ):
-            if mask_text(value).contains_credential:
-                raise FaqValidationError(
-                    f"{label} contains credential-like content and cannot be persisted"
-                )
+        validate_faq_content(self._taxonomy, content)
+
+    def _validate_submission(self, version: FaqVersion) -> None:
+        validate_faq_submission(
+            self._taxonomy, version, self._repository.list_tests(version.version_id)
+        )
 
     def _command_fingerprint(self, actor: ActorContext, payload: dict[str, Any]) -> str:
-        return fingerprint({"actorId": actor.user_id, **payload})
+        return command_fingerprint(actor, payload)
 
     def _replay(
         self, *, actor: ActorContext, key: str | None, action: str, request_fingerprint: str
@@ -106,44 +99,45 @@ class FaqDomainService:
         )
         if result is not None:
             version_data = result.get("version") or result["test"]
-            faq, version = self._require(result["faq"]["faq_id"], version_data["version_id"])
-            capability = {
-                "FAQ_APPROVED": REVIEW, "FAQ_CHANGES_REQUESTED": REVIEW,
-                "FAQ_ACTIVATED": ACTIVATE, "FAQ_ROLLED_BACK": ACTIVATE,
-                "FAQ_DISABLED": DISABLE,
-            }.get(action, WRITE)
-            self._authorize_release(actor, capability, faq, version)
+            faq, version = require_faq_version(
+                self._repository, result["faq"]["faq_id"], version_data["version_id"]
+            )
+            self._authorize_release(actor, replay_capability(action), faq, version)
         return result
 
-    @staticmethod
-    def _audit(
-        *,
-        action: str,
-        actor: ActorContext,
-        faq_id: str,
-        version_id: str | None,
-        reason: str | None,
-        before: dict[str, Any] | None,
-        after: dict[str, Any] | None,
-        correlation_id: str | None,
-    ) -> FaqAuditEvent:
-        return FaqAuditEvent(
-            audit_id=str(uuid.uuid4()),
-            action=action,
-            actor_id=actor.user_id,
-            actor_role=actor.role,
-            faq_id=faq_id,
-            version_id=version_id,
-            reason=reason,
-            before=before,
-            after=after,
-            occurred_at=utc_now(),
-            correlation_id=correlation_id,
-        )
+    def _require(self, faq_id: str, version_id: str) -> tuple[FaqRecord, FaqVersion]:
+        return require_faq_version(self._repository, faq_id, version_id)
 
-    @staticmethod
-    def _result(faq: FaqRecord, version: FaqVersion) -> dict[str, Any]:
-        return {"faq": faq.model_dump(mode="json"), "version": version.model_dump(mode="json")}
+    def _commit_transition(
+        self,
+        action: str,
+        before_faq: FaqRecord,
+        after_faq: FaqRecord,
+        versions: tuple[FaqVersion, ...],
+        actor: ActorContext,
+        expected_etag: int,
+        idempotency_key: str | None,
+        correlation_id: str | None,
+        reason: str | None,
+        active_pointer: tuple[str, str | None] | None = None,
+        primary_version_id: str | None = None,
+        request_fingerprint: str = "",
+    ) -> dict[str, Any]:
+        return commit_transition(
+            self._repository,
+            action=action,
+            before_faq=before_faq,
+            after_faq=after_faq,
+            versions=versions,
+            actor=actor,
+            expected_etag=expected_etag,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+            reason=reason,
+            active_pointer=active_pointer,
+            primary_version_id=primary_version_id,
+            request_fingerprint=request_fingerprint,
+        )
 
     def list_faqs(self, *, actor: ActorContext) -> list[dict[str, Any]]:
         visible: list[dict[str, Any]] = []
@@ -156,7 +150,7 @@ class FaqDomainService:
                 self._authorize(actor, READ, current.content.owner_unit_id)
             except FaqAuthorizationError:
                 continue
-            visible.append(self._result(faq, current))
+            visible.append(build_faq_result(faq, current))
         return visible
 
     def detail(self, *, faq_id: str, actor: ActorContext) -> dict[str, Any]:
@@ -176,8 +170,7 @@ class FaqDomainService:
                 for test in self._repository.list_tests(version.version_id)
             ],
             "audit": [
-                event.model_dump(mode="json")
-                for event in self._repository.list_audit(faq_id)
+                event.model_dump(mode="json") for event in self._repository.list_audit(faq_id)
             ],
         }
 
@@ -194,7 +187,10 @@ class FaqDomainService:
             actor, {"action": "FAQ_CREATED", "content": content.model_dump(mode="json")}
         )
         replay = self._replay(
-            actor=actor, key=idempotency_key, action="FAQ_CREATED", request_fingerprint=request_fingerprint
+            actor=actor,
+            key=idempotency_key,
+            action="FAQ_CREATED",
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
@@ -221,8 +217,8 @@ class FaqDomainService:
             updated_at=now,
             etag=1,
         )
-        result = self._result(faq, version)
-        audit = self._audit(
+        result = build_faq_result(faq, version)
+        audit = build_audit_event(
             action="FAQ_CREATED",
             actor=actor,
             faq_id=faq_id,
@@ -261,7 +257,7 @@ class FaqDomainService:
         idempotency_key: str | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
-        masked_utterance = mask_text(utterance)
+        masked = mask_text(utterance)
         request_fingerprint = self._command_fingerprint(
             actor,
             {
@@ -277,7 +273,10 @@ class FaqDomainService:
             },
         )
         replay = self._replay(
-            actor=actor, key=idempotency_key, action="FAQ_TEST_ADDED", request_fingerprint=request_fingerprint
+            actor=actor,
+            key=idempotency_key,
+            action="FAQ_TEST_ADDED",
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
@@ -285,32 +284,22 @@ class FaqDomainService:
         self._authorize(actor, WRITE, version.content.owner_unit_id)
         if source_type == "CONVERSATION":
             self._authorize(actor, "ops.conversations.read", version.content.owner_unit_id)
-        if faq.draft_version_id != version_id:
-            raise FaqTransitionError("test cases must belong to the current draft")
-        if version.status not in {"DRAFT", "CHANGES_REQUESTED"}:
-            raise FaqTransitionError(
-                "tests can only be added to DRAFT or CHANGES_REQUESTED versions"
-            )
-        expected_match = kind == "POSITIVE"
-        test = FaqTestCase(
-            test_case_id=str(uuid.uuid4()),
+        ensure_draft_accepts_test(faq=faq, version=version, version_id=version_id)
+        test = build_faq_test_case(
             faq_id=faq_id,
             version_id=version_id,
             kind=kind,
-            utterance=masked_utterance.text,
+            utterance=masked.text,
             expected_audience_group_ids=expected_audience_group_ids,
-            expected_match=expected_match,
-            created_by=actor.user_id,
-            created_at=utc_now(),
+            actor=actor,
             source_type=source_type,
             source_correlation_id=source_correlation_id,
-            masking_policy_version=MASKING_POLICY_VERSION,
         )
-        updated = self._replace(
+        updated = replace_model(
             faq, updated_by=actor.user_id, updated_at=utc_now(), etag=faq.etag + 1
         )
         result = {"faq": updated.model_dump(mode="json"), "test": test.model_dump(mode="json")}
-        audit = self._audit(
+        audit = build_audit_event(
             action="FAQ_TEST_ADDED",
             actor=actor,
             faq_id=faq_id,
@@ -363,7 +352,10 @@ class FaqDomainService:
             },
         )
         replay = self._replay(
-            actor=actor, key=idempotency_key, action="FAQ_DRAFT_CREATED", request_fingerprint=request_fingerprint
+            actor=actor,
+            key=idempotency_key,
+            action="FAQ_DRAFT_CREATED",
+            request_fingerprint=request_fingerprint,
         )
         if replay is not None:
             return replay
@@ -382,352 +374,22 @@ class FaqDomainService:
             self._authorize(actor, WRITE, published.content.owner_unit_id)
         self._authorize(actor, WRITE, content.owner_unit_id)
         self._validate_content(content)
-        current_versions = self._repository.list_versions(faq_id)
-        now = utc_now()
-        draft = FaqVersion(
-            version_id=str(uuid.uuid4()),
-            faq_id=faq_id,
-            version_number=max((item.version_number for item in current_versions), default=0) + 1,
-            content=content,
-            created_by=actor.user_id,
-            created_at=now,
-        )
-        changed: list[FaqVersion] = [draft]
-        if faq.draft_version_id:
-            prior = self._repository.get_version(faq.draft_version_id)
-            if prior and prior.status == "IN_REVIEW":
-                raise FaqTransitionError("request changes before revising an IN_REVIEW draft")
-            if prior and prior.status in {"DRAFT", "CHANGES_REQUESTED", "APPROVED"}:
-                changed.append(self._replace(prior, status="SUPERSEDED"))
-        next_faq = self._replace(
-            faq,
-            status=faq.status if faq.published_version_id else "DRAFT",
-            draft_version_id=draft.version_id,
-            updated_by=actor.user_id,
-            updated_at=now,
-            etag=faq.etag + 1,
+        next_faq, changed, draft_version_id = build_edit_draft(
+            self._repository, faq=faq, content=content, actor=actor
         )
         return self._commit_transition(
             "FAQ_DRAFT_CREATED",
             faq,
             next_faq,
-            tuple(changed),
+            changed,
             actor,
             expected_etag,
             idempotency_key,
             correlation_id,
             None,
-            primary_version_id=draft.version_id,
+            primary_version_id=draft_version_id,
             request_fingerprint=request_fingerprint,
         )
-
-    def submit(
-        self,
-        *,
-        faq_id: str,
-        version_id: str,
-        actor: ActorContext,
-        expected_etag: int,
-        idempotency_key: str | None = None,
-        correlation_id: str | None = None,
-    ) -> dict[str, Any]:
-        request_fingerprint = self._command_fingerprint(
-            actor,
-            {
-                "action": "FAQ_SUBMITTED",
-                "faqId": faq_id,
-                "versionId": version_id,
-                "etag": expected_etag,
-            },
-        )
-        replay = self._replay(
-            actor=actor, key=idempotency_key, action="FAQ_SUBMITTED", request_fingerprint=request_fingerprint
-        )
-        if replay is not None:
-            return replay
-        faq, version = self._require(faq_id, version_id)
-        self._authorize(actor, WRITE, version.content.owner_unit_id)
-        if faq.draft_version_id != version_id:
-            raise FaqTransitionError("submit must target the current draft")
-        if version.status not in {"DRAFT", "CHANGES_REQUESTED"}:
-            raise FaqTransitionError("only DRAFT or CHANGES_REQUESTED versions can be submitted")
-        self._validate_submission(version)
-        now = utc_now()
-        next_version = self._replace(
-            version, status="IN_REVIEW", submitted_at=now, submitted_by=actor.user_id
-        )
-        next_faq = self._replace(
-            faq,
-            status="IN_REVIEW" if faq.published_version_id is None else faq.status,
-            updated_by=actor.user_id,
-            updated_at=now,
-            etag=faq.etag + 1,
-        )
-        return self._commit_transition(
-            "FAQ_SUBMITTED",
-            faq,
-            next_faq,
-            (next_version,),
-            actor,
-            expected_etag,
-            idempotency_key,
-            correlation_id,
-            None,
-            primary_version_id=version_id,
-            request_fingerprint=request_fingerprint,
-        )
-
-    def review(
-        self,
-        *,
-        faq_id: str,
-        version_id: str,
-        approve: bool,
-        reason: str,
-        actor: ActorContext,
-        expected_etag: int,
-        poc_exception_reason: str | None = None,
-        idempotency_key: str | None = None,
-        correlation_id: str | None = None,
-    ) -> dict[str, Any]:
-        request_fingerprint = self._command_fingerprint(
-            actor,
-            {
-                "action": "FAQ_APPROVED" if approve else "FAQ_CHANGES_REQUESTED",
-                "faqId": faq_id,
-                "versionId": version_id,
-                "etag": expected_etag,
-                "reason": reason,
-                "poc": poc_exception_reason,
-            },
-        )
-        action = "FAQ_APPROVED" if approve else "FAQ_CHANGES_REQUESTED"
-        replay = self._replay(
-            actor=actor, key=idempotency_key, action=action, request_fingerprint=request_fingerprint
-        )
-        if replay is not None:
-            return replay
-        faq, version = self._require(faq_id, version_id)
-        self._authorize(actor, REVIEW, version.content.owner_unit_id)
-        if faq.draft_version_id != version_id:
-            raise FaqTransitionError("review must target the current draft")
-        if version.status != "IN_REVIEW":
-            raise FaqTransitionError("only IN_REVIEW versions can be reviewed")
-        if not reason.strip():
-            raise FaqValidationError("review reason is required")
-        if approve and actor.user_id == version.submitted_by:
-            if not poc_exception_reason:
-                raise FaqAuthorizationError("submitter and approver must be different")
-            self._self_approval_exception.require(
-                actor=actor,
-                owner_unit_id=version.content.owner_unit_id,
-                reason=poc_exception_reason,
-            )
-        if approve:
-            self._validate_submission(version)
-        now = utc_now()
-        if approve:
-            next_version = self._replace(
-                version,
-                status="APPROVED",
-                reviewed_by=actor.user_id,
-                reviewed_at=now,
-                review_reason=reason,
-                approved_by=actor.user_id,
-                approved_at=now,
-                self_approval_exception=actor.user_id == version.submitted_by,
-                self_approval_exception_reason=(
-                    poc_exception_reason if actor.user_id == version.submitted_by else None
-                ),
-            )
-            next_status = "APPROVED" if faq.published_version_id is None else faq.status
-        else:
-            next_version = self._replace(
-                version,
-                status="CHANGES_REQUESTED",
-                reviewed_by=actor.user_id,
-                reviewed_at=now,
-                review_reason=reason,
-            )
-            next_status = "CHANGES_REQUESTED" if faq.published_version_id is None else faq.status
-        next_faq = self._replace(
-            faq, status=next_status, updated_by=actor.user_id, updated_at=now, etag=faq.etag + 1
-        )
-        full_reason = (
-            reason
-            if not poc_exception_reason
-            else f"{reason}; POC exception: {poc_exception_reason}"
-        )
-        return self._commit_transition(
-            action,
-            faq,
-            next_faq,
-            (next_version,),
-            actor,
-            expected_etag,
-            idempotency_key,
-            correlation_id,
-            full_reason,
-            primary_version_id=version_id,
-            request_fingerprint=request_fingerprint,
-        )
-
-    def activate(
-        self,
-        *,
-        faq_id: str,
-        version_id: str,
-        actor: ActorContext,
-        expected_etag: int,
-        reason: str,
-        idempotency_key: str | None = None,
-        correlation_id: str | None = None,
-        rollback: bool = False,
-    ) -> dict[str, Any]:
-        action = "FAQ_ROLLED_BACK" if rollback else "FAQ_ACTIVATED"
-        request_fingerprint = self._command_fingerprint(
-            actor,
-            {
-                "action": action,
-                "faqId": faq_id,
-                "versionId": version_id,
-                "etag": expected_etag,
-                "reason": reason,
-            },
-        )
-        replay = self._replay(
-            actor=actor, key=idempotency_key, action=action, request_fingerprint=request_fingerprint
-        )
-        if replay is not None:
-            return replay
-        faq, version = self._require(faq_id, version_id)
-        self._authorize_release(actor, ACTIVATE, faq, version)
-        if not reason.strip():
-            raise FaqValidationError("activation reason is required")
-        if version.status != "APPROVED" and not (
-            rollback and version.status in {"SUPERSEDED", "DISABLED"} and version.approved_by
-        ):
-            raise FaqTransitionError(
-                "activation requires an APPROVED version; rollback requires a previously approved SUPERSEDED version"
-            )
-        self._validate_submission(version)
-        try:
-            require_release_gate(
-                self._release_gate_checker,
-                target_manifest_hash=faq_version_target_manifest_hash(
-                    faq_version_id=version.version_id
-                ),
-                target_type="FAQ",
-                tenant_id=getattr(actor, "tenant_id", None) or getattr(faq, "tenant_id", None),
-            )
-        except ReleaseGateBlockedError as exc:
-            raise FaqValidationError(str(exc)) from exc
-        previous_id = self._repository.get_active_version_id(faq.faq_key)
-        changed = [self._replace(version, status="ACTIVE")]
-        if previous_id and previous_id != version_id:
-            previous = self._repository.get_version(previous_id)
-            if previous:
-                changed.append(self._replace(previous, status="SUPERSEDED"))
-        now = utc_now()
-        next_faq = self._replace(
-            faq,
-            status="ACTIVE",
-            draft_version_id=None if faq.draft_version_id == version_id else faq.draft_version_id,
-            published_version_id=version_id,
-            updated_by=actor.user_id,
-            updated_at=now,
-            etag=faq.etag + 1,
-        )
-        result = self._commit_transition(
-            action,
-            faq,
-            next_faq,
-            tuple(changed),
-            actor,
-            expected_etag,
-            idempotency_key,
-            correlation_id,
-            reason,
-            active_pointer=(faq.faq_key, version_id),
-            primary_version_id=version_id,
-            request_fingerprint=request_fingerprint,
-        )
-        self._write_activation_artifact(result)
-        return result
-
-    def _write_activation_artifact(self, result: dict[str, Any]) -> None:
-        """Persist a versioned FAQ file export; never indexes into Knowledge RAG."""
-        if self._artifact_dir is None:
-            return
-        faq = result.get("faq")
-        version = result.get("version")
-        if not isinstance(faq, dict) or not isinstance(version, dict):
-            return
-        write_faq_activation_artifact(self._artifact_dir, faq=faq, version=version)
-
-    def disable(
-        self,
-        *,
-        faq_id: str,
-        actor: ActorContext,
-        expected_etag: int,
-        reason: str,
-        idempotency_key: str | None = None,
-        correlation_id: str | None = None,
-    ) -> dict[str, Any]:
-        request_fingerprint = self._command_fingerprint(
-            actor,
-            {"action": "FAQ_DISABLED", "faqId": faq_id, "etag": expected_etag, "reason": reason},
-        )
-        replay = self._replay(
-            actor=actor, key=idempotency_key, action="FAQ_DISABLED", request_fingerprint=request_fingerprint
-        )
-        if replay is not None:
-            return replay
-        faq = self._repository.get_faq(faq_id)
-        if faq is None or faq.published_version_id is None:
-            raise FaqNotFoundError(faq_id)
-        version = self._repository.get_version(faq.published_version_id)
-        if version is None:
-            raise FaqNotFoundError(faq.published_version_id)
-        self._authorize_release(actor, DISABLE, faq, version)
-        if version.status != "ACTIVE":
-            raise FaqTransitionError("only ACTIVE versions can be disabled")
-        if not reason.strip():
-            raise FaqValidationError("disable reason is required")
-        now = utc_now()
-        next_version = self._replace(
-            version,
-            status="DISABLED",
-            disabled_by=actor.user_id,
-            disabled_at=now,
-            disabled_reason=reason,
-        )
-        next_faq = self._replace(
-            faq,
-            status="DISABLED",
-            published_version_id=version.version_id,
-            updated_by=actor.user_id,
-            updated_at=now,
-            etag=faq.etag + 1,
-        )
-        return self._commit_transition(
-            "FAQ_DISABLED",
-            faq,
-            next_faq,
-            (next_version,),
-            actor,
-            expected_etag,
-            idempotency_key,
-            correlation_id,
-            reason,
-            active_pointer=(faq.faq_key, None),
-            primary_version_id=version.version_id,
-            request_fingerprint=request_fingerprint,
-        )
-
-    def rollback(self, **kwargs: Any) -> dict[str, Any]:
-        return self.activate(rollback=True, **kwargs)
 
     def active_snapshot(
         self, *, faq_key: str, audience_group_ids: tuple[str, ...]
@@ -770,96 +432,5 @@ class FaqDomainService:
             sorted(
                 (snapshot for snapshot in snapshots if snapshot is not None),
                 key=lambda snapshot: snapshot.faq_key,
-            )
-        )
-
-    def _require(self, faq_id: str, version_id: str) -> tuple[FaqRecord, FaqVersion]:
-        faq, version = self._repository.get_faq(faq_id), self._repository.get_version(version_id)
-        if faq is None or version is None or version.faq_id != faq_id:
-            raise FaqNotFoundError(f"FAQ/version not found: {faq_id}/{version_id}")
-        return faq, version
-
-    def _validate_submission(self, version: FaqVersion) -> None:
-        self._validate_content(version.content)
-        tests = self._repository.list_tests(version.version_id)
-        kinds = {item.kind for item in tests}
-        if {"POSITIVE", "NEGATIVE"} - kinds:
-            raise FaqValidationError("submit requires at least one POSITIVE and one NEGATIVE test")
-        positive_text = {item.utterance.casefold().strip() for item in tests if item.kind == "POSITIVE"}
-        negative_text = {item.utterance.casefold().strip() for item in tests if item.kind == "NEGATIVE"}
-        if positive_text & negative_text:
-            raise FaqValidationError("the same utterance cannot be both a positive and a negative test")
-        if any(not item.utterance.strip() or item.utterance == "[REDACTED_CREDENTIAL]" for item in tests):
-            raise FaqValidationError("tests must contain usable masked utterances")
-        if version.content.audience_type == "GROUPS":
-            positive_groups = {
-                group
-                for item in tests
-                if item.kind == "POSITIVE"
-                for group in item.expected_audience_group_ids
-            }
-            if not set(version.content.audience_group_ids).intersection(positive_groups):
-                raise FaqValidationError("GROUPS audience requires a positive audience test")
-            if any(
-                item.kind == "POSITIVE" and not set(version.content.audience_group_ids).intersection(item.expected_audience_group_ids)
-                for item in tests
-            ):
-                raise FaqValidationError("positive test audience must be allowed by the version")
-
-    def _commit_transition(
-        self,
-        action: str,
-        before_faq: FaqRecord,
-        after_faq: FaqRecord,
-        versions: tuple[FaqVersion, ...],
-        actor: ActorContext,
-        expected_etag: int,
-        idempotency_key: str | None,
-        correlation_id: str | None,
-        reason: str | None,
-        active_pointer: tuple[str, str | None] | None = None,
-        primary_version_id: str | None = None,
-        request_fingerprint: str = "",
-    ) -> dict[str, Any]:
-        primary = next(
-            item for item in versions if item.version_id == (primary_version_id or item.version_id)
-        )
-        result = self._result(after_faq, primary)
-        audit = self._audit(
-            action=action,
-            actor=actor,
-            faq_id=after_faq.faq_id,
-            version_id=primary.version_id,
-            reason=reason,
-            before={
-                "status": before_faq.status,
-                "etag": before_faq.etag,
-                "publishedVersionId": before_faq.published_version_id,
-                "draftVersionId": before_faq.draft_version_id,
-            },
-            after={
-                "status": after_faq.status,
-                "etag": after_faq.etag,
-                "publishedVersionId": after_faq.published_version_id,
-                "draftVersionId": after_faq.draft_version_id,
-                "versionStatus": primary.status,
-                "approvedBy": primary.approved_by,
-                "approvedAt": primary.approved_at.isoformat() if primary.approved_at else None,
-                "selfApprovalException": primary.self_approval_exception,
-            },
-            correlation_id=correlation_id,
-        )
-        return self._repository.commit(
-            FaqCommit(
-                faq=after_faq,
-                versions=versions,
-                tests=(),
-                audit=audit,
-                expected_etag=expected_etag,
-                idempotency_key=idempotency_key,
-                action=action,
-                request_fingerprint=request_fingerprint,
-                result=result,
-                active_pointer=active_pointer,
             )
         )
