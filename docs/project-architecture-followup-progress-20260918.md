@@ -45,10 +45,18 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 ### Phase G — Independent frontend deliver (first slice)
 - `sync_console_v2.py` hash gate for committed `static/console-v2`.
 
+### Phase G — Legacy shell removal path (second slice)
+- `scripts/check_legacy_shell.py`: defaults keep kill-switch off; deploy/env
+  samples must not enable `BACKOFFICE_LEGACY_SHELL_ENABLED`; documents
+  `static/legacy-js` as quarantine (tree not deleted yet).
+- CI step + architecture README / waiver deletion criteria: one release cycle
+  unused, then delete quarantine + `/legacy` serve path.
+
 ### Phase H — Oversized domain convergence
 - `draft_assets` / `export_service` / `eval_runtime` (1018→562) / `evaluation repository` (975→330).
 - `evaluation_domain/runner.py` (973→478): extracted retrieval / multi-turn / side-execution helpers.
 - `quality_domain/service.py` (902→713): extracted `clustering.py` + `case_ops.py`; facade kept.
+- `evaluation_domain/gate_repository.py` (840→282): extracted file / Firestore adapters; facade kept.
 
 ## Still open (goal continues)
 
@@ -58,7 +66,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | D Portal→Agent | **Done (0)** |
 | E polish beyond hotspot paths | Mostly done |
 | F full TS client + DTO migration | Client generated; DTO migration still open |
-| G legacy-js removal / independent deploy | First slice done |
+| G legacy-js removal / independent deploy | First + second slice (quarantine gate); tree delete deferred one release cycle |
 | H more oversized offenders | Continues |
 
 Repository strategy: modular monorepo; no physical repo split.
