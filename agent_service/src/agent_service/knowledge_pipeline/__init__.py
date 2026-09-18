@@ -32,7 +32,6 @@ from .generator import (
     should_retry_procedure_coverage,
     should_retry_visual_evidence,
 )
-from .prompts import ANSWER_PROMPT, CLAIM_REPAIR_PROMPT, REWRITE_PROMPT
 from .grounding import (
     answer_covers_error_branches,
     answer_covers_procedure_steps,
@@ -64,6 +63,7 @@ from .planner import (
     requested_diagnosis_facets,
 )
 from .policy_overlay import merge_policy_advisories, sanitize_answer_security
+from .prompts import ANSWER_PROMPT, CLAIM_REPAIR_PROMPT, REWRITE_PROMPT
 from .relevance import (
     GRADE_PROMPT,
     HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE,

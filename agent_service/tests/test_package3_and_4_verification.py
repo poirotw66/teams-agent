@@ -16,18 +16,14 @@ from agent_service.operations.settings import OpsSettings
 from agent_service.operations.stores.file_store import FileOperationalStore
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.governance_domain.service_helpers import _candidate_template
-from ai_ops_backoffice.quality_domain.models import QualityCandidate, QualityState
+from ai_ops_backoffice.quality_domain.models import QualityCandidate
 from ai_ops_backoffice.quality_domain.repository import InMemoryQualityRepository
 from ai_ops_backoffice.quality_domain.service import (
     QualityService,
     _cluster_candidates_by_similarity,
 )
-from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 from knowledge_portal.api import create_app as create_portal_app
-from knowledge_portal.models import KnowledgeDocumentRecord, KnowledgeVersionRecord
-from knowledge_portal.repository import InMemoryPortalRepository
-from knowledge_portal.service import PortalService
 from knowledge_portal.settings import PortalSettings
 
 
@@ -240,7 +236,6 @@ def test_req_007_knowledge_portal_document_format_and_owner_filter() -> None:
         headers=hdrs,
     )
     assert res_md.status_code == 200
-    doc_md_id = res_md.json()["document"]["document_id"]
 
     # Create second document with different owner
     res_sec = client.post(

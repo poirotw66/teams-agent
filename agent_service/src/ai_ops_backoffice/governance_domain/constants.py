@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from platform_kernel.governance_catalog import (
     DEFAULT_AGENT_MODEL_ID,
     DEFAULT_FILE_SEARCH_MODEL_ID,

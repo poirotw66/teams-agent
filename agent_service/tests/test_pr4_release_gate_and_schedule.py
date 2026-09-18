@@ -3,19 +3,12 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import FreshnessMetadata
 from ai_ops_backoffice.evaluation_domain import (
-    ActivationAuditRecord,
-    ActiveReleasePointer,
-    BreakGlassRequest,
-    CaseRevision,
     CriterionItem,
-    EvalSchedule,
     EvalScheduler,
     EvaluationCriteria,
     EvaluationRunner,
@@ -27,16 +20,11 @@ from ai_ops_backoffice.evaluation_domain import (
     GateBlockedError,
     GateDecision,
     GateEvaluator,
-    GatePolicy,
-    GatePolicyVersion,
     InMemoryEvaluationRepository,
     InMemoryQualityGateRepository,
     ManifestResolver,
     ProvenanceSpec,
     QualityGateService,
-    RealRagAnswerAdapter,
-    RealRagRetrieverAdapter,
-    ScheduleDispatchResult,
     TargetManifest,
     compute_next_due_time,
 )
@@ -253,7 +241,7 @@ def test_f05_t1_gate_enforcement_and_invalidation_on_change(tmp_path: Path):
     assert "Activation blocked by gate" in str(exc_tampered.value)
 
     # 6. Policy version changed: create and activate policy version 2 (Spec 7.1: "政策版本變更須重新決策")
-    p_ver2 = gate_svc.create_policy_version(
+    gate_svc.create_policy_version(
         policy_id="pol-strict-gate",
         name="生產發布門檻v2",
         mode="ENFORCE",
@@ -664,9 +652,10 @@ def test_a05_t1_data_freshness_metadata_and_p95_sla():
 
 def test_activate_target_endpoint(tmp_path: Path):
     """Verifies POST /api/evaluations/activate-target invokes gate enforcement and updates active pointer."""
-    from ai_ops_backoffice.settings import BackofficeSettings
-    from ai_ops_backoffice.api import create_app
     from fastapi.testclient import TestClient
+
+    from ai_ops_backoffice.api import create_app
+    from ai_ops_backoffice.settings import BackofficeSettings
 
     data_dir = Path(__file__).resolve().parents[2] / "data"
     settings = BackofficeSettings(

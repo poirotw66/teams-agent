@@ -765,7 +765,7 @@ def _build_eval_run(
 
 
 def evaluate_model(*, version: Any, actor_id: str) -> EvalRun:
-    from .constants import FALLBACK_TRIGGERS, PROVIDER_MODELS
+    from .constants import FALLBACK_TRIGGERS
 
     allowed = is_allowlisted_model(version.model_id, provider=version.provider)
     fallback_ok = not version.fallback_on or set(version.fallback_on) <= FALLBACK_TRIGGERS

@@ -12,7 +12,6 @@ from ai_ops_backoffice.evaluation_domain import (
     CaseRevision,
     CriterionItem,
     EvaluationCriteria,
-    EvaluationNotFoundError,
     EvaluationRunner,
     EvaluationRunService,
     EvaluationScorer,
@@ -26,14 +25,11 @@ from ai_ops_backoffice.evaluation_domain import (
     RealAgentSandboxAdapter,
     RealRagAnswerAdapter,
     RealRagRetrieverAdapter,
-    SIDE_EFFECT_TOOLS,
     TargetExecutionInput,
     TargetManifest,
     ToolCallTrace,
     ToolConstraintsSpec,
-    ToolFixture,
     ToolFixtureService,
-    ToolFixtureVersion,
     TurnSpec,
 )
 
@@ -875,8 +871,8 @@ def test_agent_sandbox_rejects_planning_as_answer_fallback(tmp_path: Path):
 
 def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: pytest.MonkeyPatch):
     """Formal sandbox executor must call AgentWorkflow.respond and return its answer."""
-    from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
     from ai_ops_backoffice.governance_domain import eval_runtime as eval_runtime_mod
+    from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
 
     calls: list[str] = []
 
@@ -954,8 +950,8 @@ def test_create_app_wires_model_factory_and_sandbox_adapter(
 ):
     """Formal app should expose model_factory and attempt AGENT_SANDBOX wiring (A09)."""
     from ai_ops_backoffice.api import create_app
-    from ai_ops_backoffice.settings import BackofficeSettings
     from ai_ops_backoffice.evaluation_domain.real_rag_adapters import RealRagAnswerAdapter
+    from ai_ops_backoffice.settings import BackofficeSettings
 
     data_dir = Path(__file__).resolve().parents[2] / "data"
     settings = BackofficeSettings(

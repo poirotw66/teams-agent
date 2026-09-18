@@ -7,7 +7,6 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any
 
 import httpx
 from fastapi import FastAPI
@@ -35,7 +34,6 @@ from ai_ops_backoffice.bootstrap.repositories import (
     build_tool_fixture_repository,
 )
 from ai_ops_backoffice.budget_domain import BudgetService
-from ai_ops_backoffice.runtime_hooks import get_portal_app_factory
 from ai_ops_backoffice.evaluation_domain import (
     AgentBehaviorScorer,
     CandidateGenerationManager,
@@ -61,6 +59,7 @@ from ai_ops_backoffice.knowledge_bridge import KnowledgePortalClient
 from ai_ops_backoffice.notification_dispatcher import NotificationDispatcher
 from ai_ops_backoffice.prompt_domain import PromptPocService
 from ai_ops_backoffice.quality_domain import QualityService
+from ai_ops_backoffice.runtime_hooks import get_portal_app_factory
 from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
 from ai_ops_backoffice.services.export_authorization import GovernanceRevocationAuthority
 from ai_ops_backoffice.services.query_service import BackofficeQueryService

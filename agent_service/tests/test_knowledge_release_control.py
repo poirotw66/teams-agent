@@ -4,10 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+
 from agent_service.knowledge_release_control import read_firestore_release_reference
 from agent_service.routers.health import _require_active_release_alignment
 from agent_service.settings import RagSettings
-from fastapi import HTTPException
 
 
 class FakeSnapshot:

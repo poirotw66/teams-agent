@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
 from ..faq_domain.errors import FaqNotFoundError, FaqValidationError

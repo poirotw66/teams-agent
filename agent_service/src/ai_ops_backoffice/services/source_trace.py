@@ -22,6 +22,7 @@ from agent_service.source_refs import (
     safe_source_path,
     source_path_stem,
 )
+
 from .source_models import (
     LocatorType,
     MappingStatus,
@@ -42,7 +43,6 @@ _ReleaseLoad = tuple[
     dict[str, dict[str, Any]],
     dict[str, list[dict[str, Any]]],
 ]
-
 
 class SourceTraceResolver:
     """Read-only resolver over private release artifacts and direct SourceRecord repository.

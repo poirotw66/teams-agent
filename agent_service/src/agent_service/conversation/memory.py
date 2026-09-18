@@ -4,12 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime
 
-from ..contracts import ConversationContext, ConversationMessage, PendingIssueContext
+from ..contracts import ConversationContext, ConversationMessage
 from .helpers import (
     Clock,
-    ConversationRepository,
     _conversation_key,
     _is_timed_out,
     _utc_now,

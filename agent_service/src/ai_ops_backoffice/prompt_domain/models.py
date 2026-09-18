@@ -1,24 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import os
-import re
-import threading
-import uuid
-from collections import Counter
 from collections.abc import Callable
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Protocol
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-
-from agent_service import extractor
-from agent_service.extractor import SYSTEM_PROMPT
-from agent_service.operations.access import ActorContext
-
-from ..faq_domain.errors import FaqAuthorizationError, FaqNotFoundError, FaqValidationError
-
 
 
 class StrictModel(BaseModel):

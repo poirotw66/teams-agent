@@ -3,13 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any, Callable
-from zoneinfo import ZoneInfo
-
-import httpx
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +20,12 @@ from agent_service.operations.contracts import (
 )
 from agent_service.operations.runtime import build_ops_runtime
 from agent_service.operations.scope import (
-    actor_bypasses_owner_unit_scope,
     filter_events_by_scope,
 )
 from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage import (
     configure_pricing_provider,
-    convert_usd_to_twd,
-    list_model_rates_usd,
-    lookup_rate,
 )
 
 from ..pricing_domain import (
@@ -44,16 +37,11 @@ from ..pricing_domain import (
 from ..settings import BackofficeSettings
 from .daily_aggregates import (
     FileDailyAggregateStore,
-    aggregate_store_updated_at,
-    aggregates_are_fresh,
-    aggregates_cover_period,
-    materialize_daily_aggregates,
-    summarize_aggregates,
 )
 from .export_content import FileExportContentStore, GcsExportContentStore
-from .export_format import wrap_export_payload
 from .export_job_store import FileExportJobStore, FirestoreExportJobStore
 from .export_service import ExportJobService
+from .freshness_service import FreshnessTracker
 from .periods import ResolvedPeriod, event_in_period, resolve_period
 from .query_budget import BudgetQueryMixin
 from .query_conversations import ConversationsQueryMixin
@@ -64,28 +52,12 @@ from .query_health import HealthQueryMixin
 from .query_issues import IssuesQueryMixin
 from .query_knowledge import KnowledgeQueryMixin
 from .query_operations import OperationsQueryMixin
-from .query_math import percentile as _percentile
-from .usage_projection import (
-    UsageDimensions,
-    confirmed_zero_call,
-    known_cost_total,
-    project_usage,
-    usage_breakdown,
-)
-
-
-from .query_helpers import (
-    _build_issue_hierarchy,
-    _is_published_knowledge_hit,
-    _summarize_turn_events,
-)
-from .source_trace import SourceTraceResolver
 from .source_repository import (
     FileSourceRecordRepository,
     FirestoreSourceRecordRepository,
     SourceRecordRepository,
 )
-from .freshness_service import FreshnessTracker
+from .source_trace import SourceTraceResolver
 
 
 class BackofficeQueryService(

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from agent_service.operations.access import ActorContext

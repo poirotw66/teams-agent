@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import pytest
+
 import httpx
+import pytest
 
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.budget_domain import (

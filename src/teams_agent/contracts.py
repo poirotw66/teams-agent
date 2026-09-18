@@ -1,4 +1,3 @@
-import re
 from dataclasses import asdict, dataclass, field
 from pathlib import PurePosixPath
 from typing import Any

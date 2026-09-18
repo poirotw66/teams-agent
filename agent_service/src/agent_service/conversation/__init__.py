@@ -17,7 +17,7 @@ __all__ = [
     "FileConversationRepository",
     "FirestoreConversationRepository",
     "InMemoryConversationRepository",
-    "build_repository",
     "_conversation_key",
     "_utc_now",
+    "build_repository",
 ]

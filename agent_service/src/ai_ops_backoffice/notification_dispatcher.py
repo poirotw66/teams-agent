@@ -219,7 +219,7 @@ class NotificationDispatcher:
             return self._budget_service.record_delivery_attempt(
                 delivery_id,
                 success=False,
-                error=f"Teams delivery failed: {type(exc).__name__}: {str(exc)}",
+                error=f"Teams delivery failed: {type(exc).__name__}: {exc!s}",
                 actor=actor,
             )
 
@@ -252,7 +252,7 @@ class NotificationDispatcher:
                 return self._budget_service.record_delivery_attempt(
                     delivery_id,
                     success=False,
-                    error=f"Email sender error: {type(exc).__name__}: {str(exc)}",
+                    error=f"Email sender error: {type(exc).__name__}: {exc!s}",
                     actor=actor,
                 )
 
@@ -298,7 +298,7 @@ class NotificationDispatcher:
             return self._budget_service.record_delivery_attempt(
                 delivery_id,
                 success=False,
-                error=f"SMTP delivery failed: {type(exc).__name__}: {str(exc)}",
+                error=f"SMTP delivery failed: {type(exc).__name__}: {exc!s}",
                 actor=actor,
             )
 

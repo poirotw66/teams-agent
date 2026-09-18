@@ -226,9 +226,9 @@ def faq_version_target_manifest_hash(
 
 __all__ = [
     "calculate_target_manifest_hash",
-    "resolve_publish_manifest_defaults",
-    "knowledge_release_gate_manifest",
     "faq_version_gate_manifest",
-    "knowledge_release_target_manifest_hash",
     "faq_version_target_manifest_hash",
+    "knowledge_release_gate_manifest",
+    "knowledge_release_target_manifest_hash",
+    "resolve_publish_manifest_defaults",
 ]

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import threading
-from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from .errors import JobFencingConflictError, JobLeaseLostError
-from .job_models import ExecutionJob, JobCheckpoint
+from .job_models import ExecutionJob
 from .job_repository import JobRepository
 from .runner import EvaluationRunner
 
@@ -94,15 +91,12 @@ class ExecutionJobWorker:
                 return
 
             def _lease_guard() -> None:
-                try:
-                    self._repo.heartbeat(
-                        job.job_id,
-                        self._worker_id,
-                        fencing_token,
-                        extend_seconds=self._lease_seconds,
-                    )
-                except (JobLeaseLostError, JobFencingConflictError):
-                    raise
+                self._repo.heartbeat(
+                    job.job_id,
+                    self._worker_id,
+                    fencing_token,
+                    extend_seconds=self._lease_seconds,
+                )
                 self._repo.save_checkpoint(
                     job.job_id,
                     self._worker_id,
@@ -161,7 +155,7 @@ class ExecutionJobWorker:
                 lease_err,
             )
         except Exception as err:
-            logger.exception("Failed to process job %s: %s", job.job_id, err)
+            logger.exception("Failed to process job %s", job.job_id)
             try:
                 self._repo.complete_job(
                     job.job_id,

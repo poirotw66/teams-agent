@@ -84,7 +84,7 @@ def _patch_portal_transport(portal_client: TestClient) -> object:
     client.__aexit__ = AsyncMock(return_value=False)
     client.get = AsyncMock(side_effect=_get)
     return patch(
-        "ai_ops_backoffice.services.query_service.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
         return_value=client,
     )
 

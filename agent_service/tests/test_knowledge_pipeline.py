@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from agent_service.contracts import GroundedClaim, PolicyAdvisory
+from agent_service.contracts import GroundedClaim, KnowledgeResult, PolicyAdvisory
 from agent_service.documents import DocumentChunk
-from agent_service.contracts import KnowledgeResult
 from agent_service.knowledge_pipeline import (
     attach_retrieval_trace,
     bounded_facet_queries,

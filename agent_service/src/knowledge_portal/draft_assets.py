@@ -10,11 +10,10 @@ from typing import Any
 from agent_service.documents import parse_front_matter
 
 from .asset_validation import (
-    ALLOWED_IMAGE_SUFFIXES,
     _IMAGE_REF_PATTERN,
+    ALLOWED_IMAGE_SUFFIXES,
     _content_type,
     _copy_image_dir,
-    _directory_has_images,
     asset_content_type,
     is_expected_asset_markdown_path,
     normalize_markdown_target,
@@ -23,6 +22,20 @@ from .asset_validation import (
 )
 from .models import DraftAssetRecord
 from .settings import PortalSettings
+
+# Compatibility re-exports for portal modules that historically imported via draft_assets.
+__all__ = [
+    "ALLOWED_IMAGE_SUFFIXES",
+    "DraftAssetStore",
+    "asset_content_type",
+    "is_expected_asset_markdown_path",
+    "markdown_image_references",
+    "normalize_upload_filename",
+    "resolve_local_asset_path",
+    "rewrite_local_image_refs",
+    "slug_from_title",
+    "validate_asset_bundle",
+]
 
 _UNSAFE_SLUG_CHARS = re.compile(r'[\\/:*?"<>|]+')
 

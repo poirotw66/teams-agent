@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import sys
 import threading
@@ -12,11 +13,13 @@ from typing import Any, Protocol
 
 from .errors import (
     EvaluationNotFoundError,
-    EvaluationVersionConflictError,
     JobFencingConflictError,
     JobLeaseLostError,
 )
 from .job_models import ExecutionJob, JobState
+from .json_record_io import load_json_model
+
+logger = logging.getLogger(__name__)
 
 
 class JobRepository(Protocol):
@@ -288,13 +291,9 @@ class FileJobRepository(InMemoryJobRepository):
         with self._lock:
             jobs: dict[str, ExecutionJob] = {}
             for path in self._records_dir.glob("*.json"):
-                try:
-                    raw = path.read_text(encoding="utf-8")
-                    if raw.strip():
-                        job = ExecutionJob.model_validate_json(raw)
-                        jobs[job.job_id] = job
-                except Exception:
-                    continue
+                job = load_json_model(path, ExecutionJob)
+                if job is not None:
+                    jobs[job.job_id] = job
             self._jobs = jobs
 
     def _write_record_atomic(self, job: ExecutionJob) -> None:
@@ -439,7 +438,7 @@ class FirestoreJobRepository:
         import hashlib
 
         digest = hashlib.sha256(
-            f"{job.tenant_id}:{job.logical_key}".encode("utf-8")
+            f"{job.tenant_id}:{job.logical_key}".encode()
         ).hexdigest()[:32]
         dedup_id = f"lk_{job.tenant_id}_{digest}"
         dedup_ref = self._client.collection(self._collection).document(dedup_id)
@@ -478,7 +477,6 @@ class FirestoreJobRepository:
     def claim_job(
         self, worker_id: str, lease_seconds: float = 60.0
     ) -> ExecutionJob | None:
-        now = datetime.now(UTC)
         query = (
             self._client.collection(self._collection)
             .where("state", "in", ["QUEUED", "RUNNING"])
@@ -488,7 +486,7 @@ class FirestoreJobRepository:
         for d in docs:
             doc_ref = self._doc_ref(d.id)
 
-            def claim_tx(transaction: Any) -> ExecutionJob | None:
+            def claim_tx(transaction: Any, doc_ref: Any = doc_ref) -> ExecutionJob | None:
                 curr_now = datetime.now(UTC)
                 snap = doc_ref.get(transaction=transaction)
                 if not getattr(snap, "exists", False):
@@ -541,6 +539,7 @@ class FirestoreJobRepository:
                 if claimed_job is not None:
                     return claimed_job
             except Exception:
+                logger.warning("Skipping claim failure for job doc %s", d.id, exc_info=True)
                 continue
         return None
 

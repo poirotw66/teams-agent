@@ -2,15 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import threading
 import uuid
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any, Literal, Protocol
-
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Literal
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.masking import mask_text
@@ -22,10 +16,9 @@ from ..faq_domain.errors import (
     FaqTransitionError,
     FaqVersionConflictError,
 )
-
-
 from .models import *  # noqa: F403
 from .repository import *  # noqa: F403
+
 
 class SyncService:
     ACTIVE = frozenset({"QUEUED", "VALIDATING", "BUILDING", "VERIFYING"})

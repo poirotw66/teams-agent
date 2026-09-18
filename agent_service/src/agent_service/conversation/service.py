@@ -7,6 +7,7 @@ from ..contracts import ConversationContext, ConversationMessage, PendingIssueCo
 from ..settings import RagSettings
 from .helpers import Clock, ConversationRepository, _utc_now
 
+
 @dataclass
 class _Round:
     """One user turn plus any assistant messages that immediately follow it."""

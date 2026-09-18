@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,17 +8,19 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from agent_service.contracts import ConversationMessage, Issue, IssueExtraction
+from agent_service.contracts import Issue, IssueExtraction
 from agent_service.extractor import IssueExtractor
 from agent_service.graph import build_chat_model
 from agent_service.operations.access import ActorContext
-from agent_service.prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime, ResolvedModelConfig
+from agent_service.prompt_runtime import (
+    GovernanceRuntime,
+    ResolvedModelConfig,
+)
 from agent_service.settings import RagSettings
 from ai_ops_backoffice.api import create_app as create_backoffice_app
 from ai_ops_backoffice.governance_domain import FileGovernanceRepository, GovernanceService
 from ai_ops_backoffice.settings import BackofficeSettings
 from knowledge_portal.api import create_app as create_portal_app
-from knowledge_portal.models import PortalActor
 from knowledge_portal.settings import PortalSettings
 
 

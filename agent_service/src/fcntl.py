@@ -15,7 +15,6 @@ if sys.platform == "win32":
 else:
     # On POSIX systems, delegate to built-in C module
     try:
-        import _fcntl as _builtin_fcntl  # type: ignore[import-not-found]
         from _fcntl import *  # type: ignore[import-not-found] # noqa: F403
     except ImportError:
         pass

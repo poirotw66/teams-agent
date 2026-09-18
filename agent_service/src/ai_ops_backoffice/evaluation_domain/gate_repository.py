@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
-from .errors import EvaluationNotFoundError, EvaluationVersionConflictError
+from .errors import EvaluationVersionConflictError
 from .gate_models import (
     ActivationAuditRecord,
     ActiveReleasePointer,
@@ -22,6 +22,7 @@ from .gate_models import (
     QualityCaseLink,
     ScheduleDispatchResult,
 )
+from .json_record_io import iter_json_models, iter_jsonl_models
 
 
 class QualityGateRepositoryProtocol(Protocol):
@@ -336,96 +337,51 @@ class FileQualityGateRepository(InMemoryQualityGateRepository):
 
     def _sync_from_disk(self) -> None:
         with self._lock:
-            policies: dict[str, GatePolicy] = {}
-            for p in self._policies_dir.glob("*.json"):
-                try:
-                    policies[p.stem] = GatePolicy.model_validate_json(p.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-            self._policies = policies
-
-            versions: dict[tuple[str, int], GatePolicyVersion] = {}
-            for p in self._versions_dir.glob("*.json"):
-                try:
-                    v = GatePolicyVersion.model_validate_json(p.read_text(encoding="utf-8"))
-                    versions[(v.policy_id, v.version)] = v
-                except Exception:
-                    continue
-            self._versions = versions
-
-            decisions: dict[str, GateDecision] = {}
-            for p in self._decisions_dir.glob("*.json"):
-                try:
-                    d = GateDecision.model_validate_json(p.read_text(encoding="utf-8"))
-                    decisions[d.decision_id] = d
-                except Exception:
-                    continue
-            self._decisions = decisions
-
-            exceptions: dict[str, GateException] = {}
-            for p in self._exceptions_dir.glob("*.json"):
-                try:
-                    e = GateException.model_validate_json(p.read_text(encoding="utf-8"))
-                    exceptions[e.exception_id] = e
-                except Exception:
-                    continue
-            self._exceptions = exceptions
-
-            schedules: dict[str, EvalSchedule] = {}
-            for p in self._schedules_dir.glob("*.json"):
-                try:
-                    s = EvalSchedule.model_validate_json(p.read_text(encoding="utf-8"))
-                    schedules[s.schedule_id] = s
-                except Exception:
-                    continue
-            self._schedules = schedules
-
-            links: dict[str, QualityCaseLink] = {}
-            for p in self._links_dir.glob("*.json"):
-                try:
-                    l = QualityCaseLink.model_validate_json(p.read_text(encoding="utf-8"))
-                    links[l.quality_case_id] = l
-                except Exception:
-                    continue
-            self._quality_cases = links
-
-            pointers: dict[tuple[str, str, str], ActiveReleasePointer] = {}
-            for p in self._pointers_dir.glob("*.json"):
-                try:
-                    ptr = ActiveReleasePointer.model_validate_json(p.read_text(encoding="utf-8"))
-                    pointers[(ptr.tenant_id, ptr.environment, ptr.target_type)] = ptr
-                except Exception:
-                    continue
-            self._pointers = pointers
-
-            break_glasses: dict[str, BreakGlassRequest] = {}
-            for p in self._break_glasses_dir.glob("*.json"):
-                try:
-                    bg = BreakGlassRequest.model_validate_json(p.read_text(encoding="utf-8"))
-                    break_glasses[bg.break_glass_id] = bg
-                except Exception:
-                    continue
-            self._break_glasses = break_glasses
-
-            dispatches: dict[str, ScheduleDispatchResult] = {}
-            for p in self._dispatches_dir.glob("*.json"):
-                try:
-                    dsp = ScheduleDispatchResult.model_validate_json(p.read_text(encoding="utf-8"))
-                    dispatches[dsp.logical_key] = dsp
-                except Exception:
-                    continue
-            self._dispatches = dispatches
-
-            audits: list[ActivationAuditRecord] = []
-            if self._audits_file.is_file():
-                for line in self._audits_file.read_text(encoding="utf-8").splitlines():
-                    if not line.strip():
-                        continue
-                    try:
-                        audits.append(ActivationAuditRecord.model_validate_json(line))
-                    except Exception:
-                        continue
-            self._activation_audits = audits
+            self._policies = {
+                path.stem: policy
+                for path, policy in iter_json_models(self._policies_dir, GatePolicy)
+            }
+            self._versions = {
+                (version.policy_id, version.version): version
+                for _, version in iter_json_models(self._versions_dir, GatePolicyVersion)
+            }
+            self._decisions = {
+                decision.decision_id: decision
+                for _, decision in iter_json_models(self._decisions_dir, GateDecision)
+            }
+            self._exceptions = {
+                exception.exception_id: exception
+                for _, exception in iter_json_models(self._exceptions_dir, GateException)
+            }
+            self._schedules = {
+                schedule.schedule_id: schedule
+                for _, schedule in iter_json_models(self._schedules_dir, EvalSchedule)
+            }
+            self._quality_cases = {
+                link.quality_case_id: link
+                for _, link in iter_json_models(self._links_dir, QualityCaseLink)
+            }
+            self._pointers = {
+                (pointer.tenant_id, pointer.environment, pointer.target_type): pointer
+                for _, pointer in iter_json_models(
+                    self._pointers_dir, ActiveReleasePointer
+                )
+            }
+            self._break_glasses = {
+                request.break_glass_id: request
+                for _, request in iter_json_models(
+                    self._break_glasses_dir, BreakGlassRequest
+                )
+            }
+            self._dispatches = {
+                dispatch.logical_key: dispatch
+                for _, dispatch in iter_json_models(
+                    self._dispatches_dir, ScheduleDispatchResult
+                )
+            }
+            self._activation_audits = list(
+                iter_jsonl_models(self._audits_file, ActivationAuditRecord)
+            )
 
     def _write_record_atomic(self, target: Path, content: str) -> None:
         temp = target.with_suffix(f".{uuid.uuid4().hex}.tmp")

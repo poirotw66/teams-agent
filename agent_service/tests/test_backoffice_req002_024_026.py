@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1039,8 +1040,9 @@ async def test_budget_create_stamps_pricing_service_versions(tmp_path: Path) -> 
 
 
 def test_health_taipei_day_boundary_for_utc_midnight_input(tmp_path: Path) -> None:
-    from ai_ops_backoffice.services.query_health import resolve_taipei_day_window
     from zoneinfo import ZoneInfo
+
+    from ai_ops_backoffice.services.query_health import resolve_taipei_day_window
 
     # 2024-01-01T00:00:00Z is still 2024-01-01 morning in Taipei (+08)
     start, end, local_day = resolve_taipei_day_window("2024-01-01T00:00:00Z")

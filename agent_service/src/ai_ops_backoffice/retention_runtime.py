@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 DEFAULT_RETENTION_DAYS = 365
 DEFAULT_AUDIT_RETENTION_DAYS = 1095
 

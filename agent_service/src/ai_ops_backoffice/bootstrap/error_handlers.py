@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from agent_service.operations.audit_errors import AuditWriteError
-
 from ai_ops_backoffice.evaluation_domain import (
     EvaluationAuditWriteError,
     EvaluationAuthorizationError,

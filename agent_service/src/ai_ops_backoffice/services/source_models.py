@@ -8,8 +8,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from agent_service.artifact_models import (
+    ArtifactKind,
+    ArtifactRecord,
+    ArtifactScanStatus,
+)
+from agent_service.document_authorization import DocumentAccessDecision
+
+# Compatibility re-exports used by tests and historical import sites.
+__all__ = [
+    "ArtifactKind",
+    "ArtifactRecord",
+    "ArtifactScanStatus",
+    "DocumentAccessDecision",
+    "LocatorType",
+    "MappingStatus",
+    "SourceLocator",
+    "SourceRecord",
+]
 
 
 class MappingStatus(str, Enum):
@@ -22,14 +41,6 @@ class MappingStatus(str, Enum):
     MAPPING_UNAVAILABLE = "MAPPING_UNAVAILABLE"
     LEGACY_UNVERIFIED = "LEGACY_UNVERIFIED"
     EDITED_DERIVATIVE = "EDITED_DERIVATIVE"
-
-
-from agent_service.artifact_models import (
-    ArtifactKind,
-    ArtifactRecord,
-    ArtifactScanStatus,
-)
-from agent_service.document_authorization import DocumentAccessDecision
 
 
 class LocatorType(str, Enum):

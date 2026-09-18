@@ -6,13 +6,11 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime
 from pathlib import Path
 
-from ..contracts import ConversationContext, ConversationMessage, PendingIssueContext
+from ..contracts import ConversationContext, ConversationMessage
 from .helpers import (
     Clock,
-    ConversationRepository,
     _conversation_key,
     _is_timed_out,
     _utc_now,

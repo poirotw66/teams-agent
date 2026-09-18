@@ -27,7 +27,6 @@ from .gate_models import (
     SourceImpactResult,
     TargetType,
 )
-from .scheduler import EvalScheduler, compute_next_due_time
 from .gate_repository import (
     FileQualityGateRepository,
     FirestoreQualityGateRepository,
@@ -35,6 +34,7 @@ from .gate_repository import (
     QualityGateRepository,
 )
 from .gate_service import GateBlockedError, QualityGateService
+from .import_export import EvaluationImportExportManager
 from .job_models import ExecutionJob, JobCheckpoint
 from .job_repository import (
     FileJobRepository,
@@ -43,9 +43,8 @@ from .job_repository import (
     JobRepository,
 )
 from .job_worker import ExecutionJobWorker
-from .migration import EvaluationMigrationTool, MigrationReport
-from .import_export import EvaluationImportExportManager
 from .manifest import ManifestResolver, calculate_target_manifest_hash
+from .migration import EvaluationMigrationTool, MigrationReport
 from .models import (
     CandidateGenerationJob,
     CaseRevision,
@@ -67,6 +66,11 @@ from .models import (
     calculate_manifest_hash,
     calculate_revision_content_hash,
 )
+from .real_rag_adapters import (
+    RealAgentSandboxAdapter,
+    RealRagAnswerAdapter,
+    RealRagRetrieverAdapter,
+)
 from .repository import (
     EvaluationRepository,
     FileEvaluationRepository,
@@ -75,11 +79,6 @@ from .repository import (
 )
 from .run_service import EvaluationRunService
 from .runner import EvaluationRunner
-from .real_rag_adapters import (
-    RealAgentSandboxAdapter,
-    RealRagAnswerAdapter,
-    RealRagRetrieverAdapter,
-)
 from .runner_models import (
     CaseExecution,
     EvaluationRun,
@@ -90,6 +89,7 @@ from .runner_models import (
     TargetExecutionInput,
     TargetManifest,
 )
+from .scheduler import EvalScheduler, compute_next_due_time
 from .scorer import EvaluationScorer
 from .service import EvaluationService
 from .tool_fixture_models import (
@@ -101,14 +101,15 @@ from .tool_fixture_models import (
     TurnExecutionTrace,
 )
 from .tool_fixtures import (
+    SIDE_EFFECT_TOOLS,
     FileToolFixtureRepository,
     FirestoreToolFixtureRepository,
-    SIDE_EFFECT_TOOLS,
     ToolFixtureRepository,
     ToolFixtureService,
 )
 
 __all__ = [
+    "SIDE_EFFECT_TOOLS",
     "ActivationAuditRecord",
     "ActiveReleasePointer",
     "AgentBehaviorScorer",
@@ -132,6 +133,7 @@ __all__ = [
     "EvaluationIdempotencyConflictError",
     "EvaluationIdempotencyRecord",
     "EvaluationImportExportManager",
+    "EvaluationMigrationTool",
     "EvaluationNotFoundError",
     "EvaluationRepository",
     "EvaluationRun",
@@ -145,7 +147,16 @@ __all__ = [
     "EvaluationVersionConflictError",
     "EvidenceItem",
     "EvidenceRequirement",
+    "ExecutionJob",
+    "ExecutionJobWorker",
     "FileEvaluationRepository",
+    "FileJobRepository",
+    "FileQualityGateRepository",
+    "FileToolFixtureRepository",
+    "FirestoreEvaluationRepository",
+    "FirestoreJobRepository",
+    "FirestoreQualityGateRepository",
+    "FirestoreToolFixtureRepository",
     "GateBlockedError",
     "GateDecision",
     "GateEvaluator",
@@ -154,8 +165,15 @@ __all__ = [
     "GatePolicyVersion",
     "ImportValidationResult",
     "InMemoryEvaluationRepository",
+    "InMemoryJobRepository",
+    "InMemoryQualityGateRepository",
+    "JobCheckpoint",
+    "JobFencingConflictError",
+    "JobLeaseLostError",
+    "JobRepository",
     "ManifestResolver",
     "MetricResult",
+    "MigrationReport",
     "MockResponseSpec",
     "ProvenanceSpec",
     "QualityCaseLink",
@@ -167,7 +185,6 @@ __all__ = [
     "ReviewDecision",
     "RunComparisonSummary",
     "RunPreflightResult",
-    "SIDE_EFFECT_TOOLS",
     "ScheduleDispatchResult",
     "SourceImpactResult",
     "TargetExecutionInput",

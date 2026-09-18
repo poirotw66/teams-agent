@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import mimetypes
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from agent_service.artifact_models import (
     ArtifactKind,
@@ -222,7 +221,7 @@ class GcsArtifactStorage:
     """
 
     # Shared storage dictionary when simulating multi-instance access across tests
-    _SHARED_STORE: dict[str, dict[str, tuple[ArtifactRecord, bytes]]] = {}
+    _SHARED_STORE: ClassVar[dict[str, dict[str, tuple[ArtifactRecord, bytes]]]] = {}
 
     def __init__(
         self,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,12 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent_service.artifact_storage import LocalFileArtifactStorage
-from agent_service.document_authorization import DocumentAccessDeniedError
 from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import FreshnessMetadata, utc_now
 from ai_ops_backoffice.evaluation_domain import (
-    ActiveReleasePointer,
-    CaseRevision,
     CriterionItem,
     EvaluationCriteria,
     EvaluationRunner,
@@ -27,16 +22,12 @@ from ai_ops_backoffice.evaluation_domain import (
     EvidenceItem,
     EvidenceRequirement,
     GateBlockedError,
-    GateDecision,
     GateEvaluator,
-    GatePolicy,
     InMemoryEvaluationRepository,
     InMemoryQualityGateRepository,
     ManifestResolver,
     ProvenanceSpec,
     QualityGateService,
-    RealRagAnswerAdapter,
-    RealRagRetrieverAdapter,
     TargetManifest,
 )
 from ai_ops_backoffice.routers.sources_router import register_sources_routes

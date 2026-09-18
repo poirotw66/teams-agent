@@ -180,6 +180,7 @@ def test_ensure_personal_policy_auto_provisioning(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_notification_dispatcher_teams_and_email(tmp_path: Path) -> None:
     import httpx
+
     from ai_ops_backoffice.notification_dispatcher import NotificationDispatcher
     from ai_ops_backoffice.settings import BackofficeSettings
 

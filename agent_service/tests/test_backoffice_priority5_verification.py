@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from governance_eval_helpers import release_eligible_lab_harness
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.contracts import OperationalEvent, utc_now
@@ -40,7 +41,6 @@ from ai_ops_backoffice.services.export_format import sanitize_csv_cell
 from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 from ai_ops_backoffice.sync_domain import InMemorySyncRepository, SyncService
-from governance_eval_helpers import release_eligible_lab_harness
 
 
 def _make_event(

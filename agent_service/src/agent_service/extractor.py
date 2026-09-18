@@ -32,35 +32,16 @@ from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import ConversationMessage, Issue, IssueExtraction
 from .execution_context import ExecutionContext
 from .extractor_heuristics import (
-    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
-    _COURTESY_ONLY_RE,
-    _DAZHOU_FAILURE_TERMS,
-    _DEVICE_TERMS,
-    _ESCALATION_PHRASES,
     _GENERIC_TICKET_DESCRIPTION,
-    _IT_DOC_TERMS,
-    _IT_SCOPE_KEYWORDS,
-    _IT_TARGET_KEYWORDS,
-    _MULTI_ISSUE_CONNECTOR_RE,
-    _POLICY_OR_META_QUESTION_MARKERS,
-    _READY_SYMPTOM_FAILURE_TERMS,
-    _READY_SYMPTOM_SYSTEM_TERMS,
     _SAFE_FALLBACK_DESCRIPTION_MAX_LEN,
-    _STANDALONE_HELPDESK_SIGNALS,
-    _SYSTEM_TERMS,
-    _TICKET_COMMAND_PUNCTUATION,
-    _TICKET_COMMAND_RE,
+    HUMAN_ESCALATION_ISSUE_DESCRIPTION,
     _can_skip_extractor_for_ready_symptom,
     _has_helpdesk_domain_evidence,
     _is_assistant_scope_question,
-    _is_courtesy_only,
     _is_generic_ticket_description,
     _is_generic_ticket_request,
     _is_human_escalation_request,
     _is_known_dazhou_issue,
-    _is_ready_known_it_symptom,
-    _looks_like_multi_issue_message,
-    _normalize_escalation_text,
     _normalize_known_it_terms,
     _strip_ticket_command,
     merge_pending_ticket_issues,
@@ -69,6 +50,22 @@ from .sanitize import sanitize_description
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
+
+# Compatibility re-exports: other modules historically import heuristics via extractor.
+__all__ = [
+    "FORBIDDEN_MISSING_INFO_TERMS",
+    "HUMAN_ESCALATION_ISSUE_DESCRIPTION",
+    "SYSTEM_PROMPT",
+    "_GENERIC_TICKET_DESCRIPTION",
+    "IssueExtractor",
+    "_has_helpdesk_domain_evidence",
+    "_is_assistant_scope_question",
+    "_is_generic_ticket_description",
+    "_is_generic_ticket_request",
+    "_is_human_escalation_request",
+    "_strip_ticket_command",
+    "merge_pending_ticket_issues",
+]
 
 
 # Terms that must never appear in a missingInfo follow-up question, per spec

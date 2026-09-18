@@ -1,31 +1,17 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import sys
 import threading
 import uuid
-from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
-
-from pydantic import BaseModel, ConfigDict, Field
-
-from agent_service.operations.access import ActorContext
-from agent_service.operations.masking import mask_text
+from typing import Any, Protocol
 
 from ..faq_domain.errors import (
-    FaqAuthorizationError,
-    FaqIdempotencyConflictError,
-    FaqNotFoundError,
-    FaqTransitionError,
     FaqVersionConflictError,
 )
-
-
 from .models import *  # noqa: F403
+
 
 class SyncRepository(Protocol):
     def load(self) -> SyncState: ...

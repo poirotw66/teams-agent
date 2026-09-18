@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import concurrent.futures
-import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +16,6 @@ from ai_ops_backoffice.evaluation_domain.errors import (
 )
 from ai_ops_backoffice.evaluation_domain.gate_models import (
     EvalSchedule,
-    GateDecision,
     GatePolicy,
     GatePolicyVersion,
 )
@@ -50,7 +49,6 @@ from ai_ops_backoffice.evaluation_domain.runner_models import (
 from ai_ops_backoffice.evaluation_domain.tool_fixture_models import ToolFixture
 from ai_ops_backoffice.evaluation_domain.tool_fixtures import (
     FileToolFixtureRepository,
-    ToolFixtureService,
 )
 from ai_ops_backoffice.settings import BackofficeSettings
 
@@ -487,7 +485,7 @@ class _MockFirestoreColl:
 
     def stream(self) -> list[_MockFirestoreSnapshot]:
         snaps = []
-        for (c, k), _ in self.store.items():
+        for c, k in self.store:
             if c == self.name:
                 snaps.append(_MockFirestoreDoc(k, self).get())
         return snaps
@@ -513,10 +511,7 @@ class _MockFirestoreColl:
                         continue
                     ok = True
                     for f, o, v in self.filters:
-                        if o == "==" and val.get(f) != v:
-                            ok = False
-                            break
-                        elif o == "in" and val.get(f) not in v:
+                        if o == "==" and val.get(f) != v or o == "in" and val.get(f) not in v:
                             ok = False
                             break
                     if ok:

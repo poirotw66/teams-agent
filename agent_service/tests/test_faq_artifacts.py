@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from test_backoffice_faq_domain import ActiveTaxonomy, AllowFaqAuthority, approve, content
+
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.faq_domain import FaqContent, FaqDomainService, InMemoryFaqRepository
 from ai_ops_backoffice.faq_domain.artifacts import write_faq_activation_artifact
-
-from test_backoffice_faq_domain import AllowFaqAuthority, ActiveTaxonomy, approve, content
 
 
 def test_activation_writes_versioned_faq_artifact_files(tmp_path: Path) -> None:

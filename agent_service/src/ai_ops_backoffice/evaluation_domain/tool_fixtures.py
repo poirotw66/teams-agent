@@ -3,9 +3,11 @@ from __future__ import annotations
 import sys
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .errors import EvaluationDomainError, EvaluationNotFoundError, EvaluationValidationError
+from .json_record_io import iter_json_models
 from .tool_fixture_models import (
     MockResponseSpec,
     ToolCallTrace,
@@ -77,23 +79,14 @@ class FileToolFixtureRepository(ToolFixtureRepository):
 
     def _sync_from_disk(self) -> None:
         with self._lock:
-            fixtures: dict[str, ToolFixture] = {}
-            for p in self._fixtures_dir.glob("*.json"):
-                try:
-                    f = ToolFixture.model_validate_json(p.read_text(encoding="utf-8"))
-                    fixtures[f.fixture_id] = f
-                except Exception:
-                    continue
-            self._fixtures = fixtures
-
-            versions: dict[tuple[str, int], ToolFixtureVersion] = {}
-            for p in self._versions_dir.glob("*.json"):
-                try:
-                    v = ToolFixtureVersion.model_validate_json(p.read_text(encoding="utf-8"))
-                    versions[(v.fixture_id, v.version)] = v
-                except Exception:
-                    continue
-            self._versions = versions
+            self._fixtures = {
+                fixture.fixture_id: fixture
+                for _, fixture in iter_json_models(self._fixtures_dir, ToolFixture)
+            }
+            self._versions = {
+                (version.fixture_id, version.version): version
+                for _, version in iter_json_models(self._versions_dir, ToolFixtureVersion)
+            }
 
     def _write_record_atomic(self, target: Path, content: str) -> None:
         import os

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 

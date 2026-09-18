@@ -28,9 +28,9 @@ from ai_ops_backoffice.bootstrap.ui import (
 )
 
 __all__ = [
-    "BackofficeContainer",
     "STATIC_DIR",
     "UI_ASSET_VERSION",
+    "BackofficeContainer",
     "build_backoffice_container",
     "build_budget_repository",
     "build_eval_prompt_resolver",

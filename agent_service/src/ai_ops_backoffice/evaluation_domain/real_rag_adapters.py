@@ -3,14 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from agent_service.documents import DocumentChunk
 from agent_service.retrieval import HybridIndex
+
 from .errors import EvaluationValidationError
 from .runner_models import TargetExecutionInput, TargetManifest
 from .tool_fixture_models import ToolCallTrace
@@ -28,8 +27,7 @@ def tokenize_cjk_and_words(text: str) -> list[str]:
 
     # Match CJK characters and form unigrams and bigrams
     cjk_chars = [ch for ch in text if "\u4e00" <= ch <= "\u9fff"]
-    for ch in cjk_chars:
-        tokens.append(ch)
+    tokens.extend(cjk_chars)
     for i in range(len(cjk_chars) - 1):
         tokens.append("".join(cjk_chars[i : i + 2]))
 

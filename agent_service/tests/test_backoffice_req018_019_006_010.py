@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
 from agent_service.operations.access import ActorContext
 from ai_ops_backoffice.example_domain import (
@@ -204,7 +203,7 @@ def test_req018_question_cluster_similarity_and_manual_annotation_preservation(t
     assert renamed_cluster["revision"] == 2
 
     # Subsequent cluster generation must not overwrite or duplicate the renamed cluster
-    regen_result = service.generate_clusters(actor=WRITER)
+    service.generate_clusters(actor=WRITER)
     active_clusters = [c for c in service.list_clusters(actor=WRITER) if c["status"] != "SUPERSEDED"]
     matching_renamed = [c for c in active_clusters if c["name"] == "IT｜VPN連線故障手動標註組"]
     assert len(matching_renamed) == 1

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -113,7 +111,7 @@ class EvaluationMigrationTool:
             tenants = {self._default_tenant}
 
         # 4. Hash reconciliation pre-check
-        source_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+        _source_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
         # 5. Commit to target repository if not dry run
         if not dry_run:
