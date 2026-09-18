@@ -9,14 +9,14 @@ from pathlib import Path
 
 from agent_service.documents import DocumentChunk, load_source_chunks
 from agent_service.knowledge_release_gcs import publish_release_directory
-from agent_service.release_artifacts import (
+from agent_service.retrieval import HybridIndex
+from knowledge_core.artifacts import INDEX_RELATIVE_PATH
+from knowledge_core.eligibility import is_generation_metadata_eligible
+from knowledge_core.release_artifacts import (
     KnowledgeReleaseValidationError,
     inspect_index_artifact,
     validate_release_artifacts,
 )
-from agent_service.retrieval import HybridIndex
-from knowledge_core.artifacts import INDEX_RELATIVE_PATH
-from knowledge_core.eligibility import is_generation_metadata_eligible
 from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
 
 from .draft_assets import DraftAssetStore

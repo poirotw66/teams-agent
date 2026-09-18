@@ -2,7 +2,6 @@
   "functions": {
     "agent_service/src/agent_service/deps.py::sync_knowledge_to_active_pointer": 100,
     "agent_service/src/agent_service/document_authorization.py::authorize_document_access": 128,
-    "agent_service/src/agent_service/documents.py::chunk_markdown": 110,
     "agent_service/src/agent_service/eval_agent_harness.py::_infer_route_and_behaviors": 97,
     "agent_service/src/agent_service/eval_agent_harness.py::aexecute": 92,
     "agent_service/src/agent_service/extractor.py::_postprocess": 83,
@@ -21,7 +20,6 @@
     "agent_service/src/agent_service/operations/emitter.py::build_turn_events": 206,
     "agent_service/src/agent_service/operations/freshness_store.py::load_firestore": 84,
     "agent_service/src/agent_service/operations/scope.py::filter_events_by_scope": 82,
-    "agent_service/src/agent_service/release_artifacts.py::_validate_production_governance": 91,
     "agent_service/src/agent_service/response_builder.py::build_response": 108,
     "agent_service/src/agent_service/routers/chat.py::chat_stream": 144,
     "agent_service/src/agent_service/routers/chat.py::events": 94,

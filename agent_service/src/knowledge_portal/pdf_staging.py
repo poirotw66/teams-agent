@@ -147,9 +147,13 @@ def build_gcs_pdf_staging_store(
             "is required for GCS PDF staging."
         )
     if client is None:
-        from agent_service.artifact_storage import build_gcs_storage_client
-
-        client = build_gcs_storage_client()
+        try:
+            from google.cloud import storage
+        except ImportError as exc:  # pragma: no cover - optional deployment dependency
+            raise RuntimeError(
+                "google-cloud-storage is required for GCS PDF staging."
+            ) from exc
+        client = storage.Client()
     return GcsPdfStagingStore(
         bucket_name=bucket,
         tenant_id=settings.default_tenant_id or "default",

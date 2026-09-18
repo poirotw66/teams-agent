@@ -1,6 +1,6 @@
 {
   "edges": {
     "ai_ops_backoffice->agent_service": 52,
-    "knowledge_portal->agent_service": 9
+    "knowledge_portal->agent_service": 5
   }
 }

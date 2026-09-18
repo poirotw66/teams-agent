@@ -184,7 +184,7 @@ def _custom_metadata(types: Any, entry: FileSearchReleaseEntry) -> list[Any]:
         ),
     }
     metadata = [types.CustomMetadata(key=key, string_value=value) for key, value in values.items()]
-    from agent_service.file_search_acl import upload_metadata_for
+    from knowledge_core.file_search_acl import upload_metadata_for
 
     acl_groups = [] if entry.allowed_groups == ("grp_public",) else list(entry.allowed_groups)
     metadata.extend(upload_metadata_for(acl_groups))

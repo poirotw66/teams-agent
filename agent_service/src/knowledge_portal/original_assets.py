@@ -15,9 +15,11 @@ import mimetypes
 import re
 import secrets
 import shutil
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any, TypeVar
+
+from knowledge_core.artifact_models import ArtifactKind
 
 from .draft_assets import normalize_upload_filename
 from .pdf_staging import OriginalStagingStore, build_gcs_pdf_staging_store
@@ -25,6 +27,17 @@ from .settings import PortalSettings
 
 _TOKEN_PATTERN = re.compile(r"^orig-[0-9a-f]{24}$")
 _T = TypeVar("_T")
+_GcsArtifactStorageProvider = Callable[[PortalSettings], Any]
+_gcs_artifact_storage_provider: _GcsArtifactStorageProvider | None = None
+
+
+def configure_gcs_artifact_storage_provider(
+    provider: _GcsArtifactStorageProvider | None,
+) -> None:
+    """Register composition-owned GCS storage factory for Portal dual-write."""
+
+    global _gcs_artifact_storage_provider
+    _gcs_artifact_storage_provider = provider
 
 
 def _run_coroutine_sync(coroutine: Coroutine[Any, Any, _T]) -> _T:
@@ -42,24 +55,18 @@ def _run_coroutine_sync(coroutine: Coroutine[Any, Any, _T]) -> _T:
 
 
 def build_portal_artifact_storage(settings: PortalSettings) -> Any | None:
-    """Build optional artifact storage for original-asset dual-write."""
+    """Build optional artifact storage for original-asset dual-write.
+
+    Local/file backends use ``knowledge_core`` storage. GCS storage must be
+    injected by composition (keeps Portal free of Agent GCS adapters).
+    """
     backend = (settings.artifact_storage_backend or "FILE").upper()
     if backend == "GCS":
-        from agent_service.artifact_storage import GcsArtifactStorage, build_gcs_storage_client
-
-        bucket = settings.artifact_gcs_bucket
-        if not bucket:
-            raise ValueError(
-                "KNOWLEDGE_PORTAL_ARTIFACT_GCS_BUCKET (or AI_OPS_ARTIFACT_GCS_BUCKET) "
-                "is required when artifact storage backend is GCS."
-            )
-        return GcsArtifactStorage(
-            bucket_name=bucket,
-            client=build_gcs_storage_client(),
-            allow_memory_fallback=False,
-        )
+        if _gcs_artifact_storage_provider is None:
+            return None
+        return _gcs_artifact_storage_provider(settings)
     if backend in {"FILE", "LOCAL"}:
-        from agent_service.artifact_storage import LocalFileArtifactStorage
+        from knowledge_core.artifact_ports import LocalFileArtifactStorage
 
         base = settings.artifact_storage_path or (
             (settings.original_assets_dir or settings.data_dir / "portal_originals") / "artifacts"
@@ -163,8 +170,6 @@ class OriginalAssetStore:
     ) -> str | None:
         if self._artifact_storage is None:
             return None
-        from agent_service.artifact_models import ArtifactKind
-
         artifact_id = f"art-{document_id}-{version_id}"
         tenant_id = self._settings.default_tenant_id or "default"
 

@@ -1,20 +1,54 @@
 """Shared knowledge contracts for Portal, Agent, and Backoffice.
 
 This package holds stable hashing, front-matter, release-gate, artifact-path,
-release-pointer, source-identity, eligibility, and chunking-profile helpers so
-Knowledge Portal (and later Backoffice) do not need to import Agent runtime
+release-pointer, source-identity, eligibility, chunking-profile, document-chunk,
+artifact-port, release-validator, and file-search ACL helpers so Knowledge
+Portal (and later Backoffice) do not need to import Agent runtime
 implementation modules for those concerns.
 """
 
 from __future__ import annotations
 
+from knowledge_core.artifact_models import (
+    ArtifactKind,
+    ArtifactRecord,
+    ArtifactScanStatus,
+)
+from knowledge_core.artifact_ports import (
+    ArtifactStorage,
+    LocalFileArtifactStorage,
+    sanitize_filename,
+)
 from knowledge_core.artifacts import INDEX_RELATIVE_PATH, MANIFEST_FILENAME
 from knowledge_core.chunking_profile import ChunkingProfile
+from knowledge_core.document_chunks import (
+    DocumentChunk,
+    DocumentImage,
+    DocumentMetadata,
+    chunk_markdown,
+    clean_markdown,
+    extract_images,
+    load_metadata,
+    load_source_chunks,
+)
 from knowledge_core.eligibility import (
     ACTIVE_CONTENT_STATE,
     is_generation_metadata_eligible,
 )
+from knowledge_core.file_search_acl import (
+    MAX_FILTER_GROUPS,
+    PUBLIC_GROUP_KEY,
+    filter_for,
+    group_metadata_key,
+    upload_metadata_for,
+)
 from knowledge_core.front_matter import parse_front_matter, strip_excluded_markdown
+from knowledge_core.release_artifacts import (
+    KnowledgeIndexArtifact,
+    KnowledgeReleaseValidationError,
+    inspect_index_artifact,
+    validate_release_artifacts,
+)
 from knowledge_core.release_gate import (
     ReleaseGateBlockedError,
     ReleaseGateChecker,
@@ -44,22 +78,45 @@ __all__ = [
     "ACTIVE_RELEASE_FILENAME",
     "INDEX_RELATIVE_PATH",
     "MANIFEST_FILENAME",
+    "MAX_FILTER_GROUPS",
+    "PUBLIC_GROUP_KEY",
+    "ArtifactKind",
+    "ArtifactRecord",
+    "ArtifactScanStatus",
+    "ArtifactStorage",
     "ChunkingProfile",
+    "DocumentChunk",
+    "DocumentImage",
+    "DocumentMetadata",
+    "KnowledgeIndexArtifact",
+    "KnowledgeReleaseValidationError",
+    "LocalFileArtifactStorage",
     "ReleaseGateBlockedError",
     "ReleaseGateChecker",
     "calculate_target_manifest_hash",
+    "chunk_markdown",
+    "clean_markdown",
+    "extract_images",
     "faq_version_gate_manifest",
     "faq_version_target_manifest_hash",
+    "filter_for",
+    "group_metadata_key",
+    "inspect_index_artifact",
     "is_generation_metadata_eligible",
     "knowledge_release_gate_manifest",
     "knowledge_release_target_manifest_hash",
+    "load_metadata",
+    "load_source_chunks",
     "make_source_ref_id",
     "parse_front_matter",
     "read_active_release_id",
     "release_index_path",
     "require_release_gate",
     "safe_source_path",
+    "sanitize_filename",
     "source_path_stem",
     "strip_excluded_markdown",
+    "upload_metadata_for",
+    "validate_release_artifacts",
     "write_active_release_pointer",
 ]
