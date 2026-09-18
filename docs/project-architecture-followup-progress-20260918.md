@@ -63,7 +63,11 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `export_service.py` 739 → 659: job model + ser/deser → `export_models.py`
 - `eval_runtime.py` 1018 → 562: runtime class → `eval_agent_runtime.py`,
   injection scoring → `eval_injection.py` (facade re-exports preserved)
-- Architecture baselines auto-tightened; focused draft/export/eval pytest green
+- `evaluation_domain/repository.py` 975 → 330: File adapter →
+  `file_evaluation_repository.py`, Firestore adapter →
+  `firestore_evaluation_repository.py`, mutation/diff helpers →
+  `firestore_evaluation_helpers.py` (public `repository` facade preserved)
+- Architecture baselines auto-tightened; focused draft/export/eval/repository pytest green
 
 ## Still open (goal continues)
 
@@ -74,7 +78,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E broader private-access / source query service polish | Mostly done for hotspot paths |
 | F canonical OpenAPI + generated TS client | First slice started: canonical Backoffice OpenAPI + TS schemas + CI freshness |
 | G independent frontend deliver + legacy removal | First slice started: bundle sync script + CI hash freshness gate |
-| H residual oversized domains | Continues (eval_runtime shrunk; more offenders remain) |
+| H residual oversized domains | Continues (eval_runtime + evaluation repository shrunk; more offenders remain) |
 
 Repository strategy unchanged: modular monorepo; no physical repo split yet.
 
