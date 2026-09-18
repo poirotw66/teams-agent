@@ -1,120 +1,30 @@
-"""Workflow node implementations for the issue processing subgraph."""
+"""Workflow node implementations for the issue processing subgraph.
+
+Public surface stays on ``IssueProcessingWorkflowMixin`` for graph wiring.
+Knowledge, ticket, and retrieval-probe helpers live in sibling modules.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 
 from .confirmation import TicketIntent
-from .contracts import AgentRequest, Citation, Issue, IssueResult, TicketDraft, UserContext
-from .execution_context import ExecutionContext, RequestDeadlineExceeded
-from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
+from .contracts import AgentRequest, Issue, IssueResult, UserContext
+from .execution_context import ExecutionContext
 from .faq import citation_for_faq
 from .knowledge import LlmCallCounter
-from .ticket import (
-    TicketServiceDisabledError,
-    TicketServiceError,
-    TicketServiceTimeout,
-    UntrustedRequesterError,
-    handoff_ticket_item_fallback,
-)
 from .workflow_helpers import AgentState
+from .workflow_issue_knowledge_ops import IssueKnowledgeOps
+from .workflow_issue_retrieval_probe import _retrieval_probe_is_answerable
+from .workflow_issue_ticket_ops import IssueTicketOps
 
 logger = logging.getLogger(__name__)
 
-_REQUESTED_FACET_MARKERS = (
-    "如何",
-    "哪些",
-    "什麼",
-    "列出",
-    "說明",
-    "原則",
-    "分流",
-    "時間",
-    "期限",
-    "內容",
-    "資料",
-    "規定",
-    "能支持",
-    "操作順序",
-    "操作方式",
-    "步驟",
-    "處理",
-)
+__all__ = ["IssueProcessingWorkflowMixin", "_retrieval_probe_is_answerable"]
 
 
-_BRANCHING_PATH_INDICATORS = (
-    "請先確認",
-    "視您的身分",
-    "若為不同",
-    "不同身分",
-    "端視",
-    "依據您的",
-    "視您所屬",
-    "若您是",
-    "如果您是",
-)
-_SCENARIO_CONFLICT_MARKERS = ("FAQ-001", "FAQ-002", "FAQ-003", "FAQ-004")
-
-
-def _retrieval_probe_is_answerable(
-    issue: Issue,
-    result: IssueResult,
-) -> bool:
-    if (
-        result.resultType != "KNOWLEDGE_ANSWERED"
-        or not result.sources
-        or result.terminalReason is not None
-    ):
-        return False
-
-    # 1. Answerability must be FULL or PARTIAL (or unspecified in test doubles)
-    if result.answerability not in ("FULL", "PARTIAL", None):
-        return False
-
-    # 2. When answerability is specified, must be backed by non-empty grounded claims
-    if result.answerability in ("FULL", "PARTIAL") and not result.claims:
-        return False
-
-    # 3. Single canonical source entity to avoid cross-source ambiguity
-    canonical_sources = {
-        source.canonicalSourceId or source.documentId or source.title
-        for source in result.sources
-        if (source.canonicalSourceId or source.documentId or source.title)
-    }
-    if len(canonical_sources) != 1:
-        return False
-
-    # 4. Requested facet must be covered in user's query or description
-    check_texts = [issue.description]
-    if result.retrievalTrace:
-        if result.retrievalTrace.rawUserUtterance:
-            check_texts.append(result.retrievalTrace.rawUserUtterance)
-        if result.retrievalTrace.resolvedIssueQuery:
-            check_texts.append(result.retrievalTrace.resolvedIssueQuery)
-
-    has_requested_facet = any(
-        marker in text
-        for text in check_texts
-        for marker in _REQUESTED_FACET_MARKERS
-    )
-    if not has_requested_facet:
-        return False
-
-    # 5. Missing info must not alter path (no conditional branching in answer)
-    answer_text = result.answer or ""
-    if any(indicator in answer_text for indicator in _BRANCHING_PATH_INDICATORS):
-        return False
-
-    # 6. No cross-scenario conflict in answer
-    matched_scenarios = [
-        marker for marker in _SCENARIO_CONFLICT_MARKERS if marker in answer_text
-    ]
-    return len(matched_scenarios) <= 1
-
-
-class IssueProcessingWorkflowMixin:
+class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
     """LangGraph nodes owned by the issue processing subgraph."""
 
     async def _process_issues(self, state: AgentState) -> dict:
@@ -190,6 +100,81 @@ class IssueProcessingWorkflowMixin:
                 issue_results.append(outcome)
         return {"issue_results": issue_results}
 
+    async def _handle_faq_route(
+        self,
+        issue: Issue,
+        *,
+        user: UserContext,
+        correlation_id: str,
+        counter: LlmCallCounter,
+        lock: asyncio.Lock,
+        agent_request: AgentRequest | None,
+        execution_context: ExecutionContext | None,
+    ) -> IssueResult:
+        entry = (
+            await asyncio.to_thread(
+                self.faq_service.get,
+                issue.faqKey,
+                tuple(user.groups),
+            )
+            if issue.faqKey
+            else None
+        )
+        if entry is not None:
+            # Spec §7.3: FAQ answer used VERBATIM. No LLM, no rewriting.
+            # Attach FAQ id/version as a citation so Judge can verify provenance.
+            return IssueResult(
+                issueId=issue.id,
+                resultType="FAQ_ANSWERED",
+                answer=entry.answer,
+                sources=[citation_for_faq(entry, include_evidence=True)],
+                backend="FAQ",
+                faqId=entry.id,
+                faqKey=entry.faqKey,
+                faqVersionId=entry.versionId,
+            )
+        # Miss or disabled entry falls back to KNOWLEDGE, never fails.
+        return await self._handle_knowledge(
+            issue,
+            user,
+            correlation_id,
+            counter,
+            lock,
+            agent_request=agent_request,
+            execution_context=execution_context,
+        )
+
+    async def _probe_need_more_info(
+        self,
+        issue: Issue,
+        *,
+        user: UserContext,
+        correlation_id: str,
+        counter: LlmCallCounter,
+        lock: asyncio.Lock,
+        agent_request: AgentRequest | None,
+        execution_context: ExecutionContext | None,
+    ) -> IssueResult:
+        probe = await self._handle_knowledge(
+            issue,
+            user,
+            correlation_id,
+            counter,
+            lock,
+            agent_request=agent_request,
+            execution_context=execution_context,
+        )
+        if _retrieval_probe_is_answerable(issue, probe):
+            return probe
+        return IssueResult(
+            issueId=issue.id,
+            resultType="NEED_MORE_INFO",
+            questions=issue.missingInfo,
+            backend=probe.backend,
+            terminalReason="CLARIFICATION_REQUIRED",
+            retrievalTrace=probe.retrievalTrace,
+        )
+
     async def _handle_issue(
         self,
         issue: Issue,
@@ -227,56 +212,23 @@ class IssueProcessingWorkflowMixin:
             )
 
         if issue.readiness == "NEED_MORE_INFO":
-            probe = await self._handle_knowledge(
+            return await self._probe_need_more_info(
                 issue,
-                user,
-                correlation_id,
-                counter,
-                lock,
+                user=user,
+                correlation_id=correlation_id,
+                counter=counter,
+                lock=lock,
                 agent_request=agent_request,
                 execution_context=execution_context,
             )
-            if _retrieval_probe_is_answerable(issue, probe):
-                return probe
-            return IssueResult(
-                issueId=issue.id,
-                resultType="NEED_MORE_INFO",
-                questions=issue.missingInfo,
-                backend=probe.backend,
-                terminalReason="CLARIFICATION_REQUIRED",
-                retrievalTrace=probe.retrievalTrace,
-            )
 
         if issue.route == "FAQ":
-            entry = (
-                await asyncio.to_thread(
-                    self.faq_service.get,
-                    issue.faqKey,
-                    tuple(user.groups),
-                )
-                if issue.faqKey
-                else None
-            )
-            if entry is not None:
-                # Spec §7.3: FAQ answer used VERBATIM. No LLM, no rewriting.
-                # Attach FAQ id/version as a citation so Judge can verify provenance.
-                return IssueResult(
-                    issueId=issue.id,
-                    resultType="FAQ_ANSWERED",
-                    answer=entry.answer,
-                    sources=[citation_for_faq(entry, include_evidence=True)],
-                    backend="FAQ",
-                    faqId=entry.id,
-                    faqKey=entry.faqKey,
-                    faqVersionId=entry.versionId,
-                )
-            # Miss or disabled entry falls back to KNOWLEDGE, never fails.
-            return await self._handle_knowledge(
+            return await self._handle_faq_route(
                 issue,
-                user,
-                correlation_id,
-                counter,
-                lock,
+                user=user,
+                correlation_id=correlation_id,
+                counter=counter,
+                lock=lock,
                 agent_request=agent_request,
                 execution_context=execution_context,
             )
@@ -300,280 +252,3 @@ class IssueProcessingWorkflowMixin:
         # Defensive fallback: NOT_IT issues are filtered out before this
         # point (Filter IT Issues node), so this should be unreachable.
         return IssueResult(issueId=issue.id, resultType="FAILED", error="unexpected_route")
-
-    def _governed_answer_model(self) -> object | None:
-        runtime = getattr(self, "governance_runtime", None)
-        resolve = getattr(runtime, "resolve_model", None)
-        cache = getattr(runtime, "chat_model_for", None)
-        if resolve is None or cache is None:
-            return None
-        try:
-            resolved = resolve(config_id="rag-answer-model")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Answer model lookup failed (%s); using startup model",
-                type(exc).__name__,
-            )
-            return None
-        try:
-            return cache(resolved)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Answer model build failed (%s); using startup model",
-                type(exc).__name__,
-            )
-            return None
-
-    async def _handle_knowledge(
-        self,
-        issue: Issue,
-        user: UserContext,
-        correlation_id: str,
-        counter: LlmCallCounter,
-        lock: asyncio.Lock,
-        *,
-        agent_request: AgentRequest | None = None,
-        execution_context: ExecutionContext | None = None,
-    ) -> IssueResult:
-        if issue.description == HUMAN_ESCALATION_ISSUE_DESCRIPTION:
-            return IssueResult(
-                issueId=issue.id,
-                resultType="NO_KNOWLEDGE",
-                backend="ESCALATION",
-            )
-
-        async with lock:
-            deadline_exceeded = False
-            if execution_context is not None:
-                try:
-                    execution_context.ensure_deadline()
-                except RequestDeadlineExceeded:
-                    deadline_exceeded = True
-                budget_exceeded = execution_context.budget_remaining() <= 0
-            else:
-                budget_exceeded = counter.count >= self.settings.max_llm_calls_per_request
-
-        if budget_exceeded or deadline_exceeded:
-            # Spec §16: stop making further LLM calls and degrade gracefully
-            # rather than raising.
-            backend = "DEADLINE_EXCEEDED" if deadline_exceeded else "BUDGET_EXCEEDED"
-            logger.warning(
-                "LLM guard tripped, degrading issue to NO_KNOWLEDGE: "
-                "issue_id=%s backend=%s correlation_id=%s",
-                issue.id,
-                backend,
-                correlation_id,
-            )
-            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE", backend=backend)
-
-        search_kwargs: dict[str, object] = {
-            "correlation_id": correlation_id,
-        }
-        if self._knowledge_supports_counter:
-            search_kwargs["call_counter"] = counter
-        if (
-            execution_context is not None
-            and "execution_context" in inspect.signature(self.knowledge_service.search).parameters
-        ):
-            search_kwargs["execution_context"] = execution_context
-        if (
-            agent_request is not None
-            and "request" in inspect.signature(self.knowledge_service.search).parameters
-        ):
-            search_kwargs["request"] = agent_request
-        answer_model = self._governed_answer_model()
-        if (
-            answer_model is not None
-            and "answer_model" in inspect.signature(self.knowledge_service.search).parameters
-        ):
-            search_kwargs["answer_model"] = answer_model
-        result = await self.knowledge_service.search(
-            issue.description,
-            user,
-            **search_kwargs,
-        )
-        if not self._knowledge_supports_counter:
-            async with lock:
-                counter.increment()
-
-        if result.found:
-            return IssueResult(
-                issueId=issue.id,
-                resultType="KNOWLEDGE_ANSWERED",
-                answer=result.answer,
-                sources=result.sources,
-                images=result.images,
-                backend=result.backend,
-                terminalReason=result.terminalReason,
-                retrievalTrace=result.retrievalTrace,
-                answerability=result.answerability,
-                claims=result.claims,
-                policyAdvisories=result.policyAdvisories,
-                unknowns=result.unknowns,
-            )
-        return IssueResult(
-            issueId=issue.id,
-            resultType="NO_KNOWLEDGE",
-            backend=result.backend,
-            terminalReason=result.terminalReason,
-            retrievalTrace=result.retrievalTrace,
-        )
-
-    async def _handle_ticket(
-        self,
-        issue: Issue,
-        *,
-        user: UserContext,
-        correlation_id: str,
-        lock: asyncio.Lock,
-        ticket_created: dict,
-        ticket_intent: TicketIntent,
-        ticket_body: str | None = None,
-        handoff_confirmed: bool = False,
-        request_id: str | None = None,
-        tenant_id: str | None = None,
-        agent_request: AgentRequest | None = None,
-        idempotency_key: str | None = None,
-        execution_context: ExecutionContext | None = None,
-    ) -> IssueResult:
-        if ticket_intent == TicketIntent.QUERY:
-            return await self._query_tickets(issue, user, correlation_id)
-        if ticket_intent != TicketIntent.CREATE:
-            return IssueResult(issueId=issue.id, resultType="NO_KNOWLEDGE")
-
-        requester_id = user.entraObjectId or user.teamsUserId or ""
-        if request_id:
-            deduped = await self._deduped_ticket_result(
-                issue=issue,
-                request_id=request_id,
-                tenant_id=tenant_id,
-                correlation_id=correlation_id,
-                ticket_service=self.ticket_service,
-                requester_id=requester_id,
-            )
-            if deduped is not None:
-                return deduped
-
-        # Spec §11.4: identity must come ONLY from the trusted Teams/Entra
-        # context, never from the user's free text.
-        if not user.is_trusted_for_ticket:
-            logger.warning(
-                "Ticket creation refused: untrusted requester identity. "
-                "issue_id=%s correlation_id=%s",
-                issue.id,
-                correlation_id,
-            )
-            return IssueResult(issueId=issue.id, resultType="FAILED", error="untrusted_requester")
-
-        # Spec §11.5: at most one ticket created per turn.
-        async with lock:
-            if ticket_created["done"]:
-                allowed = False
-            else:
-                ticket_created["done"] = True
-                allowed = True
-        if not allowed:
-            logger.info(
-                "Ticket creation skipped: one-ticket-per-turn limit already reached. "
-                "issue_id=%s correlation_id=%s",
-                issue.id,
-                correlation_id,
-            )
-            return IssueResult(issueId=issue.id, resultType="FAILED", error="ticket_limit_per_turn")
-
-        try:
-            items = await self.ticket_service.get_ticket_items(correlation_id=correlation_id)
-        except TicketServiceDisabledError:
-            return IssueResult(
-                issueId=issue.id, resultType="FAILED", error="ticket_service_disabled"
-            )
-        except (TicketServiceTimeout, TicketServiceError) as exc:
-            return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
-
-        if handoff_confirmed:
-            selected_item = handoff_ticket_item_fallback(items)
-            selection_reason = "handoff_fallback" if selected_item else None
-        else:
-            selected_item = None
-            selection_reason = None
-        if selected_item is None:
-            selection = await self.ticket_item_selector.select(
-                items=items,
-                issue_description=issue.description,
-                execution_context=execution_context,
-            )
-            selected_item = selection.item
-            selection_reason = selection.reason
-        if selected_item is not None and selection_reason == "handoff_fallback":
-            logger.info(
-                "Handoff ticket creation used catalog fallback: item_id=%s correlation_id=%s",
-                selected_item.id,
-                correlation_id,
-            )
-        if selected_item is None:
-            if selection_reason in {"model_unavailable", "model_error"}:
-                question = (
-                    "目前無法判定適用的派工單類別；已保留案件內容，請稍後重試或聯絡線上客服。"
-                )
-            else:
-                question = (
-                    "目前無法從可用派工單類別判定最適合的一項；"
-                    "請補充與目前案件最相關的系統、功能或錯誤訊息。"
-                )
-            return IssueResult(
-                issueId=issue.id,
-                resultType="NEED_MORE_INFO",
-                questions=[question],
-            )
-        draft = TicketDraft(
-            requesterId=requester_id,
-            requesterName=user.displayName or "",
-            requesterEmail=user.email or "",
-            title=issue.description[:120],
-            description=(ticket_body or issue.description),
-            ticketItemId=selected_item.id,
-        )
-        try:
-            ticket = await self.ticket_service.create_ticket(
-                draft,
-                correlation_id=correlation_id,
-                idempotency_key=idempotency_key,
-            )
-        except TicketServiceDisabledError:
-            return IssueResult(
-                issueId=issue.id, resultType="FAILED", error="ticket_service_disabled"
-            )
-        except UntrustedRequesterError:
-            return IssueResult(issueId=issue.id, resultType="FAILED", error="untrusted_requester")
-        except (TicketServiceTimeout, TicketServiceError) as exc:
-            return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
-
-        if request_id and ticket.id:
-            await self.ticket_request_dedupe.put(tenant_id, request_id, ticket.id)
-
-        sources = [Citation(title=f"{ticket.title} ({ticket.status})", url=ticket.url)]
-        return IssueResult(
-            issueId=issue.id, resultType="TICKET_CREATED", ticketId=ticket.id, sources=sources
-        )
-
-    async def _query_tickets(
-        self, issue: Issue, user: UserContext, correlation_id: str
-    ) -> IssueResult:
-        # Spec §17: never allow querying another user's tickets — always
-        # scope strictly to the trusted current-user id.
-        requester_id = user.entraObjectId or user.teamsUserId
-        if not requester_id:
-            return IssueResult(issueId=issue.id, resultType="FAILED", error="untrusted_requester")
-        try:
-            tickets = await self.ticket_service.list_tickets_by_requester(
-                requester_id, correlation_id=correlation_id
-            )
-        except TicketServiceDisabledError:
-            return IssueResult(
-                issueId=issue.id, resultType="FAILED", error="ticket_service_disabled"
-            )
-        except (TicketServiceTimeout, TicketServiceError) as exc:
-            return IssueResult(issueId=issue.id, resultType="FAILED", error=str(exc)[:300])
-
-        sources = [Citation(title=f"{t.title} ({t.status})", url=t.url) for t in tickets]
-        return IssueResult(issueId=issue.id, resultType="TICKET_FOUND", sources=sources)
