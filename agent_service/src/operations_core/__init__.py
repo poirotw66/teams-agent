@@ -1,8 +1,8 @@
 """Shared operations contracts used by Agent, Backoffice, and Portal.
 
-This package holds stable access, audit, authorization, event, masking, and
-scope predicates so Backoffice and Portal do not need to import Agent runtime
-implementation modules for those concerns.
+This package holds stable access, audit, authorization, event, masking,
+security-policy catalog, and scope predicates so Backoffice and Portal do not
+need to import Agent runtime implementation modules for those concerns.
 """
 
 from __future__ import annotations
@@ -41,6 +41,13 @@ from operations_core.scope import (
     owner_unit_for_event,
     tenant_allows_event,
 )
+from operations_core.security_policies import (
+    SECURITY_POLICIES,
+    SecurityPolicy,
+    is_policy_id,
+    known_policy_ids_in_text,
+    policy_ids_in_text,
+)
 
 __all__ = [
     "CAPABILITIES",
@@ -49,6 +56,7 @@ __all__ = [
     "DEFAULT_TIMEZONE",
     "LOCAL_SANDBOX_TENANTS",
     "MASKING_POLICY_VERSION",
+    "SECURITY_POLICIES",
     "ActorContext",
     "AuditWriteError",
     "BackofficeRole",
@@ -58,6 +66,7 @@ __all__ = [
     "MaskingRulePack",
     "OperationalEvent",
     "OperationalEventType",
+    "SecurityPolicy",
     "TaxonomyLookup",
     "TaxonomyOwnerUnit",
     "actor_bypasses_owner_unit_scope",
@@ -66,8 +75,11 @@ __all__ = [
     "ensure_document_access",
     "event_in_actor_scope",
     "filter_events_by_scope",
+    "is_policy_id",
+    "known_policy_ids_in_text",
     "mask_text",
     "owner_unit_for_event",
+    "policy_ids_in_text",
     "redact_secrets",
     "resolve_masking_pack",
     "tenant_allows_event",

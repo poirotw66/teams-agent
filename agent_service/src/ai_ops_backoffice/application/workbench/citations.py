@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol
 
-from agent_service.security_policies import SECURITY_POLICIES, known_policy_ids_in_text
+from operations_core.security_policies import SECURITY_POLICIES, known_policy_ids_in_text
 
 
 class SourceExcerptResolver(Protocol):

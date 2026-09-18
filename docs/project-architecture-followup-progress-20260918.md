@@ -20,9 +20,13 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `knowledge_core`: release gate/pointers, target manifest, front-matter, artifacts,
   chunking profile, eligibility, document chunks/layout, artifact ports, File Search ACL.
 - Portal ports + composition Agent adapters → **Portal→Agent = 0**.
-- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24 → 20 → 18**.
+- Backoffice→Agent importer files **107 → 52 → 32 → 28 → 24 → 20 → 18 → 17**.
 - Scope event filtering (`filter_events_by_scope` + helpers) + `TaxonomyLookup`
   Protocol live in `operations_core`; Agent `operations.scope` is a facade.
+- Security-policy catalog + marker matching (`SECURITY_POLICIES`,
+  `known_policy_ids_in_text`) live in `operations_core`; Agent
+  `security_policies` keeps Citation / advisory builders as a facade.
+  Workbench `citations.py` retargeted off Agent.
 
 ### Phase E — Application / persistence boundaries
 - Workbench JSON store; public query/source/export/policy accessors; AST private-access gate.
@@ -41,7 +45,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 
 | Phase | Status |
 |---|---|
-| D Backoffice→Agent (18 files) | In progress — remaining: audit/taxonomy/stores, eval/graph wiring, artifacts, prompts |
+| D Backoffice→Agent (17 files) | In progress — remaining: audit/taxonomy/stores, eval/graph wiring, artifacts, prompts |
 | D Portal→Agent | **Done (0)** |
 | E polish beyond hotspot paths | Mostly done |
 | F full TS client + DTO migration | First slice done |
@@ -51,5 +55,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 Repository strategy: modular monorepo; no physical repo split.
 
 Current ownership importer caps:
-- `ai_ops_backoffice→agent_service`: **18**
+- `ai_ops_backoffice→agent_service`: **17**
 - `knowledge_portal→agent_service`: **0**
