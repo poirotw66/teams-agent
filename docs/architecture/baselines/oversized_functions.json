@@ -68,8 +68,6 @@
     "agent_service/src/ai_ops_backoffice/services/query_feedback.py::faq_performance": 99,
     "agent_service/src/ai_ops_backoffice/services/query_feedback.py::list_feedback": 103,
     "agent_service/src/ai_ops_backoffice/services/query_helpers.py::_summarize_turn_events": 168,
-    "agent_service/src/ai_ops_backoffice/services/query_knowledge.py::document_performance": 144,
-    "agent_service/src/ai_ops_backoffice/services/query_knowledge.py::list_documents": 88,
     "agent_service/src/ai_ops_backoffice/services/query_operations.py::operations_summary": 273,
     "agent_service/src/ai_ops_backoffice/services/query_service.py::__init__": 142,
     "agent_service/src/ai_ops_backoffice/services/usage_projection.py::_detail_events_from_summary": 101,

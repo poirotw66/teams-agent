@@ -4,48 +4,34 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections import Counter
 from typing import Any
-
-import httpx
 
 from operations_core.access import ActorContext
 from operations_core.contracts import OperationalEvent
 
 from ..knowledge_bridge.delegation import DELEGATION_HEADER, issue_delegation_envelope
-from .query_helpers import _is_published_knowledge_hit
+from .query_knowledge_docs_ops import (
+    build_document_inventory_item,
+    build_document_performance_payload,
+    filter_documents_by_format,
+    paginate_documents,
+)
+from .query_knowledge_portal_ops import (
+    fetch_active_release_document_ids,
+    fetch_document_governance,
+    fetch_document_inventory,
+)
+from .query_knowledge_status import (
+    _derive_index_status,
+    _normalize_format_type,
+    normalize_format_type,
+)
 
-
-def _normalize_format_type(raw: str | None) -> str:
-    value = str(raw or "UNKNOWN").upper()
-    if value == "PDF":
-        return "PDF"
-    if value.startswith("MARKDOWN"):
-        return "MARKDOWN"
-    return value or "UNKNOWN"
-
-
-def _derive_index_status(
-    *,
-    lifecycle_status: str | None,
-    has_published_version: bool,
-    parse_status: str,
-    indexed_document_ids: set[str] | None,
-    document_id: str,
-) -> str:
-    """Return RAG index status distinct from document lifecycle."""
-    lifecycle = str(lifecycle_status or "").upper()
-    if not has_published_version:
-        return "NOT_INDEXED"
-    if parse_status != "READY":
-        return "NOT_PARSED"
-    if indexed_document_ids is None:
-        # Portal release probe unavailable: published+parsed is treated as indexed
-        # for local/single-node setups where publish activates the release.
-        return "INDEXED" if lifecycle == "PUBLISHED" else "PENDING_INDEX"
-    if document_id in indexed_document_ids:
-        return "INDEXED"
-    return "PENDING_INDEX"
+__all__ = [
+    "KnowledgeQueryMixin",
+    "_derive_index_status",
+    "_normalize_format_type",
+]
 
 
 class KnowledgeQueryMixin:
@@ -93,6 +79,11 @@ class KnowledgeQueryMixin:
             )
         return headers
 
+    def _portal_base_url(self) -> str:
+        return (
+            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
+        ).rstrip("/")
+
     async def document_performance(
         self,
         actor: ActorContext,
@@ -114,130 +105,20 @@ class KnowledgeQueryMixin:
             end_date=end_date,
         )
         events = await self._scoped_events(actor, period, force_refresh=force_refresh)
-        all_hits = [
-            event
-            for event in events
-            if event.event_type in {"knowledge.retrieved", "knowledge.answered"}
-            and _is_published_knowledge_hit(event)
-            and (
-                event.payload.get("documentId") == document_id
-                or any(
-                    citation.get("documentId") == document_id
-                    for citation in (event.payload.get("citations") or [])
-                    if isinstance(citation, dict)
-                )
-            )
-        ]
-        hit_conversations = {event.conversation_id for event in all_hits if event.conversation_id}
-        hit_correlations = {event.correlation_id for event in all_hits if event.correlation_id}
-        hit_turns = {event.turn_id for event in all_hits if event.turn_id}
-
-        feedback_events = [
-            event
-            for event in events
-            if event.event_type == "feedback.recorded"
-            and (
-                (event.correlation_id and event.correlation_id in hit_correlations)
-                or (event.turn_id and event.turn_id in hit_turns)
-                or (not event.correlation_id and not event.turn_id and event.conversation_id in hit_conversations)
-            )
-        ]
-        issue_counts = Counter(
-            event.issue_type_id or "other.unclassified"
-            for event in all_hits
-            if event.issue_type_id
+        governance = await self._fetch_document_governance(
+            document_id,
+            indexed_document_ids=await self._fetch_active_release_document_ids(),
         )
-        release_counts = Counter(
-            str(event.payload.get("releaseId"))
-            for event in all_hits
-            if event.payload.get("releaseId")
+        return build_document_performance_payload(
+            document_id=document_id,
+            period=period,
+            events=events,
+            taxonomy=self.taxonomy,
+            issue_type_id=issue_type_id,
+            limit=limit,
+            cursor=cursor,
+            governance=governance,
         )
-        up = sum(1 for event in feedback_events if event.payload.get("rating") == "UP")
-        down = sum(1 for event in feedback_events if event.payload.get("rating") == "DOWN")
-        issue_distribution = []
-        for itype_id, count in issue_counts.most_common():
-            record = self.taxonomy.get(itype_id)
-            issue_distribution.append(
-                {
-                    "issueTypeId": itype_id,
-                    "displayName": record.display_name if record else itype_id,
-                    "count": count,
-                }
-            )
-
-        filtered_hits = (
-            [h for h in all_hits if h.issue_type_id == issue_type_id]
-            if issue_type_id
-            else all_hits
-        )
-        sorted_hits = sorted(filtered_hits, key=lambda item: item.occurred_at, reverse=True)
-        start_idx = int(cursor) if cursor and cursor.isdigit() else 0
-        page_hits = sorted_hits[start_idx : start_idx + limit]
-        next_cursor = (
-            str(start_idx + len(page_hits))
-            if start_idx + len(page_hits) < len(sorted_hits)
-            else None
-        )
-
-        hit_records = [
-            {
-                "occurredAt": event.occurred_at.isoformat(),
-                "conversationId": event.conversation_id,
-                "correlationId": event.correlation_id,
-                "turnId": event.turn_id,
-                "chunkId": event.payload.get("chunkId"),
-                "releaseId": event.payload.get("releaseId"),
-                "issueTypeId": event.issue_type_id,
-                "issueTypeDisplayName": (
-                    self.taxonomy.get(event.issue_type_id).display_name
-                    if event.issue_type_id and self.taxonomy.get(event.issue_type_id)
-                    else event.issue_type_id
-                ),
-            }
-            for event in page_hits
-        ]
-
-        recent_hits = [
-            {
-                "occurredAt": event.occurred_at.isoformat(),
-                "conversationId": event.conversation_id,
-                "correlationId": event.correlation_id,
-                "chunkId": event.payload.get("chunkId"),
-                "releaseId": event.payload.get("releaseId"),
-                "issueTypeId": event.issue_type_id,
-            }
-            for event in sorted(all_hits, key=lambda item: item.occurred_at, reverse=True)[:10]
-        ]
-
-        return {
-            "documentId": document_id,
-            "periodDays": period.days,
-            "periodPreset": period.preset,
-            "startAt": period.start_at.isoformat(),
-            "endAt": period.end_at.isoformat(),
-            "hitCount": len(all_hits),
-            "conversationCount": len(hit_conversations),
-            "positiveFeedbackCount": up,
-            "negativeFeedbackCount": down,
-            "issueTypeDistribution": issue_distribution,
-            "releaseAttribution": [
-                {"releaseId": release_id, "hitCount": count}
-                for release_id, count in release_counts.most_common()
-            ],
-            "totalHits": len(filtered_hits),
-            "hits": hit_records,
-            "recentHits": recent_hits,
-            "cursor": str(start_idx),
-            "nextCursor": next_cursor,
-            "hasMore": next_cursor is not None,
-            "limit": limit,
-            "filterIssueTypeId": issue_type_id,
-            "governance": await self._fetch_document_governance(
-                document_id,
-                indexed_document_ids=await self._fetch_active_release_document_ids(),
-            ),
-        }
-
 
     async def list_documents(
         self,
@@ -265,39 +146,19 @@ class KnowledgeQueryMixin:
             if actor.allows_owner_unit(document.get("owner_unit_id"))
         ]
         indexed_document_ids = await self._fetch_active_release_document_ids()
-        format_needle = _normalize_format_type(format_type) if format_type else None
-
-        if format_needle and format_needle != "UNKNOWN":
-            governance_all = await asyncio.gather(
-                *(
-                    self._fetch_document_governance(
-                        str(document["document_id"]),
-                        indexed_document_ids=indexed_document_ids,
-                    )
-                    for document in documents
-                )
-            )
-            paired = [
-                (document, governance)
-                for document, governance in zip(documents, governance_all, strict=True)
-                if _normalize_format_type(governance.get("formatType")) == format_needle
-            ]
-            documents = [document for document, _ in paired]
-            governance_by_id = {
-                str(document["document_id"]): governance for document, governance in paired
-            }
-        else:
-            governance_by_id = None
-
-        documents.sort(key=lambda item: str(item.get("document_id") or ""))
+        format_needle = normalize_format_type(format_type) if format_type else None
+        documents, governance_by_id = await filter_documents_by_format(
+            documents,
+            format_needle=format_needle,
+            fetch_governance=self._fetch_document_governance,
+            indexed_document_ids=indexed_document_ids,
+        )
         total = len(documents)
-        if cursor:
-            documents = [
-                document
-                for document in documents
-                if str(document.get("document_id") or "") > cursor
-            ]
-        page = documents[:limit]
+        _remaining, page, next_cursor = paginate_documents(
+            documents,
+            cursor=cursor,
+            limit=limit,
+        )
         if governance_by_id is None:
             governance = await asyncio.gather(
                 *(
@@ -314,9 +175,6 @@ class KnowledgeQueryMixin:
             self._document_inventory_item(document, governance_item, events)
             for document, governance_item in zip(page, governance, strict=True)
         ]
-        next_cursor = None
-        if len(documents) > limit and page:
-            next_cursor = str(page[-1]["document_id"])
         return {
             "items": items,
             "total": total,
@@ -328,76 +186,13 @@ class KnowledgeQueryMixin:
             "filterFormatType": format_needle,
         }
 
-
     def _document_inventory_item(
         self,
         document: dict[str, Any],
         governance: dict[str, Any],
         events: list[OperationalEvent],
     ) -> dict[str, Any]:
-        document_id = str(document["document_id"])
-        hits = [
-            event
-            for event in events
-            if event.event_type in {"knowledge.retrieved", "knowledge.answered"}
-            and _is_published_knowledge_hit(event)
-            and (
-                event.payload.get("documentId") == document_id
-                or any(
-                    citation.get("documentId") == document_id
-                    for citation in (event.payload.get("citations") or [])
-                    if isinstance(citation, dict)
-                )
-            )
-        ]
-        hit_conversations = {event.conversation_id for event in hits if event.conversation_id}
-        hit_correlations = {event.correlation_id for event in hits if event.correlation_id}
-        hit_turns = {event.turn_id for event in hits if event.turn_id}
-        feedback = [
-            event
-            for event in events
-            if event.event_type == "feedback.recorded"
-            and (
-                (event.correlation_id and event.correlation_id in hit_correlations)
-                or (event.turn_id and event.turn_id in hit_turns)
-                or (not event.correlation_id and not event.turn_id and event.conversation_id in hit_conversations)
-            )
-        ]
-        issue_counts = Counter(
-            event.issue_type_id or "other.unclassified"
-            for event in hits
-        )
-        return {
-            "documentId": document_id,
-            "title": document.get("title"),
-            "summary": document.get("summary"),
-            "ownerUnitId": document.get("owner_unit_id"),
-            "lifecycleStatus": document.get("status"),
-            "formatType": governance.get("formatType", "UNKNOWN"),
-            "formatFamily": governance.get(
-                "formatFamily",
-                _normalize_format_type(governance.get("formatType")),
-            ),
-            "parseStatus": governance.get("parseStatus", "UNKNOWN"),
-            "indexStatus": governance.get("indexStatus", "UNKNOWN"),
-            "currentPublishedVersionId": document.get("current_published_version_id"),
-            "draftVersionId": document.get("draft_version_id"),
-            "updatedAt": document.get("updated_at"),
-            "portalUrl": governance.get("portalUrl"),
-            "hitCount": len(hits),
-            "conversationCount": len(hit_conversations),
-            "positiveFeedbackCount": sum(
-                1 for event in feedback if event.payload.get("rating") == "UP"
-            ),
-            "negativeFeedbackCount": sum(
-                1 for event in feedback if event.payload.get("rating") == "DOWN"
-            ),
-            "issueTypeDistribution": [
-                {"issueTypeId": issue_type_id, "count": count}
-                for issue_type_id, count in issue_counts.most_common()
-            ],
-        }
-
+        return build_document_inventory_item(document, governance, events)
 
     async def _fetch_document_inventory(
         self,
@@ -406,73 +201,23 @@ class KnowledgeQueryMixin:
         owner_unit_id: str | None,
         query: str | None,
     ) -> dict[str, Any]:
-        portal_url = (
-            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
-        ).rstrip("/")
+        portal_url = self._portal_base_url()
         headers = await self._portal_headers(portal_url)
-        params = {
-            key: value
-            for key, value in {
-                "status": status,
-                "owner_unit_id": owner_unit_id,
-                "query": query,
-            }.items()
-            if value
-        }
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(
-                    f"{portal_url}/api/documents",
-                    headers=headers,
-                    params=params,
-                )
-            if response.status_code >= 400:
-                return {
-                    "status": "unavailable",
-                    "items": [],
-                    "warning": f"Portal returned HTTP {response.status_code}",
-                }
-            payload = response.json()
-            items = payload.get("items") or []
-            return {
-                "status": "available",
-                "items": [item for item in items if isinstance(item, dict)],
-            }
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            return {"status": "unavailable", "items": [], "warning": str(exc)}
-
+        return await fetch_document_inventory(
+            portal_url=portal_url,
+            headers=headers,
+            status=status,
+            owner_unit_id=owner_unit_id,
+            query=query,
+        )
 
     async def _fetch_active_release_document_ids(self) -> set[str] | None:
-        portal_url = (
-            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
-        ).rstrip("/")
+        portal_url = self._portal_base_url()
         headers = await self._portal_headers(portal_url)
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(
-                    f"{portal_url}/api/releases",
-                    headers=headers,
-                )
-            if response.status_code >= 400:
-                return None
-            payload = response.json()
-            releases = payload.get("items") if isinstance(payload, dict) else payload
-            releases = [item for item in (releases or []) if isinstance(item, dict)]
-            active = next(
-                (item for item in releases if item.get("status") == "ACTIVE"),
-                None,
-            )
-            if active is None:
-                return set()
-            manifest = active.get("manifest") or []
-            return {
-                str(entry.get("document_id"))
-                for entry in manifest
-                if isinstance(entry, dict) and entry.get("document_id")
-            }
-        except Exception:
-            # Release probe is best-effort; inventory must still render.
-            return None
+        return await fetch_active_release_document_ids(
+            portal_url=portal_url,
+            headers=headers,
+        )
 
     async def _fetch_document_governance(
         self,
@@ -480,63 +225,11 @@ class KnowledgeQueryMixin:
         *,
         indexed_document_ids: set[str] | None = None,
     ) -> dict[str, Any]:
-        portal_url = (
-            self._settings.knowledge_internal_url or self._settings.knowledge_portal_url
-        ).rstrip("/")
+        portal_url = self._portal_base_url()
         headers = await self._portal_headers(portal_url)
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(
-                    f"{portal_url}/api/documents/{document_id}",
-                    headers=headers,
-                )
-            if response.status_code == 404:
-                return {"status": "not_found", "portalUrl": portal_url}
-            if response.status_code >= 400:
-                return {
-                    "status": "unavailable",
-                    "portalUrl": portal_url,
-                    "note": f"Portal returned HTTP {response.status_code}",
-                }
-            payload = response.json()
-            document = payload.get("document") or {}
-            published = payload.get("published_version") or {}
-            draft = payload.get("draft_version") or {}
-            raw_format = published.get("source_type") or draft.get("source_type") or "UNKNOWN"
-            format_type = _normalize_format_type(raw_format)
-            # Preserve original source label for display while normalizing family.
-            display_format = "PDF" if str(raw_format).upper() == "PDF" else str(raw_format or "UNKNOWN")
-            parse_status = (
-                "READY"
-                if (published.get("parse_preview") or draft.get("parse_preview"))
-                else "NOT_PARSED"
-            )
-            has_published = bool(
-                document.get("current_published_version_id") or published.get("version_id")
-            )
-            index_status = _derive_index_status(
-                lifecycle_status=document.get("status"),
-                has_published_version=has_published,
-                parse_status=parse_status,
-                indexed_document_ids=indexed_document_ids,
-                document_id=document_id,
-            )
-            return {
-                "status": "available",
-                "portalUrl": f"{portal_url}/#document/{document_id}",
-                "lifecycleStatus": document.get("status"),
-                "formatType": display_format if display_format != "UNKNOWN" else format_type,
-                "formatFamily": format_type,
-                "parseStatus": parse_status,
-                "indexStatus": index_status,
-                "currentPublishedVersionId": document.get("current_published_version_id"),
-                "draftVersionId": document.get("draft_version_id"),
-                "statusLabel": payload.get("status_label") or document.get("status"),
-            }
-        except httpx.HTTPError as exc:
-            return {
-                "status": "unavailable",
-                "portalUrl": portal_url,
-                "note": str(exc),
-            }
-
+        return await fetch_document_governance(
+            portal_url=portal_url,
+            headers=headers,
+            document_id=document_id,
+            indexed_document_ids=indexed_document_ids,
+        )

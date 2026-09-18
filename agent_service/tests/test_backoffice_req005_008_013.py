@@ -166,7 +166,7 @@ def test_knowledge_export_forwards_all_filter_fields(tmp_path: Path) -> None:
         ]
     )
 
-    with patch("ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient", return_value=mock_portal):
+    with patch("ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient", return_value=mock_portal):
         payload = {
             "export_type": "knowledge_performance",
             "reason": "Quarterly audit and performance check",
