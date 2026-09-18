@@ -1,10 +1,10 @@
+"""Export job orchestration: create, recover, authorize, download, and lifecycle."""
+
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from collections.abc import Callable, Coroutine
-from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -14,6 +14,7 @@ from operations_core.audit import AuditStore, build_audit_event
 from operations_core.audit_errors import AuditWriteError
 from operations_core.contracts import utc_now
 
+from .export_artifact_gc import ExportArtifactGcMixin
 from .export_auth_store import FileBackedExportAuthorizationResolver
 from .export_authorization import (
     ExportAuthoritySource,
@@ -25,7 +26,7 @@ from .export_authorization import (
     tenant_for_actor,
 )
 from .export_content import ExportContentStore, FileExportContentStore
-from .export_format import flatten_for_csv, flatten_for_xlsx
+from .export_job_runner import ExportJobRunnerMixin
 from .export_job_store import ExportJobStore, FileExportJobStore
 from .export_models import (
     LEASE_SECONDS,
@@ -55,7 +56,7 @@ class ExportExecutionBackend(Protocol):
     async def execute(self, *, actor: ActorContext, job: ExportJob) -> dict[str, Any]: ...
 
 
-class ExportJobService:
+class ExportJobService(ExportJobRunnerMixin, ExportArtifactGcMixin):
     def __init__(
         self,
         *,
@@ -84,22 +85,13 @@ class ExportJobService:
         self._lock = asyncio.Lock()
         self.store_path.mkdir(parents=True, exist_ok=True)
         self._job_store = job_store or FileExportJobStore(self.store_path)
-        self._content_store = content_store or FileExportContentStore(
-            self.store_path / "content"
+        self._content_store = content_store or FileExportContentStore(self.store_path / "content")
+        self._authorization_resolver = self._build_authorization_resolver(
+            authorization_resolver=authorization_resolver,
+            export_authority=export_authority,
+            require_export_authority=require_export_authority,
+            environment=environment,
         )
-        lab_environment = environment.lower() in {"dev", "test", "poc", "lab"}
-        if require_export_authority is None:
-            require_export_authority = not lab_environment
-        if authorization_resolver is not None:
-            self._authorization_resolver = authorization_resolver
-        elif require_export_authority and export_authority is None:
-            # Production must not silently accept file-registry-only revoke checks.
-            self._authorization_resolver = UnavailableExportAuthorizationResolver()
-        else:
-            self._authorization_resolver = FileBackedExportAuthorizationResolver(
-                self.store_path / "export_auth_registry.json",
-                authority=export_authority,
-            )
         self._execution_backend = execution_backend
         self._legacy_runners: dict[str, Callable[[], Coroutine[Any, Any, dict[str, Any]]]] = {}
         self._worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
@@ -108,6 +100,27 @@ class ExportJobService:
         self._recovery_scan_seconds = recovery_scan_seconds
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._pending_content_refs: set[str] = set()
+
+    def _build_authorization_resolver(
+        self,
+        *,
+        authorization_resolver: ExportAuthorizationResolver | None,
+        export_authority: ExportAuthoritySource | None,
+        require_export_authority: bool | None,
+        environment: str,
+    ) -> ExportAuthorizationResolver:
+        lab_environment = environment.lower() in {"dev", "test", "poc", "lab"}
+        if require_export_authority is None:
+            require_export_authority = not lab_environment
+        if authorization_resolver is not None:
+            return authorization_resolver
+        if require_export_authority and export_authority is None:
+            # Production must not silently accept file-registry-only revoke checks.
+            return UnavailableExportAuthorizationResolver()
+        return FileBackedExportAuthorizationResolver(
+            self.store_path / "export_auth_registry.json",
+            authority=export_authority,
+        )
 
     def configure_authorization_resolver(
         self,
@@ -143,6 +156,64 @@ class ExportJobService:
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 
+    async def _lookup_idempotent_job(
+        self,
+        *,
+        idempotency_key: str,
+        tenant_id: str,
+        requester_id: str,
+        fingerprint: str,
+    ) -> ExportJob | None:
+        existing_payload = await self._job_store.find_by_idempotency_scope(
+            key=idempotency_key,
+            tenant_id=tenant_id,
+            requester_id=requester_id,
+        )
+        if existing_payload is None:
+            return None
+        existing = deserialize_export_job(existing_payload)
+        if existing.request_fingerprint and existing.request_fingerprint != fingerprint:
+            raise ExportIdempotencyConflictError(
+                "Idempotency key was reused with different export parameters."
+            )
+        self._jobs[existing.job_id] = existing
+        return existing
+
+    def _build_queued_job(
+        self,
+        *,
+        actor: ActorContext,
+        export_type: str,
+        reason: str,
+        days: int,
+        request_params: dict[str, Any] | None,
+        export_format: str,
+        idempotency_key: str | None,
+        tenant_id: str,
+        fingerprint: str,
+    ) -> ExportJob:
+        now = utc_now()
+        register = getattr(self._authorization_resolver, "register", None)
+        if callable(register):
+            register(actor=actor, tenant_id=tenant_id)
+        return ExportJob(
+            job_id=str(uuid.uuid4()),
+            export_type=export_type,
+            export_format=export_format,
+            status="QUEUED",
+            reason=reason,
+            requested_by=actor.user_id,
+            requested_role=actor.role,
+            days=days,
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(seconds=self._ttl_seconds)).isoformat(),
+            tenant_id=tenant_id,
+            requested_owner_units=tuple(actor.owner_unit_ids),
+            request_params=dict(request_params or {}),
+            request_fingerprint=fingerprint,
+            idempotency_key=idempotency_key,
+        )
+
     async def create_job(
         self,
         *,
@@ -165,52 +236,35 @@ class ExportJobService:
             request_params=request_params,
         )
         if idempotency_key:
-            existing_payload = await self._job_store.find_by_idempotency_scope(
-                key=idempotency_key,
+            existing = await self._lookup_idempotent_job(
+                idempotency_key=idempotency_key,
                 tenant_id=tenant_id,
                 requester_id=actor.user_id,
+                fingerprint=fingerprint,
             )
-            if existing_payload is not None:
-                existing = deserialize_export_job(existing_payload)
-                if existing.request_fingerprint and existing.request_fingerprint != fingerprint:
-                    raise ExportIdempotencyConflictError(
-                        "Idempotency key was reused with different export parameters."
-                    )
-                self._jobs[existing.job_id] = existing
+            if existing is not None:
                 return existing
-
-        job_id = str(uuid.uuid4())
-        now = utc_now()
-        register = getattr(self._authorization_resolver, "register", None)
-        if callable(register):
-            register(actor=actor, tenant_id=tenant_id)
-        job = ExportJob(
-            job_id=job_id,
+        job = self._build_queued_job(
+            actor=actor,
             export_type=export_type,
-            export_format=export_format,
-            status="QUEUED",
             reason=reason,
-            requested_by=actor.user_id,
-            requested_role=actor.role,
             days=days,
-            created_at=now.isoformat(),
-            expires_at=(now + timedelta(seconds=self._ttl_seconds)).isoformat(),
-            tenant_id=tenant_id,
-            requested_owner_units=tuple(actor.owner_unit_ids),
-            request_params=dict(request_params or {}),
-            request_fingerprint=fingerprint,
+            request_params=request_params,
+            export_format=export_format,
             idempotency_key=idempotency_key,
+            tenant_id=tenant_id,
+            fingerprint=fingerprint,
         )
         async with self._lock:
-            self._jobs[job_id] = job
+            self._jobs[job.job_id] = job
             if runner is not None:
-                self._legacy_runners[job_id] = runner
+                self._legacy_runners[job.job_id] = runner
             await self._persist(job)
         try:
             await self._audit(
                 actor,
                 "export.create",
-                job_id,
+                job.job_id,
                 reason=reason,
                 after={
                     "exportType": export_type,
@@ -224,11 +278,11 @@ class ExportJobService:
             )
         except AuditWriteError:
             async with self._lock:
-                self._jobs.pop(job_id, None)
-                self._legacy_runners.pop(job_id, None)
-                await self._job_store.delete(job_id)
+                self._jobs.pop(job.job_id, None)
+                self._legacy_runners.pop(job.job_id, None)
+                await self._job_store.delete(job.job_id)
             raise
-        self._schedule(self._run_job(job_id))
+        self._schedule(self._run_job(job.job_id))
         return job
 
     async def recover_interrupted_jobs(self) -> int:
@@ -262,9 +316,7 @@ class ExportJobService:
             except Exception:  # noqa: BLE001
                 pass
             try:
-                await asyncio.wait_for(
-                    stop_event.wait(), timeout=self._recovery_scan_seconds
-                )
+                await asyncio.wait_for(stop_event.wait(), timeout=self._recovery_scan_seconds)
             except TimeoutError:
                 continue
 
@@ -292,192 +344,14 @@ class ExportJobService:
             raise RuntimeError("Export execution backend is not configured.")
         return await self._execution_backend.execute(actor=actor, job=job)
 
-    async def _run_job(self, job_id: str) -> None:
-        claimed_payload = await self._job_store.claim_job(
-            job_id,
-            worker_id=self._worker_id,
-            lease_seconds=self._lease_seconds,
-            now=utc_now(),
-        )
-        if claimed_payload is None:
-            return
-        job = deserialize_export_job(claimed_payload)
-        lease_token = job.lease_token or ""
-        self._jobs[job_id] = job
-        renew_task: asyncio.Task[None] | None = None
-        stop_renew = asyncio.Event()
-        pending_content_ref: str | None = None
-
-        async def _renew_loop() -> None:
-            while not stop_renew.is_set():
-                try:
-                    await asyncio.wait_for(
-                        stop_renew.wait(), timeout=max(5, self._lease_seconds // 3)
-                    )
-                    return
-                except TimeoutError:
-                    ok = await self._job_store.renew_lease(
-                        job_id,
-                        worker_id=self._worker_id,
-                        lease_token=lease_token,
-                        lease_seconds=self._lease_seconds,
-                        now=utc_now(),
-                    )
-                    if not ok:
-                        return
-
-        try:
-            renew_task = asyncio.create_task(_renew_loop())
-            actor = await self._resolve_worker_actor(job)
-            result = await self._execute(actor=actor, job=job)
-            metadata = result.get("exportMetadata") or {}
-            record_count = metadata.get("recordCount")
-            if isinstance(record_count, int) and record_count > self._max_records:
-                raise ValueError(
-                    f"Export exceeds the maximum of {self._max_records} records."
-                )
-            if job.export_format == "csv":
-                content = flatten_for_csv(result).encode("utf-8-sig")
-                content_type = "text/csv; charset=utf-8"
-            elif job.export_format == "xlsx":
-                content = flatten_for_xlsx(result)
-                content_type = (
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                content = json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8")
-                content_type = "application/json; charset=utf-8"
-            # Track pending artifact before audit/persist so failure paths can
-            # delete it even when job.content_ref was never committed.
-            content_ref = await self._content_store.put(
-                job_id=job_id,
-                content=content,
-                content_type=content_type,
-                attempt=job.attempt_count,
-                lease_token=lease_token,
-            )
-            pending_content_ref = content_ref
-            self._pending_content_refs.add(content_ref)
-            try:
-                await self._audit(
-                    actor,
-                    "export.complete",
-                    job_id,
-                    after={
-                        "exportType": job.export_type,
-                        "exportFormat": job.export_format,
-                        "status": "COMPLETED",
-                        "attemptCount": job.attempt_count,
-                        "recordCount": metadata.get("recordCount"),
-                        "fields": metadata.get("fields") or [],
-                        "queryFilters": metadata.get("queryFilters") or {},
-                        "workerId": self._worker_id,
-                    },
-                )
-            except Exception:
-                await self._content_store.delete(content_ref=content_ref)
-                self._pending_content_refs.discard(content_ref)
-                pending_content_ref = None
-                raise
-            job.status = "COMPLETED"
-            job.result = result
-            job.content_ref = content_ref
-            job.content_type = content_type
-            job.download_content = None
-            job.download_bytes = None
-            job.completed_at = utc_now().isoformat()
-            job.error = None
-            committed = await self._job_store.complete_if_owner(
-                job_id,
-                worker_id=self._worker_id,
-                lease_token=lease_token,
-                payload=serialize_export_job(job),
-            )
-            if not committed:
-                # Lost lease mid-flight — another worker owns the job; drop orphan content.
-                await self._content_store.delete(content_ref=content_ref)
-                self._pending_content_refs.discard(content_ref)
-                pending_content_ref = None
-                return
-            self._pending_content_refs.discard(content_ref)
-            pending_content_ref = None
-            self._jobs[job_id] = job
-        except Exception as exc:  # noqa: BLE001
-            current = self._jobs.get(job_id) or job
-            if pending_content_ref:
-                await self._content_store.delete(content_ref=pending_content_ref)
-                self._pending_content_refs.discard(pending_content_ref)
-            if current.content_ref and current.content_ref != pending_content_ref:
-                await self._content_store.delete(content_ref=current.content_ref)
-            retryable = (
-                current.attempt_count < current.max_attempts
-                and isinstance(exc, (TimeoutError, ConnectionError, OSError))
-            )
-            try:
-                await self._audit(
-                    ActorContext(
-                        user_id=job.requested_by,
-                        display_name=job.requested_by,
-                        role=job.requested_role,  # type: ignore[arg-type]
-                        owner_unit_ids=job.requested_owner_units,
-                        tenant_id=job.tenant_id,
-                    ),
-                    "export.failed" if not retryable else "export.retry",
-                    job_id,
-                    after={
-                        "exportType": job.export_type,
-                        "exportFormat": job.export_format,
-                        "status": "QUEUED" if retryable else "FAILED",
-                        "attemptCount": job.attempt_count,
-                        "errorType": type(exc).__name__,
-                        "workerId": self._worker_id,
-                    },
-                )
-            except AuditWriteError:
-                pass
-            if retryable:
-                current.status = "QUEUED"
-                current.error = str(exc)
-                current.lease_owner = None
-                current.lease_expires_at = None
-                current.lease_token = None
-                current.content_ref = None
-                current.content_type = None
-                committed = await self._job_store.requeue_if_owner(
-                    job_id,
-                    worker_id=self._worker_id,
-                    lease_token=lease_token,
-                    payload=serialize_export_job(current),
-                )
-                if not committed:
-                    return
-                self._jobs[job_id] = current
-                self._schedule(self._run_job(job_id))
-                return
-            current.status = "FAILED"
-            current.error = str(exc)
-            current.completed_at = utc_now().isoformat()
-            current.content_ref = None
-            current.content_type = None
-            committed = await self._job_store.complete_if_owner(
-                job_id,
-                worker_id=self._worker_id,
-                lease_token=lease_token,
-                payload=serialize_export_job(current),
-            )
-            if committed:
-                self._jobs[job_id] = current
-        finally:
-            stop_renew.set()
-            if renew_task is not None:
-                renew_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await renew_task
-
     async def get_job(self, job_id: str, *, actor: ActorContext) -> ExportJob | None:
         async with self._lock:
             persisted = await self._job_store.get(job_id)
-            job = deserialize_export_job(persisted) if persisted is not None else self._jobs.get(job_id)
+            job = (
+                deserialize_export_job(persisted)
+                if persisted is not None
+                else self._jobs.get(job_id)
+            )
             if job is None:
                 return None
             self._jobs[job_id] = job
@@ -539,82 +413,6 @@ class ExportJobService:
                 removed += 1
         await self.purge_orphan_artifacts()
         return removed
-
-    async def purge_orphan_artifacts(self, *, min_age_seconds: int | None = None) -> int:
-        """Delete attempt artifacts that no live job still references.
-
-        Artifacts younger than ``min_age_seconds`` are kept so an in-flight
-        worker that has uploaded but not yet committed ``content_ref`` is not
-        raced by the sweeper. Cross-process pending uploads are covered by age;
-        same-process pending refs are tracked in ``_pending_content_refs``.
-
-        Fail closed: incomplete reference scans or unknown artifact age retain
-        the object rather than treating "not in a capped page" as orphaned.
-        """
-        list_refs = getattr(self._content_store, "list_refs", None)
-        if not callable(list_refs):
-            return 0
-        min_age = (
-            min_age_seconds
-            if min_age_seconds is not None
-            else max(300, self._lease_seconds * 3)
-        )
-        referenced = await self._collect_referenced_content_refs()
-        if referenced is None:
-            return 0
-        removed = 0
-        now_ts = utc_now().timestamp()
-        for content_ref in await list_refs():
-            if content_ref in referenced or content_ref in self._pending_content_refs:
-                continue
-            if not await self._artifact_older_than(
-                content_ref, now_ts=now_ts, min_age_seconds=min_age
-            ):
-                continue
-            # Re-check references immediately before delete (lease/commit race).
-            fresh = await self._collect_referenced_content_refs()
-            if fresh is None or content_ref in fresh or content_ref in self._pending_content_refs:
-                continue
-            await self._content_store.delete(content_ref=content_ref)
-            removed += 1
-        return removed
-
-    async def _collect_referenced_content_refs(self) -> set[str] | None:
-        """Return complete durable refs, or ``None`` when the scan is incomplete."""
-        list_all = getattr(self._job_store, "list_all_content_refs", None)
-        referenced: set[str] = set(self._pending_content_refs)
-        if callable(list_all):
-            try:
-                referenced.update(await list_all())
-            except Exception:  # noqa: BLE001
-                return None
-        else:
-            # Legacy stores without a complete scanner must not drive deletes.
-            return None
-        async with self._lock:
-            for job in self._jobs.values():
-                if job.content_ref:
-                    referenced.add(job.content_ref)
-        return referenced
-
-    async def _artifact_older_than(
-        self,
-        content_ref: str,
-        *,
-        now_ts: float,
-        min_age_seconds: int,
-    ) -> bool:
-        created_at = None
-        created_at_fn = getattr(self._content_store, "created_at_epoch", None)
-        if callable(created_at_fn):
-            try:
-                created_at = await created_at_fn(content_ref)
-            except Exception:  # noqa: BLE001
-                created_at = None
-        if created_at is None:
-            # Unknown age (remote backend without metadata) — retain.
-            return False
-        return (now_ts - float(created_at)) >= min_age_seconds
 
     async def get_content(self, job: ExportJob) -> tuple[bytes, str] | None:
         if job.content_ref:
