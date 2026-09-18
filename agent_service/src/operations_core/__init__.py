@@ -1,9 +1,9 @@
 """Shared operations contracts used by Agent, Backoffice, and Portal.
 
 This package holds stable access, audit protocol/builder, authorization, event,
-masking, security-policy catalog, scope predicates, and taxonomy repository so
-Backoffice and Portal do not need to import Agent runtime implementation
-modules for those concerns.
+masking, security-policy catalog, scope predicates, taxonomy repository, and
+ops settings so Backoffice and Portal do not need to import Agent runtime
+implementation modules for those concerns.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from operations_core.security_policies import (
     known_policy_ids_in_text,
     policy_ids_in_text,
 )
+from operations_core.settings import OpsSettings
 from operations_core.taxonomy import TaxonomyRepository
 
 __all__ = [
@@ -70,6 +71,7 @@ __all__ = [
     "MaskingRulePack",
     "OperationalEvent",
     "OperationalEventType",
+    "OpsSettings",
     "SecurityPolicy",
     "TaxonomyLookup",
     "TaxonomyOwnerUnit",

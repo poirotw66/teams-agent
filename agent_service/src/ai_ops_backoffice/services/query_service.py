@@ -4,14 +4,12 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from agent_service.operations.runtime import build_ops_runtime
-from agent_service.operations.settings import OpsSettings
+from knowledge_core.artifact_ports import ArtifactStorage
 from operations_core.access import ActorContext
 from operations_core.audit import AuditStore
 from operations_core.contracts import (
@@ -21,6 +19,7 @@ from operations_core.contracts import (
     utc_now,
 )
 from operations_core.scope import filter_events_by_scope
+from operations_core.settings import OpsSettings
 from operations_core.taxonomy import TaxonomyRepository
 from operations_core.usage import configure_pricing_provider
 
@@ -40,6 +39,13 @@ from .export_service import ExportJobService
 from .freshness_service import FreshnessTracker
 from .periods import ResolvedPeriod, event_in_period, resolve_period
 from .query_budget import BudgetQueryMixin
+from .query_collaborators import (
+    OpsRuntimePort,
+    build_backoffice_ops_settings,
+    configure_query_service_collaborators,
+    resolve_artifact_storage,
+    resolve_ops_runtime,
+)
 from .query_conversations import ConversationsQueryMixin
 from .query_costs import CostsQueryMixin
 from .query_exports import ExportsQueryMixin
@@ -54,6 +60,13 @@ from .source_repository import (
     SourceRecordRepository,
 )
 from .source_trace import SourceTraceResolver
+
+__all__ = [
+    "BackofficeQueryService",
+    "OpsRuntimePort",
+    "build_backoffice_ops_settings",
+    "configure_query_service_collaborators",
+]
 
 
 class BackofficeQueryService(
@@ -72,24 +85,18 @@ class BackofficeQueryService(
         settings: BackofficeSettings,
         *,
         freshness_tracker: FreshnessTracker | None = None,
+        ops_runtime: OpsRuntimePort | None = None,
+        artifact_storage: ArtifactStorage | None = None,
     ) -> None:
         self._settings = settings
         self._knowledge_identity_token: tuple[float, str] | None = None
         self._knowledge_identity_token_lock = asyncio.Lock()
-        ops_settings = replace(
-            OpsSettings.from_env(),
-            enabled=True,
-            store_mode=settings.ops_store_mode,
-            store_path=settings.ops_store_path,
-            taxonomy_path=settings.ops_taxonomy_path,
-            metrics_path=settings.ops_metrics_path,
-            classification_rules_path=settings.ops_classification_rules_path,
-            audit_store_mode=settings.ops_audit_store_mode,
-            firestore_project=settings.gcp_project_id,
+        ops_settings = build_backoffice_ops_settings(settings)
+        runtime = resolve_ops_runtime(
+            ops_settings,
+            freshness_tracker=freshness_tracker,
+            ops_runtime=ops_runtime,
         )
-        runtime = build_ops_runtime(ops_settings, freshness_recorder=freshness_tracker)
-        if runtime is None:
-            raise RuntimeError("Operational events are disabled.")
         self._runtime = runtime
         self._environment = ops_settings.environment
         releases_dir = getattr(settings, "knowledge_release_dir", None) or (
@@ -109,38 +116,14 @@ class BackofficeQueryService(
             )
             source_repository = FileSourceRecordRepository(source_path)
 
-        artifact_backend = (
-            getattr(settings, "artifact_storage_backend", None) or "FILE"
-        ).upper()
-        artifact_storage = None
-        if artifact_backend == "GCS":
-            from agent_service.artifact_storage import (
-                GcsArtifactStorage,
-                build_gcs_storage_client,
-            )
-
-            bucket = getattr(settings, "artifact_gcs_bucket", None)
-            if not bucket:
-                raise ValueError(
-                    "AI_OPS_ARTIFACT_GCS_BUCKET (or AI_OPS_EXPORT_GCS_BUCKET) is required for GCS artifact storage."
-                )
-            artifact_storage = GcsArtifactStorage(
-                bucket_name=bucket,
-                client=build_gcs_storage_client(),
-                allow_memory_fallback=False,
-            )
-        else:
-            from knowledge_core.artifact_ports import LocalFileArtifactStorage
-
-            artifact_path = getattr(settings, "artifact_storage_path", None) or (
-                settings.ops_store_path.parent / "sources" / "artifacts"
-            )
-            artifact_storage = LocalFileArtifactStorage(artifact_path)
+        resolved_artifact_storage = resolve_artifact_storage(
+            settings, artifact_storage=artifact_storage
+        )
 
         self._source_trace = SourceTraceResolver(
             releases_dir,
             source_repository=source_repository,
-            artifact_storage=artifact_storage,
+            artifact_storage=resolved_artifact_storage,
         )
         if freshness_tracker is not None:
             self._freshness_tracker = freshness_tracker
