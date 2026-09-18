@@ -8,7 +8,6 @@
     "agent_service/src/agent_service/workflow_issue_processing.py": 579,
     "agent_service/src/ai_ops_backoffice/governance_domain/eval_flow.py": 578,
     "agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py": 526,
-    "agent_service/src/ai_ops_backoffice/services/export_job_store.py": 584,
     "agent_service/src/ai_ops_backoffice/services/query_conversations.py": 534,
     "agent_service/src/ai_ops_backoffice/services/query_issues.py": 557,
     "agent_service/src/ai_ops_backoffice/services/query_knowledge.py": 542,
