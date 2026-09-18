@@ -15,7 +15,6 @@
     "agent_service/src/ai_ops_backoffice/services/query_health.py": 596,
     "agent_service/src/ai_ops_backoffice/services/query_issues.py": 557,
     "agent_service/src/ai_ops_backoffice/services/query_knowledge.py": 542,
-    "agent_service/src/ai_ops_backoffice/services/source_trace.py": 653,
     "agent_service/src/knowledge_portal/models.py": 569,
     "agent_service/src/knowledge_portal/pdf_convert_jobs.py": 508,
     "agent_service/src/knowledge_portal/services/version_service.py": 652,
