@@ -29,7 +29,6 @@
     "agent_service/src/agent_service/source_refs.py::hydrate_index_sources": 96,
     "agent_service/src/agent_service/usage_events.py::build_request_cost_summary": 120,
     "agent_service/src/agent_service/workflow_clarification.py::_extract_issues": 161,
-    "agent_service/src/agent_service/workflow_handoff_nodes.py::_route_handoff": 209,
     "agent_service/src/agent_service/workflow_issue_processing.py::_handle_issue": 110,
     "agent_service/src/agent_service/workflow_issue_processing.py::_handle_knowledge": 94,
     "agent_service/src/agent_service/workflow_issue_processing.py::_handle_ticket": 136,
