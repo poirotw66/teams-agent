@@ -41,6 +41,10 @@ jobs:
         run: uv run ruff check src tests
       - name: Architecture ratchet
         run: uv run python ../scripts/check_architecture.py
+      - name: Legacy shell quarantine
+        # Defaults + deploy/env samples must keep BACKOFFICE_LEGACY_SHELL_ENABLED
+        # off; static/legacy-js remains kill-switch quarantine (not product path).
+        run: uv run python ../scripts/check_legacy_shell.py
       - name: OpenAPI snapshot
         # Inventory + canonical ai_ops_backoffice OpenAPI; fails on drift and
         # classifies BREAKING removals/type changes when the canonical doc drifts.

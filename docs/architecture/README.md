@@ -9,6 +9,7 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 |---|---|
 | `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet |
 | `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
+| `uv run python scripts/check_legacy_shell.py` | Defaults + deploy/env samples keep `BACKOFFICE_LEGACY_SHELL_ENABLED` off; `static/legacy-js` stays quarantine |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories and the canonical Backoffice OpenAPI document (breaking-change report on drift) |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/generate_openapi_ts.py --check` | Verify generated Console TypeScript schemas + client match the canonical OpenAPI |
 | `python3 scripts/sync_console_v2.py --check` | Verify committed `static/console-v2` matches a fresh `console_frontend` production rebuild (hash parity) |
@@ -38,6 +39,13 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    and commit the refreshed hashed assets.
 7. `platform_kernel` holds shared ports only and must not import domain packages.
 8. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
+9. Legacy UI quarantine: `static/legacy-js/` is kill-switch only
+   (`BACKOFFICE_LEGACY_SHELL_ENABLED`; default off). Product path is React
+   `/console-v2`. **Deletion criteria:** after one full release cycle where
+   production never enables the flag, delete the quarantine tree and `/legacy`
+   serve wiring; keep the thin `static/js/main.js` redirect stub if still linked.
+   CI enforces defaults + sample env hygiene via `scripts/check_legacy_shell.py`
+   (does not delete the tree).
 
 ## Characterization suites
 
