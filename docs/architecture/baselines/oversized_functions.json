@@ -15,8 +15,6 @@
     "agent_service/src/agent_service/knowledge_release.py::resolve_knowledge_index": 92,
     "agent_service/src/agent_service/lifespan.py::build_lifespan": 163,
     "agent_service/src/agent_service/lifespan.py::lifespan": 157,
-    "agent_service/src/agent_service/operations/emitter.py::_result_payloads": 115,
-    "agent_service/src/agent_service/operations/emitter.py::build_turn_events": 206,
     "agent_service/src/agent_service/response_builder.py::build_response": 108,
     "agent_service/src/agent_service/routers/chat.py::chat_stream": 144,
     "agent_service/src/agent_service/routers/chat.py::events": 94,
