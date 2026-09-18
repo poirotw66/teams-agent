@@ -6,8 +6,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from agent_service.extractor import SYSTEM_PROMPT
 from operations_core.access import ActorContext
+from operations_core.default_extractor_prompt import SYSTEM_PROMPT
 
 from .constants import (
     FALLBACK_TRIGGERS,

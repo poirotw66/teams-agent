@@ -63,6 +63,10 @@ from ai_ops_backoffice.governance_domain.eval_runtime import (
 )
 from ai_ops_backoffice.knowledge_bridge import KnowledgePortalClient
 from ai_ops_backoffice.notification_dispatcher import NotificationDispatcher
+from ai_ops_backoffice.ports.chat_model import (
+    configure_chat_model_factory,
+    get_chat_model_factory,
+)
 from ai_ops_backoffice.prompt_domain import PromptPocService
 from ai_ops_backoffice.quality_domain import QualityService
 from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
@@ -137,7 +141,13 @@ def configure_query_service_agent_collaborators() -> None:
     )
 
 
+def configure_backoffice_chat_model_factory() -> None:
+    """Register Agent graph build_chat_model for Backoffice judge/eval factories."""
+    configure_chat_model_factory(build_chat_model)
+
+
 configure_query_service_agent_collaborators()
+configure_backoffice_chat_model_factory()
 
 
 def bind_export_authorization(
@@ -179,7 +189,7 @@ def build_eval_model_factory() -> Callable[[str], object | None]:
         if not requested:
             return None
         # Fail closed: never silently substitute the environment default model.
-        return build_chat_model(requested)
+        return get_chat_model_factory()(requested)
 
     return _eval_model_factory
 
@@ -309,7 +319,7 @@ def resolve_eval_chat_model(
     eval_answering_fn: Callable[..., object] | None,
 ) -> object | None:
     if eval_answering_fn is None and eval_chat_model is None and eval_model_invoker is None:
-        return build_chat_model(RagSettings.from_env().model)
+        return get_chat_model_factory()(RagSettings.from_env().model)
     return eval_chat_model
 
 

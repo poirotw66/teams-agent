@@ -12,7 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
-from agent_service.graph import build_chat_model
+from ai_ops_backoffice.ports.chat_model import get_chat_model_factory
 
 from .baseline_scoring import (
     AnswerQualityAssessment,
@@ -126,7 +126,7 @@ class GeminiAnswerJudge:
             raise ValueError("Judge max_attempts must be at least 1")
         if not 0.0 <= independent_review_confidence <= 1.0:
             raise ValueError("independent_review_confidence must be between 0 and 1")
-        resolved_model = model or build_chat_model(
+        resolved_model = model or get_chat_model_factory()(
             model_id,
             temperature=0.0,
             # High reasoning effort can consume thinking tokens from the same

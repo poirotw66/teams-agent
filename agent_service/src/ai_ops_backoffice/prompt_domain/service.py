@@ -5,12 +5,13 @@ import re
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from agent_service import extractor
-from agent_service.extractor import SYSTEM_PROMPT
 from operations_core.access import ActorContext
+from operations_core.default_extractor_prompt import (
+    SYSTEM_PROMPT,
+    default_prompt_source_path,
+)
 
 from ..faq_domain.errors import FaqAuthorizationError, FaqNotFoundError, FaqValidationError
 from .models import *  # noqa: F403
@@ -40,7 +41,7 @@ class PromptPocService:
         self._repository = repository
         self._active_version = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
         self._active_effective_at = active_effective_at or datetime.fromtimestamp(
-            Path(extractor.__file__).stat().st_mtime,
+            default_prompt_source_path().stat().st_mtime,
             tz=UTC,
         )
 
