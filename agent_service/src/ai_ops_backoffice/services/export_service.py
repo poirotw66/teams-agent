@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import json
 import uuid
 from collections.abc import Callable, Coroutine
 from contextlib import suppress
-from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
@@ -30,66 +27,32 @@ from .export_authorization import (
 from .export_content import ExportContentStore, FileExportContentStore
 from .export_format import flatten_for_csv, flatten_for_xlsx
 from .export_job_store import ExportJobStore, FileExportJobStore
+from .export_models import (
+    LEASE_SECONDS,
+    RECOVERY_SCAN_SECONDS,
+    ExportJob,
+    ExportJobStatus,
+    deserialize_export_job,
+    export_request_fingerprint,
+    serialize_export_job,
+)
 
-ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
-LEASE_SECONDS = 120
-RECOVERY_SCAN_SECONDS = 30
+# Compatibility re-exports for callers that import the job contract from this module.
+__all__ = [
+    "LEASE_SECONDS",
+    "RECOVERY_SCAN_SECONDS",
+    "ExportExecutionBackend",
+    "ExportJob",
+    "ExportJobService",
+    "ExportJobStatus",
+    "export_request_fingerprint",
+]
 
 
 class ExportExecutionBackend(Protocol):
     """Rebuild export work from persisted job parameters with a fresh actor."""
 
     async def execute(self, *, actor: ActorContext, job: ExportJob) -> dict[str, Any]: ...
-
-
-@dataclass
-class ExportJob:
-    job_id: str
-    export_type: str
-    export_format: str
-    status: ExportJobStatus
-    reason: str
-    requested_by: str
-    requested_role: str
-    days: int
-    created_at: str
-    expires_at: str
-    tenant_id: str = "local-development"
-    requested_owner_units: tuple[str, ...] = ()
-    request_params: dict[str, Any] = field(default_factory=dict)
-    request_fingerprint: str | None = None
-    idempotency_key: str | None = None
-    attempt_count: int = 0
-    max_attempts: int = 3
-    lease_owner: str | None = None
-    lease_expires_at: str | None = None
-    lease_token: str | None = None
-    completed_at: str | None = None
-    result: dict[str, Any] | None = None
-    download_content: str | None = None
-    download_bytes: bytes | None = None
-    content_ref: str | None = None
-    content_type: str | None = None
-    error: str | None = None
-
-
-def export_request_fingerprint(
-    *,
-    export_type: str,
-    export_format: str,
-    days: int,
-    reason: str,
-    request_params: dict[str, Any] | None,
-) -> str:
-    payload = {
-        "export_type": export_type,
-        "export_format": export_format,
-        "days": days,
-        "reason": reason,
-        "request_params": request_params or {},
-    }
-    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class ExportJobService:
@@ -156,50 +119,7 @@ class ExportJobService:
         self._execution_backend = backend
 
     async def _persist(self, job: ExportJob) -> None:
-        await self._job_store.put(job.job_id, self._serialize_job(job))
-
-    def _serialize_job(self, job: ExportJob) -> dict[str, Any]:
-        payload = job.__dict__.copy()
-        download_bytes = payload.pop("download_bytes", None)
-        if download_bytes is not None:
-            payload["download_bytes_b64"] = base64.b64encode(download_bytes).decode("ascii")
-        payload["requested_owner_units"] = list(job.requested_owner_units)
-        payload["request_params"] = dict(job.request_params or {})
-        return payload
-
-    def _deserialize_job(self, item: dict[str, Any]) -> ExportJob:
-        defaults = {
-            "export_format": "json",
-            "download_content": None,
-            "download_bytes": None,
-            "content_ref": None,
-            "content_type": None,
-            "tenant_id": "local-development",
-            "requested_owner_units": (),
-            "request_params": {},
-            "request_fingerprint": None,
-            "idempotency_key": None,
-            "attempt_count": 0,
-            "max_attempts": 3,
-            "lease_owner": None,
-            "lease_expires_at": None,
-            "lease_token": None,
-            "error": None,
-            "result": None,
-            "completed_at": None,
-        }
-        merged = {**defaults, **item}
-        for key in ("created_at", "expires_at", "completed_at", "lease_expires_at"):
-            if isinstance(merged.get(key), datetime):
-                merged[key] = merged[key].isoformat()
-        encoded = merged.pop("download_bytes_b64", None)
-        if encoded:
-            merged["download_bytes"] = base64.b64decode(encoded)
-        units = merged.get("requested_owner_units") or ()
-        merged["requested_owner_units"] = tuple(units)
-        merged["request_params"] = dict(merged.get("request_params") or {})
-        known = {item.name for item in fields(ExportJob)}
-        return ExportJob(**{key: value for key, value in merged.items() if key in known})
+        await self._job_store.put(job.job_id, serialize_export_job(job))
 
     def _schedule(self, coroutine: Coroutine[Any, Any, None]) -> None:
         if self._run_inline:
@@ -251,7 +171,7 @@ class ExportJobService:
                 requester_id=actor.user_id,
             )
             if existing_payload is not None:
-                existing = self._deserialize_job(existing_payload)
+                existing = deserialize_export_job(existing_payload)
                 if existing.request_fingerprint and existing.request_fingerprint != fingerprint:
                     raise ExportIdempotencyConflictError(
                         "Idempotency key was reused with different export parameters."
@@ -322,7 +242,7 @@ class ExportJobService:
         recovered = 0
         now = utc_now()
         for payload in payloads:
-            job = self._deserialize_job(payload)
+            job = deserialize_export_job(payload)
             if job.status == "RUNNING":
                 lease_raw = job.lease_expires_at
                 if lease_raw:
@@ -381,7 +301,7 @@ class ExportJobService:
         )
         if claimed_payload is None:
             return
-        job = self._deserialize_job(claimed_payload)
+        job = deserialize_export_job(claimed_payload)
         lease_token = job.lease_token or ""
         self._jobs[job_id] = job
         renew_task: asyncio.Task[None] | None = None
@@ -471,7 +391,7 @@ class ExportJobService:
                 job_id,
                 worker_id=self._worker_id,
                 lease_token=lease_token,
-                payload=self._serialize_job(job),
+                payload=serialize_export_job(job),
             )
             if not committed:
                 # Lost lease mid-flight — another worker owns the job; drop orphan content.
@@ -527,7 +447,7 @@ class ExportJobService:
                     job_id,
                     worker_id=self._worker_id,
                     lease_token=lease_token,
-                    payload=self._serialize_job(current),
+                    payload=serialize_export_job(current),
                 )
                 if not committed:
                     return
@@ -543,7 +463,7 @@ class ExportJobService:
                 job_id,
                 worker_id=self._worker_id,
                 lease_token=lease_token,
-                payload=self._serialize_job(current),
+                payload=serialize_export_job(current),
             )
             if committed:
                 self._jobs[job_id] = current
@@ -557,7 +477,7 @@ class ExportJobService:
     async def get_job(self, job_id: str, *, actor: ActorContext) -> ExportJob | None:
         async with self._lock:
             persisted = await self._job_store.get(job_id)
-            job = self._deserialize_job(persisted) if persisted is not None else self._jobs.get(job_id)
+            job = deserialize_export_job(persisted) if persisted is not None else self._jobs.get(job_id)
             if job is None:
                 return None
             self._jobs[job_id] = job
@@ -613,7 +533,7 @@ class ExportJobService:
         removed = 0
         async with self._lock:
             for payload in expired_payloads:
-                job = self._deserialize_job(payload)
+                job = deserialize_export_job(payload)
                 await self._expire_job(job)
                 self._jobs[job.job_id] = job
                 removed += 1
