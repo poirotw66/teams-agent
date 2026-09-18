@@ -65,10 +65,7 @@ def _lookup_by_prompt_and_version(
     if prompt_repository is not None:
         try:
             for candidate in prompt_repository.load().candidates:
-                if (
-                    candidate.prompt_id == target_prompt_id
-                    and candidate.version == target_version
-                ):
+                if candidate.prompt_id == target_prompt_id and candidate.version == target_version:
                     content = str(candidate.content or "").strip()
                     if content:
                         return content

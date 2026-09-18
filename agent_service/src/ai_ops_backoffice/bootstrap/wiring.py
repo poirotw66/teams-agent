@@ -202,7 +202,9 @@ def build_ops_services(
     *,
     notification_transport: httpx.AsyncBaseTransport | None,
     email_sender: Callable[[str, str, str], None] | None,
-) -> tuple[SyncService, dict[str, str], BudgetService, NotificationDispatcher, PromptPocService, object]:
+) -> tuple[
+    SyncService, dict[str, str], BudgetService, NotificationDispatcher, PromptPocService, object
+]:
     sync_service = SyncService(build_sync_repository(settings))
     configured_targets = parse_budget_notification_targets(settings)
     budget_service = BudgetService(
@@ -275,9 +277,7 @@ def build_eval_runner(
     eval_scorer = EvaluationScorer()
     # Formal app always enforces strict REAL_RAG: no synthetic answer fallback.
     eval_model_factory = build_eval_model_factory()
-    eval_prompt_resolver = build_eval_prompt_resolver(
-        governance_repository, prompt_repository
-    )
+    eval_prompt_resolver = build_eval_prompt_resolver(governance_repository, prompt_repository)
     resolved_eval_chat_model = resolve_eval_chat_model(
         eval_chat_model=eval_chat_model,
         eval_model_invoker=eval_model_invoker,
@@ -318,9 +318,7 @@ def build_evaluation_stack(
     eval_answering_fn: Callable[..., object] | None,
 ) -> EvaluationStack:
     eval_repository = build_evaluation_repository(settings)
-    tool_fixture_service = ToolFixtureService(
-        repository=build_tool_fixture_repository(settings)
-    )
+    tool_fixture_service = ToolFixtureService(repository=build_tool_fixture_repository(settings))
     gate_repository = build_quality_gate_repository(settings)
     job_repository = build_job_repository(settings)
     evaluation_service = EvaluationService(

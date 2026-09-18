@@ -63,9 +63,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.exception_handler(KnowledgeBridgeError)
-    async def knowledge_bridge_error_handler(
-        _request, exc: KnowledgeBridgeError
-    ) -> JSONResponse:
+    async def knowledge_bridge_error_handler(_request, exc: KnowledgeBridgeError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     @app.exception_handler(EvaluationAuthorizationError)
@@ -75,17 +73,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.exception_handler(EvaluationNotFoundError)
-    async def evaluation_not_found_handler(
-        _request, exc: EvaluationNotFoundError
-    ) -> JSONResponse:
+    async def evaluation_not_found_handler(_request, exc: EvaluationNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
     @app.exception_handler(EvaluationVersionConflictError)
     @app.exception_handler(EvaluationIdempotencyConflictError)
     @app.exception_handler(EvaluationTransitionError)
-    async def evaluation_conflict_handler(
-        _request, exc: EvaluationDomainError
-    ) -> JSONResponse:
+    async def evaluation_conflict_handler(_request, exc: EvaluationDomainError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
     @app.exception_handler(EvaluationValidationError)

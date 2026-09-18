@@ -108,6 +108,7 @@ def _register_console_v2_routes(app: FastAPI, *, enabled: bool) -> None:
                 "<p>Initializing...</p></body></html>",
                 headers={"Cache-Control": "no-cache, must-revalidate"},
             )
+
         return
 
     @app.get("/console-v2")

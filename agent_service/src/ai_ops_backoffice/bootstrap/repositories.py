@@ -146,9 +146,7 @@ def build_governance_repository(settings: BackofficeSettings) -> Any:
         build_governance_repository as build_from_factory,
     )
 
-    store_path = settings.governance_store_path or default_phase3_path(
-        settings, "governance.json"
-    )
+    store_path = settings.governance_store_path or default_phase3_path(settings, "governance.json")
     return build_from_factory(
         store_mode=settings.governance_store_mode.upper(),
         file_path=store_path,
@@ -168,9 +166,7 @@ def build_evaluation_repository(settings: BackofficeSettings) -> EvaluationRepos
             build_sync_firestore_client(settings.gcp_project_id, None),
             collection_prefix=settings.eval_firestore_collection,
         )
-    path = settings.eval_store_path or default_evaluations_path(
-        settings, "golden_evals.json"
-    )
+    path = settings.eval_store_path or default_evaluations_path(settings, "golden_evals.json")
     return FileEvaluationRepository(path)
 
 

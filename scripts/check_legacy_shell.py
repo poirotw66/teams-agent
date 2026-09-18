@@ -32,6 +32,13 @@ SETTINGS_PATH = (
     / "ai_ops_backoffice"
     / "settings.py"
 )
+SETTINGS_ENV_PATH = (
+    REPO_ROOT
+    / "agent_service"
+    / "src"
+    / "ai_ops_backoffice"
+    / "settings_env.py"
+)
 LEGACY_JS_DIR = (
     REPO_ROOT
     / "agent_service"
@@ -142,7 +149,10 @@ def _from_env_default_is_false(source: str) -> bool:
     return False
 
 
-def check_settings_defaults(settings_path: Path = SETTINGS_PATH) -> list[Finding]:
+def check_settings_defaults(
+    settings_path: Path = SETTINGS_PATH,
+    settings_env_path: Path = SETTINGS_ENV_PATH,
+) -> list[Finding]:
     findings: list[Finding] = []
     if not settings_path.is_file():
         return [Finding(settings_path, "Backoffice settings module missing")]
@@ -154,7 +164,11 @@ def check_settings_defaults(settings_path: Path = SETTINGS_PATH) -> list[Finding
                 "BackofficeSettings.legacy_shell_enabled must default to False",
             )
         )
-    if not _from_env_default_is_false(source):
+    # Env default may live in settings.py or the extracted settings_env helper.
+    env_sources = [source]
+    if settings_env_path.is_file():
+        env_sources.append(settings_env_path.read_text(encoding="utf-8"))
+    if not any(_from_env_default_is_false(chunk) for chunk in env_sources):
         findings.append(
             Finding(
                 settings_path,
