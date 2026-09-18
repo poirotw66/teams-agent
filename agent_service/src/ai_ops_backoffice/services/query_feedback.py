@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from operations_core.access import ActorContext
-from operations_core.contracts import (
-    DEFAULT_TIMEZONE,
-    OperationalEvent,
-    utc_now,
-)
+from operations_core.contracts import OperationalEvent, utc_now
 from operations_core.scope import filter_events_by_scope
 
 from .periods import event_in_period
+from .query_feedback_faq import aggregate_faq_hits
+from .query_feedback_list import (
+    build_feedback_list_items,
+    filter_feedback_events,
+    matching_issue_type_ids,
+)
 from .query_feedback_trace import collect_feedback_trace_signals, empty_feedback_trace
+
+__all__ = ["FeedbackQueryMixin", "utc_now"]
 
 
 class FeedbackQueryMixin:
@@ -38,28 +40,6 @@ class FeedbackQueryMixin:
             for event in events
             if event.event_type == "faq.answered" and event.payload.get("faqKey") == faq_key
         ]
-        local_tz = ZoneInfo(DEFAULT_TIMEZONE)
-        local_now = (as_of or utc_now()).astimezone(local_tz)
-        today_date = local_now.date().isoformat()
-        current_iso = local_now.isocalendar()[:2]
-        current_month = local_now.strftime("%Y-%m")
-
-        def _to_local(dt: datetime) -> datetime:
-            if dt.tzinfo is None:
-                return dt.replace(tzinfo=UTC).astimezone(local_tz)
-            return dt.astimezone(local_tz)
-
-        today_hit_count = sum(
-            1 for e in all_hits if _to_local(e.occurred_at).date().isoformat() == today_date
-        )
-        this_week_hit_count = sum(
-            1 for e in all_hits if _to_local(e.occurred_at).isocalendar()[:2] == current_iso
-        )
-        this_month_hit_count = sum(
-            1 for e in all_hits if _to_local(e.occurred_at).strftime("%Y-%m") == current_month
-        )
-        total_hit_count = len(all_hits)
-
         if days or preset or start_date or end_date:
             period = self._resolve_period(
                 preset=preset,
@@ -70,56 +50,13 @@ class FeedbackQueryMixin:
             hits = [e for e in all_hits if event_in_period(e.occurred_at, period)]
         else:
             hits = all_hits
-
-        by_day: Counter[str] = Counter()
-        by_week: Counter[str] = Counter()
-        by_month: Counter[str] = Counter()
-        by_version: Counter[str] = Counter()
-        for event in hits:
-            occurred = _to_local(event.occurred_at)
-            iso_year, iso_week, _ = occurred.isocalendar()
-            by_day[occurred.date().isoformat()] += 1
-            by_week[f"{iso_year}-W{iso_week:02d}"] += 1
-            by_month[occurred.strftime("%Y-%m")] += 1
-            by_version[str(event.payload.get("faqVersionId") or "legacy-unattributed")] += 1
-
-        resolved_faq_id = faq_id or next(
-            (str(e.payload.get("faqId")) for e in all_hits if e.payload.get("faqId")), None
+        return aggregate_faq_hits(
+            all_hits,
+            hits,
+            faq_key=faq_key,
+            faq_id=faq_id,
+            as_of=as_of or utc_now(),
         )
-        return {
-            "faqKey": faq_key,
-            "faqId": resolved_faq_id,
-            "totalHitCount": total_hit_count,
-            "totalHits": total_hit_count,
-            "todayHitCount": today_hit_count,
-            "hitsToday": today_hit_count,
-            "thisWeekHitCount": this_week_hit_count,
-            "hitsThisWeek": this_week_hit_count,
-            "thisMonthHitCount": this_month_hit_count,
-            "hitsThisMonth": this_month_hit_count,
-            "rangeHitCount": len(hits),
-            "byDay": [{"period": key, "hitCount": value} for key, value in sorted(by_day.items())],
-            "byWeek": [{"period": key, "hitCount": value} for key, value in sorted(by_week.items())],
-            "byMonth": [
-                {"period": key, "hitCount": value} for key, value in sorted(by_month.items())
-            ],
-            "byVersion": [
-                {"versionId": key, "hitCount": value}
-                for key, value in by_version.most_common()
-            ],
-            "recentHits": [
-                {
-                    "occurredAt": event.occurred_at.isoformat(),
-                    "conversationId": event.conversation_id,
-                    "turnId": event.turn_id,
-                    "correlationId": event.correlation_id,
-                    "faqId": event.payload.get("faqId") or resolved_faq_id,
-                    "versionId": event.payload.get("faqVersionId"),
-                }
-                for event in sorted(hits, key=lambda item: item.occurred_at, reverse=True)[:50]
-            ],
-        }
-
 
     async def list_feedback(
         self,
@@ -140,80 +77,28 @@ class FeedbackQueryMixin:
         cursor: str | None = None,
     ) -> dict[str, Any]:
         period = self._resolve_period(
-            preset=preset,
-            days=days,
-            start_date=start_date,
-            end_date=end_date,
+            preset=preset, days=days, start_date=start_date, end_date=end_date
         )
         all_events = await self._scoped_events(actor, period)
         conversation_cache: dict[str, list[OperationalEvent]] = {}
         for event in all_events:
-            if not event.conversation_id:
-                continue
-            conversation_cache.setdefault(event.conversation_id, []).append(event)
-        feedback_events = [
-            event for event in all_events if event.event_type == "feedback.recorded"
-        ]
-        if rating:
-            feedback_events = [
-                event for event in feedback_events if event.payload.get("rating") == rating
-            ]
-        if reason:
-            needle = reason.lower()
-            feedback_events = [
-                event
-                for event in feedback_events
-                if needle in str(event.payload.get("reason") or "").lower()
-            ]
-        if resolved_status:
-            feedback_events = [
-                event
-                for event in feedback_events
-                if str(event.payload.get("resolvedStatus") or "").lower()
-                == resolved_status.lower()
-            ]
-        feedback_events.sort(key=lambda item: item.occurred_at, reverse=True)
-        requested_issue = str(issue_type_id or "").strip()
-        matching_issue_ids: set[str] | None = None
-        if requested_issue:
-            needle = requested_issue.casefold()
-            matching_issue_ids = {
-                record.issue_type_id
-                for record in self.taxonomy.list_active()
-                if needle in record.issue_type_id.casefold()
-                or needle in record.display_name.casefold()
-            }
-            # Preserve exact IDs even when a fixture contains a type that is
-            # not currently present in the active taxonomy snapshot.
-            matching_issue_ids.add(requested_issue)
-        filtered_items = []
-        for event in feedback_events:
-            trace = self._build_feedback_trace(event, conversation_cache=conversation_cache)
-            if matching_issue_ids is not None and trace.get("issueTypeId") not in matching_issue_ids:
-                continue
-            if route and trace.get("route") != route:
-                continue
-            if model and trace.get("model") != model:
-                continue
-            if handoff is True and not trace.get("handoffOccurred"):
-                continue
-            if handoff is False and trace.get("handoffOccurred"):
-                continue
-            filtered_items.append(
-                {
-                    "occurredAt": event.occurred_at.isoformat(),
-                    "conversationId": event.conversation_id,
-                    "turnId": trace.get("turnId") or event.turn_id,
-                    "correlationId": event.correlation_id,
-                    "rating": event.payload.get("rating"),
-                    "reason": event.payload.get("reason"),
-                    "resolvedStatus": event.payload.get("resolvedStatus"),
-                    "issueId": event.payload.get("issueId"),
-                    "route": trace.get("route"),
-                    "model": trace.get("model"),
-                    "trace": trace,
-                }
-            )
+            if event.conversation_id:
+                conversation_cache.setdefault(event.conversation_id, []).append(event)
+        feedback_events = filter_feedback_events(
+            [e for e in all_events if e.event_type == "feedback.recorded"],
+            rating=rating,
+            reason=reason,
+            resolved_status=resolved_status,
+        )
+        filtered_items = build_feedback_list_items(
+            feedback_events,
+            conversation_cache=conversation_cache,
+            matching_issue_ids=matching_issue_type_ids(self.taxonomy, issue_type_id),
+            route=route,
+            model=model,
+            handoff=handoff,
+            build_trace=self._build_feedback_trace,
+        )
         start = max(0, int(cursor or "0"))
         items = filtered_items[start : start + limit]
         next_index = start + len(items)
@@ -224,7 +109,6 @@ class FeedbackQueryMixin:
             "nextCursor": str(next_index) if has_more else None,
             "hasMore": has_more,
         }
-
 
     def _build_feedback_trace(
         self,

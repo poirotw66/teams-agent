@@ -1,14 +1,11 @@
-import re
-
 from microsoft_teams.api import Attachment, MessageActivityInput
 
+from .cards_body import build_image_card_body
 from .contracts import (
     AgentResponse,
     format_agent_response,
-    format_teams_answer,
     format_turn_cost_line,
 )
-from .media import build_asset_url
 from .settings import AgentSettings
 from .source_links import CitationViewerContext, enrich_citation_urls
 
@@ -187,6 +184,36 @@ def _card_activity(
     )
 
 
+def _text_only_activity(
+    response: AgentResponse,
+    *,
+    conversation_id: str | None,
+    feedback_issue_ids: list[int],
+    citation_actions_enabled: bool,
+) -> MessageActivityInput | str:
+    has_source_actions = bool(
+        _source_open_actions(response, enabled=citation_actions_enabled)
+    )
+    if not feedback_issue_ids and not has_source_actions:
+        return format_agent_response(response)
+    body: list[dict[str, object]] = [
+        {
+            "type": "TextBlock",
+            "text": format_agent_response(response),
+            "wrap": True,
+        }
+    ]
+    if feedback_issue_ids:
+        body.extend(
+            _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
+        )
+    return _card_activity(
+        response,
+        body,
+        citation_open_actions_enabled=citation_actions_enabled,
+    )
+
+
 def build_agent_activity(
     response: AgentResponse,
     settings: AgentSettings,
@@ -203,97 +230,21 @@ def build_agent_activity(
     citation_actions_enabled = bool(settings.citation_open_actions_enabled)
 
     if not response.images or not settings.images_ready:
-        has_source_actions = bool(
-            _source_open_actions(response, enabled=citation_actions_enabled)
-        )
-        if not feedback_issue_ids and not has_source_actions:
-            return format_agent_response(response)
-        body: list[dict[str, object]] = [
-            {
-                "type": "TextBlock",
-                "text": format_agent_response(response),
-                "wrap": True,
-            }
-        ]
-        if feedback_issue_ids:
-            body.extend(
-                _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
-            )
-        return _card_activity(
+        return _text_only_activity(
             response,
-            body,
-            citation_open_actions_enabled=citation_actions_enabled,
+            conversation_id=conversation_id,
+            feedback_issue_ids=feedback_issue_ids,
+            citation_actions_enabled=citation_actions_enabled,
         )
 
-    body = [
-        {
-            "type": "TextBlock",
-            "text": format_teams_answer(response.answer),
-            "wrap": True,
-        }
-    ]
-    for image in response.images:
-        url = build_asset_url(
-            image.path,
-            settings,
-            now,
-            release_id=image.releaseId,
-        )
-        if not url:
-            continue
-        body.extend(
-            [
-                {
-                    "type": "TextBlock",
-                    "text": image.title,
-                    "weight": "Bolder",
-                    "wrap": True,
-                    "spacing": "Medium",
-                },
-                {
-                    "type": "Image",
-                    "url": url,
-                    "altText": image.altText,
-                    "size": "Stretch",
-                },
-            ]
-        )
-
-    if response.citations:
-        has_citations_in_answer = bool(re.search(r"\[S\d+\]", response.answer))
-        sources = "\n".join(
-            (
-                f"- [S{index}] [{citation.title}]({citation.url})"
-                if citation.url
-                else f"- [S{index}] {citation.title}"
-            )
-            if has_citations_in_answer
-            else (
-                f"- [{citation.title}]({citation.url})"
-                if citation.url
-                else f"- {citation.title}"
-            )
-            for index, citation in enumerate(response.citations, start=1)
-        )
-        body.append(
-            {
-                "type": "TextBlock",
-                "text": f"**來源**\n\n{sources}",
-                "wrap": True,
-                "spacing": "Medium",
-                "isSubtle": True,
-            }
-        )
-
+    body = build_image_card_body(response, settings, now)
     if feedback_issue_ids:
         body.extend(
             _feedback_body_blocks(response, conversation_id, feedback_issue_ids)
         )
-
     cost_block = _cost_body_block(response)
     if cost_block is not None:
         body.append(cost_block)
-
     return _card_activity(
         response,
         body,

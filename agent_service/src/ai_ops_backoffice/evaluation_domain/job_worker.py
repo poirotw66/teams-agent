@@ -8,6 +8,12 @@ from uuid import uuid4
 from .errors import JobFencingConflictError, JobLeaseLostError
 from .job_models import ExecutionJob
 from .job_repository import JobRepository
+from .job_worker_process import (
+    bind_runner_guards,
+    complete_job_failed,
+    final_state_for_run,
+    start_heartbeat_thread,
+)
 from .runner import EvaluationRunner
 
 logger = logging.getLogger(__name__)
@@ -54,99 +60,17 @@ class ExecutionJobWorker:
     def _process_claimed_job(self, job: ExecutionJob) -> None:
         heartbeat_stop = threading.Event()
         fencing_token = job.fencing_token
-
-        def _heartbeat_loop() -> None:
-            while not heartbeat_stop.wait(self._heartbeat_interval):
-                try:
-                    self._repo.heartbeat(
-                        job.job_id,
-                        self._worker_id,
-                        fencing_token,
-                        extend_seconds=self._lease_seconds,
-                    )
-                except (JobLeaseLostError, JobFencingConflictError) as err:
-                    logger.warning("Heartbeat failed for job %s: %s", job.job_id, err)
-                    break
-                except Exception as err:
-                    logger.error("Unexpected heartbeat error for job %s: %s", job.job_id, err)
-
-        hb_thread = threading.Thread(
-            target=_heartbeat_loop,
-            daemon=True,
-            name=f"hb-{job.job_id}",
+        hb_thread = start_heartbeat_thread(
+            repo=self._repo,
+            job=job,
+            worker_id=self._worker_id,
+            fencing_token=fencing_token,
+            lease_seconds=self._lease_seconds,
+            heartbeat_interval=self._heartbeat_interval,
+            heartbeat_stop=heartbeat_stop,
         )
-        hb_thread.start()
-
         try:
-            # Check if cancellation was requested before execution began
-            current_job = self._repo.get_job(job.job_id)
-            if current_job and current_job.cancel_requested_at:
-                self._repo.complete_job(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    state="CANCELLED",
-                    last_error="Cancellation requested prior to start",
-                )
-                return
-
-            def _lease_guard() -> None:
-                self._repo.heartbeat(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    extend_seconds=self._lease_seconds,
-                )
-                self._repo.save_checkpoint(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    checkpoint_ref=f"{job.run_id}:running",
-                )
-
-            if hasattr(self._runner, "bind_lease_guard"):
-                self._runner.bind_lease_guard(_lease_guard)
-
-            def _checkpoint_saver(checkpoint_ref: str) -> None:
-                self._repo.save_checkpoint(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    checkpoint_ref=checkpoint_ref,
-                )
-
-            if hasattr(self._runner, "bind_checkpoint_saver"):
-                self._runner.bind_checkpoint_saver(_checkpoint_saver)
-            try:
-                self._repo.save_checkpoint(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    checkpoint_ref=f"{job.run_id}:started",
-                )
-                run = self._runner.execute_run(job.run_id)
-            finally:
-                if hasattr(self._runner, "bind_lease_guard"):
-                    self._runner.bind_lease_guard(None)
-                if hasattr(self._runner, "bind_checkpoint_saver"):
-                    self._runner.bind_checkpoint_saver(None)
-
-            # Determine final state based on run status
-            final_state = "COMPLETED"
-            if run.status == "FAILED":
-                final_state = "FAILED"
-            elif run.status == "CANCELLED":
-                final_state = "CANCELLED"
-            elif run.status == "PARTIAL":
-                final_state = "PARTIAL"
-
-            self._repo.complete_job(
-                job.job_id,
-                self._worker_id,
-                fencing_token,
-                state=final_state,
-                last_error=run.error_message,
-            )
+            self._execute_claimed_job(job, fencing_token)
         except (JobLeaseLostError, JobFencingConflictError) as lease_err:
             logger.warning(
                 "Worker %s lost lease/fencing for job %s: %s",
@@ -156,19 +80,55 @@ class ExecutionJobWorker:
             )
         except Exception as err:
             logger.exception("Failed to process job %s", job.job_id)
-            try:
-                self._repo.complete_job(
-                    job.job_id,
-                    self._worker_id,
-                    fencing_token,
-                    state="FAILED",
-                    last_error=str(err),
-                )
-            except Exception as complete_err:
-                logger.error("Failed to mark job %s as FAILED: %s", job.job_id, complete_err)
+            complete_job_failed(
+                repo=self._repo,
+                job=job,
+                worker_id=self._worker_id,
+                fencing_token=fencing_token,
+                error=err,
+            )
         finally:
             heartbeat_stop.set()
             hb_thread.join(timeout=2.0)
+
+    def _execute_claimed_job(self, job: ExecutionJob, fencing_token: int) -> None:
+        current_job = self._repo.get_job(job.job_id)
+        if current_job and current_job.cancel_requested_at:
+            self._repo.complete_job(
+                job.job_id,
+                self._worker_id,
+                fencing_token,
+                state="CANCELLED",
+                last_error="Cancellation requested prior to start",
+            )
+            return
+
+        unbind = bind_runner_guards(
+            runner=self._runner,
+            repo=self._repo,
+            job=job,
+            worker_id=self._worker_id,
+            fencing_token=fencing_token,
+            lease_seconds=self._lease_seconds,
+        )
+        try:
+            self._repo.save_checkpoint(
+                job.job_id,
+                self._worker_id,
+                fencing_token,
+                checkpoint_ref=f"{job.run_id}:started",
+            )
+            run = self._runner.execute_run(job.run_id)
+        finally:
+            unbind()
+
+        self._repo.complete_job(
+            job.job_id,
+            self._worker_id,
+            fencing_token,
+            state=final_state_for_run(run),
+            last_error=run.error_message,
+        )
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():

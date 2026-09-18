@@ -46,14 +46,66 @@ def register_tool_fixture_routes(
     current_actor: Callable[..., ActorContext],
     require_capability: Callable[[ActorContext, str], None],
 ) -> None:
-    router = APIRouter(prefix="/api/evaluations/tool-fixtures", tags=["evaluations.tool_fixtures"])
+    router = APIRouter(
+        prefix="/api/evaluations/tool-fixtures", tags=["evaluations.tool_fixtures"]
+    )
+    _register_tool_fixture_read_routes(
+        router, fixture_service, current_actor, require_capability
+    )
+    _register_tool_fixture_write_routes(
+        router, fixture_service, current_actor, require_capability
+    )
+    app.include_router(router)
 
+
+def _register_tool_fixture_read_routes(
+    router: APIRouter,
+    fixture_service: ToolFixtureService,
+    current_actor: Callable[..., ActorContext],
+    require_capability: Callable[[ActorContext, str], None],
+) -> None:
     @router.get("")
-    async def list_tool_fixtures(actor: ActorContext = Depends(current_actor)) -> list[dict[str, Any]]:
+    async def list_tool_fixtures(
+        actor: ActorContext = Depends(current_actor),
+    ) -> list[dict[str, Any]]:
         require_capability(actor, "ops.evals.read")
         fixtures = fixture_service.repository.list_fixtures()
         return [f.model_dump(mode="json") for f in fixtures]
 
+    @router.get("/{fixture_id}")
+    async def get_tool_fixture(
+        fixture_id: str,
+        actor: ActorContext = Depends(current_actor),
+    ) -> dict[str, Any]:
+        require_capability(actor, "ops.evals.read")
+        fixture = fixture_service.repository.get_fixture(fixture_id)
+        if not fixture:
+            return {"error": f"Tool fixture '{fixture_id}' not found"}
+        versions = fixture_service.repository.list_versions(fixture_id)
+        return {
+            "fixture": fixture.model_dump(mode="json"),
+            "versions": [v.model_dump(mode="json") for v in versions],
+        }
+
+    @router.get("/{fixture_id}/versions/{version}")
+    async def get_fixture_version(
+        fixture_id: str,
+        version: int,
+        actor: ActorContext = Depends(current_actor),
+    ) -> dict[str, Any]:
+        require_capability(actor, "ops.evals.read")
+        ver = fixture_service.repository.get_version(fixture_id, version)
+        if not ver:
+            return {"error": f"Tool fixture version '{fixture_id}:v{version}' not found"}
+        return {"version": ver.model_dump(mode="json")}
+
+
+def _register_tool_fixture_write_routes(
+    router: APIRouter,
+    fixture_service: ToolFixtureService,
+    current_actor: Callable[..., ActorContext],
+    require_capability: Callable[[ActorContext, str], None],
+) -> None:
     @router.post("")
     async def create_tool_fixture(
         payload: CreateToolFixturePayload,
@@ -79,21 +131,6 @@ def register_tool_fixture_routes(
             "version": ver.model_dump(mode="json"),
         }
 
-    @router.get("/{fixture_id}")
-    async def get_tool_fixture(
-        fixture_id: str,
-        actor: ActorContext = Depends(current_actor),
-    ) -> dict[str, Any]:
-        require_capability(actor, "ops.evals.read")
-        fixture = fixture_service.repository.get_fixture(fixture_id)
-        if not fixture:
-            return {"error": f"Tool fixture '{fixture_id}' not found"}
-        versions = fixture_service.repository.list_versions(fixture_id)
-        return {
-            "fixture": fixture.model_dump(mode="json"),
-            "versions": [v.model_dump(mode="json") for v in versions],
-        }
-
     @router.post("/{fixture_id}/versions")
     async def create_fixture_version(
         fixture_id: str,
@@ -114,18 +151,6 @@ def register_tool_fixture_routes(
         )
         return {"version": ver.model_dump(mode="json")}
 
-    @router.get("/{fixture_id}/versions/{version}")
-    async def get_fixture_version(
-        fixture_id: str,
-        version: int,
-        actor: ActorContext = Depends(current_actor),
-    ) -> dict[str, Any]:
-        require_capability(actor, "ops.evals.read")
-        ver = fixture_service.repository.get_version(fixture_id, version)
-        if not ver:
-            return {"error": f"Tool fixture version '{fixture_id}:v{version}' not found"}
-        return {"version": ver.model_dump(mode="json")}
-
     @router.post("/{fixture_id}/versions/{version}/approve")
     async def approve_fixture_version(
         fixture_id: str,
@@ -141,5 +166,3 @@ def register_tool_fixture_routes(
             reason=payload.reason,
         )
         return {"version": approved.model_dump(mode="json")}
-
-    app.include_router(router)

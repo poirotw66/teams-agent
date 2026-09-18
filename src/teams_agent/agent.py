@@ -11,6 +11,7 @@ from microsoft_teams.apps import ActivityContext, App, ErrorEvent
 from microsoft_teams.apps.plugins import StreamNotAllowedError, TerminalStreamError
 
 from .agent_gateway import AgentGateway, AgentGatewayError
+from .agent_message_delivery import deliver_gateway_answer
 from .cards import FEEDBACK_ACTION_MARKER, build_agent_activity
 from .contracts import (
     AgentRequest,
@@ -276,50 +277,15 @@ async def _handle_message(
         # Fall through to the plain request/response path rather than leaving
         # the turn unanswered.
 
-    try:
-        response = await agent_gateway.answer(request)
-    except AgentGatewayError as error:
-        elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
-        status, error_type = classify_gateway_status(error)
-        logger.exception("Agent Gateway failed: correlation_id=%s", correlation_id)
-        try:
-            await ctx.send(_service_unavailable_message(correlation_id))
-        except Exception as send_error:  # noqa: BLE001 - Teams SDK send failures vary
-            status = "FAILED"
-            error_type = type(send_error).__name__
-        adapter_health.schedule_reply(
-            status=status,
-            elapsed_ms=elapsed_ms,
-            correlation_id=correlation_id,
-            channel=request.channel,
-            error_type=error_type,
-        )
-        return
-
-    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
-    try:
-        await ctx.send(_build_activity(response, request))
-    except Exception as send_error:  # noqa: BLE001 - Teams SDK send failures vary
-        adapter_health.schedule_reply(
-            status="FAILED",
-            elapsed_ms=elapsed_ms,
-            correlation_id=correlation_id,
-            channel=request.channel,
-            error_type=type(send_error).__name__,
-        )
-        try:
-            await ctx.send(_service_unavailable_message(correlation_id))
-        except Exception:
-            logger.exception(
-                "Failed to deliver Teams fallback reply: correlation_id=%s",
-                correlation_id,
-            )
-        return
-    adapter_health.schedule_reply(
-        status="SUCCESS",
-        elapsed_ms=elapsed_ms,
+    await deliver_gateway_answer(
+        ctx=ctx,
+        request=request,
         correlation_id=correlation_id,
-        channel=request.channel,
+        started_at=started_at,
+        agent_gateway=agent_gateway,
+        adapter_health=adapter_health,
+        build_activity=_build_activity,
+        service_unavailable_message=_service_unavailable_message,
     )
 
 def _build_activity(response: AgentResponse, request: AgentRequest):

@@ -73,89 +73,54 @@ class ManifestResolver:
         has_sandbox_adapter: bool | None = None,
     ) -> RunPreflightResult:
         """Performs preflight checks before an evaluation run is queued (Spec 6.1)."""
+        from .manifest_preflight import apply_mode_preflight_checks, estimate_preflight_cost
+
         blocking_errors: list[str] = []
         warnings: list[str] = []
         limits = limits or {}
-
-        # 1. Validate Set Version
         set_version = self._repo.get_set_version(set_version_id)
         if not set_version:
-            blocking_errors.append(f"Eval set version not found: {set_version_id}")
             return RunPreflightResult(
                 is_valid=False,
-                blocking_errors=tuple(blocking_errors),
-                warnings=tuple(warnings),
+                blocking_errors=(f"Eval set version not found: {set_version_id}",),
+                warnings=(),
                 is_eval_eligible=False,
             )
-
         if set_version.status != "PUBLISHED":
             warnings.append(
                 f"Set version {set_version.version} is {set_version.status}, not PUBLISHED"
             )
-
         case_count = len(set_version.case_revision_ids)
         if case_count == 0:
             blocking_errors.append("Eval set version contains 0 case revisions")
-
-        # 2. Resolve Baseline and Candidate Manifests
         baseline_manifest, b_errs = self.resolve_manifest(baseline_target, "BASELINE")
         candidate_manifest, c_errs = self.resolve_manifest(candidate_target, "CANDIDATE")
-        blocking_errors.extend(b_errs)
-        blocking_errors.extend(c_errs)
-
-        # 3. Enforcement for REAL_RAG execution mode (Spec 6.1, F01-T1)
-        normalized_mode = mode.upper() if mode else "REAL_RAG"
-        is_eval_eligible = True
-
-        if normalized_mode == "REAL_RAG":
-            if has_retriever_adapter is False or has_answering_adapter is False:
-                blocking_errors.append(
-                    "REAL_RAG mode requires registered real retriever and answer adapters. "
-                    "Ephemeral mock or keyword fallback is prohibited for production evaluation."
-                )
-            # Validate pinned knowledge releases exist on disk if releases_dir is provided
-            if self._releases_dir:
-                if baseline_manifest.knowledge_release_id:
-                    rel_b = self._releases_dir / baseline_manifest.knowledge_release_id
-                    if not (rel_b / "index" / "chunks.json").is_file() and not (rel_b / "chunks.json").is_file():
-                        blocking_errors.append(
-                            f"Pinned baseline knowledge release artifact not found: {baseline_manifest.knowledge_release_id}"
-                        )
-                if candidate_manifest.knowledge_release_id:
-                    rel_c = self._releases_dir / candidate_manifest.knowledge_release_id
-                    if not (rel_c / "index" / "chunks.json").is_file() and not (rel_c / "chunks.json").is_file():
-                        blocking_errors.append(
-                            f"Pinned candidate knowledge release artifact not found: {candidate_manifest.knowledge_release_id}"
-                        )
-        elif normalized_mode == "AGENT_SANDBOX":
-            if has_sandbox_adapter is False:
-                blocking_errors.append("AGENT_SANDBOX mode requires registered agent sandbox adapter.")
-        elif normalized_mode == "OFFLINE_BENCHMARK":
-            is_eval_eligible = False
-            warnings.append(
-                "OFFLINE_BENCHMARK mode is not eligible for quality gate release enforcement (不可作真實品質發布驗收)."
-            )
-
-        # 4. Check for knowledge release configuration
+        blocking_errors.extend(b_errs + c_errs)
+        is_eval_eligible = apply_mode_preflight_checks(
+            mode=mode,
+            releases_dir=self._releases_dir,
+            baseline_manifest=baseline_manifest,
+            candidate_manifest=candidate_manifest,
+            has_retriever_adapter=has_retriever_adapter,
+            has_answering_adapter=has_answering_adapter,
+            has_sandbox_adapter=has_sandbox_adapter,
+            blocking_errors=blocking_errors,
+            warnings=warnings,
+        )
         if not baseline_manifest.knowledge_release_id:
-            warnings.append("Baseline has no pinned knowledge_release_id; defaulting to bundled index")
-        if not candidate_manifest.knowledge_release_id:
-            warnings.append("Candidate has no pinned knowledge_release_id; defaulting to bundled index")
-
-        # 5. Check limits and cost estimation
-        max_cases = limits.get("max_cases")
-        effective_cases = min(case_count, max_cases) if max_cases else case_count
-        estimated_tokens = effective_cases * 2 * 1200
-        estimated_cost_usd = round(estimated_tokens * 0.0000003, 4)
-        estimated_duration_seconds = round(effective_cases * 2 * 1.5, 1)
-
-        max_cost_usd = limits.get("max_cost_usd")
-        if max_cost_usd and estimated_cost_usd > max_cost_usd:
             warnings.append(
-                f"Estimated cost (${estimated_cost_usd}) exceeds requested limit (${max_cost_usd})"
+                "Baseline has no pinned knowledge_release_id; defaulting to bundled index"
             )
-
-        is_valid = len(blocking_errors) == 0
+        if not candidate_manifest.knowledge_release_id:
+            warnings.append(
+                "Candidate has no pinned knowledge_release_id; defaulting to bundled index"
+            )
+        effective_cases, estimated_cost_usd, estimated_duration_seconds = (
+            estimate_preflight_cost(
+                case_count=case_count, limits=limits, warnings=warnings
+            )
+        )
+        is_valid = not blocking_errors
         return RunPreflightResult(
             is_valid=is_valid,
             blocking_errors=tuple(blocking_errors),

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header
 
-from ..faq_domain.errors import FaqNotFoundError, FaqValidationError
+from ..faq_domain.errors import FaqValidationError
 from ..request_models import SyncJobActionRequest, SyncJobCreateRequest
+from .sync_owner_resolve import resolve_sync_owner_unit_id
 
 
 def register_sync_routes(
@@ -17,6 +18,31 @@ def register_sync_routes(
     faq_service=None,
     query_service=None,
 ) -> None:
+    register_sync_read_routes(
+        app,
+        sync_service=sync_service,
+        current_actor=current_actor,
+        require_capability=require_capability,
+    )
+    register_sync_write_routes(
+        app,
+        resolved_settings=resolved_settings,
+        sync_service=sync_service,
+        run_sync_job=run_sync_job,
+        current_actor=current_actor,
+        require_capability=require_capability,
+        faq_service=faq_service,
+        query_service=query_service,
+    )
+
+
+def register_sync_read_routes(
+    app: FastAPI,
+    *,
+    sync_service,
+    current_actor,
+    require_capability,
+) -> None:
     @app.get("/api/sync-jobs")
     async def list_sync_jobs(actor=Depends(current_actor)) -> dict[str, object]:
         require_capability(actor, "ops.sync.read")
@@ -28,6 +54,18 @@ def register_sync_routes(
         require_capability(actor, "ops.sync.read")
         return sync_service.detail(job_id, actor=actor)
 
+
+def register_sync_write_routes(
+    app: FastAPI,
+    *,
+    resolved_settings,
+    sync_service,
+    run_sync_job,
+    current_actor,
+    require_capability,
+    faq_service=None,
+    query_service=None,
+) -> None:
     @app.post("/api/sync-jobs")
     async def create_sync_job(
         payload: SyncJobCreateRequest,
@@ -39,28 +77,13 @@ def register_sync_routes(
         require_capability(actor, "ops.sync.write")
         if payload.scope_type in {"FAQ", "DOCUMENT"} and not payload.scope_ids:
             raise FaqValidationError("selected sync scopes require scope_ids")
-        owner_unit_id = resolved_settings.default_owner_unit_id
-        if payload.scope_type == "FAQ":
-            owners = set()
-            for faq_id in payload.scope_ids:
-                detail = faq_service.detail(faq_id=faq_id, actor=actor)
-                owners.add(detail["versions"][-1]["content"]["owner_unit_id"])
-            if len(owners) != 1:
-                raise FaqValidationError("FAQ sync scope must belong to one owner unit")
-            owner_unit_id = next(iter(owners))
-        elif payload.scope_type == "DOCUMENT":
-            inventory = await query_service.list_documents(actor, limit=100)
-            if inventory.get("portalStatus") != "available":
-                raise HTTPException(status_code=503, detail="Knowledge inventory is unavailable.")
-            selected = [
-                item for item in inventory["items"] if item.get("documentId") in payload.scope_ids
-            ]
-            if len(selected) != len(set(payload.scope_ids)):
-                raise FaqNotFoundError("one or more sync documents were not found")
-            owners = {item.get("ownerUnitId") for item in selected}
-            if None in owners or len(owners) != 1:
-                raise FaqValidationError("document sync scope must belong to one owner unit")
-            owner_unit_id = next(iter(owners))
+        owner_unit_id = await resolve_sync_owner_unit_id(
+            payload=payload,
+            actor=actor,
+            resolved_settings=resolved_settings,
+            faq_service=faq_service,
+            query_service=query_service,
+        )
         created = sync_service.create(
             scope_type=payload.scope_type,
             scope_ids=payload.scope_ids,
@@ -108,4 +131,3 @@ def register_sync_routes(
             reason=payload.reason,
             actor=actor,
         )
-

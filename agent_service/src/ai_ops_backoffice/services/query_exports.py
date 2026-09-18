@@ -7,6 +7,8 @@ from typing import Any
 from operations_core.access import ActorContext
 
 from .export_format import wrap_export_payload
+from .query_exports_create import build_export_create_filters
+from .query_exports_execute import export_query_filters, fetch_export_data
 
 
 class ExportsQueryMixin:
@@ -40,63 +42,36 @@ class ExportsQueryMixin:
         format_type: str | None = None,
     ) -> dict[str, Any]:
         period_kwargs = {
-            "preset": preset,
-            "days": days,
-            "start_date": start_date,
-            "end_date": end_date,
+            "preset": preset, "days": days, "start_date": start_date, "end_date": end_date,
         }
         period = self._resolve_period(**period_kwargs)
-        query_filters = {
-            key: value
-            for key, value in {
-                "actorRef": actor_ref,
-                "issueTypeId": issue_type_id,
-                "route": route,
-                "conversationId": conversation_id,
-                "model": model,
-                "hasFeedback": has_feedback,
-                "handoff": handoff,
-                "rating": rating,
-                "reason": feedback_reason,
-                "resolvedStatus": resolved_status,
-                "channelScope": channel_scope,
-                "query": query,
-                "source": source,
-                "status": status,
-                "ownerUnitId": owner_unit_id,
-                "formatType": format_type,
-            }.items()
-            if value is not None
-        }
-        request_params = {
-            "period": period_kwargs,
-            "queryFilters": {
-                "actor_ref": actor_ref,
-                "issue_type_id": issue_type_id,
-                "route": route,
-                "conversation_id": conversation_id,
-                "model": model,
-                "has_feedback": has_feedback,
-                "handoff": handoff,
-                "rating": rating,
-                "feedback_reason": feedback_reason,
-                "resolved_status": resolved_status,
-                "channel_scope": channel_scope,
-                "query": query,
-                "source": source,
-                "status": status,
-                "owner_unit_id": owner_unit_id,
-                "format_type": format_type,
-            },
-            "reason": reason,
-        }
+        snake_filters, query_filters = build_export_create_filters(
+            actor_ref=actor_ref,
+            issue_type_id=issue_type_id,
+            route=route,
+            conversation_id=conversation_id,
+            model=model,
+            has_feedback=has_feedback,
+            handoff=handoff,
+            rating=rating,
+            feedback_reason=feedback_reason,
+            resolved_status=resolved_status,
+            channel_scope=channel_scope,
+            query=query,
+            source=source,
+            status=status,
+            owner_unit_id=owner_unit_id,
+            format_type=format_type,
+        )
         self.export_jobs.configure_execution_backend(self)
         job = await self.export_jobs.create_job(
             actor=actor,
             export_type=export_type,
             reason=reason,
             days=days,
-            request_params=request_params,
+            request_params={
+                "period": period_kwargs, "queryFilters": snake_filters, "reason": reason,
+            },
             export_format=export_format,
             idempotency_key=idempotency_key,
             request_metadata={
@@ -114,7 +89,6 @@ class ExportsQueryMixin:
             "expiresAt": job.expires_at,
         }
 
-
     async def execute(self, *, actor: ActorContext, job: Any) -> dict[str, Any]:
         """ExportExecutionBackend: rebuild export using a freshly resolved actor."""
         params = dict(job.request_params or {})
@@ -122,106 +96,26 @@ class ExportsQueryMixin:
         filters = dict(params.get("queryFilters") or {})
         reason = str(params.get("reason") or job.reason)
         period = self._resolve_period(**period_kwargs)
-        export_type = job.export_type
-        if export_type == "operations_summary":
-            data = await self.operations_summary(actor, **period_kwargs)
-        elif export_type == "issues_summary":
-            data = await self.issues_summary(
-                actor,
-                **period_kwargs,
-                query=filters.get("query"),
-            )
-        elif export_type == "costs_summary":
-            data = await self.costs_summary(
-                actor,
-                **period_kwargs,
-                model=filters.get("model"),
-            )
-        elif export_type == "feedback":
-            data = await self.list_feedback(
-                actor,
-                **period_kwargs,
-                rating=filters.get("rating"),
-                issue_type_id=filters.get("issue_type_id"),
-                reason=filters.get("feedback_reason"),
-                resolved_status=filters.get("resolved_status"),
-                handoff=filters.get("handoff"),
-                model=filters.get("model"),
-                route=filters.get("route"),
-                limit=self._settings.export_max_records + 1,
-            )
-        elif export_type == "routes_summary":
-            data = await self.routes_summary(
-                actor,
-                **period_kwargs,
-                issue_type_id=filters.get("issue_type_id"),
-                route=filters.get("route"),
-            )
-        elif export_type == "knowledge_performance":
-            data = await self.list_documents(
-                actor,
-                status=filters.get("status"),
-                owner_unit_id=filters.get("owner_unit_id"),
-                query=filters.get("query"),
-                format_type=filters.get("format_type"),
-                preset=period_kwargs.get("preset"),
-                days=period_kwargs.get("days") or job.days,
-                limit=self._settings.export_max_records + 1,
-            )
-        elif export_type == "conversations":
-            data = await self.list_conversations(
-                actor,
-                **period_kwargs,
-                limit=self._settings.export_max_records + 1,
-                actor_ref=filters.get("actor_ref"),
-                user_id=filters.get("user_id"),
-                issue_type_id=filters.get("issue_type_id"),
-                route=filters.get("route"),
-                conversation_id=filters.get("conversation_id"),
-                model=filters.get("model"),
-                has_feedback=filters.get("has_feedback"),
-                handoff=filters.get("handoff"),
-                channel_scope=filters.get("channel_scope"),
-                query=filters.get("query"),
-                source=filters.get("source"),
-            )
-        else:
-            raise ValueError(f"Unsupported export type: {export_type}")
-        query_filters = {
-            key: value
-            for key, value in {
-                "actorRef": filters.get("actor_ref"),
-                "userId": filters.get("user_id"),
-                "issueTypeId": filters.get("issue_type_id"),
-                "route": filters.get("route"),
-                "conversationId": filters.get("conversation_id"),
-                "model": filters.get("model"),
-                "hasFeedback": filters.get("has_feedback"),
-                "handoff": filters.get("handoff"),
-                "rating": filters.get("rating"),
-                "reason": filters.get("feedback_reason"),
-                "resolvedStatus": filters.get("resolved_status"),
-                "channelScope": filters.get("channel_scope"),
-                "query": filters.get("query"),
-                "source": filters.get("source"),
-                "status": filters.get("status"),
-                "ownerUnitId": filters.get("owner_unit_id"),
-                "formatType": filters.get("format_type"),
-            }.items()
-            if value is not None
-        }
+        data = await fetch_export_data(
+            self,
+            actor=actor,
+            export_type=job.export_type,
+            period_kwargs=period_kwargs,
+            filters=filters,
+            job_days=job.days,
+            export_max_records=self._settings.export_max_records,
+        )
         return wrap_export_payload(
             data,
-            export_type=export_type,
+            export_type=job.export_type,
             reason=reason,
             requested_by=actor.user_id,
             requested_role=actor.role,
             export_format=job.export_format,
             period=period,
             pricing_version=self._metrics.get("pricingVersion"),
-            query_filters=query_filters,
+            query_filters=export_query_filters(filters),
         )
-
 
     async def get_export_job(self, job_id: str, *, actor: ActorContext) -> dict[str, Any] | None:
         """Return export job progress metadata only — never the artifact payload.
@@ -248,4 +142,3 @@ class ExportsQueryMixin:
                 job.content_ref or job.download_bytes is not None or job.download_content
             ),
         }
-

@@ -30,9 +30,6 @@ LOCAL_SANDBOX_TENANTS = frozenset({
     "00000000-0000-0000-0000-0000000000001",
 })
 
-_SHARED_MESSAGE_PAYLOAD_KEYS = frozenset({"messageMasked", "messageWasMasked"})
-_MIXED_TURN_HIDDEN_REASON = "MIXED_OWNER_UNIT_TURN"
-
 
 class TaxonomyOwnerUnit(Protocol):
     """Minimal taxonomy record surface for owner-unit scope checks."""
@@ -101,23 +98,6 @@ def event_in_actor_scope(
     return False
 
 
-def _redact_shared_message(event: OperationalEvent) -> OperationalEvent:
-    payload = {
-        key: value
-        for key, value in event.payload.items()
-        if key not in _SHARED_MESSAGE_PAYLOAD_KEYS
-    }
-    payload["messageHidden"] = True
-    payload["messageHiddenReason"] = _MIXED_TURN_HIDDEN_REASON
-    return event.model_copy(update={"payload": payload})
-
-
-def _carries_shared_user_message(event: OperationalEvent) -> bool:
-    if event.event_type == "turn.received":
-        return True
-    return any(key in event.payload for key in _SHARED_MESSAGE_PAYLOAD_KEYS)
-
-
 def filter_events_by_scope(
     events: list[OperationalEvent],
     actor: ActorContext,
@@ -139,6 +119,8 @@ def filter_events_by_scope(
     ``descriptionMasked`` fragments; callers must not reassemble the foreign
     unit's business content from the shared turn message.
     """
+    from .scope_companions import append_companion_events
+
     if actor_bypasses_owner_unit_scope(actor) and actor_bypasses_tenant_boundary(actor):
         return list(events)
 
@@ -171,32 +153,17 @@ def filter_events_by_scope(
             if event.correlation_id:
                 mixed_correlations.add(event.correlation_id)
 
-    # Only turns/correlations that also have an authorized owned event are mixed.
     mixed_turns &= allowed_turns
     mixed_correlations &= allowed_correlations
-
-    for event in events:
-        if event.event_id in scoped_ids:
-            continue
-        if not tenant_allows_event(actor, event):
-            continue
-        # Never widen to foreign owner units via conversation membership.
-        if owner_unit_for_event(event, taxonomy):
-            continue
-        same_turn = bool(event.turn_id and event.turn_id in allowed_turns)
-        same_correlation = bool(
-            event.correlation_id and event.correlation_id in allowed_correlations
-        )
-        if not (same_turn or same_correlation):
-            continue
-        turn_mixed = bool(event.turn_id and event.turn_id in mixed_turns)
-        correlation_mixed = bool(
-            event.correlation_id and event.correlation_id in mixed_correlations
-        )
-        if (turn_mixed or correlation_mixed) and _carries_shared_user_message(event):
-            scoped.append(_redact_shared_message(event))
-        else:
-            scoped.append(event)
-        scoped_ids.add(event.event_id)
-
+    append_companion_events(
+        events=events,
+        actor=actor,
+        taxonomy=taxonomy,
+        scoped=scoped,
+        scoped_ids=scoped_ids,
+        allowed_turns=allowed_turns,
+        allowed_correlations=allowed_correlations,
+        mixed_turns=mixed_turns,
+        mixed_correlations=mixed_correlations,
+    )
     return scoped

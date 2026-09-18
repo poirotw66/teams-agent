@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -10,141 +9,44 @@ from xml.sax.saxutils import escape
 
 from operations_core.contracts import DEFAULT_TIMEZONE, utc_now
 
+from .export_format_tabular import (
+    extract_conversation_rows,
+    extract_dict_list_rows,
+    is_conversation_export,
+    key_value_rows,
+    sanitize_csv_cell,
+)
 from .periods import ResolvedPeriod
 
-
-def sanitize_csv_cell(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        text = json.dumps(value, ensure_ascii=False)
-    else:
-        text = str(value)
-    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
-        return f"'{text}"
-    return text
+__all__ = [
+    "flatten_for_csv",
+    "flatten_for_xlsx",
+    "period_metadata",
+    "sanitize_csv_cell",
+    "wrap_export_payload",
+]
 
 
 def _extract_tabular_rows(payload: dict[str, Any]) -> list[list[str]]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else None
     if not data:
-        rows = [["key", "value"]]
-        for key, value in payload.items():
-            rows.append([sanitize_csv_cell(key), sanitize_csv_cell(value)])
-        return rows
+        return key_value_rows(payload)
 
-    export_meta = payload.get("exportMetadata") if isinstance(payload.get("exportMetadata"), dict) else {}
+    export_meta = (
+        payload.get("exportMetadata")
+        if isinstance(payload.get("exportMetadata"), dict)
+        else {}
+    )
     export_type = str(export_meta.get("exportType") or "")
     items = data.get("items") or data.get("records") or data.get("routeDistribution")
 
-    if export_type == "conversations" or (isinstance(items, list) and items and any(isinstance(it, dict) and "turns" in it for it in items)):
-        headers = [
-            "conversationId",
-            "turnId",
-            "occurredAt",
-            "actorRef",
-            "userMessage",
-            "aiReply",
-            "model",
-            "issueTypeId",
-            "route",
-            "faqKey",
-            "documentIds",
-            "sourcePaths",
-            "feedbackRating",
-            "feedbackReason",
-            "resolvedStatus",
-            "handoffStatus",
-            "ticketId",
-            "ticketStatus",
-            "ticketBackend",
-            "channelScope",
-        ]
-        rows: list[list[str]] = [headers]
-        if isinstance(items, list):
-            for conv in items:
-                if not isinstance(conv, dict):
-                    continue
-                conv_id = str(conv.get("conversationId") or "")
-                actor_ref = str(conv.get("actorRef") or "")
-                channel_scope = str(conv.get("channelScope") or "")
-                turns = conv.get("turns")
-                if isinstance(turns, list) and turns:
-                    for turn in turns:
-                        if not isinstance(turn, dict):
-                            continue
-                        docs = turn.get("documentIds")
-                        docs_str = ",".join(docs) if isinstance(docs, (list, tuple)) else str(docs or "")
-                        sources = turn.get("sourcePaths")
-                        sources_str = ",".join(sources) if isinstance(sources, (list, tuple)) else str(sources or "")
-                        rows.append([
-                            sanitize_csv_cell(conv_id),
-                            sanitize_csv_cell(turn.get("turnId") or ""),
-                            sanitize_csv_cell(turn.get("occurredAt") or ""),
-                            sanitize_csv_cell(turn.get("actorRef") or actor_ref),
-                            sanitize_csv_cell(turn.get("userMessage") or ""),
-                            sanitize_csv_cell(turn.get("aiReply") or ""),
-                            sanitize_csv_cell(turn.get("model") or ""),
-                            sanitize_csv_cell(turn.get("issueTypeId") or ""),
-                            sanitize_csv_cell(turn.get("route") or ""),
-                            sanitize_csv_cell(turn.get("faqKey") or ""),
-                            sanitize_csv_cell(docs_str),
-                            sanitize_csv_cell(sources_str),
-                            sanitize_csv_cell(turn.get("feedbackRating") or ""),
-                            sanitize_csv_cell(turn.get("feedbackReason") or ""),
-                            sanitize_csv_cell(turn.get("resolvedStatus") or ""),
-                            sanitize_csv_cell(turn.get("handoffStatus") or ""),
-                            sanitize_csv_cell(turn.get("ticketId") or ""),
-                            sanitize_csv_cell(turn.get("ticketStatus") or ""),
-                            sanitize_csv_cell(turn.get("ticketBackend") or ""),
-                            sanitize_csv_cell(channel_scope),
-                        ])
-                else:
-                    routes = conv.get("routes")
-                    routes_str = ",".join(routes) if isinstance(routes, (list, tuple)) else str(routes or "")
-                    ticket_ids = conv.get("ticketIds")
-                    ticket_str = ",".join(ticket_ids) if isinstance(ticket_ids, (list, tuple)) else str(ticket_ids or "")
-                    rows.append([
-                        sanitize_csv_cell(conv_id),
-                        "",
-                        sanitize_csv_cell(conv.get("lastOccurredAt") or ""),
-                        sanitize_csv_cell(actor_ref),
-                        "",
-                        "",
-                        "",
-                        "",
-                        sanitize_csv_cell(routes_str),
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        sanitize_csv_cell(conv.get("handoffStatus") or ""),
-                        sanitize_csv_cell(ticket_str),
-                        sanitize_csv_cell(conv.get("ticketStatus") or ""),
-                        "",
-                        sanitize_csv_cell(channel_scope),
-                    ])
-        return rows
+    if is_conversation_export(export_type, items) and isinstance(items, list):
+        return extract_conversation_rows(items)
 
     if isinstance(items, list) and items and isinstance(items[0], dict):
-        keys = list(items[0].keys())
-        for it in items[1:]:
-            if isinstance(it, dict):
-                for k in it:
-                    if k not in keys:
-                        keys.append(k)
-        rows = [keys]
-        for it in items:
-            if isinstance(it, dict):
-                rows.append([sanitize_csv_cell(it.get(k)) for k in keys])
-        return rows
+        return extract_dict_list_rows(items)
 
-    rows = [["key", "value"]]
-    for key, value in payload.items():
-        rows.append([sanitize_csv_cell(key), sanitize_csv_cell(value)])
-    return rows
+    return key_value_rows(payload)
 
 
 def flatten_for_csv(payload: dict[str, Any]) -> str:

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 
-from operations_core.access import ActorContext, BackofficeRole
+from operations_core.access import ActorContext
 
+from .auth_header import resolve_header_actor
 from .entra_auth import EntraAuthError, resolve_actor_from_entra
 
 
@@ -55,12 +56,9 @@ def resolve_actor(
             or "dev"
         ).lower()
         if environment in {"dev", "test", "poc"}:
-            validate_signature = os.environ.get("AI_OPS_ENTRA_VALIDATE_JWT", "true").lower() in {
-                "1",
-                "true",
-                "yes",
-                "on",
-            }
+            validate_signature = os.environ.get(
+                "AI_OPS_ENTRA_VALIDATE_JWT", "true"
+            ).lower() in {"1", "true", "yes", "on"}
         else:
             validate_signature = True
         try:
@@ -74,41 +72,15 @@ def resolve_actor(
         except EntraAuthError as exc:
             raise BackofficeAuthError(str(exc)) from exc
 
-    if not header_auth_allowed():
-        raise BackofficeAuthError(
-            "Header auth is disabled outside dev/test. Configure ENTRA auth for production."
-        )
-    if not header_user_id:
-        raise BackofficeAuthError("Missing X-Backoffice-User-Id header.")
-    role = (header_role or "ANALYST").upper()
-    allowed: set[BackofficeRole] = {
-        "SYSTEM_ADMIN",
-        "AI_ADMIN",
-        "KNOWLEDGE_ADMIN",
-        "SERVICE_OWNER",
-        "ANALYST",
-        "VIEWER",
-        "AUDITOR",
-    }
-    if role not in allowed:
-        raise BackofficeAuthError("Invalid backoffice role.")
-    owner_units = [
-        item.strip()
-        for item in (header_owner_units or default_owner_unit_id).split(",")
-        if item.strip()
-    ]
-    # Align with Portal / Agent lab tenant ("default") so console HEADER login
-    # can resolve the same SourceRecords without a special local-development copy.
-    tenant_id = (header_tenant_id or "").strip() or "default"
-    groups = tuple(
-        item.strip() for item in (header_groups or "").split(",") if item.strip()
-    )
-    return ActorContext(
-        user_id=header_user_id,
-        display_name=header_user_name or header_user_id,
-        role=role,  # type: ignore[arg-type]
-        owner_unit_ids=tuple(owner_units),
-        tenant_id=tenant_id,
-        groups=groups,
-        revoked=bool(revoked),
+    return resolve_header_actor(
+        header_user_id=header_user_id,
+        header_user_name=header_user_name,
+        header_role=header_role,
+        header_owner_units=header_owner_units,
+        default_owner_unit_id=default_owner_unit_id,
+        header_tenant_id=header_tenant_id,
+        header_groups=header_groups,
+        revoked=revoked,
+        auth_error_cls=BackofficeAuthError,
+        header_auth_allowed_fn=header_auth_allowed,
     )
