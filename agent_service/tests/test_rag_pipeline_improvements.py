@@ -146,6 +146,20 @@ def test_sanitize_separates_citation_from_ui_key_brackets() -> None:
     assert "按 [電話號碼] [S1]" not in sanitized
 
 
+def test_sanitize_narrows_overbroad_sec002_password_ban() -> None:
+    """QB-052 regression: meeting-password fields must not conflict with SEC-002."""
+    raw = (
+        "請將會議名稱、會議密碼等資料寄送至 123@cathaysec.com.tw [S1]。"
+        "嚴禁於郵件中提供任何密碼資訊 [POLICY-SEC-002]。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "任何密碼" not in sanitized
+    assert "會議密碼" in sanitized
+    assert "登入密碼、憑證密碼與動態驗證碼" in sanitized
+    assert "[POLICY-SEC-002]" in sanitized
+    assert "[S1]" in sanitized
+
+
 def test_sanitize_answer_security_appends_proxy_advisory_when_unqualified() -> None:
     raw = "若連線後 Wi-Fi 瞬斷，請至設定將 Proxy 設定全部關閉後重新連線。"
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
@@ -969,6 +983,8 @@ def test_answer_prompt_security_rules_align_with_policy_bodies() -> None:
         ANSWER_PROMPT_SECURITY_RULES
     )
     assert "此提醒不是安全政策，嚴禁標成 [POLICY-SEC-001]" in ANSWER_PROMPT_SECURITY_RULES
+    assert "會議密碼" in ANSWER_PROMPT_SECURITY_RULES
+    assert "不得寫成「任何密碼／所有密碼」" in ANSWER_PROMPT_SECURITY_RULES
 
 
 def test_unknown_policy_markers_do_not_crash_advisories() -> None:

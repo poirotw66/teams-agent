@@ -157,6 +157,11 @@ _KEY_BRACKET_CITATION_RE = re.compile(
     r"(按\s*\[[^\]]+\])\s*(\[S\d+\])",
     re.IGNORECASE,
 )
+_OVERBROAD_SEC002_BAN_RE = re.compile(
+    r"(?:並?[，,]?\s*)?(?:嚴禁|不得)[^。\n]*?(?:任何密碼|所有密碼)[^。\n]*?\[POLICY-SEC-002\][。.]?",
+    re.IGNORECASE,
+)
+_PRECISE_SEC002_ADVISORY = "嚴禁於回報中提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。"
 _SECURITY_POLICY_ADVISORY = f"\n\n{PROXY_ADVISORY_TEXT}"
 _POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
 _CITATION_OR_POLICY_MARKER = re.compile(r"\[(?:S\d+|POLICY-SEC-\d{3})\]")
@@ -2377,6 +2382,9 @@ class HybridKnowledgeService:
         sanitized = _TEST_LINK_POLICY_SENTENCE_RE.sub("", sanitized)
         # 4b. Separate citation markers from UI key brackets (QB-055).
         sanitized = _KEY_BRACKET_CITATION_RE.sub(r"\1。\2", sanitized)
+        # 4c. SEC-002 must not ban "any password" (QB-052: conflicts with 會議密碼 fields).
+        if _OVERBROAD_SEC002_BAN_RE.search(sanitized):
+            sanitized = _OVERBROAD_SEC002_BAN_RE.sub(_PRECISE_SEC002_ADVISORY, sanitized)
         # 5. POLICY-SEC-001 may only remain when the answer discusses its scope.
         if "[POLICY-SEC-001]" in sanitized and not _SEC001_APPLICABLE_SCOPE_RE.search(
             sanitized
