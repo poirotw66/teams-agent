@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
 from typing import Any
 
 from operations_core.access import ActorContext
-from operations_core.usage import convert_usd_to_twd, list_model_rates_usd, lookup_rate
 
-from .usage_projection import (
-    UsageDimensions,
-    confirmed_zero_call,
-    known_cost_total,
-    project_usage,
-    usage_breakdown,
-)
+from .query_costs_aggregate import accumulate_cost_metrics, build_costs_summary_payload
+from .usage_projection import UsageDimensions, project_usage
 
 
 def _cost_event_is_relevant(payload: dict) -> bool:
@@ -29,7 +22,6 @@ def _cost_event_is_relevant(payload: dict) -> bool:
     if cost is None:
         return False
     return float(cost) != 0.0
-
 
 
 class CostsQueryMixin:
@@ -62,137 +54,15 @@ class CostsQueryMixin:
         model_filter = (model or "").strip()
         if model_filter:
             events = [
-                event
-                for event in events
-                if str(event.payload.get("model") or "") == model_filter
+                event for event in events if str(event.payload.get("model") or "") == model_filter
             ]
-        by_day: dict[str, float] = defaultdict(float)
-        by_backend: Counter[str] = Counter()
-        by_route_cost: dict[str, float] = defaultdict(float)
-        by_issue_cost: dict[str, float] = defaultdict(float)
-        input_tokens = 0
-        output_tokens = 0
-        embedding_tokens = 0
-        tool_context_tokens = 0
-        missing_cost_count = 0
-        zero_cost_count = 0
-        estimated_cost_count = 0
-        pricing_versions: Counter[str] = Counter()
-        for event in events:
-            day = event.occurred_at.date().isoformat()
-            cost = event.payload.get("estimatedCostUsd")
-            route, issue_type_id = usage_dimensions.resolve(event)
-            if cost is None:
-                if confirmed_zero_call(event):
-                    zero_cost_count += 1
-                else:
-                    missing_cost_count += 1
-            else:
-                cost_value = float(cost)
-                if cost_value == 0.0:
-                    zero_cost_count += 1
-                else:
-                    estimated_cost_count += 1
-                by_day[day] += cost_value
-                by_route_cost[route] += cost_value
-                by_issue_cost[issue_type_id] += cost_value
-            backend = str(event.payload.get("knowledgeBackend") or "unknown")
-            by_backend[backend] += 1
-            input_tokens += int(event.payload.get("inputTokens") or 0)
-            output_tokens += int(event.payload.get("outputTokens") or 0)
-            embedding_tokens += int(event.payload.get("embeddingTokens") or 0)
-            tool_context_tokens += int(event.payload.get("toolContextTokens") or 0)
-            pricing_version = str(event.payload.get("pricingVersion") or "unknown")
-            pricing_versions[pricing_version] += 1
-        known_total = known_cost_total(events)
-        pricing_svc = getattr(self, "pricing_service", None)
-        if pricing_svc is not None:
-            exchange_rate = pricing_svc.get_exchange_rate()
-            model_rates = pricing_svc.list_rates()
-        else:
-            exchange_rate = float(self._metrics.get("usdTwdExchangeRate", 31.70))
-            model_rates = list_model_rates_usd()
-        by_model: list[dict[str, Any]] = []
-        for item in usage_breakdown(events, "model"):
-            input_count = int(item.get("inputTokens") or 0)
-            output_count = int(item.get("outputTokens") or 0)
-            model_name = str(item.get("model") or "")
-            rate = pricing_svc.lookup_rate(model_name) if pricing_svc is not None else lookup_rate(model_name)
-            cost_val = item.get("estimatedCostUsd")
-            if cost_val is not None:
-                cost_status = "ZERO_COST" if float(cost_val) == 0.0 else "ESTIMATED"
-            elif input_count == 0 and output_count == 0:
-                cost_status = "ZERO_COST"
-            else:
-                cost_status = "UNKNOWN"
-            by_model.append(
-                {
-                    **item,
-                    "totalTokens": input_count + output_count,
-                    "costStatus": cost_status,
-                    "inputUsdPer1MTokens": rate[0] if rate else None,
-                    "outputUsdPer1MTokens": rate[1] if rate else None,
-                }
-            )
-        return {
-            "periodDays": period.days,
-            "periodPreset": period.preset,
-            "model": model_filter or None,
-            "totalEstimatedCostUsd": known_total,
-            "totalEstimatedCostTwd": (
-                convert_usd_to_twd(known_total, exchange_rate) if known_total is not None else None
-            ),
-            "usdTwdExchangeRate": exchange_rate,
-            "estimatedCostEventCount": estimated_cost_count,
-            "zeroCostEventCount": zero_cost_count,
-            "missingCostEventCount": missing_cost_count,
-            "unknownCostEventCount": missing_cost_count,
-            "inputTokens": input_tokens,
-            "outputTokens": output_tokens,
-            "embeddingTokens": embedding_tokens,
-            "toolContextTokens": tool_context_tokens,
-            "llmCallCount": sum(int(event.payload.get("llmCallCount") or 0) for event in events),
-            "byDay": [
-                {"date": day, "estimatedCostUsd": round(value, 6)}
-                for day, value in sorted(by_day.items())
-            ],
-            "byModel": by_model,
-            "modelRates": model_rates,
-            "byProvider": usage_breakdown(events, "provider"),
-            "byComponent": usage_breakdown(events, "component"),
-            "byBackend": [
-                {"backend": backend, "eventCount": count}
-                for backend, count in by_backend.most_common()
-            ],
-            "byRoute": [
-                {"route": route, "estimatedCostUsd": round(value, 6)}
-                for route, value in sorted(
-                    by_route_cost.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            ],
-            "byIssueType": [
-                {
-                    "issueTypeId": issue_type_id,
-                    "displayName": (
-                        self.taxonomy.get(issue_type_id).display_name
-                        if self.taxonomy.get(issue_type_id)
-                        else issue_type_id
-                    ),
-                    "estimatedCostUsd": round(value, 6),
-                }
-                for issue_type_id, value in sorted(
-                    by_issue_cost.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            ],
-            "eventCount": len(events),
-            "pricingVersion": self._metrics.get("pricingVersion", "v1"),
-            "pricingVersionsObserved": [
-                {"pricingVersion": version, "eventCount": count}
-                for version, count in pricing_versions.most_common()
-            ],
-        }
-
+        acc = accumulate_cost_metrics(events, usage_dimensions)
+        return build_costs_summary_payload(
+            taxonomy=self.taxonomy,
+            metrics=self._metrics,
+            pricing_svc=getattr(self, "pricing_service", None),
+            period=period,
+            events=events,
+            model_filter=model_filter,
+            acc=acc,
+        )

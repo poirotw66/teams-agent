@@ -9,6 +9,14 @@ from typing import Any, Literal
 from operations_core.contracts import FreshnessMetadata
 from operations_core.freshness_store import FreshnessStore
 
+from .freshness_compute import (
+    compute_lag_seconds,
+    resolve_backlog_state,
+    resolve_effective_watermark,
+    resolve_freshness_status,
+    resolve_last_sync,
+)
+
 logger = logging.getLogger(__name__)
 
 StageName = Literal[
@@ -200,133 +208,103 @@ class FreshnessTracker:
         backlog_lag_seconds: float | None = None,
         is_idle: bool | None = None,
     ) -> FreshnessMetadata:
-        """Calculates FreshnessMetadata from ingest/aggregation completion, not raw event time.
-
-        An empty event stream does not imply pipeline lag. Prefer the latest
-        EVENT_INGESTED / AGGREGATION_COMPLETED stage or last successful sync.
-        UI render time (CONVERSATION_LIST_RENDERED) is never used as sync evidence.
-
-        Idle Pipeline Handling:
-        When the pipeline is healthy (worker alive), has synchronization evidence,
-        and has recent verified backlog evidence of 0 (idle), it returns REALTIME
-        with lag_seconds=0.0, while preserving the historical event_watermark.
-        """
+        """Build FreshnessMetadata from ingest/aggregation evidence, not raw event age."""
         self._reload_persistent_sync_if_needed()
         now_dt = now or self.now()
         with self._lock:
-            worker_alive = self.is_worker_active(now_dt)
-            if tenant_id:
-                lookup_key = f"{tenant_id}:{resource_type}"
-                last_sync = self._store.get_watermark(lookup_key)
-                if last_sync is None and self._firestore_client is not None:
-                    last_sync = self._store.get_watermark(lookup_key, fetch_remote=True)
-            else:
-                lookup_key = resource_type
-                last_sync = self._store.get_watermark(lookup_key)
-                if last_sync is None:
-                    norm_key = (resource_type or "").strip().lower()
-                    for alt in (norm_key.replace("_", "-"), norm_key.replace("-", "_")):
-                        if alt in self._last_successful_sync:
-                            last_sync = self._last_successful_sync[alt]
-                            break
-                if last_sync is None and self._firestore_client is not None:
-                    last_sync = self._store.get_watermark(lookup_key, fetch_remote=True)
+            return self._compute_freshness_locked(
+                resource_type=resource_type,
+                watermark=watermark,
+                is_syncing=is_syncing,
+                now_dt=now_dt,
+                tenant_id=tenant_id,
+                has_pending_backlog=has_pending_backlog,
+                backlog_count=backlog_count,
+                backlog_lag_seconds=backlog_lag_seconds,
+                is_idle=is_idle,
+            )
 
-            pipeline_watermark = self._latest_pipeline_watermark(resource_type, tenant_id=tenant_id)
-
-            # Explicit watermark wins for callers that already resolved pipeline time.
-            # Otherwise prefer ingest/aggregation completion or last_sync.
-            # UI render time (CONVERSATION_LIST_RENDERED) is presentation-only and must NEVER
-            # serve as a pipeline watermark to claim REALTIME without sync/ingest evidence!
-            if watermark is not None:
-                effective_watermark = watermark
-            elif pipeline_watermark is not None:
-                effective_watermark = pipeline_watermark
-            elif last_sync is not None:
-                effective_watermark = last_sync
-            else:
-                effective_watermark = None
-
-            if not effective_watermark:
-                return FreshnessMetadata(
-                    event_watermark=None,
-                    materialized_at=None,
-                    served_at=now_dt,
-                    lag_seconds=None,
-                    status="UNKNOWN",
-                    last_successful_sync_at=last_sync,
-                )
-
-            # Resolve backlog state and freshness
-            stored_backlog = self._store.get_backlog(lookup_key)
-            if stored_backlog is None and self._firestore_client is not None:
-                stored_backlog = self._store.get_backlog(lookup_key, fetch_remote=True)
-            if stored_backlog is None and not tenant_id:
-                stored_backlog = self._store.get_backlog(resource_type)
-
-            effective_backlog_count = backlog_count
-            effective_oldest_pending = None
-            backlog_is_fresh = False
-
-            if stored_backlog is not None:
-                rec_at = stored_backlog.get("recorded_at")
-                if rec_at is not None:
-                    elapsed = (now_dt - rec_at).total_seconds()
-                    if elapsed <= self._worker_stale_threshold:
-                        backlog_is_fresh = True
-                else:
-                    backlog_is_fresh = worker_alive
-
-                if effective_backlog_count is None and backlog_is_fresh:
-                    effective_backlog_count = stored_backlog.get("count", 0)
-                if backlog_is_fresh:
-                    effective_oldest_pending = stored_backlog.get("oldest_pending_at")
-
-            effective_has_backlog = has_pending_backlog
-            if effective_has_backlog is None:
-                if effective_backlog_count is not None:
-                    effective_has_backlog = effective_backlog_count > 0
-                elif is_idle is True:
-                    effective_has_backlog = False
-
-            # Determine pipeline lag vs raw event age
-            # If idle pipeline (explicit is_idle=True, OR explicit has_pending_backlog=False,
-            # OR recent observed backlog evidence exists and count is 0):
-            # lag represents processing backlog delay (0.0), preserving event_watermark.
-            if is_idle is True or effective_has_backlog is False or (effective_backlog_count == 0 and backlog_is_fresh and effective_has_backlog is not True):
-                lag_seconds = 0.0
-            elif effective_has_backlog is True and effective_oldest_pending is not None:
-                lag_seconds = max(0.0, (now_dt - effective_oldest_pending).total_seconds())
-            elif backlog_lag_seconds is not None:
-                lag_seconds = max(0.0, backlog_lag_seconds)
-            else:
-                lag_seconds = max(0.0, (now_dt - effective_watermark).total_seconds())
-
-            if not worker_alive:
-                status: Literal["REALTIME", "SYNCING", "DELAYED", "FAILED", "UNKNOWN"] = (
-                    "FAILED" if not self._is_worker_connected else "DELAYED"
-                )
-            elif is_syncing:
-                status = "SYNCING"
-            elif lag_seconds > self._realtime_lag_threshold:
-                status = "DELAYED"
-            else:
-                status = "REALTIME"
-
+    def _compute_freshness_locked(
+        self,
+        *,
+        resource_type: str,
+        watermark: datetime | None,
+        is_syncing: bool,
+        now_dt: datetime,
+        tenant_id: str | None,
+        has_pending_backlog: bool | None,
+        backlog_count: int | None,
+        backlog_lag_seconds: float | None,
+        is_idle: bool | None,
+    ) -> FreshnessMetadata:
+        worker_alive = self.is_worker_active(now_dt)
+        lookup_key, last_sync = resolve_last_sync(
+            self._store,
+            resource_type=resource_type,
+            tenant_id=tenant_id,
+            firestore_client=self._firestore_client,
+            last_successful_sync=self._last_successful_sync,
+        )
+        pipeline_watermark = self._latest_pipeline_watermark(resource_type, tenant_id=tenant_id)
+        # Explicit watermark wins; UI render time must never claim REALTIME alone.
+        effective_watermark = resolve_effective_watermark(
+            watermark=watermark,
+            pipeline_watermark=pipeline_watermark,
+            last_sync=last_sync,
+        )
+        if not effective_watermark:
             return FreshnessMetadata(
-                event_watermark=effective_watermark,
-                materialized_at=(
-                    effective_watermark
-                    if watermark is not None
-                    else (pipeline_watermark or last_sync or effective_watermark)
-                ),
+                event_watermark=None,
+                materialized_at=None,
                 served_at=now_dt,
-                lag_seconds=round(lag_seconds, 2),
-                status=status,
+                lag_seconds=None,
+                status="UNKNOWN",
                 last_successful_sync_at=last_sync,
             )
 
-    def _latest_pipeline_watermark(self, resource_type: str, tenant_id: str | None = None) -> datetime | None:
+        backlog = resolve_backlog_state(
+            self._store,
+            lookup_key=lookup_key,
+            resource_type=resource_type,
+            tenant_id=tenant_id,
+            firestore_client=self._firestore_client,
+            now_dt=now_dt,
+            worker_alive=worker_alive,
+            worker_stale_threshold=self._worker_stale_threshold,
+            has_pending_backlog=has_pending_backlog,
+            backlog_count=backlog_count,
+            is_idle=is_idle,
+        )
+        lag_seconds = compute_lag_seconds(
+            now_dt=now_dt,
+            effective_watermark=effective_watermark,
+            backlog=backlog,
+            is_idle=is_idle,
+            backlog_lag_seconds=backlog_lag_seconds,
+        )
+        status = resolve_freshness_status(
+            worker_alive=worker_alive,
+            is_worker_connected=self._is_worker_connected,
+            is_syncing=is_syncing,
+            lag_seconds=lag_seconds,
+            realtime_lag_threshold=self._realtime_lag_threshold,
+        )
+        return FreshnessMetadata(
+            event_watermark=effective_watermark,
+            materialized_at=(
+                effective_watermark
+                if watermark is not None
+                else (pipeline_watermark or last_sync or effective_watermark)
+            ),
+            served_at=now_dt,
+            lag_seconds=round(lag_seconds, 2),
+            status=status,
+            last_successful_sync_at=last_sync,
+        )
+
+    def _latest_pipeline_watermark(
+        self, resource_type: str, tenant_id: str | None = None
+    ) -> datetime | None:
         norm = (resource_type or "").strip().lower()
         if norm == "conversations":
             primary_stages: tuple[StageName, ...] = ("EVENT_INGESTED",)
@@ -348,7 +326,9 @@ class FreshnessTracker:
             )
         return self._scan_stages(norm, primary_stages, tenant_id=tenant_id)
 
-    def _latest_ui_render_watermark(self, resource_type: str, tenant_id: str | None = None) -> datetime | None:
+    def _latest_ui_render_watermark(
+        self, resource_type: str, tenant_id: str | None = None
+    ) -> datetime | None:
         norm = (resource_type or "").strip().lower()
         return self._scan_stages(norm, ("CONVERSATION_LIST_RENDERED",), tenant_id=tenant_id)
 
@@ -361,7 +341,11 @@ class FreshnessTracker:
         if not stages:
             return None
         latest: datetime | None = None
-        keys_to_check = [f"{tenant_id}:{norm}"] if tenant_id else [norm, norm.replace("_", "-"), norm.replace("-", "_")]
+        keys_to_check = (
+            [f"{tenant_id}:{norm}"]
+            if tenant_id
+            else [norm, norm.replace("_", "-"), norm.replace("-", "_")]
+        )
         for key in keys_to_check:
             if key in self._stage_events:
                 for stage in stages:

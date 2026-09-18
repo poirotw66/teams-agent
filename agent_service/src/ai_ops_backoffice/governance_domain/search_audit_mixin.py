@@ -13,16 +13,9 @@ from .models import (
     GovernanceState,
     replace_model,
 )
+from .search_hits import collect_search_hits
 
 Clock = Callable[[], datetime]
-
-
-
-
-from .service_helpers import (
-    _active_prompt,
-    _allowed,
-)
 
 
 class GovernanceSearchAuditMixin:
@@ -38,157 +31,15 @@ class GovernanceSearchAuditMixin:
     ) -> dict[str, Any]:
         self._require(actor, READ["search"])
         state = self._ensured()
-        needle = query.casefold()
-        target_status = status.strip().upper() if status and status.strip() else None
-        hits: list[dict[str, Any]] = []
-        for prompt in state.prompts:
-            if not _allowed(actor, READ["prompt"], doc_type, "PROMPT"):
-                continue
-            active = _active_prompt(state, prompt.prompt_id)
-            item_status = active.status if active else "ACTIVE"
-            if target_status and item_status.upper() != target_status:
-                continue
-            haystack = f"{prompt.prompt_id} {prompt.display_name} {active.version}"
-            if needle and needle not in haystack.casefold():
-                continue
-            hits.append(
-                {
-                    "type": "PROMPT",
-                    "id": prompt.prompt_id,
-                    "title": prompt.display_name,
-                    "snippet": active.version,
-                    "status": item_status,
-                }
-            )
-        for flag in state.flags:
-            if not _allowed(actor, READ["flag"], doc_type, "FLAG"):
-                continue
-            item_status = "ACTIVE" if flag.active_version_id else "DRAFT"
-            if target_status and item_status.upper() != target_status:
-                continue
-            haystack = f"{flag.flag_id} {flag.description}"
-            if needle and needle not in haystack.casefold():
-                continue
-            hits.append(
-                {
-                    "type": "FLAG",
-                    "id": flag.flag_id,
-                    "title": flag.flag_id,
-                    "snippet": flag.description,
-                    "status": item_status,
-                }
-            )
-        for config in state.model_configs:
-            if not _allowed(actor, READ["model"], doc_type, "MODEL"):
-                continue
-            item_status = "ACTIVE" if config.active_version_id else "DRAFT"
-            if target_status and item_status.upper() != target_status:
-                continue
-            haystack = f"{config.config_id} {config.component}"
-            if needle and needle not in haystack.casefold():
-                continue
-            hits.append(
-                {
-                    "type": "MODEL",
-                    "id": config.config_id,
-                    "title": config.component,
-                    "snippet": config.config_id,
-                    "status": item_status,
-                }
-            )
-        if actor.has_capability(READ["role"]) and doc_type in {None, "ROLE_MAPPING"}:
-            for change in state.role_changes:
-                item_status = str(change.status)
-                if target_status and item_status.upper() != target_status:
-                    continue
-                haystack = f"{change.target_principal} {change.target_role or ''} {change.status}"
-                if needle and needle not in haystack.casefold():
-                    continue
-                hits.append(
-                    {
-                        "type": "ROLE_MAPPING",
-                        "id": change.change_id,
-                        "title": change.target_principal,
-                        "snippet": change.status,
-                        "status": item_status,
-                    }
-                )
-        if actor.has_capability(READ["retention"]) and doc_type in {None, "RETENTION"}:
-            for policy in state.retention_policies:
-                item_status = str(policy.status)
-                if target_status and item_status.upper() != target_status:
-                    continue
-                haystack = f"{policy.policy_id} {policy.migration_plan} {policy.status}"
-                if needle and needle not in haystack.casefold():
-                    continue
-                hits.append(
-                    {
-                        "type": "RETENTION",
-                        "id": policy.version_id,
-                        "title": policy.policy_id,
-                        "snippet": f"ttl={policy.ttl_days} {policy.status}",
-                        "status": item_status,
-                    }
-                )
-        if actor.has_capability(READ["retention"]) and doc_type in {None, "MASKING"}:
-            for policy in state.masking_policies:
-                item_status = str(policy.status)
-                if target_status and item_status.upper() != target_status:
-                    continue
-                haystack = f"{policy.policy_version} {policy.status}"
-                if needle and needle not in haystack.casefold():
-                    continue
-                hits.append(
-                    {
-                        "type": "MASKING",
-                        "id": policy.version_id,
-                        "title": policy.policy_version,
-                        "snippet": policy.status,
-                        "status": item_status,
-                    }
-                )
-        if actor.has_capability(READ["audit"]) and doc_type in {None, "AUDIT"}:
-            for event in state.audits:
-                item_status = "SUCCESS" if getattr(event, "result", None) != "FAILED" else "FAILED"
-                if target_status and item_status.upper() != target_status:
-                    continue
-                haystack = f"{event.action} {event.target_id}"
-                if needle and needle not in haystack.casefold():
-                    continue
-                hits.append(
-                    {
-                        "type": "AUDIT",
-                        "id": event.audit_id,
-                        "title": event.action,
-                        "snippet": event.target_id,
-                        "status": item_status,
-                    }
-                )
-        for document in extra_documents or ():
-            required = str(document.get("requiredCapability") or "")
-            actual_type = str(document.get("type") or "EXTERNAL")
-            if doc_type not in {None, actual_type}:
-                continue
-            if owner_unit_id and document.get("owner_unit_id") and document.get("owner_unit_id") != owner_unit_id:
-                continue
-            if required and not actor.has_capability(required):
-                continue
-            item_status = str(document.get("status") or "ACTIVE")
-            if target_status and item_status.upper() != target_status:
-                continue
-            haystack = f"{document.get('title', '')} {document.get('snippet', '')}"
-            if needle and needle not in haystack.casefold():
-                continue
-            hits.append(
-                {
-                    "type": actual_type,
-                    "id": str(document.get("id") or ""),
-                    "title": str(document.get("title") or ""),
-                    "snippet": str(document.get("snippet") or ""),
-                    "owner_unit_id": document.get("owner_unit_id"),
-                    "status": item_status,
-                }
-            )
+        hits = collect_search_hits(
+            state,
+            actor=actor,
+            query=query,
+            doc_type=doc_type,
+            owner_unit_id=owner_unit_id,
+            status=status,
+            extra_documents=extra_documents,
+        )
 
         def operation(current: GovernanceState) -> tuple[GovernanceState, dict[str, Any]]:
             audit = self._audit(
