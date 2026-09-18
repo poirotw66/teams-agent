@@ -412,6 +412,13 @@ Firestore `mock_tickets` collection。此服務僅供驗收，不代表正式工
 docker compose -f deploy/docker-compose.backoffice-split.yml up --build
 ```
 
+Optional Phase G static console image (assets only; does not replace Backoffice UI):
+
+```bash
+docker compose -f deploy/docker-compose.console.yml up --build
+# or: gcloud builds submit . --config=deploy/cloudbuild-console.yaml --substitutions=_IMAGE=<registry>/ai-ops-console:<tag>
+```
+
 ### GCP Cloud Run 部署
 
 ```bash

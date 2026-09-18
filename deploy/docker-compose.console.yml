@@ -1,0 +1,24 @@
+# Optional local build of the independent console-v2 static image.
+# Default product path remains Backoffice-served /console-v2
+# (see docker-compose.backoffice-split.yml and Dockerfile.backoffice).
+# This file does not enable legacy shell and does not split repositories.
+#
+# Assets only: browser /api calls still need same-origin Backoffice (or a
+# reverse proxy in front of both services).
+
+services:
+  console:
+    build:
+      context: ..
+      dockerfile: console_frontend/Dockerfile
+    image: ai-ops-console:latest
+    container_name: ai-ops-console
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

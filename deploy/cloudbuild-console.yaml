@@ -1,0 +1,16 @@
+# Build the independent console-v2 static image (Phase G artifact).
+# Does not replace Backoffice deploy; production UI remains served from
+# Dockerfile.backoffice until a dedicated console Cloud Run cutover.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - console_frontend/Dockerfile
+      - --tag
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY
