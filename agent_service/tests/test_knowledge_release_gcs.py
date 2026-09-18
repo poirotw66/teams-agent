@@ -142,9 +142,20 @@ def test_portal_release_record_persists_gcs_integrity_metadata(
         index_generation=20,
     )
 
+    class _Publisher:
+        def publish(self, *args, **kwargs):
+            from knowledge_portal.ports.release_publish import PublishedReleaseInfo
+
+            return PublishedReleaseInfo(
+                bucket=published.bucket,
+                object_prefix=published.object_prefix,
+                manifest_generation=published.manifest_generation,
+                index_generation=published.index_generation,
+            )
+
     with patch(
-        "knowledge_portal.publisher.publish_release_directory",
-        return_value=published,
+        "knowledge_portal.publisher.get_release_directory_publisher",
+        return_value=_Publisher(),
     ):
         release = ReleasePublisher(settings).build_release(
             release_id="release-1",

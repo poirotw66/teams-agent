@@ -7,17 +7,21 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from agent_service.documents import DocumentChunk, load_source_chunks
-from agent_service.knowledge_release_gcs import publish_release_directory
-from agent_service.retrieval import HybridIndex
 from knowledge_core.artifacts import INDEX_RELATIVE_PATH
+from knowledge_core.document_models import DocumentChunk
 from knowledge_core.eligibility import is_generation_metadata_eligible
+from knowledge_core.layout_source_chunks import load_source_chunks_with_layout
 from knowledge_core.release_artifacts import (
     KnowledgeReleaseValidationError,
     inspect_index_artifact,
     validate_release_artifacts,
 )
 from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_portal.ports.release_publish import (
+    PublishedReleaseInfo,
+    get_release_directory_publisher,
+)
+from knowledge_portal.ports.retrieval import get_hybrid_index_factory
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord, ReleaseManifestEntry, ReleaseRecord, utc_now
@@ -144,7 +148,7 @@ class ReleasePublisher:
                 bundled_index_path,
             )
         elif not published_versions:
-            index = HybridIndex([], selected_embedding)
+            index = get_hybrid_index_factory().create([], selected_embedding)
             index.save(index_path)
             logger.info("Built empty knowledge release %s with 0 chunks", release_id)
         else:
@@ -184,14 +188,14 @@ class ReleasePublisher:
                     json.dumps(ingestion_metadata, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                chunks = load_source_chunks(
+                chunks = load_source_chunks_with_layout(
                     temp_root,
                     self._settings.chunk_size,
                     self._settings.chunk_overlap,
                 )
                 if not chunks:
                     raise ReleaseBuildError("Release build produced zero searchable segments.")
-                index = HybridIndex(chunks, selected_embedding)
+                index = get_hybrid_index_factory().create(chunks, selected_embedding)
                 if selected_embedding:
                     index.add_embeddings()
                 index.save(index_path)
@@ -265,15 +269,12 @@ class ReleasePublisher:
             except KnowledgeReleaseValidationError as error:
                 raise ReleaseBuildError(f"Production release validation failed: {error}") from error
 
-        published_release = None
-        if self._settings.release_gcs_bucket:
-            published_release = publish_release_directory(
-                release_dir,
-                bucket_name=self._settings.release_gcs_bucket,
-                object_prefix=self._settings.release_gcs_prefix,
-                tenant_id=resolved_tenant_id,
-                release_id=release_id,
-            )
+        published_release = _publish_release_if_configured(
+            self._settings,
+            release_dir=release_dir,
+            tenant_id=resolved_tenant_id,
+            release_id=release_id,
+        )
 
         return ReleaseRecord(
             release_id=release_id,
@@ -310,6 +311,30 @@ class ReleasePublisher:
             hybrid_backend_ready=True,
             file_search_backend_ready=file_search_store is not None,
         )
+
+
+def _publish_release_if_configured(
+    settings: PortalSettings,
+    *,
+    release_dir: Path,
+    tenant_id: str,
+    release_id: str,
+) -> PublishedReleaseInfo | None:
+    if not settings.release_gcs_bucket:
+        return None
+    publisher = get_release_directory_publisher()
+    if publisher is None:
+        raise ReleaseBuildError(
+            "Release GCS bucket is configured but no release directory "
+            "publisher was wired through composition."
+        )
+    return publisher.publish(
+        release_dir,
+        bucket_name=settings.release_gcs_bucket,
+        object_prefix=settings.release_gcs_prefix,
+        tenant_id=tenant_id,
+        release_id=release_id,
+    )
 
 
 def _write_parent_artifact(release_dir: Path, chunks: list[DocumentChunk]) -> None:

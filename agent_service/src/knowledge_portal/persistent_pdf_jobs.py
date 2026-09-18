@@ -361,11 +361,15 @@ def build_pdf_convert_job_store(
     if not is_cloud_backed:
         return PdfConvertJobStore(settings)
     if firestore_client is None:
-        from agent_service.operations.stores.firestore_store import (
-            build_sync_firestore_client,
-        )
+        from knowledge_portal.ports.firestore import get_firestore_client_factory
 
-        firestore_client = build_sync_firestore_client(
+        factory = get_firestore_client_factory()
+        if factory is None:
+            raise RuntimeError(
+                "Firestore client factory is not configured through composition, "
+                "but portal PDF jobs require Firestore + GCS."
+            )
+        firestore_client = factory.create(
             settings.firestore_project_id,
             settings.firestore_database_id,
         )

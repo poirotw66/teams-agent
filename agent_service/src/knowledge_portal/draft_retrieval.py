@@ -4,9 +4,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_service.documents import load_source_chunks
-from agent_service.retrieval import HybridIndex
+from knowledge_core.layout_source_chunks import load_source_chunks_with_layout
 from knowledge_core.release_pointer import read_active_release_id, release_index_path
+from knowledge_portal.ports.retrieval import HybridIndexPort, get_hybrid_index_factory
 
 from .draft_assets import DraftAssetStore
 from .models import KnowledgeVersionRecord
@@ -50,7 +50,7 @@ def _write_version_source(version: KnowledgeVersionRecord, sources_dir: Path) ->
 def build_draft_index(
     version: KnowledgeVersionRecord,
     settings: PortalSettings,
-) -> HybridIndex:
+) -> HybridIndexPort:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)
         store = DraftAssetStore(settings)
@@ -59,14 +59,14 @@ def build_draft_index(
             version=version,
             source_filename=f"{version.document_id}.md",
         )
-        chunks = load_source_chunks(
+        chunks = load_source_chunks_with_layout(
             temp_root,
             settings.chunk_size,
             settings.chunk_overlap,
         )
         if not chunks:
             raise ValueError("Draft content produced zero searchable segments.")
-        return HybridIndex(chunks, settings.embedding_model)
+        return get_hybrid_index_factory().create(chunks, settings.embedding_model)
 
 
 def search_draft_version(
@@ -101,7 +101,10 @@ def search_draft_version(
             active_release_id,
         )
         if active_index_path.is_file():
-            active_index = HybridIndex.load(active_index_path, settings.embedding_model)
+            active_index = get_hybrid_index_factory().load(
+                active_index_path,
+                settings.embedding_model,
+            )
             active_hits = active_index.search(query, limit, set(groups))
             leaked = any(
                 hit.chunk.title != version.title for hit in active_hits

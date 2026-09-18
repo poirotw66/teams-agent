@@ -138,7 +138,7 @@
     "agent_service/src/ai_ops_backoffice/workers.py::run_sync_job": 144,
     "agent_service/src/knowledge_portal/migration.py::bootstrap_release_0001": 165,
     "agent_service/src/knowledge_portal/pdf_convert_jobs.py::convert_pdf_bytes": 89,
-    "agent_service/src/knowledge_portal/publisher.py::build_release": 273,
+    "agent_service/src/knowledge_portal/publisher.py::build_release": 270,
     "agent_service/src/knowledge_portal/release/promote.py::promote_candidate_release": 103,
     "agent_service/src/knowledge_portal/release/publish.py::publish_version": 98,
     "agent_service/src/knowledge_portal/release/queries.py::compare_releases": 85,

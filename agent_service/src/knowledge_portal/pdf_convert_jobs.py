@@ -285,10 +285,10 @@ async def convert_pdf_bytes(
 ) -> PdfConversionResult:
     fallback_warning: str | None = None
     if settings.document_parser == "DOCUMENT_AI":
-        from agent_service.document_parsing import DocumentAiLayoutParser
+        from knowledge_portal.ports.document_ai import get_pdf_layout_parser_factory
 
         try:
-            parser = DocumentAiLayoutParser(settings.document_ai_processor_name or "")
+            parser = get_pdf_layout_parser_factory().create(settings.document_ai_processor_name or "")
             parsed = await asyncio.to_thread(
                 parser.parse_pdf,
                 payload,
