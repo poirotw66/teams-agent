@@ -77,59 +77,53 @@ def _share_cost(total: float | None, weights: list[int]) -> list[float | None]:
     return shares
 
 
-def _detail_events_from_summary(
+def _rows_from_by_model(
     event: OperationalEvent,
+    by_model: list[Any],
     *,
-    calls: list[OperationalEvent] | None = None,
+    calls: list[OperationalEvent] | None,
 ) -> list[OperationalEvent]:
-    """Expand a request summary into cost-detail rows with model attribution."""
-    summary = event.payload.get("summary")
-    if not isinstance(summary, dict):
-        raise TypeError("REQUEST_SUMMARY usage event requires an object summary")
-
-    by_model = summary.get("byModel")
-    if isinstance(by_model, list) and by_model:
-        rows: list[OperationalEvent] = []
-        for item in by_model:
-            if not isinstance(item, dict):
-                continue
-            model = str(item.get("model") or "").strip()
-            if not model:
-                continue
-            base = _summary_event(event, calls=calls)
-            rows.append(
-                base.model_copy(
-                    update={
-                        "payload": {
-                            **base.payload,
-                            "model": model,
-                            "provider": item.get("provider") or base.payload.get("provider"),
-                            "inputTokens": int(item.get("inputTokens") or 0),
-                            "outputTokens": int(item.get("outputTokens") or 0),
-                            "totalTokens": int(
-                                item.get("totalTokens")
-                                or (
-                                    int(item.get("inputTokens") or 0)
-                                    + int(item.get("outputTokens") or 0)
-                                )
-                            ),
-                            "embeddingTokens": int(item.get("embeddingTokens") or 0),
-                            "estimatedCostUsd": item.get("estimatedCostUsd"),
-                            "llmCallCount": int(
-                                item.get("llmCallCount") or base.payload.get("llmCallCount") or 0
-                            ),
-                            "modelAllocation": "SUMMARY_BY_MODEL",
-                        }
+    rows: list[OperationalEvent] = []
+    for item in by_model:
+        if not isinstance(item, dict):
+            continue
+        model = str(item.get("model") or "").strip()
+        if not model:
+            continue
+        base = _summary_event(event, calls=calls)
+        rows.append(
+            base.model_copy(
+                update={
+                    "payload": {
+                        **base.payload,
+                        "model": model,
+                        "provider": item.get("provider") or base.payload.get("provider"),
+                        "inputTokens": int(item.get("inputTokens") or 0),
+                        "outputTokens": int(item.get("outputTokens") or 0),
+                        "totalTokens": int(
+                            item.get("totalTokens")
+                            or (
+                                int(item.get("inputTokens") or 0)
+                                + int(item.get("outputTokens") or 0)
+                            )
+                        ),
+                        "embeddingTokens": int(item.get("embeddingTokens") or 0),
+                        "estimatedCostUsd": item.get("estimatedCostUsd"),
+                        "llmCallCount": int(
+                            item.get("llmCallCount") or base.payload.get("llmCallCount") or 0
+                        ),
+                        "modelAllocation": "SUMMARY_BY_MODEL",
                     }
-                )
+                }
             )
-        if rows:
-            return rows
+        )
+    return rows
 
-    base = _summary_event(event, calls=calls)
-    if base.payload.get("model") or not calls:
-        return [base]
 
+def _rows_from_call_shares(
+    base: OperationalEvent,
+    calls: list[OperationalEvent],
+) -> list[OperationalEvent]:
     weights_by_model: dict[str, int] = {}
     provider_by_model: dict[str, str] = {}
     for call in calls:
@@ -178,6 +172,28 @@ def _detail_events_from_summary(
         )
         for index, model in enumerate(models)
     ]
+
+
+def _detail_events_from_summary(
+    event: OperationalEvent,
+    *,
+    calls: list[OperationalEvent] | None = None,
+) -> list[OperationalEvent]:
+    """Expand a request summary into cost-detail rows with model attribution."""
+    summary = event.payload.get("summary")
+    if not isinstance(summary, dict):
+        raise TypeError("REQUEST_SUMMARY usage event requires an object summary")
+
+    by_model = summary.get("byModel")
+    if isinstance(by_model, list) and by_model:
+        rows = _rows_from_by_model(event, by_model, calls=calls)
+        if rows:
+            return rows
+
+    base = _summary_event(event, calls=calls)
+    if base.payload.get("model") or not calls:
+        return [base]
+    return _rows_from_call_shares(base, calls)
 
 
 def _call_has_usable_usage(payload: dict[str, Any]) -> bool:

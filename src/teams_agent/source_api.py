@@ -220,6 +220,53 @@ def _passthrough_headers(headers: Mapping[str, Any]) -> dict[str, str]:
     return result
 
 
+async def _close_source_session(
+    session: ClientSession,
+    response: Any | None,
+    *,
+    on_error: bool,
+) -> None:
+    if response is not None:
+        try:
+            await response.release()
+        except Exception:
+            logger.debug(
+                "Failed releasing source %sresponse",
+                "API " if not on_error else "",
+                exc_info=True,
+            )
+    try:
+        await session.close()
+    except Exception:
+        logger.debug(
+            "Failed closing source %ssession",
+            "API " if not on_error else "",
+            exc_info=True,
+        )
+
+
+def _source_request_headers(
+    settings: AgentSettings,
+    *,
+    delegation: str,
+    base: str,
+    range_header: str | None,
+    accept: str | None,
+) -> dict[str, str]:
+    headers = {
+        SERVICE_TOKEN_HEADER: str(settings.source_api_token or ""),
+        "Authorization": f"Bearer {settings.source_api_token}",
+        DELEGATION_HEADER: delegation,
+        "Accept": accept or "*/*",
+    }
+    identity = _google_identity_token(base)
+    if identity:
+        headers["Authorization"] = f"Bearer {identity}"
+    if range_header:
+        headers["Range"] = range_header
+    return headers
+
+
 async def stream_original_source_file(
     settings: AgentSettings,
     *,
@@ -251,17 +298,13 @@ async def stream_original_source_file(
 
     base = str(settings.source_api_base_url or "").rstrip("/")
     url = f"{base}/api/sources/{source_ref}/file"
-    headers = {
-        SERVICE_TOKEN_HEADER: str(settings.source_api_token or ""),
-        "Authorization": f"Bearer {settings.source_api_token}",
-        DELEGATION_HEADER: delegation,
-        "Accept": accept or "*/*",
-    }
-    identity = _google_identity_token(base)
-    if identity:
-        headers["Authorization"] = f"Bearer {identity}"
-    if range_header:
-        headers["Range"] = range_header
+    headers = _source_request_headers(
+        settings,
+        delegation=delegation,
+        base=base,
+        range_header=range_header,
+        accept=accept,
+    )
 
     timeout = ClientTimeout(total=float(settings.source_api_timeout_seconds))
     session = ClientSession(timeout=timeout)
@@ -272,8 +315,7 @@ async def stream_original_source_file(
         if response.status >= 400:
             body = await response.read()
             detail = body[:200].decode("utf-8", errors="replace") if body else response.reason
-            await response.release()
-            await session.close()
+            await _close_source_session(session, response, on_error=False)
             raise SourceApiError(
                 f"Source API returned HTTP {response.status}: {detail}",
                 status=response.status,
@@ -286,25 +328,12 @@ async def stream_original_source_file(
                 async for chunk in response.content.iter_chunked(chunk_size):
                     yield chunk
             finally:
-                try:
-                    await response.release()
-                except Exception:
-                    logger.debug("Failed releasing source API response", exc_info=True)
-                try:
-                    await session.close()
-                except Exception:
-                    logger.debug("Failed closing source API session", exc_info=True)
+                await _close_source_session(session, response, on_error=False)
 
         return response.status, passthrough, _chunks()
+    except SourceApiError:
+        raise
     except Exception:
-        if response is not None:
-            try:
-                await response.release()
-            except Exception:
-                logger.debug("Failed releasing source response on error", exc_info=True)
-        try:
-            await session.close()
-        except Exception:
-            logger.debug("Failed closing source session on error", exc_info=True)
+        await _close_source_session(session, response, on_error=True)
         raise
 

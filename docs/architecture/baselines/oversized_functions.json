@@ -1,23 +1,4 @@
 {
-  "functions": {
-    "agent_service/src/agent_service/deps.py::sync_knowledge_to_active_pointer": 100,
-    "agent_service/src/agent_service/eval_agent_harness.py::_infer_route_and_behaviors": 97,
-    "agent_service/src/agent_service/eval_agent_harness.py::aexecute": 92,
-    "agent_service/src/agent_service/knowledge_pipeline/grounding.py::prune_unbacked_sentences_and_citations": 84,
-    "agent_service/src/agent_service/knowledge_pipeline/retrieval_stage.py::run_retrieve": 84,
-    "agent_service/src/agent_service/knowledge_release.py::resolve_knowledge_index": 92,
-    "agent_service/src/agent_service/response_builder.py::build_response": 108,
-    "agent_service/src/agent_service/source_refs.py::hydrate_index_sources": 96,
-    "agent_service/src/ai_ops_backoffice/evaluation_domain/migration.py::migrate": 103,
-    "agent_service/src/ai_ops_backoffice/notification_dispatcher.py::_dispatch_teams": 96,
-    "agent_service/src/ai_ops_backoffice/pricing_domain/service.py::update_exchange_rate": 91,
-    "agent_service/src/ai_ops_backoffice/pricing_domain/service.py::update_model_rate": 103,
-    "agent_service/src/ai_ops_backoffice/services/usage_projection.py::_detail_events_from_summary": 101,
-    "agent_service/src/ai_ops_backoffice/worker_main.py::_start_health_server": 101,
-    "agent_service/src/knowledge_portal/release/promote.py::promote_candidate_release": 103,
-    "agent_service/src/knowledge_portal/release/publish.py::publish_version": 98,
-    "agent_service/src/knowledge_portal/release/queries.py::compare_releases": 85,
-    "src/teams_agent/source_api.py::stream_original_source_file": 87
-  },
+  "functions": {},
   "max_new_function_lines": 80
 }

@@ -35,6 +35,42 @@ class RetrievalHost:
     retrieval_cache: MutableMapping[tuple[Any, ...], list[SearchResult]]
 
 
+async def _cached_search(
+    host: RetrievalHost,
+    query: str,
+    *,
+    groups: set[str],
+    frozen_groups: frozenset[str],
+    environment: str,
+) -> tuple[list[SearchResult], dict[str, float]]:
+    cache_key = make_retrieval_cache_key(
+        query,
+        groups=frozen_groups,
+        environment=environment,
+        release_id=host.release_id,
+        top_k=host.top_k,
+        min_score=host.min_score,
+    )
+    cache = host.retrieval_cache
+    if cache_key in cache:
+        if isinstance(cache, OrderedDict):
+            cache.move_to_end(cache_key)
+        return cache[cache_key], {}
+    res, timings = await asyncio.to_thread(
+        host.search_with_timings,
+        query,
+        host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
+        groups,
+        environment=environment,
+    )
+    cache[cache_key] = res
+    if len(cache) > MAX_RETRIEVAL_CACHE_SIZE and isinstance(cache, OrderedDict):
+        cache.popitem(last=False)
+    elif len(cache) > MAX_RETRIEVAL_CACHE_SIZE:
+        cache.pop(next(iter(cache)))
+    return res, timings
+
+
 async def run_retrieve(
     host: RetrievalHost,
     state: Any,
@@ -50,37 +86,18 @@ async def run_retrieve(
     )
     frozen_groups = frozenset(groups)
     env = host.deployment_environment
-
-    async def _search_one(query: str) -> tuple[list[SearchResult], dict[str, float]]:
-        cache_key = make_retrieval_cache_key(
-            query,
-            groups=frozen_groups,
-            environment=env,
-            release_id=host.release_id,
-            top_k=host.top_k,
-            min_score=host.min_score,
+    search_outcomes = await asyncio.gather(
+        *(
+            _cached_search(
+                host,
+                query,
+                groups=groups,
+                frozen_groups=frozen_groups,
+                environment=env,
+            )
+            for query in retrieval_queries
         )
-        cache = host.retrieval_cache
-        if cache_key in cache:
-            if isinstance(cache, OrderedDict):
-                cache.move_to_end(cache_key)
-            return cache[cache_key], {}
-        res, timings = await asyncio.to_thread(
-            host.search_with_timings,
-            query,
-            host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
-            groups,
-            environment=env,
-        )
-        cache[cache_key] = res
-        if len(cache) > MAX_RETRIEVAL_CACHE_SIZE and isinstance(cache, OrderedDict):
-            cache.popitem(last=False)
-        elif len(cache) > MAX_RETRIEVAL_CACHE_SIZE:
-            # Non-OrderedDict fallback: drop an arbitrary oldest-ish key.
-            cache.pop(next(iter(cache)))
-        return res, timings
-
-    search_outcomes = await asyncio.gather(*(_search_one(q) for q in retrieval_queries))
+    )
     result_sets = [outcome[0] for outcome in search_outcomes]
     for _results, timings in search_outcomes:
         accumulate_stage_timings(state.stage_timings_ms, timings)

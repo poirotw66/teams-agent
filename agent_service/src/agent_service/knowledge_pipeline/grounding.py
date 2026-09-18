@@ -271,6 +271,62 @@ def remap_claim_marker_ids_to_chunk_ids(
     return remapped
 
 
+def _rebuild_sentence_without_unbacked(
+    sentence: str,
+    unbacked_numbers: set[int],
+) -> str | None:
+    if _POLICY_MARKER_TOKEN.search(sentence) and not re.search(r"\[S\d+\]", sentence):
+        return sentence
+    s_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", sentence)]
+    if not s_cites:
+        return sentence
+    if all(c in unbacked_numbers for c in s_cites):
+        return None
+
+    clauses = re.split(r"(?<=[，；,;])", sentence)
+    cleaned_clauses: list[str] = []
+    for clause in clauses:
+        c_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", clause)]
+        if c_cites and all(c in unbacked_numbers for c in c_cites):
+            continue
+        cleaned_clauses.append(clause)
+
+    rebuilt = "".join(cleaned_clauses).strip()
+    rebuilt = re.sub(r"[，；,;]+([。！？]?)$", r"\1", rebuilt)
+    if rebuilt and not rebuilt.endswith(("。", "！", "？", "；", "，")):
+        rebuilt += "。"
+    if rebuilt and (
+        _POLICY_MARKER_TOKEN.search(rebuilt)
+        or any(int(m) not in unbacked_numbers for m in re.findall(r"\[S(\d+)\]", rebuilt))
+    ):
+        return rebuilt
+    return None
+
+
+def _prune_line_unbacked_citations(line: str, unbacked_numbers: set[int]) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return ""
+    if _POLICY_MARKER_TOKEN.search(line) and not re.search(r"\[S\d+\]", line):
+        return line
+    line_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", line)]
+    if not line_cites:
+        return line
+    if all(c in unbacked_numbers for c in line_cites):
+        return None
+
+    cleaned_sentences: list[str] = []
+    for sentence in re.split(r"(?<=[。！？\n])", line):
+        if not sentence.strip():
+            continue
+        rebuilt = _rebuild_sentence_without_unbacked(sentence, unbacked_numbers)
+        if rebuilt:
+            cleaned_sentences.append(rebuilt)
+    if not cleaned_sentences:
+        return None
+    return "".join(cleaned_sentences)
+
+
 def prune_unbacked_sentences_and_citations(
     text: str,
     common_doc_keys: set[str],
@@ -282,68 +338,11 @@ def prune_unbacked_sentences_and_citations(
     }
     cleaned = text
     if unbacked_numbers:
-        lines = text.splitlines()
         cleaned_lines: list[str] = []
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                cleaned_lines.append("")
-                continue
-
-            if _POLICY_MARKER_TOKEN.search(line) and not re.search(r"\[S\d+\]", line):
-                cleaned_lines.append(line)
-                continue
-
-            line_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", line)]
-            if not line_cites:
-                cleaned_lines.append(line)
-                continue
-
-            if all(c in unbacked_numbers for c in line_cites):
-                continue
-
-            sentences = re.split(r"(?<=[。！？\n])", line)
-            cleaned_sentences: list[str] = []
-            for sentence in sentences:
-                if not sentence.strip():
-                    continue
-                if _POLICY_MARKER_TOKEN.search(sentence) and not re.search(
-                    r"\[S\d+\]", sentence
-                ):
-                    cleaned_sentences.append(sentence)
-                    continue
-                s_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", sentence)]
-                if not s_cites:
-                    cleaned_sentences.append(sentence)
-                    continue
-                if all(c in unbacked_numbers for c in s_cites):
-                    continue
-
-                clauses = re.split(r"(?<=[，；,;])", sentence)
-                cleaned_clauses: list[str] = []
-                for clause in clauses:
-                    c_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", clause)]
-                    if c_cites and all(c in unbacked_numbers for c in c_cites):
-                        continue
-                    cleaned_clauses.append(clause)
-
-                rebuilt = "".join(cleaned_clauses).strip()
-                rebuilt = re.sub(r"[，；,;]+([。！？]?)$", r"\1", rebuilt)
-                if rebuilt and not rebuilt.endswith(("。", "！", "？", "；", "，")):
-                    rebuilt += "。"
-                if rebuilt and (
-                    _POLICY_MARKER_TOKEN.search(rebuilt)
-                    or any(
-                        int(m) not in unbacked_numbers
-                        for m in re.findall(r"\[S(\d+)\]", rebuilt)
-                    )
-                ):
-                    cleaned_sentences.append(rebuilt)
-
-            if cleaned_sentences:
-                cleaned_lines.append("".join(cleaned_sentences))
-
+        for line in text.splitlines():
+            pruned = _prune_line_unbacked_citations(line, unbacked_numbers)
+            if pruned is not None:
+                cleaned_lines.append(pruned)
         cleaned_text = "\n".join(cleaned_lines)
 
         def _strip_any_remaining(match: re.Match[str]) -> str:

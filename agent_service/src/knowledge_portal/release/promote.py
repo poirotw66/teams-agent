@@ -36,6 +36,90 @@ class PromoteContext(Protocol):
         ...
 
 
+async def _persist_gate_block(
+    *,
+    ctx: PromoteContext,
+    actor: PortalActor,
+    target: ReleaseRecord,
+    gate_hash: str,
+    corr: str,
+    exc: ReleaseGateBlockedError,
+) -> None:
+    blocked = target.model_copy(
+        update={
+            "status": "GATE_BLOCKED",
+            "failure_summary": str(exc),
+            "activated_at": None,
+            "target_manifest_hash": gate_hash,
+        }
+    )
+    await ctx.repository.save_release(blocked)
+    await ctx.audit(
+        actor=actor,
+        action="release.gate_blocked",
+        target_type="release",
+        target_id=target.release_id,
+        correlation_id=corr,
+        reason=str(exc),
+        result="FAILURE",
+    )
+
+
+async def _deploy_promoted_candidate(
+    *,
+    ctx: PromoteContext,
+    actor: PortalActor,
+    target: ReleaseRecord,
+    gate_hash: str,
+    corr: str,
+    reason: str,
+    notify_reload: NotifyReload,
+    write_local_pointer: WriteLocalPointer,
+    deactivate_others: DeactivateOthers,
+) -> ReleaseRecord:
+    previous_active_id = await ctx.repository.get_active_release_id()
+    release = target.model_copy(
+        update={
+            "status": "DEPLOYING",
+            "activated_at": utc_now(),
+            "approved_by": actor.user_id,
+            "failure_summary": "",
+            "target_manifest_hash": gate_hash,
+        }
+    )
+    await deactivate_others(release.release_id)
+    await ctx.repository.save_release(release)
+    await ctx.repository.set_active_release_id(release.release_id)
+    write_local_pointer(release.release_id)
+
+    reload_success, reload_error = await notify_reload(release.release_id, corr)
+    release = await settle_promote_after_agent_reload(
+        store=ctx.repository,
+        release=release,
+        previous_active_id=previous_active_id,
+        correlation_id=corr,
+        reload_success=reload_success,
+        reload_error=reload_error,
+        notify_reload=notify_reload,
+        write_local_pointer=write_local_pointer,
+        utc_now=utc_now,
+    )
+
+    await ctx.audit(
+        actor=actor,
+        action="release.promote_candidate",
+        target_type="release",
+        target_id=release.release_id,
+        correlation_id=corr,
+        reason=reason,
+        metadata={
+            "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
+            "targetManifestHash": gate_hash,
+        },
+    )
+    return release
+
+
 async def promote_candidate_release(
     *,
     ctx: PromoteContext,
@@ -77,68 +161,28 @@ async def promote_candidate_release(
             tenant_id=getattr(actor, "tenant_id", None),
         )
     except ReleaseGateBlockedError as exc:
-        blocked = target.model_copy(
-            update={
-                "status": "GATE_BLOCKED",
-                "failure_summary": str(exc),
-                "activated_at": None,
-                "target_manifest_hash": gate_hash,
-            }
-        )
-        await ctx.repository.save_release(blocked)
-        await ctx.audit(
+        await _persist_gate_block(
+            ctx=ctx,
             actor=actor,
-            action="release.gate_blocked",
-            target_type="release",
-            target_id=target.release_id,
-            correlation_id=corr,
-            reason=str(exc),
-            result="FAILURE",
+            target=target,
+            gate_hash=gate_hash,
+            corr=corr,
+            exc=exc,
         )
         raise PortalPermissionError(str(exc)) from exc
 
     async with coordination_lock("promote_candidate"):
-        previous_active_id = await ctx.repository.get_active_release_id()
-        release = target.model_copy(
-            update={
-                "status": "DEPLOYING",
-                "activated_at": utc_now(),
-                "approved_by": actor.user_id,
-                "failure_summary": "",
-                "target_manifest_hash": gate_hash,
-            }
-        )
-        await deactivate_others(release.release_id)
-        await ctx.repository.save_release(release)
-        await ctx.repository.set_active_release_id(release.release_id)
-        write_local_pointer(release.release_id)
-
-        reload_success, reload_error = await notify_reload(release.release_id, corr)
-        release = await settle_promote_after_agent_reload(
-            store=ctx.repository,
-            release=release,
-            previous_active_id=previous_active_id,
-            correlation_id=corr,
-            reload_success=reload_success,
-            reload_error=reload_error,
+        return await _deploy_promoted_candidate(
+            ctx=ctx,
+            actor=actor,
+            target=target,
+            gate_hash=gate_hash,
+            corr=corr,
+            reason=reason,
             notify_reload=notify_reload,
             write_local_pointer=write_local_pointer,
-            utc_now=utc_now,
+            deactivate_others=deactivate_others,
         )
-
-        await ctx.audit(
-            actor=actor,
-            action="release.promote_candidate",
-            target_type="release",
-            target_id=release.release_id,
-            correlation_id=corr,
-            reason=reason,
-            metadata={
-                "reloadStatus": "SUCCESS" if reload_success else "FAILURE",
-                "targetManifestHash": gate_hash,
-            },
-        )
-        return release
 
 
 __all__ = ["PromoteContext", "promote_candidate_release"]

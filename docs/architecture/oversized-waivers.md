@@ -53,6 +53,8 @@ uv run python scripts/check_architecture.py --write-baselines  # full refresh
 | Console React deep panels | `ChunkInspectorModal.tsx` | UI density; not a new god module | Feature-slice when panel gains second consumer |
 | Legacy quarantine (non-product) | `static/legacy-js/**` | Emergency kill-switch only; not on default product path | Delete after **one full release cycle** where production never sets `BACKOFFICE_LEGACY_SHELL_ENABLED`; gate: `scripts/check_legacy_shell.py` (defaults + deploy/env samples must stay off). Do not delete the tree until that cycle completes |
 
+> **Phase H function ratchet (2026-09-19):** `baselines/oversized_functions.json` is empty (`functions: {}`). New production functions must stay ≤80 lines; the monotonic shrink path remains active for any future regressions.
+
 ## Env alias policy (Wave 5 residual)
 
 Backoffice/Agent settings still accept a few **secondary** env names for deploy

@@ -147,6 +147,164 @@ class PricingService:
         )
         return rule, rates, fx
 
+    @staticmethod
+    def _compose_state_with_audit(
+        state: PricingState,
+        *,
+        new_rule: HistoricalPricingRule,
+        snapshot_rates: dict[str, tuple[float, float]],
+        snapshot_fx: float,
+        audit: RateChangeAudit,
+        effective: datetime,
+        now: datetime,
+        next_version: str,
+    ) -> PricingState:
+        history_list = [*state.history, new_rule]
+        if effective > now:
+            return PricingState(
+                revision=state.revision + 1,
+                exchange_rate=state.exchange_rate,
+                pricing_version=state.pricing_version,
+                rates=state.rates,
+                history=tuple(history_list),
+                audits=(*state.audits, audit),
+            )
+        return PricingState(
+            revision=state.revision + 1,
+            exchange_rate=snapshot_fx,
+            pricing_version=next_version,
+            rates=dict(snapshot_rates),
+            history=tuple(history_list),
+            audits=(*state.audits, audit),
+        )
+
+    def _apply_model_rate_change(
+        self,
+        state: PricingState,
+        *,
+        normalized_model: str,
+        input_rate: float,
+        output_rate: float,
+        effective: datetime,
+        now: datetime,
+        reason: str | None,
+        pricing_version: str | None,
+        actor: ActorContext,
+    ) -> tuple[PricingState, dict[str, Any]]:
+        base_before = effective_rule_from_state(state, effective)
+        before_rate = base_before.rates.get(normalized_model)
+        before_dict = (
+            {
+                "inputUsdPer1MTokens": before_rate[0],
+                "outputUsdPer1MTokens": before_rate[1],
+                "pricingVersion": base_before.version,
+            }
+            if before_rate is not None
+            else None
+        )
+        next_version = self._next_version(state, pricing_version)
+        after_dict = {
+            "inputUsdPer1MTokens": input_rate,
+            "outputUsdPer1MTokens": output_rate,
+            "pricingVersion": next_version,
+        }
+        audit = RateChangeAudit(
+            audit_id=str(uuid.uuid4()),
+            change_type="MODEL_RATE",
+            target_id=normalized_model,
+            actor_id=actor.user_id,
+            actor_role=actor.role,
+            before=before_dict,
+            after=after_dict,
+            effective_at=effective,
+            occurred_at=now,
+            reason=reason,
+        )
+        new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+            state,
+            next_version=next_version,
+            effective=effective,
+            now=now,
+            actor_id=actor.user_id,
+            description=reason or f"Rate updated for {normalized_model}",
+            rate_update=(normalized_model, (input_rate, output_rate)),
+        )
+        next_state = self._compose_state_with_audit(
+            state,
+            new_rule=new_rule,
+            snapshot_rates=snapshot_rates,
+            snapshot_fx=snapshot_fx,
+            audit=audit,
+            effective=effective,
+            now=now,
+            next_version=next_version,
+        )
+        return next_state, {
+            "model": normalized_model,
+            "before": before_dict,
+            "after": after_dict,
+            "audit": audit.model_dump(mode="json"),
+        }
+
+    def _apply_exchange_rate_change(
+        self,
+        state: PricingState,
+        *,
+        exchange_rate: float,
+        effective: datetime,
+        now: datetime,
+        reason: str | None,
+        pricing_version: str | None,
+        actor: ActorContext,
+    ) -> tuple[PricingState, dict[str, Any]]:
+        base_before = effective_rule_from_state(state, effective)
+        before_dict = {
+            "exchangeRate": base_before.exchange_rate,
+            "pricingVersion": base_before.version,
+        }
+        next_version = self._next_version(state, pricing_version)
+        after_dict = {
+            "exchangeRate": exchange_rate,
+            "pricingVersion": next_version,
+        }
+        audit = RateChangeAudit(
+            audit_id=str(uuid.uuid4()),
+            change_type="EXCHANGE_RATE",
+            target_id="USD_TWD",
+            actor_id=actor.user_id,
+            actor_role=actor.role,
+            before=before_dict,
+            after=after_dict,
+            effective_at=effective,
+            occurred_at=now,
+            reason=reason,
+        )
+        new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+            state,
+            next_version=next_version,
+            effective=effective,
+            now=now,
+            actor_id=actor.user_id,
+            description=reason or f"Exchange rate updated to {exchange_rate}",
+            exchange_rate=exchange_rate,
+        )
+        next_state = self._compose_state_with_audit(
+            state,
+            new_rule=new_rule,
+            snapshot_rates=snapshot_rates,
+            snapshot_fx=snapshot_fx,
+            audit=audit,
+            effective=effective,
+            now=now,
+            next_version=next_version,
+        )
+        return next_state, {
+            "targetId": "USD_TWD",
+            "before": before_dict,
+            "after": after_dict,
+            "audit": audit.model_dump(mode="json"),
+        }
+
     async def update_model_rate(
         self,
         model: str,
@@ -167,74 +325,19 @@ class PricingService:
 
         now = datetime.now(UTC)
         effective = _normalize_utc(effective_at or now)
-
-        def operation(state: PricingState) -> tuple[PricingState, dict[str, Any]]:
-            base_before = effective_rule_from_state(state, effective)
-            before_rate = base_before.rates.get(normalized_model)
-            before_dict = (
-                {
-                    "inputUsdPer1MTokens": before_rate[0],
-                    "outputUsdPer1MTokens": before_rate[1],
-                    "pricingVersion": base_before.version,
-                }
-                if before_rate is not None
-                else None
-            )
-            next_version = self._next_version(state, pricing_version)
-            after_dict = {
-                "inputUsdPer1MTokens": input_rate,
-                "outputUsdPer1MTokens": output_rate,
-                "pricingVersion": next_version,
-            }
-            audit = RateChangeAudit(
-                audit_id=str(uuid.uuid4()),
-                change_type="MODEL_RATE",
-                target_id=normalized_model,
-                actor_id=actor.user_id,
-                actor_role=actor.role,
-                before=before_dict,
-                after=after_dict,
-                effective_at=effective,
-                occurred_at=now,
-                reason=reason,
-            )
-            new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+        result = self._repository.mutate(
+            lambda state: self._apply_model_rate_change(
                 state,
-                next_version=next_version,
+                normalized_model=normalized_model,
+                input_rate=input_rate,
+                output_rate=output_rate,
                 effective=effective,
                 now=now,
-                actor_id=actor.user_id,
-                description=reason or f"Rate updated for {normalized_model}",
-                rate_update=(normalized_model, (input_rate, output_rate)),
+                reason=reason,
+                pricing_version=pricing_version,
+                actor=actor,
             )
-            history_list = [*state.history, new_rule]
-            is_future = effective > now
-            if is_future:
-                next_state = PricingState(
-                    revision=state.revision + 1,
-                    exchange_rate=state.exchange_rate,
-                    pricing_version=state.pricing_version,
-                    rates=state.rates,
-                    history=tuple(history_list),
-                    audits=(*state.audits, audit),
-                )
-            else:
-                next_state = PricingState(
-                    revision=state.revision + 1,
-                    exchange_rate=snapshot_fx,
-                    pricing_version=next_version,
-                    rates=dict(snapshot_rates),
-                    history=tuple(history_list),
-                    audits=(*state.audits, audit),
-                )
-            return next_state, {
-                "model": normalized_model,
-                "before": before_dict,
-                "after": after_dict,
-                "audit": audit.model_dump(mode="json"),
-            }
-
-        result = self._repository.mutate(operation)
+        )
         if self._audit_store is not None:
             await self._audit_store.append(
                 build_audit_event(
@@ -266,67 +369,17 @@ class PricingService:
 
         now = datetime.now(UTC)
         effective = _normalize_utc(effective_at or now)
-
-        def operation(state: PricingState) -> tuple[PricingState, dict[str, Any]]:
-            base_before = effective_rule_from_state(state, effective)
-            before_dict = {
-                "exchangeRate": base_before.exchange_rate,
-                "pricingVersion": base_before.version,
-            }
-            next_version = self._next_version(state, pricing_version)
-            after_dict = {
-                "exchangeRate": exchange_rate,
-                "pricingVersion": next_version,
-            }
-            audit = RateChangeAudit(
-                audit_id=str(uuid.uuid4()),
-                change_type="EXCHANGE_RATE",
-                target_id="USD_TWD",
-                actor_id=actor.user_id,
-                actor_role=actor.role,
-                before=before_dict,
-                after=after_dict,
-                effective_at=effective,
-                occurred_at=now,
-                reason=reason,
-            )
-            new_rule, snapshot_rates, snapshot_fx = self._append_snapshot(
+        result = self._repository.mutate(
+            lambda state: self._apply_exchange_rate_change(
                 state,
-                next_version=next_version,
+                exchange_rate=exchange_rate,
                 effective=effective,
                 now=now,
-                actor_id=actor.user_id,
-                description=reason or f"Exchange rate updated to {exchange_rate}",
-                exchange_rate=exchange_rate,
+                reason=reason,
+                pricing_version=pricing_version,
+                actor=actor,
             )
-            history_list = [*state.history, new_rule]
-            is_future = effective > now
-            if is_future:
-                next_state = PricingState(
-                    revision=state.revision + 1,
-                    exchange_rate=state.exchange_rate,
-                    pricing_version=state.pricing_version,
-                    rates=state.rates,
-                    history=tuple(history_list),
-                    audits=(*state.audits, audit),
-                )
-            else:
-                next_state = PricingState(
-                    revision=state.revision + 1,
-                    exchange_rate=snapshot_fx,
-                    pricing_version=next_version,
-                    rates=dict(snapshot_rates),
-                    history=tuple(history_list),
-                    audits=(*state.audits, audit),
-                )
-            return next_state, {
-                "targetId": "USD_TWD",
-                "before": before_dict,
-                "after": after_dict,
-                "audit": audit.model_dump(mode="json"),
-            }
-
-        result = self._repository.mutate(operation)
+        )
         if self._audit_store is not None:
             await self._audit_store.append(
                 build_audit_event(

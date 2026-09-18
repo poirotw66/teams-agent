@@ -45,6 +45,79 @@ class ResolvedKnowledgeIndex:
     file_search_store: str | None = None
 
 
+def _load_portal_release_artifact(
+    settings: RagSettings,
+    *,
+    release_dir: Path,
+    release_id: str,
+    candidate: Path,
+) -> KnowledgeIndexArtifact | None:
+    manifest_exists = (candidate.parents[1] / MANIFEST_FILENAME).is_file()
+    requires_validation = (
+        settings.knowledge_release_require_manifest
+        or settings.knowledge_release_require_vectors
+    )
+    if requires_validation:
+        return validate_release_artifacts(
+            release_dir,
+            release_id,
+            require_vectors=settings.knowledge_release_require_vectors,
+        )
+    if not manifest_exists:
+        return None
+    try:
+        return validate_release_artifacts(
+            release_dir,
+            release_id,
+            require_vectors=False,
+        )
+    except KnowledgeReleaseValidationError as error:
+        logger.warning(
+            "Loading release %s without optional manifest validation: %s",
+            release_id,
+            error,
+        )
+        return None
+
+
+def _resolve_local_portal_release(
+    settings: RagSettings,
+    *,
+    release_dir: Path,
+    release_id: str,
+    mode: str,
+) -> ResolvedKnowledgeIndex | None:
+    candidate = release_index_path(release_dir, release_id)
+    if candidate.is_file():
+        artifact = _load_portal_release_artifact(
+            settings,
+            release_dir=release_dir,
+            release_id=release_id,
+            candidate=candidate,
+        )
+        logger.info(
+            "Loading knowledge index from portal release %s at %s",
+            release_id,
+            candidate,
+        )
+        return ResolvedKnowledgeIndex(
+            index_path=candidate,
+            release_id=release_id,
+            source="portal_release",
+            artifact=artifact,
+            release_dir=release_dir,
+            file_search_store=manifest_file_search_store(candidate.parents[1]),
+        )
+    if mode == "PORTAL":
+        raise FileNotFoundError(f"Active knowledge release index not found: {candidate}")
+    logger.warning(
+        "Active release %s was configured but index file is missing: %s",
+        release_id,
+        candidate,
+    )
+    return None
+
+
 def resolve_knowledge_index(
     settings: RagSettings,
     *,
@@ -66,55 +139,14 @@ def resolve_knowledge_index(
     release_id = explicit_release_id or pointer_release_id
 
     if release_id:
-        candidate = release_index_path(release_dir, release_id)
-        if candidate.is_file():
-            manifest_exists = (candidate.parents[1] / MANIFEST_FILENAME).is_file()
-            artifact = None
-            requires_validation = (
-                settings.knowledge_release_require_manifest
-                or settings.knowledge_release_require_vectors
-            )
-            if requires_validation:
-                artifact = validate_release_artifacts(
-                    release_dir,
-                    release_id,
-                    require_vectors=settings.knowledge_release_require_vectors,
-                )
-            elif manifest_exists:
-                try:
-                    artifact = validate_release_artifacts(
-                        release_dir,
-                        release_id,
-                        require_vectors=False,
-                    )
-                except KnowledgeReleaseValidationError as error:
-                    logger.warning(
-                        "Loading release %s without optional manifest validation: %s",
-                        release_id,
-                        error,
-                    )
-            logger.info(
-                "Loading knowledge index from portal release %s at %s",
-                release_id,
-                candidate,
-            )
-            return ResolvedKnowledgeIndex(
-                index_path=candidate,
-                release_id=release_id,
-                source="portal_release",
-                artifact=artifact,
-                release_dir=release_dir,
-                file_search_store=manifest_file_search_store(candidate.parents[1]),
-            )
-        if mode == "PORTAL":
-            raise FileNotFoundError(
-                f"Active knowledge release index not found: {candidate}"
-            )
-        logger.warning(
-            "Active release %s was configured but index file is missing: %s",
-            release_id,
-            candidate,
+        resolved = _resolve_local_portal_release(
+            settings,
+            release_dir=release_dir,
+            release_id=release_id,
+            mode=mode,
         )
+        if resolved is not None:
+            return resolved
 
     if mode == "PORTAL":
         raise FileNotFoundError(

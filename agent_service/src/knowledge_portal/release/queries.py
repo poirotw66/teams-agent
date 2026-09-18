@@ -24,6 +24,66 @@ class QueryContext(Protocol):
     repository: Any
 
 
+def _is_document_visible(actor: PortalActor, doc: Any) -> bool:
+    return (
+        actor.role == "PLATFORM"
+        or not actor.owner_unit_ids
+        or (
+            doc is not None
+            and can_view_document(
+                actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
+            )
+        )
+    )
+
+
+async def _append_compare_changes(
+    *,
+    ctx: QueryContext,
+    actor: PortalActor,
+    current_manifest: dict[str, ReleaseManifestEntry],
+    target_manifest: dict[str, ReleaseManifestEntry],
+) -> list[ReleaseDocumentChange]:
+    changes: list[ReleaseDocumentChange] = []
+    for doc_id, entry in target_manifest.items():
+        doc = await ctx.repository.get_document(doc_id)
+        title = entry.title if _is_document_visible(actor, doc) else "[Restricted Document]"
+        current_entry = current_manifest.get(doc_id)
+        if current_entry is None:
+            changes.append(
+                ReleaseDocumentChange(
+                    document_id=doc_id,
+                    title=title,
+                    change_type="ADDED",
+                    target_version_id=entry.version_id,
+                )
+            )
+        elif current_entry.version_id != entry.version_id:
+            changes.append(
+                ReleaseDocumentChange(
+                    document_id=doc_id,
+                    title=title,
+                    change_type="UPDATED",
+                    current_version_id=current_entry.version_id,
+                    target_version_id=entry.version_id,
+                )
+            )
+    for doc_id, entry in current_manifest.items():
+        if doc_id in target_manifest:
+            continue
+        doc = await ctx.repository.get_document(doc_id)
+        title = entry.title if _is_document_visible(actor, doc) else "[Restricted Document]"
+        changes.append(
+            ReleaseDocumentChange(
+                document_id=doc_id,
+                title=title,
+                change_type="REMOVED",
+                current_version_id=entry.version_id,
+            )
+        )
+    return changes
+
+
 async def list_releases(*, ctx: QueryContext, actor: PortalActor) -> list[ReleaseRecord]:
     ensure_can_list_releases(actor)
     releases = await ctx.repository.list_releases()
@@ -63,63 +123,12 @@ async def compare_releases(
         entry.document_id: entry for entry in (current.manifest if current else [])
     }
     target_manifest = {entry.document_id: entry for entry in target.manifest}
-
-    changes: list[ReleaseDocumentChange] = []
-    for doc_id, entry in target_manifest.items():
-        doc = await ctx.repository.get_document(doc_id)
-        is_visible = (
-            actor.role == "PLATFORM"
-            or not actor.owner_unit_ids
-            or (
-                doc is not None
-                and can_view_document(
-                    actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
-                )
-            )
-        )
-        title = entry.title if is_visible else "[Restricted Document]"
-        current_entry = current_manifest.get(doc_id)
-        if current_entry is None:
-            changes.append(
-                ReleaseDocumentChange(
-                    document_id=doc_id,
-                    title=title,
-                    change_type="ADDED",
-                    target_version_id=entry.version_id,
-                )
-            )
-        elif current_entry.version_id != entry.version_id:
-            changes.append(
-                ReleaseDocumentChange(
-                    document_id=doc_id,
-                    title=title,
-                    change_type="UPDATED",
-                    current_version_id=current_entry.version_id,
-                    target_version_id=entry.version_id,
-                )
-            )
-    for doc_id, entry in current_manifest.items():
-        if doc_id not in target_manifest:
-            doc = await ctx.repository.get_document(doc_id)
-            is_visible = (
-                actor.role == "PLATFORM"
-                or not actor.owner_unit_ids
-                or (
-                    doc is not None
-                    and can_view_document(
-                        actor, doc.owner_unit_id, doc.created_by, tenant_id=doc.tenant_id
-                    )
-                )
-            )
-            title = entry.title if is_visible else "[Restricted Document]"
-            changes.append(
-                ReleaseDocumentChange(
-                    document_id=doc_id,
-                    title=title,
-                    change_type="REMOVED",
-                    current_version_id=entry.version_id,
-                )
-            )
+    changes = await _append_compare_changes(
+        ctx=ctx,
+        actor=actor,
+        current_manifest=current_manifest,
+        target_manifest=target_manifest,
+    )
 
     target_is_older = False
     if current is not None and current.created_at and target.created_at:

@@ -117,6 +117,63 @@ async def collect_active_published_versions(
     return published_versions
 
 
+async def _execute_publish(
+    *,
+    ctx: PublishContext,
+    documents: DocumentCommands,
+    actor: PortalActor,
+    document_id: str,
+    request: PublishRequest,
+    correlation_id: str,
+    activate_release: ActivateRelease,
+) -> tuple[ReleaseRecord, Any, Any]:
+    detail = await documents.get_document(actor, document_id)
+    document = detail.document
+    version = await ctx.repository.get_version(request.version_id)
+    ensure_not_found("version", request.version_id, version)
+    if version.document_id != document_id:
+        raise ValueError("Version does not belong to this document.")
+    if version.status != "APPROVED":
+        raise ValueError("Only approved versions can be published.")
+    if (
+        ctx.settings.require_dual_approval
+        and actor.user_id == version.created_by
+        and actor.role != "PLATFORM"
+    ):
+        raise ValueError("Contributors cannot publish their own approved content.")
+
+    published_versions = await collect_active_published_versions(
+        repository=ctx.repository,
+        actor=actor,
+        exclude_document_ids={document_id},
+    )
+    published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
+
+    release = await activate_release(
+        actor=actor,
+        published_versions=published_versions,
+        correlation_id=correlation_id,
+        reason=request.reason,
+        metadata={"documentId": document_id, "versionId": version.version_id},
+    )
+    if release is None:
+        raise ValueError("Publishing failed to produce an active release.")
+
+    updated_version = version.model_copy(update={"status": "PUBLISHED"})
+    updated_document = document.model_copy(
+        update={
+            "status": "PUBLISHED",
+            "current_published_version_id": version.version_id,
+            "draft_version_id": None,
+            "updated_at": utc_now(),
+            "updated_by": actor.user_id,
+        }
+    )
+    await ctx.repository.save_version(updated_version)
+    await ctx.repository.save_document(updated_document)
+    return release, document, version
+
+
 async def publish_version(
     *,
     ctx: PublishContext,
@@ -129,6 +186,8 @@ async def publish_version(
     coordination_lock: CoordinationLock,
     activate_release: ActivateRelease,
 ) -> ReleaseRecord:
+    scope_key = ""
+    payload_hash = ""
     if idempotency_key:
         scope_key = (
             f"publish::{actor.tenant_id or 'default'}::{actor.user_id}::{idempotency_key}"
@@ -145,50 +204,15 @@ async def publish_version(
     try:
         ensure_can_publish(actor)
         async with coordination_lock("publish"):
-            detail = await documents.get_document(actor, document_id)
-            document = detail.document
-            version = await ctx.repository.get_version(request.version_id)
-            ensure_not_found("version", request.version_id, version)
-            if version.document_id != document_id:
-                raise ValueError("Version does not belong to this document.")
-            if version.status != "APPROVED":
-                raise ValueError("Only approved versions can be published.")
-            if (
-                ctx.settings.require_dual_approval
-                and actor.user_id == version.created_by
-                and actor.role != "PLATFORM"
-            ):
-                raise ValueError("Contributors cannot publish their own approved content.")
-
-            published_versions = await collect_active_published_versions(
-                repository=ctx.repository,
+            release, document, version = await _execute_publish(
+                ctx=ctx,
+                documents=documents,
                 actor=actor,
-                exclude_document_ids={document_id},
-            )
-            published_versions.append(version.model_copy(update={"status": "PUBLISHED"}))
-
-            release = await activate_release(
-                actor=actor,
-                published_versions=published_versions,
+                document_id=document_id,
+                request=request,
                 correlation_id=correlation_id,
-                reason=request.reason,
-                metadata={"documentId": document_id, "versionId": version.version_id},
+                activate_release=activate_release,
             )
-            if release is None:
-                raise ValueError("Publishing failed to produce an active release.")
-
-            updated_version = version.model_copy(update={"status": "PUBLISHED"})
-            updated_document = document.model_copy(
-                update={
-                    "status": "PUBLISHED",
-                    "current_published_version_id": version.version_id,
-                    "draft_version_id": None,
-                    "updated_at": utc_now(),
-                    "updated_by": actor.user_id,
-                }
-            )
-            await ctx.repository.save_version(updated_version)
-            await ctx.repository.save_document(updated_document)
 
         await ctx.audit(
             actor=actor,

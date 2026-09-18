@@ -126,29 +126,16 @@ class NotificationDispatcher:
             "deep_link": deep_link,
         }
 
-    async def _dispatch_teams(
+    def _build_teams_payload(
         self,
         *,
         delivery_id: str,
         alert_id: str,
         target_id: str,
         summary: str,
-        actor: ActorContext,
+        alert_info: dict[str, str],
     ) -> dict[str, Any]:
-        webhook_url = self._settings.teams_webhook_url
-        if not webhook_url and target_id.startswith("http"):
-            webhook_url = target_id
-
-        if not webhook_url:
-            return self._budget_service.record_delivery_attempt(
-                delivery_id,
-                success=False,
-                error="Teams webhook URL is not configured (AI_OPS_TEAMS_WEBHOOK_URL)",
-                actor=actor,
-            )
-
-        alert_info = self._get_alert_context(alert_id)
-        payload = {
+        return {
             "type": "message",
             "attachments": [
                 {
@@ -194,6 +181,36 @@ class NotificationDispatcher:
             ],
             "text": f"{summary} (Reason: {alert_info['reason']} | Link: {alert_info['deep_link']})",
         }
+
+    async def _dispatch_teams(
+        self,
+        *,
+        delivery_id: str,
+        alert_id: str,
+        target_id: str,
+        summary: str,
+        actor: ActorContext,
+    ) -> dict[str, Any]:
+        webhook_url = self._settings.teams_webhook_url
+        if not webhook_url and target_id.startswith("http"):
+            webhook_url = target_id
+
+        if not webhook_url:
+            return self._budget_service.record_delivery_attempt(
+                delivery_id,
+                success=False,
+                error="Teams webhook URL is not configured (AI_OPS_TEAMS_WEBHOOK_URL)",
+                actor=actor,
+            )
+
+        alert_info = self._get_alert_context(alert_id)
+        payload = self._build_teams_payload(
+            delivery_id=delivery_id,
+            alert_id=alert_id,
+            target_id=target_id,
+            summary=summary,
+            alert_info=alert_info,
+        )
 
         try:
             async with httpx.AsyncClient(

@@ -320,6 +320,57 @@ def _render_multi_issue_block(position: int, issue: Issue, content: str) -> str:
     return f"**問題 {position}｜{description}**\n\n{body}"
 
 
+def _render_issue_blocks(
+    ordered_issues: list[Issue],
+    results_by_issue_id: dict[str, IssueResult],
+    *,
+    offer_ticket_on_no_knowledge: bool,
+    correlation_id: str | None,
+) -> tuple[list[str], list[Citation], list[AgentImage], bool]:
+    all_sources: list[Citation] = []
+    all_images: list[AgentImage] = []
+    feedback_eligible = False
+    multiple_issues = len(ordered_issues) > 1
+    issue_blocks: list[str] = []
+    for position, issue in enumerate(ordered_issues, start=1):
+        if not issue.isIT:
+            rendered = _render_not_it(issue)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
+            continue
+
+        result = results_by_issue_id.get(issue.id)
+        if result is None:
+            rendered = _render_failed(issue, correlation_id)
+            issue_blocks.append(
+                _render_multi_issue_block(position, issue, rendered)
+                if multiple_issues
+                else rendered
+            )
+            continue
+
+        rendered = _render_result(
+            issue,
+            result,
+            offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
+            correlation_id=correlation_id,
+        )
+        issue_blocks.append(
+            _render_multi_issue_block(position, issue, rendered)
+            if multiple_issues
+            else rendered
+        )
+        if result.resultType not in {"TICKET_CREATED", "TICKET_FOUND"}:
+            all_sources.extend(result.sources)
+        all_images.extend(result.images)
+        if result.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES:
+            feedback_eligible = True
+    return issue_blocks, all_sources, all_images, feedback_eligible
+
+
 def build_response(
     *,
     issues: list[Issue],
@@ -360,62 +411,21 @@ def build_response(
 
     blocks: list[str] = []
     if too_many_issues:
-        # Spec §4.2: ask the user to prioritise when there were more
-        # issues than the workflow processed.
         blocks.append(
             f"你的訊息包含多個問題，已先協助你處理最重要的 "
             f"{settings.max_issues_per_message} 個。"
             "如果還有其他問題，請告訴我你最需要優先處理的項目。"
         )
 
-    all_sources: list[Citation] = []
-    all_images: list[AgentImage] = []
-    feedback_eligible = False
-
-    multiple_issues = len(ordered_issues) > 1
-    issue_blocks: list[str] = []
-    for position, issue in enumerate(ordered_issues, start=1):
-        if not issue.isIT:
-            rendered = _render_not_it(issue)
-            issue_blocks.append(
-                _render_multi_issue_block(position, issue, rendered)
-                if multiple_issues
-                else rendered
-            )
-            continue
-
-        result = results_by_issue_id.get(issue.id)
-        if result is None:
-            # Defensive: an IT issue that never got a result. Do not
-            # silently drop it (§4.2) — surface it as a generic failure
-            # without inventing details.
-            rendered = _render_failed(issue, correlation_id)
-            issue_blocks.append(
-                _render_multi_issue_block(position, issue, rendered)
-                if multiple_issues
-                else rendered
-            )
-            continue
-
-        rendered = _render_result(
-            issue,
-            result,
-            offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
-            correlation_id=correlation_id,
-        )
-        issue_blocks.append(
-            _render_multi_issue_block(position, issue, rendered)
-            if multiple_issues
-            else rendered
-        )
-        if result.resultType not in {"TICKET_CREATED", "TICKET_FOUND"}:
-            all_sources.extend(result.sources)
-        all_images.extend(result.images)
-        if result.resultType in _FEEDBACK_ELIGIBLE_RESULT_TYPES:
-            feedback_eligible = True
-
+    issue_blocks, all_sources, all_images, feedback_eligible = _render_issue_blocks(
+        ordered_issues,
+        results_by_issue_id,
+        offer_ticket_on_no_knowledge=offer_ticket_on_no_knowledge,
+        correlation_id=correlation_id,
+    )
     if issue_blocks:
-        blocks.append(("\n\n---\n\n" if multiple_issues else "\n\n").join(issue_blocks))
+        separator = "\n\n---\n\n" if len(ordered_issues) > 1 else "\n\n"
+        blocks.append(separator.join(issue_blocks))
 
     if not blocks:
         text = ALL_NON_IT_MESSAGE if not ordered_issues else ""

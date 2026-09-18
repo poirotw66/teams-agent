@@ -26,6 +26,78 @@ from .settings import BackofficeSettings
 logger = logging.getLogger("ai_ops_worker")
 
 
+def _collect_dependency_status(
+    *,
+    app: Any,
+    health_provider: Any,
+    consecutive_errors: int,
+) -> tuple[dict[str, Any], Any, datetime | None, int]:
+    dependencies_status: dict[str, Any] = {}
+    tracker = None
+    last_hb: datetime | None = None
+    errors = consecutive_errors
+    if health_provider is not None:
+        try:
+            provider_data = health_provider()
+            if isinstance(provider_data, dict):
+                dependencies_status.update(provider_data)
+        except Exception as ex:
+            errors += 1
+            dependencies_status["provider_error"] = str(ex)
+        return dependencies_status, tracker, last_hb, errors
+
+    if app is not None and hasattr(app, "state"):
+        tracker = getattr(app.state, "freshness_tracker", None)
+        if tracker is not None:
+            last_hb = getattr(tracker, "_last_worker_heartbeat", None)
+        settings = getattr(app.state, "settings", None)
+        if settings is not None:
+            dependencies_status["store_mode"] = getattr(settings, "ops_store_mode", "UNKNOWN")
+        job_worker = getattr(app.state, "job_worker", None)
+        if job_worker is not None:
+            dependencies_status["job_worker_running"] = getattr(job_worker, "_running", False)
+    return dependencies_status, tracker, last_hb, errors
+
+
+def _build_health_body(
+    *,
+    is_running: bool,
+    start_time: float,
+    consecutive_errors: int,
+    dependencies_status: dict[str, Any],
+    tracker: Any,
+    last_hb: datetime | None,
+) -> tuple[int, str, bytes]:
+    last_hb_str = last_hb.isoformat() if last_hb is not None else None
+    is_stalled = False
+    if tracker is not None and last_hb is not None:
+        stale_thresh = getattr(tracker, "_worker_stale_threshold", 600.0)
+        elapsed_hb = time.time() - last_hb.timestamp()
+        if elapsed_hb > stale_thresh:
+            is_stalled = True
+            dependencies_status["stalled"] = True
+            dependencies_status["elapsed_since_heartbeat_seconds"] = round(elapsed_hb, 1)
+
+    status_code = 200
+    status_str = "OK"
+    if not is_running or consecutive_errors >= 10 or is_stalled:
+        status_code = 503
+        status_str = "Service Unavailable"
+
+    body_dict = {
+        "status": "ok" if status_code == 200 else ("stalled" if is_stalled else "degraded"),
+        "worker": "ai_ops_worker",
+        "process_alive": True,
+        "loop_running": is_running,
+        "uptime_seconds": round(time.time() - start_time, 2),
+        "last_heartbeat_at": last_hb_str,
+        "consecutive_errors": consecutive_errors,
+        "dependencies": dependencies_status,
+    }
+    body = json.dumps(body_dict).encode("utf-8") + b"\n"
+    return status_code, status_str, body
+
+
 async def _start_health_server(
     host: str,
     port: int,
@@ -48,60 +120,19 @@ async def _start_health_server(
         try:
             line = await reader.readline()
             if line:
-                is_running = not stop_event.is_set()
-                status_code = 200
-                status_str = "OK"
-
-                last_hb_str: str | None = None
-                tracker = None
-                last_hb: datetime | None = None
-                dependencies_status: dict[str, Any] = {}
-
-                if health_provider is not None:
-                    try:
-                        provider_data = health_provider()
-                        if isinstance(provider_data, dict):
-                            dependencies_status.update(provider_data)
-                    except Exception as ex:
-                        consecutive_errors += 1
-                        dependencies_status["provider_error"] = str(ex)
-                elif app is not None and hasattr(app, "state"):
-                    tracker = getattr(app.state, "freshness_tracker", None)
-                    if tracker is not None:
-                        last_hb = getattr(tracker, "_last_worker_heartbeat", None)
-                        if last_hb is not None:
-                            last_hb_str = last_hb.isoformat()
-                    settings = getattr(app.state, "settings", None)
-                    if settings is not None:
-                        dependencies_status["store_mode"] = getattr(settings, "ops_store_mode", "UNKNOWN")
-                    job_worker = getattr(app.state, "job_worker", None)
-                    if job_worker is not None:
-                        dependencies_status["job_worker_running"] = getattr(job_worker, "_running", False)
-
-                is_stalled = False
-                if tracker is not None and last_hb is not None:
-                    stale_thresh = getattr(tracker, "_worker_stale_threshold", 600.0)
-                    elapsed_hb = time.time() - last_hb.timestamp()
-                    if elapsed_hb > stale_thresh:
-                        is_stalled = True
-                        dependencies_status["stalled"] = True
-                        dependencies_status["elapsed_since_heartbeat_seconds"] = round(elapsed_hb, 1)
-
-                if not is_running or consecutive_errors >= 10 or is_stalled:
-                    status_code = 503
-                    status_str = "Service Unavailable"
-
-                body_dict = {
-                    "status": "ok" if status_code == 200 else ("stalled" if is_stalled else "degraded"),
-                    "worker": "ai_ops_worker",
-                    "process_alive": True,
-                    "loop_running": is_running,
-                    "uptime_seconds": round(time.time() - start_time, 2),
-                    "last_heartbeat_at": last_hb_str,
-                    "consecutive_errors": consecutive_errors,
-                    "dependencies": dependencies_status,
-                }
-                body = json.dumps(body_dict).encode("utf-8") + b"\n"
+                deps, tracker, last_hb, consecutive_errors = _collect_dependency_status(
+                    app=app,
+                    health_provider=health_provider,
+                    consecutive_errors=consecutive_errors,
+                )
+                status_code, status_str, body = _build_health_body(
+                    is_running=not stop_event.is_set(),
+                    start_time=start_time,
+                    consecutive_errors=consecutive_errors,
+                    dependencies_status=deps,
+                    tracker=tracker,
+                    last_hb=last_hb,
+                )
                 response = (
                     f"HTTP/1.1 {status_code} {status_str}\r\n"
                     f"Content-Type: application/json\r\n"

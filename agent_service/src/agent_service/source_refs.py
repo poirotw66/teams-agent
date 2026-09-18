@@ -12,8 +12,9 @@ identity helpers live in ``knowledge_core.source_identity``.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from knowledge_core.source_identity import (
@@ -58,6 +59,58 @@ def build_citation_url(
     return None
 
 
+def _apply_manifest_entry(chunk: DocumentChunk, entry: Mapping[str, Any]) -> None:
+    chunk.document_id = (
+        chunk.document_id
+        or str(entry.get("document_id") or entry.get("documentId") or "")
+        or None
+    )
+    chunk.version_id = (
+        chunk.version_id
+        or str(entry.get("version_id") or entry.get("versionId") or "")
+        or None
+    )
+    if chunk.version_number is None:
+        raw_version_number = entry.get("version_number") or entry.get("versionNumber")
+        if raw_version_number is not None:
+            try:
+                chunk.version_number = int(raw_version_number)
+            except (TypeError, ValueError):
+                chunk.version_number = None
+    chunk.source_type = (
+        chunk.source_type
+        or str(entry.get("source_type") or entry.get("sourceType") or "")
+        or None
+    )
+    aliases = entry.get("source_aliases") or entry.get("sourceAliases") or []
+    if not chunk.source_aliases and isinstance(aliases, list):
+        chunk.source_aliases = [
+            str(alias).strip() for alias in aliases if str(alias).strip()
+        ]
+    chunk.content_state = str(
+        entry.get("content_state") or entry.get("contentState") or chunk.content_state
+    )
+    chunk.effective_at = (
+        chunk.effective_at
+        or str(entry.get("effective_at") or entry.get("effectiveAt") or "")
+        or None
+    )
+    chunk.expires_at = (
+        chunk.expires_at
+        or str(entry.get("expires_at") or entry.get("expiresAt") or "")
+        or None
+    )
+    environments = (
+        entry.get("applicable_environments") or entry.get("applicableEnvironments") or []
+    )
+    if not chunk.applicable_environments and isinstance(environments, list):
+        chunk.applicable_environments = [
+            str(environment).strip()
+            for environment in environments
+            if str(environment).strip()
+        ]
+
+
 def hydrate_index_sources(
     chunks: Iterable[DocumentChunk],
     *,
@@ -91,55 +144,7 @@ def hydrate_index_sources(
             by_title=by_title,
         )
         if entry:
-            chunk.document_id = (
-                chunk.document_id
-                or str(entry.get("document_id") or entry.get("documentId") or "")
-                or None
-            )
-            chunk.version_id = (
-                chunk.version_id
-                or str(entry.get("version_id") or entry.get("versionId") or "")
-                or None
-            )
-            if chunk.version_number is None:
-                raw_version_number = entry.get("version_number") or entry.get("versionNumber")
-                if raw_version_number is not None:
-                    try:
-                        chunk.version_number = int(raw_version_number)
-                    except (TypeError, ValueError):
-                        chunk.version_number = None
-            chunk.source_type = (
-                chunk.source_type
-                or str(entry.get("source_type") or entry.get("sourceType") or "")
-                or None
-            )
-            aliases = entry.get("source_aliases") or entry.get("sourceAliases") or []
-            if not chunk.source_aliases and isinstance(aliases, list):
-                chunk.source_aliases = [
-                    str(alias).strip() for alias in aliases if str(alias).strip()
-                ]
-            chunk.content_state = str(
-                entry.get("content_state") or entry.get("contentState") or chunk.content_state
-            )
-            chunk.effective_at = (
-                chunk.effective_at
-                or str(entry.get("effective_at") or entry.get("effectiveAt") or "")
-                or None
-            )
-            chunk.expires_at = (
-                chunk.expires_at
-                or str(entry.get("expires_at") or entry.get("expiresAt") or "")
-                or None
-            )
-            environments = (
-                entry.get("applicable_environments") or entry.get("applicableEnvironments") or []
-            )
-            if not chunk.applicable_environments and isinstance(environments, list):
-                chunk.applicable_environments = [
-                    str(environment).strip()
-                    for environment in environments
-                    if str(environment).strip()
-                ]
+            _apply_manifest_entry(chunk, entry)
         chunk.release_id = release_id
         original = _original_asset_path(
             release_root,
