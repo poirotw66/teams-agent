@@ -213,13 +213,13 @@ def build_and_configure_pricing_service(
     import logging
     import os
 
-    from agent_service.pricing_bootstrap import resolve_pricing_store_path
     from ai_ops_backoffice.pricing_domain import (
         FilePricingRepository,
         FirestorePricingRepository,
         InMemoryPricingRepository,
         PricingService,
     )
+    from operations_core.pricing_paths import resolve_pricing_store_path
     from operations_core.usage import configure_pricing_provider
 
     logger = logging.getLogger(__name__)
@@ -286,9 +286,7 @@ def build_portal_release_gate_checker(settings: Any) -> QualityGateReleaseChecke
 
         gate_mode = (os.environ.get("AI_OPS_GATE_STORE_MODE") or "FILE").upper()
         if gate_mode == "FIRESTORE":
-            from agent_service.operations.stores.firestore_store import (
-                build_sync_firestore_client,
-            )
+            from operations_core.firestore_client import build_sync_firestore_client
 
             gate_repo = FirestoreQualityGateRepository(
                 build_sync_firestore_client(

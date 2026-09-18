@@ -4,26 +4,21 @@ Shares the same store defaults as the AI Ops backoffice so emit-time costs and
 budget evaluation read one PricingService truth.
 
 Concrete Backoffice repositories are wired via composition.install_agent_hooks().
+Path resolution lives in ``operations_core.pricing_paths``; this module re-exports
+it and keeps the Agent runtime-hook based configure entry point.
 """
 
 from __future__ import annotations
 
-import logging
-import os
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from operations_core.pricing_paths import resolve_pricing_store_path
 
-
-def resolve_pricing_store_path(ops_store_path: Path | None = None) -> Path:
-    explicit = os.environ.get("AI_OPS_PRICING_STORE_PATH")
-    if explicit:
-        return Path(explicit).expanduser().resolve()
-    if ops_store_path is not None:
-        return (ops_store_path.parent / "phase2" / "pricing_rules.json").resolve()
-    root = Path(__file__).resolve().parents[3]
-    return (root / "data" / "ops" / "phase2" / "pricing_rules.json").resolve()
+__all__ = [
+    "build_and_configure_pricing_service",
+    "resolve_pricing_store_path",
+]
 
 
 def build_and_configure_pricing_service(

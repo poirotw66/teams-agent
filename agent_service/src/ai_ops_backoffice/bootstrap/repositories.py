@@ -162,7 +162,7 @@ def build_evaluation_repository(settings: BackofficeSettings) -> EvaluationRepos
     if mode == "MEMORY":
         return InMemoryEvaluationRepository()
     if mode == "FIRESTORE":
-        from agent_service.operations.stores.firestore_store import build_sync_firestore_client
+        from operations_core.firestore_client import build_sync_firestore_client
 
         return FirestoreEvaluationRepository(
             build_sync_firestore_client(settings.gcp_project_id, None),
@@ -179,7 +179,7 @@ def build_tool_fixture_repository(settings: BackofficeSettings) -> ToolFixtureRe
     if mode == "MEMORY":
         return ToolFixtureRepository()
     if mode == "FIRESTORE":
-        from agent_service.operations.stores.firestore_store import build_sync_firestore_client
+        from operations_core.firestore_client import build_sync_firestore_client
 
         return FirestoreToolFixtureRepository(
             build_sync_firestore_client(settings.gcp_project_id, None),
@@ -194,7 +194,7 @@ def build_quality_gate_repository(settings: BackofficeSettings) -> QualityGateRe
     if mode == "MEMORY":
         return InMemoryQualityGateRepository()
     if mode == "FIRESTORE":
-        from agent_service.operations.stores.firestore_store import build_sync_firestore_client
+        from operations_core.firestore_client import build_sync_firestore_client
 
         return FirestoreQualityGateRepository(
             build_sync_firestore_client(settings.gcp_project_id, None),
@@ -209,7 +209,7 @@ def build_job_repository(settings: BackofficeSettings) -> JobRepository:
     if mode == "MEMORY":
         return InMemoryJobRepository()
     if mode == "FIRESTORE":
-        from agent_service.operations.stores.firestore_store import build_sync_firestore_client
+        from operations_core.firestore_client import build_sync_firestore_client
 
         return FirestoreJobRepository(
             build_sync_firestore_client(settings.gcp_project_id, None),
