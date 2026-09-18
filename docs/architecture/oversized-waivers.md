@@ -48,7 +48,7 @@ uv run python scripts/check_architecture.py --write-baselines  # full refresh
 | Document / extraction pipelines | `documents.py`, `extractor.py`, `layout_chunking`-adjacent | Behavior-coupled OCR/chunk pipelines; split risks citation regressions | Stage extraction behind golden RAG suites |
 | Workflow node modules | `workflow_*.py`, `handoff_flow.py` | LangGraph node graphs still share mutable state | Split by node family with characterization tests |
 | Evaluation / governance domains | `evaluation_domain/*`, `governance_domain/*` | Large domain services already under package split; further cuts are incremental | Continue use-case extraction per router family |
-| Portal asset / PDF jobs | `draft_assets.py`, `pdf_convert_jobs.py`, `version_service.py` | I/O-heavy job orchestration; size tracks job matrix | Extract job runners behind ports |
+| Portal asset / PDF jobs | `draft_assets.py`, `pdf_convert_jobs.py` | I/O-heavy job orchestration; size tracks job matrix | Extract job runners behind ports |
 | Ops emitters / freshness | `operations/emitter.py`, `operations_core/freshness_store.py` | Event serialization + store shapes | Split write vs query surfaces |
 | Console React deep panels | `ChunkInspectorModal.tsx` | UI density; not a new god module | Feature-slice when panel gains second consumer |
 | Legacy quarantine (non-product) | `static/legacy-js/**` | Emergency kill-switch only; not on default product path | Delete after **one full release cycle** where production never sets `BACKOFFICE_LEGACY_SHELL_ENABLED`; gate: `scripts/check_legacy_shell.py` (defaults + deploy/env samples must stay off). Do not delete the tree until that cycle completes |

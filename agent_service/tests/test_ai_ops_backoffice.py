@@ -2042,7 +2042,7 @@ def test_health_summary_includes_active_knowledge_release(tmp_path: Path) -> Non
     http_client.get = AsyncMock(side_effect=[portal_response, release_response])
 
     with patch(
-        "ai_ops_backoffice.services.query_health.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_health_probes.httpx.AsyncClient",
         return_value=http_client,
     ):
         response = TestClient(create_app(settings)).get(
@@ -2086,7 +2086,7 @@ def test_health_summary_includes_24_hour_operational_metrics(
     client.get = AsyncMock(return_value=response)
     client.post = AsyncMock(return_value=response)
     with patch(
-        "ai_ops_backoffice.services.query_health.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_health_probes.httpx.AsyncClient",
         return_value=client,
     ):
         result = seeded_backoffice_client.get(
