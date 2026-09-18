@@ -146,11 +146,7 @@
     "src/teams_agent/settings.py::validate": 121,
     "src/teams_agent/source_api.py::stream_original_source_file": 87,
     "src/teams_agent/source_links.py::enrich_citation_urls": 83,
-    "src/teams_agent/source_links.py::resolve_source_file": 98,
-    "src/teams_agent/source_routes.py::create_source_router": 703,
-    "src/teams_agent/source_routes.py::source_preview": 88,
-    "src/teams_agent/source_routes.py::viewer_auth_callback": 188,
-    "src/teams_agent/source_routes.py::viewer_login_page": 175
+    "src/teams_agent/source_links.py::resolve_source_file": 98
   },
   "max_new_function_lines": 80
 }
