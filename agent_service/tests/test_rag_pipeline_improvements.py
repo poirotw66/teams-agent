@@ -138,6 +138,14 @@ def test_sanitize_prunes_uncited_policy_after_stripping_sec_003() -> None:
     assert "[S1]" in sanitized
 
 
+def test_sanitize_separates_citation_from_ui_key_brackets() -> None:
+    """QB-055 regression: [S1] must not look like another IP-phone key."""
+    raw = "使用 IP 話機撥外線：1. 取聽筒。2. 按 [0]。3. 按 [電話號碼] [S1]。"
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "按 [電話號碼]。[S1]" in sanitized
+    assert "按 [電話號碼] [S1]" not in sanitized
+
+
 def test_sanitize_answer_security_appends_proxy_advisory_when_unqualified() -> None:
     raw = "若連線後 Wi-Fi 瞬斷，請至設定將 Proxy 設定全部關閉後重新連線。"
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)

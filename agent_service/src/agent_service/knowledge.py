@@ -152,6 +152,11 @@ _TEST_LINK_POLICY_SENTENCE_RE = re.compile(
     r"非正式連結|正式網址)[^。\n]*\[POLICY-SEC-\d{3}\][。.]?",
     re.IGNORECASE,
 )
+# IP-phone style keys use [0]/[電話號碼]; keep [S#] from looking like another key.
+_KEY_BRACKET_CITATION_RE = re.compile(
+    r"(按\s*\[[^\]]+\])\s*(\[S\d+\])",
+    re.IGNORECASE,
+)
 _SECURITY_POLICY_ADVISORY = f"\n\n{PROXY_ADVISORY_TEXT}"
 _POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
 _CITATION_OR_POLICY_MARKER = re.compile(r"\[(?:S\d+|POLICY-SEC-\d{3})\]")
@@ -2370,6 +2375,8 @@ class HybridKnowledgeService:
                 sanitized = f"{sanitized}{_SECURITY_POLICY_ADVISORY}"
         # 4. Drop fabricated test-link "policy" sentences (not any POLICY-SEC scope).
         sanitized = _TEST_LINK_POLICY_SENTENCE_RE.sub("", sanitized)
+        # 4b. Separate citation markers from UI key brackets (QB-055).
+        sanitized = _KEY_BRACKET_CITATION_RE.sub(r"\1。\2", sanitized)
         # 5. POLICY-SEC-001 may only remain when the answer discusses its scope.
         if "[POLICY-SEC-001]" in sanitized and not _SEC001_APPLICABLE_SCOPE_RE.search(
             sanitized
