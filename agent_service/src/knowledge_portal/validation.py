@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -24,6 +25,8 @@ _SECRET_PATTERNS = (
 )
 _EXTERNAL_IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\((https?://[^)]+)\)")
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+AddIssue = Callable[[str, str, str, str | None], None]
 
 
 def content_hash(content: str) -> str:
@@ -67,54 +70,33 @@ def build_parse_preview(markdown_content: str, title: str) -> ParsePreview:
     )
 
 
-def validate_draft(
+def _check_required_fields(
+    add: AddIssue,
     *,
     title: str,
     owner_unit_id: str,
     change_reason: str,
     effective_at: str,
     review_due_at: str,
-    audience_type: AudienceType,
-    audience_group_ids: list[str],
-    markdown_content: str,
-    require_operational_fields: bool = True,
-    asset_slug: str = "",
-    draft_assets_root: Path | None = None,
-) -> ValidationSummary:
-    issues: list[ValidationIssue] = []
+) -> None:
+    if not title.strip():
+        add("TITLE_REQUIRED", "BLOCKING", "請填寫標題。", "title")
+    if not owner_unit_id.strip():
+        add("OWNER_REQUIRED", "BLOCKING", "請填寫擁有單位。", "owner_unit_id")
+    if not change_reason.strip():
+        add("CHANGE_REASON_REQUIRED", "BLOCKING", "請填寫變更原因。", "change_reason")
+    if not effective_at.strip():
+        add("EFFECTIVE_DATE_REQUIRED", "BLOCKING", "請填寫生效日。", "effective_at")
+    if not review_due_at.strip():
+        add("REVIEW_DUE_REQUIRED", "BLOCKING", "請填寫下次檢視日。", "review_due_at")
 
-    def add(code: str, severity: str, message: str, field: str | None = None) -> None:
-        issues.append(
-            ValidationIssue(code=code, severity=severity, message=message, field=field)
-        )
 
-    if require_operational_fields:
-        if not title.strip():
-            add("TITLE_REQUIRED", "BLOCKING", "請填寫標題。", "title")
-        if not owner_unit_id.strip():
-            add("OWNER_REQUIRED", "BLOCKING", "請填寫擁有單位。", "owner_unit_id")
-        if not change_reason.strip():
-            add(
-                "CHANGE_REASON_REQUIRED",
-                "BLOCKING",
-                "請填寫變更原因。",
-                "change_reason",
-            )
-        if not effective_at.strip():
-            add(
-                "EFFECTIVE_DATE_REQUIRED",
-                "BLOCKING",
-                "請填寫生效日。",
-                "effective_at",
-            )
-        if not review_due_at.strip():
-            add(
-                "REVIEW_DUE_REQUIRED",
-                "BLOCKING",
-                "請填寫下次檢視日。",
-                "review_due_at",
-            )
-
+def _check_dates(
+    add: AddIssue,
+    *,
+    effective_at: str,
+    review_due_at: str,
+) -> tuple[date | None, date | None]:
     effective = _parse_iso_date(effective_at)
     review_due = _parse_iso_date(review_due_at)
     if effective_at and effective is None:
@@ -128,7 +110,15 @@ def validate_draft(
             "下次檢視日不可早於生效日。",
             "review_due_at",
         )
+    return effective, review_due
 
+
+def _check_audience(
+    add: AddIssue,
+    *,
+    audience_type: AudienceType,
+    audience_group_ids: list[str],
+) -> None:
     if audience_type == "RESTRICTED_GROUPS" and not audience_group_ids:
         add(
             "AUDIENCE_GROUPS_REQUIRED",
@@ -144,6 +134,8 @@ def validate_draft(
             "audience_group_ids",
         )
 
+
+def _check_markdown_content(add: AddIssue, *, title: str, markdown_content: str) -> str:
     stripped = markdown_content.strip()
     if not stripped:
         add("EMPTY_CONTENT", "BLOCKING", "正文內容不可為空。", "markdown_content")
@@ -191,7 +183,17 @@ def validate_draft(
                 "markdown_content",
             )
             break
+    return stripped
 
+
+def _check_assets_and_review_due(
+    add: AddIssue,
+    *,
+    stripped: str,
+    asset_slug: str,
+    draft_assets_root: Path | None,
+    review_due: date | None,
+) -> None:
     if asset_slug and draft_assets_root is not None:
         seen_codes: set[str] = set()
         for code, severity, message in validate_asset_bundle(
@@ -207,20 +209,51 @@ def validate_draft(
     if review_due:
         days = (review_due - datetime.now(UTC).date()).days
         if days < 0:
-            add(
-                "REVIEW_OVERDUE",
-                "WARNING",
-                "下次檢視日已過期。",
-                "review_due_at",
-            )
+            add("REVIEW_OVERDUE", "WARNING", "下次檢視日已過期。", "review_due_at")
         elif days <= 7:
-            add(
-                "REVIEW_DUE_SOON",
-                "INFO",
-                "下次檢視日在 7 天內。",
-                "review_due_at",
-            )
+            add("REVIEW_DUE_SOON", "INFO", "下次檢視日在 7 天內。", "review_due_at")
 
+
+def validate_draft(
+    *,
+    title: str,
+    owner_unit_id: str,
+    change_reason: str,
+    effective_at: str,
+    review_due_at: str,
+    audience_type: AudienceType,
+    audience_group_ids: list[str],
+    markdown_content: str,
+    require_operational_fields: bool = True,
+    asset_slug: str = "",
+    draft_assets_root: Path | None = None,
+) -> ValidationSummary:
+    issues: list[ValidationIssue] = []
+
+    def add(code: str, severity: str, message: str, field: str | None = None) -> None:
+        issues.append(
+            ValidationIssue(code=code, severity=severity, message=message, field=field)
+        )
+
+    if require_operational_fields:
+        _check_required_fields(
+            add,
+            title=title,
+            owner_unit_id=owner_unit_id,
+            change_reason=change_reason,
+            effective_at=effective_at,
+            review_due_at=review_due_at,
+        )
+    _, review_due = _check_dates(add, effective_at=effective_at, review_due_at=review_due_at)
+    _check_audience(add, audience_type=audience_type, audience_group_ids=audience_group_ids)
+    stripped = _check_markdown_content(add, title=title, markdown_content=markdown_content)
+    _check_assets_and_review_due(
+        add,
+        stripped=stripped,
+        asset_slug=asset_slug,
+        draft_assets_root=draft_assets_root,
+        review_due=review_due,
+    )
     return ValidationSummary(issues=issues)
 
 
