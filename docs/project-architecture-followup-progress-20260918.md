@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~31 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | Ongoing — ~29 oversized files remain (was ~36); continue workflow/query/eval residuals |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -29,3 +29,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `operations_core/freshness_store.py` 745→62 (`freshness_store_writes/queries`, `freshness_firestore_ops`)
 - `budget_domain/service.py` 736→264 (`policy_ops`, `alert_ops`, `delivery_ops`, `ops_common`)
 - `evaluation_domain/service.py` 813→275 (`case_ops`, `revision_ops`, `set_ops`)
+- `workflow_handoff_nodes.py` 781→15 (`workflow_handoff_common/case/ticket/route_ops`)
+- `quality_domain/service.py` 713→245 (`candidate_ops`, `case_lifecycle_ops`, `cluster_ops`)
