@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~19 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | Ongoing — ~16 oversized files remain (was ~36); continue workflow/query/eval residuals |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -41,3 +41,6 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `services/source_trace.py` 653→153 (`release/locator/mapping/resolve/payload`)
 - `CaseDetailPage.tsx` 780→97 (`useCaseDetail`, header/body/modals/timeline)
 - `extractor.py` 699→425 (`extractor_invoke/fallback/normalize`)
+- `version_service.py` 652→175 (`version_create/draft/revision/test_cases`)
+- `query_health.py` 596→98 (`query_health_probes/telemetry/summary/window`)
+- `prompts_mixin.py` 585→391 (`prompt_canary_ops`, `prompt_candidate_ops`)

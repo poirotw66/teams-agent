@@ -45,8 +45,6 @@
     "agent_service/src/ai_ops_backoffice/governance_domain/eval_flow.py::observe": 92,
     "agent_service/src/ai_ops_backoffice/governance_domain/policies_mixin.py::operation": 101,
     "agent_service/src/ai_ops_backoffice/governance_domain/policies_mixin.py::purge_expired": 126,
-    "agent_service/src/ai_ops_backoffice/governance_domain/prompts_mixin.py::operation": 85,
-    "agent_service/src/ai_ops_backoffice/governance_domain/prompts_mixin.py::stop_prompt_canary": 97,
     "agent_service/src/ai_ops_backoffice/governance_domain/search_audit_mixin.py::search": 179,
     "agent_service/src/ai_ops_backoffice/governance_routes.py::register_governance_routes": 441,
     "agent_service/src/ai_ops_backoffice/notification_dispatcher.py::_dispatch_teams": 96,
