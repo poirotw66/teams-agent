@@ -1,4 +1,9 @@
-"""Internal service wiring helpers for Backoffice composition."""
+"""Internal service wiring helpers for Backoffice composition.
+
+Agent-backed collaborators (ops runtime, GCS artifacts, chat models, policy
+runtime) are registered by ``composition.backoffice_agent_adapters`` into
+Backoffice ports. This module stays free of agent_service imports.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +13,6 @@ from collections.abc import Callable
 import httpx
 from fastapi import FastAPI
 
-from agent_service.artifact_storage import GcsArtifactStorage, build_gcs_storage_client
-from agent_service.graph import build_chat_model
-from agent_service.operations.policy_runtime import (
-    PolicyRuntime,
-    configure_policy_runtime,
-    get_policy_runtime,
-)
-from agent_service.operations.runtime import build_ops_runtime
-from agent_service.settings import RagSettings
 from ai_ops_backoffice.adapters.platform_ports import QualityGateReleaseChecker
 from ai_ops_backoffice.bootstrap.eval_prompt import build_eval_prompt_resolver
 from ai_ops_backoffice.bootstrap.repositories import (
@@ -63,21 +59,16 @@ from ai_ops_backoffice.governance_domain.eval_runtime import (
 )
 from ai_ops_backoffice.knowledge_bridge import KnowledgePortalClient
 from ai_ops_backoffice.notification_dispatcher import NotificationDispatcher
-from ai_ops_backoffice.ports.chat_model import (
-    configure_chat_model_factory,
-    get_chat_model_factory,
-)
+from ai_ops_backoffice.ports.chat_model import get_chat_model_factory
+from ai_ops_backoffice.ports.default_chat_model import get_default_chat_model_id
+from ai_ops_backoffice.ports.governance_policy import apply_governance_policy_runtime
 from ai_ops_backoffice.prompt_domain import PromptPocService
 from ai_ops_backoffice.quality_domain import QualityService
 from ai_ops_backoffice.services.export_auth_store import FileBackedExportAuthorizationResolver
 from ai_ops_backoffice.services.export_authorization import GovernanceRevocationAuthority
-from ai_ops_backoffice.services.freshness_service import FreshnessTracker
-from ai_ops_backoffice.services.query_collaborators import configure_query_service_collaborators
 from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
 from ai_ops_backoffice.sync_domain import SyncService
-from knowledge_core.artifact_ports import ArtifactStorage, LocalFileArtifactStorage
-from operations_core.settings import OpsSettings
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +76,6 @@ __all__ = [
     "ActiveFaqTaxonomy",
     "EvaluationStack",
     "bind_export_authorization",
-    "build_backoffice_artifact_storage",
-    "build_backoffice_ops_runtime",
     "build_core_domain_services",
     "build_eval_model_factory",
     "build_eval_runner",
@@ -97,57 +86,10 @@ __all__ = [
     "build_prompt_service",
     "build_sandbox_adapter",
     "configure_governance_policy_runtime",
-    "configure_query_service_agent_collaborators",
     "maybe_build_in_process_portal",
     "parse_budget_notification_targets",
+    "resolve_eval_chat_model",
 ]
-
-
-def build_backoffice_ops_runtime(
-    settings: OpsSettings,
-    *,
-    freshness_recorder: FreshnessTracker | None = None,
-) -> object | None:
-    """Compose Agent ops runtime for Backoffice query and governance wiring."""
-    return build_ops_runtime(settings, freshness_recorder=freshness_recorder)
-
-
-def build_backoffice_artifact_storage(settings: BackofficeSettings) -> ArtifactStorage:
-    """Build FILE or GCS artifact storage for Backoffice source-trace paths."""
-    artifact_backend = (getattr(settings, "artifact_storage_backend", None) or "FILE").upper()
-    if artifact_backend == "GCS":
-        bucket = getattr(settings, "artifact_gcs_bucket", None)
-        if not bucket:
-            raise ValueError(
-                "AI_OPS_ARTIFACT_GCS_BUCKET (or AI_OPS_EXPORT_GCS_BUCKET) is required "
-                "for GCS artifact storage."
-            )
-        return GcsArtifactStorage(
-            bucket_name=bucket,
-            client=build_gcs_storage_client(),
-            allow_memory_fallback=False,
-        )
-    artifact_path = getattr(settings, "artifact_storage_path", None) or (
-        settings.ops_store_path.parent / "sources" / "artifacts"
-    )
-    return LocalFileArtifactStorage(artifact_path)
-
-
-def configure_query_service_agent_collaborators() -> None:
-    """Register Agent-backed builders used by BackofficeQueryService defaults."""
-    configure_query_service_collaborators(
-        ops_runtime_builder=build_backoffice_ops_runtime,
-        artifact_storage_builder=build_backoffice_artifact_storage,
-    )
-
-
-def configure_backoffice_chat_model_factory() -> None:
-    """Register Agent graph build_chat_model for Backoffice judge/eval factories."""
-    configure_chat_model_factory(build_chat_model)
-
-
-configure_query_service_agent_collaborators()
-configure_backoffice_chat_model_factory()
 
 
 def bind_export_authorization(
@@ -172,15 +114,7 @@ def configure_governance_policy_runtime(
     query_service: BackofficeQueryService,
     governance_service: GovernanceService,
 ) -> None:
-    existing_runtime = get_policy_runtime()
-    policy_settings = (
-        existing_runtime.settings
-        if existing_runtime is not None
-        else query_service.runtime_settings
-    )
-    configure_policy_runtime(
-        PolicyRuntime(settings=policy_settings, governance=governance_service)
-    )
+    apply_governance_policy_runtime(query_service, governance_service)
 
 
 def build_eval_model_factory() -> Callable[[str], object | None]:
@@ -319,7 +253,7 @@ def resolve_eval_chat_model(
     eval_answering_fn: Callable[..., object] | None,
 ) -> object | None:
     if eval_answering_fn is None and eval_chat_model is None and eval_model_invoker is None:
-        return get_chat_model_factory()(RagSettings.from_env().model)
+        return get_chat_model_factory()(get_default_chat_model_id())
     return eval_chat_model
 
 

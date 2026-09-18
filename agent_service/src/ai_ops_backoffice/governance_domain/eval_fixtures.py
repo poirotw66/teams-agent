@@ -2,6 +2,7 @@
 
 Provides isolated mock repositories for FAQ, Knowledge (release chunks or
 deterministic fixture), and Ticket services during evaluation sandbox runs.
+Agent contract types are constructed via composition-registered eval bindings.
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+
+from ai_ops_backoffice.ports.eval_agent import get_eval_agent_bindings
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +29,9 @@ class _FixtureFaqRepository:
         faq_version_id: str | None = None,
         faq_repository: Any = None,
     ) -> None:
-        from agent_service.contracts import FaqEntry
-
+        bindings = get_eval_agent_bindings()
         self.version_id = str(faq_version_id or "eval-faq-v1")
-        self._entries: dict[str, FaqEntry] = {}
+        self._entries: dict[str, Any] = {}
 
         if faq_version_id and faq_version_id not in ("eval-faq-v1", "default"):
             resolved = False
@@ -53,7 +55,7 @@ class _FixtureFaqRepository:
                         else:
                             answer_text = getattr(version_record, "answer", "")
                         status = getattr(version_record, "status", "ACTIVE")
-                        self._entries[faq_key] = FaqEntry(
+                        self._entries[faq_key] = bindings.build_faq_entry(
                             id=version_record.version_id,
                             faqKey=faq_key,
                             enabled=status not in ("DISABLED", "SUPERSEDED"),
@@ -72,7 +74,7 @@ class _FixtureFaqRepository:
             if not resolved:
                 raise EvalBindingError(f"faq_version_not_found:{self.version_id}")
         else:
-            self._entries["account.unlock"] = FaqEntry(
+            self._entries["account.unlock"] = bindings.build_faq_entry(
                 id="faq-account-unlock",
                 faqKey="account.unlock",
                 enabled=True,
@@ -125,8 +127,7 @@ class _FixtureKnowledgeService:
         return self._chunks
 
     async def search(self, query: str, user_context: Any, **kwargs: Any) -> Any:
-        from agent_service.contracts import Citation, KnowledgeResult
-
+        bindings = get_eval_agent_bindings()
         groups = set(
             getattr(user_context, "groups", None)
             or getattr(user_context, "audience_group_ids", None)
@@ -159,7 +160,7 @@ class _FixtureKnowledgeService:
             if matched:
                 top_chunks = [item[1] for item in matched[:3]]
                 citations = [
-                    Citation(
+                    bindings.build_citation(
                         title=str(c.get("title", "Release Doc")),
                         url=str(c.get("source_path", c.get("source_id", f"release://{self.release_id}"))),
                         chunkId=str(c.get("chunk_id", "")),
@@ -167,7 +168,7 @@ class _FixtureKnowledgeService:
                     for c in top_chunks
                 ]
                 combined_answer = "\n".join(str(c.get("content", ""))[:200] for c in top_chunks)
-                result = KnowledgeResult(
+                result = bindings.build_knowledge_result(
                     found=True,
                     answer=combined_answer,
                     sources=citations,
@@ -175,7 +176,7 @@ class _FixtureKnowledgeService:
                     backend="release-index",
                 )
             else:
-                result = KnowledgeResult(
+                result = bindings.build_knowledge_result(
                     found=False,
                     answer="",
                     sources=[],
@@ -211,7 +212,7 @@ class _FixtureKnowledgeService:
         normalized = (query or "").casefold()
         miss_markers = ("網路打不開", "無法上網", "打不開", "按鈕無法點選")
         if any(marker in query for marker in miss_markers):
-            result = KnowledgeResult(
+            result = bindings.build_knowledge_result(
                 found=False, answer="", sources=[], images=[], backend="eval-fixture"
             )
         else:
@@ -221,11 +222,11 @@ class _FixtureKnowledgeService:
                 or ("vpn 密碼鎖定" in normalized)
             )
             if hit:
-                result = KnowledgeResult(
+                result = bindings.build_knowledge_result(
                     found=True,
                     answer="VPN 或帳號鎖定時，請先自助解鎖；仍無法登入再聯繫資訊小幫手。[S1]",
                     sources=[
-                        Citation(
+                        bindings.build_citation(
                             title="帳號與 VPN 解鎖 FAQ",
                             url="eval://fixture/unlock",
                             chunkId="eval-unlock-1",
@@ -235,7 +236,7 @@ class _FixtureKnowledgeService:
                     backend="eval-fixture",
                 )
             else:
-                result = KnowledgeResult(
+                result = bindings.build_knowledge_result(
                     found=False, answer="", sources=[], images=[], backend="eval-fixture"
                 )
         self.tool_calls.append(
@@ -302,9 +303,7 @@ class _EvalTicketService:
             "priority": getattr(draft, "priority", None),
         }
         arguments.update({key: kwargs[key] for key in kwargs})
-        from agent_service.contracts import Ticket
-
-        ticket = Ticket(
+        ticket = get_eval_agent_bindings().build_ticket(
             id=f"EVAL-{len(self.created_tickets)}",
             title=getattr(draft, "title", "eval-ticket") or "eval-ticket",
             status="OPEN",
@@ -344,27 +343,14 @@ class _EvalTicketService:
 
 def resolve_eval_candidate_prompt(*, template: str, model_id: str) -> Any:
     """Build the immutable ResolvedExtractorPrompt used by eval candidate binding."""
-    from agent_service.prompt_runtime import ResolvedExtractorPrompt
-
-    return ResolvedExtractorPrompt(
-        template=template,
-        source="governance",
-        version_id=f"eval-{model_id}",
-        version="eval-candidate",
-        content_hash=None,
-        canary=False,
+    return get_eval_agent_bindings().resolve_candidate_prompt(
+        template=template, model_id=model_id
     )
 
 
 def rebind_eval_workflow_models(workflow: Any, model: Any) -> None:
     """Install the candidate model on supervisor, handoff router, and ticket selector."""
-    from agent_service.handoff_flow import AgenticHandoffRouter
-    from agent_service.supervisor import ConversationSupervisor
-    from agent_service.ticket import AgenticTicketItemSelector
-
-    workflow.supervisor = ConversationSupervisor(model)
-    workflow.handoff_router = AgenticHandoffRouter(model)
-    workflow.ticket_item_selector = AgenticTicketItemSelector(model)
+    get_eval_agent_bindings().rebind_workflow_models(workflow, model)
 
 
 def build_eval_active_handoff_case(
@@ -380,31 +366,16 @@ def build_eval_active_handoff_case(
     retention_expires_at: Any,
 ) -> Any:
     """Seed fixture for active SUMMARY_REVIEW handoff state."""
-    from agent_service.handoff import CaseSummary, HandoffCase, HandoffStatus
-
-    summary = CaseSummary(
-        issue="帳號無法登入",
-        userNeed="需要人工協助解鎖",
-        conversationHighlights=["是否轉接專人？"],
-        attemptedSolutions=["線上指引"],
-        unresolvedReason="使用者仍無法完成",
-        requestedOutcome="轉接專人",
-        generatedAt=created_at,
-    )
-    return HandoffCase(
-        caseId=case_id,
-        sessionId=session_id,
-        tenantId=tenant_id,
-        conversationId=conversation_id,
-        requesterId=requester_id,
-        requesterName="Eval User",
-        status=HandoffStatus.SUMMARY_REVIEW,
-        summary=summary,
-        createdAt=created_at,
-        updatedAt=created_at,
-        sessionExpiresAt=session_expires_at,
-        retentionExpiresAt=retention_expires_at,
-        correlationId=correlation_id,
+    return get_eval_agent_bindings().build_active_handoff_case(
+        tenant_id=tenant_id,
+        conversation_id=conversation_id,
+        requester_id=requester_id,
+        case_id=case_id,
+        session_id=session_id,
+        correlation_id=correlation_id,
+        created_at=created_at,
+        session_expires_at=session_expires_at,
+        retention_expires_at=retention_expires_at,
     )
 
 
@@ -422,27 +393,15 @@ def build_eval_agent_request(
     correlation_id: str,
 ) -> Any:
     """Build the AgentRequest envelope used by isolated eval turns."""
-    from agent_service.contracts import (
-        AgentRequest,
-        ConversationIdentity,
-        MessageContent,
-        UserIdentity,
-    )
-
-    return AgentRequest(
-        requestId=request_id,
-        channel="eval",
-        conversation=ConversationIdentity(
-            tenantId=tenant_id,
-            conversationId=conversation_id,
-        ),
-        user=UserIdentity(
-            teamsUserId=teams_user_id,
-            entraObjectId=entra_object_id,
-            displayName=display_name,
-            email=email,
-            groups=list(groups),
-        ),
-        message=MessageContent(text=text, locale="zh-TW"),
-        correlationId=correlation_id,
+    return get_eval_agent_bindings().build_agent_request(
+        request_id=request_id,
+        tenant_id=tenant_id,
+        conversation_id=conversation_id,
+        teams_user_id=teams_user_id,
+        entra_object_id=entra_object_id,
+        display_name=display_name,
+        email=email,
+        groups=groups,
+        text=text,
+        correlation_id=correlation_id,
     )

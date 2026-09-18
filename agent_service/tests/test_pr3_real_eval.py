@@ -873,6 +873,7 @@ def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: p
     """Formal sandbox executor must call AgentWorkflow.respond and return its answer."""
     from ai_ops_backoffice.governance_domain import eval_runtime as eval_runtime_mod
     from ai_ops_backoffice.governance_domain.eval_flow import FlowObservation
+    from ai_ops_backoffice.ports.eval_agent import get_eval_agent_bindings
 
     calls: list[str] = []
 
@@ -914,14 +915,16 @@ def test_build_agent_sandbox_workflow_executor_runs_agent_respond(monkeypatch: p
         def note_turn_result(self, **kwargs):
             return None
 
+    bindings = get_eval_agent_bindings()
     monkeypatch.setattr(
-        eval_runtime_mod,
-        "build_isolated_eval_runtime",
-        lambda model_factory=None: FakeRuntime(),
+        bindings,
+        "build_isolated_runtime",
+        lambda **_kwargs: FakeRuntime(),
     )
     monkeypatch.setattr(
-        "agent_service.eval_agent_harness.AgentWorkflowTurnExecutor",
-        FakeTurnExecutor,
+        bindings,
+        "build_turn_executor",
+        lambda _runtime: FakeTurnExecutor(),
     )
 
     executor = eval_runtime_mod.build_agent_sandbox_workflow_executor(

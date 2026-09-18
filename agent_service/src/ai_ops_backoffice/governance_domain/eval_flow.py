@@ -366,16 +366,9 @@ class AgentWorkflowFlowHarness:
         )
 
     def _build_executor_from_runtime(self, runtime: Any) -> Any:
-        from agent_service.eval_agent_harness import AgentWorkflowTurnExecutor
+        from ai_ops_backoffice.ports.eval_agent import get_eval_agent_bindings
 
-        return AgentWorkflowTurnExecutor(
-            runtime.workflow,
-            request_factory=runtime.build_request,
-            apply_candidate=runtime.apply_candidate,
-            side_effect_reader=runtime.read_side_effects,
-            prepare_case=runtime.prepare_case,
-            note_turn_result=runtime.note_turn_result,
-        )
+        return get_eval_agent_bindings().build_turn_executor(runtime)
 
     def _executor_call_kwargs(
         self,

@@ -7,8 +7,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent_service.documents import DocumentChunk
-from agent_service.retrieval import HybridIndex
+from ai_ops_backoffice.ports.answer_prompt import get_default_answer_prompt
+from ai_ops_backoffice.ports.retrieval import get_hybrid_index_factory
+from knowledge_core.document_models import DocumentChunk
 
 from .errors import EvaluationValidationError
 from .runner_models import TargetExecutionInput, TargetManifest
@@ -109,7 +110,7 @@ class RealRagRetrieverAdapter:
             doc_chunks.append(doc_chunk)
 
         try:
-            hybrid_index = HybridIndex(doc_chunks)
+            hybrid_index = get_hybrid_index_factory().create(doc_chunks)
             if acl_policy == "STRICT":
                 search_groups = user_groups
             else:
@@ -200,9 +201,7 @@ class RealRagAnswerAdapter:
             raise EvaluationValidationError(
                 f"REAL_RAG rejected: prompt_version '{version}' requires a registered prompt resolver."
             )
-        from agent_service.knowledge import ANSWER_PROMPT
-
-        return ANSWER_PROMPT
+        return get_default_answer_prompt()
 
     def _resolve_chat_model(self, manifest: TargetManifest) -> Any | None:
         model_id = (manifest.model_id or "").strip()

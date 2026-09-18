@@ -139,9 +139,9 @@ def build_eval_prompt_resolver(
     def resolver(prompt_version: str) -> str | None:
         version = str(prompt_version or "").strip()
         if not version or version == "default":
-            from agent_service.knowledge import ANSWER_PROMPT
+            from ai_ops_backoffice.ports.answer_prompt import get_default_answer_prompt
 
-            return ANSWER_PROMPT
+            return get_default_answer_prompt()
 
         target_prompt_id: str | None = None
         target_version = version
