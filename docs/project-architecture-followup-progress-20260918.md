@@ -23,24 +23,34 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `extractor.py` baseline 978 → 799; shrinks cannot silently re-grow to old caps.
 - Wave0 architecture tests cover shrink-then-regrow.
 
-### Phase D (partial) — `operations_core` first slice
-- New package `operations_core` owns `ActorContext` / `CAPABILITIES` / `BackofficeRole`.
-- `agent_service.operations.access` is a compatibility re-export.
-- 55 Backoffice files that only needed access contracts now import `operations_core`.
-- Importer-count ratchet tightened: `ai_ops_backoffice→agent_service` 107 → 52.
+### Phase D — Shared ownership slices
+- `operations_core` owns `ActorContext` / `CAPABILITIES` / `BackofficeRole` (Backoffice→Agent 107 → 52).
+- `knowledge_core` first + second slices:
+  - release gate, target-manifest hashing, front-matter, artifact path constants
+  - release pointers, source identity, generation eligibility, `ChunkingProfile`
+- Portal→Agent importer files **18 → 9**.
+- Agent modules keep compatibility facades.
 
-### Phase E (partial) — Workbench persistence boundary
-- Added `ai_ops_backoffice.adapters.workbench_json_store.WorkbenchJsonStore`.
-- Removed router-package JSON filesystem I/O (`routers/workbench/persistence.py` deleted).
-- Workbench routes/tests green.
+### Phase E — Application / persistence boundaries
+- Workbench JSON I/O behind `WorkbenchJsonStore` (earlier).
+- Public APIs: `QueryService.source_trace` / `runtime_settings`, `SourceTraceResolver.active_release_id()`,
+  `ExportJobService.store_path`, `PolicyRuntime.settings`.
+- AST cross-module private-access gate under Backoffice `routers/` and `bootstrap/`.
+
+### Phase F — Canonical OpenAPI + generated TS (first slice)
+- Canonical artifact: `docs/architecture/baselines/openapi/ai_ops_backoffice.openapi.json`
+- Breaking-change classifier in `scripts/openapi_contract.py` (reported on canonical drift)
+- Generated TS schemas: `console_frontend/src/shared/api/generated/backoffice-schemas.ts`
+- CI: `snapshot_openapi.py --check` + `generate_openapi_ts.py --check`
+- Still open: full TS client (paths/operations), migrate hand-written DTOs, consumer-driven tests, cross-version matrix, portal/agent canonical docs
 
 ## Still open (goal continues)
 
 | Phase | Status |
 |---|---|
-| D `knowledge_core` + remaining Agent implementation imports | Pending |
-| E private-member access AST gate + source public query service | Pending |
-| F canonical OpenAPI + generated TS client | Not started |
+| D remaining Portal→Agent implementation imports (9 files) | In progress |
+| E broader private-access / source query service polish | Mostly done for hotspot paths |
+| F canonical OpenAPI + generated TS client | First slice started: canonical Backoffice OpenAPI + TS schemas + CI freshness |
 | G independent frontend deliver + legacy removal | Not started |
 | H residual oversized domains | Not started |
 
@@ -48,4 +58,9 @@ Repository strategy unchanged: modular monorepo; no physical repo split yet.
 
 Current ownership importer caps:
 - `ai_ops_backoffice→agent_service`: **52**
-- `knowledge_portal→agent_service`: **18**
+- `knowledge_portal→agent_service`: **9**
+
+Remaining Portal→Agent importers:
+`draft_retrieval.py`, `file_search_release.py`, `original_assets.py`, `pdf_convert_jobs.py`,
+`pdf_staging.py`, `persistent_pdf_jobs.py`, `publisher.py`, `services/document_service.py`,
+`validation.py`.

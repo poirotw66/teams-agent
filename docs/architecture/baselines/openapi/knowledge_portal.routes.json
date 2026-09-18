@@ -3,7 +3,7 @@
   "routes": [
     {
       "method": "GET",
-      "operationId": "get_root",
+      "operationId": "portal_home__get",
       "path": "/",
       "requestSchema": null,
       "responseSchemas": [],
@@ -14,7 +14,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_admin_bootstrap_release_0001",
+      "operationId": "bootstrap_release_0001_api_admin_bootstrap_release_0001_post",
       "path": "/api/admin/bootstrap-release-0001",
       "requestSchema": "BootstrapReleaseRequest",
       "responseSchemas": [
@@ -28,7 +28,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_audit_events",
+      "operationId": "list_audit_api_audit_events_get",
       "path": "/api/audit-events",
       "requestSchema": null,
       "responseSchemas": [
@@ -42,7 +42,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_dashboard",
+      "operationId": "dashboard_api_dashboard_get",
       "path": "/api/dashboard",
       "requestSchema": null,
       "responseSchemas": [
@@ -56,7 +56,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents",
+      "operationId": "list_documents_api_documents_get",
       "path": "/api/documents",
       "requestSchema": null,
       "responseSchemas": [
@@ -70,7 +70,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents",
+      "operationId": "create_document_api_documents_post",
       "path": "/api/documents",
       "requestSchema": "CreateDocumentRequest",
       "responseSchemas": [
@@ -84,7 +84,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_import_docx",
+      "operationId": "import_docx_api_documents_import_docx_post",
       "path": "/api/documents/import-docx",
       "requestSchema": "Body_import_docx_api_documents_import_docx_post",
       "responseSchemas": [
@@ -98,7 +98,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_import_markdown",
+      "operationId": "import_markdown_api_documents_import_markdown_post",
       "path": "/api/documents/import-markdown",
       "requestSchema": "Body_import_markdown_api_documents_import_markdown_post",
       "responseSchemas": [
@@ -112,7 +112,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_import_pdf",
+      "operationId": "import_pdf_api_documents_import_pdf_post",
       "path": "/api/documents/import-pdf",
       "requestSchema": "Body_import_pdf_api_documents_import_pdf_post",
       "responseSchemas": [
@@ -126,7 +126,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_pdf_jobs_job_id",
+      "operationId": "get_pdf_job_api_documents_pdf_jobs__job_id__get",
       "path": "/api/documents/pdf-jobs/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -140,7 +140,7 @@
     },
     {
       "method": "DELETE",
-      "operationId": "delete_api_documents_document_id",
+      "operationId": "remove_document_api_documents__document_id__delete",
       "path": "/api/documents/{document_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -154,7 +154,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id",
+      "operationId": "get_document_api_documents__document_id__get",
       "path": "/api/documents/{document_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -168,7 +168,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id_chunk_preview",
+      "operationId": "preview_document_chunks_api_documents__document_id__chunk_preview_get",
       "path": "/api/documents/{document_id}/chunk-preview",
       "requestSchema": null,
       "responseSchemas": [
@@ -182,7 +182,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_discard_draft",
+      "operationId": "discard_draft_api_documents__document_id__discard_draft_post",
       "path": "/api/documents/{document_id}/discard-draft",
       "requestSchema": "RemoveDocumentRequest",
       "responseSchemas": [
@@ -196,7 +196,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_documents_document_id_draft",
+      "operationId": "update_draft_api_documents__document_id__draft_put",
       "path": "/api/documents/{document_id}/draft",
       "requestSchema": "UpdateDraftRequest",
       "responseSchemas": [
@@ -210,7 +210,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_draft_search",
+      "operationId": "draft_search_api_documents__document_id__draft_search_post",
       "path": "/api/documents/{document_id}/draft-search",
       "requestSchema": "DraftSearchRequest",
       "responseSchemas": [
@@ -224,7 +224,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_draft_asset_ref",
+      "operationId": "suggest_asset_ref_api_documents__document_id__draft_asset_ref_post",
       "path": "/api/documents/{document_id}/draft/asset-ref",
       "requestSchema": null,
       "responseSchemas": [
@@ -238,7 +238,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id_draft_assets",
+      "operationId": "list_draft_assets_api_documents__document_id__draft_assets_get",
       "path": "/api/documents/{document_id}/draft/assets",
       "requestSchema": null,
       "responseSchemas": [
@@ -252,7 +252,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_draft_assets",
+      "operationId": "upload_draft_assets_api_documents__document_id__draft_assets_post",
       "path": "/api/documents/{document_id}/draft/assets",
       "requestSchema": "Body_upload_draft_assets_api_documents__document_id__draft_assets_post",
       "responseSchemas": [
@@ -266,7 +266,7 @@
     },
     {
       "method": "DELETE",
-      "operationId": "delete_api_documents_document_id_draft_assets_filename",
+      "operationId": "delete_draft_asset_api_documents__document_id__draft_assets__filename__delete",
       "path": "/api/documents/{document_id}/draft/assets/{filename}",
       "requestSchema": null,
       "responseSchemas": [
@@ -280,7 +280,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id_draft_assets_filename",
+      "operationId": "get_draft_asset_api_documents__document_id__draft_assets__filename__get",
       "path": "/api/documents/{document_id}/draft/assets/{filename}",
       "requestSchema": null,
       "responseSchemas": [
@@ -294,7 +294,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_evaluate",
+      "operationId": "evaluate_document_candidate_api_documents__document_id__evaluate_post",
       "path": "/api/documents/{document_id}/evaluate",
       "requestSchema": null,
       "responseSchemas": [
@@ -308,7 +308,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_publish",
+      "operationId": "publish_document_api_documents__document_id__publish_post",
       "path": "/api/documents/{document_id}/publish",
       "requestSchema": "PublishRequest",
       "responseSchemas": [
@@ -322,7 +322,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_rechunk",
+      "operationId": "rechunk_document_api_documents__document_id__rechunk_post",
       "path": "/api/documents/{document_id}/rechunk",
       "requestSchema": null,
       "responseSchemas": [
@@ -336,7 +336,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_start_revision",
+      "operationId": "start_revision_api_documents__document_id__start_revision_post",
       "path": "/api/documents/{document_id}/start-revision",
       "requestSchema": null,
       "responseSchemas": [
@@ -350,7 +350,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_submit_review",
+      "operationId": "submit_review_api_documents__document_id__submit_review_post",
       "path": "/api/documents/{document_id}/submit-review",
       "requestSchema": "SubmitReviewRequest",
       "responseSchemas": [
@@ -364,7 +364,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id_test_cases",
+      "operationId": "list_test_cases_api_documents__document_id__test_cases_get",
       "path": "/api/documents/{document_id}/test-cases",
       "requestSchema": null,
       "responseSchemas": [
@@ -378,7 +378,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_test_cases",
+      "operationId": "create_test_case_api_documents__document_id__test_cases_post",
       "path": "/api/documents/{document_id}/test-cases",
       "requestSchema": "CreateTestCaseRequest",
       "responseSchemas": [
@@ -392,7 +392,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_test_cases_test_case_id_run",
+      "operationId": "run_test_case_api_documents__document_id__test_cases__test_case_id__run_post",
       "path": "/api/documents/{document_id}/test-cases/{test_case_id}/run",
       "requestSchema": null,
       "responseSchemas": [
@@ -406,7 +406,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_documents_document_id_test_runs",
+      "operationId": "list_test_runs_api_documents__document_id__test_runs_get",
       "path": "/api/documents/{document_id}/test-runs",
       "requestSchema": null,
       "responseSchemas": [
@@ -420,7 +420,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_unpublish",
+      "operationId": "unpublish_document_api_documents__document_id__unpublish_post",
       "path": "/api/documents/{document_id}/unpublish",
       "requestSchema": "RemoveDocumentRequest",
       "responseSchemas": [
@@ -434,7 +434,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_documents_document_id_validate",
+      "operationId": "validate_document_api_documents__document_id__validate_post",
       "path": "/api/documents/{document_id}/validate",
       "requestSchema": null,
       "responseSchemas": [
@@ -448,7 +448,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_ingestion_jobs_job_id",
+      "operationId": "get_ingestion_job_api_ingestion_jobs__job_id__get",
       "path": "/api/ingestion-jobs/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -462,7 +462,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_ingestion_jobs_job_id_cancel",
+      "operationId": "cancel_ingestion_job_api_ingestion_jobs__job_id__cancel_post",
       "path": "/api/ingestion-jobs/{job_id}/cancel",
       "requestSchema": null,
       "responseSchemas": [
@@ -476,7 +476,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_internal_v1_ingestion_jobs_job_id_run",
+      "operationId": "run_ingestion_job_api_internal_v1_ingestion_jobs__job_id__run_post",
       "path": "/api/internal/v1/ingestion-jobs/{job_id}/run",
       "requestSchema": null,
       "responseSchemas": [
@@ -490,7 +490,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_releases",
+      "operationId": "list_releases_api_releases_get",
       "path": "/api/releases",
       "requestSchema": null,
       "responseSchemas": [
@@ -504,7 +504,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_releases_compare",
+      "operationId": "compare_releases_api_releases_compare_get",
       "path": "/api/releases/compare",
       "requestSchema": null,
       "responseSchemas": [
@@ -518,7 +518,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_releases_rollback",
+      "operationId": "rollback_release_api_releases_rollback_post",
       "path": "/api/releases/rollback",
       "requestSchema": "RollbackRequest",
       "responseSchemas": [
@@ -532,7 +532,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_releases_release_id_promote",
+      "operationId": "promote_candidate_release_api_releases__release_id__promote_post",
       "path": "/api/releases/{release_id}/promote",
       "requestSchema": null,
       "responseSchemas": [
@@ -546,7 +546,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_releases_release_id_sync_agent",
+      "operationId": "sync_agent_release_api_releases__release_id__sync_agent_post",
       "path": "/api/releases/{release_id}/sync-agent",
       "requestSchema": null,
       "responseSchemas": [
@@ -560,7 +560,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_reviews_pending",
+      "operationId": "list_pending_reviews_api_reviews_pending_get",
       "path": "/api/reviews/pending",
       "requestSchema": null,
       "responseSchemas": [
@@ -574,7 +574,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_reviews_review_id_decision",
+      "operationId": "review_decision_api_reviews__review_id__decision_post",
       "path": "/api/reviews/{review_id}/decision",
       "requestSchema": "ReviewDecisionRequest",
       "responseSchemas": [
@@ -588,7 +588,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_sync",
+      "operationId": "sync_knowledge_api_sync_post",
       "path": "/api/sync",
       "requestSchema": null,
       "responseSchemas": [
@@ -602,7 +602,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_v1_documents_document_id_chunk_preview",
+      "operationId": "preview_document_chunks_api_v1_documents__document_id__chunk_preview_get",
       "path": "/api/v1/documents/{document_id}/chunk-preview",
       "requestSchema": null,
       "responseSchemas": [
@@ -616,7 +616,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_v1_documents_document_id_evaluate",
+      "operationId": "evaluate_document_candidate_api_v1_documents__document_id__evaluate_post",
       "path": "/api/v1/documents/{document_id}/evaluate",
       "requestSchema": null,
       "responseSchemas": [
@@ -630,7 +630,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_v1_documents_document_id_rechunk",
+      "operationId": "rechunk_document_api_v1_documents__document_id__rechunk_post",
       "path": "/api/v1/documents/{document_id}/rechunk",
       "requestSchema": null,
       "responseSchemas": [
@@ -644,7 +644,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_v1_documents_document_id_versions_version_id_assets_filename",
+      "operationId": "get_document_version_asset_api_v1_documents__document_id__versions__version_id__assets__filename__get",
       "path": "/api/v1/documents/{document_id}/versions/{version_id}/assets/{filename}",
       "requestSchema": null,
       "responseSchemas": [
@@ -658,7 +658,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_v1_documents_document_id_versions_version_id_chunk_preview",
+      "operationId": "preview_document_version_chunks_api_v1_documents__document_id__versions__version_id__chunk_preview_get",
       "path": "/api/v1/documents/{document_id}/versions/{version_id}/chunk-preview",
       "requestSchema": null,
       "responseSchemas": [
@@ -672,7 +672,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_v1_ingestion_jobs_job_id",
+      "operationId": "get_ingestion_job_api_v1_ingestion_jobs__job_id__get",
       "path": "/api/v1/ingestion-jobs/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -686,7 +686,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_v1_ingestion_jobs_job_id_cancel",
+      "operationId": "cancel_ingestion_job_api_v1_ingestion_jobs__job_id__cancel_post",
       "path": "/api/v1/ingestion-jobs/{job_id}/cancel",
       "requestSchema": null,
       "responseSchemas": [
@@ -700,7 +700,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_health",
+      "operationId": "healthz_health_get",
       "path": "/health",
       "requestSchema": null,
       "responseSchemas": [],
@@ -711,7 +711,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_healthz",
+      "operationId": "healthz_healthz_get",
       "path": "/healthz",
       "requestSchema": null,
       "responseSchemas": [],

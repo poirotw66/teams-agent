@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Capture and verify OpenAPI route/schema snapshots for FastAPI services.
 
+Also maintains the Phase F canonical OpenAPI document for selected services
+(currently ``ai_ops_backoffice``) and fails CI on breaking contract changes.
+
 Usage (from repo root):
   PYTHONPATH=agent_service/src uv run python scripts/snapshot_openapi.py --write
   PYTHONPATH=agent_service/src uv run python scripts/snapshot_openapi.py --check
@@ -9,42 +12,35 @@ Usage (from repo root):
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT_DIR = REPO_ROOT / "docs" / "architecture" / "baselines" / "openapi"
 DATA_DIR = REPO_ROOT / "data"
+_SCRIPTS_DIR = str(REPO_ROOT / "scripts")
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
 
-
-
-def rel_path(path: Path) -> str:
-    return path.resolve().relative_to(REPO_ROOT).as_posix()
-
-
-def write_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+from openapi_contract import (
+    CANONICAL_OPENAPI_SERVICES,
+    SNAPSHOT_DIR,
+    canonical_openapi_path,
+    find_breaking_changes,
+    load_json,
+    normalize_openapi,
+    rel_path,
+    schema_ref_name,
+    write_json,
+)
 
 
 def stable_operation_id(method: str, path: str) -> str:
     cleaned = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
     cleaned = cleaned.replace("-", "_")
     return f"{method.lower()}_{cleaned or 'root'}"
-
-
-def schema_ref_name(value: Any) -> str | None:
-    if isinstance(value, dict) and isinstance(value.get("$ref"), str):
-        ref = value["$ref"]
-        if ref.startswith("#/components/schemas/"):
-            return ref.rsplit("/", 1)[-1]
-    return None
 
 
 def response_schema_names(operation: dict[str, Any]) -> list[str]:
@@ -83,11 +79,15 @@ def route_inventory(schema: dict[str, Any]) -> list[dict[str, Any]]:
             if method.startswith("x-") or not isinstance(operation, dict):
                 continue
             responses = operation.get("responses") or {}
+            # Prefer FastAPI's real operationId; fall back to a stable path key.
+            operation_id = operation.get("operationId") or stable_operation_id(
+                method, path
+            )
             routes.append(
                 {
                     "method": method.upper(),
                     "path": path,
-                    "operationId": stable_operation_id(method, path),
+                    "operationId": operation_id,
                     "statusCodes": sorted(str(code) for code in responses),
                     "tags": sorted(operation.get("tags") or []),
                     "requestSchema": request_schema_name(operation),
@@ -158,8 +158,6 @@ def build_portal_schema() -> dict[str, Any]:
 def build_backoffice_schema() -> dict[str, Any]:
     from ai_ops_backoffice.api import create_app
     from ai_ops_backoffice.settings import BackofficeSettings
-
-
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -232,14 +230,20 @@ def write_snapshots() -> None:
         routes_path, schemas_path = snapshot_paths(service)
         write_json(routes_path, routes_payload)
         write_json(schemas_path, schemas_payload)
-        # Remove legacy full OpenAPI dumps if present from earlier Wave 0 drafts.
-        legacy = SNAPSHOT_DIR / f"{service}.openapi.json"
-        if legacy.exists():
-            legacy.unlink()
         print(
             f"Wrote {rel_path(routes_path)} ({routes_payload['routeCount']} routes) "
             f"and {rel_path(schemas_path)} ({schemas_payload['schemaCount']} schemas)"
         )
+        if service in CANONICAL_OPENAPI_SERVICES:
+            canonical_path = canonical_openapi_path(service)
+            write_json(canonical_path, normalize_openapi(schema))
+            print(f"Wrote canonical OpenAPI {rel_path(canonical_path)}")
+        else:
+            # Non-canonical services keep inventory-only snapshots.
+            legacy = SNAPSHOT_DIR / f"{service}.openapi.json"
+            if legacy.exists():
+                legacy.unlink()
+                print(f"Removed non-canonical legacy dump {rel_path(legacy)}")
 
 
 def check_snapshots() -> list[str]:
@@ -253,8 +257,8 @@ def check_snapshots() -> list[str]:
             continue
         schema = builder()
         current_routes, current_schemas = build_snapshot(service, schema)
-        expected_routes = json.loads(routes_path.read_text(encoding="utf-8"))
-        expected_schemas = json.loads(schemas_path.read_text(encoding="utf-8"))
+        expected_routes = load_json(routes_path)
+        expected_schemas = load_json(schemas_path)
         if current_routes != expected_routes:
             errors.append(
                 f"{service} route inventory drifted "
@@ -276,6 +280,47 @@ def check_snapshots() -> list[str]:
                 f"got {current_schemas['schemaCount']}). "
                 "Re-run with --write after intentional API changes."
             )
+
+        if service not in CANONICAL_OPENAPI_SERVICES:
+            continue
+
+        canonical_path = canonical_openapi_path(service)
+        if not canonical_path.exists():
+            errors.append(
+                f"missing canonical OpenAPI for {service} "
+                f"({rel_path(canonical_path)}); run with --write first"
+            )
+            continue
+
+        baseline_doc = normalize_openapi(load_json(canonical_path))
+        current_doc = normalize_openapi(schema)
+        if baseline_doc != current_doc:
+            errors.append(
+                f"{service} canonical OpenAPI drifted "
+                f"({rel_path(canonical_path)}). "
+                "Re-run with --write after intentional API changes, then "
+                "regenerate TypeScript with scripts/generate_openapi_ts.py --write."
+            )
+            breaking = find_breaking_changes(baseline_doc, current_doc)
+            if breaking:
+                errors.append(
+                    f"{service} breaking OpenAPI changes "
+                    f"({len(breaking)}):"
+                )
+                errors.extend(f"  BREAKING: {item}" for item in breaking[:30])
+            else:
+                errors.append(
+                    f"{service} OpenAPI drift looks additive/non-breaking; "
+                    "still requires --write to refresh the canonical artifact."
+                )
+        else:
+            # Exact match still re-runs the breaker as a self-check (should be empty).
+            breaking = find_breaking_changes(baseline_doc, current_doc)
+            if breaking:
+                errors.append(
+                    f"{service} internal breaker inconsistency: "
+                    f"identical documents reported {breaking}"
+                )
     return errors
 
 
@@ -302,7 +347,10 @@ def describe_route_diff(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Write or verify FastAPI OpenAPI route/schema snapshots."
+        description=(
+            "Write or verify FastAPI OpenAPI route/schema snapshots and the "
+            "canonical ai_ops_backoffice OpenAPI document."
+        )
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="Write snapshots.")
@@ -319,6 +367,10 @@ def main() -> int:
     errors = check_snapshots()
     if not errors:
         print("OpenAPI snapshots match.")
+        print(
+            "Canonical OpenAPI services: "
+            + ", ".join(CANONICAL_OPENAPI_SERVICES)
+        )
         return 0
     print("OpenAPI snapshot check failed:")
     for error in errors:

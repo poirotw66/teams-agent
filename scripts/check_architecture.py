@@ -109,7 +109,16 @@ MAX_NEW_FILE_LINES = 500
 MAX_NEW_FUNCTION_LINES = 80
 SOURCE_SUFFIXES = frozenset({".py", ".ts", ".tsx"})
 EXCLUDED_DIR_NAMES = frozenset(
-    {"__pycache__", "static", "node_modules", "dist", "build", ".vite"}
+    {
+        "__pycache__",
+        "static",
+        "node_modules",
+        "dist",
+        "build",
+        ".vite",
+        # OpenAPI/codegen output (freshness gated by generate_openapi_ts.py).
+        "generated",
+    }
 )
 
 

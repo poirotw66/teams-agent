@@ -42,7 +42,13 @@ jobs:
       - name: Architecture ratchet
         run: uv run python ../scripts/check_architecture.py
       - name: OpenAPI snapshot
+        # Inventory + canonical ai_ops_backoffice OpenAPI; fails on drift and
+        # classifies BREAKING removals/type changes when the canonical doc drifts.
         run: PYTHONPATH=src uv run python ../scripts/snapshot_openapi.py --check
+      - name: Generated OpenAPI TypeScript freshness
+        # Ensures console_frontend/src/shared/api/generated matches the canonical
+        # Backoffice OpenAPI. Regenerate with scripts/generate_openapi_ts.py --write.
+        run: PYTHONPATH=src uv run python ../scripts/generate_openapi_ts.py --check
       - name: Wire-contract compatibility
         run: PYTHONPATH=../src:src uv run python ../scripts/check_wire_contracts.py
       - name: Golden evaluation tests

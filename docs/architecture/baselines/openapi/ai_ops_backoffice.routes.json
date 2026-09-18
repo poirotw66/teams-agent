@@ -3,7 +3,7 @@
   "routes": [
     {
       "method": "GET",
-      "operationId": "get_root",
+      "operationId": "index__get",
       "path": "/",
       "requestSchema": null,
       "responseSchemas": [],
@@ -14,7 +14,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_admin_reconciliation_costs_summary",
+      "operationId": "reconciliation_costs_summary_api_admin_reconciliation_costs_summary_get",
       "path": "/api/admin/reconciliation/costs-summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -28,7 +28,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_admin_reconciliation_issues_summary",
+      "operationId": "reconciliation_issues_summary_api_admin_reconciliation_issues_summary_get",
       "path": "/api/admin/reconciliation/issues-summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -42,7 +42,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_admin_reconciliation_operations_summary",
+      "operationId": "reconciliation_operations_summary_api_admin_reconciliation_operations_summary_get",
       "path": "/api/admin/reconciliation/operations-summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -56,7 +56,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_admin_retention_purge",
+      "operationId": "purge_retention_api_admin_retention_purge_post",
       "path": "/api/admin/retention/purge",
       "requestSchema": null,
       "responseSchemas": [
@@ -70,7 +70,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_admin_retention_status",
+      "operationId": "retention_status_api_admin_retention_status_get",
       "path": "/api/admin/retention/status",
       "requestSchema": null,
       "responseSchemas": [
@@ -84,7 +84,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_aggregates_rebuild",
+      "operationId": "aggregates_rebuild_api_aggregates_rebuild_post",
       "path": "/api/aggregates/rebuild",
       "requestSchema": null,
       "responseSchemas": [
@@ -98,7 +98,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_aggregates_summary",
+      "operationId": "aggregates_summary_api_aggregates_summary_get",
       "path": "/api/aggregates/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -112,7 +112,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_alerts",
+      "operationId": "list_alerts_api_alerts_get",
       "path": "/api/alerts",
       "requestSchema": null,
       "responseSchemas": [
@@ -126,7 +126,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_alerts_alert_id",
+      "operationId": "get_alert_api_alerts__alert_id__get",
       "path": "/api/alerts/{alert_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -140,7 +140,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_alerts_alert_id_acknowledge",
+      "operationId": "acknowledge_alert_api_alerts__alert_id__acknowledge_post",
       "path": "/api/alerts/{alert_id}/acknowledge",
       "requestSchema": "FaqReasonRequest",
       "responseSchemas": [
@@ -154,7 +154,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_alerts_alert_id_deliveries_delivery_id_retry",
+      "operationId": "retry_alert_delivery_api_alerts__alert_id__deliveries__delivery_id__retry_post",
       "path": "/api/alerts/{alert_id}/deliveries/{delivery_id}/retry",
       "requestSchema": null,
       "responseSchemas": [
@@ -168,7 +168,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_alerts_alert_id_resolve",
+      "operationId": "resolve_alert_api_alerts__alert_id__resolve_post",
       "path": "/api/alerts/{alert_id}/resolve",
       "requestSchema": "FaqReasonRequest",
       "responseSchemas": [
@@ -182,7 +182,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_audit_events",
+      "operationId": "audit_events_api_audit_events_get",
       "path": "/api/audit-events",
       "requestSchema": null,
       "responseSchemas": [
@@ -196,7 +196,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_auth_config",
+      "operationId": "auth_config_api_auth_config_get",
       "path": "/api/auth/config",
       "requestSchema": null,
       "responseSchemas": [],
@@ -207,7 +207,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_budget_policies",
+      "operationId": "list_budget_policies_api_budget_policies_get",
       "path": "/api/budget-policies",
       "requestSchema": null,
       "responseSchemas": [
@@ -221,7 +221,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_budget_policies",
+      "operationId": "create_budget_policy_api_budget_policies_post",
       "path": "/api/budget-policies",
       "requestSchema": "BudgetPolicyCreateRequest",
       "responseSchemas": [
@@ -235,7 +235,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_budget_policies_evaluate_all",
+      "operationId": "evaluate_all_policies_api_budget_policies_evaluate_all_post",
       "path": "/api/budget-policies/evaluate-all",
       "requestSchema": null,
       "responseSchemas": [
@@ -249,7 +249,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_budget_policies_policy_id",
+      "operationId": "get_budget_policy_api_budget_policies__policy_id__get",
       "path": "/api/budget-policies/{policy_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -263,7 +263,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_budget_policies_policy_id",
+      "operationId": "update_budget_policy_api_budget_policies__policy_id__put",
       "path": "/api/budget-policies/{policy_id}",
       "requestSchema": "BudgetPolicyUpdateRequest",
       "responseSchemas": [
@@ -277,7 +277,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_budget_policies_policy_id_evaluate",
+      "operationId": "evaluate_budget_policy_api_budget_policies__policy_id__evaluate_post",
       "path": "/api/budget-policies/{policy_id}/evaluate",
       "requestSchema": null,
       "responseSchemas": [
@@ -291,7 +291,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_budget_policies_policy_id_state",
+      "operationId": "set_budget_policy_state_api_budget_policies__policy_id__state_post",
       "path": "/api/budget-policies/{policy_id}/state",
       "requestSchema": "BudgetPolicyStateRequest",
       "responseSchemas": [
@@ -305,7 +305,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_capabilities",
+      "operationId": "capabilities_api_capabilities_get",
       "path": "/api/capabilities",
       "requestSchema": null,
       "responseSchemas": [
@@ -319,7 +319,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_work_items",
+      "operationId": "list_work_items_api_console_work_items_get",
       "path": "/api/console/work-items",
       "requestSchema": null,
       "responseSchemas": [
@@ -334,7 +334,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_work_summary",
+      "operationId": "get_work_summary_api_console_work_summary_get",
       "path": "/api/console/work-summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -349,7 +349,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_broadcast",
+      "operationId": "set_emergency_broadcast_api_console_workbench_broadcast_post",
       "path": "/api/console/workbench/broadcast",
       "requestSchema": "BroadcastRequest",
       "responseSchemas": [
@@ -363,7 +363,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workbench_conversations",
+      "operationId": "list_workbench_conversations_api_console_workbench_conversations_get",
       "path": "/api/console/workbench/conversations",
       "requestSchema": null,
       "responseSchemas": [
@@ -377,7 +377,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_conversations_conversation_id_action",
+      "operationId": "handle_conversation_action_api_console_workbench_conversations__conversation_id__action_post",
       "path": "/api/console/workbench/conversations/{conversation_id}/action",
       "requestSchema": "ConversationActionRequest",
       "responseSchemas": [
@@ -391,7 +391,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workbench_documents",
+      "operationId": "list_workbench_documents_api_console_workbench_documents_get",
       "path": "/api/console/workbench/documents",
       "requestSchema": null,
       "responseSchemas": [
@@ -405,7 +405,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_documents_upload",
+      "operationId": "upload_workbench_document_api_console_workbench_documents_upload_post",
       "path": "/api/console/workbench/documents/upload",
       "requestSchema": "Body_upload_workbench_document_api_console_workbench_documents_upload_post",
       "responseSchemas": [
@@ -419,7 +419,7 @@
     },
     {
       "method": "DELETE",
-      "operationId": "delete_api_console_workbench_documents_document_id",
+      "operationId": "delete_workbench_document_api_console_workbench_documents__document_id__delete",
       "path": "/api/console/workbench/documents/{document_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -433,7 +433,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workbench_faqs",
+      "operationId": "list_workbench_faqs_api_console_workbench_faqs_get",
       "path": "/api/console/workbench/faqs",
       "requestSchema": null,
       "responseSchemas": [
@@ -447,7 +447,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_faqs",
+      "operationId": "save_workbench_faq_api_console_workbench_faqs_post",
       "path": "/api/console/workbench/faqs",
       "requestSchema": "QuickFaqSaveRequest",
       "responseSchemas": [
@@ -461,7 +461,7 @@
     },
     {
       "method": "DELETE",
-      "operationId": "delete_api_console_workbench_faqs_faq_id",
+      "operationId": "delete_workbench_faq_api_console_workbench_faqs__faq_id__delete",
       "path": "/api/console/workbench/faqs/{faq_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -475,7 +475,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workbench_overview",
+      "operationId": "get_workbench_overview_api_console_workbench_overview_get",
       "path": "/api/console/workbench/overview",
       "requestSchema": null,
       "responseSchemas": [
@@ -489,7 +489,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_simulate",
+      "operationId": "simulate_ai_answer_api_console_workbench_simulate_post",
       "path": "/api/console/workbench/simulate",
       "requestSchema": "SimulationRequest",
       "responseSchemas": [
@@ -503,7 +503,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workbench_tickets",
+      "operationId": "list_workbench_tickets_api_console_workbench_tickets_get",
       "path": "/api/console/workbench/tickets",
       "requestSchema": null,
       "responseSchemas": [
@@ -517,7 +517,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_console_workbench_tickets",
+      "operationId": "create_workbench_ticket_api_console_workbench_tickets_post",
       "path": "/api/console/workbench/tickets",
       "requestSchema": "TicketCreateRequest",
       "responseSchemas": [
@@ -531,7 +531,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_console_workflows_kind_item_id",
+      "operationId": "get_workflow_detail_api_console_workflows__kind___item_id__get",
       "path": "/api/console/workflows/{kind}/{item_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -546,7 +546,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_conversations",
+      "operationId": "conversations_api_conversations_get",
       "path": "/api/conversations",
       "requestSchema": null,
       "responseSchemas": [
@@ -560,7 +560,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_conversations_conversation_id",
+      "operationId": "conversation_detail_api_conversations__conversation_id__get",
       "path": "/api/conversations/{conversation_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -574,7 +574,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_conversations_conversation_id_examples",
+      "operationId": "create_conversation_example_api_conversations__conversation_id__examples_post",
       "path": "/api/conversations/{conversation_id}/examples",
       "requestSchema": "ExampleCreateRequest",
       "responseSchemas": [
@@ -588,7 +588,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_costs_rates",
+      "operationId": "costs_rates_api_costs_rates_get",
       "path": "/api/costs/rates",
       "requestSchema": null,
       "responseSchemas": [
@@ -602,7 +602,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_costs_rates",
+      "operationId": "update_costs_rate_api_costs_rates_post",
       "path": "/api/costs/rates",
       "requestSchema": null,
       "responseSchemas": [
@@ -616,7 +616,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_costs_rates_history",
+      "operationId": "costs_rates_history_api_costs_rates_history_get",
       "path": "/api/costs/rates/history",
       "requestSchema": null,
       "responseSchemas": [
@@ -630,7 +630,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_costs_summary",
+      "operationId": "costs_summary_api_costs_summary_get",
       "path": "/api/costs/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -644,7 +644,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_activate_target",
+      "operationId": "activate_target_api_evaluations_activate_target_post",
       "path": "/api/evaluations/activate-target",
       "requestSchema": "ActivateTargetPayload",
       "responseSchemas": [
@@ -660,7 +660,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_candidate_jobs",
+      "operationId": "start_candidate_job_api_evaluations_candidate_jobs_post",
       "path": "/api/evaluations/candidate-jobs",
       "requestSchema": "CandidateJobPayload",
       "responseSchemas": [
@@ -676,7 +676,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_candidate_jobs_job_id",
+      "operationId": "get_candidate_job_api_evaluations_candidate_jobs__job_id__get",
       "path": "/api/evaluations/candidate-jobs/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -692,7 +692,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_candidate_jobs_job_id_cancel",
+      "operationId": "cancel_candidate_job_api_evaluations_candidate_jobs__job_id__cancel_post",
       "path": "/api/evaluations/candidate-jobs/{job_id}/cancel",
       "requestSchema": null,
       "responseSchemas": [
@@ -708,7 +708,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_cases",
+      "operationId": "list_cases_api_evaluations_cases_get",
       "path": "/api/evaluations/cases",
       "requestSchema": null,
       "responseSchemas": [
@@ -724,7 +724,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_cases",
+      "operationId": "create_case_api_evaluations_cases_post",
       "path": "/api/evaluations/cases",
       "requestSchema": "CaseCreatePayload",
       "responseSchemas": [
@@ -740,7 +740,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_cases_case_id",
+      "operationId": "get_case_api_evaluations_cases__case_id__get",
       "path": "/api/evaluations/cases/{case_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -756,7 +756,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_cases_case_id_retire",
+      "operationId": "retire_case_api_evaluations_cases__case_id__retire_post",
       "path": "/api/evaluations/cases/{case_id}/retire",
       "requestSchema": "RetireCasePayload",
       "responseSchemas": [
@@ -772,7 +772,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_cases_case_id_revisions",
+      "operationId": "create_revision_api_evaluations_cases__case_id__revisions_post",
       "path": "/api/evaluations/cases/{case_id}/revisions",
       "requestSchema": "RevisionCreatePayload",
       "responseSchemas": [
@@ -788,7 +788,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_cases_case_id_revisions_revision_id_review",
+      "operationId": "review_revision_api_evaluations_cases__case_id__revisions__revision_id__review_post",
       "path": "/api/evaluations/cases/{case_id}/revisions/{revision_id}/review",
       "requestSchema": "ReviewRevisionPayload",
       "responseSchemas": [
@@ -804,7 +804,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_cases_case_id_revisions_revision_id_submit",
+      "operationId": "submit_revision_api_evaluations_cases__case_id__revisions__revision_id__submit_post",
       "path": "/api/evaluations/cases/{case_id}/revisions/{revision_id}/submit",
       "requestSchema": "SubmitRevisionPayload",
       "responseSchemas": [
@@ -820,7 +820,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_exceptions_exception_id_approve",
+      "operationId": "approve_exception_api_evaluations_exceptions__exception_id__approve_post",
       "path": "/api/evaluations/exceptions/{exception_id}/approve",
       "requestSchema": null,
       "responseSchemas": [
@@ -836,7 +836,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_exports",
+      "operationId": "export_cases_api_evaluations_exports_post",
       "path": "/api/evaluations/exports",
       "requestSchema": "ExportPayload",
       "responseSchemas": [
@@ -852,7 +852,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_gate_decisions",
+      "operationId": "list_decisions_api_evaluations_gate_decisions_get",
       "path": "/api/evaluations/gate-decisions",
       "requestSchema": null,
       "responseSchemas": [
@@ -868,7 +868,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_decisions",
+      "operationId": "evaluate_decision_api_evaluations_gate_decisions_post",
       "path": "/api/evaluations/gate-decisions",
       "requestSchema": "EvaluateDecisionPayload",
       "responseSchemas": [
@@ -884,7 +884,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_gate_decisions_decision_id",
+      "operationId": "get_decision_api_evaluations_gate_decisions__decision_id__get",
       "path": "/api/evaluations/gate-decisions/{decision_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -900,7 +900,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_decisions_decision_id_exceptions",
+      "operationId": "request_exception_api_evaluations_gate_decisions__decision_id__exceptions_post",
       "path": "/api/evaluations/gate-decisions/{decision_id}/exceptions",
       "requestSchema": "RequestExceptionPayload",
       "responseSchemas": [
@@ -916,7 +916,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_gate_policies",
+      "operationId": "list_gate_policies_api_evaluations_gate_policies_get",
       "path": "/api/evaluations/gate-policies",
       "requestSchema": null,
       "responseSchemas": [
@@ -932,7 +932,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_policies",
+      "operationId": "create_gate_policy_api_evaluations_gate_policies_post",
       "path": "/api/evaluations/gate-policies",
       "requestSchema": "CreateGatePolicyPayload",
       "responseSchemas": [
@@ -948,7 +948,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_gate_policies_policy_id",
+      "operationId": "get_gate_policy_api_evaluations_gate_policies__policy_id__get",
       "path": "/api/evaluations/gate-policies/{policy_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -964,7 +964,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_policies_policy_id_versions",
+      "operationId": "create_policy_version_api_evaluations_gate_policies__policy_id__versions_post",
       "path": "/api/evaluations/gate-policies/{policy_id}/versions",
       "requestSchema": "CreatePolicyVersionPayload",
       "responseSchemas": [
@@ -980,7 +980,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_policies_policy_id_versions_version_activate",
+      "operationId": "activate_policy_version_api_evaluations_gate_policies__policy_id__versions__version__activate_post",
       "path": "/api/evaluations/gate-policies/{policy_id}/versions/{version}/activate",
       "requestSchema": "ActivatePolicyVersionPayload",
       "responseSchemas": [
@@ -996,7 +996,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_gate_policies_policy_id_versions_version_approve",
+      "operationId": "approve_policy_version_api_evaluations_gate_policies__policy_id__versions__version__approve_post",
       "path": "/api/evaluations/gate-policies/{policy_id}/versions/{version}/approve",
       "requestSchema": null,
       "responseSchemas": [
@@ -1012,7 +1012,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_imports_validate",
+      "operationId": "validate_import_api_evaluations_imports_validate_post",
       "path": "/api/evaluations/imports/validate",
       "requestSchema": "ImportValidatePayload",
       "responseSchemas": [
@@ -1028,7 +1028,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_imports_staged_id_commit",
+      "operationId": "commit_import_api_evaluations_imports__staged_id__commit_post",
       "path": "/api/evaluations/imports/{staged_id}/commit",
       "requestSchema": null,
       "responseSchemas": [
@@ -1044,7 +1044,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_runs",
+      "operationId": "list_runs_api_evaluations_runs_get",
       "path": "/api/evaluations/runs",
       "requestSchema": null,
       "responseSchemas": [
@@ -1060,7 +1060,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs",
+      "operationId": "create_run_api_evaluations_runs_post",
       "path": "/api/evaluations/runs",
       "requestSchema": "CreateRunPayload",
       "responseSchemas": [
@@ -1076,7 +1076,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs_preflight",
+      "operationId": "preflight_run_api_evaluations_runs_preflight_post",
       "path": "/api/evaluations/runs/preflight",
       "requestSchema": "PreflightRunPayload",
       "responseSchemas": [
@@ -1092,7 +1092,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_runs_run_id",
+      "operationId": "get_run_api_evaluations_runs__run_id__get",
       "path": "/api/evaluations/runs/{run_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1108,7 +1108,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs_run_id_cancel",
+      "operationId": "cancel_run_api_evaluations_runs__run_id__cancel_post",
       "path": "/api/evaluations/runs/{run_id}/cancel",
       "requestSchema": "CancelRunPayload",
       "responseSchemas": [
@@ -1124,7 +1124,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_runs_run_id_cases",
+      "operationId": "list_case_executions_api_evaluations_runs__run_id__cases_get",
       "path": "/api/evaluations/runs/{run_id}/cases",
       "requestSchema": null,
       "responseSchemas": [
@@ -1140,7 +1140,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_runs_run_id_cases_execution_id",
+      "operationId": "get_case_execution_api_evaluations_runs__run_id__cases__execution_id__get",
       "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1156,7 +1156,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs_run_id_cases_execution_id_quality_case",
+      "operationId": "link_quality_case_api_evaluations_runs__run_id__cases__execution_id__quality_case_post",
       "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}/quality-case",
       "requestSchema": "CreateQualityCasePayload",
       "responseSchemas": [
@@ -1172,7 +1172,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_runs_run_id_cases_execution_id_trajectory",
+      "operationId": "get_case_trajectory_api_evaluations_runs__run_id__cases__execution_id__trajectory_get",
       "path": "/api/evaluations/runs/{run_id}/cases/{execution_id}/trajectory",
       "requestSchema": null,
       "responseSchemas": [
@@ -1188,7 +1188,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs_run_id_rescore",
+      "operationId": "rescore_run_api_evaluations_runs__run_id__rescore_post",
       "path": "/api/evaluations/runs/{run_id}/rescore",
       "requestSchema": "RescoreRunPayload",
       "responseSchemas": [
@@ -1204,7 +1204,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_runs_run_id_reviews",
+      "operationId": "review_case_execution_api_evaluations_runs__run_id__reviews_post",
       "path": "/api/evaluations/runs/{run_id}/reviews",
       "requestSchema": "ReviewExecutionPayload",
       "responseSchemas": [
@@ -1220,7 +1220,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_schedules",
+      "operationId": "list_schedules_api_evaluations_schedules_get",
       "path": "/api/evaluations/schedules",
       "requestSchema": null,
       "responseSchemas": [
@@ -1236,7 +1236,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_schedules",
+      "operationId": "create_schedule_api_evaluations_schedules_post",
       "path": "/api/evaluations/schedules",
       "requestSchema": "CreateSchedulePayload",
       "responseSchemas": [
@@ -1252,7 +1252,7 @@
     },
     {
       "method": "PATCH",
-      "operationId": "patch_api_evaluations_schedules_schedule_id",
+      "operationId": "update_schedule_api_evaluations_schedules__schedule_id__patch",
       "path": "/api/evaluations/schedules/{schedule_id}",
       "requestSchema": "UpdateSchedulePayload",
       "responseSchemas": [
@@ -1268,7 +1268,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_sets",
+      "operationId": "list_sets_api_evaluations_sets_get",
       "path": "/api/evaluations/sets",
       "requestSchema": null,
       "responseSchemas": [
@@ -1284,7 +1284,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_sets",
+      "operationId": "create_set_api_evaluations_sets_post",
       "path": "/api/evaluations/sets",
       "requestSchema": "SetCreatePayload",
       "responseSchemas": [
@@ -1300,7 +1300,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_sets_set_id",
+      "operationId": "get_set_api_evaluations_sets__set_id__get",
       "path": "/api/evaluations/sets/{set_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1316,7 +1316,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_sets_set_id_versions",
+      "operationId": "create_set_version_draft_api_evaluations_sets__set_id__versions_post",
       "path": "/api/evaluations/sets/{set_id}/versions",
       "requestSchema": "SetVersionDraftPayload",
       "responseSchemas": [
@@ -1332,7 +1332,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_sets_set_id_versions_version_id_publish",
+      "operationId": "publish_set_version_api_evaluations_sets__set_id__versions__version_id__publish_post",
       "path": "/api/evaluations/sets/{set_id}/versions/{version_id}/publish",
       "requestSchema": "PublishSetVersionPayload",
       "responseSchemas": [
@@ -1348,7 +1348,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_source_impacts",
+      "operationId": "get_source_impacts_api_evaluations_source_impacts_get",
       "path": "/api/evaluations/source-impacts",
       "requestSchema": null,
       "responseSchemas": [
@@ -1364,7 +1364,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_tool_fixtures",
+      "operationId": "list_tool_fixtures_api_evaluations_tool_fixtures_get",
       "path": "/api/evaluations/tool-fixtures",
       "requestSchema": null,
       "responseSchemas": [
@@ -1380,7 +1380,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_tool_fixtures",
+      "operationId": "create_tool_fixture_api_evaluations_tool_fixtures_post",
       "path": "/api/evaluations/tool-fixtures",
       "requestSchema": "CreateToolFixturePayload",
       "responseSchemas": [
@@ -1396,7 +1396,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_tool_fixtures_fixture_id",
+      "operationId": "get_tool_fixture_api_evaluations_tool_fixtures__fixture_id__get",
       "path": "/api/evaluations/tool-fixtures/{fixture_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1412,7 +1412,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_tool_fixtures_fixture_id_versions",
+      "operationId": "create_fixture_version_api_evaluations_tool_fixtures__fixture_id__versions_post",
       "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions",
       "requestSchema": "CreateFixtureVersionPayload",
       "responseSchemas": [
@@ -1428,7 +1428,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_evaluations_tool_fixtures_fixture_id_versions_version",
+      "operationId": "get_fixture_version_api_evaluations_tool_fixtures__fixture_id__versions__version__get",
       "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions/{version}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1444,7 +1444,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_tool_fixtures_fixture_id_versions_version_approve",
+      "operationId": "approve_fixture_version_api_evaluations_tool_fixtures__fixture_id__versions__version__approve_post",
       "path": "/api/evaluations/tool-fixtures/{fixture_id}/versions/{version}/approve",
       "requestSchema": "ApproveFixtureVersionPayload",
       "responseSchemas": [
@@ -1460,7 +1460,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_evaluations_verify_release",
+      "operationId": "verify_release_api_evaluations_verify_release_post",
       "path": "/api/evaluations/verify-release",
       "requestSchema": "VerifyReleasePayload",
       "responseSchemas": [
@@ -1476,7 +1476,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_examples",
+      "operationId": "list_examples_api_examples_get",
       "path": "/api/examples",
       "requestSchema": null,
       "responseSchemas": [
@@ -1490,7 +1490,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_examples_manual",
+      "operationId": "create_manual_example_api_examples_manual_post",
       "path": "/api/examples/manual",
       "requestSchema": "ExampleCreateRequest",
       "responseSchemas": [
@@ -1504,7 +1504,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_examples_example_id",
+      "operationId": "get_example_api_examples__example_id__get",
       "path": "/api/examples/{example_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1518,7 +1518,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_examples_example_id",
+      "operationId": "update_example_api_examples__example_id__put",
       "path": "/api/examples/{example_id}",
       "requestSchema": "ExampleUpdateRequest",
       "responseSchemas": [
@@ -1532,7 +1532,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_examples_example_id_retire",
+      "operationId": "retire_example_api_examples__example_id__retire_post",
       "path": "/api/examples/{example_id}/retire",
       "requestSchema": "ExampleRetireRequest",
       "responseSchemas": [
@@ -1546,7 +1546,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_examples_example_id_review",
+      "operationId": "review_example_api_examples__example_id__review_post",
       "path": "/api/examples/{example_id}/review",
       "requestSchema": "ExampleReviewRequest",
       "responseSchemas": [
@@ -1560,7 +1560,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_exports",
+      "operationId": "create_export_api_exports_post",
       "path": "/api/exports",
       "requestSchema": "ExportRequest",
       "responseSchemas": [
@@ -1574,7 +1574,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_exports_job_id",
+      "operationId": "get_export_api_exports__job_id__get",
       "path": "/api/exports/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1588,7 +1588,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_exports_job_id_download",
+      "operationId": "download_export_api_exports__job_id__download_get",
       "path": "/api/exports/{job_id}/download",
       "requestSchema": null,
       "responseSchemas": [
@@ -1602,7 +1602,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_faqs",
+      "operationId": "list_faqs_api_faqs_get",
       "path": "/api/faqs",
       "requestSchema": null,
       "responseSchemas": [
@@ -1616,7 +1616,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs",
+      "operationId": "create_faq_api_faqs_post",
       "path": "/api/faqs",
       "requestSchema": "FaqCreateRequest",
       "responseSchemas": [
@@ -1630,7 +1630,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_faqs_faq_id",
+      "operationId": "get_faq_api_faqs__faq_id__get",
       "path": "/api/faqs/{faq_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -1644,7 +1644,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_faqs_faq_id",
+      "operationId": "edit_faq_api_faqs__faq_id__put",
       "path": "/api/faqs/{faq_id}",
       "requestSchema": "FaqEditRequest",
       "responseSchemas": [
@@ -1658,7 +1658,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_disable",
+      "operationId": "disable_faq_api_faqs__faq_id__disable_post",
       "path": "/api/faqs/{faq_id}/disable",
       "requestSchema": "FaqReasonRequest",
       "responseSchemas": [
@@ -1672,7 +1672,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_faqs_faq_id_performance",
+      "operationId": "get_faq_performance_api_faqs__faq_id__performance_get",
       "path": "/api/faqs/{faq_id}/performance",
       "requestSchema": null,
       "responseSchemas": [
@@ -1686,7 +1686,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_activate",
+      "operationId": "activate_faq_api_faqs__faq_id__versions__version_id__activate_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/activate",
       "requestSchema": "FaqReasonRequest",
       "responseSchemas": [
@@ -1700,7 +1700,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_examples",
+      "operationId": "create_faq_example_api_faqs__faq_id__versions__version_id__examples_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/examples",
       "requestSchema": "ExampleCreateRequest",
       "responseSchemas": [
@@ -1714,7 +1714,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_review",
+      "operationId": "review_faq_api_faqs__faq_id__versions__version_id__review_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/review",
       "requestSchema": "FaqReviewRequest",
       "responseSchemas": [
@@ -1728,7 +1728,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_rollback",
+      "operationId": "rollback_faq_api_faqs__faq_id__versions__version_id__rollback_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/rollback",
       "requestSchema": "FaqReasonRequest",
       "responseSchemas": [
@@ -1742,7 +1742,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_submit",
+      "operationId": "submit_faq_api_faqs__faq_id__versions__version_id__submit_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/submit",
       "requestSchema": "FaqTransitionRequest",
       "responseSchemas": [
@@ -1756,7 +1756,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_faqs_faq_id_versions_version_id_tests",
+      "operationId": "add_faq_test_api_faqs__faq_id__versions__version_id__tests_post",
       "path": "/api/faqs/{faq_id}/versions/{version_id}/tests",
       "requestSchema": "FaqTestCreateRequest",
       "responseSchemas": [
@@ -1770,7 +1770,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_feature_flags",
+      "operationId": "list_feature_flags_api_feature_flags_get",
       "path": "/api/feature-flags",
       "requestSchema": null,
       "responseSchemas": [
@@ -1784,7 +1784,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_feedback",
+      "operationId": "feedback_list_api_feedback_get",
       "path": "/api/feedback",
       "requestSchema": null,
       "responseSchemas": [
@@ -1798,7 +1798,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_gaps_summary",
+      "operationId": "gap_summary_api_gaps_summary_get",
       "path": "/api/gaps/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -1812,7 +1812,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_audit",
+      "operationId": "governance_audit_api_governance_audit_get",
       "path": "/api/governance/audit",
       "requestSchema": null,
       "responseSchemas": [
@@ -1826,7 +1826,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_audit_export",
+      "operationId": "governance_audit_export_api_governance_audit_export_get",
       "path": "/api/governance/audit/export",
       "requestSchema": null,
       "responseSchemas": [
@@ -1840,7 +1840,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_eval_harness",
+      "operationId": "governance_eval_harness_status_api_governance_eval_harness_get",
       "path": "/api/governance/eval-harness",
       "requestSchema": null,
       "responseSchemas": [
@@ -1854,7 +1854,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_flags",
+      "operationId": "list_governance_flags_api_governance_flags_get",
       "path": "/api/governance/flags",
       "requestSchema": null,
       "responseSchemas": [
@@ -1868,7 +1868,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_flags_candidates",
+      "operationId": "create_governance_flag_api_governance_flags_candidates_post",
       "path": "/api/governance/flags/candidates",
       "requestSchema": "FlagCandidateBody",
       "responseSchemas": [
@@ -1882,7 +1882,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_flags_flag_id_effective",
+      "operationId": "effective_governance_flag_api_governance_flags__flag_id__effective_get",
       "path": "/api/governance/flags/{flag_id}/effective",
       "requestSchema": null,
       "responseSchemas": [
@@ -1896,7 +1896,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_flags_flag_id_versions_version_id_activate",
+      "operationId": "activate_governance_flag_api_governance_flags__flag_id__versions__version_id__activate_post",
       "path": "/api/governance/flags/{flag_id}/versions/{version_id}/activate",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -1910,7 +1910,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_flags_flag_id_versions_version_id_approve",
+      "operationId": "approve_governance_flag_api_governance_flags__flag_id__versions__version_id__approve_post",
       "path": "/api/governance/flags/{flag_id}/versions/{version_id}/approve",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -1924,7 +1924,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_masking",
+      "operationId": "list_masking_api_governance_masking_get",
       "path": "/api/governance/masking",
       "requestSchema": null,
       "responseSchemas": [
@@ -1938,7 +1938,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_masking_candidates",
+      "operationId": "create_masking_api_governance_masking_candidates_post",
       "path": "/api/governance/masking/candidates",
       "requestSchema": "MaskingBody",
       "responseSchemas": [
@@ -1952,7 +1952,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_masking_version_id_activate",
+      "operationId": "activate_masking_api_governance_masking__version_id__activate_post",
       "path": "/api/governance/masking/{version_id}/activate",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -1966,7 +1966,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_masking_version_id_approve",
+      "operationId": "approve_masking_api_governance_masking__version_id__approve_post",
       "path": "/api/governance/masking/{version_id}/approve",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -1980,7 +1980,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_models",
+      "operationId": "list_governance_models_api_governance_models_get",
       "path": "/api/governance/models",
       "requestSchema": null,
       "responseSchemas": [
@@ -1994,7 +1994,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_candidates",
+      "operationId": "create_governance_model_api_governance_models_candidates_post",
       "path": "/api/governance/models/candidates",
       "requestSchema": "ModelCandidateBody",
       "responseSchemas": [
@@ -2008,7 +2008,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_rollback",
+      "operationId": "rollback_governance_model_api_governance_models__config_id__rollback_post",
       "path": "/api/governance/models/{config_id}/rollback",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2022,7 +2022,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_simulate_fallback",
+      "operationId": "simulate_model_fallback_api_governance_models__config_id__simulate_fallback_post",
       "path": "/api/governance/models/{config_id}/simulate-fallback",
       "requestSchema": "FallbackBody",
       "responseSchemas": [
@@ -2036,7 +2036,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_versions_version_id_activate",
+      "operationId": "activate_governance_model_api_governance_models__config_id__versions__version_id__activate_post",
       "path": "/api/governance/models/{config_id}/versions/{version_id}/activate",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2050,7 +2050,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_versions_version_id_approve",
+      "operationId": "approve_governance_model_api_governance_models__config_id__versions__version_id__approve_post",
       "path": "/api/governance/models/{config_id}/versions/{version_id}/approve",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2064,7 +2064,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_versions_version_id_eval",
+      "operationId": "eval_governance_model_api_governance_models__config_id__versions__version_id__eval_post",
       "path": "/api/governance/models/{config_id}/versions/{version_id}/eval",
       "requestSchema": null,
       "responseSchemas": [
@@ -2078,7 +2078,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_models_config_id_versions_version_id_schedule",
+      "operationId": "schedule_governance_model_api_governance_models__config_id__versions__version_id__schedule_post",
       "path": "/api/governance/models/{config_id}/versions/{version_id}/schedule",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2092,7 +2092,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_prompts",
+      "operationId": "list_governance_prompts_api_governance_prompts_get",
       "path": "/api/governance/prompts",
       "requestSchema": null,
       "responseSchemas": [
@@ -2106,7 +2106,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_prompts_prompt_id",
+      "operationId": "governance_prompt_detail_api_governance_prompts__prompt_id__get",
       "path": "/api/governance/prompts/{prompt_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2120,7 +2120,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_canary_evaluate",
+      "operationId": "evaluate_governance_prompt_canary_api_governance_prompts__prompt_id__canary_evaluate_post",
       "path": "/api/governance/prompts/{prompt_id}/canary/evaluate",
       "requestSchema": "PromptCanaryEvaluateBody",
       "responseSchemas": [
@@ -2134,7 +2134,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_canary_stop",
+      "operationId": "stop_governance_prompt_canary_api_governance_prompts__prompt_id__canary_stop_post",
       "path": "/api/governance/prompts/{prompt_id}/canary/stop",
       "requestSchema": "PromptCanaryStopBody",
       "responseSchemas": [
@@ -2148,7 +2148,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_candidates",
+      "operationId": "create_governance_prompt_candidate_api_governance_prompts__prompt_id__candidates_post",
       "path": "/api/governance/prompts/{prompt_id}/candidates",
       "requestSchema": "PromptCandidateBody",
       "responseSchemas": [
@@ -2162,7 +2162,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_rollback",
+      "operationId": "rollback_governance_prompt_api_governance_prompts__prompt_id__rollback_post",
       "path": "/api/governance/prompts/{prompt_id}/rollback",
       "requestSchema": "PromptRollbackBody",
       "responseSchemas": [
@@ -2176,7 +2176,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_prompts_prompt_id_runtime",
+      "operationId": "resolve_governance_prompt_api_governance_prompts__prompt_id__runtime_get",
       "path": "/api/governance/prompts/{prompt_id}/runtime",
       "requestSchema": null,
       "responseSchemas": [
@@ -2190,7 +2190,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_activate",
+      "operationId": "activate_governance_prompt_api_governance_prompts__prompt_id__versions__version_id__activate_post",
       "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/activate",
       "requestSchema": "PromptActivateBody",
       "responseSchemas": [
@@ -2204,7 +2204,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_approve",
+      "operationId": "approve_governance_prompt_api_governance_prompts__prompt_id__versions__version_id__approve_post",
       "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/approve",
       "requestSchema": "PromptApproveBody",
       "responseSchemas": [
@@ -2218,7 +2218,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_canary",
+      "operationId": "canary_governance_prompt_api_governance_prompts__prompt_id__versions__version_id__canary_post",
       "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/canary",
       "requestSchema": "PromptCanaryBody",
       "responseSchemas": [
@@ -2232,7 +2232,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_prompts_prompt_id_versions_version_id_diff",
+      "operationId": "governance_prompt_diff_api_governance_prompts__prompt_id__versions__version_id__diff_get",
       "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/diff",
       "requestSchema": null,
       "responseSchemas": [
@@ -2246,7 +2246,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_prompts_prompt_id_versions_version_id_eval",
+      "operationId": "eval_governance_prompt_api_governance_prompts__prompt_id__versions__version_id__eval_post",
       "path": "/api/governance/prompts/{prompt_id}/versions/{version_id}/eval",
       "requestSchema": null,
       "responseSchemas": [
@@ -2260,7 +2260,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_retention",
+      "operationId": "list_retention_api_governance_retention_get",
       "path": "/api/governance/retention",
       "requestSchema": null,
       "responseSchemas": [
@@ -2274,7 +2274,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_retention_candidates",
+      "operationId": "create_retention_api_governance_retention_candidates_post",
       "path": "/api/governance/retention/candidates",
       "requestSchema": "RetentionBody",
       "responseSchemas": [
@@ -2288,7 +2288,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_retention_version_id_activate",
+      "operationId": "activate_retention_api_governance_retention__version_id__activate_post",
       "path": "/api/governance/retention/{version_id}/activate",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2302,7 +2302,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_retention_version_id_approve",
+      "operationId": "approve_retention_api_governance_retention__version_id__approve_post",
       "path": "/api/governance/retention/{version_id}/approve",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2316,7 +2316,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_roles",
+      "operationId": "list_role_changes_api_governance_roles_get",
       "path": "/api/governance/roles",
       "requestSchema": null,
       "responseSchemas": [
@@ -2330,7 +2330,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_roles_requests",
+      "operationId": "request_role_change_api_governance_roles_requests_post",
       "path": "/api/governance/roles/requests",
       "requestSchema": "RoleRequestBody",
       "responseSchemas": [
@@ -2344,7 +2344,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_roles_revoke",
+      "operationId": "revoke_principal_api_governance_roles_revoke_post",
       "path": "/api/governance/roles/revoke",
       "requestSchema": "RevokeBody",
       "responseSchemas": [
@@ -2358,7 +2358,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_governance_roles_change_id_approve",
+      "operationId": "approve_role_change_api_governance_roles__change_id__approve_post",
       "path": "/api/governance/roles/{change_id}/approve",
       "requestSchema": "ReasonBody",
       "responseSchemas": [
@@ -2372,7 +2372,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_governance_search",
+      "operationId": "governance_search_api_governance_search_get",
       "path": "/api/governance/search",
       "requestSchema": null,
       "responseSchemas": [
@@ -2386,7 +2386,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_health_check_alerts",
+      "operationId": "trigger_health_check_alerts_api_health_check_alerts_post",
       "path": "/api/health/check-alerts",
       "requestSchema": null,
       "responseSchemas": [
@@ -2400,7 +2400,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_health_summary",
+      "operationId": "health_summary_api_health_summary_get",
       "path": "/api/health/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -2414,7 +2414,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_issues_summary",
+      "operationId": "issues_summary_api_issues_summary_get",
       "path": "/api/issues/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -2428,7 +2428,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_issues_issue_type_id_routes",
+      "operationId": "issue_routes_api_issues__issue_type_id__routes_get",
       "path": "/api/issues/{issue_type_id}/routes",
       "requestSchema": null,
       "responseSchemas": [
@@ -2442,7 +2442,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_knowledge",
+      "operationId": "knowledge_documents_api_knowledge_get",
       "path": "/api/knowledge",
       "requestSchema": null,
       "responseSchemas": [
@@ -2456,7 +2456,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_knowledge_status",
+      "operationId": "knowledge_bridge_status_api_knowledge_status_get",
       "path": "/api/knowledge/status",
       "requestSchema": null,
       "responseSchemas": [
@@ -2472,7 +2472,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_knowledge_document_id_performance",
+      "operationId": "knowledge_performance_api_knowledge__document_id__performance_get",
       "path": "/api/knowledge/{document_id}/performance",
       "requestSchema": null,
       "responseSchemas": [
@@ -2486,7 +2486,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_knowledge_document_id_versions_version_id_examples",
+      "operationId": "create_document_example_api_knowledge__document_id__versions__version_id__examples_post",
       "path": "/api/knowledge/{document_id}/versions/{version_id}/examples",
       "requestSchema": "ExampleCreateRequest",
       "responseSchemas": [
@@ -2500,7 +2500,7 @@
     },
     {
       "method": "DELETE",
-      "operationId": "delete_api_knowledge_full_path",
+      "operationId": "knowledge_proxy_delete",
       "path": "/api/knowledge/{full_path}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2516,7 +2516,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_knowledge_full_path",
+      "operationId": "knowledge_proxy_get",
       "path": "/api/knowledge/{full_path}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2532,7 +2532,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_knowledge_full_path",
+      "operationId": "knowledge_proxy_post",
       "path": "/api/knowledge/{full_path}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2548,7 +2548,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_knowledge_full_path",
+      "operationId": "knowledge_proxy_put",
       "path": "/api/knowledge/{full_path}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2564,7 +2564,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_metrics_definitions",
+      "operationId": "metrics_definitions_api_metrics_definitions_get",
       "path": "/api/metrics/definitions",
       "requestSchema": null,
       "responseSchemas": [
@@ -2578,7 +2578,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_operations_summary",
+      "operationId": "operations_summary_api_operations_summary_get",
       "path": "/api/operations/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -2592,7 +2592,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_prompts_active",
+      "operationId": "get_active_prompt_api_prompts_active_get",
       "path": "/api/prompts/active",
       "requestSchema": null,
       "responseSchemas": [
@@ -2606,7 +2606,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_prompts_candidates",
+      "operationId": "list_prompt_candidates_api_prompts_candidates_get",
       "path": "/api/prompts/candidates",
       "requestSchema": null,
       "responseSchemas": [
@@ -2620,7 +2620,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_prompts_candidates",
+      "operationId": "create_prompt_candidate_api_prompts_candidates_post",
       "path": "/api/prompts/candidates",
       "requestSchema": "PromptCandidateRequest",
       "responseSchemas": [
@@ -2634,7 +2634,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_prompts_candidates_candidate_id",
+      "operationId": "get_prompt_candidate_api_prompts_candidates__candidate_id__get",
       "path": "/api/prompts/candidates/{candidate_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2648,7 +2648,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_prompts_candidates_candidate_id_compare",
+      "operationId": "compare_prompt_candidate_api_prompts_candidates__candidate_id__compare_get",
       "path": "/api/prompts/candidates/{candidate_id}/compare",
       "requestSchema": null,
       "responseSchemas": [
@@ -2662,7 +2662,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_quality_candidates",
+      "operationId": "list_quality_candidates_api_quality_candidates_get",
       "path": "/api/quality-candidates",
       "requestSchema": null,
       "responseSchemas": [
@@ -2676,7 +2676,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_candidates_merge",
+      "operationId": "merge_quality_candidates_api_quality_candidates_merge_post",
       "path": "/api/quality-candidates/merge",
       "requestSchema": "QualityCandidateMergeRequest",
       "responseSchemas": [
@@ -2690,7 +2690,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_candidates_refresh",
+      "operationId": "refresh_quality_candidates_api_quality_candidates_refresh_post",
       "path": "/api/quality-candidates/refresh",
       "requestSchema": "QualityCandidateRefreshRequest",
       "responseSchemas": [
@@ -2704,7 +2704,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_quality_cases",
+      "operationId": "list_quality_cases_api_quality_cases_get",
       "path": "/api/quality-cases",
       "requestSchema": null,
       "responseSchemas": [
@@ -2718,7 +2718,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_quality_cases_case_id",
+      "operationId": "get_quality_case_api_quality_cases__case_id__get",
       "path": "/api/quality-cases/{case_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2732,7 +2732,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_api_quality_cases_case_id",
+      "operationId": "update_quality_case_api_quality_cases__case_id__put",
       "path": "/api/quality-cases/{case_id}",
       "requestSchema": "QualityCaseUpdateRequest",
       "responseSchemas": [
@@ -2746,7 +2746,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_cases_case_id_content",
+      "operationId": "link_quality_case_content_api_quality_cases__case_id__content_post",
       "path": "/api/quality-cases/{case_id}/content",
       "requestSchema": "QualityContentLinkRequest",
       "responseSchemas": [
@@ -2760,7 +2760,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_cases_case_id_document_draft",
+      "operationId": "create_quality_case_document_draft_api_quality_cases__case_id__document_draft_post",
       "path": "/api/quality-cases/{case_id}/document-draft",
       "requestSchema": "QualityDocumentDraftRequest",
       "responseSchemas": [
@@ -2774,7 +2774,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_cases_case_id_faq_draft",
+      "operationId": "create_quality_case_faq_draft_api_quality_cases__case_id__faq_draft_post",
       "path": "/api/quality-cases/{case_id}/faq-draft",
       "requestSchema": "QualityFaqDraftRequest",
       "responseSchemas": [
@@ -2788,7 +2788,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_cases_case_id_observation_refresh",
+      "operationId": "refresh_quality_case_observation_api_quality_cases__case_id__observation_refresh_post",
       "path": "/api/quality-cases/{case_id}/observation/refresh",
       "requestSchema": "FaqTransitionRequest",
       "responseSchemas": [
@@ -2802,7 +2802,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_quality_cases_case_id_transition",
+      "operationId": "transition_quality_case_api_quality_cases__case_id__transition_post",
       "path": "/api/quality-cases/{case_id}/transition",
       "requestSchema": "QualityCaseTransitionRequest",
       "responseSchemas": [
@@ -2816,7 +2816,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_question_clusters",
+      "operationId": "list_question_clusters_api_question_clusters_get",
       "path": "/api/question-clusters",
       "requestSchema": null,
       "responseSchemas": [
@@ -2830,7 +2830,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_question_clusters_correct",
+      "operationId": "correct_question_clusters_api_question_clusters_correct_post",
       "path": "/api/question-clusters/correct",
       "requestSchema": "QuestionClusterCorrectionRequest",
       "responseSchemas": [
@@ -2844,7 +2844,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_question_clusters_generate",
+      "operationId": "generate_question_clusters_api_question_clusters_generate_post",
       "path": "/api/question-clusters/generate",
       "requestSchema": null,
       "responseSchemas": [
@@ -2858,7 +2858,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_routes_summary",
+      "operationId": "routes_summary_api_routes_summary_get",
       "path": "/api/routes/summary",
       "requestSchema": null,
       "responseSchemas": [
@@ -2872,7 +2872,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_sources",
+      "operationId": "resolve_sources_api_sources_get",
       "path": "/api/sources",
       "requestSchema": null,
       "responseSchemas": [
@@ -2886,7 +2886,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_sources_source_ref_id",
+      "operationId": "source_preview_api_sources__source_ref_id__get",
       "path": "/api/sources/{source_ref_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2900,7 +2900,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_sources_source_ref_id_file",
+      "operationId": "source_file_get",
       "path": "/api/sources/{source_ref_id}/file",
       "requestSchema": null,
       "responseSchemas": [
@@ -2914,7 +2914,7 @@
     },
     {
       "method": "HEAD",
-      "operationId": "head_api_sources_source_ref_id_file",
+      "operationId": "source_file_head",
       "path": "/api/sources/{source_ref_id}/file",
       "requestSchema": null,
       "responseSchemas": [
@@ -2928,7 +2928,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_sync_jobs",
+      "operationId": "list_sync_jobs_api_sync_jobs_get",
       "path": "/api/sync-jobs",
       "requestSchema": null,
       "responseSchemas": [
@@ -2942,7 +2942,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_sync_jobs",
+      "operationId": "create_sync_job_api_sync_jobs_post",
       "path": "/api/sync-jobs",
       "requestSchema": "SyncJobCreateRequest",
       "responseSchemas": [
@@ -2956,7 +2956,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_sync_jobs_job_id",
+      "operationId": "get_sync_job_api_sync_jobs__job_id__get",
       "path": "/api/sync-jobs/{job_id}",
       "requestSchema": null,
       "responseSchemas": [
@@ -2970,7 +2970,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_sync_jobs_job_id_cancel",
+      "operationId": "cancel_sync_job_api_sync_jobs__job_id__cancel_post",
       "path": "/api/sync-jobs/{job_id}/cancel",
       "requestSchema": "SyncJobActionRequest",
       "responseSchemas": [
@@ -2984,7 +2984,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_api_sync_jobs_job_id_retry",
+      "operationId": "retry_sync_job_api_sync_jobs__job_id__retry_post",
       "path": "/api/sync-jobs/{job_id}/retry",
       "requestSchema": "SyncJobActionRequest",
       "responseSchemas": [
@@ -2998,7 +2998,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_api_taxonomy",
+      "operationId": "taxonomy_api_taxonomy_get",
       "path": "/api/taxonomy",
       "requestSchema": null,
       "responseSchemas": [
@@ -3012,7 +3012,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_console_v2",
+      "operationId": "console_v2_spa_console_v2_get",
       "path": "/console-v2",
       "requestSchema": null,
       "responseSchemas": [
@@ -3026,7 +3026,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_console_v2",
+      "operationId": "console_v2_spa_console_v2__get",
       "path": "/console-v2/",
       "requestSchema": null,
       "responseSchemas": [
@@ -3040,7 +3040,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_console_v2_full_path",
+      "operationId": "console_v2_spa_console_v2__full_path__get",
       "path": "/console-v2/{full_path}",
       "requestSchema": null,
       "responseSchemas": [
@@ -3054,7 +3054,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_healthz",
+      "operationId": "healthz_healthz_get",
       "path": "/healthz",
       "requestSchema": null,
       "responseSchemas": [],
@@ -3065,7 +3065,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_knowledge_ui",
+      "operationId": "knowledge_ui_knowledge_ui_get",
       "path": "/knowledge-ui",
       "requestSchema": null,
       "responseSchemas": [],
@@ -3076,7 +3076,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_knowledge_ui",
+      "operationId": "knowledge_ui_knowledge_ui__get",
       "path": "/knowledge-ui/",
       "requestSchema": null,
       "responseSchemas": [],
@@ -3087,7 +3087,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_legacy",
+      "operationId": "legacy_shell_legacy_get",
       "path": "/legacy",
       "requestSchema": null,
       "responseSchemas": [],
@@ -3098,7 +3098,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_legacy",
+      "operationId": "legacy_shell_legacy__get",
       "path": "/legacy/",
       "requestSchema": null,
       "responseSchemas": [],

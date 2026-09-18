@@ -3,7 +3,7 @@
   "routes": [
     {
       "method": "GET",
-      "operationId": "get_admin_knowledge_backend",
+      "operationId": "get_knowledge_backend_admin_knowledge_backend_get",
       "path": "/admin/knowledge-backend",
       "requestSchema": null,
       "responseSchemas": [
@@ -17,7 +17,7 @@
     },
     {
       "method": "PUT",
-      "operationId": "put_admin_knowledge_backend",
+      "operationId": "set_knowledge_backend_admin_knowledge_backend_put",
       "path": "/admin/knowledge-backend",
       "requestSchema": "KnowledgeBackendUpdate",
       "responseSchemas": [
@@ -31,7 +31,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_admin_knowledge_status",
+      "operationId": "get_knowledge_status_admin_knowledge_status_get",
       "path": "/admin/knowledge-status",
       "requestSchema": null,
       "responseSchemas": [
@@ -45,7 +45,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_admin_model_control_embedding_adopt",
+      "operationId": "adopt_embedding_admin_model_control_embedding_adopt_post",
       "path": "/admin/model-control/embedding/adopt",
       "requestSchema": "EmbeddingAdoptBody",
       "responseSchemas": [
@@ -59,7 +59,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_admin_model_control_file_search_apply",
+      "operationId": "apply_file_search_admin_model_control_file_search_apply_post",
       "path": "/admin/model-control/file-search/apply",
       "requestSchema": "FileSearchModelBody",
       "responseSchemas": [
@@ -73,7 +73,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_admin_model_control_file_search_restore",
+      "operationId": "restore_file_search_admin_model_control_file_search_restore_post",
       "path": "/admin/model-control/file-search/restore",
       "requestSchema": "FileSearchModelBody",
       "responseSchemas": [
@@ -87,7 +87,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_admin_reload_knowledge",
+      "operationId": "reload_knowledge_admin_reload_knowledge_post",
       "path": "/admin/reload-knowledge",
       "requestSchema": null,
       "responseSchemas": [
@@ -101,7 +101,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_agent_chat",
+      "operationId": "chat_agent_chat_post",
       "path": "/agent/chat",
       "requestSchema": "AgentRequest",
       "responseSchemas": [
@@ -116,7 +116,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_agent_chat_stream",
+      "operationId": "chat_stream_agent_chat_stream_post",
       "path": "/agent/chat/stream",
       "requestSchema": "AgentRequest",
       "responseSchemas": [
@@ -130,7 +130,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_agent_evaluation_chat",
+      "operationId": "evaluation_chat_agent_evaluation_chat_post",
       "path": "/agent/evaluation/chat",
       "requestSchema": "AgentRequest",
       "responseSchemas": [
@@ -145,7 +145,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_agent_ops_health_telemetry",
+      "operationId": "ingest_health_telemetry_agent_ops_health_telemetry_post",
       "path": "/agent/ops/health-telemetry",
       "requestSchema": "HealthTelemetryPayload",
       "responseSchemas": [
@@ -159,7 +159,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_feedback",
+      "operationId": "feedback_feedback_post",
       "path": "/feedback",
       "requestSchema": "FeedbackRequest",
       "responseSchemas": [
@@ -173,7 +173,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_healthz",
+      "operationId": "health_healthz_get",
       "path": "/healthz",
       "requestSchema": null,
       "responseSchemas": [],
@@ -184,7 +184,7 @@
     },
     {
       "method": "GET",
-      "operationId": "get_readyz",
+      "operationId": "ready_readyz_get",
       "path": "/readyz",
       "requestSchema": null,
       "responseSchemas": [],
@@ -195,7 +195,7 @@
     },
     {
       "method": "POST",
-      "operationId": "post_retrieval_search",
+      "operationId": "search_retrieval_search_post",
       "path": "/retrieval/search",
       "requestSchema": "SearchRequest",
       "responseSchemas": [

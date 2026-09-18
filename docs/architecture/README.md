@@ -9,7 +9,8 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 |---|---|
 | `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet |
 | `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
-| `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories |
+| `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories and the canonical Backoffice OpenAPI document (breaking-change report on drift) |
+| `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/generate_openapi_ts.py --check` | Verify generated Console TypeScript schemas match the canonical OpenAPI |
 | `PYTHONPATH=../src:src uv run --directory agent_service python ../scripts/check_wire_contracts.py` | Adapter ↔ Agent wire-field compatibility |
 | Golden / release / frontend steps | Named jobs in `.github/workflows/ci.yml` |
 
@@ -22,6 +23,12 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
 3. Existing oversized files and functions may shrink, but must not grow past their baseline. Shrinks auto-tighten the baseline JSON on check (`BASELINE_TIGHTENED`); commit the rewrite.
 4. Ownership edges `ai_ops_backoffice->agent_service` and `knowledge_portal->agent_service` are capped by `baselines/importer_counts.json` (must not grow).
 5. Public FastAPI routes/status codes/schema names are pinned under `baselines/openapi/`.
+   Canonical full OpenAPI for the Console seam is
+   `baselines/openapi/ai_ops_backoffice.openapi.json` (real `operationId`s + schemas).
+   Generated TypeScript lives at
+   `console_frontend/src/shared/api/generated/backoffice-schemas.ts`.
+   After intentional API changes:
+   `snapshot_openapi.py --write` then `generate_openapi_ts.py --write`.
 6. `platform_kernel` holds shared ports only and must not import domain packages.
 7. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
 

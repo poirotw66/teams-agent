@@ -55,9 +55,24 @@ def test_architecture_baselines_exist() -> None:
         BASELINES / "openapi" / "agent_service.schemas.json",
         BASELINES / "openapi" / "knowledge_portal.schemas.json",
         BASELINES / "openapi" / "ai_ops_backoffice.schemas.json",
+        BASELINES / "openapi" / "ai_ops_backoffice.openapi.json",
     )
     missing = [str(path.relative_to(REPO_ROOT)) for path in required if not path.exists()]
     assert missing == [], f"missing architecture baselines: {missing}"
+
+    generated_ts = (
+        REPO_ROOT
+        / "console_frontend"
+        / "src"
+        / "shared"
+        / "api"
+        / "generated"
+        / "backoffice-schemas.ts"
+    )
+    assert generated_ts.exists(), (
+        "missing generated OpenAPI TypeScript; "
+        "run scripts/generate_openapi_ts.py --write"
+    )
 
 
 def test_reverse_import_allowlist_is_empty_after_wave1() -> None:
