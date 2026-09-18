@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~9 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | **File ratchet cleared** (0 files >500); function residuals remain |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -55,3 +55,12 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `ticket.py` 576→187 (`ticket_errors/catalog/http`)
 - `query_issues.py` 557→255 (`query_issues_summary_ops/route_ops`)
 - `workflow_helpers.py` 567→187 (`workflow_pending/clarification_helpers`)
+- `knowledge_portal/models.py` 569→129 (`models_types/records/api`)
+- `pdf_convert_jobs.py` 508→282 (`pdf_convert_runner`)
+- `query_knowledge.py` 542→235 (`status/portal/docs_ops`)
+- `query_conversations.py` 534→134 (`filters/list/detail_ops`)
+- `gemini_file_search.py` 555→356 (`sdk/grounding/result`)
+- `usage_events.py` 521→39 (`models/extract/collector/cost_summary`)
+- `handoff_flow.py` 516→69 (`policy/router/summary`)
+- `source_viewer.py` 544→93 (`markdown/template`)
+- `service_helpers.py` 526→55 (governance/prompt/model/flag lifecycle ops)
