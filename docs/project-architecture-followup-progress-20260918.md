@@ -51,10 +51,6 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `ticket.py` 576→187 (`ticket_errors/catalog/http`)
 - `query_issues.py` 557→255 (`query_issues_summary_ops/route_ops`)
 - `workflow_helpers.py` 567→187 (`workflow_pending/clarification_helpers`)
-- `ChunkInspectorModal.tsx` 580→295 (`ChunkInspectorToolbar/ChunkCard`, utils)
-- `ticket.py` 576→187 (`ticket_errors/catalog/http`)
-- `query_issues.py` 557→255 (`query_issues_summary_ops/route_ops`)
-- `workflow_helpers.py` 567→187 (`workflow_pending/clarification_helpers`)
 - `knowledge_portal/models.py` 569→129 (`models_types/records/api`)
 - `pdf_convert_jobs.py` 508→282 (`pdf_convert_runner`)
 - `query_knowledge.py` 542→235 (`status/portal/docs_ops`)
@@ -64,3 +60,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `handoff_flow.py` 516→69 (`policy/router/summary`)
 - `source_viewer.py` 544→93 (`markdown/template`)
 - `service_helpers.py` 526→55 (governance/prompt/model/flag lifecycle ops)
+
+## Goal blockers (not closed)
+- **G:** `static/legacy-js` still present (~73 files). Quarantine CI is green; tree delete waits one unused release cycle.
+- **H:** 0 oversized *files*; ~91 oversized *functions* remain under the function ratchet.
+- **F residual (optional):** hand-written frontend DTOs may still parallel generated client.
