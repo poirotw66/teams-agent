@@ -82,6 +82,62 @@ def test_sanitize_answer_security_redacts_internal_ips_and_unc() -> None:
     assert "內部系統伺服器路徑" in sanitized
 
 
+def test_sanitize_strips_policy_sec_003_outside_its_scope() -> None:
+    raw = (
+        "報價問題請蒐集商品代碼並寄送至 123@cathaysec.com.tw [S1]。"
+        "若不確定資料是否可提交，請先向權責單位確認 [POLICY-SEC-003]。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "[POLICY-SEC-003]" not in sanitized
+    assert "[S1]" in sanitized
+
+    # Hedge language like「若涉及安全性設定變更」must not keep SEC-003 alive.
+    hedged = (
+        "請遵守資料最小化 [POLICY-SEC-001]。"
+        "若涉及安全性設定變更，請務必先向權責單位確認 [POLICY-SEC-003]。"
+    )
+    assert "[POLICY-SEC-003]" not in HybridKnowledgeService._sanitize_answer_security(
+        hedged
+    )
+
+    scoped = (
+        "若需關閉 Proxy，請先向權責單位確認是否受企業政策管制 [POLICY-SEC-003]。"
+    )
+    assert "[POLICY-SEC-003]" in HybridKnowledgeService._sanitize_answer_security(scoped)
+
+
+def test_sanitize_strips_misattributed_test_link_policy_sec_001() -> None:
+    """QB-004 regression: test-link reminders must not cite POLICY-SEC-001."""
+    raw = (
+        "針對 GitLab 帳號解鎖，請聯繫專案開發部 張語桐 [S1]。"
+        "此外，請注意文件中的測試連結僅為佔位用途，若有相關需求請洽詢上述正式窗口，"
+        "切勿使用非正式連結 [POLICY-SEC-001]。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "[POLICY-SEC-001]" not in sanitized
+    assert "測試連結" not in sanitized
+    assert "張語桐" in sanitized
+    assert "[S1]" in sanitized
+
+    valid = "提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。"
+    assert "[POLICY-SEC-001]" in HybridKnowledgeService._sanitize_answer_security(valid)
+
+
+def test_sanitize_prunes_uncited_policy_after_stripping_sec_003() -> None:
+    """QB-045 regression: stripping SEC-003 must not leave uncited policy prose."""
+    raw = (
+        "請將「允許在 IE 模式重新載入」設為「允許」[S1]。"
+        "關於風險控制，文件未特別說明針對此設定的風險管理措施，"
+        "但系統安全政策要求變更安全性設定前須向權責單位確認 [POLICY-SEC-003]。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert "[POLICY-SEC-003]" not in sanitized
+    assert "向權責單位確認" not in sanitized
+    assert "系統安全政策" not in sanitized
+    assert "允許在 IE 模式重新載入" in sanitized
+    assert "[S1]" in sanitized
+
+
 def test_sanitize_answer_security_appends_proxy_advisory_when_unqualified() -> None:
     raw = "若連線後 Wi-Fi 瞬斷，請至設定將 Proxy 設定全部關閉後重新連線。"
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
@@ -704,15 +760,24 @@ def test_remap_claim_marker_ids_to_chunk_ids() -> None:
     from agent_service.knowledge import remap_claim_marker_ids_to_chunk_ids
 
     claims = [
-        GroundedClaim(text="a", chunkIds=["S1", "POLICY-SEC-002"]),
-        GroundedClaim(text="b", chunkIds=["s2"]),
+        GroundedClaim(text="白名單僅含 CRM 與 OA", chunkIds=["S1", "POLICY-SEC-002"]),
+        GroundedClaim(text="公槽不可使用", chunkIds=["s1"]),
+        GroundedClaim(text="完全無關的主張", chunkIds=["S1"]),
     ]
     remapped = remap_claim_marker_ids_to_chunk_ids(
         claims,
-        marker_to_chunk_id={"S1": "chk-1", "S2": "chk-2", "s1": "chk-1", "s2": "chk-2"},
+        marker_to_chunk_ids={
+            "S1": ["chk-allow", "chk-deny"],
+            "s1": ["chk-allow", "chk-deny"],
+        },
+        chunk_content_by_id={
+            "chk-allow": "VPN 可使用權限白名單包含 CRM 與 OA。",
+            "chk-deny": "VPN 不可使用公槽資料夾。",
+        },
     )
-    assert remapped[0].chunkIds == ["chk-1", "POLICY-SEC-002"]
-    assert remapped[1].chunkIds == ["chk-2"]
+    assert remapped[0].chunkIds == ["chk-allow", "POLICY-SEC-002"]
+    assert remapped[1].chunkIds == ["chk-deny"]
+    assert all(claim.text != "完全無關的主張" for claim in remapped)
 
 
 def test_answer_indicates_insufficient_information_covers_common_gap_phrasing() -> None:
@@ -881,6 +946,37 @@ def test_qb085_answer_prompt_rules_contain_global_security_baseline() -> None:
     assert "該來源沒有規定" in ANSWER_PROMPT
 
 
+def test_answer_prompt_security_rules_align_with_policy_bodies() -> None:
+    from agent_service.security_policies import ANSWER_PROMPT_SECURITY_RULES
+
+    assert "POLICY-SEC-003" in ANSWER_PROMPT_SECURITY_RULES
+    assert "Proxy" in ANSWER_PROMPT_SECURITY_RULES or "憑證" in ANSWER_PROMPT_SECURITY_RULES
+    # Must not reintroduce the free-floating submit-confirmation rule that
+    # caused models to mis-attribute data-submit guidance to POLICY-SEC-003.
+    assert "不確定時確認原則" not in ANSWER_PROMPT_SECURITY_RULES
+    assert "嚴禁把「資料能否提交」「正式網址查詢」「一般通報流程」標成 [POLICY-SEC-003]。" in (
+        ANSWER_PROMPT_SECURITY_RULES
+    )
+    assert "嚴禁把「測試連結／佔位網址／非正式連結」標成 [POLICY-SEC-001]" in (
+        ANSWER_PROMPT_SECURITY_RULES
+    )
+    assert "此提醒不是安全政策，嚴禁標成 [POLICY-SEC-001]" in ANSWER_PROMPT_SECURITY_RULES
+
+
+def test_unknown_policy_markers_do_not_crash_advisories() -> None:
+    from agent_service.security_policies import (
+        advisories_from_text,
+        strip_unknown_policy_markers,
+    )
+
+    text = "請遵守資料最小化 [POLICY-SEC-001]，並參考未知規則 [POLICY-SEC-999]。"
+    advisories = advisories_from_text(text)
+    assert [a.policyIds for a in advisories] == [["POLICY-SEC-001"]]
+    stripped = strip_unknown_policy_markers(text)
+    assert "[POLICY-SEC-001]" in stripped
+    assert "[POLICY-SEC-999]" not in stripped
+
+
 def test_uncited_security_policy_leak_is_pruned() -> None:
     text = (
         "申請共用公槽請填必要資料 [S1]。\n"
@@ -898,6 +994,85 @@ def test_uncited_security_policy_leak_is_pruned() -> None:
     )
     assert "[S1]" in cleaned
     assert "資料最小化" not in cleaned
+
+
+def test_same_line_uncited_policy_clause_is_pruned() -> None:
+    text = "申請共用公槽請填必要資料 [S1]，另請注意資料最小化勿提交無關敏感資訊。"
+    cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
+    assert "[S1]" in cleaned
+    assert "申請共用公槽請填必要資料" in cleaned
+    assert "資料最小化" not in cleaned
+
+
+def test_error_branch_coverage_helpers() -> None:
+    from agent_service.knowledge import (
+        answer_covers_error_branches,
+        error_branch_codes_in_text,
+    )
+
+    context = "### Permission denied (-455)\n...\n### Unable (-14)\n...\n### Session (-20199)\n"
+    codes = error_branch_codes_in_text(context)
+    assert codes == ["-455", "-14", "-20199"]
+    assert not answer_covers_error_branches(
+        "請先確認網路與軟體狀態後聯絡服務台。", codes
+    )
+    assert answer_covers_error_branches(
+        "(-455) 查網路；(-14) 更新版本；(-20199) 重登。", codes
+    )
+
+
+def test_ux_audit_chunks_are_filtered_from_context() -> None:
+    production = DocumentChunk(
+        chunk_id="forti-1",
+        title="登入 FortiClient 出現錯訊",
+        source_path="sources/forti.md",
+        content="Permission denied (-455) 請確認網路。",
+    )
+    audit = DocumentChunk(
+        chunk_id="audit-1",
+        title="[UX-AUDIT] VPN 連線測試文件",
+        source_path="sources/ux-audit.md",
+        content="通用排查：確認網路與軟體狀態。",
+    )
+    filtered = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "收到 FortiClient 錯誤時如何分流？",
+        [
+            SearchResult(chunk=production, score=0.9, sparse_score=0.9, dense_score=0.0),
+            SearchResult(chunk=audit, score=0.85, sparse_score=0.85, dense_score=0.0),
+        ],
+    )
+    assert [item.chunk.chunk_id for item in filtered] == ["forti-1"]
+
+
+def test_enterprise_app_query_prefers_device_management_doc() -> None:
+    portal = DocumentChunk(
+        chunk_id="portal-1",
+        title="國泰員工入口網、CTeam密碼、國泰e點名",
+        source_path="sources/portal.md",
+        content="安裝完成請務必至手機一般 > VPN與裝置管理 > 企業級APP內將CATHAY LIFE加入驗證。",
+    )
+    external = DocumentChunk(
+        chunk_id="ext-1",
+        title="外部客戶線上問題",
+        source_path="sources/external.md",
+        content="請寄送至 123@cathaysec.com.tw。",
+    )
+    ad = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="帳號鎖定請至 AD 自助解鎖專區。",
+    )
+    filtered = HybridKnowledgeService._filter_cross_scenario_chunks(
+        "iOS 上安裝來源所述的企業 App 後仍無法使用，應檢查什麼？",
+        [
+            SearchResult(chunk=ad, score=0.92, sparse_score=0.92, dense_score=0.0),
+            SearchResult(chunk=external, score=0.90, sparse_score=0.90, dense_score=0.0),
+            SearchResult(chunk=portal, score=0.80, sparse_score=0.80, dense_score=0.0),
+        ],
+    )
+    assert filtered[0].chunk.chunk_id == "portal-1"
+    assert all(item.chunk.chunk_id != "ext-1" for item in filtered)
 
 
 def test_policy_marked_security_advisory_is_retained() -> None:

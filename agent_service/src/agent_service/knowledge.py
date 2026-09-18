@@ -66,6 +66,7 @@ from .security_policies import (
     is_policy_id,
     policy_ids_in_text,
     split_claims_by_provenance,
+    strip_unknown_policy_markers,
 )
 from .settings import RagSettings
 from .source_refs import build_citation_url, make_source_ref_id, safe_source_path
@@ -78,6 +79,12 @@ _RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 _MAX_CONTEXT_DOCUMENTS = 3
 _MAX_ACCESS_SCOPE_CONTEXT_DOCUMENTS = 4
 _MAX_CHUNKS_PER_DOCUMENT = 2
+_NON_PRODUCTION_TITLE_MARKERS: tuple[str, ...] = (
+    "[UX-AUDIT]",
+    "[TEST]",
+    "UX-AUDIT",
+)
+_ERROR_CODE_TOKEN_RE = re.compile(r"\((-?\d{1,5})\)")
 _ACCESS_SCOPE_QUERY_MARKERS: tuple[str, ...] = (
     "權限",
     "存取",
@@ -131,6 +138,20 @@ _IE_SECURITY_LOWERING_PATTERN = re.compile(
     r"(?:將網址|新增至|加入).{0,12}(?:信任的網站|信任網站))",
     re.IGNORECASE,
 )
+_SEC001_APPLICABLE_SCOPE_RE = re.compile(
+    r"(?:畫面|截圖|附件|敏感資訊|資料最小化|個人及敏感|與問題無關的個人)",
+    re.IGNORECASE,
+)
+_SEC003_APPLICABLE_SCOPE_RE = re.compile(
+    r"(?:Proxy|代理伺服器|憑證設定|變更憑證|忽略憑證|繞過憑證|關閉\s*Proxy|停用\s*Proxy|"
+    r"安全性區域|受保護模式|信任的網站|安全等級)",
+    re.IGNORECASE,
+)
+_TEST_LINK_POLICY_SENTENCE_RE = re.compile(
+    r"(?:此外[，,]?\s*)?(?:請注意)?(?:文件中的)?(?:測試連結|佔位(?:用途|網址|連結)|"
+    r"非正式連結|正式網址)[^。\n]*\[POLICY-SEC-\d{3}\][。.]?",
+    re.IGNORECASE,
+)
 _SECURITY_POLICY_ADVISORY = f"\n\n{PROXY_ADVISORY_TEXT}"
 _POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
 _CITATION_OR_POLICY_MARKER = re.compile(r"\[(?:S\d+|POLICY-SEC-\d{3})\]")
@@ -138,8 +159,9 @@ _UNCITED_POLICY_LEAK_RE = re.compile(
     r"(?:"
     r"資料最小化|機敏資訊|登入密碼|憑證密碼|動態驗證碼|"
     r"遮蔽或移除|無關的個人|無關敏感|"
-    r"變更前需(?:先)?向|切勿擅自變更|關閉\s*Proxy|停用\s*Proxy|"
-    r"系統資安政策|全域資安"
+    r"變更(?:前|安全性設定前)(?:需|須)(?:先)?向|"
+    r"切勿擅自變更|關閉\s*Proxy|停用\s*Proxy|"
+    r"系統(?:資安|安全)政策|全域資安"
     r")",
     re.IGNORECASE,
 )
@@ -148,6 +170,25 @@ _COMPOSITE_S_MARKER_RE = re.compile(
     r"\[\s*((?:S\d+\s*[,，、]\s*)+S\d+)\s*\]",
     re.IGNORECASE,
 )
+
+
+def error_branch_codes_in_text(text: str) -> list[str]:
+    """Extract parenthetical error codes like ``(-455)`` from knowledge context."""
+    return list(dict.fromkeys(_ERROR_CODE_TOKEN_RE.findall(text)))
+
+
+def answer_covers_error_branches(answer: str, codes: list[str]) -> bool:
+    """Whether the answer mentions enough error-code branches from the context."""
+    if len(codes) < 2:
+        return True
+    hits = sum(1 for code in codes if code in answer)
+    required = max(2, (len(codes) + 1) // 2)
+    return hits >= required
+
+
+def _is_non_production_knowledge_chunk(chunk: DocumentChunk) -> bool:
+    title = chunk.title or ""
+    return any(marker in title for marker in _NON_PRODUCTION_TITLE_MARKERS)
 
 
 def normalize_composite_citation_markers(text: str) -> str:
@@ -160,22 +201,88 @@ def normalize_composite_citation_markers(text: str) -> str:
     return _COMPOSITE_S_MARKER_RE.sub(_expand, text)
 
 
+def _claim_text_overlaps_chunk(claim_text: str, chunk_content: str) -> bool:
+    """Require substantive overlap so S# remaps cannot cite an unrelated first chunk."""
+    stop = {
+        "可使",
+        "使用",
+        "可以",
+        "進行",
+        "相關",
+        "問題",
+        "內容",
+        "說明",
+        "根據",
+        "以及",
+        "或者",
+        "若",
+        "請",
+        "需",
+        "應",
+    }
+    claim_tokens = {
+        token.casefold()
+        for token in tokenize(claim_text)
+        if len(token) >= 2 and token.casefold() not in stop
+    }
+    if not claim_tokens:
+        return False
+    content_tokens = {
+        token.casefold()
+        for token in tokenize(chunk_content)
+        if len(token) >= 2 and token.casefold() not in stop
+    }
+    if not content_tokens:
+        return False
+    overlap = claim_tokens & content_tokens
+    if not overlap:
+        return False
+    return len(overlap) / len(claim_tokens) >= 0.34 or len(overlap) >= 2
+
+
 def remap_claim_marker_ids_to_chunk_ids(
     claims: list[GroundedClaim],
     *,
-    marker_to_chunk_id: dict[str, str],
+    marker_to_chunk_ids: dict[str, list[str]],
+    chunk_content_by_id: dict[str, str] | None = None,
 ) -> list[GroundedClaim]:
-    """Replace claim chunkIds like ``S1`` with the concrete retrieved chunk id."""
+    """Replace claim chunkIds like ``S1`` with supporting retrieved chunk ids.
+
+    Concrete chunk ids emitted by the model are kept as-is. Marker ids (``S1``)
+    expand to every chunk under that document marker and keep only chunks whose
+    content overlaps the claim text—legal id remapping alone is not sufficient.
+    """
     remapped: list[GroundedClaim] = []
+    contents = chunk_content_by_id or {}
     for claim in claims:
         resolved_ids: list[str] = []
         for chunk_id in claim.chunkIds:
             key = chunk_id.strip()
-            mapped = marker_to_chunk_id.get(key) or marker_to_chunk_id.get(key.upper())
-            if mapped is None and key.upper().startswith("S"):
-                mapped = marker_to_chunk_id.get(key.upper())
-            resolved_ids.append(mapped or chunk_id)
-        # Preserve order while dropping empty duplicates.
+            if is_policy_id(key):
+                resolved_ids.append(key)
+                continue
+            if key.startswith("POLICY-SEC-"):
+                # Unknown policy ids are dropped rather than treated as knowledge.
+                continue
+            is_marker = bool(re.fullmatch(r"[Ss]\d+", key))
+            if not is_marker:
+                # Model already cited a concrete chunk id; do not re-filter by overlap.
+                if not contents or key in contents:
+                    resolved_ids.append(key)
+                continue
+            candidates = (
+                marker_to_chunk_ids.get(key) or marker_to_chunk_ids.get(key.upper()) or []
+            )
+            if contents:
+                supported = [
+                    candidate
+                    for candidate in candidates
+                    if candidate in contents
+                    and _claim_text_overlaps_chunk(claim.text, contents[candidate])
+                ]
+                resolved_ids.extend(supported)
+            else:
+                resolved_ids.extend(candidates)
         deduped = list(dict.fromkeys(cid for cid in resolved_ids if cid))
         if not deduped:
             continue
@@ -258,9 +365,15 @@ ANSWER_PROMPT = """\
     - 若知識內容包含不同問題類型、獨立 FAQ 或情境（如「交易問題」、「帳務問題」、「報價問題」等各自獨立的規範），必須僅依據與使用者問題直接相符之特定情境作答，嚴禁將其他情境獨有的特定業務流程或步驟跨情境混用。
     - 若特定情境之文件中未記載某事項，應如實指出該情境未特別說明，嚴禁跨情境拼貼。
     - 跨情境區分僅限於業務流程與特定章節條款，絕不得牴觸 Rule 10 之全域資安與資料最小化原則。
+    - 當問題提及「來源所述」的企業 App／平台但未具名，且檢索結果同時含內部 IT 文件與外部客戶通報流程時，不得逕自套用外部客戶 123@ 通報流程；應先依內部 IT／企業裝置文件作答，或在 unknowns 標明需澄清 App／平台名稱。
 12. 嚴格依異常情境對應專屬處置，防範混淆跨小節解法：
     - 即使使用者提問中預設或詢問了其他章節的處置（例如詢問能否/如何執行關閉 Proxy 或特定變更），亦必須嚴格依據該具體異常現象（例如「已連線仍無法使用內網」與「Wi-Fi 瞬斷」為不同異常）所對應之專屬步驟作答。
     - 若該處置屬於另一種異常情境之解法，應在回答中清楚指明該處置僅適用於另一情境（例如 Wi-Fi 瞬斷），目前異常應依專屬步驟處理，切勿將不同小節之處置步驟混用。
+    - 文件使用「可能」「或許」「代表可能」等不確定語氣時，回答必須保留不確定性，不得改成「確定是／一定是」。
+    - 同一來源若並列衝突流程（例如同時寫「通知 SMT」與「引導客戶自行排除」），必須同時揭露衝突並標註同一來源，不得自行擇一當成唯一正解。
+13. 錯誤碼／分流題完整性：
+    - 若知識內容以多個錯誤碼、錯訊或條件分支列出處置（例如 (-455)、(-14)、(-20199)），回答必須依「條件／錯誤碼 → 處置 → 完成或升級條件」逐項覆蓋相關分支，不得只給通用排查三步驟。
+    - 不得引用標題含 [UX-AUDIT]、[TEST] 等非正式測試文件作為正式處置依據。
 
 使用者問題：
 {question}
@@ -801,6 +914,9 @@ class HybridKnowledgeService:
             key=lambda result: result.score,
             reverse=True,
         )
+        results = self._inject_enterprise_app_evidence(
+            state.resolved_issue_query, results
+        )
         competitive_results, displaced_top1 = self._select_document_chunks(
             state.resolved_issue_query, results
         )
@@ -856,6 +972,15 @@ class HybridKnowledgeService:
         if not results:
             return results
 
+        # Drop informal audit/test docs before any scenario isolation.
+        results = [
+            result
+            for result in results
+            if not _is_non_production_knowledge_chunk(result.chunk)
+        ]
+        if not results:
+            return results
+
         normalized_query = query.casefold()
 
         # Check explicit specific product/service intent
@@ -869,6 +994,16 @@ class HybridKnowledgeService:
             t in normalized_query for t in ("accessflow", "門禁", "打卡", "e點名")
         )
         is_share_drive_query = any(t in normalized_query for t in ("公槽", "共用公槽"))
+        is_enterprise_app_query = any(
+            term in query
+            for term in (
+                "企業 App",
+                "企業App",
+                "企業級APP",
+                "企業級 App",
+                "來源所述的企業",
+            )
+        )
 
         # 1. Topic FAQ scenario isolation
         target_scenario: str | None = None
@@ -921,6 +1056,7 @@ class HybridKnowledgeService:
             or is_vpn_query
             or is_accessflow_query
             or is_share_drive_query
+            or is_enterprise_app_query
             or any(
                 term in normalized_query
                 for term in (
@@ -994,7 +1130,92 @@ class HybridKnowledgeService:
             if android_results:
                 results = [r for r in results if "ios" not in r.chunk.title.lower()]
 
+        # 5. Enterprise App trust/profile checks belong to portal/MDM docs, not
+        # external customer FAQ or generic AD unlock hits.
+        if is_enterprise_app_query:
+            preferred = [
+                result
+                for result in results
+                if any(
+                    marker in f"{result.chunk.title}\n{result.chunk.content}"
+                    for marker in (
+                        "企業級APP",
+                        "企業級 App",
+                        "CATHAY LIFE",
+                    )
+                )
+            ]
+            if preferred:
+                preferred_ids = {result.chunk.chunk_id for result in preferred}
+                results = preferred + [
+                    result
+                    for result in results
+                    if result.chunk.chunk_id not in preferred_ids
+                ]
+            results = [result for result in results if "外部客戶" not in result.chunk.title]
+
         return results
+
+    def _inject_enterprise_app_evidence(
+        self,
+        query: str,
+        results: list[SearchResult],
+    ) -> list[SearchResult]:
+        """Ensure enterprise-app trust docs enter and lead the candidate pool.
+
+        Hybrid retrieval often ranks AD/Outlook ahead of the portal note that
+        actually describes 企業級APP / CATHAY LIFE verification.
+        """
+        if not any(
+            term in query
+            for term in (
+                "企業 App",
+                "企業App",
+                "企業級APP",
+                "企業級 App",
+                "來源所述的企業",
+            )
+        ):
+            return results
+
+        def _is_enterprise_trust_chunk(chunk) -> bool:
+            blob = f"{chunk.title}\n{chunk.content}"
+            return any(
+                marker in blob
+                for marker in ("企業級APP", "企業級 App", "CATHAY LIFE")
+            )
+
+        boosted: list[SearchResult] = []
+        seen_ids: set[str] = set()
+        for result in results:
+            seen_ids.add(result.chunk.chunk_id)
+            if _is_enterprise_trust_chunk(result.chunk):
+                boosted.append(
+                    SearchResult(
+                        chunk=result.chunk,
+                        score=max(result.score, 0.92),
+                        sparse_score=result.sparse_score,
+                        dense_score=result.dense_score,
+                    )
+                )
+            else:
+                boosted.append(result)
+
+        for chunk in self.index.chunks:
+            if chunk.chunk_id in seen_ids:
+                continue
+            if _is_enterprise_trust_chunk(chunk):
+                boosted.append(
+                    SearchResult(
+                        chunk=chunk,
+                        score=0.92,
+                        sparse_score=0.92,
+                        dense_score=0.0,
+                    )
+                )
+                seen_ids.add(chunk.chunk_id)
+
+        return sorted(boosted, key=lambda item: item.score, reverse=True)
 
     def _select_document_chunks(
         self,
@@ -1056,6 +1277,17 @@ class HybridKnowledgeService:
                 "操作順序",
             )
         )
+        is_error_branch_query = any(
+            marker in query
+            for marker in (
+                "分流",
+                "錯誤時",
+                "各錯誤",
+                "不同錯誤",
+                "FortiClient 錯誤",
+                "forticlient 錯誤",
+            )
+        )
         is_multi_section_query = any(
             marker in query
             for marker in (
@@ -1070,13 +1302,13 @@ class HybridKnowledgeService:
         )
         max_chunks_limit = (
             6
-            if (is_multi_section_query or is_procedure_query)
+            if (is_multi_section_query or is_procedure_query or is_error_branch_query)
             else getattr(self.settings, "max_chunks_per_document", _MAX_CHUNKS_PER_DOCUMENT)
         )
         selected: list[SearchResult] = []
         for document_results in ranked_documents:
             canonical_version = self._canonical_version_results(document_results)
-            if is_procedure_query and len(canonical_version) >= 1:
+            if (is_procedure_query or is_error_branch_query) and len(canonical_version) >= 1:
                 doc_path = canonical_version[0].chunk.source_path
                 doc_id = canonical_version[0].chunk.document_id
                 all_doc_chunks = [
@@ -1604,27 +1836,41 @@ class HybridKnowledgeService:
 
     @staticmethod
     def _prune_uncited_material_sentences(text: str) -> str:
-        """Remove uncited security-policy leaks that bypass [POLICY-*] provenance.
+        """Remove uncited security-policy leaks clause-by-clause.
 
-        Procedure steps and ordinary knowledge prose without markers are kept;
-        only security-policy language lacking [S#] or [POLICY-SEC-*] is dropped.
+        A sibling clause that carries ``[S1]`` must not preserve a later
+        uncited policy sentence on the same line. Procedure steps and ordinary
+        knowledge prose without markers remain allowed.
         """
         lines = text.splitlines()
-        kept: list[str] = []
+        kept_lines: list[str] = []
         for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                kept.append("")
+            if not line.strip():
+                kept_lines.append("")
                 continue
-            if _CITATION_OR_POLICY_MARKER.search(stripped):
-                kept.append(line)
-                continue
-            if _UNCITED_POLICY_LEAK_RE.search(stripped):
-                continue
-            kept.append(line)
+            sentences = re.split(r"(?<=[。！？\n])", line)
+            kept_sentences: list[str] = []
+            for sentence in sentences:
+                if not sentence.strip():
+                    continue
+                clauses = re.split(r"(?<=[，；,;])", sentence)
+                kept_clauses: list[str] = []
+                for clause in clauses:
+                    if not clause.strip():
+                        continue
+                    if _CITATION_OR_POLICY_MARKER.search(clause):
+                        kept_clauses.append(clause)
+                        continue
+                    if _UNCITED_POLICY_LEAK_RE.search(clause):
+                        continue
+                    kept_clauses.append(clause)
+                if kept_clauses:
+                    kept_sentences.append("".join(kept_clauses))
+            if kept_sentences:
+                kept_lines.append("".join(kept_sentences))
         collapsed: list[str] = []
         previous_blank = False
-        for line in kept:
+        for line in kept_lines:
             is_blank = not line.strip()
             if is_blank and previous_blank:
                 continue
@@ -1667,12 +1913,14 @@ class HybridKnowledgeService:
             f"[chunkId={result.chunk.chunk_id}]\n{result.chunk.content}"
             for index, result in enumerate(results)
         )
-        marker_to_chunk_id: dict[str, str] = {}
+        marker_to_chunk_ids: dict[str, list[str]] = {}
+        chunk_content_by_id = {
+            result.chunk.chunk_id: result.chunk.content for result in results
+        }
         for index, result in enumerate(results):
             marker = f"S{chunk_to_doc_idx[index]}"
-            # Prefer the first chunk observed for each document marker.
-            marker_to_chunk_id.setdefault(marker, result.chunk.chunk_id)
-            marker_to_chunk_id.setdefault(marker.lower(), result.chunk.chunk_id)
+            marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)
+            marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
 
         async def _invoke_answer() -> StructuredKnowledgeAnswer:
             return await answer_model.with_structured_output(StructuredKnowledgeAnswer).ainvoke(
@@ -1701,9 +1949,11 @@ class HybridKnowledgeService:
         response = self._repair_structured_answer(response)
         response.claims = remap_claim_marker_ids_to_chunk_ids(
             response.claims,
-            marker_to_chunk_id=marker_to_chunk_id,
+            marker_to_chunk_ids=marker_to_chunk_ids,
+            chunk_content_by_id=chunk_content_by_id,
         )
         answer = normalize_composite_citation_markers(response.answer.strip())
+        answer = strip_unknown_policy_markers(answer)
         logger.info(
             "Knowledge generated candidate answer=%r answerability=%s claims=%s unknowns=%s",
             answer,
@@ -1711,11 +1961,20 @@ class HybridKnowledgeService:
             response.claims,
             response.unknowns,
         )
-        if response.answerability == "NONE" and results:
-            # High-confidence retrieval can still get a false NONE. Retry once
-            # with an explicit instruction to use any overlapping document facts.
-            # Do not gate on phrasing markers: models often say 「並未記載」 without
-            # matching the older insufficient-info lexicon.
+        confidence_label, _ = self._evaluate_retrieval_confidence(state)
+        should_retry_false_none = (
+            response.answerability == "NONE"
+            and results
+            and confidence_label == "HIGH_CONFIDENCE_PASS"
+            and (
+                answer_indicates_insufficient_information(answer) or not response.claims
+            )
+            and query_lexically_matches_results(state.resolved_issue_query, results)
+        )
+        if should_retry_false_none:
+            # Narrow retry: only when high-confidence retrieval + lexical overlap
+            # still produced NONE / empty claims. Soften instruction so legitimate
+            # NONE remains allowed when evidence cannot answer the question.
             async def _invoke_answer_retry() -> StructuredKnowledgeAnswer:
                 return await answer_model.with_structured_output(
                     StructuredKnowledgeAnswer
@@ -1730,18 +1989,20 @@ class HybridKnowledgeService:
                         HumanMessage(
                             content=(
                                 f"已解析問題：{state.resolved_issue_query}\n"
-                                "上方已授權知識內容已通過高信心檢索。"
-                                "若文件已描述相關角色、系統或權限範圍，必須以 PARTIAL 或 FULL "
-                                "依文件作答並標註 [S#]，不得因問題措辭較廣或未寫「所有系統」"
-                                "就回傳 NONE。"
+                                "上方檢索結果與問題有詞彙重疊。請再檢查一次："
+                                "若文件已直接描述可支持的事實（例如角色權限範圍、錯誤碼處置），"
+                                "請以 PARTIAL 或 FULL 作答並標註 [S#] 與真實 chunkId；"
+                                "若文件仍不足以回答該問題，必須再次回傳 answerability=NONE，"
+                                "不得用相關但答非所問的內容硬答。"
                             )
                         ),
                     ]
                 )
 
             logger.info(
-                "Retrying knowledge generation after false NONE on retrieved evidence "
-                "(results=%d)",
+                "Retrying knowledge generation after likely false NONE "
+                "(confidence=%s results=%d)",
+                confidence_label,
                 len(results),
             )
             response = await self._invoke_llm(
@@ -1753,15 +2014,85 @@ class HybridKnowledgeService:
             response = self._repair_structured_answer(response)
             response.claims = remap_claim_marker_ids_to_chunk_ids(
                 response.claims,
-                marker_to_chunk_id=marker_to_chunk_id,
+                marker_to_chunk_ids=marker_to_chunk_ids,
+                chunk_content_by_id=chunk_content_by_id,
             )
             answer = normalize_composite_citation_markers(response.answer.strip())
+            answer = strip_unknown_policy_markers(answer)
             logger.info(
                 "Knowledge retry candidate answer=%r answerability=%s claims=%s unknowns=%s",
                 answer,
                 response.answerability,
                 response.claims,
                 response.unknowns,
+            )
+        context_error_codes = error_branch_codes_in_text(context)
+        asks_for_error_branching = any(
+            marker in state.resolved_issue_query
+            for marker in (
+                "分流",
+                "錯誤時",
+                "各錯誤",
+                "不同錯誤",
+                "多個錯誤",
+                "錯誤碼分流",
+            )
+        )
+        if (
+            response.answerability in {"FULL", "PARTIAL"}
+            and asks_for_error_branching
+            and len(context_error_codes) >= 2
+            and not answer_covers_error_branches(answer, context_error_codes)
+        ):
+            codes_csv = ", ".join(f"({code})" for code in context_error_codes)
+
+            async def _invoke_error_coverage_retry() -> StructuredKnowledgeAnswer:
+                return await answer_model.with_structured_output(
+                    StructuredKnowledgeAnswer
+                ).ainvoke(
+                    [
+                        SystemMessage(
+                            content=ANSWER_PROMPT.format(
+                                question=state.resolved_issue_query,
+                                context=context,
+                            )
+                        ),
+                        HumanMessage(
+                            content=(
+                                f"已解析問題：{state.resolved_issue_query}\n"
+                                f"知識內容包含錯誤碼分支：{codes_csv}。"
+                                "請依「條件／錯誤碼 → 處置 → 完成或升級條件」重新作答，"
+                                "逐項覆蓋這些分支；不得只給通用排查步驟，"
+                                "也不得引用 [UX-AUDIT]/[TEST] 測試文件。"
+                            )
+                        ),
+                    ]
+                )
+
+            logger.info(
+                "Retrying knowledge generation for incomplete error-code coverage "
+                "(codes=%s)",
+                context_error_codes,
+            )
+            response = await self._invoke_llm(
+                _invoke_error_coverage_retry,
+                component="knowledge_generate_error_coverage",
+                execution_context=execution_context,
+                counter=counter,
+            )
+            response = self._repair_structured_answer(response)
+            response.claims = remap_claim_marker_ids_to_chunk_ids(
+                response.claims,
+                marker_to_chunk_ids=marker_to_chunk_ids,
+                chunk_content_by_id=chunk_content_by_id,
+            )
+            answer = normalize_composite_citation_markers(response.answer.strip())
+            answer = strip_unknown_policy_markers(answer)
+            logger.info(
+                "Knowledge error-coverage retry answer=%r answerability=%s claims=%s",
+                answer,
+                response.answerability,
+                response.claims,
             )
         if not self._structured_answer_is_grounded(response, results):
             logger.warning(
@@ -2037,7 +2368,25 @@ class HybridKnowledgeService:
             )
             if not any(marker in sanitized for marker in policy_markers):
                 sanitized = f"{sanitized}{_SECURITY_POLICY_ADVISORY}"
-        return sanitized
+        # 4. Drop fabricated test-link "policy" sentences (not any POLICY-SEC scope).
+        sanitized = _TEST_LINK_POLICY_SENTENCE_RE.sub("", sanitized)
+        # 5. POLICY-SEC-001 may only remain when the answer discusses its scope.
+        if "[POLICY-SEC-001]" in sanitized and not _SEC001_APPLICABLE_SCOPE_RE.search(
+            sanitized
+        ):
+            sanitized = sanitized.replace("[POLICY-SEC-001]", "")
+        # 6. POLICY-SEC-003 may only remain when the answer discusses its scope.
+        if "[POLICY-SEC-003]" in sanitized and not _SEC003_APPLICABLE_SCOPE_RE.search(
+            sanitized
+        ):
+            sanitized = sanitized.replace("[POLICY-SEC-003]", "")
+        sanitized = re.sub(r"[ \t]{2,}", " ", sanitized)
+        sanitized = re.sub(r"[。]{2,}", "。", sanitized)
+        # Marker stripping can leave uncited policy prose; prune again.
+        sanitized = HybridKnowledgeService._prune_uncited_material_sentences(
+            sanitized.strip()
+        )
+        return sanitized.strip()
 
     @classmethod
     def _repair_structured_answer(

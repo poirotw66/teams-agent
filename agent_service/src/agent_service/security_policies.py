@@ -64,19 +64,32 @@ PROXY_ADVISORY_TEXT = (
     "切勿擅自變更或停用安全防護設定。"
 )
 
-ANSWER_PROMPT_SECURITY_RULES = """\
+
+def build_answer_prompt_security_rules() -> str:
+    """Derive prompt Rule 10 from SECURITY_POLICIES so text cannot drift from bodies."""
+    policy_bullets = "\n".join(
+        f"      - [{policy.policy_id}] {policy.title}：{policy.summary}"
+        for policy in SECURITY_POLICIES.values()
+    )
+    return f"""\
 10. 嚴格遵守資安與敏感資訊原則（全域安全底線，優先於所有情境；必須使用獨立政策標記，不可標成 [S#]）：
-    - 政策文件事實只能使用 [S1]/[S2] 等知識來源標記。
-    - 全域資安規則只能使用下方政策標記，嚴禁把政策內容歸因到知識文件來源：
-      - [POLICY-SEC-001] 全域資料最小化原則：提交畫面或附件時，嚴禁提交與問題無關的個人及敏感資訊；不得宣稱「無須遵守資料最小化」。
-      - [POLICY-SEC-002] 絕對機敏資訊禁令：登入密碼、個人憑證密碼、動態驗證碼等嚴禁提供。
-      - [POLICY-SEC-003] 安全性設定變更確認原則：關閉 Proxy、變更安全性區域或憑證設定前，須先向權責單位或資訊部門確認。
-    - 不確定時確認原則：若使用者不確定資料是否可提交，必須先向權責主管或資訊/資安部門確認。
-    - 全域最高性：上述政策高於所有個別小節規範。
-    - 當問題問「某來源有無規定 X」時：先說明「該來源沒有規定」，再獨立標示「但系統安全政策要求…… [POLICY-SEC-xxx]」。
-    - 不得在回答中輸出測試或佔位網址（例如含有 test、example、pages.dev 等佔位連結），若文件僅提供測試連結，應提醒使用者洽詢 IT 支援窗口或至公司正式入口。
+    - 知識文件事實只能使用 [S1]、[S2] 等知識來源標記。
+    - 全域資安規則只能使用下方已定義政策標記，嚴禁把政策內容歸因到知識文件來源：
+{policy_bullets}
+    - 適用範圍鎖定：僅可引用各政策 summary／body 已涵蓋的事項；不得自行延伸政策適用範圍。
+      - 資料能否提交、畫面敏感資訊、資料最小化 → 只可用 [POLICY-SEC-001]。
+      - 密碼／憑證密碼／動態驗證碼 → 只可用 [POLICY-SEC-002]。
+      - Proxy／安全性區域／憑證設定變更前確認 → 只可用 [POLICY-SEC-003]。
+      - 嚴禁把「資料能否提交」「正式網址查詢」「一般通報流程」標成 [POLICY-SEC-003]。
+      - 嚴禁把「測試連結／佔位網址／非正式連結」標成 [POLICY-SEC-001] 或任何 POLICY-SEC-*。
+    - 當問題問「某來源有無規定 X」時：先說明「該來源沒有規定」，再獨立標示「但系統安全政策要求…… [POLICY-SEC-xxx]」（xxx 必須是上方已定義且真正適用的政策）。
+    - 不得在回答中輸出測試或佔位網址（例如含有 test、example、pages.dev 等佔位連結），若文件僅提供測試連結，應提醒使用者洽詢 IT 支援窗口或至公司正式入口；此提醒不是安全政策，嚴禁標成 [POLICY-SEC-001]、[POLICY-SEC-002] 或 [POLICY-SEC-003]。
     - 不得在回答中直接暴露內部 IP 位址（如 10.x.x.x、172.16-31.x.x、192.168.x.x）或內部伺服器主機路徑，應以系統名稱或公槽資料夾等功能名稱代稱。
+    - 全域最高性：上述已定義政策高於所有個別小節規範。
 """
+
+
+ANSWER_PROMPT_SECURITY_RULES = build_answer_prompt_security_rules()
 
 
 def is_policy_id(value: str) -> bool:
@@ -87,7 +100,23 @@ def policy_ids_in_text(text: str) -> list[str]:
     return list(dict.fromkeys(POLICY_MARKER_RE.findall(text)))
 
 
+def known_policy_ids_in_text(text: str) -> list[str]:
+    return [policy_id for policy_id in policy_ids_in_text(text) if is_policy_id(policy_id)]
+
+
+def strip_unknown_policy_markers(text: str) -> str:
+    """Remove unknown [POLICY-SEC-*] markers without failing the whole answer."""
+
+    def _replace(match: re.Match[str]) -> str:
+        policy_id = match.group(1)
+        return match.group(0) if is_policy_id(policy_id) else ""
+
+    return POLICY_MARKER_RE.sub(_replace, text)
+
+
 def citation_for_policy(policy_id: str, *, include_evidence: bool = True) -> Citation:
+    if policy_id not in SECURITY_POLICIES:
+        raise KeyError(f"Unknown security policy id: {policy_id}")
     policy = SECURITY_POLICIES[policy_id]
     evidence = (
         f"[chunkId={policy.policy_id}]\n{policy.body}" if include_evidence else None
@@ -116,8 +145,9 @@ def citations_for_policy_ids(
 
 
 def advisories_from_text(text: str) -> list[PolicyAdvisory]:
+    """Build advisories for known policy markers only; ignore unknown IDs."""
     advisories: list[PolicyAdvisory] = []
-    for policy_id in policy_ids_in_text(text):
+    for policy_id in known_policy_ids_in_text(text):
         policy = SECURITY_POLICIES[policy_id]
         advisories.append(
             PolicyAdvisory(
@@ -136,7 +166,12 @@ def split_claims_by_provenance(
     policy_advisories: list[PolicyAdvisory] = []
     for claim in claims:
         policy_ids = [chunk_id for chunk_id in claim.chunkIds if is_policy_id(chunk_id)]
-        knowledge_ids = [chunk_id for chunk_id in claim.chunkIds if not is_policy_id(chunk_id)]
+        # Drop unknown POLICY-SEC-* ids rather than treating them as knowledge chunks.
+        knowledge_ids = [
+            chunk_id
+            for chunk_id in claim.chunkIds
+            if not chunk_id.startswith("POLICY-SEC-")
+        ]
         if knowledge_ids:
             knowledge_claims.append(claim.model_copy(update={"chunkIds": knowledge_ids}))
         if policy_ids:
