@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .citations import build_citations_for_turn
 

@@ -6,11 +6,10 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 from .models import SimulationRequest
-from .persistence import load_json_safe
 
 
 def register_simulation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -31,7 +30,7 @@ def register_simulation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None
             raise HTTPException(status_code=400, detail="Query cannot be empty")
 
         # 1. Check real FAQs
-        data = load_json_safe(faqs_file)
+        data = ctx.store.load(faqs_file)
         if data and "faqs" in data:
             v_map = {v["version_id"]: v for v in data.get("versions", [])}
             for f in data.get("faqs", []):

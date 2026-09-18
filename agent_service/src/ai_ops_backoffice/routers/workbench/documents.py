@@ -7,17 +7,22 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 from ai_ops_backoffice.application.workbench.documents import (
     DocumentOperationError,
+)
+from ai_ops_backoffice.application.workbench.documents import (
     delete_workbench_document as delete_document,
+)
+from ai_ops_backoffice.application.workbench.documents import (
     list_workbench_documents as list_documents,
+)
+from ai_ops_backoffice.application.workbench.documents import (
     upload_workbench_document as upload_document,
 )
 from ai_ops_backoffice.knowledge_bridge.capabilities import has_knowledge_capability
 
 from .context import WorkbenchRouteContext
-from .persistence import load_json_safe
 
 
 def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -31,7 +36,7 @@ def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     ) -> list[dict[str, Any]]:
         """Return real published documents and chunks from portal_state.json and chunks.json."""
         ctx.require_capability(actor, "ops.knowledge.read")
-        portal_data = load_json_safe(portal_state_file)
+        portal_data = ctx.store.load(portal_state_file)
         if not portal_data or "documents" not in portal_data:
             return []
         return list_documents(

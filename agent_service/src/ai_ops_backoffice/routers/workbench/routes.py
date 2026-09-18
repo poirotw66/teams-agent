@@ -7,12 +7,16 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from ai_ops_backoffice.adapters.workbench_json_store import (
+    WorkbenchJsonStore,
+    resolve_project_root,
+)
+
 from .context import WorkbenchRouteContext
 from .conversations import register_conversation_routes
 from .documents import register_document_routes
 from .faqs import register_faq_routes
 from .overview import register_overview_routes
-from .persistence import get_project_root
 from .simulation import register_simulation_routes
 from .tickets import register_ticket_routes
 
@@ -27,8 +31,9 @@ def register_workbench_routes(
     require_capability: Callable[[Any, str], None],
 ) -> None:
     ops_store_path = resolved_settings.ops_store_path
-    project_root = get_project_root(ops_store_path)
+    project_root = resolve_project_root(ops_store_path)
     data_dir = project_root / "data"
+    store = WorkbenchJsonStore()
 
     ctx = WorkbenchRouteContext(
         data_dir=data_dir,
@@ -41,6 +46,7 @@ def register_workbench_routes(
         knowledge_client=knowledge_client,
         current_actor=current_actor,
         require_capability=require_capability,
+        store=store,
     )
 
     register_overview_routes(app, ctx)

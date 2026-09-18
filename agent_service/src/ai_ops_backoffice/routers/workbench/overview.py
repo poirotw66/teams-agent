@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 from ai_ops_backoffice.application.workbench.overview import build_workbench_overview
 
 from .context import WorkbenchRouteContext

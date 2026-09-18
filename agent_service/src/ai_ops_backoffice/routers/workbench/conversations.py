@@ -6,10 +6,12 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 from ai_ops_backoffice.application.workbench.conversations import (
     apply_conversation_action,
     build_conversation_list,
+)
+from ai_ops_backoffice.application.workbench.conversations import (
     set_emergency_broadcast as set_broadcast,
 )
 

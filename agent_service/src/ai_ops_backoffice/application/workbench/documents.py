@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
+from ai_ops_backoffice.adapters.workbench_json_store import build_portal_upload_body
 
 _TITLE_EXCLUSIONS = ("測試", "Untitled", "Agent Sync", "[UX-AUDIT]", "簡報講者", "活動簡章")
 _IMPORT_PATHS = {
@@ -27,20 +27,6 @@ class DocumentOperationError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(detail)
-
-
-def _portal_upload_body(
-    *,
-    filename: str,
-    payload: bytes,
-    content_type: str,
-) -> tuple[bytes, str]:
-    request = httpx.Request(
-        "POST",
-        "https://knowledge-portal.invalid/upload",
-        files={"file": (filename, payload, content_type)},
-    )
-    return request.read(), str(request.headers["content-type"])
 
 
 def _chunk_item_from_raw(chunk: dict[str, Any]) -> dict[str, Any]:
@@ -354,7 +340,7 @@ async def upload_workbench_document(
     _validate_upload_bytes(file_bytes)
     safe_filename = Path(filename or "document.pdf").name
     extension, import_path = _import_path_for_filename(safe_filename)
-    upload_body, multipart_type = _portal_upload_body(
+    upload_body, multipart_type = build_portal_upload_body(
         filename=safe_filename,
         payload=file_bytes,
         content_type=content_type or "application/octet-stream",

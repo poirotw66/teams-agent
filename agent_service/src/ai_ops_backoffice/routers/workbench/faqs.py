@@ -7,11 +7,10 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 from .models import QuickFaqSaveRequest
-from .persistence import load_json_safe, save_json_safe
 
 
 def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -26,7 +25,7 @@ def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         """Return real FAQs loaded directly from faqs.json."""
         require_capability(actor, "ops.faq.read")
 
-        data = load_json_safe(faqs_file)
+        data = ctx.store.load(faqs_file)
         if not data or "faqs" not in data:
             return []
 
@@ -64,7 +63,7 @@ def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         """Directly create or update a real FAQ item in faqs.json."""
         require_capability(actor, "ops.faq.write")
 
-        data = load_json_safe(faqs_file)
+        data = ctx.store.load(faqs_file)
         if not data or "faqs" not in data:
             data = {"faqs": [], "versions": []}
 
@@ -115,7 +114,7 @@ def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
             )
 
         data["versions"].append(new_version)
-        save_json_safe(faqs_file, data)
+        ctx.store.save(faqs_file, data)
 
         # If linked to a conversation, mark that conversation resolved
         if payload.resolveConversationId:
@@ -143,7 +142,7 @@ def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         """Delete an FAQ item from faqs.json."""
         require_capability(actor, "ops.faq.read")
 
-        data = load_json_safe(faqs_file)
+        data = ctx.store.load(faqs_file)
         if not data or "faqs" not in data:
             raise HTTPException(status_code=404, detail="FAQ 知識庫中無資料。")
 
@@ -162,5 +161,5 @@ def register_faq_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         if "versions" in data:
             data["versions"] = [v for v in data["versions"] if v.get("faq_id") != faq_id]
 
-        save_json_safe(faqs_file, data)
+        ctx.store.save(faqs_file, data)
         return {"ok": True, "deleted_faq_id": faq_id}

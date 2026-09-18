@@ -7,11 +7,10 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 from .models import TicketCreateRequest
-from .persistence import save_json_safe
 
 
 def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -58,7 +57,7 @@ def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         }
 
         tickets.insert(0, new_ticket)
-        save_json_safe(tickets_file, tickets)
+        ctx.store.save(tickets_file, tickets)
 
         # Update conversation status and linked ticket in state
         if payload.conversationId:
