@@ -24,3 +24,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `teams_agent/source_routes.py` 916→255 (`source_route_auth/payloads/streaming`)
 - `teams_agent/source_links.py` 866→354 (`source_link_signing`, `source_link_access`)
 - `evaluation_domain/gate_service.py` 821→457 (`gate_policy_ops`, `gate_release_ops`, `gate_case_ops`)
+- `governance_routes.py` 844→499 (`route_models`, `search_ops`, `model_schedule`, `route_errors`, `audit_routes`)
+- `governance_domain/eval_runner.py` 801→173 (`eval_case_ops`, `eval_flow_ops`, `eval_run_ops`)

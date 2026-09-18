@@ -1,152 +1,55 @@
+"""Governance HTTP route registration.
+
+Request bodies, search extras, and model schedule helpers live in sibling
+modules; this module owns exception handlers and route endpoints.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
-
 from fastapi import Depends, FastAPI, Header, Query
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 
-from .governance_domain import (
-    GovernanceAuthorizationError,
-    GovernanceConflictError,
-    GovernanceError,
-    GovernanceNotFoundError,
-    GovernanceService,
-    GovernanceTransitionError,
-    GovernanceValidationError,
+from .governance_audit_routes import register_audit_routes
+from .governance_domain import GovernanceService, GovernanceValidationError
+from .governance_model_schedule import run_model_schedule, scheduled_model_id
+from .governance_route_errors import register_governance_exception_handlers
+from .governance_route_models import (
+    FallbackBody,
+    FlagCandidateBody,
+    MaskingBody,
+    ModelCandidateBody,
+    PromptActivateBody,
+    PromptApproveBody,
+    PromptCanaryBody,
+    PromptCanaryEvaluateBody,
+    PromptCanaryStopBody,
+    PromptCandidateBody,
+    PromptRollbackBody,
+    ReasonBody,
+    RetentionBody,
+    RevokeBody,
+    RoleRequestBody,
 )
+from .governance_search_ops import collect_search_extras
 
-
-class PromptCandidateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    dataset_version: str
-    taxonomy_version: str
-    knowledge_release_id: str | None = None
-
-
-class PromptApproveBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3)
-    policy_exception_reason: str | None = None
-    policy_exception_expires_at: datetime | None = None
-    approved: bool | None = None
-
-
-class PromptCanaryBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    percent: int = Field(ge=1, le=99)
-    environment: str = "prod"
-    reason: str = Field(min_length=3)
-
-
-class PromptCanaryStopBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3)
-    rollback: bool = False
-
-
-class PromptCanaryEvaluateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    error_rate: float = Field(ge=0, le=1)
-    negative_feedback_rate: float = Field(ge=0, le=1)
-    handoff_rate: float = Field(ge=0, le=1)
-    safety_alerts: int = Field(default=0, ge=0)
-    sample_size: int = Field(ge=0)
-
-
-class PromptActivateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3)
-    emergency: bool = False
-
-
-class PromptRollbackBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3)
-
-
-class ModelCandidateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    config_id: str = "issue-extractor-model"
-    provider: str
-    model_id: str
-    component: str = "issue-extractor"
-    temperature: float = Field(default=0.0, ge=0, le=1)
-    max_output_tokens: int = Field(default=2048, ge=1, le=8192)
-    timeout_seconds: int = Field(default=30, ge=1, le=120)
-    retry: int = Field(default=1, ge=0, le=3)
-    secret_ref: str
-    region: str = "asia-east1"
-    pricing_version: str = "v1"
-    fallback_model_id: str | None = None
-    fallback_on: tuple[str, ...] = ()
-    change_reason: str = Field(min_length=3)
-
-
-class ReasonBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3)
-
-
-class FallbackBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    error: Literal["TIMEOUT", "RATE_LIMIT", "UNAVAILABLE"]
-
-
-class FlagCandidateBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    flag_id: str
-    value: str
-    environment: str = "lab"
-    expires_at: datetime | None = None
-    percent: int | None = Field(default=None, ge=1, le=100)
-    reason: str = Field(min_length=3)
-
-
-class RoleRequestBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_principal: str
-    target_role: str | None = None
-    add_capabilities: tuple[str, ...] = ()
-    remove_capabilities: tuple[str, ...] = ()
-    reason: str = Field(min_length=3)
-
-
-class RevokeBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    principal: str
-    reason: str = Field(min_length=3)
-
-
-class RetentionBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    policy_id: str = "operational-events"
-    ttl_days: int = Field(ge=1, le=3650)
-    migration_plan: str = Field(min_length=3)
-    reason: str = Field(min_length=3)
-
-
-class MaskingBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    policy_version: str = Field(min_length=1, max_length=120)
-    reason: str = Field(min_length=3)
-
+# Re-export body models for stable importers / OpenAPI discovery.
+__all__ = [
+    "FallbackBody",
+    "FlagCandidateBody",
+    "MaskingBody",
+    "ModelCandidateBody",
+    "PromptActivateBody",
+    "PromptApproveBody",
+    "PromptCanaryBody",
+    "PromptCanaryEvaluateBody",
+    "PromptCanaryStopBody",
+    "PromptCandidateBody",
+    "PromptRollbackBody",
+    "ReasonBody",
+    "RetentionBody",
+    "RevokeBody",
+    "RoleRequestBody",
+    "register_governance_routes",
+]
 
 def register_governance_routes(
     app: FastAPI,
@@ -160,26 +63,7 @@ def register_governance_routes(
     quality_service=None,
     eval_harness_status=None,
 ) -> None:
-    @app.exception_handler(GovernanceAuthorizationError)
-    async def governance_authorization_handler(
-        _request, exc: GovernanceAuthorizationError
-    ) -> JSONResponse:
-        return JSONResponse(status_code=403, content={"detail": str(exc)})
-
-    @app.exception_handler(GovernanceNotFoundError)
-    async def governance_not_found_handler(_request, exc: GovernanceNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
-
-    @app.exception_handler(GovernanceConflictError)
-    @app.exception_handler(GovernanceTransitionError)
-    async def governance_conflict_handler(_request, exc: GovernanceError) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-    @app.exception_handler(GovernanceValidationError)
-    async def governance_validation_handler(
-        _request, exc: GovernanceValidationError
-    ) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    register_governance_exception_handlers(app)
 
     def _reject_client_approval(payload: PromptApproveBody) -> None:
         if payload.approved is not None:
@@ -408,7 +292,7 @@ def register_governance_routes(
         config_id: str, version_id: str, payload: ReasonBody, actor=Depends(current_actor)
     ) -> dict[str, object]:
         require_capability(actor, "ops.models.activate")
-        return await _run_model_schedule(
+        return await run_model_schedule(
             governance,
             query_service,
             actor=actor,
@@ -429,7 +313,7 @@ def register_governance_routes(
         version_id = str(version.get("version_id") or "")
         if not version_id:
             return rolled
-        return await _run_model_schedule(
+        return await run_model_schedule(
             governance,
             query_service,
             actor=actor,
@@ -582,150 +466,14 @@ def register_governance_routes(
         actor=Depends(current_actor),
     ) -> dict[str, object]:
         require_capability(actor, "ops.search.read")
-        extras: list[dict[str, object]] = []
-        warnings: list[str] = []
-        if faq_service is not None and actor.has_capability("ops.faq.read"):
-            try:
-                for item in faq_service.list_faqs(actor=actor):
-                    faq = item.get("faq") or {}
-                    version = item.get("version") or {}
-                    content = version.get("content") or {}
-                    faq_status = str(version.get("status") or faq.get("status") or "PUBLISHED")
-                    extras.append(
-                        {
-                            "type": "FAQ",
-                            "id": str(faq.get("faq_id") or ""),
-                            "title": str(content.get("faq_key") or faq.get("faq_id") or ""),
-                            "snippet": str(content.get("question") or version.get("status") or "")[
-                                :160
-                            ],
-                            "owner_unit_id": str(faq.get("owner_unit_id") or ""),
-                            "status": faq_status,
-                            "requiredCapability": "ops.faq.read",
-                        }
-                    )
-            except Exception as exc:
-                warnings.append(f"FAQ 資料來源讀取失敗：{exc}")
-        if example_service is not None and actor.has_capability("ops.examples.read"):
-            try:
-                for item in example_service.list_examples(actor=actor)[:200]:
-                    example_status = str(item.get("status") or "VERIFIED")
-                    extras.append(
-                        {
-                            "type": "EXAMPLE",
-                            "id": str(item.get("example_id") or ""),
-                            "title": str(
-                                item.get("expected_issue_type_id") or item.get("label") or ""
-                            ),
-                            "snippet": str(item.get("text") or "")[:160],
-                            "owner_unit_id": str(item.get("owner_unit_id") or ""),
-                            "status": example_status,
-                            "requiredCapability": "ops.examples.read",
-                        }
-                    )
-            except Exception as exc:
-                warnings.append(f"Few-Shot 範例資料來源讀取失敗：{exc}")
-        if query_service is not None and actor.has_capability("ops.issues.read"):
-            try:
-                taxonomy = getattr(query_service, "taxonomy", None)
-                if taxonomy is not None:
-                    for issue in taxonomy.list_active():
-                        issue_id = getattr(issue, "issue_type_id", None) or getattr(issue, "id", "")
-                        display = getattr(issue, "display_name", None) or getattr(
-                            issue, "name", issue_id
-                        )
-                        desc = (
-                            getattr(issue, "description", "")
-                            or getattr(issue, "category", "")
-                            or ""
-                        )
-                        extras.append(
-                            {
-                                "type": "ISSUE_TYPE",
-                                "id": str(issue_id),
-                                "title": str(display),
-                                "snippet": f"{issue_id} {desc}"[:160],
-                                "owner_unit_id": str(getattr(issue, "owner_unit_id", "") or ""),
-                                "status": "ACTIVE",
-                                "requiredCapability": "ops.issues.read",
-                            }
-                        )
-            except Exception as exc:
-                warnings.append(f"問題分類資料來源讀取失敗：{exc}")
-        if query_service is not None and actor.has_capability("ops.knowledge.read"):
-            try:
-                doc_inv = await query_service._fetch_document_inventory()
-                for doc in doc_inv.get("items", []):
-                    doc_id = str(doc.get("document_id") or "")
-                    title = str(doc.get("title") or doc.get("filename") or doc_id)
-                    desc = str(
-                        doc.get("description")
-                        or doc.get("category")
-                        or doc.get("owner_unit_id")
-                        or ""
-                    )
-                    doc_status = str(doc.get("status") or "PUBLISHED")
-                    extras.append(
-                        {
-                            "type": "KNOWLEDGE",
-                            "id": doc_id,
-                            "title": title,
-                            "snippet": f"{doc_id} {desc}"[:160],
-                            "owner_unit_id": str(doc.get("owner_unit_id") or ""),
-                            "status": doc_status,
-                            "requiredCapability": "ops.knowledge.read",
-                        }
-                    )
-            except Exception as exc:
-                warnings.append(f"知識文件資料來源讀取失敗：{exc}")
-        if query_service is not None and actor.has_capability("ops.conversations.read") and q:
-            try:
-                conv_result = await query_service.list_conversations(
-                    actor, days=365, query=q, limit=20
-                )
-                for item in conv_result.get("items", []):
-                    turn_texts = []
-                    for t in item.get("turns", []):
-                        if t.get("userMessage"):
-                            turn_texts.append(str(t["userMessage"]))
-                        if t.get("aiReply"):
-                            turn_texts.append(str(t["aiReply"]))
-                    matched_snippet = (
-                        " ".join(turn_texts) if turn_texts else f"{item.get('actorRef') or ''} {q}"
-                    )
-                    conv_status = str(item.get("status") or "CLOSED")
-                    extras.append(
-                        {
-                            "type": "CONVERSATION",
-                            "id": item["conversationId"],
-                            "title": f"對話 {item['conversationId']}",
-                            "snippet": matched_snippet[:160],
-                            "owner_unit_id": str(item.get("ownerUnitId") or ""),
-                            "status": conv_status,
-                            "requiredCapability": "ops.conversations.read",
-                        }
-                    )
-            except Exception as exc:
-                warnings.append(f"對話歷史資料來源讀取失敗：{exc}")
-        if quality_service is not None and actor.has_capability("ops.quality.read"):
-            try:
-                for case in quality_service.list_cases(actor=actor)[:200]:
-                    case_status = str(case.get("status") or "OPEN")
-                    extras.append(
-                        {
-                            "type": "QUALITY_CASE",
-                            "id": str(case.get("case_id") or ""),
-                            "title": str(case.get("title") or case.get("status") or ""),
-                            "snippet": str(
-                                case.get("description") or case.get("issue_type_id") or ""
-                            )[:160],
-                            "owner_unit_id": str(case.get("owner_unit_id") or ""),
-                            "status": case_status,
-                            "requiredCapability": "ops.quality.read",
-                        }
-                    )
-            except Exception as exc:
-                warnings.append(f"品質案件資料來源讀取失敗：{exc}")
+        extras, warnings = await collect_search_extras(
+            actor=actor,
+            query=q,
+            faq_service=faq_service,
+            example_service=example_service,
+            query_service=query_service,
+            quality_service=quality_service,
+        )
         res = governance.search(
             query=q,
             actor=actor,
@@ -737,108 +485,15 @@ def register_governance_routes(
         res["warnings"] = warnings
         return res
 
-    @app.get("/api/governance/audit")
-    async def governance_audit(
-        actor_id: str | None = Query(default=None),
-        action: str | None = Query(default=None),
-        target_type: str | None = Query(default=None),
-        start_date: str | None = Query(default=None),
-        end_date: str | None = Query(default=None),
-        limit: int = Query(default=50, ge=1, le=100),
-        cursor: str | None = Query(default=None),
-        actor=Depends(current_actor),
-    ) -> dict[str, object]:
-        require_capability(actor, "ops.audit.read")
-        return governance.query_audit(
-            actor=actor,
-            target_type=target_type,
-            actor_id=actor_id,
-            action=action,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit,
-            cursor=cursor,
-        )
 
-    @app.get("/api/governance/audit/export")
-    async def governance_audit_export(
-        actor_id: str | None = Query(default=None),
-        action: str | None = Query(default=None),
-        target_type: str | None = Query(default=None),
-        start_date: str | None = Query(default=None),
-        end_date: str | None = Query(default=None),
-        actor=Depends(current_actor),
-    ) -> dict[str, object]:
-        require_capability(actor, "ops.audit.read")
-        return governance.export_audit(
-            actor=actor,
-            target_type=target_type,
-            actor_id=actor_id,
-            action=action,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-
-async def _run_model_schedule(
-    governance: GovernanceService,
-    query_service: object,
-    *,
-    actor: object,
-    config_id: str,
-    version_id: str,
-    reason: str,
-    already_scheduled: bool = False,
-) -> dict[str, object]:
-    from .governance_domain.model_catalog import model_component
-    from .services.model_effect import ModelEffectError, run_scheduled_effect
-    from .services.runtime_models import load_agent_runtime_models
-
-    settings = getattr(query_service, "_settings", None)
-    agent_api_url = getattr(settings, "agent_api_url", None)
-    runtime = await load_agent_runtime_models(agent_api_url)
-    if not runtime.get("controlPlaneReady"):
-        raise GovernanceTransitionError("model control plane is not connected")
-    spec = model_component(config_id=config_id)
-    if spec.effect == "next_request":
-        raise GovernanceTransitionError("this component activates on the next request")
-    listed = governance.list_models(actor=actor)
-    model_id = _scheduled_model_id(listed, config_id=config_id, version_id=version_id)
-    portal_url = getattr(settings, "knowledge_internal_url", None) or getattr(
-        settings, "knowledge_portal_url", None
+    register_audit_routes(
+        app,
+        governance=governance,
+        current_actor=current_actor,
+        require_capability=require_capability,
     )
-    token = getattr(settings, "service_token", "") or getattr(
-        settings, "knowledge_service_token", ""
-    )
-    try:
-        return await run_scheduled_effect(
-            governance=governance,
-            actor=actor,
-            config_id=config_id,
-            version_id=version_id,
-            reason=reason,
-            effect=spec.effect,
-            model_id=model_id,
-            agent_api_url=agent_api_url,
-            portal_url=portal_url,
-            service_token=token,
-            already_scheduled=already_scheduled,
-        )
-    except ModelEffectError as exc:
-        raise GovernanceTransitionError(exc.message) from exc
 
 
-def _scheduled_model_id(items: list[dict[str, object]], *, config_id: str, version_id: str) -> str:
-    for item in items:
-        config = item.get("config") or {}
-        if not isinstance(config, dict) or config.get("config_id") != config_id:
-            continue
-        versions = item.get("versions") or []
-        if not isinstance(versions, list):
-            continue
-        for version in versions:
-            if isinstance(version, dict) and version.get("version_id") == version_id:
-                model_id = str(version.get("model_id") or "")
-                if model_id:
-                    return model_id
-    raise GovernanceNotFoundError(version_id)
+# Stable private aliases (historical underscore names).
+_run_model_schedule = run_model_schedule
+_scheduled_model_id = scheduled_model_id
