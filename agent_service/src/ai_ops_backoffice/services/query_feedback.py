@@ -324,7 +324,7 @@ class FeedbackQueryMixin:
             issue_type_id = issue_extracted.issue_type_id
 
         record = self.taxonomy.get(issue_type_id) if issue_type_id else None
-        source_trace = getattr(self, "_source_trace", None)
+        source_trace = getattr(self, "source_trace", None)
         return {
             "turnId": feedback_event.turn_id,
             "issueTypeId": issue_type_id,

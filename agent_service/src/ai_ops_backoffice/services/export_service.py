@@ -113,16 +113,16 @@ class ExportJobService:
         recovery_scan_seconds: int = RECOVERY_SCAN_SECONDS,
     ) -> None:
         self._audit_store = audit_store
-        self._store_path = store_path
+        self.store_path = store_path
         self._environment = environment
         self._ttl_seconds = ttl_seconds
         self._max_records = max_records
         self._jobs: dict[str, ExportJob] = {}
         self._lock = asyncio.Lock()
-        self._store_path.mkdir(parents=True, exist_ok=True)
-        self._job_store = job_store or FileExportJobStore(self._store_path)
+        self.store_path.mkdir(parents=True, exist_ok=True)
+        self._job_store = job_store or FileExportJobStore(self.store_path)
         self._content_store = content_store or FileExportContentStore(
-            self._store_path / "content"
+            self.store_path / "content"
         )
         lab_environment = environment.lower() in {"dev", "test", "poc", "lab"}
         if require_export_authority is None:
@@ -134,7 +134,7 @@ class ExportJobService:
             self._authorization_resolver = UnavailableExportAuthorizationResolver()
         else:
             self._authorization_resolver = FileBackedExportAuthorizationResolver(
-                self._store_path / "export_auth_registry.json",
+                self.store_path / "export_auth_registry.json",
                 authority=export_authority,
             )
         self._execution_backend = execution_backend

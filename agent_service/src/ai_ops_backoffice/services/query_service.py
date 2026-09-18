@@ -261,6 +261,16 @@ class BackofficeQueryService(
         return self._environment
 
     @property
+    def source_trace(self) -> SourceTraceResolver:
+        """Public accessor for citation/source resolution used by routers."""
+        return self._source_trace
+
+    @property
+    def runtime_settings(self) -> OpsSettings:
+        """Public accessor for the ops runtime settings used at wiring time."""
+        return self._runtime.settings
+
+    @property
     def source_repository(self) -> SourceRecordRepository:
         """Public accessor for the source-record store used by quality and sources routes."""
         return self._source_trace.source_repository

@@ -448,6 +448,79 @@ def find_package_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
     return sccs
 
 
+_PRIVATE_ACCESS_ROOTS: tuple[Path, ...] = (
+    REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "routers",
+    REPO_ROOT / "agent_service" / "src" / "ai_ops_backoffice" / "bootstrap",
+)
+_ALLOWED_PRIVATE_BASES = frozenset({"self", "cls"})
+
+
+def _attribute_expr(node: ast.AST) -> str | None:
+    """Reconstruct a dotted attribute expression from Name/Attribute nodes."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _attribute_expr(node.value)
+        if parent is None:
+            return None
+        return f"{parent}.{node.attr}"
+    return None
+
+
+def is_cross_module_private_attr(node: ast.Attribute) -> bool:
+    """True when node loads a single-underscore private attr on a non-self/cls base."""
+    if not node.attr.startswith("_") or node.attr.startswith("__"):
+        return False
+    if isinstance(node.value, ast.Name) and node.value.id in _ALLOWED_PRIVATE_BASES:
+        return False
+    return True
+
+
+def collect_cross_module_private_access(
+    source: str,
+    *,
+    filename: str = "<memory>",
+) -> list[tuple[int, str]]:
+    """Return (lineno, expr) for cross-module private attribute loads in source."""
+    try:
+        tree = ast.parse(source, filename=filename)
+    except SyntaxError:
+        return []
+    findings: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        if not is_cross_module_private_attr(node):
+            continue
+        expr = _attribute_expr(node)
+        if expr is None:
+            continue
+        findings.append((node.lineno, expr))
+    return findings
+
+
+def check_cross_module_private_access() -> list[Finding]:
+    """Fail on cross-module private attribute access under routers/ and bootstrap/."""
+    findings: list[Finding] = []
+    for root in _PRIVATE_ACCESS_ROOTS:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            if is_excluded(path):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for lineno, expr in collect_cross_module_private_access(
+                text, filename=str(path)
+            ):
+                findings.append(
+                    Finding(
+                        "CROSS_MODULE_PRIVATE_ACCESS",
+                        f"{rel_path(path)}:{lineno}: {expr}",
+                    )
+                )
+    return findings
+
+
 def check_package_cycles(graph: dict[str, set[str]]) -> list[Finding]:
     findings: list[Finding] = []
     for scc in find_package_cycles(graph):
@@ -603,6 +676,7 @@ def run_checks() -> list[Finding]:
         check_reverse_imports(collect_reverse_imports(), import_baseline)
     )
     findings.extend(check_package_cycles(collect_package_dependency_graph()))
+    findings.extend(check_cross_module_private_access())
 
     if IMPORTER_COUNTS_BASELINE.exists():
         importer_baseline = load_json(IMPORTER_COUNTS_BASELINE).get("edges", {})

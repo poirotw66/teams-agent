@@ -33,7 +33,7 @@ def register_preview_routes(app: FastAPI, ctx: SourcesRouteContext) -> None:
         """
         require_capability(actor, "ops.conversations.read")
         tenant_id = getattr(actor, "tenant_id", None) or "default"
-        source = query_service._source_trace.resolve_source_ref(
+        source = query_service.source_trace.resolve_source_ref(
             source_ref_id, tenant_id=tenant_id
         )
         if source is None:
@@ -47,7 +47,7 @@ def register_preview_routes(app: FastAPI, ctx: SourcesRouteContext) -> None:
         except DocumentAccessDeniedError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-        payload = query_service._source_trace.preview_payload(source)
+        payload = query_service.source_trace.preview_payload(source)
         payload["previewUrl"] = f"/api/sources/{source.source_ref_id}"
         if source.original_asset_available and source.mapping_status != "LEGACY_UNVERIFIED":
             payload["downloadUrl"] = f"/api/sources/{source.source_ref_id}/file"

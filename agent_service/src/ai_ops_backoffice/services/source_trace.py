@@ -64,7 +64,7 @@ class SourceTraceResolver:
         self.artifact_storage = artifact_storage
         self._release_cache: dict[str, tuple[int, int, _ReleaseLoad]] = {}
 
-    def _active_release_id(self) -> str | None:
+    def active_release_id(self) -> str | None:
         pointer = self.releases_dir / "active_release.json"
         if not pointer.is_file():
             return None
@@ -77,7 +77,7 @@ class SourceTraceResolver:
 
     def _release_ids(self, preferred: str | None = None) -> list[str]:
         values: list[str] = []
-        for value in (preferred, self._active_release_id()):
+        for value in (preferred, self.active_release_id()):
             if value and _SAFE_RELEASE_ID.fullmatch(value) and value not in values:
                 values.append(value)
         if self.releases_dir.is_dir():

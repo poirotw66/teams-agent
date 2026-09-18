@@ -230,3 +230,23 @@ def test_importer_count_tighten_reduces_cap() -> None:
     tightened = checker.tighten_importer_counts(baseline, current)
     assert tightened == current
 
+
+def test_cross_module_private_access_is_detected() -> None:
+    checker = _load_script(
+        "check_architecture_private_access",
+        SCRIPTS / "check_architecture.py",
+    )
+    snippet = (
+        "def preview(query_service):\n"
+        "    return query_service._source_trace.resolve_source_ref('x')\n"
+    )
+    hits = checker.collect_cross_module_private_access(snippet)
+    assert any(expr == "query_service._source_trace" for _, expr in hits)
+
+    allowed = (
+        "class Service:\n"
+        "    def run(self):\n"
+        "        return self._source_trace\n"
+    )
+    assert checker.collect_cross_module_private_access(allowed) == []
+

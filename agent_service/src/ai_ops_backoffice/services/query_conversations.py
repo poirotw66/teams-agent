@@ -291,7 +291,7 @@ class ConversationsQueryMixin:
                         )
                     )
                 ]
-                source_trace = getattr(self, "_source_trace", None)
+                source_trace = getattr(self, "source_trace", None)
                 t_source_refs = (
                     source_trace.references_for_events(source_events)
                     if source_trace is not None
@@ -466,7 +466,7 @@ class ConversationsQueryMixin:
                 if item.turn_id == event.turn_id and item.event_type != "turn.received"
             ]
             summary = _summarize_turn_events(event, events)
-            source_trace = getattr(self, "_source_trace", None)
+            source_trace = getattr(self, "source_trace", None)
             summary["sourceRefs"] = (
                 source_trace.references_for_events(related)
                 if source_trace is not None

@@ -83,6 +83,11 @@ class PolicyRuntime:
             require_governance if require_governance is not None else governance is not None
         )
 
+    @property
+    def settings(self) -> OpsSettings:
+        """Public accessor for the ops settings used by this runtime."""
+        return self._settings
+
     @classmethod
     def from_ops_settings(cls, settings: OpsSettings) -> PolicyRuntime:
         return cls(settings=settings, governance=_try_build_governance(settings))

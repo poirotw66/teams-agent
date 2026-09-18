@@ -30,7 +30,7 @@ async def _handle_source_file(
     require_capability(actor, "ops.conversations.read")
 
     tenant_id = getattr(actor, "tenant_id", None) or "default"
-    source = query_service._source_trace.resolve_source_ref(
+    source = query_service.source_trace.resolve_source_ref(
         source_ref_id, tenant_id=tenant_id
     )
     if source is None or not source.original_asset_available:
@@ -52,7 +52,7 @@ async def _handle_source_file(
     raw_name = source.original_asset_name or "source-file"
     safe_name = sanitize_filename(raw_name)
     range_header = request.headers.get("range")
-    artifact_store = getattr(query_service._source_trace, "artifact_storage", None)
+    artifact_store = getattr(query_service.source_trace, "artifact_storage", None)
 
     artifact_response = await stream_artifact_file(
         request=request,

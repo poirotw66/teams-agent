@@ -178,7 +178,7 @@ def bind_export_authorization(
     )
     query_service.export_jobs.configure_authorization_resolver(
         FileBackedExportAuthorizationResolver(
-            query_service.export_jobs._store_path / "export_auth_registry.json",
+            query_service.export_jobs.store_path / "export_auth_registry.json",
             authority=export_authority,
         )
     )
@@ -190,9 +190,9 @@ def configure_governance_policy_runtime(
 ) -> None:
     existing_runtime = get_policy_runtime()
     policy_settings = (
-        existing_runtime._settings
+        existing_runtime.settings
         if existing_runtime is not None
-        else query_service._runtime.settings
+        else query_service.runtime_settings
     )
     configure_policy_runtime(
         PolicyRuntime(settings=policy_settings, governance=governance_service)
