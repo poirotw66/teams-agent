@@ -41,7 +41,7 @@ class OperationsFreshnessRecorder(FreshnessRecorder):
             clock=clock,
             max_stage_events=max_stage_events,
         )
-        self._lock = self._store._lock
+        self._lock = self._store.lock
         self._persistent_path = persistent_path
         self._firestore_client = firestore_client
         self._firestore_collection = firestore_collection
@@ -50,15 +50,15 @@ class OperationsFreshnessRecorder(FreshnessRecorder):
 
     @property
     def _last_successful_sync(self) -> dict[str, datetime]:
-        return self._store._last_successful_sync
+        return self._store.last_successful_sync
 
     @property
     def _worker_heartbeats(self) -> dict[str, datetime]:
-        return self._store._worker_heartbeats
+        return self._store.worker_heartbeats
 
     @property
     def _stage_events(self) -> Any:
-        return self._store._stage_events
+        return self._store.stage_events
 
     def now(self) -> datetime:
         return self._store.now()
@@ -108,13 +108,13 @@ class OperationsFreshnessRecorder(FreshnessRecorder):
         self._store.save_backlog(key, backlog_count, oldest_pending_at, now_val)
 
     def _save_firestore_watermark(self, key: str, at: datetime) -> None:
-        self._store._save_firestore_watermark(key, at)
+        self._store.save_firestore_watermark(key, at)
 
     def _save_firestore_heartbeat(self, worker_id: str, at: datetime) -> None:
-        self._store._save_firestore_heartbeat(worker_id, at)
+        self._store.save_firestore_heartbeat(worker_id, at)
 
     def _save_persistent_sync(self) -> None:
-        self._store._save_persistent()
+        self._store.save_persistent()
 
     def _load_persistent_sync(self) -> None:
         self._store.load_persistent()

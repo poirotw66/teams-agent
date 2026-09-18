@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from agent_service.operations.freshness_store import FreshnessStore
 from operations_core.contracts import FreshnessMetadata
+from operations_core.freshness_store import FreshnessStore
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class FreshnessTracker:
             clock=clock,
             max_stage_events=max_stage_events,
         )
-        self._lock = self._store._lock
+        self._lock = self._store.lock
         # Stale threshold must exceed the heartbeat interval or healthy workers look dead.
         self._heartbeat_interval = heartbeat_interval_seconds
         self._worker_stale_threshold = max(
@@ -60,35 +60,35 @@ class FreshnessTracker:
 
     @property
     def _last_mtime(self) -> float:
-        return self._store._last_file_mtime
+        return self._store.last_file_mtime
 
     @_last_mtime.setter
     def _last_mtime(self, val: float) -> None:
-        self._store._last_file_mtime = val
+        self._store.last_file_mtime = val
 
     @property
     def _last_firestore_poll(self) -> float:
-        return self._store._last_firestore_poll
+        return self._store.last_firestore_poll
 
     @_last_firestore_poll.setter
     def _last_firestore_poll(self, val: float) -> None:
-        self._store._last_firestore_poll = val
+        self._store.last_firestore_poll = val
 
     @property
     def _worker_heartbeats(self) -> dict[str, datetime]:
-        return self._store._worker_heartbeats
+        return self._store.worker_heartbeats
 
     @property
     def _last_successful_sync(self) -> dict[str, datetime]:
-        return self._store._last_successful_sync
+        return self._store.last_successful_sync
 
     @property
     def _pending_backlog(self) -> dict[str, dict[str, Any]]:
-        return self._store._pending_backlog
+        return self._store.pending_backlog
 
     @property
     def _stage_events(self) -> OrderedDict[str, dict[str, Any]]:
-        return self._store._stage_events
+        return self._store.stage_events
 
     @property
     def _last_worker_heartbeat(self) -> datetime | None:
@@ -109,16 +109,16 @@ class FreshnessTracker:
         self._store.load_firestore()
 
     def _save_firestore_watermark(self, key: str, at: datetime) -> None:
-        self._store._save_firestore_watermark(key, at)
+        self._store.save_firestore_watermark(key, at)
 
     def _save_firestore_heartbeat(self, worker_id: str, at: datetime) -> None:
-        self._store._save_firestore_heartbeat(worker_id, at)
+        self._store.save_firestore_heartbeat(worker_id, at)
 
     def _reload_persistent_sync_if_needed(self) -> None:
         self._store.reload_if_needed()
 
     def _save_persistent_sync(self) -> None:
-        self._store._save_persistent()
+        self._store.save_persistent()
 
     def record_worker_heartbeat(
         self,
