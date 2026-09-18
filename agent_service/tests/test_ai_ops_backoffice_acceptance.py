@@ -117,7 +117,7 @@ def _patch_portal_client(response: MagicMock) -> object:
     client.__aexit__ = AsyncMock(return_value=False)
     client.get = AsyncMock(return_value=response)
     return patch(
-        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient",
         return_value=client,
     )
 
@@ -215,7 +215,7 @@ def test_uat_knowledge_inventory_enriches_governance_and_performance(
         ]
     )
     with patch(
-        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient",
         return_value=client,
     ):
         response = acceptance_client.get(
@@ -294,7 +294,7 @@ def test_uat_knowledge_inventory_applies_owner_scope_and_cursor(
         return client
 
     with patch(
-        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient",
         return_value=portal_client(),
     ):
         first = acceptance_client.get(
@@ -307,7 +307,7 @@ def test_uat_knowledge_inventory_applies_owner_scope_and_cursor(
     assert first.json()["nextCursor"] == "doc-a"
 
     with patch(
-        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient",
         return_value=portal_client(),
     ):
         second = acceptance_client.get(
@@ -348,7 +348,7 @@ def test_uat_knowledge_performance_export_uses_scoped_inventory(
         ]
     )
     with patch(
-        "ai_ops_backoffice.services.query_knowledge.httpx.AsyncClient",
+        "ai_ops_backoffice.services.query_knowledge_portal_ops.httpx.AsyncClient",
         return_value=client,
     ):
         created = acceptance_client.post(
