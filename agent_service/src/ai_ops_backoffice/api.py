@@ -348,11 +348,43 @@ def create_app(
     else:
         raise ValueError(f"Unsupported quality store mode: {quality_store_mode}")
     quality_service = QualityService(quality_repository)
+    portal_app: FastAPI | None = None
+    delegation_secret = resolved_settings.knowledge_delegation_secret
+    if (
+        knowledge_transport is None
+        and resolved_settings.knowledge_bridge_enabled
+        and getattr(resolved_settings, "knowledge_in_process", True)
+    ):
+        try:
+            import secrets
+            from dataclasses import replace
+
+            from knowledge_portal.api import create_app as create_portal_app
+            from knowledge_portal.settings import PortalSettings
+
+            if not delegation_secret:
+                delegation_secret = secrets.token_hex(32)
+
+            portal_settings = PortalSettings.from_env()
+            portal_settings = replace(
+                portal_settings,
+                delegation_secret=delegation_secret,
+                require_service_token_with_delegation=bool(
+                    resolved_settings.knowledge_service_token
+                ),
+            )
+            portal_app = create_portal_app(portal_settings)
+            knowledge_transport = httpx.ASGITransport(app=portal_app)
+            logger.info("In-process Knowledge Portal initialized successfully.")
+        except Exception:
+            logger.exception("Failed to initialize in-process Knowledge Portal; falling back to remote URL.")
+
     knowledge_client = KnowledgePortalClient(
         base_url=resolved_settings.knowledge_internal_url
-        or resolved_settings.knowledge_portal_url,
+        or resolved_settings.knowledge_portal_url
+        or "http://inprocess-portal",
         service_token=resolved_settings.knowledge_service_token,
-        delegation_secret=resolved_settings.knowledge_delegation_secret,
+        delegation_secret=delegation_secret,
         auth_mode=resolved_settings.knowledge_auth_mode,
         timeout_seconds=resolved_settings.knowledge_timeout_seconds,
         transport=knowledge_transport,
@@ -864,6 +896,8 @@ def create_app(
         require_capability=require_capability,
     )
     app.state.quality_gate_service = quality_gate_service
+    app.state.portal_app = portal_app
+    app.state.knowledge_client = knowledge_client
     app.state.job_repository = job_repository
     app.state.job_worker = job_worker
     register_gate_routes(

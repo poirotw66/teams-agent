@@ -220,6 +220,19 @@ export interface CitationItem {
   snippet: string;
   updated_at: string;
   is_stale?: boolean;
+  chunk_id?: string;
+  source_ref_id?: string;
+  source_type?: string;
+  source_path?: string;
+  section?: string;
+  url?: string;
+  original_url?: string;
+  preview_url?: string;
+  download_url?: string;
+  content?: string;
+  page?: number;
+  policy_id?: string;
+  is_policy?: boolean;
 }
 
 export interface ChatMessage {

@@ -25,7 +25,7 @@ class KnowledgePortalClient:
         timeout_seconds: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = (base_url or "http://inprocess-portal").rstrip("/")
         self._service_token = service_token
         self._delegation_secret = delegation_secret
         self._auth_mode = auth_mode.upper()
@@ -34,7 +34,7 @@ class KnowledgePortalClient:
 
     @property
     def configured(self) -> bool:
-        return bool(self._base_url and self._delegation_secret)
+        return bool((self._base_url or self._transport is not None) and self._delegation_secret)
 
     def _headers(
         self,

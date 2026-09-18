@@ -19,6 +19,7 @@ _ALLOWED = (
     re.compile(r"^ingestion-jobs/[^/]+/cancel$"),
     re.compile(r"^v1/ingestion-jobs/[^/]+$"),
     re.compile(r"^v1/ingestion-jobs/[^/]+/cancel$"),
+    re.compile(r"^internal/v1/ingestion-jobs/[^/]+/run$"),
     re.compile(r"^documents/[^/]+$"),
     re.compile(r"^documents/[^/]+/chunk-preview$"),
     re.compile(r"^documents/[^/]+/rechunk$"),

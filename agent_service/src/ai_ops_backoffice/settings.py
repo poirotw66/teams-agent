@@ -84,6 +84,7 @@ class BackofficeSettings:
     knowledge_timeout_seconds: float = 180.0
     source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
+    knowledge_in_process: bool = True
     deployment_tenant_id: str = "local-development"
     relaxed_workflow: bool = False
     min_test_cases_for_review: int = 3
@@ -207,6 +208,10 @@ class BackofficeSettings:
             ).strip(),
             knowledge_bridge_enabled=os.environ.get(
                 "AI_OPS_KNOWLEDGE_BRIDGE_ENABLED", "true"
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            knowledge_in_process=os.environ.get(
+                "AI_OPS_KNOWLEDGE_IN_PROCESS", "true"
             ).lower()
             in {"1", "true", "yes", "on"},
             deployment_tenant_id=os.environ.get(

@@ -385,6 +385,12 @@ def _format_steps_and_citations(text: str) -> str:
     already included it). Also automatically converts unnumbered sequential steps under
     a '流程如下' or '步驟如下' header into an ordered list.
     """
+    # Unpack inline numbered steps that were merged on a single line
+    text = re.sub(
+        r"(?<!\n)(?:([：:。；;!?！？])\s*|(\s+))(\d+)\.\s+",
+        r"\1\n\3. ",
+        text,
+    )
     lines = text.split("\n")
     new_lines: list[str] = []
     in_step_group = False

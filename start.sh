@@ -16,7 +16,7 @@ PLAYGROUND_PORT="${PLAYGROUND_PORT:-3979}"
 PLAYGROUND_INTERNAL_PORT="${PLAYGROUND_INTERNAL_PORT:-56150}"
 
 START_MOCK_TICKET="${START_MOCK_TICKET:-true}"
-START_PORTAL="${START_PORTAL:-true}"
+START_PORTAL="${START_PORTAL:-false}"
 START_PDF_CONVERTER="${START_PDF_CONVERTER:-true}"
 START_BACKOFFICE="${START_AI_OPS_BACKOFFICE:-true}"
 START_PLAYGROUND="${START_PLAYGROUND:-true}"
@@ -385,7 +385,7 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
     fail "已啟用 knowledge bridge，但未設定 KNOWLEDGE_PORTAL_DELEGATION_SECRET。"
   fi
   if [[ "${KNOWLEDGE_BRIDGE_ENABLED}" == "true" && "${START_PORTAL}" != "true" ]]; then
-    log "警告：knowledge bridge 已啟用，但 START_PORTAL=false；後台知識 API 會回 503，直到內部 Portal 可用。"
+    log "資訊：Knowledge Portal 已以 In-Process 方式內嵌於 AI Ops Backoffice（免開 8091）。"
   fi
 fi
 
@@ -536,6 +536,11 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
     export KNOWLEDGE_PORTAL_TOKEN="${KNOWLEDGE_PORTAL_TOKEN:-}"
     export AI_OPS_KNOWLEDGE_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
     export AI_OPS_KNOWLEDGE_BRIDGE_ENABLED="${KNOWLEDGE_BRIDGE_ENABLED}"
+    export AI_OPS_KNOWLEDGE_IN_PROCESS="${AI_OPS_KNOWLEDGE_IN_PROCESS:-true}"
+    export KNOWLEDGE_PORTAL_STATE_PATH="${PORTAL_STATE_PATH}"
+    export KNOWLEDGE_PORTAL_RELEASE_DIR="${PORTAL_RELEASE_DIR}"
+    export KNOWLEDGE_PORTAL_REPOSITORY_MODE="${KNOWLEDGE_PORTAL_REPOSITORY_MODE:-FILE}"
+    export KNOWLEDGE_PORTAL_DEMO_MODE="${KNOWLEDGE_PORTAL_DEMO_MODE:-true}"
     export AI_OPS_DEPLOYMENT_TENANT_ID="${AI_OPS_DEPLOYMENT_TENANT_ID:-local-development}"
     export AI_OPS_BACKOFFICE_AUTH_MODE="${AI_OPS_BACKOFFICE_AUTH_MODE:-HEADER}"
     export AI_OPS_BACKOFFICE_TOKEN="${LOCAL_SOURCE_TOKEN}"
@@ -636,7 +641,11 @@ printf '[start] 資訊客服營運工作台 (全新)：%s/console-v2/dashboard\n
 printf '[start] 舊版管理後台：%s/#/platform/overview\n' "${PUBLIC_OPS_URL}"
 if [[ "${START_BACKOFFICE}" == "true" ]]; then
   printf '[start] 知識文件庫：%s/#/knowledge_ops/knowledgePortal\n' "${PUBLIC_OPS_URL}"
-  printf '[start] 知識 API：%s/api/knowledge/*（BFF → 內部 Portal）\n' "${PUBLIC_OPS_URL}"
+  if [[ "${START_PORTAL}" == "true" ]]; then
+    printf '[start] 知識 API：%s/api/knowledge/*（BFF → 內部獨立 Portal :%s）\n' "${PUBLIC_OPS_URL}" "${PORTAL_PORT}"
+  else
+    printf '[start] 知識 API：%s/api/knowledge/*（In-Process 內嵌整合，免開 8091）\n' "${PUBLIC_OPS_URL}"
+  fi
   printf '[start] knowledge bridge：%s\n' "${KNOWLEDGE_BRIDGE_ENABLED}"
 fi
 if [[ "${START_PORTAL}" == "true" ]]; then

@@ -84,6 +84,17 @@ def test_workbench_conversations(client: TestClient) -> None:
     assert "messages" in first
     assert "status" in first
 
+    # Verify bot message citations enrichment
+    bot_msgs = [m for m in first["messages"] if m.get("sender") == "bot"]
+    for bot_msg in bot_msgs:
+        assert "citations" in bot_msg
+        for cite in bot_msg["citations"]:
+            assert "document_id" in cite
+            assert "document_title" in cite
+            assert "similarity_score" in cite
+            assert "snippet" in cite
+            assert "source_type" in cite
+
 
 def test_workbench_faqs(client: TestClient) -> None:
     headers = {

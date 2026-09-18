@@ -407,3 +407,16 @@ def test_format_agent_response_full_presentation() -> None:
     assert "**來源**\n\n- [S1] [員工 IT 支援服務手冊](https://kb.example/handbook)" in result
     assert "- [S2] [VPN國外連線短暫申請](https://kb.example/vpn)" in result
 
+
+def test_format_teams_answer_unpacks_inline_numbered_steps() -> None:
+    raw = (
+        "問題：國金 CRM 登入設定\n\n"
+        "處理方式：國金 CRM 首次登入時，步驟如下：1. 輸入帳號密碼點擊登入 [S1]。"
+        "2. 系統跳出設定視窗 [S1]。3. 選擇任一方式完成綁定 [S1]。"
+    )
+    formatted = format_teams_answer(raw)
+    assert "**問題：** 國金 CRM 登入設定\n\n**處理方式：**\n\n" in formatted
+    assert "步驟如下：\n1. 輸入帳號密碼點擊登入" in formatted
+    assert "\n2. 系統跳出設定視窗" in formatted
+    assert "\n3. 選擇任一方式完成綁定" in formatted
+

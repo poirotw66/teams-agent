@@ -352,3 +352,77 @@ def test_knowledge_ui_same_origin_entry(tmp_path: Path) -> None:
     assert b"/static/kp/" in page.content
     css = client.get("/static/kp/styles.css")
     assert css.status_code == 200
+
+
+def test_in_process_portal_mount_and_e2e_request(tmp_path: Path) -> None:
+    settings = _backoffice_settings(tmp_path, bridge=True)
+    app = create_app(settings)
+    assert app.state.portal_app is not None
+    client = TestClient(app)
+
+    # In-process call to dashboard
+    dashboard_res = client.get(
+        "/api/knowledge/dashboard",
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert dashboard_res.status_code == 200
+    assert "my_drafts" in dashboard_res.json()
+
+    # In-process call to create document
+    create_res = client.post(
+        "/api/knowledge/documents",
+        json=sample_document_payload(),
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert create_res.status_code == 200
+    doc_id = create_res.json()["document"]["document_id"]
+
+    # In-process call to read document
+    doc_res = client.get(
+        f"/api/knowledge/documents/{doc_id}",
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert doc_res.status_code == 200
+    assert doc_res.json()["document"]["document_id"] == doc_id
+
+    # In-process submit review
+    etag = doc_res.json()["document"]["etag"]
+    submit_res = client.post(
+        f"/api/knowledge/documents/{doc_id}/submit-review",
+        json={"etag": etag, "change_reason": "Ready for review"},
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert submit_res.status_code == 200
+    review_id = submit_res.json()["open_review"]["review_id"]
+    version_id = submit_res.json()["draft_version"]["version_id"]
+
+    # In-process decision approve
+    decision_res = client.post(
+        f"/api/knowledge/reviews/{review_id}/decision",
+        json={"decision": "APPROVED", "comment": "Approved in-process"},
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert decision_res.status_code == 200
+
+    # In-process publish
+    publish_res = client.post(
+        f"/api/knowledge/documents/{doc_id}/publish",
+        json={"version_id": version_id, "reason": "Initial publish"},
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert publish_res.status_code == 200
+    assert "release_id" in publish_res.json()
+
+    # Verify published status via document detail
+    detail_res = client.get(
+        f"/api/knowledge/documents/{doc_id}",
+        headers=headers("KNOWLEDGE_ADMIN"),
+    )
+    assert detail_res.status_code == 200
+    assert detail_res.json()["document"]["status"] == "PUBLISHED"
+
+
+def test_in_process_portal_can_be_disabled(tmp_path: Path) -> None:
+    settings = replace(_backoffice_settings(tmp_path, bridge=True), knowledge_in_process=False)
+    app = create_app(settings)
+    assert app.state.portal_app is None
