@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from .contracts import PendingIssueContext
 from .response_builder import build_response
-from .workflow_helpers import (
-    _TICKET_OFFER_MARKER,
-    AgentState,
-    _preserves_interrupted_clarification,
-)
+from .workflow_clarification_helpers import _preserves_interrupted_clarification
+from .workflow_helpers import AgentState
+from .workflow_pending_helpers import _TICKET_OFFER_MARKER
 
 
 class ResponseWorkflowMixin:
@@ -83,14 +81,8 @@ class ResponseWorkflowMixin:
     ) -> list[PendingIssueContext]:
         issues_by_id = {issue.id: issue for issue in state.get("issues", [])}
         prior = state.get("prior_pending_issues", [])
-        previous_count = max(
-            (pending.clarificationCount for pending in prior), default=0
-        )
-        previous_questions = [
-            question
-            for pending in prior
-            for question in pending.askedQuestions
-        ]
+        previous_count = max((pending.clarificationCount for pending in prior), default=0)
+        previous_questions = [question for pending in prior for question in pending.askedQuestions]
         pending_contexts: list[PendingIssueContext] = []
         if _preserves_interrupted_clarification(state):
             return list(prior)
@@ -99,9 +91,7 @@ class ResponseWorkflowMixin:
             if issue is None:
                 continue
             if result.resultType == "NEED_MORE_INFO":
-                asked_questions = list(
-                    dict.fromkeys([*previous_questions, *result.questions])
-                )
+                asked_questions = list(dict.fromkeys([*previous_questions, *result.questions]))
                 pending_contexts.append(
                     PendingIssueContext(
                         description=issue.description,
@@ -117,9 +107,8 @@ class ResponseWorkflowMixin:
                         clarificationCount=previous_count + 1,
                     )
                 )
-            elif (
-                result.resultType == "NO_KNOWLEDGE"
-                and _TICKET_OFFER_MARKER in state.get("final_response", "")
+            elif result.resultType == "NO_KNOWLEDGE" and _TICKET_OFFER_MARKER in state.get(
+                "final_response", ""
             ):
                 pending_contexts.append(
                     PendingIssueContext(
@@ -138,13 +127,8 @@ class ResponseWorkflowMixin:
         return pending_contexts
 
     @staticmethod
-    def _follow_up_state(
-        state: AgentState, pending_issues: list[PendingIssueContext]
-    ) -> str:
-        if any(
-            result.resultType == "NEED_MORE_INFO"
-            for result in state.get("issue_results", [])
-        ):
+    def _follow_up_state(state: AgentState, pending_issues: list[PendingIssueContext]) -> str:
+        if any(result.resultType == "NEED_MORE_INFO" for result in state.get("issue_results", [])):
             return "AWAITING_CLARIFICATION"
         if pending_issues and _preserves_interrupted_clarification(state):
             return "AWAITING_CLARIFICATION"

@@ -14,9 +14,14 @@ from .execution_context import ExecutionContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
 from .graph import user_context_from_identity
 from .supervisor import ConversationSupervisorDecision
+from .workflow_clarification_helpers import _complete_complementary_pending_issue
 from .workflow_helpers import (
     AgentState,
-    _complete_complementary_pending_issue,
+    assistant_scope_issue,
+    greeting_issue_from_message,
+    non_it_issue_from_message,
+)
+from .workflow_pending_helpers import (
     _conversation_turns_for_supervisor,
     _has_pending_ticket_offer,
     _is_pending_ticket_detail,
@@ -27,9 +32,6 @@ from .workflow_helpers import (
     _pending_offer_issues,
     _recent_ticket_contexts,
     _requests_ticket_offer,
-    assistant_scope_issue,
-    greeting_issue_from_message,
-    non_it_issue_from_message,
 )
 
 
@@ -58,9 +60,7 @@ class ClarificationWorkflowMixin:
         if _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation):
             return routing
 
-        can_terminate = (
-            decision.confidence >= self.settings.supervisor_terminal_confidence
-        )
+        can_terminate = decision.confidence >= self.settings.supervisor_terminal_confidence
         if not can_terminate:
             return routing
 
@@ -104,12 +104,8 @@ class ClarificationWorkflowMixin:
     async def _load_conversation(self, state: AgentState) -> dict:
         request = state["request"]
         user = user_context_from_identity(request.user)
-        teams_conversation_id = (
-            request.conversation.conversationId or f"req:{request.requestId}"
-        )
-        teams_user_id = (
-            request.user.teamsUserId or request.user.entraObjectId or "anonymous"
-        )
+        teams_conversation_id = request.conversation.conversationId or f"req:{request.requestId}"
+        teams_user_id = request.user.teamsUserId or request.user.entraObjectId or "anonymous"
         conversation = await self.conversation_service.load_or_create(
             tenant_id=request.conversation.tenantId,
             teams_conversation_id=teams_conversation_id,
@@ -129,15 +125,12 @@ class ClarificationWorkflowMixin:
         supervisor_decision = await self.supervisor.decide(
             message=request.message.text,
             pending_clarification=bool(
-                _pending_clarifications(conversation)
-                or _has_pending_ticket_offer(conversation)
+                _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation)
             ),
             recent_turns=_conversation_turns_for_supervisor(conversation) or None,
             execution_context=execution_context,
         )
-        routing = self._apply_supervisor_routing(
-            conversation, request, supervisor_decision
-        )
+        routing = self._apply_supervisor_routing(conversation, request, supervisor_decision)
         return {
             "user": user,
             "conversation": conversation,
@@ -157,11 +150,7 @@ class ClarificationWorkflowMixin:
             ticket_intent = await self._resolve_ticket_intent(state)
         superseded_resume = state.get("handoff_resume_reason", "NONE")
         superseded_handoff = superseded_resume in {"NEW_ISSUE", "REVISED_ISSUE"}
-        prior_pending_issues = (
-            []
-            if superseded_handoff
-            else _pending_clarifications(conversation)
-        )
+        prior_pending_issues = [] if superseded_handoff else _pending_clarifications(conversation)
         decision = state.get("supervisor_decision") or ConversationSupervisorDecision()
         force_ticket_offer = False
         pending_confirmation = False
@@ -225,11 +214,11 @@ class ClarificationWorkflowMixin:
             ]
             too_many_issues = False
         else:
-            history = await self.conversation_service.get_history(
-                conversation.conversationId
-            )
-            if superseded_resume == "NEW_ISSUE" or ticket_intent == TicketIntent.CANCEL or not _needs_history_for_follow_up(
-                conversation
+            history = await self.conversation_service.get_history(conversation.conversationId)
+            if (
+                superseded_resume == "NEW_ISSUE"
+                or ticket_intent == TicketIntent.CANCEL
+                or not _needs_history_for_follow_up(conversation)
             ):
                 history = []
             faq_keys = await asyncio.to_thread(
@@ -265,9 +254,7 @@ class ClarificationWorkflowMixin:
                 # The extractor may still ask another reasonable question,
                 # but the conversation-level cap wins over per-turn output.
                 issues = [
-                    issue.model_copy(
-                        update={"readiness": "READY", "missingInfo": []}
-                    )
+                    issue.model_copy(update={"readiness": "READY", "missingInfo": []})
                     if issue.readiness == "NEED_MORE_INFO"
                     else issue
                     for issue in issues
@@ -278,15 +265,10 @@ class ClarificationWorkflowMixin:
             and any(issue.isIT for issue in issues)
         ):
             issues = [
-                issue.model_copy(update={"route": "TICKET"})
-                if issue.isIT
-                else issue
+                issue.model_copy(update={"route": "TICKET"}) if issue.isIT else issue
                 for issue in issues
             ]
-            if all(
-                not issue.isIT or issue.readiness == "READY"
-                for issue in issues
-            ):
+            if all(not issue.isIT or issue.readiness == "READY" for issue in issues):
                 ticket_intent = TicketIntent.CREATE
         if (
             ticket_intent == TicketIntent.CREATE

@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
 | G Independent frontend + legacy removal | Bundle sync + legacy-shell quarantine CI; full `legacy-js` tree delete pending unused release cycle |
-| H Oversized domain convergence | Ongoing — ~13 oversized files remain (was ~36); continue workflow/query/eval residuals |
+| H Oversized domain convergence | Ongoing — ~9 oversized files remain (was ~36); continue workflow/query/eval residuals |
 
 ## Recent Phase H wins
 - `faq_domain/service.py` 865→436 (`transitions`, `lifecycle_ops`)
@@ -47,3 +47,11 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `export_job_store.py` 584→76 (`export_job_lease`, file/firestore adapters)
 - `eval_flow.py` 578→140 (`eval_flow_scripted/agent/unavailable`)
 - `workflow_issue_processing.py` 579→254 (`knowledge/ticket/retrieval_probe` ops)
+- `ChunkInspectorModal.tsx` 580→295 (`ChunkInspectorToolbar/ChunkCard`, utils)
+- `ticket.py` 576→187 (`ticket_errors/catalog/http`)
+- `query_issues.py` 557→255 (`query_issues_summary_ops/route_ops`)
+- `workflow_helpers.py` 567→187 (`workflow_pending/clarification_helpers`)
+- `ChunkInspectorModal.tsx` 580→295 (`ChunkInspectorToolbar/ChunkCard`, utils)
+- `ticket.py` 576→187 (`ticket_errors/catalog/http`)
+- `query_issues.py` 557→255 (`query_issues_summary_ops/route_ops`)
+- `workflow_helpers.py` 567→187 (`workflow_pending/clarification_helpers`)

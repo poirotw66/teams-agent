@@ -3,7 +3,6 @@
     "agent_service/src/agent_service/gemini_file_search.py": 555,
     "agent_service/src/agent_service/handoff_flow.py": 516,
     "agent_service/src/agent_service/usage_events.py": 521,
-    "agent_service/src/agent_service/workflow_helpers.py": 567,
     "agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py": 526,
     "agent_service/src/ai_ops_backoffice/services/query_conversations.py": 534,
     "agent_service/src/ai_ops_backoffice/services/query_knowledge.py": 542,
