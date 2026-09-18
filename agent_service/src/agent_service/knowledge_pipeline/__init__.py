@@ -18,6 +18,11 @@ from .citation_assembly import (
     remap_answer_citation_markers,
     resolve_doc_key_for_marker,
 )
+from .document_selection import (
+    canonical_version_results,
+    inject_enterprise_app_evidence,
+    select_document_chunks,
+)
 from .generator import (
     is_unsupported_miss_answer,
     query_asks_for_error_branching,
@@ -27,6 +32,7 @@ from .generator import (
     should_retry_procedure_coverage,
     should_retry_visual_evidence,
 )
+from .prompts import ANSWER_PROMPT, CLAIM_REPAIR_PROMPT, REWRITE_PROMPT
 from .grounding import (
     answer_covers_error_branches,
     answer_covers_procedure_steps,
@@ -94,10 +100,13 @@ from .selector import (
 from .trace import attach_retrieval_trace, build_retrieval_attempt
 
 __all__ = [
+    "ANSWER_PROMPT",
+    "CLAIM_REPAIR_PROMPT",
     "GRADE_PROMPT",
     "HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE",
     "MAX_RETRIEVAL_CACHE_SIZE",
     "RETRIEVAL_CANDIDATE_MULTIPLIER",
+    "REWRITE_PROMPT",
     "GroundedClaimRepair",
     "RelevanceDecision",
     "RewrittenQuery",
@@ -115,6 +124,7 @@ __all__ = [
     "build_chunk_document_maps",
     "build_relevance_grade_context",
     "build_retrieval_attempt",
+    "canonical_version_results",
     "claimed_document_keys",
     "conflicting_top_candidates",
     "deterministic_relevance_without_model",
@@ -127,6 +137,7 @@ __all__ = [
     "format_grade_prompt",
     "high_confidence_retrieval_hit",
     "infer_markers_from_claims",
+    "inject_enterprise_app_evidence",
     "is_non_production_knowledge_chunk",
     "is_numbered_section",
     "is_unsupported_miss_answer",
@@ -158,6 +169,7 @@ __all__ = [
     "resolve_retrieval_queries",
     "sanitize_answer_security",
     "section_sort_key",
+    "select_document_chunks",
     "should_keep_prior_after_visual_retry",
     "should_retry_error_coverage",
     "should_retry_false_none",

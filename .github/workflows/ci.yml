@@ -45,6 +45,10 @@ jobs:
         run: PYTHONPATH=src uv run python ../scripts/snapshot_openapi.py --check
       - name: Wire-contract compatibility
         run: PYTHONPATH=../src:src uv run python ../scripts/check_wire_contracts.py
+      - name: Golden evaluation tests
+        run: uv run pytest -q tests/test_golden_baseline.py tests/test_golden_baseline_pipeline.py
+      - name: Release failure matrix
+        run: uv run pytest -q tests/test_release_coordinator_matrix.py
       - name: Pytest
         run: uv run pytest -q
 

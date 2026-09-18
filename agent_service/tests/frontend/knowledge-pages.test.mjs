@@ -36,7 +36,7 @@ async function setup() {
     '../knowledge_portal_view.js': { renderNativeKnowledgePortal: async (_app, _caps, _nav, filters) => calls.push(filters) },
     '../app/lifecycle.js': { createPageController: x => x },
   };
-  const baseKnowledgeUrl = new URL('../../src/ai_ops_backoffice/static/js/views/knowledge.js', import.meta.url);
+  const baseKnowledgeUrl = new URL('../../src/ai_ops_backoffice/static/legacy-js/views/knowledge.js', import.meta.url);
   const cache = new Map();
 
   function getMock(cleanSpecifier) {

@@ -113,6 +113,7 @@ class BackofficeSettings:
     query_cache_ttl_seconds: int = 120
     freshness_firestore_collection: str = "freshness_state"
     console_v2_enabled: bool = True
+    legacy_shell_enabled: bool = False
 
     def validate_for_production(self, *, require_gcp_project: bool = False) -> list[str]:
         """Validate settings for production deployment to prevent ephemeral data loss."""
@@ -486,6 +487,10 @@ class BackofficeSettings:
                 or "freshness_state"
             ).strip(),
             console_v2_enabled=os.environ.get("BACKOFFICE_CONSOLE_V2_ENABLED", "true").lower()
+            in {"1", "true", "yes", "on"},
+            legacy_shell_enabled=os.environ.get(
+                "BACKOFFICE_LEGACY_SHELL_ENABLED", "false"
+            ).lower()
             in {"1", "true", "yes", "on"},
         )
 

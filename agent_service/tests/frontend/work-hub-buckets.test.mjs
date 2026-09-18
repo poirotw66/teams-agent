@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   assignWorkHubBuckets,
   partitionQualityCases,
-} from "../../src/ai_ops_backoffice/static/js/views/workHubBuckets.js";
+} from "../../src/ai_ops_backoffice/static/legacy-js/views/workHubBuckets.js";
 
 test("unassigned open cases stay out of mine and review", () => {
   const partitioned = partitionQualityCases(

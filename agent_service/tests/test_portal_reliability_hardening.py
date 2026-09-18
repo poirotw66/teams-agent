@@ -1292,7 +1292,7 @@ def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
     assert "logout" in content
 
     node_script = """
-    import { parseJwt, isTokenExpired, getTokenExpiryDetails, authHeaders, saveAuthHeaders } from './src/ai_ops_backoffice/static/js/api.js';
+    import { parseJwt, isTokenExpired, getTokenExpiryDetails, authHeaders, saveAuthHeaders } from './src/ai_ops_backoffice/static/legacy-js/api.js';
 
     const store = {};
     global.sessionStorage = {

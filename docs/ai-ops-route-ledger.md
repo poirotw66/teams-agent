@@ -1,5 +1,10 @@
 # AI Ops Workflow Console Route Ledger
 
+**Status (2026-09-18):** Migration complete for the product path. All 30 ledger-owned
+routes are owned by React `/console-v2`. Default `/` and `/legacy` redirect to
+`/console-v2/dashboard`; the legacy static family is emergency-only
+(`BACKOFFICE_LEGACY_SHELL_ENABLED=true`).
+
 ## 1. Overview and Migration Principles
 
 This Route Ledger tabulates all legacy navigation views, aliases, workspaces, and canonical `/console-v2/*` routes for the AI Ops Workflow Console.
@@ -60,13 +65,15 @@ Legacy hash URLs adhere to one of the following patterns:
 ### 3.2 Dual-Way Routing Matrix
 - When `console_v2_enabled` is active (default):
   - `GET /` redirects to `/console-v2/dashboard` (legacy shell is not the normal product path).
-  - Emergency legacy shell remains at `/legacy` only.
+  - `GET /legacy` also redirects to `/console-v2/dashboard` unless `BACKOFFICE_LEGACY_SHELL_ENABLED=true`.
+  - The classic SPA bundle lives under `/static/legacy-js/` (not `/static/js/`). Product path never loads that full bundle; `/static/js/main.js` is only a thin redirect stub to `/console-v2/dashboard`.
+  - When `BACKOFFICE_LEGACY_SHELL_ENABLED=true`, `/legacy` serves `index.html` with import map + entry from `/static/legacy-js/`.
   - Navigating to `/console-v2/*` loads the React Console for all ledger-owned routes (30/30 v2).
   - Navigating to legacy hash `/#knowledge_ops/workHub` or `/#work` triggers a browser client redirect to `/console-v2/work` preserving query params and filter state.
   - Navigating to legacy hash `/#knowledge_ops/quality?case_id=qc-1001` or `/#cases?id=qc-1001` redirects to `/console-v2/improvements/cases/qc-1001`.
 - When `console_v2_enabled` is disabled (kill switch):
   - Any access to `/console-v2/*` is redirected by FastAPI to the legacy shell root `/`.
-  - `GET /` serves the legacy application shell; all hash routes remain there.
+  - `GET /` serves the legacy application shell from `/static/legacy-js/`; all hash routes remain there.
 
 ---
 

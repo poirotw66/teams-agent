@@ -17,7 +17,8 @@ from starlette.responses import Response
 from ai_ops_backoffice.settings import BackofficeSettings
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
-UI_ASSET_VERSION = "ops-ui-20260916b"
+UI_ASSET_VERSION = "ops-ui-20260918a"
+LEGACY_JS_MOUNT = "/static/legacy-js"
 
 _CONSOLE_V2_STATIC_EXTENSIONS = frozenset(
     {
@@ -40,11 +41,12 @@ _CONSOLE_V2_STATIC_EXTENSIONS = frozenset(
 
 
 def _js_import_map_script(version: str) -> str:
-    """Remap bare module URLs so nested ES imports share one cache-busted URL."""
-    js_root = STATIC_DIR / "js"
+    """Remap legacy-js module URLs so nested ES imports share one cache-busted URL."""
+    js_root = STATIC_DIR / "legacy-js"
+    mount = LEGACY_JS_MOUNT
     imports = {
-        f"/static/js/{path.relative_to(js_root).as_posix()}": (
-            f"/static/js/{path.relative_to(js_root).as_posix()}?v={version}"
+        f"{mount}/{path.relative_to(js_root).as_posix()}": (
+            f"{mount}/{path.relative_to(js_root).as_posix()}?v={version}"
         )
         for path in sorted(js_root.rglob("*.js"))
     }
@@ -133,8 +135,12 @@ def register_static_ui_routes(
 
     @app.get("/legacy")
     @app.get("/legacy/")
-    async def legacy_shell() -> HTMLResponse:
-        """Emergency legacy shell; normal product path uses `/console-v2`."""
+    async def legacy_shell() -> Response:
+        """Emergency legacy shell; disabled unless BACKOFFICE_LEGACY_SHELL_ENABLED."""
+        if settings.console_v2_enabled and not settings.legacy_shell_enabled:
+            from starlette.responses import RedirectResponse
+
+            return RedirectResponse(url="/console-v2/dashboard", status_code=307)
         return HTMLResponse(
             _render_index_html(),
             headers={"Cache-Control": "no-cache, must-revalidate"},

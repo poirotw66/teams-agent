@@ -66,6 +66,7 @@ def _test_settings(tmp_path: Path) -> BackofficeSettings:
         governance_store_path=tmp_path / "governance.json",
         eval_store_mode="MEMORY",
         eval_store_path=tmp_path / "golden_evals.json",
+        legacy_shell_enabled=True,
     )
 
 

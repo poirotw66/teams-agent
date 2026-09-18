@@ -9,7 +9,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
 
-const root = fileURLToPath(new URL('../../src/ai_ops_backoffice/static/js/', import.meta.url));
+const root = fileURLToPath(new URL('../../src/ai_ops_backoffice/static/legacy-js/', import.meta.url));
 
 const ROLE_FIXTURES = {
   ANALYST: {

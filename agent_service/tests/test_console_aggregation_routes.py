@@ -16,7 +16,12 @@ from ai_ops_backoffice.settings import BackofficeSettings
 REPO_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
-def _build_settings(tmp_path: Path, *, console_v2_enabled: bool = True) -> BackofficeSettings:
+def _build_settings(
+    tmp_path: Path,
+    *,
+    console_v2_enabled: bool = True,
+    legacy_shell_enabled: bool = False,
+) -> BackofficeSettings:
     return BackofficeSettings(
         host="127.0.0.1",
         port=8092,
@@ -39,6 +44,7 @@ def _build_settings(tmp_path: Path, *, console_v2_enabled: bool = True) -> Backo
         quality_store_mode="FILE",
         quality_store_path=tmp_path / "quality.json",
         console_v2_enabled=console_v2_enabled,
+        legacy_shell_enabled=legacy_shell_enabled,
     )
 
 
@@ -308,6 +314,28 @@ def test_console_v2_feature_flag_redirect(tmp_path: Path) -> None:
     assert root_res.status_code == 307
     assert root_res.headers["location"] == "/console-v2/dashboard"
 
-    legacy_res = client_enabled.get("/legacy")
+    legacy_disabled = client_enabled.get("/legacy", follow_redirects=False)
+    assert legacy_disabled.status_code == 307
+    assert legacy_disabled.headers["location"] == "/console-v2/dashboard"
+
+    settings_legacy = _build_settings(
+        tmp_path, console_v2_enabled=True, legacy_shell_enabled=True
+    )
+    app_legacy = create_app(settings_legacy)
+    client_legacy = TestClient(app_legacy)
+    legacy_res = client_legacy.get("/legacy")
     assert legacy_res.status_code == 200
     assert "text/html" in legacy_res.headers.get("content-type", "")
+    assert "/static/legacy-js/main.js" in legacy_res.text
+    assert "/static/js/main.js" not in legacy_res.text
+    assert '"/static/legacy-js/' in legacy_res.text
+
+    stub_res = client_enabled.get("/static/js/main.js")
+    assert stub_res.status_code == 200
+    stub_body = stub_res.text
+    assert "/console-v2/dashboard" in stub_body
+    assert "from \"./api.js\"" not in stub_body
+
+    legacy_bundle = client_legacy.get("/static/legacy-js/main.js")
+    assert legacy_bundle.status_code == 200
+    assert "from \"./api.js\"" in legacy_bundle.text or 'from "./api.js"' in legacy_bundle.text
