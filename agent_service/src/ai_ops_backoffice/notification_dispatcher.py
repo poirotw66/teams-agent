@@ -8,8 +8,8 @@ from typing import Any
 
 import httpx
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import utc_now
+from operations_core.access import ActorContext
+from operations_core.contracts import utc_now
 
 from .budget_domain import BudgetService, NotificationDelivery
 from .settings import BackofficeSettings

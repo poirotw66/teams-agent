@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from agent_service.operations.masking import MASKING_POLICY_VERSION, mask_text, redact_secrets
+from operations_core.masking import MASKING_POLICY_VERSION, mask_text, redact_secrets
 
 FaqLifecycleStatus = Literal[
     "DRAFT",

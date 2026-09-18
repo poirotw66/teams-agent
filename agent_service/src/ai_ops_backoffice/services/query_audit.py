@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
 from agent_service.operations.audit_errors import AuditWriteError
+from operations_core.access import ActorContext
 
 
 async def record_query_audit(

@@ -7,7 +7,6 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from operations_core.access import ActorContext
 from ai_ops_backoffice.application.workbench.documents import (
     DocumentOperationError,
 )
@@ -21,6 +20,7 @@ from ai_ops_backoffice.application.workbench.documents import (
     upload_workbench_document as upload_document,
 )
 from ai_ops_backoffice.knowledge_bridge.capabilities import has_knowledge_capability
+from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 

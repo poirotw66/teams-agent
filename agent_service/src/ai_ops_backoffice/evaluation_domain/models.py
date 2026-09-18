@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_service.operations.masking import MASKING_POLICY_VERSION
+from operations_core.masking import MASKING_POLICY_VERSION
 
 from .runner_models import CaseExecution, EvaluationRun, ReviewDecision
 

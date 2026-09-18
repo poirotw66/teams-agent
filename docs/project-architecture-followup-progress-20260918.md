@@ -58,29 +58,26 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Still open: independent frontend image/artifact/deploy/rollback, store/API domain split,
   behavioral component tests, route code splitting / bundle budget, delete `static/legacy-js`
 
-### Phase H — Residual oversized domain convergence (first slice)
+### Phase H — Residual oversized domain convergence
 - `draft_assets.py` 544 → 428: pure markdown/filename helpers → `draft_markdown.py`
-  (dropped from oversized-files baseline; facade re-exports preserved)
 - `export_service.py` 739 → 659: job model + ser/deser → `export_models.py`
-  (public API still via `export_service` re-exports)
-- Architecture baselines auto-tightened; focused draft/export pytest green
+- `eval_runtime.py` 1018 → 562: runtime class → `eval_agent_runtime.py`,
+  injection scoring → `eval_injection.py` (facade re-exports preserved)
+- Architecture baselines auto-tightened; focused draft/export/eval pytest green
 
 ## Still open (goal continues)
 
 | Phase | Status |
 |---|---|
-| D remaining Portal→Agent implementation imports (5 files) | In progress |
+| D Backoffice→Agent implementation imports (52 files) | In progress |
+| D Portal→Agent | **Done (0)** |
 | E broader private-access / source query service polish | Mostly done for hotspot paths |
 | F canonical OpenAPI + generated TS client | First slice started: canonical Backoffice OpenAPI + TS schemas + CI freshness |
 | G independent frontend deliver + legacy removal | First slice started: bundle sync script + CI hash freshness gate |
-| H residual oversized domains | First slice started |
+| H residual oversized domains | Continues (eval_runtime shrunk; more offenders remain) |
 
 Repository strategy unchanged: modular monorepo; no physical repo split yet.
 
 Current ownership importer caps:
 - `ai_ops_backoffice→agent_service`: **52**
-- `knowledge_portal→agent_service`: **5**
-
-Remaining Portal→Agent importers:
-`draft_retrieval.py`, `pdf_convert_jobs.py`, `persistent_pdf_jobs.py`,
-`publisher.py`, `services/document_service.py`.
+- `knowledge_portal→agent_service`: **0**

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from agent_service.operations.contracts import OperationalEvent
 from agent_service.operations.taxonomy import TaxonomyRepository
+from operations_core.contracts import OperationalEvent
 
 
 def _is_published_knowledge_hit(event: OperationalEvent) -> bool:

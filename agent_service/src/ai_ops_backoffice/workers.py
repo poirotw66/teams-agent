@@ -13,8 +13,8 @@ from zoneinfo import ZoneInfo
 import httpx
 from fastapi import FastAPI
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import DEFAULT_TIMEZONE
+from operations_core.access import ActorContext
+from operations_core.contracts import DEFAULT_TIMEZONE
 
 from .faq_domain import FaqDomainError
 

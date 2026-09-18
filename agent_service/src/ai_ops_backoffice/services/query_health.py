@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from agent_service.operations.contracts import DEFAULT_TIMEZONE, utc_now
+from operations_core.contracts import DEFAULT_TIMEZONE, utc_now
 
 from .query_math import percentile as _percentile
 from .usage_projection import project_usage

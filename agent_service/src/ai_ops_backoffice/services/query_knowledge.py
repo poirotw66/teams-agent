@@ -9,8 +9,8 @@ from typing import Any
 
 import httpx
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import OperationalEvent
+from operations_core.access import ActorContext
+from operations_core.contracts import OperationalEvent
 
 from ..knowledge_bridge.delegation import DELEGATION_HEADER, issue_delegation_envelope
 from .query_helpers import _is_published_knowledge_hit

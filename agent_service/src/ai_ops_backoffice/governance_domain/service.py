@@ -5,9 +5,9 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.masking import MASKING_POLICY_VERSION, redact_secrets
-from agent_service.operations.masking_rules import resolve_masking_pack
+from operations_core.access import ActorContext
+from operations_core.masking import MASKING_POLICY_VERSION, redact_secrets
+from operations_core.masking_rules import resolve_masking_pack
 
 from .errors import (
     GovernanceAuthorizationError,

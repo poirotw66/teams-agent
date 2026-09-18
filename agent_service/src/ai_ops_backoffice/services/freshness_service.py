@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from agent_service.operations.contracts import FreshnessMetadata
 from agent_service.operations.freshness_store import FreshnessStore
+from operations_core.contracts import FreshnessMetadata
 
 logger = logging.getLogger(__name__)
 

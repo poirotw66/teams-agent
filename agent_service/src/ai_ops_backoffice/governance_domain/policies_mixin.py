@@ -5,8 +5,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.masking_rules import resolve_masking_pack
+from operations_core.access import ActorContext
+from operations_core.masking_rules import resolve_masking_pack
 
 from .constants import (
     READ,

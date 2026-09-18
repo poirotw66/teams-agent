@@ -10,7 +10,7 @@ from typing import Any
 
 from agent_service import extractor
 from agent_service.extractor import SYSTEM_PROMPT
-from agent_service.operations.access import ActorContext
+from operations_core.access import ActorContext
 
 from ..faq_domain.errors import FaqAuthorizationError, FaqNotFoundError, FaqValidationError
 from .models import *  # noqa: F403

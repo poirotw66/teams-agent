@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
-from agent_service.operations.contracts import OperationalEvent, utc_now
+from operations_core.contracts import OperationalEvent, utc_now
 
 
 @dataclass(frozen=True)

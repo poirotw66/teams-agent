@@ -4,8 +4,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.masking import mask_text
+from operations_core.access import ActorContext
+from operations_core.masking import mask_text
 
 from ..faq_domain.errors import (
     FaqAuthorizationError,

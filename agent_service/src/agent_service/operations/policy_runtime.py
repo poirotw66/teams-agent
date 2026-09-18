@@ -9,9 +9,10 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Protocol
 
-from agent_service.operations.contracts import MASKING_POLICY_VERSION
-from agent_service.operations.masking_rules import MaskingRulePack, resolve_masking_pack
 from agent_service.operations.settings import OpsSettings
+from operations_core.contracts import MASKING_POLICY_VERSION
+from operations_core.masking import register_active_masking_policy_provider
+from operations_core.masking_rules import MaskingRulePack, resolve_masking_pack
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +271,9 @@ def active_masking_policy() -> EffectiveMaskingPolicy:
 
 def active_masking_policy_version() -> str:
     return active_masking_policy().policy_version
+
+
+register_active_masking_policy_provider(lambda: active_masking_policy())
 
 
 def _try_build_governance(settings: OpsSettings) -> GovernancePolicySource | None:

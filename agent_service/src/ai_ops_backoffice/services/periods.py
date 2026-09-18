@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from agent_service.operations.contracts import DEFAULT_TIMEZONE, utc_now
+from operations_core.contracts import DEFAULT_TIMEZONE, utc_now
 
 
 @dataclass(frozen=True)

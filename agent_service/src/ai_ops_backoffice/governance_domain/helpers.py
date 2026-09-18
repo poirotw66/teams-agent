@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agent_service.operations.masking import mask_text
+from operations_core.masking import mask_text
 from platform_kernel.hashing import content_hash, fingerprint, short_version, sticky_bucket
 
 from .constants import INJECTION_SIGNATURES, SECRET_REF_PREFIX

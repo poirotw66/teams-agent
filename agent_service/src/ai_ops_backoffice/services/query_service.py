@@ -10,14 +10,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore
-from agent_service.operations.contracts import (
-    DEFAULT_TIMEZONE,
-    METRICS_DEFINITION_VERSION,
-    OperationalEvent,
-    utc_now,
-)
 from agent_service.operations.runtime import build_ops_runtime
 from agent_service.operations.scope import (
     filter_events_by_scope,
@@ -26,6 +19,13 @@ from agent_service.operations.settings import OpsSettings
 from agent_service.operations.taxonomy import TaxonomyRepository
 from agent_service.usage import (
     configure_pricing_provider,
+)
+from operations_core.access import ActorContext
+from operations_core.contracts import (
+    DEFAULT_TIMEZONE,
+    METRICS_DEFINITION_VERSION,
+    OperationalEvent,
+    utc_now,
 )
 
 from ..pricing_domain import (

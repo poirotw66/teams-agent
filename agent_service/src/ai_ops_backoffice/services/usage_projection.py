@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_service.operations.contracts import OperationalEvent
+from operations_core.contracts import OperationalEvent
 
 
 def usage_scope(event: OperationalEvent) -> str:

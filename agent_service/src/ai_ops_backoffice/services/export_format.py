@@ -8,7 +8,7 @@ from io import BytesIO
 from typing import Any
 from xml.sax.saxutils import escape
 
-from agent_service.operations.contracts import DEFAULT_TIMEZONE, utc_now
+from operations_core.contracts import DEFAULT_TIMEZONE, utc_now
 
 from .periods import ResolvedPeriod
 

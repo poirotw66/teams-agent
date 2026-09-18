@@ -8,8 +8,8 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.masking import mask_text, redact_secrets
+from operations_core.access import ActorContext
+from operations_core.masking import mask_text, redact_secrets
 
 from ..faq_domain.errors import (
     FaqAuthorizationError,

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from agent_service.operations.masking import mask_text, redact_secrets
+from operations_core.masking import mask_text, redact_secrets
 
 LifecycleStatus = Literal[
     "DRAFT",

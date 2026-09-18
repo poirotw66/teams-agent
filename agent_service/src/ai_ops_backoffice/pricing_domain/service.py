@@ -4,9 +4,9 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agent_service.operations.access import ActorContext
 from agent_service.operations.audit import AuditStore, build_audit_event
 from agent_service.usage import normalize_model_name
+from operations_core.access import ActorContext
 
 from ..faq_domain.errors import FaqAuthorizationError, FaqValidationError
 from .models import HistoricalPricingRule, PricingState, RateChangeAudit

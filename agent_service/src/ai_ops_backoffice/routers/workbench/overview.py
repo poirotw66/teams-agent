@@ -6,8 +6,8 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
-from operations_core.access import ActorContext
 from ai_ops_backoffice.application.workbench.overview import build_workbench_overview
+from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 

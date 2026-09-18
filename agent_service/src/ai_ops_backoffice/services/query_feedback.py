@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from agent_service.operations.access import ActorContext
-from agent_service.operations.contracts import (
+from agent_service.operations.scope import filter_events_by_scope
+from operations_core.access import ActorContext
+from operations_core.contracts import (
     DEFAULT_TIMEZONE,
     OperationalEvent,
     utc_now,
 )
-from agent_service.operations.scope import filter_events_by_scope
 
 from .periods import event_in_period
 
