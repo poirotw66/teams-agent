@@ -6,8 +6,9 @@ import html
 import re
 from difflib import SequenceMatcher
 
-from .media import build_asset_url
 from teams_agent.settings import AgentSettings
+
+from .media import build_asset_url
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")

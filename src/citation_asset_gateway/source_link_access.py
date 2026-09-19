@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from teams_agent.settings import AgentSettings
+
 from .source_link_signing import (
     ALLOWED_SUFFIXES,
     SAFE_RELEASE_ID,

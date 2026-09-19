@@ -15,6 +15,7 @@ from fastapi import HTTPException, Request
 
 from teams_agent.oidc import verify_entra_id_token
 from teams_agent.settings import AgentSettings
+
 from .source_links import verify_viewer_token
 from .viewer_sessions import get_viewer_membership_store
 

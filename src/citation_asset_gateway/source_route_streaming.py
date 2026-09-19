@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from teams_agent.settings import AgentSettings
+
 from .source_api import (
     SourceApiError,
     fetch_original_source_file,

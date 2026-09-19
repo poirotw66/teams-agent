@@ -18,6 +18,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from teams_agent.settings import AgentSettings
+
 from .source_api import (
     fetch_original_source_file,
     fetch_source_preview,

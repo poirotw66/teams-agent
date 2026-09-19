@@ -8,6 +8,7 @@ from pathlib import Path
 import markdown as markdown_lib
 
 from teams_agent.settings import AgentSettings
+
 from .source_viewer_markdown import (
     first_heading,
     mark_evidence_block,

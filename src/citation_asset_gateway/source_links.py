@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 from teams_agent.contracts import AgentResponse, Citation
 from teams_agent.settings import AgentSettings
+
 from .source_link_access import (
     authorize_original_open,
     authorize_source_open,

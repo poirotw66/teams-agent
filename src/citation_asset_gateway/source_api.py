@@ -11,6 +11,7 @@ from typing import Any
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
 from teams_agent.settings import AgentSettings
+
 from .source_delegation import DELEGATION_HEADER, SourceDelegationError, issue_source_delegation
 
 logger = logging.getLogger(__name__)
