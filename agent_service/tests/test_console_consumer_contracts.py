@@ -93,6 +93,29 @@ def test_work_hub_contracts_match_console_work_page(tmp_path: Path) -> None:
         assert "route" in sample["next_action"]
 
 
+def test_work_items_reject_invalid_bucket_with_client_error(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    response = client.get(
+        "/api/console/work-items",
+        headers=_auth(),
+        params={"bucket": "not_a_real_bucket", "limit": 5},
+    )
+    assert response.status_code in {400, 422}
+    body = response.json()
+    assert "detail" in body or "error" in body
+
+
+def test_work_summary_stable_under_header_auth_defaults(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    response = client.get("/api/console/work-summary")
+    # HEADER mode may synthesize a default actor; either challenge or stable summary.
+    assert response.status_code in {200, 401, 403}
+    if response.status_code == 200:
+        body = response.json()
+        assert "total" in body
+        assert "by_bucket" in body
+
+
 def test_capabilities_contract_for_knowledge_ui_bootstrap(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     response = client.get("/api/capabilities", headers=_auth())
@@ -100,12 +123,17 @@ def test_capabilities_contract_for_knowledge_ui_bootstrap(tmp_path: Path) -> Non
     body = response.json()
     assert "knowledgeBridgeEnabled" in body or "knowledge_bridge_enabled" in body
     assert "knowledgeCapabilities" in body or "knowledge_capabilities" in body
+
+
+def test_operations_health_contract_for_health_page(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     response = client.get("/api/health/summary", headers=_auth())
     assert response.status_code == 200
     body = response.json()
     assert "components" in body or "probes" in body
-    breakdown = body.get("components") if body.get("components") is not None else body.get("probes")
+    breakdown = (
+        body.get("components") if body.get("components") is not None else body.get("probes")
+    )
     assert isinstance(breakdown, (list, dict))
     if isinstance(breakdown, list):
         assert breakdown
