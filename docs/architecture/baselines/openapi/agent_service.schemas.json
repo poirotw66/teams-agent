@@ -89,6 +89,7 @@
         "evidence",
         "originalAssetAvailable",
         "originalAssetName",
+        "originalUrl",
         "page",
         "releaseId",
         "section",
