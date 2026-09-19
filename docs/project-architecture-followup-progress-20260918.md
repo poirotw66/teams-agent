@@ -15,7 +15,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
-| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness; **exact duplicate DTO names cleared (7 re-exports)**; 19 workbench-only handwritten DTOs remain until OpenAPI covers them |
+| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness + exact DTO re-exports; consumer-driven console contracts added; 19 workbench-only handwritten DTOs remain until OpenAPI covers them |
 | G Independent frontend + legacy removal | Partial — image/UI-only release/code-split/Vitest/store lazy-load done; **legacy-js delete still waits unused release cycle** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
@@ -28,6 +28,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Bundle budget gate enforces entry/feature/vendor gzip ceilings
 - Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests
 - Backoffice domain `import *` wildcards cleared (explicit imports)
+- Product HTML no longer imports `/static/legacy-js/` (`knowledge-ui` uses `/static/js/session_auth.js`; CI enforces)
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.

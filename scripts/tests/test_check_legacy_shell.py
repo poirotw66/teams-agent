@@ -124,6 +124,24 @@ class LegacyShellCheckTest(unittest.TestCase):
                 any("must not enable legacy shell" in f.message for f in findings)
             )
 
+    def test_product_html_must_not_import_legacy_js(self) -> None:
+        check = _load_check_legacy_shell()
+        with tempfile.TemporaryDirectory() as tmp:
+            static = Path(tmp) / "static"
+            static.mkdir()
+            (static / "knowledge-ui.html").write_text(
+                '<script type="module" src="/static/legacy-js/api.js"></script>\n',
+                encoding="utf-8",
+            )
+            (static / "index.html").write_text(
+                '<script type="module" src="/static/legacy-js/main.js"></script>\n',
+                encoding="utf-8",
+            )
+            findings = check.check_product_html_avoids_legacy_js(static)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("knowledge-ui.html", findings[0].format())
+            self.assertIn("must not import /static/legacy-js/", findings[0].message)
+
 
 if __name__ == "__main__":
     unittest.main()

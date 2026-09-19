@@ -47,8 +47,12 @@ LEGACY_JS_DIR = (
     / "static"
     / "legacy-js"
 )
+STATIC_DIR = LEGACY_JS_DIR.parent
 ENV_VAR_NAME = "BACKOFFICE_LEGACY_SHELL_ENABLED"
 TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
+# Product HTML may not import the quarantine tree (kill-switch shell only).
+PRODUCT_HTML_ALLOWLIST_LEGACY_REFS = frozenset({"index.html"})
+_LEGACY_JS_REF_RE = re.compile(r"/static/legacy-js/")
 
 # Deploy / infra / env samples that must not enable the kill-switch.
 SAMPLE_GLOBS = (
@@ -242,6 +246,37 @@ def check_deploy_samples(repo_root: Path = REPO_ROOT) -> list[Finding]:
     return findings
 
 
+def check_product_html_avoids_legacy_js(
+    static_dir: Path = STATIC_DIR,
+) -> list[Finding]:
+    """Product HTML outside the kill-switch shell must not load legacy-js."""
+    findings: list[Finding] = []
+    if not static_dir.is_dir():
+        return findings
+    for path in sorted(static_dir.rglob("*.html")):
+        try:
+            relative = path.relative_to(static_dir).as_posix()
+        except ValueError:
+            continue
+        if relative.startswith("legacy-js/"):
+            continue
+        if path.name in PRODUCT_HTML_ALLOWLIST_LEGACY_REFS:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if _LEGACY_JS_REF_RE.search(text):
+            findings.append(
+                Finding(
+                    path,
+                    "product HTML must not import /static/legacy-js/ "
+                    "(use /static/js/session_auth.js or console-v2 instead)",
+                )
+            )
+    return findings
+
+
 def run_checks(*, repo_root: Path = REPO_ROOT) -> list[Finding]:
     settings_path = (
         repo_root
@@ -258,10 +293,12 @@ def run_checks(*, repo_root: Path = REPO_ROOT) -> list[Finding]:
         / "static"
         / "legacy-js"
     )
+    static_dir = legacy_js_dir.parent
     findings: list[Finding] = []
     findings.extend(check_settings_defaults(settings_path))
     findings.extend(check_quarantine_present(legacy_js_dir))
     findings.extend(check_deploy_samples(repo_root))
+    findings.extend(check_product_html_avoids_legacy_js(static_dir))
     return findings
 
 
@@ -277,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         "legacy shell quarantine check OK: "
         f"defaults keep {ENV_VAR_NAME} disabled; "
         "deploy/env samples do not enable it; "
+        "product HTML avoids /static/legacy-js/; "
         f"{LEGACY_JS_DIR.relative_to(REPO_ROOT)} remains quarantine."
     )
     return 0

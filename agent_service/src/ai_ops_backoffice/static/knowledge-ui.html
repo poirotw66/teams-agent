@@ -200,7 +200,7 @@
     </fluent-design-system-provider>
 
     <script type="module">
-      import { authHeaders } from "/static/legacy-js/api.js";
+      import { authHeaders, ensureAuth, loadAuthHeaders } from "/static/js/session_auth.js";
 
       function portalCapabilities(knowledgeCaps) {
         const set = new Set(knowledgeCaps || []);
@@ -235,8 +235,8 @@
 
       async function boot() {
         const authConfig = await fetch("/api/auth/config").then((r) => r.json()).catch(() => ({}));
-        const { ensureAuth } = await import("/static/legacy-js/api.js");
         await ensureAuth(authConfig);
+        const stored = loadAuthHeaders();
 
         const capsResponse = await fetch("/api/capabilities", { headers: authHeaders() });
         if (capsResponse.status === 401) {
