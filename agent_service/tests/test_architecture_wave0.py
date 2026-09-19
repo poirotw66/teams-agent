@@ -346,3 +346,17 @@ def test_router_filesystem_io_pattern_detects_path_open() -> None:
         Path("agent_service/src/ai_ops_backoffice/adapters/local_source_files.py")
     )
 
+
+def test_allowed_cross_domain_edge_matrix_rejects_unknown_edges() -> None:
+    checker = _load_script(
+        "check_architecture_allowed_edges",
+        SCRIPTS / "check_architecture.py",
+    )
+    findings = checker.check_allowed_cross_domain_edges(
+        {"teams_agent->agent_service": 1}
+    )
+    assert any(item.code == "EDGE_NOT_ALLOWED" for item in findings)
+    assert checker.check_allowed_cross_domain_edges(
+        {"composition->agent_service": 3}
+    ) == []
+

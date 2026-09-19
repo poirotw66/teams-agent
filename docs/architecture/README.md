@@ -23,10 +23,11 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
 ## Rules
 
 1. Domain packages must not add new reverse imports beyond `baselines/reverse_imports.json` (currently empty).
-2. New production source files must stay at or below 500 lines.
-3. Existing oversized files and functions may shrink, but must not grow past their baseline. Shrinks auto-tighten the baseline JSON on check (`BASELINE_TIGHTENED`); commit the rewrite.
-4. Ownership edges `ai_ops_backoffice->agent_service` and `knowledge_portal->agent_service` are capped by `baselines/importer_counts.json` (must not grow).
-5. Public FastAPI routes/status codes/schema names are pinned under `baselines/openapi/`.
+2. Cross-domain imports must appear on `ALLOWED_CROSS_DOMAIN_EDGES` in `scripts/check_architecture.py` (unknown edges fail with `EDGE_NOT_ALLOWED`).
+3. New production source files must stay at or below 500 lines.
+4. Existing oversized files and functions may shrink, but must not grow past their baseline. Shrinks auto-tighten the baseline JSON on check (`BASELINE_TIGHTENED`); commit the rewrite.
+5. Ownership edges `ai_ops_backoffice->agent_service` and `knowledge_portal->agent_service` are capped by `baselines/importer_counts.json` (must not grow).
+6. Public FastAPI routes/status codes/schema names are pinned under `baselines/openapi/`.
    Canonical full OpenAPI for the Console seam is
    `baselines/openapi/ai_ops_backoffice.openapi.json` (real `operationId`s + schemas).
    Generated TypeScript lives at
@@ -34,14 +35,14 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    and `backoffice-client.ts` (typed `backofficeClient` operation wrappers).
    After intentional API changes:
    `snapshot_openapi.py --write` then `generate_openapi_ts.py --write`.
-6. Production React console assets live at
+7. Production React console assets live at
    `agent_service/src/ai_ops_backoffice/static/console-v2/` and must match
    `console_frontend` via `python3 scripts/sync_console_v2.py --check`.
    After intentional UI changes: `python3 scripts/sync_console_v2.py --write`
    and commit the refreshed hashed assets.
-7. `platform_kernel` holds shared ports only and must not import domain packages.
-8. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
-9. Legacy UI quarantine: `static/legacy-js/` is kill-switch only
+8. `platform_kernel` holds shared ports only and must not import domain packages.
+9. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
+10. Legacy UI quarantine: `static/legacy-js/` is kill-switch only
    (`BACKOFFICE_LEGACY_SHELL_ENABLED`; default off). Product path is React
    `/console-v2`. **Deletion criteria:** after one full release cycle where
    production never enables the flag, delete the quarantine tree and `/legacy`

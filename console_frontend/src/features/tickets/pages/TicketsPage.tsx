@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons';
 import { ItTicketItem } from '../../../shared/api/types';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
 
 const { Title, Text } = Typography;
 
@@ -192,6 +193,7 @@ export const TicketsPage: React.FC = () => {
 
   return (
     <div>
+      <WorkbenchLoadErrorBanner />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           IT 實體工單追蹤中心

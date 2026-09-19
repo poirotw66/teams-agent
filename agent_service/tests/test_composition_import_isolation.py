@@ -121,6 +121,36 @@ def test_domain_api_modules_expose_factory_without_module_app() -> None:
     assert not hasattr(portal_api, "app")
 
 
+def test_importing_composition_factories_has_no_io_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Factory modules may load, but import must not touch disk/network."""
+    import socket
+
+    _purge_composition_modules()
+
+    io_calls: list[str] = []
+
+    def _record(name: str):
+        def _wrapped(*args, **kwargs):  # type: ignore[no-untyped-def]
+            io_calls.append(name)
+            raise AssertionError(f"unexpected I/O during import: {name}")
+
+        return _wrapped
+
+    monkeypatch.setattr("builtins.open", _record("open"))
+    monkeypatch.setattr("pathlib.Path.mkdir", _record("Path.mkdir"))
+    monkeypatch.setattr("pathlib.Path.write_text", _record("Path.write_text"))
+    monkeypatch.setattr("pathlib.Path.write_bytes", _record("Path.write_bytes"))
+    monkeypatch.setattr(socket, "socket", _record("socket.socket"))
+
+    import composition.agent_app  # noqa: F401
+    import composition.backoffice_app  # noqa: F401
+    import composition.portal_app  # noqa: F401
+
+    assert io_calls == []
+
+
 def test_service_mains_point_at_composition_asgi_modules() -> None:
     import ast
     from pathlib import Path

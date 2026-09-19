@@ -12,6 +12,7 @@ import { KnowledgeGapsManager } from '../components/KnowledgeGapsManager';
 import { PlaygroundSimulator } from '../components/PlaygroundSimulator';
 import { QuickFaqDrawer, QuickFaqInitialData } from '../../dashboard/components/QuickFaqDrawer';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
 import {
   ManualDocumentItem,
   FaqItem,
@@ -104,6 +105,7 @@ export const KnowledgePage: React.FC = () => {
 
   return (
     <div>
+      <WorkbenchLoadErrorBanner />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           知識庫與手冊中心

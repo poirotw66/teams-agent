@@ -7,6 +7,7 @@ import { TriageActionPanel } from '../components/TriageActionPanel';
 import { QuickFaqDrawer, QuickFaqInitialData } from '../../dashboard/components/QuickFaqDrawer';
 import { EscalateTicketModal, EscalateTicketInitialData } from '../../dashboard/components/EscalateTicketModal';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
 import { ConversationDetail } from '../../../shared/api/types';
 
 const { Title, Text } = Typography;
@@ -56,6 +57,7 @@ export const TriagePage: React.FC = () => {
 
   return (
     <div>
+      <WorkbenchLoadErrorBanner />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           對話重播與負評分診台

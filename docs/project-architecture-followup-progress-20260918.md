@@ -12,11 +12,11 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 |---|---|
 | A Required CI green | Done — OpenAPI snapshot builds via composition factories (adapters configured) |
 | B Composition import isolation | Done |
-| C Monotonic architecture ratchet | Done |
+| C Monotonic architecture ratchet | Done — size shrink + **explicit ALLOWED_CROSS_DOMAIN_EDGES** matrix + importer caps |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done — private-access empty; router FS gate; **workbench Path/JSON behind WorkbenchRepository** |
 | F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + call-site matrix; **handwritten_only=0** (incl. portal workbench DTOs) |
-| G Independent frontend + legacy removal | Partial — soft deliverables + fail-closed `delete_legacy_js.py`; **tree delete still waits unused release** |
+| G Independent frontend + legacy removal | Partial — soft deliverables + fail-closed `delete_legacy_js.py` + empty store/`getLoadError` UI; **tree delete still waits unused release** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files/functions; characterization registry covers extractor/evaluation/source/documents/composition/contracts/**quality/FAQ/settings**/release matrix |
 
 ## Phase G soft deliverables (landed)

@@ -10,6 +10,7 @@ import { QuickFaqDrawer, QuickFaqInitialData } from '../components/QuickFaqDrawe
 import { BroadcastModal } from '../components/BroadcastModal';
 import { EscalateTicketModal, EscalateTicketInitialData } from '../components/EscalateTicketModal';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
 import {
   DashboardKpiMetrics,
   SpikeAlertItem,
@@ -93,6 +94,7 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div>
+      <WorkbenchLoadErrorBanner />
       {/* Top Welcome & Quick Actions */}
       <div
         style={{

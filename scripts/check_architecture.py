@@ -113,6 +113,31 @@ OWNERSHIP_IMPORT_EDGES = frozenset(
     }
 )
 
+# Explicit allowlist for any cross-domain edge. New domain→domain imports must
+# be added here (or they fail CI). Forbidden edges are still tracked separately
+# via the reverse-import ratchet when residual allowlisted importers exist.
+ALLOWED_CROSS_DOMAIN_EDGES = frozenset(
+    {
+        ("agent_service", "knowledge_core"),
+        ("agent_service", "operations_core"),
+        ("agent_service", "platform_kernel"),
+        ("ai_ops_backoffice", "agent_service"),
+        ("ai_ops_backoffice", "knowledge_core"),
+        ("ai_ops_backoffice", "knowledge_portal"),
+        ("ai_ops_backoffice", "operations_core"),
+        ("ai_ops_backoffice", "platform_kernel"),
+        ("composition", "agent_service"),
+        ("composition", "ai_ops_backoffice"),
+        ("composition", "knowledge_core"),
+        ("composition", "knowledge_portal"),
+        ("composition", "operations_core"),
+        ("knowledge_core", "platform_kernel"),
+        ("knowledge_portal", "agent_service"),
+        ("knowledge_portal", "knowledge_core"),
+        ("knowledge_portal", "platform_kernel"),
+    }
+)
+
 MAX_NEW_FILE_LINES = 500
 MAX_NEW_FUNCTION_LINES = 80
 SOURCE_SUFFIXES = frozenset({".py", ".ts", ".tsx"})
@@ -367,6 +392,49 @@ def check_reverse_imports(
                     f"new forbidden reverse import {edge} in {path}",
                 )
             )
+    return findings
+
+
+def collect_cross_domain_edges() -> dict[str, int]:
+    """Count importer files per observed domain→domain edge."""
+    grouped: dict[str, set[str]] = {}
+    for path in iter_source_files():
+        if path.suffix != ".py":
+            continue
+        src_pkg = package_of(path)
+        if src_pkg is None or src_pkg not in DOMAIN_PACKAGES:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError:
+            continue
+        for dst_pkg in imported_domain_packages(tree):
+            if src_pkg == dst_pkg:
+                continue
+            key = f"{src_pkg}->{dst_pkg}"
+            grouped.setdefault(key, set()).add(rel_path(path))
+    return {key: len(paths) for key, paths in sorted(grouped.items())}
+
+
+def check_allowed_cross_domain_edges(
+    current: dict[str, int] | None = None,
+) -> list[Finding]:
+    """Fail when a domain→domain edge is not on the explicit allowlist."""
+    observed = current if current is not None else collect_cross_domain_edges()
+    findings: list[Finding] = []
+    for key, count in sorted(observed.items()):
+        src, dst = key.split("->", 1)
+        edge = (src, dst)
+        if edge in ALLOWED_CROSS_DOMAIN_EDGES:
+            continue
+        findings.append(
+            Finding(
+                "EDGE_NOT_ALLOWED",
+                f"cross-domain edge not on allowlist: {key} "
+                f"({count} importer file(s)); add to ALLOWED_CROSS_DOMAIN_EDGES "
+                "only with an explicit architecture decision",
+            )
+        )
     return findings
 
 
@@ -779,6 +847,7 @@ def run_checks() -> list[Finding]:
     findings.extend(check_package_cycles(collect_package_dependency_graph()))
     findings.extend(check_cross_module_private_access(private_access_baseline))
     findings.extend(check_router_filesystem_io())
+    findings.extend(check_allowed_cross_domain_edges())
 
     if IMPORTER_COUNTS_BASELINE.exists():
         importer_baseline = load_json(IMPORTER_COUNTS_BASELINE).get("edges", {})
