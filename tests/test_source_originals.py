@@ -196,7 +196,7 @@ def test_rag_citation_route_renders_governed_preview(tmp_path: Path) -> None:
         }
     )
     with patch(
-        "teams_agent.source_route_streaming.fetch_source_preview",
+        "citation_asset_gateway.source_route_streaming.fetch_source_preview",
         new=preview_client,
     ):
         response = TestClient(app).get(
@@ -244,11 +244,11 @@ def test_rag_citation_route_renders_complete_release_document(
 
     with (
         patch(
-            "teams_agent.source_route_streaming.fetch_source_preview",
+            "citation_asset_gateway.source_route_streaming.fetch_source_preview",
             new=AsyncMock(return_value=payload),
         ),
         patch(
-            "teams_agent.source_route_streaming.fetch_release_source_document",
+            "citation_asset_gateway.source_route_streaming.fetch_release_source_document",
             return_value=(
                 "# Phone Guide\n\nIntroductory text.\n\n"
                 "## Transfer\n\nPress Transfer to continue.\n\n"
@@ -300,7 +300,7 @@ def test_rag_citation_route_keeps_excerpt_explicitly_degraded(
     app.include_router(create_source_router(settings))
 
     with patch(
-        "teams_agent.source_route_streaming.fetch_source_preview",
+        "citation_asset_gateway.source_route_streaming.fetch_source_preview",
         new=AsyncMock(return_value=payload),
     ):
         parsed = urlparse(url)
@@ -338,13 +338,13 @@ def test_rag_citation_route_does_not_read_release_after_acl_denial(
 
     with (
         patch(
-            "teams_agent.source_route_streaming.fetch_source_preview",
+            "citation_asset_gateway.source_route_streaming.fetch_source_preview",
             new=AsyncMock(
                 side_effect=SourceApiError("Access denied", status=403),
             ),
         ),
         patch(
-            "teams_agent.source_route_streaming.fetch_release_source_document",
+            "citation_asset_gateway.source_route_streaming.fetch_release_source_document",
         ) as source_reader,
     ):
         parsed = urlparse(url)
@@ -458,7 +458,7 @@ def test_rag_originals_route_proxies_backoffice_bytes(tmp_path: Path) -> None:
         yield b"%PDF-1.4 mock"
 
     with patch(
-        "teams_agent.source_route_streaming.stream_original_source_file",
+        "citation_asset_gateway.source_route_streaming.stream_original_source_file",
         new=AsyncMock(
             return_value=(
                 200,
@@ -527,7 +527,7 @@ def test_rag_originals_route_handles_416_range_not_satisfiable(tmp_path: Path) -
     app.include_router(create_source_router(settings))
 
     with patch(
-        "teams_agent.source_route_streaming.stream_original_source_file",
+        "citation_asset_gateway.source_route_streaming.stream_original_source_file",
         new=AsyncMock(
             side_effect=SourceApiError(
                 "Source API returned HTTP 416: Range Not Satisfiable",
@@ -582,7 +582,7 @@ async def test_stream_original_source_file_chunks_content(tmp_path: Path) -> Non
     mock_session.request = AsyncMock(return_value=mock_resp)
     mock_session.close = AsyncMock()
 
-    with patch("teams_agent.source_api.ClientSession", return_value=mock_session):
+    with patch("citation_asset_gateway.source_api.ClientSession", return_value=mock_session):
         status, headers, stream = await stream_original_source_file(
             settings,
             source_ref_id="src-1",
