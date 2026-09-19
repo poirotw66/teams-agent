@@ -1576,7 +1576,7 @@ async def test_ops_runtime_freshness_wiring_and_live_ingestion(tmp_path: Path) -
 
 def test_backoffice_query_service_firestore_fail_fast(tmp_path: Path) -> None:
     """Verify that BackofficeQueryService fails fast with RuntimeError when Firestore initialization fails."""
-    from unittest.mock import patch
+    from unittest.mock import MagicMock, patch
 
     from ai_ops_backoffice.services.query_service import BackofficeQueryService
     from ai_ops_backoffice.settings import BackofficeSettings
@@ -1604,8 +1604,20 @@ def test_backoffice_query_service_firestore_fail_fast(tmp_path: Path) -> None:
         gcp_project_id="test-proj",
     )
 
-    # When Firestore client creation fails, it must NOT silently downgrade to local files
-    with patch("google.cloud.firestore.Client", side_effect=Exception("Connection refused")):
+    # Primary store uses AsyncClient; freshness uses sync Client. Stub the primary
+    # so fail-fast is exercised on freshness init, and force Client construction to fail
+    # without needing real Application Default Credentials.
+    with (
+        patch(
+            "agent_service.operations.runtime.build_firestore_client",
+            return_value=MagicMock(name="async-firestore"),
+        ),
+        patch(
+            "google.cloud.firestore.Client",
+            side_effect=Exception("Connection refused"),
+            create=True,
+        ),
+    ):
         with pytest.raises(RuntimeError) as exc_info:
             BackofficeQueryService(settings)
         assert "Failed to initialize Firestore client" in str(exc_info.value)

@@ -222,17 +222,27 @@ def test_governance_model_parameters_peek_and_runtime_resolution(tmp_path: Path)
 
 def test_build_chat_model_accepts_and_configures_parameters() -> None:
     """REQ-022: Verify build_chat_model accepts temperature, timeout, max_retries without error."""
+    from unittest.mock import MagicMock, patch
+
     # When model_name is None, it returns None
     assert build_chat_model(None) is None
 
-    # Test initialization with keyword arguments
-    model = build_chat_model(
+    # Avoid ChatGoogleGenerativeAI API-key validation in credential-less CI.
+    fake_model = MagicMock(name="chat-model")
+    with patch("agent_service.graph.init_chat_model", return_value=fake_model) as mock_init:
+        model = build_chat_model(
+            "google_genai:gemini-2.5-flash",
+            temperature=0.2,
+            timeout=30.0,
+            max_retries=2,
+        )
+    assert model is fake_model
+    mock_init.assert_called_once_with(
         "google_genai:gemini-2.5-flash",
         temperature=0.2,
         timeout=30.0,
         max_retries=2,
     )
-    assert model is not None
 
 
 class _MockStructuredHandle:
