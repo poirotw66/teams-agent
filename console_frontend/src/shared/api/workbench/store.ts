@@ -10,210 +10,130 @@ import {
   IngestionStage,
   KnowledgeGapItem,
 } from "../types";
+import { ConversationsSlice } from "./conversationsSlice";
+import { DocumentsSlice } from "./documentsSlice";
+import { FaqsSlice } from "./faqsSlice";
+import { OverviewSlice } from "./overviewSlice";
 import {
-  initialDashboardKpi,
-  initialSpikeAlert,
-  initialTopTopics,
-  initialBlindSpots,
-  initialConversations,
-  initialTickets,
-  initialFaqs,
-  initialDocuments,
-  initialKnowledgeGaps,
-} from "../mockData";
-import {
-  postConversationAction,
-  fetchConversations,
-} from "./conversationsApi";
-import {
-  deleteDocumentRequest,
-  decideDocumentReviewRequest,
-  fetchLegacyDocuments,
-  fetchPortalDocumentList,
-  mergeLegacyAndPortalDocuments,
-  postPublishDocument,
-  previewDocumentChunks,
-  resolvePublishVersionId,
-  submitDocumentReviewRequest,
-  uploadDocumentViaPortal,
-} from "./documentsApi";
-import { deleteFaqRequest, fetchFaqs, postFaq } from "./faqsApi";
-import { fetchOverview, postBroadcast } from "./overviewApi";
+  createReloadHooksPlaceholder,
+  StoreCore,
+  WorkbenchSliceContext,
+} from "./storeCore";
+import { TicketsSlice } from "./ticketsSlice";
 import { ChunkingProfile } from "./types";
-import { fetchTickets, postTicket } from "./ticketsApi";
 
+/**
+ * Thin facade that preserves the historical workbenchStore public API.
+ * Domain behavior lives in cohesive slices that share mutable state + notify.
+ */
 class WorkbenchStore {
-  private kpis: DashboardKpiMetrics = { ...initialDashboardKpi };
-  private spikeAlert: SpikeAlertItem | null = initialSpikeAlert;
-  private topTopics: TopFrequentTopic[] = [...initialTopTopics];
-  private blindSpots: KnowledgeBlindSpot[] = [...initialBlindSpots];
-  private conversations: ConversationDetail[] = [...initialConversations];
-  private tickets: ItTicketItem[] = [...initialTickets];
-  private faqs: FaqItem[] = [...initialFaqs];
-  private documents: ManualDocumentItem[] = [...initialDocuments];
-  private gaps: KnowledgeGapItem[] = [...initialKnowledgeGaps];
-  private listeners: Set<() => void> = new Set();
-  private isLoaded: boolean = false;
-  private loading: boolean = false;
-  private loadStarted: boolean = false;
+  private readonly core = new StoreCore();
+  private readonly overview: OverviewSlice;
+  private readonly conversations: ConversationsSlice;
+  private readonly tickets: TicketsSlice;
+  private readonly faqs: FaqsSlice;
+  private readonly documents: DocumentsSlice;
+
+  constructor() {
+    const reloads = createReloadHooksPlaceholder();
+    const ctx: WorkbenchSliceContext = {
+      state: this.core.state,
+      notify: () => this.core.notify(),
+      reloads,
+    };
+
+    this.overview = new OverviewSlice(ctx);
+    this.conversations = new ConversationsSlice(ctx);
+    this.tickets = new TicketsSlice(ctx);
+    this.faqs = new FaqsSlice(ctx);
+    this.documents = new DocumentsSlice(ctx);
+
+    reloads.loadAll = () => this.loadAll();
+    reloads.loadOverview = () => this.overview.loadOverview();
+    reloads.loadTickets = () => this.tickets.loadTickets();
+    reloads.loadDocuments = () => this.documents.loadDocuments();
+
+    this.core.setLoadAllHandler(() => this.loadAll());
+  }
 
   public subscribe(listener: () => void): () => void {
-    this.listeners.add(listener);
-    this.ensureLoaded();
-    listener();
-    return () => this.listeners.delete(listener);
+    return this.core.subscribe(listener);
   }
 
-  /** Start the first fetch when a UI surface actually subscribes. */
   public ensureLoaded(): void {
-    if (this.isLoaded || this.loadStarted) {
-      return;
-    }
-    this.loadStarted = true;
-    this.loadAll().catch((err) => {
-      this.loadStarted = false;
-      console.warn("Workbench data load failed:", err);
-    });
-  }
-
-  private notify(): void {
-    for (const listener of this.listeners) {
-      listener();
-    }
+    this.core.ensureLoaded();
   }
 
   public getKpis(): DashboardKpiMetrics {
-    return { ...this.kpis };
+    return this.overview.getKpis();
   }
 
   public getSpikeAlert(): SpikeAlertItem | null {
-    return this.spikeAlert ? { ...this.spikeAlert } : null;
+    return this.overview.getSpikeAlert();
   }
 
   public getTopTopics(): TopFrequentTopic[] {
-    return [...this.topTopics];
+    return this.overview.getTopTopics();
   }
 
   public getBlindSpots(): KnowledgeBlindSpot[] {
-    return [...this.blindSpots];
+    return this.overview.getBlindSpots();
   }
 
   public getConversations(): ConversationDetail[] {
-    return [...this.conversations];
+    return this.conversations.getConversations();
   }
 
   public getConversationById(id: string): ConversationDetail | undefined {
-    return this.conversations.find((c) => c.id === id);
+    return this.conversations.getConversationById(id);
   }
 
   public getTickets(): ItTicketItem[] {
-    return [...this.tickets];
+    return this.tickets.getTickets();
   }
 
   public getFaqs(): FaqItem[] {
-    return [...this.faqs];
+    return this.faqs.getFaqs();
   }
 
   public getDocuments(): ManualDocumentItem[] {
-    return [...this.documents];
+    return this.documents.getDocuments();
   }
 
   public getKnowledgeGaps(): KnowledgeGapItem[] {
-    return [...this.gaps];
+    return this.overview.getKnowledgeGaps();
   }
 
   public getIsLoaded(): boolean {
-    return this.isLoaded;
+    return this.core.getIsLoaded();
   }
 
   public getIsLoading(): boolean {
-    return this.loading;
+    return this.core.getIsLoading();
   }
 
   public async loadOverview(): Promise<void> {
-    try {
-      const data = await fetchOverview();
-      if (data.kpis) {
-        this.kpis = { ...this.kpis, ...data.kpis };
-      }
-      if (data.spikeAlert !== undefined) {
-        this.spikeAlert = data.spikeAlert;
-      }
-      if (Array.isArray(data.topTopics)) {
-        this.topTopics = data.topTopics;
-      }
-      if (Array.isArray(data.blindSpots)) {
-        this.blindSpots = data.blindSpots;
-      }
-      if (Array.isArray(data.gaps)) {
-        this.gaps = data.gaps;
-      }
-      this.notify();
-    } catch (err) {
-      console.error("Failed to load overview:", err);
-    }
+    return this.overview.loadOverview();
   }
 
   public async loadConversations(): Promise<void> {
-    try {
-      const items = await fetchConversations();
-      if (Array.isArray(items)) {
-        this.conversations = items;
-        this.notify();
-      }
-    } catch (err) {
-      console.error("Failed to load conversations:", err);
-    }
+    return this.conversations.loadConversations();
   }
 
   public async loadFaqs(): Promise<void> {
-    try {
-      const items = await fetchFaqs();
-      if (Array.isArray(items)) {
-        this.faqs = items;
-        this.notify();
-      }
-    } catch (err) {
-      console.error("Failed to load FAQs:", err);
-    }
+    return this.faqs.loadFaqs();
   }
 
   public async loadDocuments(): Promise<void> {
-    try {
-      const [legacyResult, portalResult] = await Promise.allSettled([
-        fetchLegacyDocuments(),
-        fetchPortalDocumentList(),
-      ]);
-      const legacyDocuments =
-        legacyResult.status === "fulfilled" && Array.isArray(legacyResult.value)
-          ? legacyResult.value
-          : [];
-      const portalList =
-        portalResult.status === "fulfilled" ? portalResult.value : null;
-      this.documents = mergeLegacyAndPortalDocuments(
-        legacyDocuments,
-        portalList,
-      );
-      this.notify();
-    } catch (err) {
-      console.error("Failed to load documents:", err);
-    }
+    return this.documents.loadDocuments();
   }
 
   public async loadTickets(): Promise<void> {
-    try {
-      const items = await fetchTickets();
-      if (Array.isArray(items)) {
-        this.tickets = items;
-        this.notify();
-      }
-    } catch (err) {
-      console.error("Failed to load tickets:", err);
-    }
+    return this.tickets.loadTickets();
   }
 
   public async loadAll(): Promise<void> {
-    this.loading = true;
+    this.core.beginLoadAll();
     try {
       await Promise.allSettled([
         this.loadOverview(),
@@ -222,10 +142,9 @@ class WorkbenchStore {
         this.loadDocuments(),
         this.loadTickets(),
       ]);
-      this.isLoaded = true;
+      this.core.markLoaded();
     } finally {
-      this.loading = false;
-      this.notify();
+      this.core.endLoadAll();
     }
   }
 
@@ -236,27 +155,7 @@ class WorkbenchStore {
     category: string;
     resolveConversationId?: string;
   }): Promise<FaqItem> {
-    const saved = await postFaq(params);
-
-    const existingIndex = this.faqs.findIndex((f) => f.id === saved.id);
-    if (existingIndex >= 0) {
-      this.faqs[existingIndex] = saved;
-    } else {
-      this.faqs.unshift(saved);
-    }
-
-    if (params.resolveConversationId) {
-      const conv = this.conversations.find(
-        (c) => c.id === params.resolveConversationId,
-      );
-      if (conv) {
-        conv.status = "RESOLVED";
-      }
-    }
-
-    this.notify();
-    this.loadAll().catch(() => {});
-    return saved;
+    return this.faqs.quickSaveFaq(params);
   }
 
   public async escalateTicket(params: {
@@ -269,76 +168,22 @@ class WorkbenchStore {
     assignedTeam: string;
     notes?: string;
   }): Promise<ItTicketItem> {
-    const newTicket = await postTicket(params);
-
-    this.tickets.unshift(newTicket);
-    this.kpis.escalated_ticket_count += 1;
-
-    if (params.conversationId) {
-      const conv = this.conversations.find(
-        (c) => c.id === params.conversationId,
-      );
-      if (conv) {
-        conv.status = "ESCALATED_TICKET";
-        conv.associated_ticket_id = newTicket.ticket_number;
-        conv.messages.push({
-          id: `msg-sys-${Date.now()}`,
-          sender: "system",
-          content: `已成功轉派開立 IT 工單 [${newTicket.ticket_number}]（指派：${params.assignedTeam}）`,
-          timestamp: "剛剛",
-        });
-      }
-    }
-
-    this.notify();
-    this.loadTickets().catch(() => {});
-    return newTicket;
+    return this.tickets.escalateTicket(params);
   }
 
   public async setSpikeBroadcast(
     message: string,
     durationHours: number = 2,
   ): Promise<void> {
-    await postBroadcast(message, durationHours);
-
-    if (this.spikeAlert) {
-      const expires = new Date(
-        Date.now() + durationHours * 3600 * 1000,
-      ).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      this.spikeAlert.active_broadcast = {
-        message,
-        expires_at: `${expires} (有效 ${durationHours} 小時)`,
-      };
-      this.notify();
-    }
-    this.loadOverview().catch(() => {});
+    return this.overview.setSpikeBroadcast(message, durationHours);
   }
 
   public dismissSpikeAlert(): void {
-    if (this.spikeAlert) {
-      this.spikeAlert.is_active = false;
-      this.notify();
-    }
+    this.overview.dismissSpikeAlert();
   }
 
   public async resolveConversation(conversationId: string): Promise<void> {
-    const conv = this.conversations.find((c) => c.id === conversationId);
-    if (conv) {
-      conv.status = "RESOLVED";
-      if (this.kpis.urgent_attention_count > 0) {
-        this.kpis.urgent_attention_count -= 1;
-      }
-      this.notify();
-    }
-
-    await postConversationAction(conversationId, {
-      action: "resolve",
-    }).catch((err) => {
-      console.error("Failed to resolve conversation on server:", err);
-    });
+    return this.conversations.resolveConversation(conversationId);
   }
 
   public async setRootCause(
@@ -349,18 +194,7 @@ class WorkbenchStore {
       | "MISUNDERSTOOD"
       | "HARDWARE_TICKET",
   ): Promise<void> {
-    const conv = this.conversations.find((c) => c.id === conversationId);
-    if (conv) {
-      conv.root_cause = cause;
-      this.notify();
-    }
-
-    await postConversationAction(conversationId, {
-      action: "root_cause",
-      root_cause: cause,
-    }).catch((err) => {
-      console.error("Failed to update root cause on server:", err);
-    });
+    return this.conversations.setRootCause(conversationId, cause);
   }
 
   public async uploadDocument(params: {
@@ -371,27 +205,21 @@ class WorkbenchStore {
     profile?: ChunkingProfile;
     onProgress?: (stage: IngestionStage) => void;
   }): Promise<ManualDocumentItem> {
-    const newDoc = await uploadDocumentViaPortal(params);
-    this.documents.unshift(newDoc);
-    this.notify();
-    return newDoc;
+    return this.documents.uploadDocument(params);
   }
 
   public async previewDocument(
     document: ManualDocumentItem,
     profile: ChunkingProfile = "AUTO",
   ): Promise<ManualDocumentItem> {
-    const updated = await previewDocumentChunks(document, profile);
-    this.notify();
-    return updated;
+    return this.documents.previewDocument(document, profile);
   }
 
   public async submitDocumentReview(
     documentId: string,
     reason: string,
   ): Promise<void> {
-    await submitDocumentReviewRequest(documentId, reason);
-    await this.loadDocuments();
+    return this.documents.submitDocumentReview(documentId, reason);
   }
 
   public async decideDocumentReview(
@@ -399,37 +227,22 @@ class WorkbenchStore {
     decision: "APPROVED" | "CHANGES_REQUESTED",
     comment: string,
   ): Promise<void> {
-    await decideDocumentReviewRequest(documentId, decision, comment);
-    await this.loadDocuments();
+    return this.documents.decideDocumentReview(documentId, decision, comment);
   }
 
   public async publishDocument(
     documentId: string,
     reason: string,
   ): Promise<void> {
-    const versionId = await resolvePublishVersionId(documentId);
-    const document = this.documents.find((item) => item.id === documentId);
-    if (document) {
-      document.status = "PUBLISHING";
-      this.notify();
-    }
-    try {
-      await postPublishDocument(documentId, versionId, reason);
-    } finally {
-      await this.loadDocuments();
-    }
+    return this.documents.publishDocument(documentId, reason);
   }
 
   public async deleteDocument(documentId: string): Promise<void> {
-    await deleteDocumentRequest(documentId);
-    this.documents = this.documents.filter((d) => d.id !== documentId);
-    this.notify();
+    return this.documents.deleteDocument(documentId);
   }
 
   public async deleteFaq(faqId: string): Promise<void> {
-    await deleteFaqRequest(faqId);
-    this.faqs = this.faqs.filter((f) => f.id !== faqId);
-    this.notify();
+    return this.faqs.deleteFaq(faqId);
   }
 }
 

@@ -17,7 +17,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | E HTTP/app/persistence boundaries | Done — private-access empty; router FS gate; **workbench Path/JSON behind WorkbenchRepository** |
 | F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + **console OpenAPI call-site matrix**; handwritten_only=0 |
 | G Independent frontend + legacy removal | Partial — soft deliverables landed (legacy shell HTML now under `legacy-js/`); **tree delete still waits unused release cycle** |
-| H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
+| H Oversized domain convergence | **Done for size ratchets** — 0 oversized files/functions; characterization registry covers extractor/evaluation/source/documents/composition/contracts |
 
 ## Phase G soft deliverables (landed)
 - Independent console Docker image + Cloud Build + UI-only release path (`BUILD_CONSOLE`)
@@ -28,6 +28,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Legacy shell route characterization quarantined under `tests/legacy_frontend/` (skips when tree deleted)
 - Route-level `React.lazy` + Suspense in `App.tsx`
 - Vite `manualChunks` (antd / react / refine / markdown / vendor)
+- Workbench store split into domain slices (`storeCore` + overview/conversations/tickets/faqs/documents)
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)
 - Bundle budget gate enforces entry/feature/vendor gzip ceilings
 - Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests

@@ -14,13 +14,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / "scripts"
 BASELINES = REPO_ROOT / "docs" / "architecture" / "baselines"
 
-# Existing suites that serve as Wave 0 characterization baselines for the
-# three highest-risk domains named in the architecture refactor plan.
+# Existing suites that serve as Wave 0 / Phase H characterization baselines for
+# the highest-risk domains named in the architecture follow-up plan.
 CHARACTERIZATION_MODULES = (
     "test_workbench_routes",
     "test_knowledge",
     "test_knowledge_release",
     "test_pr4_release_gate_and_schedule",
+    "test_extractor",
+    "test_evaluation_domain",
+    "test_source_traceability",
+    "test_documents",
+    "test_composition_import_isolation",
+    "test_console_consumer_contracts",
 )
 
 
