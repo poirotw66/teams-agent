@@ -28,6 +28,8 @@ def test_rrf_prefers_consensus_over_sparse_only_leader() -> None:
     fused = reciprocal_rank_fusion(sparse_results=sparse, dense_results=dense, k=60)
     assert fused[0].chunk.chunk_id == "b"
     assert fused[0].fusion_score is not None
+    assert fused[0].fusion_score < 0.1  # raw RRF magnitude
+    assert fused[0].score == 0.95  # evidence gate scale (max sparse/dense)
     assert fused[0].sparse_rank == 2
     assert fused[0].dense_rank == 1
 

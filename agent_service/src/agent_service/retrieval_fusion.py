@@ -8,6 +8,68 @@ from __future__ import annotations
 from .retrieval import SearchResult
 
 
+def evidence_gate_score(result: SearchResult) -> float:
+    """[0,1]-scale score for min_score / confidence gates.
+
+    RRF fusion magnitudes are tiny (~1/(k+rank)); relevance thresholds were
+    calibrated on sparse/dense evidence scores. Ranking still follows
+    ``fusion_score`` / list order from RRF.
+    """
+    dense = result.dense_score
+    if dense is None:
+        return float(result.sparse_score)
+    return max(float(result.sparse_score), float(dense))
+
+
+def _merge_rrf_candidate(
+    existing: SearchResult | None,
+    incoming: SearchResult,
+) -> SearchResult:
+    if existing is None:
+        return incoming
+    return SearchResult(
+        chunk=existing.chunk,
+        score=existing.score,
+        sparse_score=existing.sparse_score,
+        dense_score=(
+            incoming.dense_score
+            if incoming.dense_score is not None
+            else existing.dense_score
+        ),
+        sparse_rank=existing.sparse_rank,
+        dense_rank=existing.dense_rank,
+        fusion_score=existing.fusion_score,
+        fusion_rank=existing.fusion_rank,
+        rerank_score=existing.rerank_score,
+        rerank_rank=existing.rerank_rank,
+        final_rank=existing.final_rank,
+    )
+
+
+def _rrf_ranked_result(
+    base: SearchResult,
+    *,
+    chunk_id: str,
+    fusion_score: float,
+    fusion_rank: int,
+    sparse_rank: dict[str, int],
+    dense_rank: dict[str, int],
+) -> SearchResult:
+    return SearchResult(
+        chunk=base.chunk,
+        score=round(evidence_gate_score(base), 6),
+        sparse_score=base.sparse_score,
+        dense_score=base.dense_score,
+        sparse_rank=sparse_rank.get(chunk_id),
+        dense_rank=dense_rank.get(chunk_id),
+        fusion_score=round(fusion_score, 6),
+        fusion_rank=fusion_rank,
+        rerank_score=base.rerank_score,
+        rerank_rank=base.rerank_rank,
+        final_rank=fusion_rank,
+    )
+
+
 def reciprocal_rank_fusion(
     *,
     sparse_results: list[SearchResult],
@@ -20,6 +82,9 @@ def reciprocal_rank_fusion(
 
     Candidates are keyed by ``chunk.chunk_id``. ACL filtering must already have
     been applied before results enter this function.
+
+    ``fusion_score`` holds the RRF value used for ordering; ``score`` keeps the
+    evidence gate scale so ``min_score`` / high-confidence checks stay valid.
     """
     if k < 1:
         raise ValueError("rrf k must be >= 1")
@@ -41,52 +106,20 @@ def reciprocal_rank_fusion(
         chunk_id = result.chunk.chunk_id
         dense_rank[chunk_id] = rank
         scores[chunk_id] = scores.get(chunk_id, 0.0) + dense_weight / (k + rank)
-        # Prefer the richer score fields when both lists contain the chunk.
-        existing = by_id.get(chunk_id)
-        if existing is None:
-            by_id[chunk_id] = result
-        else:
-            by_id[chunk_id] = SearchResult(
-                chunk=existing.chunk,
-                score=existing.score,
-                sparse_score=existing.sparse_score,
-                dense_score=(
-                    result.dense_score
-                    if result.dense_score is not None
-                    else existing.dense_score
-                ),
-                sparse_rank=existing.sparse_rank,
-                dense_rank=existing.dense_rank,
-                fusion_score=existing.fusion_score,
-                fusion_rank=existing.fusion_rank,
-                rerank_score=existing.rerank_score,
-                rerank_rank=existing.rerank_rank,
-                final_rank=existing.final_rank,
-            )
+        by_id[chunk_id] = _merge_rrf_candidate(by_id.get(chunk_id), result)
 
-    ordered = sorted(
-        scores.items(),
-        key=lambda item: (-item[1], item[0]),
-    )
-    fused: list[SearchResult] = []
-    for fusion_rank, (chunk_id, fusion_score) in enumerate(ordered, start=1):
-        base = by_id[chunk_id]
-        fused.append(
-            SearchResult(
-                chunk=base.chunk,
-                score=round(fusion_score, 6),
-                sparse_score=base.sparse_score,
-                dense_score=base.dense_score,
-                sparse_rank=sparse_rank.get(chunk_id),
-                dense_rank=dense_rank.get(chunk_id),
-                fusion_score=round(fusion_score, 6),
-                fusion_rank=fusion_rank,
-                rerank_score=base.rerank_score,
-                rerank_rank=base.rerank_rank,
-                final_rank=fusion_rank,
-            )
+    ordered = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    return [
+        _rrf_ranked_result(
+            by_id[chunk_id],
+            chunk_id=chunk_id,
+            fusion_score=fusion_score,
+            fusion_rank=fusion_rank,
+            sparse_rank=sparse_rank,
+            dense_rank=dense_rank,
         )
-    return fused
+        for fusion_rank, (chunk_id, fusion_score) in enumerate(ordered, start=1)
+    ]
 
 
 def legacy_weighted_hybrid_rank(
@@ -181,6 +214,7 @@ def fuse_hybrid_candidates(
 
 
 __all__ = [
+    "evidence_gate_score",
     "fuse_hybrid_candidates",
     "legacy_weighted_hybrid_rank",
     "reciprocal_rank_fusion",

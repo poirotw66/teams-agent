@@ -53,6 +53,7 @@ def make_settings(tmp_path: Path, **overrides) -> RagSettings:
         "index_path": tmp_path / "index.json",
         "ticket_service_mode": "HTTP",
         "ticket_service_base_url": "https://tickets.example.internal",
+        "rag_reranker_enabled": False,
     }
     defaults.update(overrides)
     return RagSettings(**defaults)

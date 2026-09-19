@@ -22,6 +22,7 @@ def make_settings(tmp_path: Path) -> RagSettings:
         top_k=2,
         min_score=0.05,
         max_rewrites=0,
+        rag_reranker_enabled=False,
     )
 
 

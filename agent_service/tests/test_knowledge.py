@@ -48,6 +48,8 @@ def make_settings(tmp_path: Path, **overrides) -> RagSettings:
         "skip_relevance_llm_on_high_confidence": False,
         # Keep legacy rewrite/retry expectations unless a test opts in.
         "enable_adaptive_query_tiers": False,
+        # Unit tests must not call the production listwise Gemini path.
+        "rag_reranker_enabled": False,
     }
     defaults.update(overrides)
     return RagSettings(**defaults)
@@ -172,7 +174,15 @@ class CountingIndex(HybridIndex):
         self.search_queries: list[str] = []
         self._search_lock = threading.Lock()
 
-    def search_with_timings(self, query, limit, groups=None, *, environment="dev"):
+    def search_with_timings(
+        self,
+        query,
+        limit,
+        groups=None,
+        *,
+        environment="dev",
+        fusion_mode=None,
+    ):
         with self._search_lock:
             self.search_calls += 1
             self.search_queries.append(query)
@@ -181,6 +191,7 @@ class CountingIndex(HybridIndex):
             limit,
             groups,
             environment=environment,
+            fusion_mode=fusion_mode,
         )
 
 
@@ -242,9 +253,30 @@ class FixedResultIndex(HybridIndex):
         groups: set[str] | None = None,
         *,
         environment: str = "dev",
+        fusion_mode: str | None = None,
     ) -> list[SearchResult]:
-        del environment
+        del environment, fusion_mode
         return self._results[:limit]
+
+    def search_with_timings(
+        self,
+        query: str,
+        limit: int,
+        groups: set[str] | None = None,
+        *,
+        environment: str = "dev",
+        fusion_mode: str | None = None,
+    ) -> tuple[list[SearchResult], dict[str, float]]:
+        return (
+            self.search(
+                query,
+                limit,
+                groups,
+                environment=environment,
+                fusion_mode=fusion_mode,
+            ),
+            {},
+        )
 
 
 def vpn_chunk(**overrides) -> DocumentChunk:

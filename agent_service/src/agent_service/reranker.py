@@ -359,10 +359,28 @@ def build_default_reranker(
         elif lowered in {"listwise", "gemini-listwise"} or lowered.startswith(
             ("listwise:", "gemini-listwise:")
         ):
+            import os
+
             from .reranker_listwise import (
                 build_gemini_listwise_pair_scorer,
                 wrap_listwise_title_protect,
             )
+
+            # Without Gemini credentials, keep fail-open lexical scoring so CI
+            # and local offline tests never attempt a network listwise call.
+            if not (
+                os.environ.get("GOOGLE_API_KEY")
+                or os.environ.get("GEMINI_API_KEY")
+            ):
+                logger.warning(
+                    "rag_reranker_model=%s requested without Gemini API key; "
+                    "using lexical FailOpenReranker",
+                    model_name,
+                )
+                return FailOpenReranker(
+                    ModelReranker(lexical_overlap_pair_scorer),
+                    timeout_seconds=max(timeout_ms, 1) / 1000.0,
+                )
 
             return FailOpenReranker(
                 wrap_listwise_title_protect(build_gemini_listwise_pair_scorer(resolved)),

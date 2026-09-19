@@ -121,12 +121,12 @@ class HybridIndex:
         embedding_model: str | None = None,
         *,
         fusion_mode: str = "RRF",
-        rrf_k: int = 60,
-        sparse_candidate_k: int = 50,
-        dense_candidate_k: int = 50,
-        fusion_candidate_k: int = 30,
-        sparse_weight: float = 1.0,
-        dense_weight: float = 1.0,
+        rrf_k: int = 5,
+        sparse_candidate_k: int = 40,
+        dense_candidate_k: int = 10,
+        fusion_candidate_k: int = 20,
+        sparse_weight: float = 0.5,
+        dense_weight: float = 1.5,
     ) -> None:
         self.chunks = chunks
         self.embedding_model_name = embedding_model
