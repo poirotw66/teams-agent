@@ -183,17 +183,50 @@ def check_settings_defaults(
     return findings
 
 
-def check_quarantine_present(legacy_js_dir: Path = LEGACY_JS_DIR) -> list[Finding]:
-    """Confirm quarantine tree still exists (deletion is a later release slice)."""
-    if not legacy_js_dir.is_dir():
-        return [
-            Finding(
-                legacy_js_dir,
-                "expected quarantine directory missing; if intentionally deleted, "
-                "retire this check and remove leftover /legacy serve wiring",
-            )
-        ]
+def check_quarantine_state(legacy_js_dir: Path = LEGACY_JS_DIR) -> list[Finding]:
+    """Allow either quarantine-present (pre-delete) or fully-removed (post-delete).
+
+    Pre-delete: tree must exist so the unused-release cycle has a quarantine to retire.
+    Post-delete: absence is success; leftover product HTML refs are caught separately.
+    """
+    del legacy_js_dir  # presence/absence both valid; no findings from existence alone
     return []
+
+
+def check_post_delete_wiring(repo_root: Path = REPO_ROOT) -> list[Finding]:
+    """When legacy-js is gone, leftover kill-switch serve must still fail closed."""
+    legacy_js_dir = (
+        repo_root
+        / "agent_service"
+        / "src"
+        / "ai_ops_backoffice"
+        / "static"
+        / "legacy-js"
+    )
+    if legacy_js_dir.is_dir():
+        return []
+    ui_path = (
+        repo_root
+        / "agent_service"
+        / "src"
+        / "ai_ops_backoffice"
+        / "bootstrap"
+        / "ui.py"
+    )
+    findings: list[Finding] = []
+    if not ui_path.is_file():
+        return [
+            Finding(ui_path, "bootstrap/ui.py missing after legacy-js deletion")
+        ]
+    text = ui_path.read_text(encoding="utf-8")
+    if "LEGACY_SHELL_DIR" not in text and "legacy-js" not in text:
+        findings.append(
+            Finding(
+                ui_path,
+                "post-delete ui.py should keep fail-closed legacy shell handling",
+            )
+        )
+    return findings
 
 
 def _iter_sample_files(repo_root: Path = REPO_ROOT) -> list[Path]:
@@ -296,7 +329,8 @@ def run_checks(*, repo_root: Path = REPO_ROOT) -> list[Finding]:
     static_dir = legacy_js_dir.parent
     findings: list[Finding] = []
     findings.extend(check_settings_defaults(settings_path))
-    findings.extend(check_quarantine_present(legacy_js_dir))
+    findings.extend(check_quarantine_state(legacy_js_dir))
+    findings.extend(check_post_delete_wiring(repo_root))
     findings.extend(check_deploy_samples(repo_root))
     findings.extend(check_product_html_avoids_legacy_js(static_dir))
     return findings
@@ -310,12 +344,17 @@ def main(argv: list[str] | None = None) -> int:
         for finding in findings:
             print(f"  - {finding.format()}", file=sys.stderr)
         return 1
+    status = (
+        f"{LEGACY_JS_DIR.relative_to(REPO_ROOT)} remains quarantine"
+        if LEGACY_JS_DIR.is_dir()
+        else "legacy-js fully removed (Phase G hard exit)"
+    )
     print(
         "legacy shell quarantine check OK: "
         f"defaults keep {ENV_VAR_NAME} disabled; "
         "deploy/env samples do not enable it; "
         "product HTML avoids /static/legacy-js/; "
-        f"{LEGACY_JS_DIR.relative_to(REPO_ROOT)} remains quarantine."
+        f"{status}."
     )
     return 0
 

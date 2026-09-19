@@ -37,6 +37,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - JWT/session helpers live under `/static/js/session_auth.js`; legacy `api.js` re-exports them; reliability tests no longer import legacy-js
 - Legacy shell HTML moved into `static/legacy-js/index.html` (product static root has no legacy HTML)
 - Console↔OpenAPI call-site matrix gate: `scripts/check_console_openapi_matrix.py`
+- Fail-closed delete helper: `scripts/delete_legacy_js.py` (requires unused-release acknowledgment)
+- Dual-mode legacy shell CI gate: passes with quarantine present **or** fully removed
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~74 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. After that cycle: `uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write`, then retire quarantine-present assertions.

@@ -151,6 +151,11 @@ def register_static_ui_routes(
             from starlette.responses import RedirectResponse
 
             return RedirectResponse(url="/console-v2/dashboard", status_code=307)
+        if not LEGACY_SHELL_DIR.is_dir():
+            from starlette.responses import RedirectResponse
+
+            # Post-delete: kill-switch cannot serve assets that no longer exist.
+            return RedirectResponse(url="/console-v2/dashboard", status_code=307)
         return HTMLResponse(
             _render_index_html(),
             headers={"Cache-Control": "no-cache, must-revalidate"},

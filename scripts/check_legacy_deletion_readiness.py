@@ -79,12 +79,12 @@ def main() -> int:
                 continue
             if "/legacy_frontend/" in relative or relative.endswith(
                 "check_legacy_shell.py"
-            ) or relative.endswith("test_check_legacy_shell.py"):
+            ) or relative.endswith("test_check_legacy_shell.py") or relative.endswith(
+                "delete_legacy_js.py"
+            ) or relative.endswith("check_legacy_deletion_readiness.py"):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             if "static/legacy-js" in text or "/legacy-js/" in text:
-                if path.name == "check_legacy_deletion_readiness.py":
-                    continue
                 notes.append(f"reference remains (update when deleting): {relative}")
 
     print("Phase G legacy deletion readiness")

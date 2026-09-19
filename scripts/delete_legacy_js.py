@@ -65,7 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     shutil.rmtree(LEGACY_JS)
-    print("Deleted. Next: retire check_legacy_shell quarantine-present assertion and /legacy serve path.")
+    print(
+        "Deleted. Dual-mode check_legacy_shell accepts absence; "
+        "product path remains React /console-v2."
+    )
     return 0
 
 
