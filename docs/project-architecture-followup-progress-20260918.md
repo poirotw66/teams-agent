@@ -23,6 +23,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Independent console Docker image + Cloud Build + UI-only release path (`BUILD_CONSOLE`)
 - Synced `static/console-v2/*` selects console image only (not Backoffice Python)
 - `Dockerfile.backoffice` is Python-only (committed console-v2 artifact; no Node stage)
+- Legacy frontend characterization tests moved to `tests/legacy_frontend/` (CI skips when tree deleted)
+- Deletion readiness reporter: `scripts/check_legacy_deletion_readiness.py`
 - Route-level `React.lazy` + Suspense in `App.tsx`
 - Vite `manualChunks` (antd / react / refine / markdown / vendor)
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)

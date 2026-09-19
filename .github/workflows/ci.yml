@@ -35,8 +35,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Frontend navigation tests
-        run: node --experimental-vm-modules --test tests/frontend/*.test.mjs
+      - name: Legacy quarantine frontend tests
+        # Characterization for static/legacy-js only. Skips automatically once
+        # the quarantine tree is deleted after the unused release cycle.
+        if: hashFiles('agent_service/src/ai_ops_backoffice/static/legacy-js/**/*.js') != ''
+        run: node --experimental-vm-modules --test tests/legacy_frontend/*.test.mjs
       - name: Ruff
         run: uv run ruff check src tests
       - name: Architecture ratchet
