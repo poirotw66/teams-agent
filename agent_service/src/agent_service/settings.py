@@ -102,6 +102,11 @@ class RagSettings:
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
 
+    # --- Observability (docs/0919-arch.md P2) ---
+    otel_enabled: bool = False
+    otel_service_name: str = "agent-runtime"
+    otel_exporter_endpoint: str | None = None
+
     # --- Cost visibility (Phase 1 observability) ---
     show_turn_cost: bool = True
     # Playground channel hides per-turn cost in the user-facing response by default;

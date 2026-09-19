@@ -218,6 +218,9 @@ def load_conversation_handoff_faq_env(
 def load_feedback_cost_env() -> dict[str, Any]:
     return {
         "feedback_enabled": _bool_env("FEEDBACK_ENABLED", True),
+        "otel_enabled": _bool_env("OTEL_ENABLED", False),
+        "otel_service_name": _str_env("OTEL_SERVICE_NAME") or "agent-runtime",
+        "otel_exporter_endpoint": _str_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
         "show_turn_cost": _bool_env("SHOW_TURN_COST", True),
         "show_turn_cost_playground": _bool_env("SHOW_TURN_COST_PLAYGROUND", False),
         "usd_twd_exchange_rate": _float_env("USD_TWD_EXCHANGE_RATE", 31.70),
