@@ -44,4 +44,36 @@ describe('workbenchStore loading surface', () => {
 
     unsubscribe();
   });
+
+  it('starts empty and surfaces loadError when every fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      })),
+    );
+
+    const { workbenchStore } = await import('./store');
+
+    expect(workbenchStore.getTickets()).toEqual([]);
+    expect(workbenchStore.getConversations()).toEqual([]);
+    expect(workbenchStore.getFaqs()).toEqual([]);
+    expect(workbenchStore.getDocuments()).toEqual([]);
+    expect(workbenchStore.getKpis().total_inquiries_today).toBe(0);
+    expect(workbenchStore.getLoadError()).toBeNull();
+
+    const unsubscribe = workbenchStore.subscribe(() => undefined);
+
+    await vi.waitFor(() => {
+      expect(workbenchStore.getIsLoaded()).toBe(true);
+    });
+
+    expect(workbenchStore.getTickets()).toEqual([]);
+    expect(workbenchStore.getConversations()).toEqual([]);
+    expect(workbenchStore.getLoadError()).toMatch(/load failed|Partial workbench/i);
+
+    unsubscribe();
+  });
 });

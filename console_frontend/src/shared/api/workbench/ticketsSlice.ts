@@ -18,6 +18,7 @@ export class TicketsSlice {
       }
     } catch (err) {
       console.error("Failed to load tickets:", err);
+      throw err;
     }
   }
 

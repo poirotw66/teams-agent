@@ -22,6 +22,7 @@ export class ConversationsSlice {
       }
     } catch (err) {
       console.error("Failed to load conversations:", err);
+      throw err;
     }
   }
 

@@ -18,6 +18,7 @@ export class FaqsSlice {
       }
     } catch (err) {
       console.error("Failed to load FAQs:", err);
+      throw err;
     }
   }
 

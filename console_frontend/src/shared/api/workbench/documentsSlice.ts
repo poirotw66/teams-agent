@@ -22,25 +22,28 @@ export class DocumentsSlice {
   }
 
   public async loadDocuments(): Promise<void> {
-    try {
-      const [legacyResult, portalResult] = await Promise.allSettled([
-        fetchLegacyDocuments(),
-        fetchPortalDocumentList(),
-      ]);
-      const legacyDocuments =
-        legacyResult.status === "fulfilled" && Array.isArray(legacyResult.value)
-          ? legacyResult.value
-          : [];
-      const portalList =
-        portalResult.status === "fulfilled" ? portalResult.value : null;
-      this.ctx.state.documents = mergeLegacyAndPortalDocuments(
-        legacyDocuments,
-        portalList,
-      );
-      this.ctx.notify();
-    } catch (err) {
-      console.error("Failed to load documents:", err);
+    const [legacyResult, portalResult] = await Promise.allSettled([
+      fetchLegacyDocuments(),
+      fetchPortalDocumentList(),
+    ]);
+    if (
+      legacyResult.status === "rejected" &&
+      portalResult.status === "rejected"
+    ) {
+      console.error("Failed to load documents:", legacyResult.reason);
+      throw legacyResult.reason;
     }
+    const legacyDocuments =
+      legacyResult.status === "fulfilled" && Array.isArray(legacyResult.value)
+        ? legacyResult.value
+        : [];
+    const portalList =
+      portalResult.status === "fulfilled" ? portalResult.value : null;
+    this.ctx.state.documents = mergeLegacyAndPortalDocuments(
+      legacyDocuments,
+      portalList,
+    );
+    this.ctx.notify();
   }
 
   public async uploadDocument(params: {

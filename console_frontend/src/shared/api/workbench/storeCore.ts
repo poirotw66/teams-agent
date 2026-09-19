@@ -9,17 +9,6 @@ import {
   ManualDocumentItem,
   KnowledgeGapItem,
 } from "../types";
-import {
-  initialDashboardKpi,
-  initialSpikeAlert,
-  initialTopTopics,
-  initialBlindSpots,
-  initialConversations,
-  initialTickets,
-  initialFaqs,
-  initialDocuments,
-  initialKnowledgeGaps,
-} from "../mockData";
 
 /** Mutable workbench data shared by every domain slice. */
 export type WorkbenchMutableState = {
@@ -53,17 +42,29 @@ export type WorkbenchSliceContext = {
   reloads: WorkbenchReloadHooks;
 };
 
+const EMPTY_KPI: DashboardKpiMetrics = {
+  total_inquiries_today: 0,
+  inquiries_trend_percentage: 0,
+  ai_resolution_rate: 0,
+  ai_resolved_count: 0,
+  escalated_ticket_count: 0,
+  satisfaction_rate: 0,
+  negative_feedback_count: 0,
+  urgent_attention_count: 0,
+};
+
+/** Production-safe empty state — never seed demo/mock rows into the live store. */
 export function createInitialWorkbenchState(): WorkbenchMutableState {
   return {
-    kpis: { ...initialDashboardKpi },
-    spikeAlert: initialSpikeAlert,
-    topTopics: [...initialTopTopics],
-    blindSpots: [...initialBlindSpots],
-    conversations: [...initialConversations],
-    tickets: [...initialTickets],
-    faqs: [...initialFaqs],
-    documents: [...initialDocuments],
-    gaps: [...initialKnowledgeGaps],
+    kpis: { ...EMPTY_KPI },
+    spikeAlert: null,
+    topTopics: [],
+    blindSpots: [],
+    conversations: [],
+    tickets: [],
+    faqs: [],
+    documents: [],
+    gaps: [],
   };
 }
 
@@ -91,6 +92,7 @@ export class StoreCore {
   private isLoaded: boolean = false;
   private loading: boolean = false;
   private loadStarted: boolean = false;
+  private loadError: string | null = null;
   private loadAllHandler: (() => Promise<void>) | null = null;
 
   public setLoadAllHandler(handler: () => Promise<void>): void {
@@ -115,7 +117,11 @@ export class StoreCore {
     this.loadStarted = true;
     this.loadAllHandler().catch((err) => {
       this.loadStarted = false;
+      const message =
+        err instanceof Error ? err.message : "Workbench data load failed";
+      this.setLoadError(message);
       console.warn("Workbench data load failed:", err);
+      this.notify();
     });
   }
 
@@ -133,8 +139,21 @@ export class StoreCore {
     return this.loading;
   }
 
+  public getLoadError(): string | null {
+    return this.loadError;
+  }
+
+  public clearLoadError(): void {
+    this.loadError = null;
+  }
+
+  public setLoadError(message: string): void {
+    this.loadError = message;
+  }
+
   public beginLoadAll(): void {
     this.loading = true;
+    this.loadError = null;
   }
 
   public markLoaded(): void {

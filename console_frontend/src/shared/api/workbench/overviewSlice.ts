@@ -52,6 +52,7 @@ export class OverviewSlice {
       this.ctx.notify();
     } catch (err) {
       console.error("Failed to load overview:", err);
+      throw err;
     }
   }
 

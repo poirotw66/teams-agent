@@ -23,10 +23,19 @@ CHARACTERIZATION_MODULES = (
     "test_pr4_release_gate_and_schedule",
     "test_extractor",
     "test_evaluation_domain",
+    "test_evaluation_runner",
     "test_source_traceability",
+    "test_source_document_resolve",
     "test_documents",
     "test_composition_import_isolation",
     "test_console_consumer_contracts",
+    # Phase H residual domains from the 2026-09-18 follow-up plan.
+    "test_backoffice_quality_domain",
+    "test_faq",
+    "test_backoffice_faq_domain",
+    "test_backoffice_settings",
+    "test_settings_domain",
+    "test_release_coordinator_matrix",
 )
 
 

@@ -112,6 +112,10 @@ class WorkbenchStore {
     return this.core.getIsLoading();
   }
 
+  public getLoadError(): string | null {
+    return this.core.getLoadError();
+  }
+
   public async loadOverview(): Promise<void> {
     return this.overview.loadOverview();
   }
@@ -135,13 +139,23 @@ class WorkbenchStore {
   public async loadAll(): Promise<void> {
     this.core.beginLoadAll();
     try {
-      await Promise.allSettled([
+      const results = await Promise.allSettled([
         this.loadOverview(),
         this.loadConversations(),
         this.loadFaqs(),
         this.loadDocuments(),
         this.loadTickets(),
       ]);
+      const failureCount = results.filter(
+        (result) => result.status === "rejected",
+      ).length;
+      if (failureCount === results.length) {
+        this.core.setLoadError("Workbench data load failed");
+      } else if (failureCount > 0) {
+        this.core.setLoadError(
+          `Partial workbench load failure (${failureCount}/${results.length})`,
+        );
+      }
       this.core.markLoaded();
     } finally {
       this.core.endLoadAll();
