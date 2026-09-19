@@ -135,6 +135,17 @@ def coerce_issue(
     # instruction inside `description`, sanitize it here.
     data["description"] = sanitize_description(data["description"])
 
+    # Trust boundary: retrieval prefers the original user utterance (or an
+    # explicit retrieval_query), never a model free-text field that is also
+    # rendered to the user.
+    existing_retrieval = (data.get("retrieval_query") or "").strip()
+    if existing_retrieval:
+        data["retrieval_query"] = sanitize_description(existing_retrieval)[:4000]
+    elif raw_utterance.strip():
+        data["retrieval_query"] = sanitize_description(raw_utterance.strip())[:4000]
+    else:
+        data["retrieval_query"] = data["description"]
+
     # §6.3/§12/§17: strip forbidden follow-up questions regardless of what
     # the model produced. A prompt instruction alone is not sufficient.
     data["missingInfo"] = strip_forbidden_missing_info(data.get("missingInfo") or [])

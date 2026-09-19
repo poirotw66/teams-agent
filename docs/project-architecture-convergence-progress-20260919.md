@@ -10,7 +10,7 @@ Tracks execution of [`docs/0919-arch.md`](./0919-arch.md).
 | P0 | GCS Knowledge Release as sole SoT; fix deploy doc drift | **Done** — docs rewritten + `scripts/check_knowledge_image_sot.py` |
 | P1 | uv workspace + runtime-scoped deps | **In progress** — Agent/Backoffice images drop portal(+Agent bigquery) extras; root `[tool.uv.workspace]` members declared |
 | P1 | Turn Planner PoC (4-call → 2-call, Golden Eval) | Pending |
-| P1 | Trust / provenance boundary for retrieval vs display | Pending |
+| P1 | Trust / provenance boundary for retrieval vs display | **In progress** — `Issue.retrieval_query` + `issue_trust` helpers; knowledge search no longer uses display description as the query |
 | P2 | Extract citation/viewer from Teams Adapter | Pending |
 | P2 | OpenTelemetry + SLO foundations | Pending |
 

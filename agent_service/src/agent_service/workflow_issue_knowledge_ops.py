@@ -9,6 +9,7 @@ import logging
 from .contracts import AgentRequest, Issue, IssueResult, UserContext
 from .execution_context import ExecutionContext, RequestDeadlineExceeded
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
+from .issue_trust import issue_retrieval_text
 from .knowledge import LlmCallCounter
 
 logger = logging.getLogger(__name__)
@@ -130,8 +131,11 @@ class IssueKnowledgeOps:
             agent_request=agent_request,
             execution_context=execution_context,
         )
+        user_utterance = ""
+        if agent_request is not None and getattr(agent_request, "message", None) is not None:
+            user_utterance = getattr(agent_request.message, "text", "") or ""
         result = await self.knowledge_service.search(
-            issue.description,
+            issue_retrieval_text(issue, user_utterance=user_utterance),
             user,
             **search_kwargs,
         )
