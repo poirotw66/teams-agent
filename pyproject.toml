@@ -38,6 +38,12 @@ teams-agent = "teams_agent.main:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/teams_agent"]
 
+# Monorepo workspace (docs/0919-arch.md P1). Members stay in-tree for now;
+# later splits move cores under packages/ and apps under apps/ without
+# multi-repo. Adapter (this project) + Agent/Backoffice/Portal (agent_service).
+[tool.uv.workspace]
+members = [".", "agent_service"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

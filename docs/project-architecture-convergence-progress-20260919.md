@@ -8,7 +8,7 @@ Tracks execution of [`docs/0919-arch.md`](./0919-arch.md).
 |---|---|---|
 | P0 | Protect `main` (required checks + PR-only) | **Done** — GitHub branch protection enabled |
 | P0 | GCS Knowledge Release as sole SoT; fix deploy doc drift | **Done** — docs rewritten + `scripts/check_knowledge_image_sot.py` |
-| P1 | uv workspace + runtime-scoped deps | Pending |
+| P1 | uv workspace + runtime-scoped deps | **In progress** — Agent/Backoffice images drop portal(+Agent bigquery) extras; root `[tool.uv.workspace]` members declared |
 | P1 | Turn Planner PoC (4-call → 2-call, Golden Eval) | Pending |
 | P1 | Trust / provenance boundary for retrieval vs display | Pending |
 | P2 | Extract citation/viewer from Teams Adapter | Pending |
@@ -23,3 +23,10 @@ Tracks execution of [`docs/0919-arch.md`](./0919-arch.md).
   releases as production SoT; removed “developer machine must hold corpus” path.
 - Gate: `uv run python scripts/check_knowledge_image_sot.py` fails if
   `agent_service/Dockerfile` reintroduces corpus/index bake.
+
+## P1 notes
+
+- `agent_service/Dockerfile`: `--extra firestore` only (no `portal`, no `bigquery`).
+- `agent_service/Dockerfile.backoffice`: `--extra firestore` only (no `portal`).
+- `agent_service/Dockerfile.portal`: keeps `--extra firestore --extra portal`.
+- Workspace: see `docs/uv-workspace-layout.md`.

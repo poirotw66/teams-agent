@@ -17,21 +17,21 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv==0.8.15
 COPY agent_service/pyproject.toml agent_service/uv.lock agent_service/README.md ./agent_service/
+# Firestore/storage only. Portal PDF extras are not required for Backoffice API;
+# portal package modules remain importable from the installed source tree.
 RUN uv sync \
     --project agent_service \
     --frozen \
     --no-dev \
     --no-install-project \
-    --extra firestore \
-    --extra portal
+    --extra firestore
 
 COPY agent_service/src ./agent_service/src
 RUN uv sync \
     --project agent_service \
     --frozen \
     --no-dev \
-    --extra firestore \
-    --extra portal
+    --extra firestore
 
 COPY data/ops ./data/ops
 RUN mkdir -p /app/data/index \

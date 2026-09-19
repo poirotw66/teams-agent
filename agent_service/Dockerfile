@@ -15,23 +15,22 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv==0.8.15
 COPY agent_service/pyproject.toml agent_service/uv.lock agent_service/README.md ./agent_service/
+# Runtime-scoped deps: firestore/storage for conversation + knowledge release.
+# Do not install portal (pymupdf/JWT) or bigquery extras on the Agent image;
+# OPS_BIGQUERY_ENABLED defaults false — enable via a dedicated image tag later.
 RUN uv sync \
     --project agent_service \
     --frozen \
     --no-dev \
     --no-install-project \
-    --extra firestore \
-    --extra bigquery \
-    --extra portal
+    --extra firestore
 
 COPY agent_service/src ./agent_service/src
 RUN uv sync \
     --project agent_service \
     --frozen \
     --no-dev \
-    --extra firestore \
-    --extra bigquery \
-    --extra portal
+    --extra firestore
 
 # Runtime configuration remains image-owned; knowledge releases are fetched
 # from GCS and are intentionally excluded from this application image.
