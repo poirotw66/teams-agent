@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Phase G console bundle budget gate for the committed console-v2 artifact.
 
-Budgets are monotonic upper bounds for the Backoffice-served
-``static/console-v2`` tree (and any independent image that copies it).
+Budgets follow the architecture review gzip targets:
+- entry (assets/index-*.js): gzip < 350 KiB
+- lazy feature chunks (non-vendor): gzip < 200 KiB
+- shared vendor-* chunks: gzip < 400 KiB
+
 Tighten after intentional shrinks; do not raise without review.
 """
 
 from __future__ import annotations
 
+import gzip
 import sys
 from pathlib import Path
 
@@ -21,9 +25,25 @@ CONSOLE_V2 = (
     / "console-v2"
 )
 
-# Soft ceilings derived from the 2026-09-19 artifact (~2.1 MiB total).
+MAX_ENTRY_GZIP_BYTES = 350_000
+MAX_FEATURE_GZIP_BYTES = 200_000
+MAX_VENDOR_GZIP_BYTES = 400_000
 MAX_TOTAL_BYTES = 2_500_000
-MAX_SINGLE_JS_BYTES = 2_300_000
+
+
+def gzip_size(path: Path) -> int:
+    return len(gzip.compress(path.read_bytes(), compresslevel=9))
+
+
+def classify_js(relative: str) -> str:
+    name = Path(relative).name
+    if name.startswith("index-") and name.endswith(".js"):
+        return "entry"
+    if name.startswith("vendor-") or name.startswith("vendor.") or name.startswith(
+        "rolldown-runtime-"
+    ):
+        return "vendor"
+    return "feature"
 
 
 def main() -> int:
@@ -32,27 +52,37 @@ def main() -> int:
         return 1
 
     total = 0
-    largest_js = 0
-    largest_name = ""
-    for path in CONSOLE_V2.rglob("*"):
+    findings: list[str] = []
+    summary: list[str] = []
+
+    for path in sorted(CONSOLE_V2.rglob("*")):
         if not path.is_file():
             continue
         size = path.stat().st_size
         total += size
-        if path.suffix == ".js" and size > largest_js:
-            largest_js = size
-            largest_name = str(path.relative_to(CONSOLE_V2))
+        if path.suffix != ".js":
+            continue
 
-    findings: list[str] = []
+        relative = path.relative_to(CONSOLE_V2).as_posix()
+        kind = classify_js(relative)
+        gz = gzip_size(path)
+        summary.append(f"{kind}:{relative}={gz}")
+
+        if kind == "entry" and gz > MAX_ENTRY_GZIP_BYTES:
+            findings.append(
+                f"entry {relative} gzip {gz} exceeds {MAX_ENTRY_GZIP_BYTES}"
+            )
+        elif kind == "feature" and gz > MAX_FEATURE_GZIP_BYTES:
+            findings.append(
+                f"feature chunk {relative} gzip {gz} exceeds {MAX_FEATURE_GZIP_BYTES}"
+            )
+        elif kind == "vendor" and gz > MAX_VENDOR_GZIP_BYTES:
+            findings.append(
+                f"vendor chunk {relative} gzip {gz} exceeds {MAX_VENDOR_GZIP_BYTES}"
+            )
+
     if total > MAX_TOTAL_BYTES:
-        findings.append(
-            f"console-v2 total {total} bytes exceeds budget {MAX_TOTAL_BYTES}"
-        )
-    if largest_js > MAX_SINGLE_JS_BYTES:
-        findings.append(
-            f"largest JS {largest_name} is {largest_js} bytes "
-            f"(budget {MAX_SINGLE_JS_BYTES})"
-        )
+        findings.append(f"console-v2 total {total} bytes exceeds budget {MAX_TOTAL_BYTES}")
 
     if findings:
         for item in findings:
@@ -60,8 +90,8 @@ def main() -> int:
         return 1
 
     print(
-        f"console bundle budget OK: total={total} bytes, "
-        f"largest_js={largest_name}:{largest_js} bytes"
+        f"console bundle budget OK: total={total} bytes; "
+        + "; ".join(summary)
     )
     return 0
 

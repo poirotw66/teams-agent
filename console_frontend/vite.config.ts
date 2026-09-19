@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
@@ -23,5 +24,37 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, '../agent_service/src/ai_ops_backoffice/static/console-v2'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+          if (id.includes('antd') || id.includes('@ant-design')) {
+            return 'vendor-antd';
+          }
+          if (id.includes('@refinedev')) {
+            return 'vendor-refine';
+          }
+          if (
+            id.includes('react-dom') ||
+            id.includes('react-router') ||
+            id.includes('/react/') ||
+            id.endsWith('/react') ||
+            id.includes('scheduler')
+          ) {
+            return 'vendor-react';
+          }
+          if (id.includes('react-markdown') || id.includes('remark') || id.includes('unified')) {
+            return 'vendor-markdown';
+          }
+          return 'vendor';
+        },
+      },
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
   },
 });
