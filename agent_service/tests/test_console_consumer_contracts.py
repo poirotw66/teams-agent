@@ -132,7 +132,9 @@ def test_operations_health_contract_for_health_page(tmp_path: Path) -> None:
     body = response.json()
     assert "components" in body or "probes" in body
     breakdown = (
-        body.get("components") if body.get("components") is not None else body.get("probes")
+        body.get("components")
+        if body.get("components") is not None
+        else body.get("probes")
     )
     assert isinstance(breakdown, (list, dict))
     if isinstance(breakdown, list):
@@ -140,3 +142,21 @@ def test_operations_health_contract_for_health_page(tmp_path: Path) -> None:
         assert "id" in breakdown[0] or "name" in breakdown[0]
     else:
         assert breakdown
+
+
+def test_workbench_overview_contract_for_dashboard(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    response = client.get("/api/console/workbench/overview", headers=_auth())
+    assert response.status_code == 200
+    body = response.json()
+    assert "kpis" in body
+    assert "topTopics" in body
+    assert "blindSpots" in body
+    kpis = body["kpis"]
+    for key in (
+        "total_inquiries_today",
+        "ai_resolution_rate",
+        "escalated_ticket_count",
+        "satisfaction_rate",
+    ):
+        assert key in kpis

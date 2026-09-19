@@ -138,9 +138,12 @@ class LegacyShellCheckTest(unittest.TestCase):
                 encoding="utf-8",
             )
             findings = check.check_product_html_avoids_legacy_js(static)
-            self.assertEqual(len(findings), 1)
-            self.assertIn("knowledge-ui.html", findings[0].format())
-            self.assertIn("must not import /static/legacy-js/", findings[0].message)
+            self.assertEqual(len(findings), 2)
+            paths = {f.path.name for f in findings}
+            self.assertEqual(paths, {"knowledge-ui.html", "index.html"})
+            self.assertTrue(
+                all("must not import /static/legacy-js/" in f.message for f in findings)
+            )
 
 
 if __name__ == "__main__":

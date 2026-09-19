@@ -50,8 +50,8 @@ LEGACY_JS_DIR = (
 STATIC_DIR = LEGACY_JS_DIR.parent
 ENV_VAR_NAME = "BACKOFFICE_LEGACY_SHELL_ENABLED"
 TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
-# Product HTML may not import the quarantine tree (kill-switch shell only).
-PRODUCT_HTML_ALLOWLIST_LEGACY_REFS = frozenset({"index.html"})
+# Product HTML outside legacy-js/ must not import the quarantine tree.
+PRODUCT_HTML_ALLOWLIST_LEGACY_REFS = frozenset()
 _LEGACY_JS_REF_RE = re.compile(r"/static/legacy-js/")
 
 # Deploy / infra / env samples that must not enable the kill-switch.

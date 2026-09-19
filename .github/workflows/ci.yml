@@ -115,3 +115,8 @@ jobs:
       - name: Frontend DTO overlap with generated OpenAPI schemas
         working-directory: ${{ github.workspace }}
         run: python3 scripts/check_frontend_dto_overlap.py
+      - name: Console OpenAPI call-site matrix
+        # Literal /api paths used by console_frontend must resolve in the
+        # canonical Backoffice OpenAPI (incl. knowledge catch-all proxy).
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/check_console_openapi_matrix.py

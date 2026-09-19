@@ -17,6 +17,7 @@ from starlette.responses import Response
 from ai_ops_backoffice.settings import BackofficeSettings
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+LEGACY_SHELL_DIR = STATIC_DIR / "legacy-js"
 UI_ASSET_VERSION = "ops-ui-20260918a"
 LEGACY_JS_MOUNT = "/static/legacy-js"
 
@@ -42,8 +43,10 @@ _CONSOLE_V2_STATIC_EXTENSIONS = frozenset(
 
 def _js_import_map_script(version: str) -> str:
     """Remap legacy-js module URLs so nested ES imports share one cache-busted URL."""
-    js_root = STATIC_DIR / "legacy-js"
+    js_root = LEGACY_SHELL_DIR
     mount = LEGACY_JS_MOUNT
+    if not js_root.is_dir():
+        return ""
     imports = {
         f"{mount}/{path.relative_to(js_root).as_posix()}": (
             f"{mount}/{path.relative_to(js_root).as_posix()}?v={version}"
@@ -55,7 +58,13 @@ def _js_import_map_script(version: str) -> str:
 
 
 def _render_index_html(version: str = UI_ASSET_VERSION) -> str:
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    index_path = LEGACY_SHELL_DIR / "index.html"
+    if not index_path.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail="Legacy shell assets are not available on this deployment.",
+        )
+    html = index_path.read_text(encoding="utf-8")
     html = html.replace("__UI_ASSET_VERSION__", version)
     marker = "<!-- AI_OPS_IMPORT_MAP -->"
     import_map = _js_import_map_script(version)

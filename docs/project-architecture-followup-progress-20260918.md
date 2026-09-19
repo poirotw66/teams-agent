@@ -15,8 +15,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done — private-access allowlist empty; local source file I/O via adapters; **router FS I/O gate** |
-| F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts; **handwritten_only=0** (workbench response models wired into OpenAPI; portal-only shapes remain in `workbench/types.ts`) |
-| G Independent frontend + legacy removal | Partial — soft deliverables landed; **legacy-js delete still waits unused release cycle** |
+| F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + **console OpenAPI call-site matrix**; handwritten_only=0 |
+| G Independent frontend + legacy removal | Partial — soft deliverables landed (legacy shell HTML now under `legacy-js/`); **tree delete still waits unused release cycle** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
 ## Phase G soft deliverables (landed)
@@ -34,6 +34,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Backoffice domain `import *` wildcards cleared (explicit imports)
 - Product HTML no longer imports `/static/legacy-js/` (`knowledge-ui` uses `/static/js/session_auth.js`; CI enforces)
 - JWT/session helpers live under `/static/js/session_auth.js`; legacy `api.js` re-exports them; reliability tests no longer import legacy-js
+- Legacy shell HTML moved into `static/legacy-js/index.html` (product static root has no legacy HTML)
+- Console↔OpenAPI call-site matrix gate: `scripts/check_console_openapi_matrix.py`
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. Tree delete waits one unused release after quarantine ships. Product/test paths no longer require legacy-js modules.

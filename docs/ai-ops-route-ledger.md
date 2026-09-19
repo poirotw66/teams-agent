@@ -67,7 +67,7 @@ Legacy hash URLs adhere to one of the following patterns:
   - `GET /` redirects to `/console-v2/dashboard` (legacy shell is not the normal product path).
   - `GET /legacy` also redirects to `/console-v2/dashboard` unless `BACKOFFICE_LEGACY_SHELL_ENABLED=true`.
   - The classic SPA bundle lives under `/static/legacy-js/` (not `/static/js/`). Product path never loads that full bundle; `/static/js/main.js` is only a thin redirect stub to `/console-v2/dashboard`.
-  - When `BACKOFFICE_LEGACY_SHELL_ENABLED=true`, `/legacy` serves `index.html` with import map + entry from `/static/legacy-js/`.
+  - When `BACKOFFICE_LEGACY_SHELL_ENABLED=true`, `/legacy` serves `static/legacy-js/index.html` with import map + entry from `/static/legacy-js/`.
   - Navigating to `/console-v2/*` loads the React Console for all ledger-owned routes (30/30 v2).
   - Navigating to legacy hash `/#knowledge_ops/workHub` or `/#work` triggers a browser client redirect to `/console-v2/work` preserving query params and filter state.
   - Navigating to legacy hash `/#knowledge_ops/quality?case_id=qc-1001` or `/#cases?id=qc-1001` redirects to `/console-v2/improvements/cases/qc-1001`.

@@ -52,7 +52,7 @@ def main() -> int:
     if STATIC_DIR.is_dir():
         for path in sorted(STATIC_DIR.rglob("*.html")):
             rel = path.relative_to(STATIC_DIR).as_posix()
-            if rel.startswith("legacy-js/") or path.name == "index.html":
+            if rel.startswith("legacy-js/"):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             if _LEGACY_REF.search(text):
