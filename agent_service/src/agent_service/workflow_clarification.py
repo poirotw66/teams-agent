@@ -10,14 +10,12 @@ from .confirmation import (
 )
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
-from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from .graph import user_context_from_identity
 from .supervisor import ConversationSupervisorDecision
 from .turn_planner import (
     planned_issues_to_issues,
     turn_plan_to_supervisor_decision,
 )
-from .workflow_clarification_helpers import _complete_complementary_pending_issue
 from .workflow_helpers import (
     AgentState,
     assistant_scope_issue,
@@ -164,13 +162,12 @@ class ClarificationWorkflowMixin:
     async def _extract_issues(self, state: AgentState) -> dict:
         from .workflow_clarification_extract import (
             apply_ticket_create_offer,
-            extract_issues_via_extractor,
             issues_from_offer_contexts,
+            resolve_issues_for_extraction,
             resolve_pending_offer_state,
         )
 
         request = state["request"]
-        correlation_id = state["correlation_id"]
         conversation = state["conversation"]
         ticket_intent = state.get("ticket_intent")
         if ticket_intent is None:
@@ -200,43 +197,17 @@ class ClarificationWorkflowMixin:
             decision=decision,
         )
         if issues is None:
-            planned = state.get("planned_issues") or []
-            if planned and self.settings.turn_planner_enabled:
-                issues = list(planned)
-                too_many_issues = len(planned) > self.settings.max_issues_per_message
-                if superseded_handoff and decision.intent != "HUMAN_ESCALATION":
-                    issues = [
-                        issue
-                        for issue in issues
-                        if issue.description != HUMAN_ESCALATION_ISSUE_DESCRIPTION
-                    ] or issues
-                issues = _complete_complementary_pending_issue(
-                    issues, prior_pending_issues, request.message.text, decision=decision
-                )
-                previous_count = max(
-                    (pending.clarificationCount for pending in prior_pending_issues),
-                    default=0,
-                )
-                if previous_count >= self.settings.max_clarification_rounds:
-                    issues = [
-                        issue.model_copy(update={"readiness": "READY", "missingInfo": []})
-                        if issue.readiness == "NEED_MORE_INFO"
-                        else issue
-                        for issue in issues
-                    ]
-            else:
-                issues, too_many_issues = await extract_issues_via_extractor(
-                    self,
-                    request=request,
-                    conversation=conversation,
-                    correlation_id=correlation_id,
-                    ticket_intent=ticket_intent,
-                    superseded_resume=superseded_resume,
-                    superseded_handoff=superseded_handoff,
-                    prior_pending_issues=prior_pending_issues,
-                    decision=decision,
-                    execution_context=state.get("execution_context"),
-                )
+            issues, too_many_issues = await resolve_issues_for_extraction(
+                self,
+                state=state,
+                request=request,
+                conversation=conversation,
+                ticket_intent=ticket_intent,
+                superseded_resume=superseded_resume,
+                superseded_handoff=superseded_handoff,
+                prior_pending_issues=prior_pending_issues,
+                decision=decision,
+            )
             force_ticket_offer = False
         issues, ticket_intent, force_ticket_offer, too_many_issues = apply_ticket_create_offer(
             self,
