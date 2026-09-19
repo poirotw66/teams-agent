@@ -2164,7 +2164,9 @@ def test_health_summary_includes_recent_masked_anomalies(tmp_path: Path) -> None
 
 
 def test_health_metric_summary_separates_failures_and_timeouts() -> None:
-    summary = BackofficeQueryService._health_metric_summary(
+    from ai_ops_backoffice.services.query_health_telemetry import health_metric_summary
+
+    summary = health_metric_summary(
         [("SUCCESS", 100.0), ("FAILED", 200.0), ("TIMEOUT", 300.0)]
     )
 

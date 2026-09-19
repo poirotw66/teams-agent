@@ -1322,9 +1322,9 @@ def test_gemini_adapter_always_sends_grounding_system_instruction() -> None:
         GeminiFileSearchKnowledgeService,
     )
 
-    source = inspect.getsource(GeminiFileSearchKnowledgeService.search)
+    source = inspect.getsource(GeminiFileSearchKnowledgeService._generate_content)
     assert "system_instruction=GROUNDING_SYSTEM_INSTRUCTION" in source, (
-        "GeminiFileSearchKnowledgeService.search must pass "
+        "GeminiFileSearchKnowledgeService._generate_content must pass "
         "GROUNDING_SYSTEM_INSTRUCTION to GenerateContentConfig."
     )
     # The rule that actually blocks the observed breach.

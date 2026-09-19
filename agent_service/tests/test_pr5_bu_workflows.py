@@ -365,7 +365,7 @@ async def test_uat_02_answer_traceability_and_range_streaming(tmp_path: Path):
     )
 
     class MockQueryService:
-        _source_trace = resolver
+        source_trace = resolver
 
     app = FastAPI()
     register_sources_routes(
@@ -440,7 +440,7 @@ def test_uat_03_source_unavailable_handling(tmp_path: Path):
     )
 
     class MockQueryService:
-        _source_trace = resolver
+        source_trace = resolver
 
     current_test_actor: Any = AI_ADMIN
 
