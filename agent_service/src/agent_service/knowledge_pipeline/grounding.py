@@ -55,13 +55,15 @@ _COMPOSITE_S_MARKER_RE = re.compile(
 _POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
 _UNCITED_POLICY_LEAK_RE = re.compile(
     r"(?:"
-    r"資料最小化|機敏資訊|登入密碼|憑證密碼|動態驗證碼|"
+    r"資料最小化|"
     r"遮蔽或移除|無關的個人|無關敏感|"
     r"變更(?:前|安全性設定前)(?:需|須)(?:先)?向|"
     r"(?:向|洽詢)(?:權責單位|資訊部門)(?:或[^，。；;\n]{0,16})?確認|"
     r"切勿擅自變更|"
     r"系統(?:資安|安全)政策|全域資安|"
-    r"\[Rule\s*10\]|(?<![A-Za-z])Rule\s*10(?![A-Za-z])"
+    r"\[Rule\s*10\]|(?<![A-Za-z])Rule\s*10(?![A-Za-z])|"
+    # Credential bans as overlay hedges — not ordinary「勿填機敏資訊」knowledge facts.
+    r"(?:嚴禁|不得).{0,24}(?:登入密碼|憑證密碼|動態驗證碼)"
     r")",
     re.IGNORECASE,
 )
