@@ -36,7 +36,7 @@ dev = [
 teams-agent = "teams_agent.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/teams_agent"]
+packages = ["src/teams_agent", "src/citation_asset_gateway"]
 
 # Monorepo workspace (docs/0919-arch.md P1). Members stay in-tree for now;
 # later splits move cores under packages/ and apps under apps/ without

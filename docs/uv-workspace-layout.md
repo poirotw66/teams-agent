@@ -24,3 +24,13 @@ apps/
 ```
 
 Do not split into multiple Git repositories.
+
+In-tree shared libraries already exist under `agent_service/src/`:
+
+- `platform_kernel/`
+- `operations_core/`
+- `knowledge_core/`
+- `composition/`
+
+Adapter-side Asset Gateway extraction: `src/citation_asset_gateway/`
+(with `teams_agent` shims for stable imports).
