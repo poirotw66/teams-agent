@@ -18,6 +18,9 @@ BACKOFFICE_SERVICE="${GCP_BACKOFFICE_SERVICE:-teams-ai-ops-backoffice}"
 PORTAL_SERVICE="${GCP_PORTAL_SERVICE:-teams-knowledge-portal}"
 CONVERTER_SERVICE="${GCP_PDF_CONVERTER_SERVICE:-teams-pdf-converter}"
 
+CONSOLE_SERVICE="${GCP_CONSOLE_SERVICE:-}"
+CONSOLE_IMAGE_NAME="${GCP_CONSOLE_IMAGE:-teams-ai-ops-console}"
+
 GIT_SHA="${RELEASE_GIT_SHA:-$(git -C "${PROJECT_DIR}" rev-parse --short HEAD)}"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
 AGENT_IMAGE="${REGISTRY}/${AGENT_SERVICE}:${GIT_SHA}"
@@ -25,6 +28,7 @@ ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:${GIT_SHA}"
 BACKOFFICE_IMAGE="${REGISTRY}/${BACKOFFICE_SERVICE}:${GIT_SHA}"
 PORTAL_IMAGE="${REGISTRY}/${PORTAL_SERVICE}:${GIT_SHA}"
 CONVERTER_IMAGE="${REGISTRY}/${CONVERTER_SERVICE}:${GIT_SHA}"
+CONSOLE_IMAGE="${REGISTRY}/${CONSOLE_IMAGE_NAME}:${GIT_SHA}"
 AGENT_CACHE_IMAGE="${REGISTRY}/${AGENT_SERVICE}:buildcache"
 ADAPTER_CACHE_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:buildcache"
 BACKOFFICE_CACHE_IMAGE="${REGISTRY}/${BACKOFFICE_SERVICE}:buildcache"
@@ -124,6 +128,7 @@ select_components() {
   BUILD_BACKOFFICE=0
   BUILD_PORTAL=0
   BUILD_CONVERTER=0
+  BUILD_CONSOLE=0
 
   if [[ "${requested}" != "auto" ]]; then
     if [[ ",${requested}," == *",agent,"* ]]; then BUILD_AGENT=1; fi
@@ -131,6 +136,7 @@ select_components() {
     if [[ ",${requested}," == *",backoffice,"* ]]; then BUILD_BACKOFFICE=1; fi
     if [[ ",${requested}," == *",portal,"* ]]; then BUILD_PORTAL=1; fi
     if [[ ",${requested}," == *",converter,"* ]]; then BUILD_CONVERTER=1; fi
+    if [[ ",${requested}," == *",console,"* ]]; then BUILD_CONSOLE=1; fi
     return
   fi
 
@@ -165,7 +171,12 @@ select_components() {
       src/*|pyproject.toml|uv.lock|Dockerfile)
         BUILD_ADAPTER=1
         ;;
-      agent_service/src/ai_ops_backoffice/*|console_frontend/*|agent_service/Dockerfile.backoffice)
+      console_frontend/*|console_frontend/Dockerfile|deploy/cloudbuild-console.yaml)
+        # Phase G: UI-only changes build the independent console image, not
+        # the Backoffice Python image.
+        BUILD_CONSOLE=1
+        ;;
+      agent_service/src/ai_ops_backoffice/*|agent_service/Dockerfile.backoffice)
         BUILD_BACKOFFICE=1
         ;;
       agent_service/src/knowledge_portal/*)
@@ -183,6 +194,7 @@ select_components() {
         BUILD_BACKOFFICE=1
         BUILD_PORTAL=1
         BUILD_CONVERTER=1
+        BUILD_CONSOLE=1
         ;;
     esac
   done <<<"${changed_files}"
@@ -190,13 +202,13 @@ select_components() {
 
 require_cmd git
 select_components
-if ((BUILD_AGENT + BUILD_ADAPTER + BUILD_BACKOFFICE + BUILD_PORTAL + BUILD_CONVERTER == 0)); then
+if ((BUILD_AGENT + BUILD_ADAPTER + BUILD_BACKOFFICE + BUILD_PORTAL + BUILD_CONVERTER + BUILD_CONSOLE == 0)); then
   fail "No application changes detected. Publish knowledge separately or set RELEASE_COMPONENTS."
 fi
 if [[ "${RELEASE_DRY_RUN:-0}" == "1" ]]; then
-  printf 'agent=%s adapter=%s backoffice=%s portal=%s converter=%s\n' \
+  printf 'agent=%s adapter=%s backoffice=%s portal=%s converter=%s console=%s\n' \
     "${BUILD_AGENT}" "${BUILD_ADAPTER}" "${BUILD_BACKOFFICE}" "${BUILD_PORTAL}" \
-    "${BUILD_CONVERTER}"
+    "${BUILD_CONVERTER}" "${BUILD_CONSOLE}"
   exit 0
 fi
 [[ -n "${PROJECT_ID}" ]] || fail "Set GCP_PROJECT_ID"
@@ -211,6 +223,7 @@ if [[ "${BUILD_ONLY}" != "1" ]]; then
   PREVIOUS_BACKOFFICE_IMAGE=""
   PREVIOUS_PORTAL_IMAGE=""
   PREVIOUS_CONVERTER_IMAGE=""
+  PREVIOUS_CONSOLE_IMAGE=""
   if [[ "${BUILD_AGENT}" == "1" ]]; then
     PREVIOUS_AGENT_IMAGE="$(
       pin_image_reference "$(current_service_image "${AGENT_SERVICE}")"
@@ -236,6 +249,11 @@ if [[ "${BUILD_ONLY}" != "1" ]]; then
       pin_image_reference "$(current_service_image "${CONVERTER_SERVICE}")"
     )"
   fi
+  if [[ "${BUILD_CONSOLE}" == "1" && -n "${CONSOLE_SERVICE}" ]]; then
+    PREVIOUS_CONSOLE_IMAGE="$(
+      pin_image_reference "$(current_service_image "${CONSOLE_SERVICE}")"
+    )"
+  fi
 
   rollback_all() {
     rollback_service_image "${AGENT_SERVICE}" "${PREVIOUS_AGENT_IMAGE}"
@@ -243,6 +261,9 @@ if [[ "${BUILD_ONLY}" != "1" ]]; then
     rollback_service_image "${BACKOFFICE_SERVICE}" "${PREVIOUS_BACKOFFICE_IMAGE}"
     rollback_service_image "${PORTAL_SERVICE}" "${PREVIOUS_PORTAL_IMAGE}"
     rollback_service_image "${CONVERTER_SERVICE}" "${PREVIOUS_CONVERTER_IMAGE}"
+    if [[ -n "${CONSOLE_SERVICE}" ]]; then
+      rollback_service_image "${CONSOLE_SERVICE}" "${PREVIOUS_CONSOLE_IMAGE}"
+    fi
   }
 
   trap 'status=$?; if [[ ${status} -ne 0 ]]; then log "Release failed — attempting rollback"; rollback_all; fi; exit ${status}' ERR
@@ -250,17 +271,28 @@ fi
 
 gcloud config set project "${PROJECT_ID}" >/dev/null
 
-log "Submitting one parallel application build"
-gcloud builds submit "${PROJECT_DIR}" \
-  --config="${PROJECT_DIR}/deploy/cloudbuild-release.yaml" \
-  --substitutions="_BUILD_AGENT=${BUILD_AGENT},_BUILD_ADAPTER=${BUILD_ADAPTER},_BUILD_BACKOFFICE=${BUILD_BACKOFFICE},_BUILD_PORTAL=${BUILD_PORTAL},_BUILD_CONVERTER=${BUILD_CONVERTER},_AGENT_IMAGE=${AGENT_IMAGE},_ADAPTER_IMAGE=${ADAPTER_IMAGE},_BACKOFFICE_IMAGE=${BACKOFFICE_IMAGE},_PORTAL_IMAGE=${PORTAL_IMAGE},_CONVERTER_IMAGE=${CONVERTER_IMAGE},_AGENT_CACHE_IMAGE=${AGENT_CACHE_IMAGE},_ADAPTER_CACHE_IMAGE=${ADAPTER_CACHE_IMAGE},_BACKOFFICE_CACHE_IMAGE=${BACKOFFICE_CACHE_IMAGE},_PORTAL_CACHE_IMAGE=${PORTAL_CACHE_IMAGE},_CONVERTER_CACHE_IMAGE=${CONVERTER_CACHE_IMAGE}" \
-  --project="${PROJECT_ID}"
+if ((BUILD_AGENT + BUILD_ADAPTER + BUILD_BACKOFFICE + BUILD_PORTAL + BUILD_CONVERTER > 0)); then
+  log "Submitting one parallel application build"
+  gcloud builds submit "${PROJECT_DIR}" \
+    --config="${PROJECT_DIR}/deploy/cloudbuild-release.yaml" \
+    --substitutions="_BUILD_AGENT=${BUILD_AGENT},_BUILD_ADAPTER=${BUILD_ADAPTER},_BUILD_BACKOFFICE=${BUILD_BACKOFFICE},_BUILD_PORTAL=${BUILD_PORTAL},_BUILD_CONVERTER=${BUILD_CONVERTER},_AGENT_IMAGE=${AGENT_IMAGE},_ADAPTER_IMAGE=${ADAPTER_IMAGE},_BACKOFFICE_IMAGE=${BACKOFFICE_IMAGE},_PORTAL_IMAGE=${PORTAL_IMAGE},_CONVERTER_IMAGE=${CONVERTER_IMAGE},_AGENT_CACHE_IMAGE=${AGENT_CACHE_IMAGE},_ADAPTER_CACHE_IMAGE=${ADAPTER_CACHE_IMAGE},_BACKOFFICE_CACHE_IMAGE=${BACKOFFICE_CACHE_IMAGE},_PORTAL_CACHE_IMAGE=${PORTAL_CACHE_IMAGE},_CONVERTER_CACHE_IMAGE=${CONVERTER_CACHE_IMAGE}" \
+    --project="${PROJECT_ID}"
+fi
+
+if [[ "${BUILD_CONSOLE}" == "1" ]]; then
+  log "Submitting independent console-v2 image build"
+  gcloud builds submit "${PROJECT_DIR}" \
+    --config="${PROJECT_DIR}/deploy/cloudbuild-console.yaml" \
+    --substitutions="_IMAGE=${CONSOLE_IMAGE}" \
+    --project="${PROJECT_ID}"
+fi
 
 if [[ "${BUILD_AGENT}" == "1" ]]; then AGENT_IMAGE="$(resolve_image_digest "${AGENT_IMAGE}")"; fi
 if [[ "${BUILD_ADAPTER}" == "1" ]]; then ADAPTER_IMAGE="$(resolve_image_digest "${ADAPTER_IMAGE}")"; fi
 if [[ "${BUILD_BACKOFFICE}" == "1" ]]; then BACKOFFICE_IMAGE="$(resolve_image_digest "${BACKOFFICE_IMAGE}")"; fi
 if [[ "${BUILD_PORTAL}" == "1" ]]; then PORTAL_IMAGE="$(resolve_image_digest "${PORTAL_IMAGE}")"; fi
 if [[ "${BUILD_CONVERTER}" == "1" ]]; then CONVERTER_IMAGE="$(resolve_image_digest "${CONVERTER_IMAGE}")"; fi
+if [[ "${BUILD_CONSOLE}" == "1" ]]; then CONSOLE_IMAGE="$(resolve_image_digest "${CONSOLE_IMAGE}")"; fi
 
 if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
   printf '\nBuild complete (BUILD_ONLY=1 — Cloud Run not updated).\n'
@@ -270,6 +302,7 @@ if [[ "${BUILD_ONLY:-0}" == "1" ]]; then
   printf 'Backoffice:    %s\n' "${BACKOFFICE_IMAGE}"
   printf 'Portal:        %s\n' "${PORTAL_IMAGE}"
   printf 'Converter:     %s\n' "${CONVERTER_IMAGE}"
+  printf 'Console:       %s\n' "${CONSOLE_IMAGE}"
   exit 0
 fi
 
@@ -307,6 +340,12 @@ if [[ "${BUILD_CONVERTER}" == "1" ]]; then
   deploy_service_image "${CONVERTER_SERVICE}" "${CONVERTER_IMAGE}" &
   DEPLOY_PIDS+=("$!")
 fi
+if [[ "${BUILD_CONSOLE}" == "1" && -n "${CONSOLE_SERVICE}" ]]; then
+  deploy_service_image "${CONSOLE_SERVICE}" "${CONSOLE_IMAGE}" &
+  DEPLOY_PIDS+=("$!")
+elif [[ "${BUILD_CONSOLE}" == "1" ]]; then
+  log "Console image built (${CONSOLE_IMAGE}); set GCP_CONSOLE_SERVICE to deploy the independent UI service"
+fi
 DEPLOY_FAILED=0
 for pid in "${DEPLOY_PIDS[@]}"; do
   if ! wait "${pid}"; then
@@ -334,6 +373,7 @@ printf 'Adapter image: %s\n' "${ADAPTER_IMAGE}"
 printf 'Backoffice:    %s\n' "${BACKOFFICE_IMAGE}"
 printf 'Portal:        %s\n' "${PORTAL_IMAGE}"
 printf 'Converter:     %s\n' "${CONVERTER_IMAGE}"
+printf 'Console:       %s\n' "${CONSOLE_IMAGE}"
 if [[ -n "${ADAPTER_URL}" ]]; then
   printf 'Adapter URL:   %s\n' "${ADAPTER_URL}"
   printf 'Smoke:         curl -sS %s/readyz\n' "${ADAPTER_URL}"

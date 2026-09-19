@@ -16,10 +16,9 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
 | F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
-| G Independent frontend + legacy removal | Partial — independent console image + cloudbuild/compose; quarantine CI green; legacy-js delete + UI-only deploy cutover still open |
-| H Oversized domain convergence | **File ratchet cleared** (0 files >500); **function ratchet cleared** (0 functions >80; was 18 this pass, ~39 earlier in session) |
+| G Independent frontend + legacy removal | Partial — independent console image + release path for UI-only builds; quarantine CI green; legacy-js delete still waits unused release cycle |
+| H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
 ## Goal blockers (not closed)
-- **G:** `static/legacy-js` still present (~73 files). Quarantine CI is green; tree delete waits one unused release cycle. Console has independent Docker image, but release still rebuilds Backoffice Python image for UI-only changes.
-- **H:** 0 oversized *files*; **0** oversized *functions* remain under the function ratchet.
+- **G:** `static/legacy-js` still present (~73 files). Quarantine CI green; tree delete waits one unused release cycle. UI-only release builds console image without Backoffice Python (set `GCP_CONSOLE_SERVICE` for Cloud Run cutover).
 - **F residual (optional):** hand-written frontend DTOs may still parallel generated client.
