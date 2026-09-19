@@ -40,5 +40,22 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Fail-closed delete helper: `scripts/delete_legacy_js.py` (requires unused-release acknowledgment)
 - Dual-mode legacy shell CI gate: passes with quarantine present **or** fully removed
 
+## Tip verification (2026-09-19)
+Re-checked on local `main` tip (ahead of `origin/main` by ~140 commits):
+
+- Adapter + Agent `ruff check`: exit 0
+- `check_architecture.py`: passed (oversized files/functions empty)
+- `check_legacy_shell.py`: quarantine-present mode OK
+- `snapshot_openapi.py --check` + `generate_openapi_ts.py --check`: OK
+- `check_wire_contracts.py`: OK
+- `check_frontend_dto_overlap.py`: `handwritten_only=0`
+- `check_console_openapi_matrix.py` + `check_console_bundle_budget.py`: OK
+- `sync_console_v2.py --check`: OK
+- console Vitest: 17 passed
+- Agent full pytest: 1740 passed (fixed UTC-midnight flaky conversation-volume trend seed)
+- Adapter pytest: 215 passed
+
+`origin/main` still has **no** `static/legacy-js` / `BACKOFFICE_LEGACY_SHELL_*` (last remote tip predates quarantine). First ship of this tip starts the unused-release clock; it does **not** delete the tree in the same release.
+
 ## Goal blockers (not closed)
-- **G hard exit:** `static/legacy-js` still present (~74 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. After that cycle: `uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write`, then retire quarantine-present assertions.
+- **G hard exit:** `static/legacy-js` still present (~74 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. After that cycle: `uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write` (updates waivers/progress; dual-mode legacy gate accepts absence).
