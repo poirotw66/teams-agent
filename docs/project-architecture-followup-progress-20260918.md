@@ -27,6 +27,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)
 - Bundle budget gate enforces entry/feature/vendor gzip ceilings
 - Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests
+- Backoffice domain `import *` wildcards cleared (explicit imports)
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.

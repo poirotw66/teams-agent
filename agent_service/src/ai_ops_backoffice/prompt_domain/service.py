@@ -13,8 +13,8 @@ from operations_core.default_extractor_prompt import (
 )
 
 from ..faq_domain.errors import FaqAuthorizationError, FaqNotFoundError
-from .models import *  # noqa: F403
-from .repository import *  # noqa: F403
+from .models import PromptAuditEvent, PromptState
+from .repository import PromptRepository
 
 
 class PromptPocService:

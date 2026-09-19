@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
-from .models import *  # noqa: F403
+from .models import Mutation, PromptState
 
 
 class PromptRepository(Protocol):

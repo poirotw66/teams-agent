@@ -16,8 +16,8 @@ from ..faq_domain.errors import (
     FaqTransitionError,
     FaqVersionConflictError,
 )
-from .models import *  # noqa: F403
-from .repository import *  # noqa: F403
+from .models import SyncAuditEvent, SyncIdempotency, SyncJob, SyncState
+from .repository import SyncRepository
 
 
 class SyncService:

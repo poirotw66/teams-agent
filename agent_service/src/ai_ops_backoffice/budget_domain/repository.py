@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from ..faq_domain.errors import (
     FaqVersionConflictError,
 )
-from .models import *  # noqa: F403
+from .models import BudgetState, Mutation
 
 
 class BudgetRepository(Protocol):

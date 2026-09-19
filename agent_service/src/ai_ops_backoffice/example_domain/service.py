@@ -15,8 +15,8 @@ from ..faq_domain.errors import (
     FaqTransitionError,
     FaqValidationError,
 )
-from .models import *  # noqa: F403
-from .repository import *  # noqa: F403
+from .models import ExampleAuditEvent, ExampleRecord
+from .repository import ExampleRepository
 
 
 class ExampleService:
