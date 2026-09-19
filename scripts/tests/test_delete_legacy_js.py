@@ -35,12 +35,12 @@ class DeleteLegacyJsTest(unittest.TestCase):
 
     def test_dry_run_with_unused_release_confirmation_does_not_delete(self) -> None:
         delete = _load_delete_legacy_js()
-        self.assertTrue(delete.LEGACY_JS.is_dir())
+        initial_is_dir = delete.LEGACY_JS.is_dir()
         self.assertEqual(
             delete.main(["--confirm-unused-release-completed"]),
             0,
         )
-        self.assertTrue(delete.LEGACY_JS.is_dir())
+        self.assertEqual(delete.LEGACY_JS.is_dir(), initial_is_dir)
 
     def test_never_shipped_refuses_when_origin_has_quarantine(self) -> None:
         delete = _load_delete_legacy_js()
