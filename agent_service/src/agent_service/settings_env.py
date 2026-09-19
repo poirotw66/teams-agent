@@ -120,12 +120,10 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         "rag_sparse_weight": _float_env("RAG_SPARSE_WEIGHT", 0.5),
         "rag_dense_weight": _float_env("RAG_DENSE_WEIGHT", 1.5),
         "rag_contextual_index": _bool_env("RAG_CONTEXTUAL_INDEX", True),
-        "rag_reranker_enabled": _bool_env("RAG_RERANKER_ENABLED", True),
-        "rag_reranker_model": (
-            _str_env("RAG_RERANKER_MODEL") or "listwise:gemini-2.5-flash"
-        ),
+        "rag_reranker_enabled": _bool_env("RAG_RERANKER_ENABLED", False),
+        "rag_reranker_model": (_str_env("RAG_RERANKER_MODEL") or "lexical"),
         "rag_rerank_candidate_k": _int_env("RAG_RERANK_CANDIDATE_K", 24),
-        "rag_rerank_timeout_ms": _int_env("RAG_RERANK_TIMEOUT_MS", 90_000),
+        "rag_rerank_timeout_ms": _int_env("RAG_RERANK_TIMEOUT_MS", 700),
         "rag_reranker_min_tier": (
             _str_env("RAG_RERANKER_MIN_TIER") or "standard"
         ).strip().lower(),

@@ -87,6 +87,7 @@ def build_retrieval_host(
         ).lower(),
         reranker_model=str(getattr(settings, "rag_reranker_model", None) or "noop"),
         fusion_mode=fusion_mode,
+        fusion_candidate_k=int(getattr(index, "fusion_candidate_k", 20)),
         rrf_k=int(getattr(index, "rrf_k", 60)),
         contextualization_version=next(
             (
@@ -96,6 +97,7 @@ def build_retrieval_host(
             ),
             "",
         ),
+        chunk_by_id={chunk.chunk_id: chunk for chunk in index.chunks},
     )
 
 

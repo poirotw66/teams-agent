@@ -84,14 +84,20 @@ def build_gemini_listwise_pair_scorer(model_id: str = "gemini-2.5-flash") -> Pai
             snippet = (text or "").replace("\n", " ")[:180]
             lines.append(f"{index}. {snippet}")
         prompt = (
-            "你是企業 IT 知識庫 listwise reranker。\n"
-            "規則：FortiToken/Token OTP→VPN常見Q&A，勿選外網/國金 CRM；"
-            "UX-AUDIT測試文件→FortiClient錯訊或VPN常見Q&A；登入不了→FortiClient/VPN優先於AD。\n"
-            f"只輸出一個 JSON 整數陣列（長度 {len(texts)}），例如 [3,1,2,...]，"
-            "禁止物件、禁止 markdown。\n\n"
-            f"查詢：{query}\n\n候選：\n" + "\n".join(lines)
+            "You are an enterprise IT knowledge-base listwise reranker.\n"
+            "Rank candidate passages by how directly they answer the query.\n"
+            "Prioritize: (1) exact system/product match, (2) exact error code or "
+            "identifier, (3) same troubleshooting scenario, (4) evidence that "
+            "directly answers the requested action, (5) current applicable version.\n"
+            "Penalize: (1) topically similar but different systems, (2) different "
+            "error codes, (3) different OS/platforms, (4) generic docs when a "
+            "specific procedure exists.\n"
+            "Do not use memorized exam answers or document-title shortcuts.\n"
+            f"Output only one JSON integer array of length {len(texts)}, "
+            "e.g. [3,1,2,...]. No objects, no markdown.\n\n"
+            f"Query: {query}\n\nCandidates:\n" + "\n".join(lines)
         )
-        model = init_chat_model(langchain_id, temperature=0, timeout=90)
+        model = init_chat_model(langchain_id, temperature=0, timeout=30)
         response = await asyncio.to_thread(model.invoke, prompt)
         content = getattr(response, "content", str(response))
         if isinstance(content, list):

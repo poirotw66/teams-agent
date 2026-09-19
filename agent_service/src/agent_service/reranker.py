@@ -331,6 +331,56 @@ def build_cross_encoder_pair_scorer(model_name: str) -> PairScorer:
     return score_pairs
 
 
+def _build_listwise_reranker(model_name: str | None, *, timeout_ms: int) -> Reranker:
+    """Gemini listwise + title-protect (experiment-only; lexical offline fallback)."""
+    import os
+
+    from .reranker_listwise import (
+        build_gemini_listwise_pair_scorer,
+        wrap_listwise_title_protect,
+    )
+
+    resolved = (model_name or "listwise").strip()
+    if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+        logger.warning(
+            "rag_reranker_model=%s requested without Gemini API key; "
+            "using lexical title-protect FailOpenReranker",
+            model_name,
+        )
+        inner = wrap_listwise_title_protect(lexical_overlap_pair_scorer)
+    else:
+        inner = wrap_listwise_title_protect(build_gemini_listwise_pair_scorer(resolved))
+    return FailOpenReranker(inner, timeout_seconds=max(timeout_ms, 1) / 1000.0)
+
+
+def _pair_scorer_for_model_name(model_name: str | None) -> PairScorer | None:
+    """Resolve a model id to a PairScorer, or None when unknown / listwise."""
+    resolved = (model_name or "lexical").strip()
+    lowered = resolved.lower()
+    if lowered in {"", "lexical", "noop-lexical"}:
+        return lexical_overlap_pair_scorer
+    if lowered.startswith(("cross-encoder:", "cross_encoder:")):
+        return build_cross_encoder_pair_scorer(resolved)
+    if lowered in {
+        "vertex-ranking",
+        "vertex_ranking",
+        "ranking-api",
+        "ranking_api",
+    } or lowered.startswith(
+        ("vertex-ranking:", "vertex_ranking:", "ranking-api:", "ranking_api:")
+    ):
+        from .reranker_dedicated import build_vertex_ranking_pair_scorer
+
+        return build_vertex_ranking_pair_scorer(resolved)
+    if lowered in {"qwen3-reranker", "qwen3_reranker", "qwen3"} or lowered.startswith(
+        ("qwen3-reranker:", "qwen3_reranker:", "qwen3:")
+    ):
+        from .reranker_dedicated import build_qwen3_reranker_pair_scorer
+
+        return build_qwen3_reranker_pair_scorer(resolved)
+    return None
+
+
 def build_default_reranker(
     *,
     enabled: bool,
@@ -343,62 +393,33 @@ def build_default_reranker(
     When enabled without an injected scorer:
     - ``lexical`` (default) — deterministic Jaccard PairScorer
     - ``cross-encoder:<hf-id>`` — optional sentence_transformers CrossEncoder
-    - ``listwise`` / ``listwise:gemini-…`` — Gemini listwise + title-protect blend
+    - ``vertex-ranking[:model]`` — Vertex AI Ranking API (v2.1 preferred A/B)
+    - ``qwen3-reranker[:hf-id]`` — Qwen3 Reranker via CrossEncoder (v2.1 fallback)
+    - ``listwise`` / ``listwise:gemini-…`` — Gemini listwise + title-protect (experiment-only)
     """
     if not enabled:
         return NoopReranker()
-    scorer = score_pairs
-    use_title_protect = False
+    if score_pairs is not None:
+        return FailOpenReranker(
+            ModelReranker(score_pairs),
+            timeout_seconds=max(timeout_ms, 1) / 1000.0,
+        )
+    lowered = (model_name or "lexical").strip().lower()
+    if lowered in {"listwise", "gemini-listwise"} or lowered.startswith(
+        ("listwise:", "gemini-listwise:")
+    ):
+        return _build_listwise_reranker(model_name, timeout_ms=timeout_ms)
+    scorer = _pair_scorer_for_model_name(model_name)
     if scorer is None:
-        resolved = (model_name or "lexical").strip()
-        lowered = resolved.lower()
-        if lowered in {"", "lexical", "noop-lexical"}:
-            scorer = lexical_overlap_pair_scorer
-        elif lowered.startswith(("cross-encoder:", "cross_encoder:")):
-            scorer = build_cross_encoder_pair_scorer(resolved)
-        elif lowered in {"listwise", "gemini-listwise"} or lowered.startswith(
-            ("listwise:", "gemini-listwise:")
-        ):
-            import os
-
-            from .reranker_listwise import (
-                build_gemini_listwise_pair_scorer,
-                wrap_listwise_title_protect,
-            )
-
-            # Without Gemini credentials, keep title-protect + lexical scoring so
-            # CI never attempts a network listwise call but still exercises the
-            # production wrapper shape.
-            if not (
-                os.environ.get("GOOGLE_API_KEY")
-                or os.environ.get("GEMINI_API_KEY")
-            ):
-                logger.warning(
-                    "rag_reranker_model=%s requested without Gemini API key; "
-                    "using lexical title-protect FailOpenReranker",
-                    model_name,
-                )
-                return FailOpenReranker(
-                    wrap_listwise_title_protect(lexical_overlap_pair_scorer),
-                    timeout_seconds=max(timeout_ms, 1) / 1000.0,
-                )
-
-            return FailOpenReranker(
-                wrap_listwise_title_protect(build_gemini_listwise_pair_scorer(resolved)),
-                timeout_seconds=max(max(timeout_ms, 1) / 1000.0, 90.0),
-            )
-        else:
-            logger.warning(
-                "rag_reranker_model=%s has no built-in adapter; using NoopReranker",
-                model_name,
-            )
-            return NoopReranker()
-    inner: Reranker = ModelReranker(scorer)
-    if use_title_protect:
-        from .reranker_listwise import TitleProtectedListwiseReranker
-
-        inner = TitleProtectedListwiseReranker(inner)
-    return FailOpenReranker(inner, timeout_seconds=max(timeout_ms, 1) / 1000.0)
+        logger.warning(
+            "rag_reranker_model=%s has no built-in adapter; using NoopReranker",
+            model_name,
+        )
+        return NoopReranker()
+    return FailOpenReranker(
+        ModelReranker(scorer),
+        timeout_seconds=max(timeout_ms, 1) / 1000.0,
+    )
 
 
 # Re-export listwise helpers for stable imports from ``reranker``.

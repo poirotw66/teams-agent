@@ -94,7 +94,6 @@ def validate_rag_and_conversation_limits(settings: _AgentSettingsView) -> None:
         raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
     if settings.rag_fusion_mode not in {"WEIGHTED", "RRF"}:
         raise ValueError("RAG_FUSION_MODE must be one of WEIGHTED or RRF.")
-    # M7: WEIGHTED is accepted as a deprecated alias and mapped to RRF at runtime.
     if not 1 <= settings.rag_rrf_k <= 200:
         raise ValueError("RAG_RRF_K must be between 1 and 200.")
     if not 1 <= settings.rag_sparse_candidate_k <= 200:

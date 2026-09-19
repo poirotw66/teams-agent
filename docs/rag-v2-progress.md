@@ -1,37 +1,31 @@
 # RAG v2 Progress
 
 Tracks execution of [`docs/rag-v2-spec.md`](./rag-v2-spec.md).
-Rollout ops: [`docs/rag-v2-canary-cutover.md`](./rag-v2-canary-cutover.md).
+**Course correction:** [`docs/rag-v2.1-plan.md`](./rag-v2.1-plan.md) — do **not** merge PR #10 as-is.
 
 ## Status
 
 | Milestone | Item | Status |
 |---|---|---|
-| M0 | Hard eval v2 | **Done** |
-| M1 | RRF | **Done** (production default) |
-| M2 | Contextual index dual-read | **Done** |
-| M3 | Reranker (listwise + title-protect) | **Done** (default on, fail-open) |
-| M4 | Shadow matrix | **Done** |
-| M5 | Canary wiring | **Done** (`RAG_CANARY_PERCENT=0`) |
-| §45 | Acceptance vs Weighted | **Cleared offline (label-free)** |
-| M6 | Production default | **Done** (`RRF` + `listwise`) |
-| M7 | Delete weighted hot path | **Done** (alias → RRF; `LEGACY_WEIGHTED` eval-only) |
+| M0–M5 | Hard eval / RRF / contextual / reranker iface / shadow / canary | **Keep infrastructure** |
+| §45 offline Hit@1 | Label-free title ranking | **Not a production cutover gate** |
+| M6 Gemini listwise default | Production default | **Withdrawn** (default off / lexical) |
+| M7 Delete Weighted | Alias WEIGHTED→RRF | **Reverted** — Weighted path restored for A/B |
+| **v2.1 P0** | Evidence-level eval + no-answer fix + frozen split | **Done** |
+| **v2.1 P0.5** | Remove benchmark leakage from listwise prompt | **Done** |
+| **v2.1 P1** | Candidate pool + Adaptive Fusion + reranker A/B plan | **Done** |
+| **v2.1 P2** | Inject before rerank + parent/neighbor expand | **Done** (basic) |
 
-## Production defaults (M6)
+## Current safe defaults (v2.1)
 
 | Flag | Default |
 |---|---|
-| `RAG_FUSION_MODE` | `RRF` |
-| `RAG_RERANKER_ENABLED` | `true` |
-| `RAG_RERANKER_MODEL` | `listwise:gemini-2.5-flash` |
+| `RAG_FUSION_MODE` | `RRF` (Weighted still available / honest for baseline A) |
+| `RAG_RERANKER_ENABLED` | `false` |
+| `RAG_RERANKER_MODEL` | `lexical` |
+| `RAG_RERANK_TIMEOUT_MS` | `700` |
 | `RAG_CANARY_PERCENT` | `0` |
-
-`WEIGHTED` env values alias to RRF at `HybridIndex` construction (M7). Shadow/§45 baseline A still uses `fusion_mode=LEGACY_WEIGHTED` on search calls only.
-
-## §45 evidence
-
-`uv run python ../scripts/run_rag_v2_section45_eval.py` → gate45 **true** (Hit +11.9pp / MRR +9.1% / Recall@20 flat).
 
 ## Explicit non-goals (unchanged)
 
-No GraphRAG / Vector DB / workflow rewrite / microservice / Answer-Citation rewrite.
+No GraphRAG / Vector DB / workflow rewrite / microservice / Answer-Citation rewrite until Evidence Recall@4 + answer quality move together.

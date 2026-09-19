@@ -134,8 +134,7 @@ class HybridIndex:
         self.tokenized_documents = [tokenize(sparse_index_text(chunk)) for chunk in chunks]
         self.last_search_timings_ms: dict[str, float] = {}
         self.fusion_mode = (fusion_mode or "RRF").strip().upper()
-        if self.fusion_mode == "WEIGHTED":
-            # M7: weighted hot path removed; alias keeps old env configs working.
+        if self.fusion_mode not in {"RRF", "WEIGHTED", "LEGACY_WEIGHTED"}:
             self.fusion_mode = "RRF"
         self.rrf_k = rrf_k
         self.sparse_candidate_k = sparse_candidate_k
@@ -276,7 +275,10 @@ class HybridIndex:
         from .retrieval_fusion import fuse_hybrid_candidates
 
         groups = groups or set()
-        use_legacy_weighted = (fusion_mode or "").strip().upper() == "LEGACY_WEIGHTED"
+        effective_mode = (fusion_mode or self.fusion_mode or "RRF").strip().upper()
+        # WEIGHTED and LEGACY_WEIGHTED both run the linear blend path so A/B
+        # baselines stay honest (RAG v2.1 — do not alias WEIGHTED → RRF).
+        use_legacy_weighted = effective_mode in {"WEIGHTED", "LEGACY_WEIGHTED"}
         started = time.perf_counter()
         authorized_indices = [
             index
@@ -300,16 +302,34 @@ class HybridIndex:
             embedding_ms = (time.perf_counter() - embed_started) * 1000
 
         results = self._candidate_results(authorized_indices, normalized_sparse, query_vector)
+        sparse_candidate_k = self.sparse_candidate_k
+        dense_candidate_k = self.dense_candidate_k
+        sparse_weight = self.sparse_weight
+        dense_weight = self.dense_weight
+        if not use_legacy_weighted:
+            from .retrieval_adaptive_fusion import adaptive_fusion_weights
+
+            weights = adaptive_fusion_weights(
+                query,
+                default_sparse_weight=self.sparse_weight,
+                default_dense_weight=self.dense_weight,
+                default_sparse_candidate_k=self.sparse_candidate_k,
+                default_dense_candidate_k=self.dense_candidate_k,
+            )
+            sparse_candidate_k = weights.sparse_candidate_k
+            dense_candidate_k = weights.dense_candidate_k
+            sparse_weight = weights.sparse_weight
+            dense_weight = weights.dense_weight
         filtered = fuse_hybrid_candidates(
             results,
             query=query,
             limit=limit,
-            sparse_candidate_k=self.sparse_candidate_k,
-            dense_candidate_k=self.dense_candidate_k,
+            sparse_candidate_k=sparse_candidate_k,
+            dense_candidate_k=dense_candidate_k,
             fusion_candidate_k=self.fusion_candidate_k,
             rrf_k=self.rrf_k,
-            sparse_weight=self.sparse_weight,
-            dense_weight=self.dense_weight,
+            sparse_weight=sparse_weight,
+            dense_weight=dense_weight,
             legacy_weighted=use_legacy_weighted,
         )
         timings = {

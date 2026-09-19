@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +16,7 @@ from agent_service.rag_observability import (
 )
 from agent_service.reranker import Reranker, tier_meets_minimum
 from agent_service.retrieval import SearchResult
+from agent_service.retrieval_expand import expand_retrieval_context
 
 from .query_tier import classify_query_tier
 from .retrieval_state import RetrievalState
@@ -48,8 +49,21 @@ class RetrievalHost:
     reranker_min_tier: str = "standard"
     reranker_model: str = "noop"
     fusion_mode: str = "RRF"
+    fusion_candidate_k: int = 20
     rrf_k: int = 60
     contextualization_version: str = ""
+    chunk_by_id: Mapping[str, Any] | None = None
+
+
+def retrieval_candidate_limit(host: RetrievalHost) -> int:
+    """Pool size before rerank — never smaller than configured rerank/fusion k."""
+    floors = [
+        host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
+        int(host.fusion_candidate_k or 0),
+    ]
+    if host.reranker_enabled:
+        floors.append(int(host.rerank_candidate_k or 0))
+    return max(floors)
 
 
 async def _cached_search(
@@ -86,7 +100,7 @@ async def _cached_search(
         res, timings = await asyncio.to_thread(
             host.search_with_timings,
             query,
-            host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
+            retrieval_candidate_limit(host),
             groups,
             environment=environment,
             fusion_mode=host.fusion_mode,
@@ -161,17 +175,21 @@ async def run_retrieve(
     for _results, timings in search_outcomes:
         accumulate_stage_timings(state.stage_timings_ms, timings)
     results = merge_best_chunk_results(*result_sets, previous=state.results)
-    results = await _maybe_rerank(
-        host,
-        query=state.resolved_issue_query or state.search_query,
-        results=results,
-    )
+    # Injection is a retriever-like signal: it must enter the pool before rerank
+    # so enterprise evidence is ranked, not force-inserted after (RAG v2.1 P2).
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
         results,
         groups=groups,
         environment=env,
     )
+    results = await _maybe_rerank(
+        host,
+        query=state.resolved_issue_query or state.search_query,
+        results=results,
+    )
+    if host.chunk_by_id:
+        results = expand_retrieval_context(results, chunk_by_id=host.chunk_by_id)
     competitive_results, displaced_top1 = host.select_document_chunks(
         state.resolved_issue_query, results
     )
@@ -202,4 +220,4 @@ async def run_retrieve(
     )
 
 
-__all__ = ["RetrievalHost", "run_retrieve"]
+__all__ = ["RetrievalHost", "retrieval_candidate_limit", "run_retrieve"]

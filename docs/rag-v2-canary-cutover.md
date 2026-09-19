@@ -1,52 +1,53 @@
 # RAG v2 Canary / Cutover
 
 Operational checklist for [`docs/rag-v2-spec.md`](./rag-v2-spec.md) §46–§49.
+**Course correction:** see [`docs/rag-v2.1-plan.md`](./rag-v2.1-plan.md) — do **not** treat Gemini listwise Hit@1 as a production cutover gate.
 
-## Production defaults (M6 — applied)
+## Production defaults (v2.1 — safe)
 
 | Flag | Default | Notes |
 |---|---|---|
-| `RAG_FUSION_MODE` | `RRF` | Soft-best knobs below; `WEIGHTED` aliases to RRF (M7) |
+| `RAG_FUSION_MODE` | `RRF` | Soft-best knobs below; **`WEIGHTED` remains a real baseline path** for A/B |
 | `RAG_RRF_K` | `5` | Soft-best local tune |
-| `RAG_SPARSE_WEIGHT` / `RAG_DENSE_WEIGHT` | `0.5` / `1.5` | Dense-heavy RRF |
+| `RAG_SPARSE_WEIGHT` / `RAG_DENSE_WEIGHT` | `0.5` / `1.5` | Overridden per-query by Adaptive Fusion |
 | `RAG_CONTEXTUAL_INDEX` | `true` | Dual-read v1/v2 |
-| `RAG_RERANKER_ENABLED` | `true` | Fail-open if Gemini unavailable |
-| `RAG_RERANKER_MODEL` | `listwise:gemini-2.5-flash` | Title-protect blend |
-| `RAG_RERANK_TIMEOUT_MS` | `90000` | Listwise budget |
+| `RAG_RERANKER_ENABLED` | `false` | Dedicated reranker A/B before enabling |
+| `RAG_RERANKER_MODEL` | `lexical` | Prefer `vertex-ranking` or `qwen3-reranker:0.6B` in experiments |
+| `RAG_RERANK_TIMEOUT_MS` | `700` | Interactive path budget |
 | `RAG_SHADOW_ENABLED` | `false` | Optional background compare |
 | `RAG_CANARY_PERCENT` | `0` | Sticky canary off |
 
-## Experiment matrix (offline)
+## Dedicated reranker A/B (v2.1)
 
 ```bash
-cd agent_service
-uv run python ../scripts/run_rag_v2_shadow_eval.py \
-  --variants A,B,C,D \
-  --output ../outputs/rag-v2-shadow.json
+# Vertex Ranking API (preferred on GCP)
+RAG_RERANKER_ENABLED=true RAG_RERANKER_MODEL=vertex-ranking \
+  VERTEX_RANKING_PROJECT=... \
+  uv run python ../scripts/run_rag_v2_shadow_eval.py --variants A,D
 
-# A uses LEGACY_WEIGHTED scoring (eval-only). D default PairScorer is lexical;
-# for §45 stack:
-uv run python ../scripts/run_rag_v2_shadow_eval.py \
-  --variants A,D --reranker-model listwise:gemini-2.5-flash
+# Qwen3-Reranker-0.6B fallback
+RAG_RERANKER_ENABLED=true \
+  RAG_RERANKER_MODEL=qwen3-reranker:Qwen/Qwen3-Reranker-0.6B \
+  uv run python ../scripts/run_rag_v2_shadow_eval.py --variants A,D
 ```
 
-Reproduce §45:
+Ship on **Evidence Recall@4 / No-answer F1 / P95 / cost** using the frozen `split=test` set — not Hit@1 alone.
+
+## Evidence-level eval
 
 ```bash
-uv run python ../scripts/run_rag_v2_section45_eval.py
+uv run python scripts/enrich_retrieval_eval_v2_evidence.py
+cd agent_service
+uv run python ../scripts/run_retrieval_eval_v2.py --fusion-mode WEIGHTED --split test
+uv run python ../scripts/run_retrieval_eval_v2.py --fusion-mode RRF --split test
 ```
 
 ## Rollback
 
 ```text
-RAG_RERANKER_ENABLED=false   # Soft-RRF only (still better than pre-M6 weighted)
+RAG_RERANKER_ENABLED=false
+RAG_FUSION_MODE=WEIGHTED   # honest weighted baseline still available
 # or redeploy prior release
 ```
 
-Weighted linear fusion is **not** available as a production fusion mode after M7.
-
-## M7 notes
-
-- Production `HybridIndex.search` always runs Soft-best RRF (+ error-code guard).
-- `RAG_FUSION_MODE=WEIGHTED` is accepted but mapped to RRF.
-- `legacy_weighted_hybrid_rank` / `fusion_mode=LEGACY_WEIGHTED` remain for offline baseline A only.
+Gemini listwise (`listwise:gemini-…`) remains **experiment-only**.

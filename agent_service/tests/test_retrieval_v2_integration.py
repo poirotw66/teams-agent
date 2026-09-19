@@ -32,10 +32,11 @@ def test_rrf_and_legacy_weighted_both_return_positive_hits() -> None:
     )
 
 
-def test_weighted_constructor_aliases_to_rrf() -> None:
+def test_weighted_constructor_preserves_weighted_mode() -> None:
     chunks = [_chunk("a", "VPN FAQ", "Permission denied (-455)")]
     index = HybridIndex(chunks, fusion_mode="WEIGHTED")
-    assert index.fusion_mode == "RRF"
+    assert index.fusion_mode == "WEIGHTED"
+    assert index.search("Permission denied (-455)", limit=1)
 
 
 def test_contextual_bm25_prefers_alias_enriched_chunk() -> None:

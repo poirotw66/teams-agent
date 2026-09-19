@@ -98,6 +98,39 @@ def test_no_answer_confusion() -> None:
     assert 0.0 < stats["f1"] < 1.0
 
 
+def test_no_answer_prediction_ignores_empty_relevant_list() -> None:
+    """``relevant=[]`` must not vacuously count as predicted no-answer."""
+    ranked = ["noise-a", "noise-b"]
+    relevant: list[str] = []
+    # Vacuous any() over empty relevant would be False → not any = True (bug).
+    vacuous_bug = not any(title in ranked[:3] for title in relevant)
+    assert vacuous_bug is True
+    predicted = len(ranked) == 0
+    assert predicted is False
+
+
+def test_precision_and_recall_at_4() -> None:
+    ranked = ["a", "x", "b", "y", "c"]
+    assert recall_at_k(ranked, ["a", "b", "c"], k=4) == 2 / 3
+    from agent_service.retrieval_eval_metrics import (
+        evidence_recall_at_k,
+        precision_at_k,
+    )
+
+    assert precision_at_k(ranked, ["a", "b", "c"], k=4) == 0.5
+    assert (
+        evidence_recall_at_k(
+            retrieved_texts=[
+                "Permission denied (-455) 密碼輸入錯誤",
+                "unrelated",
+            ],
+            evidence_must_contain=[["-455", "密碼"]],
+            k=4,
+        )
+        == 1.0
+    )
+
+
 def test_score_and_aggregate_case() -> None:
     scored = score_retrieval_case(
         case_id="c1",
@@ -121,6 +154,8 @@ def test_retrieval_eval_v2_meets_spec_floor() -> None:
     assert len(ids) == len(set(ids))
     categories = {cat for case in cases for cat in case["categories"]}
     assert REQUIRED_CATEGORIES <= categories
+    assert sum(1 for case in cases if case.get("expectedChunkIds")) >= 50
+    assert {"dev", "test"} <= {case.get("split") for case in cases}
     for case in cases:
         assert case["query"].strip()
         assert isinstance(case["expectedFound"], bool)

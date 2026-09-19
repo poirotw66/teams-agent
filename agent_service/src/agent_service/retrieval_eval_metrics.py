@@ -146,12 +146,86 @@ class RetrievalCaseScore:
     recall_at_5: float
     recall_at_10: float
     recall_at_20: float
+    recall_at_4: float
+    precision_at_4: float
+    evidence_recall_at_4: float
+    evidence_precision_at_4: float
     mrr_at_10: float
     ndcg_at_10: float
     hit_at_1: float
     hit_at_3: float
     hard_negative_accuracy: float | None = None
     acl_leakage_count: int = 0
+
+
+def precision_at_k(
+    ranked_ids: Sequence[str],
+    relevant_ids: Iterable[str],
+    *,
+    k: int,
+) -> float:
+    """Fraction of top-``k`` ranks that are relevant (0 when top-k is empty)."""
+    relevant = {item for item in relevant_ids if item}
+    top = list(ranked_ids[:k])
+    if not top:
+        return 0.0
+    return sum(1 for item in top if item in relevant) / len(top)
+
+
+def evidence_fact_hit(
+    *,
+    retrieved_texts: Sequence[str],
+    must_contain: Sequence[str],
+) -> bool:
+    """True when some retrieved text contains every required evidence token."""
+    required = [token for token in must_contain if token]
+    if not required or not retrieved_texts:
+        return False
+    for text in retrieved_texts:
+        haystack = text or ""
+        if all(token in haystack for token in required):
+            return True
+    return False
+
+
+def evidence_recall_at_k(
+    *,
+    retrieved_texts: Sequence[str],
+    evidence_must_contain: Sequence[Sequence[str]],
+    k: int,
+) -> float:
+    """Fraction of evidence facts recoverable from the top-``k`` retrieved texts."""
+    facts = [tuple(tokens) for tokens in evidence_must_contain if tokens]
+    if not facts:
+        return 0.0
+    top_texts = list(retrieved_texts[:k])
+    hits = sum(
+        1
+        for tokens in facts
+        if evidence_fact_hit(retrieved_texts=top_texts, must_contain=tokens)
+    )
+    return hits / len(facts)
+
+
+def evidence_precision_at_k(
+    *,
+    retrieved_texts: Sequence[str],
+    evidence_must_contain: Sequence[Sequence[str]],
+    k: int,
+) -> float:
+    """Share of top-``k`` texts that satisfy at least one evidence fact."""
+    facts = [tuple(tokens) for tokens in evidence_must_contain if tokens]
+    top_texts = list(retrieved_texts[:k])
+    if not top_texts or not facts:
+        return 0.0
+    supporting = 0
+    for text in top_texts:
+        if any(
+            evidence_fact_hit(retrieved_texts=[text], must_contain=tokens)
+            for tokens in facts
+        ):
+            supporting += 1
+    return supporting / len(top_texts)
 
 
 def score_retrieval_case(
@@ -162,6 +236,8 @@ def score_retrieval_case(
     relevance_grades: Mapping[str, float] | None = None,
     hard_negative_ids: Iterable[str] = (),
     forbidden_ids: Iterable[str] = (),
+    retrieved_texts: Sequence[str] = (),
+    evidence_must_contain: Sequence[Sequence[str]] = (),
 ) -> RetrievalCaseScore:
     relevant = tuple(relevant_ids)
     grades = dict(relevance_grades or {})
@@ -183,6 +259,18 @@ def score_retrieval_case(
         recall_at_5=recall_at_k(ranked_ids, relevant, k=5),
         recall_at_10=recall_at_k(ranked_ids, relevant, k=10),
         recall_at_20=recall_at_k(ranked_ids, relevant, k=20),
+        recall_at_4=recall_at_k(ranked_ids, relevant, k=4),
+        precision_at_4=precision_at_k(ranked_ids, relevant, k=4),
+        evidence_recall_at_4=evidence_recall_at_k(
+            retrieved_texts=retrieved_texts,
+            evidence_must_contain=evidence_must_contain,
+            k=4,
+        ),
+        evidence_precision_at_4=evidence_precision_at_k(
+            retrieved_texts=retrieved_texts,
+            evidence_must_contain=evidence_must_contain,
+            k=4,
+        ),
         mrr_at_10=mrr_at_k(ranked_ids, relevant, k=10),
         ndcg_at_10=ndcg_at_k(ranked_ids, grades, k=10),
         hit_at_1=hit_at_k(ranked_ids, relevant, k=1),
@@ -197,6 +285,10 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
     if not scores:
         return {
             "caseCount": 0.0,
+            "recallAt4": 0.0,
+            "precisionAt4": 0.0,
+            "evidenceRecallAt4": 0.0,
+            "evidencePrecisionAt4": 0.0,
             "recallAt5": 0.0,
             "recallAt10": 0.0,
             "recallAt20": 0.0,
@@ -218,6 +310,12 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
     ]
     return {
         "caseCount": float(len(scores)),
+        "recallAt4": _mean([score.recall_at_4 for score in scores]),
+        "precisionAt4": _mean([score.precision_at_4 for score in scores]),
+        "evidenceRecallAt4": _mean([score.evidence_recall_at_4 for score in scores]),
+        "evidencePrecisionAt4": _mean(
+            [score.evidence_precision_at_4 for score in scores]
+        ),
         "recallAt5": _mean([score.recall_at_5 for score in scores]),
         "recallAt10": _mean([score.recall_at_10 for score in scores]),
         "recallAt20": _mean([score.recall_at_20 for score in scores]),
@@ -235,11 +333,15 @@ __all__ = [
     "RetrievalCaseScore",
     "acl_leakage_count",
     "aggregate_case_scores",
+    "evidence_fact_hit",
+    "evidence_precision_at_k",
+    "evidence_recall_at_k",
     "hard_negative_accuracy",
     "hit_at_k",
     "mrr_at_k",
     "ndcg_at_k",
     "no_answer_confusion",
+    "precision_at_k",
     "recall_at_k",
     "score_retrieval_case",
 ]

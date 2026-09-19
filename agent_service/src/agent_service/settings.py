@@ -61,10 +61,12 @@ class RagSettings:
     # When true, newly built indexes store contextual retrieval_text (schema v2).
     rag_contextual_index: bool = True
     # M6: listwise title-protect on by default; FailOpenReranker if Gemini is down.
-    rag_reranker_enabled: bool = True
-    rag_reranker_model: str | None = "listwise:gemini-2.5-flash"
+    # Gemini listwise is experiment-only; production default stays off until a
+    # dedicated low-latency reranker clears Evidence Recall@4 gates (RAG v2.1).
+    rag_reranker_enabled: bool = False
+    rag_reranker_model: str | None = "lexical"
     rag_rerank_candidate_k: int = 24
-    rag_rerank_timeout_ms: int = 90_000
+    rag_rerank_timeout_ms: int = 700
     rag_reranker_min_tier: str = "standard"
     # Shadow/canary rollout knobs (docs/rag-v2-spec.md §46–§48). 0 = off.
     rag_shadow_enabled: bool = False

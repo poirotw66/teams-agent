@@ -67,8 +67,8 @@ def test_search_fusion_mode_override_does_not_mutate_index() -> None:
     ]
     index = HybridIndex(chunks, fusion_mode="WEIGHTED")
     _ = index.search("alpha token", limit=2, fusion_mode="RRF")
-    # M7: WEIGHTED constructor alias maps to RRF.
-    assert index.fusion_mode == "RRF"
+    # Override must not mutate the index default mode.
+    assert index.fusion_mode == "WEIGHTED"
 
 
 def test_sparse_search_indexes_title_alias_and_section_identity() -> None:
