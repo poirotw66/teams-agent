@@ -1065,6 +1065,59 @@ def test_same_line_uncited_policy_clause_is_pruned() -> None:
     assert "資料最小化" not in cleaned
 
 
+def test_policy_boilerplate_misattributed_to_knowledge_citation_is_pruned() -> None:
+    """Baseline #06 FAIL pattern: policy hedges falsely tagged as [S#]."""
+    text = (
+        "請先重啟數據機，再改用手機網路分享測試 [S1]。"
+        "關於後續調整 TLS 或 Proxy 設定，變更前需先向權責單位或資訊部門確認適用性，"
+        "切勿擅自變更 [S1]。"
+        "調整時請取消勾選 SSL 3.0 並勾選 TLS 1.2 [S1]。"
+    )
+    cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
+    assert "重啟數據機" in cleaned
+    assert "TLS 1.2" in cleaned
+    assert "資訊部門確認" not in cleaned
+    assert "切勿擅自變更" not in cleaned
+
+
+def test_rule10_data_minimization_misattributed_as_source_limit_is_pruned() -> None:
+    text = (
+        "問題類型應歸類為「報價」[S1]。"
+        "關於資料保護的限制，文件僅規範全域資安與資料最小化原則，"
+        "嚴禁提供登入密碼等機敏資訊 [Rule 10]。"
+    )
+    cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
+    assert "報價" in cleaned
+    assert "資料最小化" not in cleaned
+    assert "登入密碼" not in cleaned
+    assert "Rule 10" not in cleaned
+
+
+def test_legitimate_policy_sec_marker_is_preserved() -> None:
+    text = (
+        "請將 Proxy 伺服器設為不勾選 [S1]。"
+        "變更前請向權責單位確認 [POLICY-SEC-003]。"
+    )
+    cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
+    assert "Proxy" in cleaned
+    assert "[POLICY-SEC-003]" in cleaned
+    assert "向權責單位確認" in cleaned
+
+
+def test_policy_advisory_line_body_is_preserved() -> None:
+    text = (
+        "可關閉 Proxy 後重新連線 [S1]。\n"
+        "> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：此操作涉及安全性、Proxy 或憑證設定變更。"
+        "若該裝置是否受企業政策管轄狀態未明，執行前應先向權責單位或 IT 支援窗口確認，"
+        "切勿擅自變更或停用安全防護設定。"
+    )
+    cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
+    assert "關閉 Proxy" in cleaned
+    assert "[POLICY-SEC-003]" in cleaned
+    assert "向權責單位或 IT 支援窗口確認" in cleaned
+    assert "切勿擅自變更" in cleaned
+
+
 def test_error_branch_coverage_helpers() -> None:
     from agent_service.knowledge_pipeline import (
         answer_covers_error_branches,
