@@ -30,6 +30,11 @@ from .query_issues_summary_ops import (
     previous_period_for,
 )
 
+__all__ = [
+    "IssueAnalyticsQueryService",
+    "IssuesQueryMixin",
+]
+
 
 class IssuesQueryMixin:
     """Domain query helpers mixed into BackofficeQueryService."""
@@ -253,3 +258,7 @@ class IssuesQueryMixin:
             "handoffCount": handoff_count,
             "noAnswerCount": no_answer_count,
         }
+
+
+IssueAnalyticsQueryService = IssuesQueryMixin
+

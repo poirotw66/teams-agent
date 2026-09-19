@@ -12,6 +12,11 @@ from .periods import ResolvedPeriod
 from .query_budget_scope import compute_budget_measure, filter_events_for_budget_scope
 from .usage_projection import project_usage
 
+__all__ = [
+    "BudgetQueryMixin",
+    "BudgetQueryService",
+]
+
 
 class BudgetQueryMixin:
     async def budget_usage(
@@ -74,3 +79,7 @@ class BudgetQueryMixin:
             if event.actor_ref:
                 actors.add(event.actor_ref)
         return sorted(actors)
+
+
+BudgetQueryService = BudgetQueryMixin
+

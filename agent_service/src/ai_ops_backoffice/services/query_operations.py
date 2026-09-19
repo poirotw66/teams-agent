@@ -24,6 +24,11 @@ from .query_operations_summary_ops import (
     resolve_operations_freshness,
 )
 
+__all__ = [
+    "OperationsQueryMixin",
+    "OperationsQueryService",
+]
+
 
 class OperationsQueryMixin:
     """Domain query helpers mixed into BackofficeQueryService."""
@@ -158,3 +163,7 @@ class OperationsQueryMixin:
             trends=trends,
             metric_definitions=self._metrics.get("definitions", {}),
         )
+
+
+OperationsQueryService = OperationsQueryMixin
+

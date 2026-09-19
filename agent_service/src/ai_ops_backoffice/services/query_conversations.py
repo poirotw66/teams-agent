@@ -17,6 +17,7 @@ from .query_conversations_list_ops import (
 )
 
 __all__ = [
+    "ConversationQueryService",
     "ConversationsQueryMixin",
     "_matched_turn_for_filters",
 ]
@@ -132,3 +133,7 @@ class ConversationsQueryMixin:
             source_trace=getattr(self, "source_trace", None),
             unmask_reason=unmask_reason,
         )
+
+
+ConversationQueryService = ConversationsQueryMixin
+

@@ -30,7 +30,7 @@ from operations_core.default_extractor_prompt import SYSTEM_PROMPT
 from .confirmation import TicketIntent, classify_ticket_intent
 from .contracts import ConversationMessage, Issue, IssueExtraction
 from .execution_context import ExecutionContext
-from .extractor_fallback import invoke_model_with_fallback
+from .extractor_engine import IssueExtractorEngine
 from .extractor_heuristics import (
     _GENERIC_TICKET_DESCRIPTION,
     _SAFE_FALLBACK_DESCRIPTION_MAX_LEN,
@@ -45,11 +45,9 @@ from .extractor_heuristics import (
     _strip_ticket_command,
     merge_pending_ticket_issues,
 )
-from .extractor_invoke import call_extractor_model, resolve_chat_model
-from .extractor_normalize import (
+from .extractor_normalizer import (
     FORBIDDEN_MISSING_INFO_TERMS,
-    coerce_issue,
-    postprocess_issues,
+    IssueNormalizer,
 )
 from .sanitize import sanitize_description
 from .settings import RagSettings
@@ -63,6 +61,8 @@ __all__ = [
     "SYSTEM_PROMPT",
     "_GENERIC_TICKET_DESCRIPTION",
     "IssueExtractor",
+    "IssueExtractorEngine",
+    "IssueNormalizer",
     "_has_helpdesk_domain_evidence",
     "_is_assistant_scope_question",
     "_is_generic_ticket_description",
@@ -109,6 +109,17 @@ class IssueExtractor:
 
             prompt_runtime = ExtractorPromptRuntime.from_settings(settings)
         self.prompt_runtime = prompt_runtime
+        self.engine = IssueExtractorEngine(
+            settings=settings,
+            startup_model=model,
+            prompt_runtime=prompt_runtime,
+            default_model_name=self.default_model_name,
+            call_model_fn=self._call_model,
+        )
+        self.normalizer = IssueNormalizer(
+            max_issues=settings.max_issues_per_message,
+            max_missing_info=settings.max_missing_info_per_issue,
+        )
 
     async def extract(
         self,
@@ -209,28 +220,26 @@ class IssueExtractor:
             resolved.canary,
             correlation_id,
         )
-        active_model, resolved_model = resolve_chat_model(
-            prompt_runtime=self.prompt_runtime,
-            startup_model=self.model,
-        )
+        active_model, resolved_model = self.engine.resolve_chat_model()
         timeout_val = (
             float(resolved_model.timeout_seconds)
             if (resolved_model and getattr(resolved_model, "timeout_seconds", None))
             else None
         )
         model_used = getattr(resolved_model, "model_name", None) or self.default_model_name
-        raw, llm_calls, fallback_applied, model_used = await invoke_model_with_fallback(
-            call_model=self._call_model,
-            text=normalized_text,
-            history=history,
-            faq_keys=faq_keys,
-            template=resolved.template,
-            active_model=active_model,
-            resolved_model=resolved_model,
-            execution_context=execution_context,
-            timeout_val=timeout_val,
-            initial_model_used=model_used,
-            correlation_id=correlation_id,
+        raw, llm_calls, fallback_applied, model_used = (
+            await self.engine.invoke_with_fallback(
+                text=normalized_text,
+                history=history,
+                faq_keys=faq_keys,
+                template=resolved.template,
+                active_model=active_model,
+                resolved_model=resolved_model,
+                execution_context=execution_context,
+                timeout_val=timeout_val,
+                initial_model_used=model_used,
+                correlation_id=correlation_id,
+            )
         )
         if raw is None:
             return self._outcome_from_fallback(
@@ -339,8 +348,7 @@ class IssueExtractor:
         timeout_seconds: float | None = None,
     ) -> IssueExtraction:
         # Kept as an instance method so eval harnesses can monkeypatch it.
-        return await call_extractor_model(
-            settings=self.settings,
+        return await self.engine.call_extractor_model(
             text=text,
             history=history,
             faq_keys=faq_keys,
@@ -356,11 +364,9 @@ class IssueExtractor:
         faq_keys: list[str],
         raw_utterance: str = "",
     ) -> tuple[list[Issue], bool]:
-        return postprocess_issues(
+        return self.normalizer.postprocess(
             issues,
             faq_keys,
-            max_issues=self.settings.max_issues_per_message,
-            max_missing_info=self.settings.max_missing_info_per_issue,
             raw_utterance=raw_utterance,
         )
 
@@ -372,11 +378,10 @@ class IssueExtractor:
         allowed_faq_keys: set[str],
         raw_utterance: str = "",
     ) -> Issue:
-        return coerce_issue(
+        return self.normalizer.coerce(
             issue,
             new_id=new_id,
             allowed_faq_keys=allowed_faq_keys,
-            max_missing_info=self.settings.max_missing_info_per_issue,
             raw_utterance=raw_utterance,
         )
 

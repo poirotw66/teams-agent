@@ -31,7 +31,6 @@ from .coordinator import (
     should_mark_rolled_back,
 )
 from .ports import ActivationStorePort
-from .transitions import FAILED, GATE_BLOCKED
 
 logger = logging.getLogger(__name__)
 
@@ -56,24 +55,15 @@ class ReleaseBuilder(Protocol):
         ...
 
 
+from .aggregate import ReleaseAggregate
+
+
 def mark_release_failed(release: ReleaseRecord, *, summary: str) -> ReleaseRecord:
-    return release.model_copy(
-        update={
-            "status": FAILED,
-            "failure_summary": summary,
-            "activated_at": None,
-        }
-    )
+    return ReleaseAggregate.wrap(release).mark_failed(summary=summary).record
 
 
 def mark_release_gate_blocked(release: ReleaseRecord, *, summary: str) -> ReleaseRecord:
-    return release.model_copy(
-        update={
-            "status": GATE_BLOCKED,
-            "failure_summary": summary,
-            "activated_at": None,
-        }
-    )
+    return ReleaseAggregate.wrap(release).mark_gate_blocked(summary=summary).record
 
 
 async def persist_failed_release(

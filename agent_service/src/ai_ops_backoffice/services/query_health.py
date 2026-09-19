@@ -18,6 +18,7 @@ from .query_health_window import resolve_taipei_day_window
 
 __all__ = [
     "HealthQueryMixin",
+    "HealthQueryService",
     "resolve_taipei_day_window",
 ]
 
@@ -96,3 +97,7 @@ class HealthQueryMixin(HealthProbeMixin):
             "simulatedAnomalies": self._settings.simulate_health_anomalies,
             "updatedAt": utc_now().isoformat(),
         }
+
+
+HealthQueryService = HealthQueryMixin
+

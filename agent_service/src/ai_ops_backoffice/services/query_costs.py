@@ -24,6 +24,12 @@ def _cost_event_is_relevant(payload: dict) -> bool:
     return float(cost) != 0.0
 
 
+__all__ = [
+    "CostQueryService",
+    "CostsQueryMixin",
+]
+
+
 class CostsQueryMixin:
     """Mixin providing cost summary helpers for BackofficeQueryService."""
 
@@ -66,3 +72,7 @@ class CostsQueryMixin:
             model_filter=model_filter,
             acc=acc,
         )
+
+
+CostQueryService = CostsQueryMixin
+

@@ -16,7 +16,7 @@ from .authorization import (
     FaqTaxonomyPort,
 )
 from .errors import FaqAuthorizationError, FaqNotFoundError, FaqValidationError
-from .lifecycle_ops import FaqPublishOpsMixin
+from .lifecycle_ops import FaqPublishCommandHandler, FaqPublishOpsMixin
 from .models import (
     FaqContent,
     FaqRecord,
@@ -63,6 +63,7 @@ class FaqDomainService(FaqPublishOpsMixin):
         self._self_approval_exception = self_approval_exception or DenySelfApprovalException()
         self._artifact_dir = artifact_dir
         self._release_gate_checker = release_gate_checker
+        self.publish_handler = FaqPublishCommandHandler(self)
 
     def set_release_gate_checker(self, checker: Any | None) -> None:
         self._release_gate_checker = checker

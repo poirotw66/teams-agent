@@ -249,10 +249,9 @@ def test_evaluation_preflight_and_ui_assets(tmp_path: Path):
     assert root_res.status_code == 307
     assert root_res.headers["location"] == "/console-v2/dashboard"
 
-    index_res = client.get("/legacy")
-    assert index_res.status_code == 200
-    from ai_ops_backoffice.api import UI_ASSET_VERSION
-    assert UI_ASSET_VERSION in index_res.text
+    index_res = client.get("/legacy", follow_redirects=False)
+    assert index_res.status_code == 307
+    assert index_res.headers["location"] == "/console-v2/dashboard"
 
     aiadmin_headers = auth_headers("AI_ADMIN", "u_aiadmin")
     # Verify preflight with non-existent set version returns 200 with is_valid=False and blocking_errors

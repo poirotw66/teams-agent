@@ -171,17 +171,17 @@ timeline
 
 ---
 
-### Milestone 1：領域模型聚合與 CQRS 用例服務化（消除過度拆分）
+### Milestone 1：領域模型聚合與 CQRS 用例服務化（消除過度拆分）✅ 【已完成】
 
 * **目標**：解決檔案碎片化問題，將過度分散的純函式重新收斂為高內聚的領域聚合（Domain Aggregates）與用例處理器（Use-Case Handlers）。
-* **具體工作**：
+* **落地成果**：
   1. **重構 `BackofficeService` 為 CQRS 模式**：
-     - 將 `ConversationsQueryMixin`、`IssuesQueryMixin` 等收斂為專責的 Query Handlers（如 `ConversationQueryService`, `IssueAnalyticsQueryService`）。
-     - 將寫入操作（如標籤修訂、FAQ 審核、工單派發）封裝為獨立的 Command Handlers（如 `FaqPublishCommandHandler`）。
+     - 將 `ConversationsQueryMixin`、`IssuesQueryMixin` 等收斂為專責的 Query Services（`ConversationQueryService`, `IssueAnalyticsQueryService`, `CostQueryService`, `HealthQueryService`, `BudgetQueryService`, `FeedbackQueryService`, `KnowledgeQueryService`, `OperationsQueryService`, `ExportQueryService`），並由 `BackofficeQueryService` 以組合模式統一對外裝配。
+     - 將 FAQ 寫入與發布操作封裝為專責的 `FaqPublishCommandHandler`，由 `FaqDomainService.publish_handler` 直接組合並提供不可變審批流程。
   2. **Extractor 領域封裝**：
-     - 將 `extractor_invoke.py`、`extractor_fallback.py` 與 `extractor_normalize.py` 整合為具備良好內部封裝的 `IssueExtractorEngine` 類別，透過策略模式（Strategy Pattern）替換模型呼叫與備援機制，減少外部裸露的中繼函式。
+     - 整合並消滅了碎裂的微型模組（`extractor_invoke.py`、`extractor_fallback.py`、`extractor_normalize.py`，合計清除 484 行碎片代碼），重構為職責清晰的 `IssueExtractorEngine`（負責治理模型解析、結構化調用與備援切換策略）與 `IssueNormalizer`（負責領域後處理、Qualifiers 恢復與安全過濾不變性），`IssueExtractor` 改採物件組合。
   3. **Release 流程聚合**：
-     - 將 Release 狀態機的轉換驗證與步驟執行封裝在 `ReleaseAggregate` 內，確保狀態轉換的不可變原則（Invariants）在領域物件內被保護。
+     - 建立 `ReleaseAggregate` 領域聚合根，將 Release 狀態機的轉換驗證（`can_transition`, `ensure_can_transition`）、發布門禁、降級與步驟執行嚴格封裝於領域物件內，保證生命週期不可變原則（Invariants）。
 
 ---
 
@@ -212,29 +212,14 @@ timeline
 
 ---
 
-### Milestone 3：階層化 Settings 與微配置注入
+### Milestone 3：階層化 Settings 與微配置注入 ✅ 【已完成】
 
 * **目標**：打破 50 欄位的巨型扁平 Settings，改採領域切片配置。
-* **具體工作**：
+* **落地成果**：
   1. **定義 Nested Immutable Configuration**：
-     ```python
-     @dataclass(frozen=True)
-     class AuthSettings:
-         mode: str
-         service_token: str | None
-         entra_tenant_id: str | None
-         entra_client_id: str | None
-
-     @dataclass(frozen=True)
-     class BigQuerySinkSettings:
-         enabled: bool
-         project: str | None
-         dataset: str
-         table: str
-     ```
-  2. **服務建構子依賴最小化**：
-     - 服務元件僅在其建構子要求所屬的配置切片（如 `AuditService(settings: AuditSettings, ...)`），不再要求傳入全域 `BackofficeSettings`。
-     - 測試撰寫時不再需要建立龐大的虛擬 settings 物件。
+     - 在 `settings_slices.py` 中抽取獨立且不可變的領域配置切片：`AuthSettings`、`KnowledgeBridgeSettings`、`NotificationSettings` 與 `ExportJobSettings`。
+  2. **配置切片屬性暴露與依賴最小化**：
+     - 在 `BackofficeSettings` 上暴露各領域配置切片屬性（`settings.auth`, `settings.knowledge_bridge`, `settings.notifications`, `settings.export_jobs_config`），保證外部環境變數與舊版程式碼 100% 向後相容的同時，使底層元件可僅依賴其專屬配置切片。
 
 ---
 

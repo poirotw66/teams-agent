@@ -26,6 +26,7 @@ from .transitions import (
 )
 
 __all__ = [
+    "FaqPublishCommandHandler",
     "FaqPublishOpsMixin",
     "build_activated_faq",
     "build_activated_versions",
@@ -430,3 +431,25 @@ class FaqPublishOpsMixin:
 
     def rollback(self, **kwargs: Any) -> dict[str, Any]:
         return FaqPublishOpsMixin.activate(self, rollback=True, **kwargs)
+
+
+class FaqPublishCommandHandler:
+    """Dedicated CQRS command handler for governed FAQ submission, review, activation, and disablement."""
+
+    def __init__(self, host: _FaqPublishHost) -> None:
+        self._host = host
+
+    def submit(self, **kwargs: Any) -> dict[str, Any]:
+        return FaqPublishOpsMixin.submit(self._host, **kwargs)
+
+    def review(self, **kwargs: Any) -> dict[str, Any]:
+        return FaqPublishOpsMixin.review(self._host, **kwargs)
+
+    def activate(self, **kwargs: Any) -> dict[str, Any]:
+        return FaqPublishOpsMixin.activate(self._host, **kwargs)
+
+    def disable(self, **kwargs: Any) -> dict[str, Any]:
+        return FaqPublishOpsMixin.disable(self._host, **kwargs)
+
+    def rollback(self, **kwargs: Any) -> dict[str, Any]:
+        return FaqPublishOpsMixin.rollback(self._host, **kwargs)

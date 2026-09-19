@@ -29,6 +29,7 @@ from .query_knowledge_status import (
 
 __all__ = [
     "KnowledgeQueryMixin",
+    "KnowledgeQueryService",
     "_derive_index_status",
     "_normalize_format_type",
 ]
@@ -233,3 +234,7 @@ class KnowledgeQueryMixin:
             document_id=document_id,
             indexed_document_ids=indexed_document_ids,
         )
+
+
+KnowledgeQueryService = KnowledgeQueryMixin
+

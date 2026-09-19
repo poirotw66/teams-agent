@@ -27,21 +27,21 @@ from ..pricing_domain import PricingService
 from ..settings import BackofficeSettings
 from .freshness_service import FreshnessTracker
 from .periods import ResolvedPeriod, event_in_period, resolve_period
-from .query_budget import BudgetQueryMixin
+from .query_budget import BudgetQueryMixin, BudgetQueryService
 from .query_collaborators import (
     OpsRuntimePort,
     build_backoffice_ops_settings,
     configure_query_service_collaborators,
     resolve_ops_runtime,
 )
-from .query_conversations import ConversationsQueryMixin
-from .query_costs import CostsQueryMixin
-from .query_exports import ExportsQueryMixin
-from .query_feedback import FeedbackQueryMixin
-from .query_health import HealthQueryMixin
-from .query_issues import IssuesQueryMixin
-from .query_knowledge import KnowledgeQueryMixin
-from .query_operations import OperationsQueryMixin
+from .query_conversations import ConversationQueryService, ConversationsQueryMixin
+from .query_costs import CostQueryService, CostsQueryMixin
+from .query_exports import ExportQueryService, ExportsQueryMixin
+from .query_feedback import FeedbackQueryMixin, FeedbackQueryService
+from .query_health import HealthQueryMixin, HealthQueryService
+from .query_issues import IssueAnalyticsQueryService, IssuesQueryMixin
+from .query_knowledge import KnowledgeQueryMixin, KnowledgeQueryService
+from .query_operations import OperationsQueryMixin, OperationsQueryService
 from .query_service_wiring import (
     build_export_job_service,
     build_freshness_tracker,
@@ -53,6 +53,15 @@ from .source_trace import SourceTraceResolver
 
 __all__ = [
     "BackofficeQueryService",
+    "BudgetQueryService",
+    "ConversationQueryService",
+    "CostQueryService",
+    "ExportQueryService",
+    "FeedbackQueryService",
+    "HealthQueryService",
+    "IssueAnalyticsQueryService",
+    "KnowledgeQueryService",
+    "OperationsQueryService",
     "OpsRuntimePort",
     "build_backoffice_ops_settings",
     "configure_query_service_collaborators",
@@ -108,6 +117,15 @@ class BackofficeQueryService(
             settings, runtime=runtime, environment=self._environment
         )
         configure_pricing_provider(self._pricing_service)
+        self.conversations: ConversationQueryService = self
+        self.issues: IssueAnalyticsQueryService = self
+        self.costs: CostQueryService = self
+        self.health: HealthQueryService = self
+        self.budget: BudgetQueryService = self
+        self.feedback: FeedbackQueryService = self
+        self.knowledge: KnowledgeQueryService = self
+        self.operations: OperationsQueryService = self
+        self.exports: ExportQueryService = self
 
     @property
     def pricing_service(self) -> PricingService:

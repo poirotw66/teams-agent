@@ -4,6 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .settings_env import build_backoffice_settings_kwargs
+from .settings_slices import (
+    AuthSettings,
+    ExportJobSettings,
+    KnowledgeBridgeSettings,
+    NotificationSettings,
+)
+
+__all__ = [
+    "AuthSettings",
+    "BackofficeSettings",
+    "ExportJobSettings",
+    "KnowledgeBridgeSettings",
+    "NotificationSettings",
+]
 
 
 @dataclass(frozen=True)
@@ -124,6 +138,64 @@ class BackofficeSettings:
             self,
             require_production=self.environment in {"prod", "production", "staging"},
             require_gcp_project=require_gcp_project,
+        )
+
+    @property
+    def auth(self) -> AuthSettings:
+        from .settings_slices import AuthSettings
+
+        return AuthSettings(
+            auth_mode=self.auth_mode,
+            service_token=self.service_token,
+            entra_tenant_id=self.entra_tenant_id,
+            entra_client_id=self.entra_client_id,
+            default_owner_unit_id=self.default_owner_unit_id,
+        )
+
+    @property
+    def knowledge_bridge(self) -> KnowledgeBridgeSettings:
+        from .settings_slices import KnowledgeBridgeSettings
+
+        return KnowledgeBridgeSettings(
+            enabled=self.knowledge_bridge_enabled,
+            in_process=self.knowledge_in_process,
+            portal_url=self.knowledge_portal_url,
+            internal_url=self.knowledge_internal_url,
+            service_token=self.knowledge_service_token,
+            delegation_secret=self.knowledge_delegation_secret,
+            source_delegation_secret=self.source_delegation_secret,
+            auth_mode=self.knowledge_auth_mode,
+            timeout_seconds=self.knowledge_timeout_seconds,
+        )
+
+    @property
+    def notifications(self) -> NotificationSettings:
+        from .settings_slices import NotificationSettings
+
+        return NotificationSettings(
+            targets=self.budget_notification_targets,
+            teams_webhook_url=self.teams_webhook_url,
+            smtp_host=self.smtp_host,
+            smtp_port=self.smtp_port,
+            smtp_user=self.smtp_user,
+            smtp_password=self.smtp_password,
+            smtp_from=self.smtp_from,
+        )
+
+    @property
+    def export_jobs_config(self) -> ExportJobSettings:
+        from .settings_slices import ExportJobSettings
+
+        return ExportJobSettings(
+            store_mode=self.export_job_store_mode,
+            collection=self.export_job_collection,
+            content_backend=self.export_content_backend,
+            content_path=self.export_content_path,
+            gcs_bucket=self.export_gcs_bucket,
+            ttl_seconds=self.export_ttl_seconds,
+            max_records=self.export_max_records,
+            worker_lease_seconds=self.export_worker_lease_seconds,
+            worker_max_attempts=self.export_worker_max_attempts,
         )
 
     @classmethod

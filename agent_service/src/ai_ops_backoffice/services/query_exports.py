@@ -10,6 +10,11 @@ from .export_format import wrap_export_payload
 from .query_exports_create import build_export_create_filters
 from .query_exports_execute import export_query_filters, fetch_export_data
 
+__all__ = [
+    "ExportQueryService",
+    "ExportsQueryMixin",
+]
+
 
 class ExportsQueryMixin:
     async def create_export_job(
@@ -142,3 +147,7 @@ class ExportsQueryMixin:
                 job.content_ref or job.download_bytes is not None or job.download_content
             ),
         }
+
+
+ExportQueryService = ExportsQueryMixin
+

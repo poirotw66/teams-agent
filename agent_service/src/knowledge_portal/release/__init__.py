@@ -18,6 +18,7 @@ from .activation import (
     write_local_active_pointer,
 )
 from .agent_reload import notify_agent_reload
+from .aggregate import ReleaseAggregate
 from .coordinator import (
     assert_promotable,
     compensation_target_status,
@@ -90,6 +91,7 @@ __all__ = [
     "ROLLED_BACK",
     "ActivationStorePort",
     "AgentReloadPort",
+    "ReleaseAggregate",
     "ReleaseGateBlockedError",
     "ReleaseGateChecker",
     "SourceCatalogEntry",

@@ -16,6 +16,7 @@ from .errors import (
     FaqValidationError,
     FaqVersionConflictError,
 )
+from .lifecycle_ops import FaqPublishCommandHandler
 from .models import FaqContent, FaqRecord, FaqRuntimeSnapshot, FaqTestCase, FaqVersion
 from .repository import FileFaqRepository, FirestoreFaqRepository, InMemoryFaqRepository
 from .service import FaqDomainService
@@ -31,6 +32,7 @@ __all__ = [
     "FaqDomainService",
     "FaqIdempotencyConflictError",
     "FaqNotFoundError",
+    "FaqPublishCommandHandler",
     "FaqRecord",
     "FaqRuntimeSnapshot",
     "FaqTaxonomyPort",

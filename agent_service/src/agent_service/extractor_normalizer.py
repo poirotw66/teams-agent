@@ -132,10 +132,7 @@ def coerce_issue(
     # §17: structured output only constrains the *shape* of the model's
     # response, not the *content* of a free-text field. If the model is
     # compromised into placing system-prompt text or an injection-style
-    # instruction inside `description`, sanitize it here -- once, before
-    # it can reach either response_builder (rendered to the user) or
-    # workflow._handle_knowledge (used as the retrieval query). See
-    # sanitize.py's module docstring for the detection/tradeoff design.
+    # instruction inside `description`, sanitize it here.
     data["description"] = sanitize_description(data["description"])
 
     # §6.3/§12/§17: strip forbidden follow-up questions regardless of what
@@ -164,13 +161,9 @@ def coerce_issue(
             data["missingInfo"] = []
 
         if data["readiness"] == "NOT_IT":
-            # isIT is true but the model said NOT_IT; treat as READY unless
-            # missing info says otherwise below.
             data["readiness"] = "READY"
 
         if data["readiness"] == "NEED_MORE_INFO" and not data["missingInfo"]:
-            # All follow-up questions were stripped (e.g. all forbidden) or
-            # none were ever provided: downgrade rather than ask nothing.
             data["readiness"] = "READY"
         elif data["readiness"] != "NEED_MORE_INFO":
             data["missingInfo"] = []
@@ -212,3 +205,42 @@ def postprocess_issues(
         coerced[0] = restore_utterance_qualifiers(coerced[0], raw_utterance)
 
     return coerced, too_many
+
+
+class IssueNormalizer:
+    """Encapsulates post-extraction normalization, domain sanitization, and security invariants."""
+
+    def __init__(self, *, max_issues: int, max_missing_info: int) -> None:
+        self.max_issues = max_issues
+        self.max_missing_info = max_missing_info
+
+    def postprocess(
+        self,
+        issues: list[Issue],
+        faq_keys: list[str],
+        *,
+        raw_utterance: str = "",
+    ) -> tuple[list[Issue], bool]:
+        return postprocess_issues(
+            issues,
+            faq_keys,
+            max_issues=self.max_issues,
+            max_missing_info=self.max_missing_info,
+            raw_utterance=raw_utterance,
+        )
+
+    def coerce(
+        self,
+        issue: Issue,
+        *,
+        new_id: int,
+        allowed_faq_keys: set[str],
+        raw_utterance: str = "",
+    ) -> Issue:
+        return coerce_issue(
+            issue,
+            new_id=new_id,
+            allowed_faq_keys=allowed_faq_keys,
+            max_missing_info=self.max_missing_info,
+            raw_utterance=raw_utterance,
+        )

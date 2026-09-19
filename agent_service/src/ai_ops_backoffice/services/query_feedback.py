@@ -18,7 +18,7 @@ from .query_feedback_list import (
 )
 from .query_feedback_trace import collect_feedback_trace_signals, empty_feedback_trace
 
-__all__ = ["FeedbackQueryMixin", "utc_now"]
+__all__ = ["FeedbackQueryMixin", "FeedbackQueryService", "utc_now"]
 
 
 class FeedbackQueryMixin:
@@ -165,3 +165,7 @@ class FeedbackQueryMixin:
             "route": signals["detected_route"],
             "model": signals["detected_model"],
         }
+
+
+FeedbackQueryService = FeedbackQueryMixin
+
