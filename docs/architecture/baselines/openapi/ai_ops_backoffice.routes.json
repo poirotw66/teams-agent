@@ -1,5 +1,5 @@
 {
-  "routeCount": 215,
+  "routeCount": 216,
   "routes": [
     {
       "method": "GET",
@@ -344,6 +344,19 @@
       "statusCodes": [
         "200",
         "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "portal_dto_catalog_api_console_workbench__well_known_portal_dto_catalog_get",
+      "path": "/api/console/workbench/.well-known/portal-dto-catalog",
+      "requestSchema": null,
+      "responseSchemas": [
+        "PortalWorkbenchDtoCatalog"
+      ],
+      "statusCodes": [
+        "200"
       ],
       "tags": []
     },

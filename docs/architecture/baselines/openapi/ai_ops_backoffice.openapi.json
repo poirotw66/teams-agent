@@ -550,6 +550,197 @@
         "title": "ChatMessage",
         "type": "object"
       },
+      "ChunkPreviewChunk": {
+        "properties": {
+          "chunkerVersion": {
+            "title": "Chunkerversion",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "contentPreview": {
+            "title": "Contentpreview",
+            "type": "string"
+          },
+          "headingPath": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headingpath",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChunkPreviewImageDto"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          },
+          "neighborIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Neighborids",
+            "type": "array"
+          },
+          "pageEnd": {
+            "title": "Pageend",
+            "type": "integer"
+          },
+          "pageStart": {
+            "title": "Pagestart",
+            "type": "integer"
+          },
+          "parentId": {
+            "title": "Parentid",
+            "type": "string"
+          },
+          "parserVersion": {
+            "title": "Parserversion",
+            "type": "string"
+          },
+          "qualityIssues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChunkQualityIssue"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualityissues"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tokenCount": {
+            "title": "Tokencount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "neighborIds",
+          "title",
+          "content",
+          "contentPreview",
+          "tokenCount",
+          "pageStart",
+          "pageEnd",
+          "headingPath",
+          "contentHash",
+          "parserVersion",
+          "chunkerVersion"
+        ],
+        "title": "ChunkPreviewChunk",
+        "type": "object"
+      },
+      "ChunkPreviewImageDto": {
+        "properties": {
+          "alt_text": {
+            "title": "Alt Text",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "filename",
+          "alt_text",
+          "content_type",
+          "url"
+        ],
+        "title": "ChunkPreviewImageDto",
+        "type": "object"
+      },
+      "ChunkPreviewResponse": {
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/ChunkPreviewChunk"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "documentId": {
+            "title": "Documentid",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChunkingProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality": {
+            "$ref": "#/components/schemas/ChunkQualitySummary"
+          },
+          "releaseId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Releaseid"
+          },
+          "versionId": {
+            "title": "Versionid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentId",
+          "versionId",
+          "quality",
+          "chunks"
+        ],
+        "title": "ChunkPreviewResponse",
+        "type": "object"
+      },
       "ChunkQualityIssue": {
         "enum": [
           "SHORT",
@@ -3138,6 +3329,476 @@
           "blindSpots"
         ],
         "title": "OverviewApiResponse",
+        "type": "object"
+      },
+      "PendingPortalReviewItem": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "review_id": {
+            "title": "Review Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "document_id"
+        ],
+        "title": "PendingPortalReviewItem",
+        "type": "object"
+      },
+      "PendingPortalReviewList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingPortalReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PendingPortalReviewList",
+        "type": "object"
+      },
+      "PortalDocumentDetail": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/PortalDocumentRecord"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortalDocumentVersionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortalDocumentVersionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "title": "PortalDocumentDetail",
+        "type": "object"
+      },
+      "PortalDocumentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PortalDocumentRecord"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PortalDocumentList",
+        "type": "object"
+      },
+      "PortalDocumentRecord": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "title",
+          "category",
+          "status",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "PortalDocumentRecord",
+        "type": "object"
+      },
+      "PortalDocumentVersionSummary": {
+        "properties": {
+          "original_asset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Asset Name"
+          },
+          "original_asset_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Asset Size"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version_id",
+          "version_number"
+        ],
+        "title": "PortalDocumentVersionSummary",
+        "type": "object"
+      },
+      "PortalImportAsset": {
+        "properties": {
+          "content_base64": {
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content_base64"
+        ],
+        "title": "PortalImportAsset",
+        "type": "object"
+      },
+      "PortalImportResult": {
+        "properties": {
+          "assets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PortalImportAsset"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assets"
+          },
+          "audience_group_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Group Ids"
+          },
+          "audience_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALL_EMPLOYEES",
+                  "RESTRICTED_GROUPS"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audience Type"
+          },
+          "byteSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytesize"
+          },
+          "effective_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "jobId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobid"
+          },
+          "markdown_content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markdown Content"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sync",
+                  "async"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "original_asset_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Asset Token"
+          },
+          "owner_unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Unit Id"
+          },
+          "page_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Count"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortalImportResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Due At"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PDF",
+                  "DOCX",
+                  "MARKDOWN_UPLOAD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestionStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
+          }
+        },
+        "title": "PortalImportResult",
+        "type": "object"
+      },
+      "PortalWorkbenchDtoCatalog": {
+        "additionalProperties": false,
+        "description": "Bundle referenced only to force portal DTO schemas into OpenAPI components.",
+        "properties": {
+          "chunk_preview": {
+            "$ref": "#/components/schemas/ChunkPreviewResponse"
+          },
+          "document_detail": {
+            "$ref": "#/components/schemas/PortalDocumentDetail"
+          },
+          "document_list": {
+            "$ref": "#/components/schemas/PortalDocumentList"
+          },
+          "import_result": {
+            "$ref": "#/components/schemas/PortalImportResult"
+          },
+          "note": {
+            "default": "OpenAPI catalog only; not a runtime product endpoint.",
+            "title": "Note",
+            "type": "string"
+          },
+          "pending_reviews": {
+            "$ref": "#/components/schemas/PendingPortalReviewList"
+          }
+        },
+        "required": [
+          "import_result",
+          "document_list",
+          "document_detail",
+          "pending_reviews",
+          "chunk_preview"
+        ],
+        "title": "PortalWorkbenchDtoCatalog",
         "type": "object"
       },
       "PreflightRunPayload": {
@@ -10147,6 +10808,25 @@
           }
         },
         "summary": "Get Work Summary"
+      }
+    },
+    "/api/console/workbench/.well-known/portal-dto-catalog": {
+      "get": {
+        "description": "Schema catalog for OpenAPI codegen; not a product runtime surface.",
+        "operationId": "portal_dto_catalog_api_console_workbench__well_known_portal_dto_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalWorkbenchDtoCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Portal Dto Catalog"
       }
     },
     "/api/console/workbench/broadcast": {

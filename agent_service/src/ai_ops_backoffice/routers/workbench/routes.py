@@ -15,6 +15,7 @@ from .conversations import register_conversation_routes
 from .documents import register_document_routes
 from .faqs import register_faq_routes
 from .overview import register_overview_routes
+from .portal_response_models import PortalWorkbenchDtoCatalog
 from .simulation import register_simulation_routes
 from .tickets import register_ticket_routes
 
@@ -39,6 +40,17 @@ def register_workbench_routes(
         current_actor=current_actor,
         require_capability=require_capability,
     )
+
+    @app.get(
+        "/api/console/workbench/.well-known/portal-dto-catalog",
+        response_model=PortalWorkbenchDtoCatalog,
+        include_in_schema=True,
+    )
+    async def portal_dto_catalog() -> PortalWorkbenchDtoCatalog:
+        """Schema catalog for OpenAPI codegen; not a product runtime surface."""
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="schema catalog only")
 
     register_overview_routes(app, ctx)
     register_conversation_routes(app, ctx)

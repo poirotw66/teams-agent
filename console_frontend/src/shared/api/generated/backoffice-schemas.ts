@@ -14,7 +14,7 @@
 /* eslint-disable */
 /* prettier-ignore */
 
-// Component schemas from ai_ops_backoffice OpenAPI (103 types).
+// Component schemas from ai_ops_backoffice OpenAPI (115 types).
 export type BackofficeSchemas = {
   ActivatePolicyVersionPayload: ActivatePolicyVersionPayload;
   ActivateTargetPayload: ActivateTargetPayload;
@@ -28,6 +28,9 @@ export type BackofficeSchemas = {
   CandidateJobPayload: CandidateJobPayload;
   CaseCreatePayload: CaseCreatePayload;
   ChatMessage: ChatMessage;
+  ChunkPreviewChunk: ChunkPreviewChunk;
+  ChunkPreviewImageDto: ChunkPreviewImageDto;
+  ChunkPreviewResponse: ChunkPreviewResponse;
   ChunkQualityIssue: ChunkQualityIssue;
   ChunkQualitySummary: ChunkQualitySummary;
   ChunkingProfile: ChunkingProfile;
@@ -71,6 +74,15 @@ export type BackofficeSchemas = {
   MaskingBody: MaskingBody;
   ModelCandidateBody: ModelCandidateBody;
   OverviewApiResponse: OverviewApiResponse;
+  PendingPortalReviewItem: PendingPortalReviewItem;
+  PendingPortalReviewList: PendingPortalReviewList;
+  PortalDocumentDetail: PortalDocumentDetail;
+  PortalDocumentList: PortalDocumentList;
+  PortalDocumentRecord: PortalDocumentRecord;
+  PortalDocumentVersionSummary: PortalDocumentVersionSummary;
+  PortalImportAsset: PortalImportAsset;
+  PortalImportResult: PortalImportResult;
+  PortalWorkbenchDtoCatalog: PortalWorkbenchDtoCatalog;
   PreflightRunPayload: PreflightRunPayload;
   PromptActivateBody: PromptActivateBody;
   PromptApproveBody: PromptApproveBody;
@@ -213,6 +225,41 @@ export interface ChatMessage {
   id: string;
   sender: 'user' | 'bot' | 'system';
   timestamp: string;
+}
+
+export interface ChunkPreviewChunk {
+  chunkerVersion: string;
+  content: string;
+  contentHash: string;
+  contentPreview: string;
+  headingPath: Array<string>;
+  id: string;
+  images?: Array<ChunkPreviewImageDto> | null;
+  neighborIds: Array<string>;
+  pageEnd: number;
+  pageStart: number;
+  parentId: string;
+  parserVersion: string;
+  qualityIssues?: Array<ChunkQualityIssue> | null;
+  title: string;
+  tokenCount: number;
+}
+
+export interface ChunkPreviewImageDto {
+  alt_text: string;
+  content_type: string;
+  filename: string;
+  path: string;
+  url: string;
+}
+
+export interface ChunkPreviewResponse {
+  chunks: Array<ChunkPreviewChunk>;
+  documentId: string;
+  profile?: ChunkingProfile | null;
+  quality: ChunkQualitySummary;
+  releaseId?: string | null;
+  versionId: string;
 }
 
 export type ChunkQualityIssue = 'SHORT' | 'HEADING_ONLY' | 'DUPLICATE';
@@ -632,6 +679,79 @@ export interface OverviewApiResponse {
   kpis: DashboardKpiMetrics;
   spikeAlert?: SpikeAlertItem | null;
   topTopics: Array<TopFrequentTopic>;
+}
+
+export interface PendingPortalReviewItem {
+  document_id: string;
+  review_id: string;
+}
+
+export interface PendingPortalReviewList {
+  items: Array<PendingPortalReviewItem>;
+}
+
+export interface PortalDocumentDetail {
+  document: PortalDocumentRecord;
+  draft_version?: PortalDocumentVersionSummary | null;
+  published_version?: PortalDocumentVersionSummary | null;
+}
+
+export interface PortalDocumentList {
+  items: Array<PortalDocumentRecord>;
+}
+
+export interface PortalDocumentRecord {
+  category: string;
+  document_id: string;
+  etag?: string | null;
+  format?: string | null;
+  status: string;
+  title: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface PortalDocumentVersionSummary {
+  original_asset_name?: string | null;
+  original_asset_size?: number | null;
+  version_id: string;
+  version_number: number;
+}
+
+export interface PortalImportAsset {
+  content_base64: string;
+  filename: string;
+}
+
+export interface PortalImportResult {
+  assets?: Array<PortalImportAsset> | null;
+  audience_group_ids?: Array<string> | null;
+  audience_type?: 'ALL_EMPLOYEES' | 'RESTRICTED_GROUPS' | null;
+  byteSize?: number | null;
+  effective_at?: string | null;
+  error?: string | null;
+  jobId?: string | null;
+  markdown_content?: string | null;
+  mode?: 'sync' | 'async' | null;
+  original_asset_token?: string | null;
+  owner_unit_id?: string | null;
+  page_count?: number | null;
+  result?: PortalImportResult | null;
+  review_due_at?: string | null;
+  source_type?: 'PDF' | 'DOCX' | 'MARKDOWN_UPLOAD' | null;
+  stage?: IngestionStage | null;
+  status?: string | null;
+  title?: string | null;
+  warnings?: Array<string> | null;
+}
+
+export interface PortalWorkbenchDtoCatalog {
+  chunk_preview: ChunkPreviewResponse;
+  document_detail: PortalDocumentDetail;
+  document_list: PortalDocumentList;
+  import_result: PortalImportResult;
+  note?: string;
+  pending_reviews: PendingPortalReviewList;
 }
 
 export interface PreflightRunPayload {

@@ -15,8 +15,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done — private-access empty; router FS gate; **workbench Path/JSON behind WorkbenchRepository** |
-| F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + **console OpenAPI call-site matrix**; handwritten_only=0 |
-| G Independent frontend + legacy removal | Partial — soft deliverables landed (legacy shell HTML now under `legacy-js/`); **tree delete still waits unused release cycle** |
+| F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + call-site matrix; **handwritten_only=0** (incl. portal workbench DTOs) |
+| G Independent frontend + legacy removal | Partial — soft deliverables + fail-closed `delete_legacy_js.py`; **tree delete still waits unused release** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files/functions; characterization registry covers extractor/evaluation/source/documents/composition/contracts |
 
 ## Phase G soft deliverables (landed)
@@ -39,4 +39,4 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Console↔OpenAPI call-site matrix gate: `scripts/check_console_openapi_matrix.py`
 
 ## Goal blockers (not closed)
-- **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. Tree delete waits one unused release after quarantine ships. Product/test paths no longer require legacy-js modules.
+- **G hard exit:** `static/legacy-js` still present (~74 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. After that cycle: `uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write`, then retire quarantine-present assertions.

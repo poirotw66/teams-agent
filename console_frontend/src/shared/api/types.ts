@@ -27,4 +27,10 @@ export type {
   IngestionStage,
   ChunkingProfile,
   OverviewApiResponse,
+  PortalImportResult,
+  PortalDocumentRecord,
+  PortalDocumentList,
+  PortalDocumentDetail,
+  PendingPortalReviewList,
+  ChunkPreviewResponse,
 } from './generated/backoffice-schemas';

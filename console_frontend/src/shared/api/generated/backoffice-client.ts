@@ -61,6 +61,7 @@ import type {
   MaskingBody,
   ModelCandidateBody,
   OverviewApiResponse,
+  PortalWorkbenchDtoCatalog,
   PreflightRunPayload,
   PromptActivateBody,
   PromptApproveBody,
@@ -162,7 +163,7 @@ function toFormData(body: FormData | object | undefined): FormData | undefined {
   return form;
 }
 
-// Operations from ai_ops_backoffice OpenAPI (215 methods).
+// Operations from ai_ops_backoffice OpenAPI (216 methods).
 export const backofficeClient = {
   async acknowledge_alert_api_alerts__alert_id__acknowledge_post(args: {
     path: {
@@ -1700,6 +1701,11 @@ export const backofficeClient = {
     const path = '/api/operations/summary';
     const url = `${path}${buildQuery(args?.query)}`;
     return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+  },
+  async portal_dto_catalog_api_console_workbench__well_known_portal_dto_catalog_get(): Promise<PortalWorkbenchDtoCatalog> {
+    const path = '/api/console/workbench/.well-known/portal-dto-catalog';
+    const url = path;
+    return apiClient<PortalWorkbenchDtoCatalog>(url, { method: 'GET' });
   },
   async preflight_run_api_evaluations_runs_preflight_post(args: {
     body: PreflightRunPayload;

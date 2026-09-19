@@ -1,5 +1,5 @@
 {
-  "schemaCount": 103,
+  "schemaCount": 115,
   "schemas": [
     {
       "name": "ActivatePolicyVersionPayload",
@@ -179,6 +179,78 @@
         "id",
         "sender",
         "timestamp"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ChunkPreviewChunk",
+      "properties": [
+        "chunkerVersion",
+        "content",
+        "contentHash",
+        "contentPreview",
+        "headingPath",
+        "id",
+        "images",
+        "neighborIds",
+        "pageEnd",
+        "pageStart",
+        "parentId",
+        "parserVersion",
+        "qualityIssues",
+        "title",
+        "tokenCount"
+      ],
+      "required": [
+        "chunkerVersion",
+        "content",
+        "contentHash",
+        "contentPreview",
+        "headingPath",
+        "id",
+        "neighborIds",
+        "pageEnd",
+        "pageStart",
+        "parentId",
+        "parserVersion",
+        "title",
+        "tokenCount"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ChunkPreviewImageDto",
+      "properties": [
+        "alt_text",
+        "content_type",
+        "filename",
+        "path",
+        "url"
+      ],
+      "required": [
+        "alt_text",
+        "content_type",
+        "filename",
+        "path",
+        "url"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ChunkPreviewResponse",
+      "properties": [
+        "chunks",
+        "documentId",
+        "profile",
+        "quality",
+        "releaseId",
+        "versionId"
+      ],
+      "required": [
+        "chunks",
+        "documentId",
+        "quality",
+        "versionId"
       ],
       "type": "object"
     },
@@ -960,6 +1032,143 @@
         "blindSpots",
         "kpis",
         "topTopics"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PendingPortalReviewItem",
+      "properties": [
+        "document_id",
+        "review_id"
+      ],
+      "required": [
+        "document_id",
+        "review_id"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PendingPortalReviewList",
+      "properties": [
+        "items"
+      ],
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalDocumentDetail",
+      "properties": [
+        "document",
+        "draft_version",
+        "published_version"
+      ],
+      "required": [
+        "document"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalDocumentList",
+      "properties": [
+        "items"
+      ],
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalDocumentRecord",
+      "properties": [
+        "category",
+        "document_id",
+        "etag",
+        "format",
+        "status",
+        "title",
+        "updated_at",
+        "updated_by"
+      ],
+      "required": [
+        "category",
+        "document_id",
+        "status",
+        "title",
+        "updated_at",
+        "updated_by"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalDocumentVersionSummary",
+      "properties": [
+        "original_asset_name",
+        "original_asset_size",
+        "version_id",
+        "version_number"
+      ],
+      "required": [
+        "version_id",
+        "version_number"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalImportAsset",
+      "properties": [
+        "content_base64",
+        "filename"
+      ],
+      "required": [
+        "content_base64",
+        "filename"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "PortalImportResult",
+      "properties": [
+        "assets",
+        "audience_group_ids",
+        "audience_type",
+        "byteSize",
+        "effective_at",
+        "error",
+        "jobId",
+        "markdown_content",
+        "mode",
+        "original_asset_token",
+        "owner_unit_id",
+        "page_count",
+        "result",
+        "review_due_at",
+        "source_type",
+        "stage",
+        "status",
+        "title",
+        "warnings"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "PortalWorkbenchDtoCatalog",
+      "properties": [
+        "chunk_preview",
+        "document_detail",
+        "document_list",
+        "import_result",
+        "note",
+        "pending_reviews"
+      ],
+      "required": [
+        "chunk_preview",
+        "document_detail",
+        "document_list",
+        "import_result",
+        "pending_reviews"
       ],
       "type": "object"
     },
