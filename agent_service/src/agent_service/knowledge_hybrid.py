@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from langchain_core.language_models import BaseChatModel
 
@@ -60,6 +60,13 @@ from .knowledge_pipeline.retrieval_state import RetrievalState
 from .knowledge_pipeline.search_stage import run_search_loop
 from .knowledge_pipeline.trace import attach_retrieval_trace
 from .llm_call_counter import LlmCallCounter
+from .rag_rollout import (
+    VARIANT_A_WEIGHTED,
+    VARIANT_D_RRF_CONTEXTUAL_RERANK,
+    RagServingDecision,
+    select_rag_serving_variant,
+)
+from .reranker import Reranker, build_default_reranker
 from .retrieval import HybridIndex, SearchResult
 from .settings import RagSettings
 
@@ -80,15 +87,44 @@ class HybridKnowledgeService:
         index: HybridIndex,
         model: BaseChatModel | None = None,
         release_id: str | None = None,
+        *,
+        reranker: Reranker | None = None,
     ) -> None:
         self.settings = settings
         self.index = index
         self.model = model
         self.release_id = release_id
         self.last_llm_call_count = 0
-        self._retrieval_cache: OrderedDict[
-            tuple[str, frozenset[str], str, str, int, float], list[SearchResult]
-        ] = OrderedDict()
+        self._retrieval_cache: OrderedDict[tuple[Any, ...], list[SearchResult]] = OrderedDict()
+        self._reranker = reranker or build_default_reranker(
+            enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
+            timeout_ms=int(getattr(settings, "rag_rerank_timeout_ms", 700)),
+            model_name=getattr(settings, "rag_reranker_model", None),
+        )
+
+    def _serving_decision(self, request: AgentRequest | None) -> RagServingDecision:
+        tenant = "default"
+        conversation_id = "anonymous"
+        if request is not None:
+            tenant = (request.conversation.tenantId or "default").strip() or "default"
+            conversation_id = (
+                request.conversation.conversationId or request.requestId or "anonymous"
+            ).strip() or "anonymous"
+        return select_rag_serving_variant(
+            tenant=tenant,
+            conversation_id=conversation_id,
+            canary_percent=int(getattr(self.settings, "rag_canary_percent", 0)),
+            canary_variant=VARIANT_D_RRF_CONTEXTUAL_RERANK,
+            baseline_variant=VARIANT_A_WEIGHTED,
+            shadow_enabled=bool(getattr(self.settings, "rag_shadow_enabled", False)),
+            baseline_fusion_mode=str(
+                getattr(self.index, "fusion_mode", None)
+                or getattr(self.settings, "rag_fusion_mode", "RRF")
+            ),
+            global_reranker_enabled=bool(
+                getattr(self.settings, "rag_reranker_enabled", False)
+            ),
+        )
 
     async def search(
         self,
@@ -102,6 +138,11 @@ class HybridKnowledgeService:
         request: AgentRequest | None = None,
     ) -> KnowledgeResult:
         del correlation_id  # reserved for cross-service correlation
+        serving = self._serving_decision(request)
+
+        async def retrieve(state: _RetrievalState, groups: set[str]) -> _RetrievalState:
+            return await self._retrieve(state, groups, serving=serving)
+
         return await run_search_loop(
             query=query,
             user_context=user_context,
@@ -113,7 +154,7 @@ class HybridKnowledgeService:
             max_retrieval_rewrites=self.settings.max_retrieval_rewrites,
             min_score=self.settings.min_score,
             enable_adaptive_query_tiers=self.settings.enable_adaptive_query_tiers,
-            retrieve=self._retrieve,
+            retrieve=retrieve,
             documents_are_relevant=self._documents_are_relevant,
             generate=self._generate,
             rewrite=self._rewrite,
@@ -165,8 +206,26 @@ class HybridKnowledgeService:
         )
 
     async def _retrieve(
-        self, state: _RetrievalState, groups: set[str]
+        self,
+        state: _RetrievalState,
+        groups: set[str],
+        *,
+        serving: RagServingDecision | None = None,
     ) -> _RetrievalState:
+        decision = serving or RagServingDecision(
+            serve_variant=VARIANT_A_WEIGHTED,
+            is_canary=False,
+            canary_percent=0,
+            shadow_enabled=False,
+            fusion_mode=str(getattr(self.index, "fusion_mode", "RRF")),
+            reranker_enabled=bool(getattr(self.settings, "rag_reranker_enabled", True)),
+        )
+        # Shadow mode still serves the baseline path; canary percent drives serve.
+        fusion_mode = decision.fusion_mode
+        reranker_enabled = decision.reranker_enabled
+        if decision.shadow_enabled and not decision.is_canary:
+            fusion_mode = str(getattr(self.index, "fusion_mode", "RRF"))
+            reranker_enabled = bool(getattr(self.settings, "rag_reranker_enabled", True))
         host = RetrievalHost(
             search_with_timings=self.index.search_with_timings,
             inject_enterprise_app_evidence=self._inject_enterprise_app_evidence,
@@ -176,6 +235,23 @@ class HybridKnowledgeService:
             deployment_environment=self.settings.deployment_environment,
             release_id=self.release_id or "",
             retrieval_cache=self._retrieval_cache,
+            reranker=self._reranker,
+            rerank_candidate_k=int(getattr(self.settings, "rag_rerank_candidate_k", 24)),
+            reranker_enabled=reranker_enabled,
+            reranker_min_tier=str(
+                getattr(self.settings, "rag_reranker_min_tier", "standard")
+            ).lower(),
+            reranker_model=str(getattr(self.settings, "rag_reranker_model", None) or "noop"),
+            fusion_mode=fusion_mode,
+            rrf_k=int(getattr(self.index, "rrf_k", 60)),
+            contextualization_version=next(
+                (
+                    chunk.contextualization_version or ""
+                    for chunk in self.index.chunks
+                    if chunk.contextualization_version
+                ),
+                "",
+            ),
         )
         return await run_retrieve(
             host,

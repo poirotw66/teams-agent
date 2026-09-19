@@ -8,8 +8,17 @@ from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
+from agent_service.rag_observability import (
+    record_cache_hit,
+    record_query_tier,
+    rerank_span,
+    retrieval_span,
+)
+from agent_service.reranker import Reranker, tier_meets_minimum
 from agent_service.retrieval import SearchResult
 
+from .query_tier import classify_query_tier
+from .retrieval_state import RetrievalState
 from .retriever import (
     MAX_RETRIEVAL_CACHE_SIZE,
     RETRIEVAL_CANDIDATE_MULTIPLIER,
@@ -33,6 +42,14 @@ class RetrievalHost:
     deployment_environment: str
     release_id: str
     retrieval_cache: MutableMapping[tuple[Any, ...], list[SearchResult]]
+    reranker: Reranker | None = None
+    rerank_candidate_k: int = 24
+    reranker_enabled: bool = False
+    reranker_min_tier: str = "standard"
+    reranker_model: str = "noop"
+    fusion_mode: str = "RRF"
+    rrf_k: int = 60
+    contextualization_version: str = ""
 
 
 async def _cached_search(
@@ -50,25 +67,67 @@ async def _cached_search(
         release_id=host.release_id,
         top_k=host.top_k,
         min_score=host.min_score,
+        fusion_mode=host.fusion_mode,
+        rrf_k=host.rrf_k,
+        contextualization_version=host.contextualization_version,
     )
     cache = host.retrieval_cache
     if cache_key in cache:
         if isinstance(cache, OrderedDict):
             cache.move_to_end(cache_key)
+        record_cache_hit(True)
         return cache[cache_key], {}
-    res, timings = await asyncio.to_thread(
-        host.search_with_timings,
-        query,
-        host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
-        groups,
-        environment=environment,
-    )
+    record_cache_hit(False)
+    with retrieval_span(
+        fusion_mode=host.fusion_mode,
+        release_id=host.release_id,
+        cache_hit=False,
+    ):
+        res, timings = await asyncio.to_thread(
+            host.search_with_timings,
+            query,
+            host.top_k * RETRIEVAL_CANDIDATE_MULTIPLIER,
+            groups,
+            environment=environment,
+            fusion_mode=host.fusion_mode,
+        )
     cache[cache_key] = res
     if len(cache) > MAX_RETRIEVAL_CACHE_SIZE and isinstance(cache, OrderedDict):
         cache.popitem(last=False)
     elif len(cache) > MAX_RETRIEVAL_CACHE_SIZE:
         cache.pop(next(iter(cache)))
     return res, timings
+
+
+async def _maybe_rerank(
+    host: RetrievalHost,
+    *,
+    query: str,
+    results: list[SearchResult],
+) -> list[SearchResult]:
+    if not host.reranker_enabled or host.reranker is None or not results:
+        return results
+    provisional = classify_query_tier(
+        RetrievalState(
+            raw_user_utterance=query,
+            resolved_issue_query=query,
+            search_query=query,
+            facet_queries=(),
+            results=results,
+        ),
+        min_score=host.min_score,
+        max_retrieval_rewrites=0,
+    )
+    record_query_tier(provisional.tier.value)
+    if not tier_meets_minimum(provisional.tier.value, host.reranker_min_tier):
+        return results
+    limit = min(host.rerank_candidate_k, len(results))
+    with rerank_span(
+        reranker_model=host.reranker_model,
+        candidate_count=limit,
+        query_tier=provisional.tier.value,
+    ):
+        return await host.reranker.rerank(query=query, candidates=results, limit=limit)
 
 
 async def run_retrieve(
@@ -102,6 +161,11 @@ async def run_retrieve(
     for _results, timings in search_outcomes:
         accumulate_stage_timings(state.stage_timings_ms, timings)
     results = merge_best_chunk_results(*result_sets, previous=state.results)
+    results = await _maybe_rerank(
+        host,
+        query=state.resolved_issue_query or state.search_query,
+        results=results,
+    )
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
         results,

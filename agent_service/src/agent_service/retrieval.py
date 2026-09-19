@@ -9,11 +9,25 @@ from statistics import mean
 
 from langchain.embeddings import init_embeddings
 
+from knowledge_core.contextual_representation import effective_retrieval_text
+
 from .documents import DocumentChunk
 from .knowledge_eligibility import is_chunk_generation_eligible
 
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9_./:\\-]+|[\u3400-\u9fff]+")
 
+
+def hybrid_index_fusion_kwargs(settings: object) -> dict[str, object]:
+    """Map RagSettings fusion knobs onto HybridIndex constructor kwargs."""
+    return {
+        "fusion_mode": str(getattr(settings, "rag_fusion_mode", "RRF")),
+        "rrf_k": int(getattr(settings, "rag_rrf_k", 5)),
+        "sparse_candidate_k": int(getattr(settings, "rag_sparse_candidate_k", 40)),
+        "dense_candidate_k": int(getattr(settings, "rag_dense_candidate_k", 10)),
+        "fusion_candidate_k": int(getattr(settings, "rag_fusion_candidate_k", 20)),
+        "sparse_weight": float(getattr(settings, "rag_sparse_weight", 0.5)),
+        "dense_weight": float(getattr(settings, "rag_dense_weight", 1.5)),
+    }
 
 def tokenize(text: str) -> list[str]:
     tokens: list[str] = []
@@ -27,6 +41,10 @@ def tokenize(text: str) -> list[str]:
 
 
 def sparse_index_text(chunk: DocumentChunk) -> str:
+    """BM25 document text: prefer contextual retrieval_text when present."""
+    contextual = (chunk.retrieval_text or "").strip()
+    if contextual:
+        return contextual
     fields = [
         chunk.title,
         *chunk.source_aliases,
@@ -70,6 +88,15 @@ class SearchResult:
     score: float
     sparse_score: float
     dense_score: float | None = None
+    # RAG v2 ranking provenance (docs/rag-v2-spec.md §10). Optional for
+    # backward compatibility with weighted hybrid callers.
+    sparse_rank: int | None = None
+    dense_rank: int | None = None
+    fusion_score: float | None = None
+    fusion_rank: int | None = None
+    rerank_score: float | None = None
+    rerank_rank: int | None = None
+    final_rank: int | None = None
 
 
 def _normalize_embedding_model_id(model_id: str) -> str:
@@ -92,18 +119,37 @@ class HybridIndex:
         self,
         chunks: list[DocumentChunk],
         embedding_model: str | None = None,
+        *,
+        fusion_mode: str = "RRF",
+        rrf_k: int = 60,
+        sparse_candidate_k: int = 50,
+        dense_candidate_k: int = 50,
+        fusion_candidate_k: int = 30,
+        sparse_weight: float = 1.0,
+        dense_weight: float = 1.0,
     ) -> None:
         self.chunks = chunks
         self.embedding_model_name = embedding_model
         self.embedding_client = init_embeddings(embedding_model) if embedding_model else None
         self.tokenized_documents = [tokenize(sparse_index_text(chunk)) for chunk in chunks]
         self.last_search_timings_ms: dict[str, float] = {}
+        self.fusion_mode = (fusion_mode or "RRF").strip().upper()
+        if self.fusion_mode == "WEIGHTED":
+            # M7: weighted hot path removed; alias keeps old env configs working.
+            self.fusion_mode = "RRF"
+        self.rrf_k = rrf_k
+        self.sparse_candidate_k = sparse_candidate_k
+        self.dense_candidate_k = dense_candidate_k
+        self.fusion_candidate_k = fusion_candidate_k
+        self.sparse_weight = sparse_weight
+        self.dense_weight = dense_weight
 
     @classmethod
     def load(
         cls,
         index_path: Path,
         embedding_model: str | None = None,
+        **fusion_kwargs: object,
     ) -> "HybridIndex":
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
@@ -125,12 +171,22 @@ class HybridIndex:
                 runtime_model = str(indexed_model)
             else:
                 runtime_model = embedding_model or str(indexed_model)
-        return cls(chunks, runtime_model)
+        return cls(chunks, runtime_model, **fusion_kwargs)  # type: ignore[arg-type]
 
     def save(self, index_path: Path) -> None:
         index_path.parent.mkdir(parents=True, exist_ok=True)
+        has_contextual = any((chunk.retrieval_text or "").strip() for chunk in self.chunks)
+        contextual_versions = {
+            chunk.contextualization_version
+            for chunk in self.chunks
+            if chunk.contextualization_version
+        }
         payload = {
-            "version": 1,
+            "version": 2 if has_contextual else 1,
+            "indexSchemaVersion": 2 if has_contextual else 1,
+            "contextualizationVersion": (
+                next(iter(contextual_versions)) if len(contextual_versions) == 1 else None
+            ),
             "embeddingModel": self.embedding_model_name,
             "chunks": [chunk.to_dict() for chunk in self.chunks],
         }
@@ -143,7 +199,7 @@ class HybridIndex:
         if not self.embedding_client:
             return
         vectors = self.embedding_client.embed_documents(
-            [f"{chunk.title}\n{chunk.content}" for chunk in self.chunks]
+            [effective_retrieval_text(chunk) for chunk in self.chunks]
         )
         for chunk, vector in zip(self.chunks, vectors, strict=True):
             chunk.vector = vector
@@ -195,9 +251,14 @@ class HybridIndex:
         groups: set[str] | None = None,
         *,
         environment: str = "dev",
+        fusion_mode: str | None = None,
     ) -> list[SearchResult]:
         results, timings = self.search_with_timings(
-            query, limit, groups, environment=environment
+            query,
+            limit,
+            groups,
+            environment=environment,
+            fusion_mode=fusion_mode,
         )
         self.last_search_timings_ms = timings
         return results
@@ -209,9 +270,18 @@ class HybridIndex:
         groups: set[str] | None = None,
         *,
         environment: str = "dev",
+        fusion_mode: str | None = None,
     ) -> tuple[list[SearchResult], dict[str, float]]:
-        """Search and return per-call timings from locals (safe under parallel calls)."""
+        """Search and return per-call timings from locals (safe under parallel calls).
+
+        ``fusion_mode`` overrides the index default for this call only so canary
+        traffic can use RRF without mutating shared HybridIndex state.
+        """
         groups = groups or set()
+        # M7: production search is Soft-best RRF. LEGACY_WEIGHTED is eval/shadow only.
+        use_legacy_weighted = (
+            (fusion_mode or "").strip().upper() == "LEGACY_WEIGHTED"
+        )
         started = time.perf_counter()
         authorized_indices = [
             index
@@ -242,7 +312,7 @@ class HybridIndex:
             score = normalized_sparse[index]
             if query_vector is not None and chunk.vector:
                 dense_score = max(0.0, cosine_similarity(query_vector, chunk.vector))
-                score = 0.45 * normalized_sparse[index] + 0.55 * dense_score
+                score = dense_score
 
             results.append(
                 SearchResult(
@@ -253,8 +323,51 @@ class HybridIndex:
                 )
             )
 
-        results.sort(key=lambda item: item.score, reverse=True)
-        filtered = [result for result in results[:limit] if result.score > 0]
+        from .reranker import apply_error_code_guard
+        from .retrieval_fusion import legacy_weighted_hybrid_rank, reciprocal_rank_fusion
+
+        if use_legacy_weighted:
+            ranked = legacy_weighted_hybrid_rank(results)
+            filtered = [result for result in ranked[:limit] if result.score > 0]
+        else:
+            sparse_ranked = sorted(
+                (
+                    SearchResult(
+                        chunk=item.chunk,
+                        score=item.sparse_score,
+                        sparse_score=item.sparse_score,
+                        dense_score=item.dense_score,
+                    )
+                    for item in results
+                    if item.sparse_score > 0
+                ),
+                key=lambda item: item.sparse_score,
+                reverse=True,
+            )[: self.sparse_candidate_k]
+            dense_ranked = sorted(
+                (
+                    SearchResult(
+                        chunk=item.chunk,
+                        score=item.dense_score or 0.0,
+                        sparse_score=item.sparse_score,
+                        dense_score=item.dense_score,
+                    )
+                    for item in results
+                    if item.dense_score is not None and item.dense_score > 0
+                ),
+                key=lambda item: item.dense_score or 0.0,
+                reverse=True,
+            )[: self.dense_candidate_k]
+            fused = reciprocal_rank_fusion(
+                sparse_results=sparse_ranked,
+                dense_results=dense_ranked,
+                k=self.rrf_k,
+                sparse_weight=self.sparse_weight,
+                dense_weight=self.dense_weight,
+            )
+            take = min(limit, self.fusion_candidate_k)
+            filtered = [result for result in fused[:take] if result.score > 0]
+            filtered = apply_error_code_guard(query, filtered)
         timings = {
             "embeddingMs": round(embedding_ms, 1),
             "sparseMs": round(sparse_ms, 1),
