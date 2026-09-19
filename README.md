@@ -926,32 +926,31 @@ docker build -t teams-agent-backend .
 docker run --rm -p 8080:8080 --env-file .env teams-agent-backend
 ```
 
-Agent Service (`agent_service/Dockerfile`; build context is still the repo root,
-because the image must copy both `agent_service/` and root `data/`):
+Agent Service (`agent_service/Dockerfile`; build context is the repo root so the
+image can copy `agent_service/` plus the small runtime-owned `data/faq.json` and
+`data/ops/` trees):
 
 ```bash
 docker build -f agent_service/Dockerfile -t teams-agent-rag-service .
 docker run --rm -p 8080:8080 --env-file agent_service/.env teams-agent-rag-service
 ```
 
-`data/faq.json` is packaged into the image via `COPY data ./data` in `agent_service/Dockerfile`;
-that is also why `data/faq.json` must be Git-tracked—otherwise an image built from a clean
-clone would have no FAQ config.
+`data/faq.json` is packaged into the image (Git-tracked FAQ config). **Knowledge
+corpus and retrieval index are not.** Production Agent loads an immutable
+Knowledge Release Artifact from GCS (`KNOWLEDGE_RELEASE_STORE_MODE=GCS`). See
+[`deploy/README.md`](deploy/README.md) under “Knowledge Release Artifact
+(Source of Truth).”
 
-> **Build context must include the corpus.** `COPY data ./data` copies **the local
-> `data/` at build time**. `data/sources` (including assets), `data/index` are gitignored,
-> so an image built from a clean clone has **neither corpus nor index**. In that case
-> `RAG_AUTO_BUILD_INDEX` cannot help—auto-building needs Markdown files under `data/sources/`;
-> without source documents `build_index()` raises
-> `No Markdown source documents were found.` and the service cannot pass readiness.
-> Corpus delivery and its limits are detailed in
-> [`deploy/README.md`](deploy/README.md) under “Knowledge corpus and index
-> delivery.”
+> **Do not bake corpus into the Agent image.** `data/sources/` and `data/index/`
+> remain gitignored. A clean-clone / Cloud Build Git-triggered image is expected
+> to start without those trees; readiness depends on a published GCS release,
+> not on files copied at `docker build` time.
 
-> **Not yet verified.** The two `docker build` commands in this section have **not been run** in this phase
-> (Docker is not installed in the development environment). Cloud Run deploy uses the remote build path via `gcloud builds submit`;
-> on first deploy, confirm the build succeeds and use the chunk count from `/readyz` to verify the index
-> actually landed in the image.
+> **Not yet verified locally.** The two `docker build` commands in this section
+> may not have been run in every environment. Cloud Run deploy uses
+> `gcloud builds submit`; on first deploy, confirm the build succeeds and use
+> `/readyz` (chunk / release identity) to verify the active knowledge release
+> loaded.
 
 Messaging endpoint:
 

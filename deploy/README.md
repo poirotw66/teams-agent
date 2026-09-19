@@ -277,45 +277,48 @@ gcloud builds submit . --config=deploy/cloudbuild-agent.yaml \
 gcloud run services delete teams-rag-agent-verify --region=<region> --project=<project>
 ```
 
-## Knowledge corpus and index delivery — known limitation
+## Knowledge Release Artifact (Source of Truth)
 
-**Deployment currently requires a developer machine that holds the corpus.**
-This is a deliberate, accepted constraint for the POC, recorded here so it is
-not rediscovered during an incident.
+**Immutable knowledge releases in GCS are the sole Source of Truth for retrieval
+corpus and index in production.** The Agent application image must not bake
+`data/sources/` or `data/index/` into the runtime.
 
-`agent_service/Dockerfile` does `COPY data ./data`, so the image is built with
-whatever `data/` exists **in the upload context**, and
-`gcloud builds submit .` uploads the *local working directory* filtered by
-[`.gcloudignore`](../.gcloudignore) — not the git tree. Since `.gcloudignore`
-does not exclude `data/`, the local corpus (`data/sources/`), the built index
-(`data/index/chunks.json`) and the extracted images (`data/sources/assets/`) are all
-uploaded and baked into the image. `data/faq.json` ships the same way, and
-`FAQ_PATH` resolves to `/app/data/faq.json` inside the container.
+### What the Agent image contains
 
-The consequence: **`data/sources/` and `data/index/` are gitignored** (internal
-IT documents are deliberately kept out of version control), so a build
-triggered from a connected Git repository — a Cloud Build GitHub trigger, or
-any CI runner doing a clean clone — would produce an image with **no corpus and
-no index**. `RAG_AUTO_BUILD_INDEX` cannot rescue it, because there would be no
-source documents to build from; the service would start and then fail
-readiness.
+`agent_service/Dockerfile` intentionally:
 
-Practical rules while this stands:
+- **Does not** `COPY` corpus (`data/sources/`) or the built retrieval index
+  (`data/index/`).
+- Copies only runtime-owned config: `data/faq.json` and `data/ops/` (ops
+  bootstrap layouts; not the knowledge corpus).
+- Documents that knowledge releases are fetched from GCS at runtime.
 
-1. Deploy only via `deploy/deploy-gcp.sh` (or a manual `gcloud builds submit .`)
-   from a checkout that has the corpus present.
-2. Rebuild the index before deploying whenever the corpus changed:
-   `cd agent_service && .venv/bin/rag-index`.
-3. Do **not** wire up a Git-triggered Cloud Build for the Agent Service without
-   first changing how the corpus is delivered.
-4. After deploying, check `/readyz` — it reports the chunk count, which is the
-   fastest way to catch an image that shipped without an index.
+Published releases live under the configured bucket/prefix (typically
+`KNOWLEDGE_RELEASE_GCS_BUCKET` / `KNOWLEDGE_RELEASE_GCS_PREFIX`, default prefix
+`knowledge-releases`). Portal publishes; Agent loads via
+`KNOWLEDGE_RELEASE_STORE_MODE=GCS` (see `agent_service` settings validation).
 
-If deployment needs to become automatable later, the options considered were:
-fetch the corpus and index from a GCS bucket at container start (keeps
-documents out of both git and the image, adds a runtime dependency), or track
-the corpus in a private repository (simplest, but puts internal IT documents
-into git history and needs an infosec decision). Neither is implemented.
+### Production deploy rules
+
+1. Build/deploy Agent from a clean checkout or Cloud Build Git trigger — **no
+   developer machine corpus is required** for the application image.
+2. Ensure Portal (or the release publisher) has published an immutable release
+   to the shared GCS bucket before expecting Agent readiness against that
+   release.
+3. Set Agent env so release loading uses GCS (`KNOWLEDGE_RELEASE_STORE_MODE=GCS`
+   and `KNOWLEDGE_RELEASE_GCS_BUCKET=…`). Local `FILE` / `data/releases` remains
+   a development convenience only.
+4. After deploy, check Agent `/readyz` (chunk / release identity) to confirm the
+   active release loaded — not whether a corpus was copied into the image.
+
+### Local development
+
+Developers may still keep gitignored `data/sources/` and `data/index/` on a
+laptop for offline indexing experiments. That path is **not** the production
+delivery model and must not be reintroduced into `agent_service/Dockerfile`.
+
+`.gcloudignore` already excludes `data/index/**` and release working trees from
+Cloud Build upload context; do not weaken that to re-bake corpus into images.
 
 ## Tuning the §16 knobs
 

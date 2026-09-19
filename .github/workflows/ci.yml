@@ -50,8 +50,12 @@ jobs:
           uv run python ../scripts/check_architecture.py --compare-ref "${COMPARE_REF}"
       - name: Legacy shell quarantine
         # Defaults + deploy/env samples must keep BACKOFFICE_LEGACY_SHELL_ENABLED
-        # off; static/legacy-js remains kill-switch quarantine (not product path).
+        # off; dual-mode accepts absent static/legacy-js (Phase G hard exit).
         run: uv run python ../scripts/check_legacy_shell.py
+      - name: Knowledge image Source of Truth
+        # Agent Dockerfile must not bake data/sources|data/index|data/releases;
+        # GCS immutable releases are the production knowledge plane.
+        run: uv run python ../scripts/check_knowledge_image_sot.py
       - name: OpenAPI snapshot
         # Inventory + canonical ai_ops_backoffice OpenAPI; fails on drift and
         # classifies BREAKING removals/type changes when the canonical doc drifts.
