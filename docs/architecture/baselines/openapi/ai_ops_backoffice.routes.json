@@ -479,7 +479,8 @@
       "path": "/api/console/workbench/overview",
       "requestSchema": null,
       "responseSchemas": [
-        "HTTPValidationError"
+        "HTTPValidationError",
+        "OverviewApiResponse"
       ],
       "statusCodes": [
         "200",
@@ -521,7 +522,8 @@
       "path": "/api/console/workbench/tickets",
       "requestSchema": "TicketCreateRequest",
       "responseSchemas": [
-        "HTTPValidationError"
+        "HTTPValidationError",
+        "ItTicketItem"
       ],
       "statusCodes": [
         "200",

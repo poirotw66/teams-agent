@@ -134,7 +134,7 @@ export const CitationList: React.FC<CitationListProps> = ({
                             style={{ color: '#107C41', padding: 0, height: 'auto', fontSize: '12px' }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(cite.download_url, '_blank');
+                              window.open(cite.download_url ?? undefined, '_blank');
                             }}
                           >
                             下載原檔
@@ -148,7 +148,7 @@ export const CitationList: React.FC<CitationListProps> = ({
                             style={{ color: '#5B5FC7', padding: 0, height: 'auto', fontSize: '12px' }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(cite.url, '_blank');
+                              window.open(cite.url ?? undefined, '_blank');
                             }}
                           >
                             前往原文

@@ -183,7 +183,13 @@ async def build_workbench_overview(
     }
     sorted_topics = sorted(topic_counts.items(), key=lambda item: item[1], reverse=True)
     top_drivers = [
-        {"rank": rank, "topic": name, "count": count, "resolution_rate": 100}
+        {
+            "id": f"topic-{rank}",
+            "rank": rank,
+            "topic": name,
+            "count": count,
+            "resolution_rate": 100,
+        }
         for rank, (name, count) in enumerate(sorted_topics[:5], 1)
     ]
     return {

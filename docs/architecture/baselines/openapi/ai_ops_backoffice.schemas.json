@@ -1,5 +1,5 @@
 {
-  "schemaCount": 84,
+  "schemaCount": 103,
   "schemas": [
     {
       "name": "ActivatePolicyVersionPayload",
@@ -164,6 +164,95 @@
       "type": "object"
     },
     {
+      "name": "ChatMessage",
+      "properties": [
+        "citations",
+        "content",
+        "feedback",
+        "feedback_comment",
+        "id",
+        "sender",
+        "timestamp"
+      ],
+      "required": [
+        "content",
+        "id",
+        "sender",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ChunkQualityIssue",
+      "properties": [],
+      "required": [],
+      "type": "string"
+    },
+    {
+      "name": "ChunkQualitySummary",
+      "properties": [
+        "acceptable",
+        "chunkCount",
+        "coverageRatio",
+        "coveredBlocks",
+        "duplicateChunkCount",
+        "headingOnlyCount",
+        "orphanMediaCount",
+        "shortChunkCount",
+        "sourceBlocks"
+      ],
+      "required": [
+        "acceptable",
+        "chunkCount",
+        "coverageRatio",
+        "coveredBlocks",
+        "duplicateChunkCount",
+        "headingOnlyCount",
+        "orphanMediaCount",
+        "shortChunkCount",
+        "sourceBlocks"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ChunkingProfile",
+      "properties": [],
+      "required": [],
+      "type": "string"
+    },
+    {
+      "name": "CitationItem",
+      "properties": [
+        "chunk_id",
+        "content",
+        "document_id",
+        "document_title",
+        "download_url",
+        "is_policy",
+        "is_stale",
+        "original_url",
+        "page",
+        "policy_id",
+        "preview_url",
+        "section",
+        "similarity_score",
+        "snippet",
+        "source_path",
+        "source_ref_id",
+        "source_type",
+        "updated_at",
+        "url"
+      ],
+      "required": [
+        "document_id",
+        "document_title",
+        "similarity_score",
+        "snippet",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    {
       "name": "ConversationActionRequest",
       "properties": [
         "action",
@@ -171,6 +260,32 @@
       ],
       "required": [
         "action"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ConversationDetail",
+      "properties": [
+        "associated_ticket_id",
+        "id",
+        "messages",
+        "reporter_dept",
+        "reporter_ext",
+        "reporter_name",
+        "root_cause",
+        "started_at",
+        "status",
+        "topic_summary"
+      ],
+      "required": [
+        "id",
+        "messages",
+        "reporter_dept",
+        "reporter_ext",
+        "reporter_name",
+        "started_at",
+        "status",
+        "topic_summary"
       ],
       "type": "object"
     },
@@ -285,6 +400,30 @@
       "required": [
         "fixture_id",
         "tool_name"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "DashboardKpiMetrics",
+      "properties": [
+        "ai_resolution_rate",
+        "ai_resolved_count",
+        "escalated_ticket_count",
+        "inquiries_trend_percentage",
+        "negative_feedback_count",
+        "satisfaction_rate",
+        "total_inquiries_today",
+        "urgent_attention_count"
+      ],
+      "required": [
+        "ai_resolution_rate",
+        "ai_resolved_count",
+        "escalated_ticket_count",
+        "inquiries_trend_percentage",
+        "negative_feedback_count",
+        "satisfaction_rate",
+        "total_inquiries_today",
+        "urgent_attention_count"
       ],
       "type": "object"
     },
@@ -503,6 +642,27 @@
       "type": "object"
     },
     {
+      "name": "FaqItem",
+      "properties": [
+        "answer",
+        "category",
+        "id",
+        "is_active",
+        "questions",
+        "updated_at",
+        "updated_by"
+      ],
+      "required": [
+        "answer",
+        "category",
+        "id",
+        "is_active",
+        "questions",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    {
       "name": "FaqReasonRequest",
       "properties": [
         "expected_etag",
@@ -594,6 +754,162 @@
       "type": "object"
     },
     {
+      "name": "IngestionStage",
+      "properties": [],
+      "required": [],
+      "type": "string"
+    },
+    {
+      "name": "ItTicketItem",
+      "properties": [
+        "assigned_agent",
+        "assigned_team",
+        "category",
+        "conversation_id",
+        "created_at",
+        "id",
+        "reporter_dept",
+        "reporter_ext",
+        "reporter_name",
+        "resolution_note",
+        "status",
+        "ticket_number",
+        "title",
+        "updated_at"
+      ],
+      "required": [
+        "assigned_team",
+        "category",
+        "created_at",
+        "id",
+        "reporter_dept",
+        "reporter_name",
+        "status",
+        "ticket_number",
+        "title",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "KnowledgeBlindSpot",
+      "properties": [
+        "category",
+        "description",
+        "id",
+        "negative_rate",
+        "status"
+      ],
+      "required": [
+        "category",
+        "description",
+        "id",
+        "negative_rate",
+        "status"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "KnowledgeGapItem",
+      "properties": [
+        "category",
+        "cluster_query",
+        "detected_at",
+        "frequency",
+        "id",
+        "sample_conversations"
+      ],
+      "required": [
+        "category",
+        "cluster_query",
+        "detected_at",
+        "frequency",
+        "id",
+        "sample_conversations"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ManualChunkImage",
+      "properties": [
+        "alt_text",
+        "content_type",
+        "filename",
+        "path",
+        "url"
+      ],
+      "required": [
+        "alt_text",
+        "content_type",
+        "filename",
+        "path",
+        "url"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ManualChunkItem",
+      "properties": [
+        "character_count",
+        "chunker_version",
+        "content",
+        "content_hash",
+        "content_preview",
+        "heading_path",
+        "id",
+        "images",
+        "neighbor_ids",
+        "page_end",
+        "page_number",
+        "parent_id",
+        "parser_version",
+        "quality_issues",
+        "source_path",
+        "title",
+        "token_count"
+      ],
+      "required": [
+        "content_preview",
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "ManualDocumentItem",
+      "properties": [
+        "category",
+        "chunk_count",
+        "chunking_profile",
+        "chunks",
+        "file_name",
+        "file_size_bytes",
+        "id",
+        "ingestion_stage",
+        "ingestion_warnings",
+        "job_id",
+        "quality",
+        "status",
+        "title",
+        "updated_at",
+        "updated_by",
+        "version",
+        "version_id"
+      ],
+      "required": [
+        "category",
+        "chunk_count",
+        "file_name",
+        "id",
+        "status",
+        "title",
+        "updated_at",
+        "updated_by",
+        "version"
+      ],
+      "type": "object"
+    },
+    {
       "name": "MaskingBody",
       "properties": [
         "policy_version",
@@ -628,6 +944,22 @@
         "model_id",
         "provider",
         "secret_ref"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "OverviewApiResponse",
+      "properties": [
+        "blindSpots",
+        "gaps",
+        "kpis",
+        "spikeAlert",
+        "topTopics"
+      ],
+      "required": [
+        "blindSpots",
+        "kpis",
+        "topTopics"
       ],
       "type": "object"
     },
@@ -1066,6 +1398,39 @@
       "type": "object"
     },
     {
+      "name": "SpikeAlertActiveBroadcast",
+      "properties": [
+        "expires_at",
+        "message"
+      ],
+      "required": [
+        "expires_at",
+        "message"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "SpikeAlertItem",
+      "properties": [
+        "active_broadcast",
+        "affected_count",
+        "created_at",
+        "id",
+        "is_active",
+        "topic",
+        "window_minutes"
+      ],
+      "required": [
+        "affected_count",
+        "created_at",
+        "id",
+        "is_active",
+        "topic",
+        "window_minutes"
+      ],
+      "type": "object"
+    },
+    {
       "name": "SubmitRevisionPayload",
       "properties": [
         "expected_etag"
@@ -1115,6 +1480,24 @@
         "reporterDept",
         "reporterName",
         "title"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "TopFrequentTopic",
+      "properties": [
+        "count",
+        "id",
+        "rank",
+        "resolution_rate",
+        "topic"
+      ],
+      "required": [
+        "count",
+        "id",
+        "rank",
+        "resolution_rate",
+        "topic"
       ],
       "type": "object"
     },

@@ -1,22 +1,11 @@
-import {
-  DashboardKpiMetrics,
-  SpikeAlertItem,
-  TopFrequentTopic,
-  KnowledgeBlindSpot,
+import type {
   ManualDocumentItem,
   ChunkQualityIssue,
   ChunkQualitySummary,
   IngestionStage,
-  KnowledgeGapItem,
 } from "../types";
 
-export interface OverviewApiResponse {
-  kpis: DashboardKpiMetrics;
-  spikeAlert: SpikeAlertItem | null;
-  topTopics: TopFrequentTopic[];
-  blindSpots: KnowledgeBlindSpot[];
-  gaps?: KnowledgeGapItem[];
-}
+export type { OverviewApiResponse, ChunkingProfile } from "../types";
 
 export interface PortalImportResult {
   mode?: "sync" | "async";
@@ -108,5 +97,3 @@ export interface ChunkPreviewResponse {
     }>;
   }>;
 }
-
-export type ChunkingProfile = "AUTO" | "SLIDE_DECK" | "MANUAL" | "POLICY";

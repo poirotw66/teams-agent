@@ -23,6 +23,7 @@ from ai_ops_backoffice.knowledge_bridge.capabilities import has_knowledge_capabi
 from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
+from .response_models import ManualDocumentItem
 
 
 def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -30,7 +31,10 @@ def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     knowledge_client = ctx.knowledge_client
     portal_state_file = ctx.portal_state_file
 
-    @app.get("/api/console/workbench/documents")
+    @app.get(
+        "/api/console/workbench/documents",
+        response_model=list[ManualDocumentItem],
+    )
     async def list_workbench_documents(
         actor: ActorContext = Depends(current_actor),
     ) -> list[dict[str, Any]]:

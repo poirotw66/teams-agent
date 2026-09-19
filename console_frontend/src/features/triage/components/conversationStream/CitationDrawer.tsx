@@ -77,7 +77,9 @@ export const CitationDrawer: React.FC<CitationDrawerProps> = ({
             size="small"
             icon={<DownloadOutlined />}
             style={{ backgroundColor: '#107C41' }}
-            onClick={() => window.open(selectedCitation.download_url, '_blank')}
+            onClick={() =>
+              window.open(selectedCitation.download_url ?? undefined, '_blank')
+            }
           >
             下載原檔
           </Button>
@@ -86,7 +88,9 @@ export const CitationDrawer: React.FC<CitationDrawerProps> = ({
           <Button
             size="small"
             icon={<ExportOutlined />}
-            onClick={() => window.open(selectedCitation.url, '_blank')}
+            onClick={() =>
+              window.open(selectedCitation.url ?? undefined, '_blank')
+            }
           >
             開啟連結
           </Button>
@@ -230,7 +234,9 @@ export const CitationDrawer: React.FC<CitationDrawerProps> = ({
               type="primary"
               icon={<DownloadOutlined />}
               style={{ backgroundColor: '#107C41' }}
-              onClick={() => window.open(selectedCitation.download_url, '_blank')}
+              onClick={() =>
+                window.open(selectedCitation.download_url ?? undefined, '_blank')
+              }
             >
               下載原始文件檔案
             </Button>
@@ -238,7 +244,9 @@ export const CitationDrawer: React.FC<CitationDrawerProps> = ({
           {selectedCitation.url && (
             <Button
               icon={<ExportOutlined />}
-              onClick={() => window.open(selectedCitation.url, '_blank')}
+              onClick={() =>
+                window.open(selectedCitation.url ?? undefined, '_blank')
+              }
             >
               在新分頁開啟原文
             </Button>

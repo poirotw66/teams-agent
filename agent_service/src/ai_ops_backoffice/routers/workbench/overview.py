@@ -10,13 +10,14 @@ from ai_ops_backoffice.application.workbench.overview import build_workbench_ove
 from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
+from .response_models import OverviewApiResponse
 
 
 def register_overview_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     require_capability = ctx.require_capability
 
-    @app.get("/api/console/workbench/overview")
+    @app.get("/api/console/workbench/overview", response_model=OverviewApiResponse)
     async def get_workbench_overview(
         actor: ActorContext = Depends(current_actor),
     ) -> dict[str, Any]:

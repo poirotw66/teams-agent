@@ -15,7 +15,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done — private-access allowlist empty; local source file I/O via adapters; **router FS I/O gate** |
-| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness + exact DTO re-exports + consumer contracts; **exact name duplicates = 0**; 19 workbench-only handwritten shapes remain (not yet in OpenAPI response models) |
+| F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts; **handwritten_only=0** (workbench response models wired into OpenAPI; portal-only shapes remain in `workbench/types.ts`) |
 | G Independent frontend + legacy removal | Partial — soft deliverables landed; **legacy-js delete still waits unused release cycle** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
@@ -36,4 +36,3 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. Tree delete waits one unused release after quarantine ships. Product/test paths no longer require legacy-js modules.
-- **F residual:** 19 workbench-domain DTOs in `types.ts` still lack OpenAPI-generated counterparts (gated against new name collisions).

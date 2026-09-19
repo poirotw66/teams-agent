@@ -17,6 +17,7 @@ from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 from .models import BroadcastRequest, ConversationActionRequest
+from .response_models import ConversationDetail
 
 
 def register_conversation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -24,7 +25,10 @@ def register_conversation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> No
     require_capability = ctx.require_capability
     query_service = ctx.query_service
 
-    @app.get("/api/console/workbench/conversations")
+    @app.get(
+        "/api/console/workbench/conversations",
+        response_model=list[ConversationDetail],
+    )
     async def list_workbench_conversations(
         actor: ActorContext = Depends(current_actor),
     ) -> list[dict[str, Any]]:

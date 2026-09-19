@@ -76,7 +76,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             ) : (
               <BotMessageMarkdown
                 content={msg.content}
-                citations={msg.citations}
+                citations={msg.citations ?? undefined}
                 onSelectCitation={onSelectCitation}
               />
             )}

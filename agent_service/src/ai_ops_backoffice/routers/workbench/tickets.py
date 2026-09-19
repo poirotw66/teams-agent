@@ -11,6 +11,7 @@ from operations_core.access import ActorContext
 
 from .context import WorkbenchRouteContext
 from .models import TicketCreateRequest
+from .response_models import ItTicketItem
 
 
 def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
@@ -18,7 +19,7 @@ def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     require_capability = ctx.require_capability
     tickets_file = ctx.tickets_file
 
-    @app.get("/api/console/workbench/tickets")
+    @app.get("/api/console/workbench/tickets", response_model=list[ItTicketItem])
     async def list_workbench_tickets(
         actor: ActorContext = Depends(current_actor),
     ) -> list[dict[str, Any]]:
@@ -26,7 +27,7 @@ def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         require_capability(actor, "ops.conversations.read")
         return ctx.get_all_tickets()
 
-    @app.post("/api/console/workbench/tickets")
+    @app.post("/api/console/workbench/tickets", response_model=ItTicketItem)
     async def create_workbench_ticket(
         payload: TicketCreateRequest,
         actor: ActorContext = Depends(current_actor),

@@ -213,6 +213,7 @@ def list_workbench_documents(
                 "id": doc.get("document_id", ""),
                 "title": title,
                 "file_name": f"{title}.{doc_format}",
+                "file_size_bytes": int(doc.get("byte_size") or 0),
                 "category": _infer_category(title),
                 "version": str(doc.get("current_published_version_id") or "v1.0")[:12],
                 "status": "LIVE" if doc.get("status") == "PUBLISHED" else "ARCHIVED",

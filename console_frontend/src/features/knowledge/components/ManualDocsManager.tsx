@@ -133,7 +133,7 @@ export const ManualDocsManager: React.FC<ManualDocsManagerProps> = ({
             <Tag color="blue">{doc.version}</Tag>
           </Space>
           <Text type="secondary" style={{ fontSize: '12px' }}>
-            檔案：{doc.file_name} ({(doc.file_size_bytes / 1024 / 1024).toFixed(1)} MB) | 分類：{doc.category}
+            檔案：{doc.file_name} ({((doc.file_size_bytes ?? 0) / 1024 / 1024).toFixed(1)} MB) | 分類：{doc.category}
           </Text>
         </Space>
       ),

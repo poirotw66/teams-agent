@@ -181,7 +181,10 @@ export const ChunkInspectorChunkCard: React.FC<ChunkInspectorChunkCardProps> = (
               overflowY: "auto",
             }}
           >
-            <MarkdownChunkContent content={fullContent} images={chunk.images} />
+            <MarkdownChunkContent
+              content={fullContent}
+              images={chunk.images ?? undefined}
+            />
           </div>
           <div
             style={{
@@ -222,7 +225,7 @@ export const ChunkInspectorChunkCard: React.FC<ChunkInspectorChunkCardProps> = (
         >
           <MarkdownChunkContent
             content={chunk.content_preview}
-            images={chunk.images}
+            images={chunk.images ?? undefined}
             isCompact
           />
           <span

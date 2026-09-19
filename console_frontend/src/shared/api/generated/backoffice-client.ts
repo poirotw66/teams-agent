@@ -31,6 +31,7 @@ import type {
   CandidateJobPayload,
   CaseCreatePayload,
   ConversationActionRequest,
+  ConversationDetail,
   CreateFixtureVersionPayload,
   CreateGatePolicyPayload,
   CreatePolicyVersionPayload,
@@ -48,14 +49,18 @@ import type {
   FallbackBody,
   FaqCreateRequest,
   FaqEditRequest,
+  FaqItem,
   FaqReasonRequest,
   FaqReviewRequest,
   FaqTestCreateRequest,
   FaqTransitionRequest,
   FlagCandidateBody,
   ImportValidatePayload,
+  ItTicketItem,
+  ManualDocumentItem,
   MaskingBody,
   ModelCandidateBody,
+  OverviewApiResponse,
   PreflightRunPayload,
   PromptActivateBody,
   PromptApproveBody,
@@ -818,11 +823,11 @@ export const backofficeClient = {
   },
   async create_workbench_ticket_api_console_workbench_tickets_post(args: {
     body: TicketCreateRequest;
-}): Promise<Record<string, unknown>> {
+}): Promise<ItTicketItem> {
     const path = '/api/console/workbench/tickets';
     const url = path;
     const body = args.body === undefined ? undefined : JSON.stringify(args.body);
-    return apiClient<Record<string, unknown>>(url, { method: 'POST', body });
+    return apiClient<ItTicketItem>(url, { method: 'POST', body });
   },
   async delete_workbench_document_api_console_workbench_documents__document_id__delete(args: {
     path: {
@@ -1193,10 +1198,10 @@ export const backofficeClient = {
     const url = `${path}${buildQuery(args?.query)}`;
     return apiClient<WorkSummaryResponse>(url, { method: 'GET' });
   },
-  async get_workbench_overview_api_console_workbench_overview_get(): Promise<Record<string, unknown>> {
+  async get_workbench_overview_api_console_workbench_overview_get(): Promise<OverviewApiResponse> {
     const path = '/api/console/workbench/overview';
     const url = path;
-    return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+    return apiClient<OverviewApiResponse>(url, { method: 'GET' });
   },
   async get_workflow_detail_api_console_workflows__kind___item_id__get(args: {
     path: {
@@ -1647,25 +1652,25 @@ export const backofficeClient = {
     const url = `${path}${buildQuery(args?.query)}`;
     return apiClient<WorkItemsResponse>(url, { method: 'GET' });
   },
-  async list_workbench_conversations_api_console_workbench_conversations_get(): Promise<Array<Record<string, unknown>>> {
+  async list_workbench_conversations_api_console_workbench_conversations_get(): Promise<Array<ConversationDetail>> {
     const path = '/api/console/workbench/conversations';
     const url = path;
-    return apiClient<Array<Record<string, unknown>>>(url, { method: 'GET' });
+    return apiClient<Array<ConversationDetail>>(url, { method: 'GET' });
   },
-  async list_workbench_documents_api_console_workbench_documents_get(): Promise<Array<Record<string, unknown>>> {
+  async list_workbench_documents_api_console_workbench_documents_get(): Promise<Array<ManualDocumentItem>> {
     const path = '/api/console/workbench/documents';
     const url = path;
-    return apiClient<Array<Record<string, unknown>>>(url, { method: 'GET' });
+    return apiClient<Array<ManualDocumentItem>>(url, { method: 'GET' });
   },
-  async list_workbench_faqs_api_console_workbench_faqs_get(): Promise<Array<Record<string, unknown>>> {
+  async list_workbench_faqs_api_console_workbench_faqs_get(): Promise<Array<FaqItem>> {
     const path = '/api/console/workbench/faqs';
     const url = path;
-    return apiClient<Array<Record<string, unknown>>>(url, { method: 'GET' });
+    return apiClient<Array<FaqItem>>(url, { method: 'GET' });
   },
-  async list_workbench_tickets_api_console_workbench_tickets_get(): Promise<Array<Record<string, unknown>>> {
+  async list_workbench_tickets_api_console_workbench_tickets_get(): Promise<Array<ItTicketItem>> {
     const path = '/api/console/workbench/tickets';
     const url = path;
-    return apiClient<Array<Record<string, unknown>>>(url, { method: 'GET' });
+    return apiClient<Array<ItTicketItem>>(url, { method: 'GET' });
   },
   async merge_quality_candidates_api_quality_candidates_merge_post(args: {
     body: QualityCandidateMergeRequest;

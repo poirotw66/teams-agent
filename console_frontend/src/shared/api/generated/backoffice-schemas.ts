@@ -14,7 +14,7 @@
 /* eslint-disable */
 /* prettier-ignore */
 
-// Component schemas from ai_ops_backoffice OpenAPI (84 types).
+// Component schemas from ai_ops_backoffice OpenAPI (103 types).
 export type BackofficeSchemas = {
   ActivatePolicyVersionPayload: ActivatePolicyVersionPayload;
   ActivateTargetPayload: ActivateTargetPayload;
@@ -27,7 +27,13 @@ export type BackofficeSchemas = {
   CancelRunPayload: CancelRunPayload;
   CandidateJobPayload: CandidateJobPayload;
   CaseCreatePayload: CaseCreatePayload;
+  ChatMessage: ChatMessage;
+  ChunkQualityIssue: ChunkQualityIssue;
+  ChunkQualitySummary: ChunkQualitySummary;
+  ChunkingProfile: ChunkingProfile;
+  CitationItem: CitationItem;
   ConversationActionRequest: ConversationActionRequest;
+  ConversationDetail: ConversationDetail;
   CreateFixtureVersionPayload: CreateFixtureVersionPayload;
   CreateGatePolicyPayload: CreateGatePolicyPayload;
   CreatePolicyVersionPayload: CreatePolicyVersionPayload;
@@ -35,6 +41,7 @@ export type BackofficeSchemas = {
   CreateRunPayload: CreateRunPayload;
   CreateSchedulePayload: CreateSchedulePayload;
   CreateToolFixturePayload: CreateToolFixturePayload;
+  DashboardKpiMetrics: DashboardKpiMetrics;
   EvaluateDecisionPayload: EvaluateDecisionPayload;
   EvidenceRef: EvidenceRef;
   ExampleCreateRequest: ExampleCreateRequest;
@@ -46,6 +53,7 @@ export type BackofficeSchemas = {
   FallbackBody: FallbackBody;
   FaqCreateRequest: FaqCreateRequest;
   FaqEditRequest: FaqEditRequest;
+  FaqItem: FaqItem;
   FaqReasonRequest: FaqReasonRequest;
   FaqReviewRequest: FaqReviewRequest;
   FaqTestCreateRequest: FaqTestCreateRequest;
@@ -53,8 +61,16 @@ export type BackofficeSchemas = {
   FlagCandidateBody: FlagCandidateBody;
   HTTPValidationError: HTTPValidationError;
   ImportValidatePayload: ImportValidatePayload;
+  IngestionStage: IngestionStage;
+  ItTicketItem: ItTicketItem;
+  KnowledgeBlindSpot: KnowledgeBlindSpot;
+  KnowledgeGapItem: KnowledgeGapItem;
+  ManualChunkImage: ManualChunkImage;
+  ManualChunkItem: ManualChunkItem;
+  ManualDocumentItem: ManualDocumentItem;
   MaskingBody: MaskingBody;
   ModelCandidateBody: ModelCandidateBody;
+  OverviewApiResponse: OverviewApiResponse;
   PreflightRunPayload: PreflightRunPayload;
   PromptActivateBody: PromptActivateBody;
   PromptApproveBody: PromptApproveBody;
@@ -87,10 +103,13 @@ export type BackofficeSchemas = {
   SetCreatePayload: SetCreatePayload;
   SetVersionDraftPayload: SetVersionDraftPayload;
   SimulationRequest: SimulationRequest;
+  SpikeAlertActiveBroadcast: SpikeAlertActiveBroadcast;
+  SpikeAlertItem: SpikeAlertItem;
   SubmitRevisionPayload: SubmitRevisionPayload;
   SyncJobActionRequest: SyncJobActionRequest;
   SyncJobCreateRequest: SyncJobCreateRequest;
   TicketCreateRequest: TicketCreateRequest;
+  TopFrequentTopic: TopFrequentTopic;
   UpdateSchedulePayload: UpdateSchedulePayload;
   ValidationError: ValidationError;
   VerifyReleasePayload: VerifyReleasePayload;
@@ -186,9 +205,70 @@ export interface CaseCreatePayload {
   title: string;
 }
 
+export interface ChatMessage {
+  citations?: Array<CitationItem> | null;
+  content: string;
+  feedback?: 'positive' | 'negative' | null;
+  feedback_comment?: string | null;
+  id: string;
+  sender: 'user' | 'bot' | 'system';
+  timestamp: string;
+}
+
+export type ChunkQualityIssue = 'SHORT' | 'HEADING_ONLY' | 'DUPLICATE';
+
+export interface ChunkQualitySummary {
+  acceptable: boolean;
+  chunkCount: number;
+  coverageRatio: number;
+  coveredBlocks: number;
+  duplicateChunkCount: number;
+  headingOnlyCount: number;
+  orphanMediaCount: number;
+  shortChunkCount: number;
+  sourceBlocks: number;
+}
+
+export type ChunkingProfile = 'AUTO' | 'SLIDE_DECK' | 'MANUAL' | 'POLICY';
+
+export interface CitationItem {
+  chunk_id?: string | null;
+  content?: string | null;
+  document_id: string;
+  document_title: string;
+  download_url?: string | null;
+  is_policy?: boolean | null;
+  is_stale?: boolean | null;
+  original_url?: string | null;
+  page?: number | null;
+  policy_id?: string | null;
+  preview_url?: string | null;
+  section?: string | null;
+  similarity_score: number;
+  snippet: string;
+  source_path?: string | null;
+  source_ref_id?: string | null;
+  source_type?: string | null;
+  updated_at: string;
+  url?: string | null;
+}
+
 export interface ConversationActionRequest {
   action: string;
   root_cause?: string | null;
+}
+
+export interface ConversationDetail {
+  associated_ticket_id?: string | null;
+  id: string;
+  messages: Array<ChatMessage>;
+  reporter_dept: string;
+  reporter_ext: string;
+  reporter_name: string;
+  root_cause?: 'OUTDATED_DOC' | 'MISSING_KNOWLEDGE' | 'MISUNDERSTOOD' | 'HARDWARE_TICKET' | null;
+  started_at: string;
+  status: 'PENDING_REVIEW' | 'ESCALATED_TICKET' | 'RESOLVED';
+  topic_summary: string;
 }
 
 export interface CreateFixtureVersionPayload {
@@ -257,6 +337,17 @@ export interface CreateToolFixturePayload {
   is_sandbox_safe?: boolean;
   mock_responses?: Array<Record<string, unknown>>;
   tool_name: string;
+}
+
+export interface DashboardKpiMetrics {
+  ai_resolution_rate: number;
+  ai_resolved_count: number;
+  escalated_ticket_count: number;
+  inquiries_trend_percentage: number;
+  negative_feedback_count: number;
+  satisfaction_rate: number;
+  total_inquiries_today: number;
+  urgent_attention_count: number;
 }
 
 export interface EvaluateDecisionPayload {
@@ -376,6 +467,16 @@ export interface FaqEditRequest {
   review_due_at?: string | null;
 }
 
+export interface FaqItem {
+  answer: string;
+  category: string;
+  id: string;
+  is_active: boolean;
+  questions: Array<string>;
+  updated_at: string;
+  updated_by?: string | null;
+}
+
 export interface FaqReasonRequest {
   expected_etag: number;
   reason: string;
@@ -419,6 +520,90 @@ export interface ImportValidatePayload {
   owner_unit_id: string;
 }
 
+export type IngestionStage = 'UPLOADED' | 'SCANNING' | 'PARSING' | 'CHUNK_REVIEW' | 'INDEXING' | 'EVALUATING' | 'READY' | 'ACTIVE' | 'FAILED' | 'CANCELLED';
+
+export interface ItTicketItem {
+  assigned_agent?: string | null;
+  assigned_team: string;
+  category: 'HARDWARE' | 'ACCESS' | 'NETWORK' | 'SOFTWARE';
+  conversation_id?: string | null;
+  created_at: string;
+  id: string;
+  reporter_dept: string;
+  reporter_ext?: string | null;
+  reporter_name: string;
+  resolution_note?: string | null;
+  status: 'DISPATCHED' | 'IN_PROGRESS' | 'RESOLVED' | 'CANCELLED';
+  ticket_number: string;
+  title: string;
+  updated_at: string;
+}
+
+export interface KnowledgeBlindSpot {
+  category: string;
+  description: string;
+  id: string;
+  negative_rate: number;
+  status: 'HEALTHY' | 'NEEDS_UPDATE' | 'HIGH_DEFECT';
+}
+
+export interface KnowledgeGapItem {
+  category: string;
+  cluster_query: string;
+  detected_at: string;
+  frequency: number;
+  id: string;
+  sample_conversations: Array<string>;
+}
+
+export interface ManualChunkImage {
+  alt_text: string;
+  content_type: string;
+  filename: string;
+  path: string;
+  url: string;
+}
+
+export interface ManualChunkItem {
+  character_count?: number | null;
+  chunker_version?: string | null;
+  content?: string | null;
+  content_hash?: string | null;
+  content_preview: string;
+  heading_path?: Array<string> | null;
+  id: string;
+  images?: Array<ManualChunkImage> | null;
+  neighbor_ids?: Array<string> | null;
+  page_end?: number | null;
+  page_number?: number | null;
+  parent_id?: string | null;
+  parser_version?: string | null;
+  quality_issues?: Array<ChunkQualityIssue> | null;
+  source_path?: string | null;
+  title: string;
+  token_count?: number | null;
+}
+
+export interface ManualDocumentItem {
+  category: string;
+  chunk_count: number;
+  chunking_profile?: ChunkingProfile | null;
+  chunks?: Array<ManualChunkItem> | null;
+  file_name: string;
+  file_size_bytes?: number;
+  id: string;
+  ingestion_stage?: IngestionStage | null;
+  ingestion_warnings?: Array<string> | null;
+  job_id?: string | null;
+  quality?: ChunkQualitySummary | null;
+  status: 'LIVE' | 'DRAFT' | 'PARSING' | 'CHUNK_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'CHANGES_REQUESTED' | 'PUBLISHING' | 'READY' | 'FAILED' | 'ARCHIVED';
+  title: string;
+  updated_at: string;
+  updated_by: string;
+  version: string;
+  version_id?: string | null;
+}
+
 export interface MaskingBody {
   policy_version: string;
   reason: string;
@@ -439,6 +624,14 @@ export interface ModelCandidateBody {
   secret_ref: string;
   temperature?: number;
   timeout_seconds?: number;
+}
+
+export interface OverviewApiResponse {
+  blindSpots: Array<KnowledgeBlindSpot>;
+  gaps?: Array<KnowledgeGapItem>;
+  kpis: DashboardKpiMetrics;
+  spikeAlert?: SpikeAlertItem | null;
+  topTopics: Array<TopFrequentTopic>;
 }
 
 export interface PreflightRunPayload {
@@ -653,6 +846,21 @@ export interface SimulationRequest {
   query: string;
 }
 
+export interface SpikeAlertActiveBroadcast {
+  expires_at: string;
+  message: string;
+}
+
+export interface SpikeAlertItem {
+  active_broadcast?: SpikeAlertActiveBroadcast | null;
+  affected_count: number;
+  created_at: string;
+  id: string;
+  is_active: boolean;
+  topic: string;
+  window_minutes: number;
+}
+
 export interface SubmitRevisionPayload {
   expected_etag: number;
 }
@@ -677,6 +885,14 @@ export interface TicketCreateRequest {
   reporterExt?: string | null;
   reporterName: string;
   title: string;
+}
+
+export interface TopFrequentTopic {
+  count: number;
+  id: string;
+  rank: number;
+  resolution_rate: number;
+  topic: string;
 }
 
 export interface UpdateSchedulePayload {
