@@ -8,7 +8,6 @@ from agent_service.contracts import (
     AgentRequest,
     ConversationIdentity,
     MessageContent,
-    UserContext,
     UserIdentity,
 )
 from agent_service.knowledge_hybrid import HybridKnowledgeService
