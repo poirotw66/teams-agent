@@ -29,7 +29,6 @@ from .response_models import ManualDocumentItem
 def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     knowledge_client = ctx.knowledge_client
-    portal_state_file = ctx.portal_state_file
 
     @app.get(
         "/api/console/workbench/documents",
@@ -40,7 +39,7 @@ def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     ) -> list[dict[str, Any]]:
         """Return real published documents and chunks from portal_state.json and chunks.json."""
         ctx.require_capability(actor, "ops.knowledge.read")
-        portal_data = ctx.store.load(portal_state_file)
+        portal_data = ctx.load_portal_state()
         if not portal_data or "documents" not in portal_data:
             return []
         return list_documents(

@@ -13,7 +13,6 @@ from .response_models import FaqItem
 def register_faq_list_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     require_capability = ctx.require_capability
-    faqs_file = ctx.faqs_file
 
     @app.get("/api/console/workbench/faqs", response_model=list[FaqItem])
     async def list_workbench_faqs(
@@ -22,7 +21,7 @@ def register_faq_list_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         """Return real FAQs loaded directly from faqs.json."""
         require_capability(actor, "ops.faq.read")
 
-        data = ctx.store.load(faqs_file)
+        data = ctx.load_faqs()
         if not data or "faqs" not in data:
             return []
 

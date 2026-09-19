@@ -9,6 +9,7 @@ normalized to ``{name}`` templates).
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -45,6 +46,21 @@ def _openapi_path_templates(document: dict) -> set[str]:
     return set(paths) if isinstance(paths, dict) else set()
 
 
+def _segments_match(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    left_param = left.startswith("{") and left.endswith("}")
+    right_param = right.startswith("{") and right.endswith("}")
+    return left_param or right_param
+
+
+def _is_catch_all_param(segment: str) -> bool:
+    if not (segment.startswith("{") and segment.endswith("}")):
+        return False
+    name = segment[1:-1].lower()
+    return "full_path" in name or name.endswith("path") or ":path" in name
+
+
 def _path_matches(template: str, openapi_paths: set[str]) -> bool:
     if template in openapi_paths:
         return True
@@ -52,39 +68,20 @@ def _path_matches(template: str, openapi_paths: set[str]) -> bool:
     for candidate in openapi_paths:
         candidate_parts = candidate.strip("/").split("/")
         # Catch-all final param (e.g. /api/knowledge/{full_path}) covers nested paths.
-        if (
-            len(candidate_parts) <= len(template_parts)
-            and candidate_parts
-            and candidate_parts[-1].startswith("{")
-            and candidate_parts[-1].endswith("}")
-            and (
-                "full_path" in candidate_parts[-1]
-                or "path" in candidate_parts[-1].lower()
-            )
-        ):
+        if candidate_parts and _is_catch_all_param(candidate_parts[-1]):
             prefix = candidate_parts[:-1]
-            if template_parts[: len(prefix)] == prefix or all(
-                left == right
-                or (left.startswith("{") and left.endswith("}"))
-                or (right.startswith("{") and right.endswith("}"))
-                for left, right in zip(
-                    template_parts[: len(prefix)], prefix, strict=True
-                )
+            if len(template_parts) >= len(candidate_parts) and all(
+                _segments_match(left, right)
+                for left, right in zip(template_parts[: len(prefix)], prefix)
             ):
-                if len(template_parts) >= len(candidate_parts):
-                    return True
+                return True
+            continue
         if len(candidate_parts) != len(template_parts):
             continue
-        matched = True
-        for left, right in zip(template_parts, candidate_parts, strict=True):
-            left_param = left.startswith("{") and left.endswith("}")
-            right_param = right.startswith("{") and right.endswith("}")
-            if left_param or right_param:
-                continue
-            if left != right:
-                matched = False
-                break
-        if matched:
+        if all(
+            _segments_match(left, right)
+            for left, right in zip(template_parts, candidate_parts)
+        ):
             return True
     return False
 
@@ -110,8 +107,6 @@ def main() -> int:
     if not CONSOLE_SRC.is_dir():
         print(f"missing console source: {CONSOLE_SRC}", file=sys.stderr)
         return 1
-
-    import json
 
     document = json.loads(OPENAPI.read_text(encoding="utf-8"))
     openapi_paths = _openapi_path_templates(document)

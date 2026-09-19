@@ -15,7 +15,6 @@ from .models import SimulationRequest
 def register_simulation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     require_capability = ctx.require_capability
-    faqs_file = ctx.faqs_file
 
     @app.post("/api/console/workbench/simulate")
     async def simulate_ai_answer(
@@ -30,7 +29,7 @@ def register_simulation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None
             raise HTTPException(status_code=400, detail="Query cannot be empty")
 
         # 1. Check real FAQs
-        data = ctx.store.load(faqs_file)
+        data = ctx.load_faqs()
         if data and "faqs" in data:
             v_map = {v["version_id"]: v for v in data.get("versions", [])}
             for f in data.get("faqs", []):

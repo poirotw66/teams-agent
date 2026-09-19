@@ -75,7 +75,6 @@ def _upsert_faq_record(
 def register_faq_mutation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     require_capability = ctx.require_capability
-    faqs_file = ctx.faqs_file
 
     @app.post("/api/console/workbench/faqs")
     async def save_workbench_faq(
@@ -85,7 +84,7 @@ def register_faq_mutation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> No
         """Directly create or update a real FAQ item in faqs.json."""
         require_capability(actor, "ops.faq.write")
 
-        data = ctx.store.load(faqs_file)
+        data = ctx.load_faqs()
         if not data or "faqs" not in data:
             data = {"faqs": [], "versions": []}
 
@@ -101,7 +100,7 @@ def register_faq_mutation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> No
         )
         _upsert_faq_record(data, faq_id=faq_id, version_id=version_id, actor=actor, now_iso=now_iso)
         data["versions"].append(new_version)
-        ctx.store.save(faqs_file, data)
+        ctx.save_faqs(data)
 
         if payload.resolveConversationId:
             state = ctx.get_workbench_state()
@@ -128,7 +127,7 @@ def register_faq_mutation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> No
         """Delete an FAQ item from faqs.json."""
         require_capability(actor, "ops.faq.read")
 
-        data = ctx.store.load(faqs_file)
+        data = ctx.load_faqs()
         if not data or "faqs" not in data:
             raise HTTPException(status_code=404, detail="FAQ 知識庫中無資料。")
 
@@ -147,5 +146,5 @@ def register_faq_mutation_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> No
         if "versions" in data:
             data["versions"] = [v for v in data["versions"] if v.get("faq_id") != faq_id]
 
-        ctx.store.save(faqs_file, data)
+        ctx.save_faqs(data)
         return {"ok": True, "deleted_faq_id": faq_id}

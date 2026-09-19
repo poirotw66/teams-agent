@@ -62,10 +62,12 @@ def test_workbench_overview(client: TestClient) -> None:
     assert res.status_code == 200
     data = res.json()
     assert "kpis" in data
-    assert "total_conversations" in data["kpis"]
-    assert data["kpis"]["total_conversations"] >= 1
+    assert "total_inquiries_today" in data["kpis"]
+    assert data["kpis"]["total_inquiries_today"] >= 1
+    assert "ai_resolution_rate" in data["kpis"]
     assert "topTopics" in data
     assert len(data["topTopics"]) >= 1
+    assert "id" in data["topTopics"][0]
     assert "blindSpots" in data
 
 

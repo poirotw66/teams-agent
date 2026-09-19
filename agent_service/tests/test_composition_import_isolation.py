@@ -62,6 +62,52 @@ def test_import_agent_asgi_does_not_build_other_service_apps(
     assert "composition.portal_app" not in sys.modules
 
 
+def test_import_backoffice_asgi_does_not_build_other_service_apps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _purge_composition_modules()
+    from composition import backoffice_app as backoffice_app_module
+
+    sentinel = SimpleNamespace(title="backoffice-only")
+    monkeypatch.setattr(
+        backoffice_app_module,
+        "create_backoffice_app",
+        lambda settings=None, **kwargs: sentinel,
+    )
+    sys.modules.pop("composition.backoffice_asgi", None)
+
+    from composition import backoffice_asgi
+
+    assert backoffice_asgi.app is sentinel
+    # Factory module may import portal_app for DI wiring; ASGI singletons must stay cold.
+    assert "composition.agent_asgi" not in sys.modules
+    assert "composition.portal_asgi" not in sys.modules
+    assert "composition.agent_app" not in sys.modules
+
+
+def test_import_portal_asgi_does_not_build_other_service_apps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _purge_composition_modules()
+    from composition import portal_app as portal_app_module
+
+    sentinel = SimpleNamespace(title="portal-only")
+    monkeypatch.setattr(
+        portal_app_module,
+        "create_portal_app",
+        lambda settings=None, **kwargs: sentinel,
+    )
+    sys.modules.pop("composition.portal_asgi", None)
+
+    from composition import portal_asgi
+
+    assert portal_asgi.app is sentinel
+    assert "composition.agent_asgi" not in sys.modules
+    assert "composition.backoffice_asgi" not in sys.modules
+    assert "composition.agent_app" not in sys.modules
+    assert "composition.backoffice_app" not in sys.modules
+
+
 def test_domain_api_modules_expose_factory_without_module_app() -> None:
     from agent_service import api as agent_api
     from ai_ops_backoffice import api as backoffice_api

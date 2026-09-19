@@ -17,7 +17,6 @@ from .response_models import ItTicketItem
 def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     current_actor = ctx.current_actor
     require_capability = ctx.require_capability
-    tickets_file = ctx.tickets_file
 
     @app.get("/api/console/workbench/tickets", response_model=list[ItTicketItem])
     async def list_workbench_tickets(
@@ -58,7 +57,7 @@ def register_ticket_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
         }
 
         tickets.insert(0, new_ticket)
-        ctx.store.save(tickets_file, tickets)
+        ctx.save_all_tickets(tickets)
 
         # Update conversation status and linked ticket in state
         if payload.conversationId:

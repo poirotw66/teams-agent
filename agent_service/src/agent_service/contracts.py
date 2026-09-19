@@ -115,6 +115,8 @@ class Citation(StrictModel):
     sourceType: str | None = None
     originalAssetAvailable: bool = False
     originalAssetName: str | None = None
+    # Adapter may enrich citations with a signed original-download URL.
+    originalUrl: str | None = None
 
 
 class AgentImage(StrictModel):

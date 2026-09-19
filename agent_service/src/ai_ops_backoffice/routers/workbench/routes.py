@@ -7,10 +7,8 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from ai_ops_backoffice.adapters.workbench_json_store import (
-    WorkbenchJsonStore,
-    resolve_project_root,
-)
+from ai_ops_backoffice.adapters.workbench_json_store import resolve_project_root
+from ai_ops_backoffice.adapters.workbench_repository import WorkbenchRepository
 
 from .context import WorkbenchRouteContext
 from .conversations import register_conversation_routes
@@ -32,21 +30,14 @@ def register_workbench_routes(
 ) -> None:
     ops_store_path = resolved_settings.ops_store_path
     project_root = resolve_project_root(ops_store_path)
-    data_dir = project_root / "data"
-    store = WorkbenchJsonStore()
+    repository = WorkbenchRepository(data_dir=project_root / "data")
 
     ctx = WorkbenchRouteContext(
-        data_dir=data_dir,
-        faqs_file=data_dir / "ops" / "phase2" / "faqs.json",
-        portal_state_file=data_dir / "portal_state" / "portal_state.json",
-        chunks_file=data_dir / "index" / "chunks.json",
-        tickets_file=data_dir / "ops" / "tickets.json",
-        state_file=data_dir / "ops" / "workbench_state.json",
+        repository=repository,
         query_service=query_service,
         knowledge_client=knowledge_client,
         current_actor=current_actor,
         require_capability=require_capability,
-        store=store,
     )
 
     register_overview_routes(app, ctx)
