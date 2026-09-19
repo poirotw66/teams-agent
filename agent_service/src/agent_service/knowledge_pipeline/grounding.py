@@ -53,14 +53,15 @@ _COMPOSITE_S_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 _POLICY_MARKER_TOKEN = re.compile(r"\[POLICY-SEC-\d{3}\]")
-_CITATION_OR_POLICY_MARKER = re.compile(r"\[(?:S\d+|POLICY-SEC-\d{3})\]")
 _UNCITED_POLICY_LEAK_RE = re.compile(
     r"(?:"
     r"資料最小化|機敏資訊|登入密碼|憑證密碼|動態驗證碼|"
     r"遮蔽或移除|無關的個人|無關敏感|"
     r"變更(?:前|安全性設定前)(?:需|須)(?:先)?向|"
-    r"切勿擅自變更|關閉\s*Proxy|停用\s*Proxy|"
-    r"系統(?:資安|安全)政策|全域資安"
+    r"(?:向|洽詢)(?:權責單位|資訊部門)(?:或[^，。；;\n]{0,16})?確認|"
+    r"切勿擅自變更|"
+    r"系統(?:資安|安全)政策|全域資安|"
+    r"\[Rule\s*10\]|(?<![A-Za-z])Rule\s*10(?![A-Za-z])"
     r")",
     re.IGNORECASE,
 )
@@ -357,17 +358,25 @@ def prune_unbacked_sentences_and_citations(
 
 
 def prune_uncited_material_sentences(text: str) -> str:
-    """Remove uncited security-policy leaks clause-by-clause.
+    """Remove security-policy leaks that lack a proper POLICY-SEC marker.
 
-    A sibling clause that carries ``[S1]`` must not preserve a later
-    uncited policy sentence on the same line. Procedure steps and ordinary
-    knowledge prose without markers remain allowed.
+    Drops:
+    - Uncited policy prose (sibling of a knowledge ``[S#]`` clause)
+    - Policy prose mis-attributed to knowledge with ``[S#]`` only
+
+    Keeps:
+    - Any line that already carries ``[POLICY-SEC-*]`` (full advisory body)
+    - Ordinary knowledge prose that is not policy boilerplate
     """
     lines = text.splitlines()
     kept_lines: list[str] = []
     for line in lines:
         if not line.strip():
             kept_lines.append("")
+            continue
+        # Keep whole advisory lines; body sentences after the marker must stay.
+        if _POLICY_MARKER_TOKEN.search(line):
+            kept_lines.append(line)
             continue
         sentences = re.split(r"(?<=[。！？\n])", line)
         kept_sentences: list[str] = []
@@ -379,10 +388,8 @@ def prune_uncited_material_sentences(text: str) -> str:
             for clause in clauses:
                 if not clause.strip():
                     continue
-                if _CITATION_OR_POLICY_MARKER.search(clause):
-                    kept_clauses.append(clause)
-                    continue
-                if _UNCITED_POLICY_LEAK_RE.search(clause):
+                has_policy_marker = bool(_POLICY_MARKER_TOKEN.search(clause))
+                if _UNCITED_POLICY_LEAK_RE.search(clause) and not has_policy_marker:
                     continue
                 kept_clauses.append(clause)
             if kept_clauses:
