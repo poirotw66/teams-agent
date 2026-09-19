@@ -31,6 +31,7 @@ from uuid import uuid4
 # These are conservative averages from structured-output prompts in this repo.
 _CALL_TOKEN_PROFILES: dict[str, tuple[int, int]] = {
     "conversation_supervisor": (900, 60),
+    "turn_planner": (2800, 280),
     "issue_extractor": (2500, 250),
     "knowledge": (1800, 350),
     "handoff_router": (1200, 40),
@@ -93,6 +94,8 @@ class _StructuredHandle:
 
             self._model.last_component = "conversation_supervisor"
             text = _latest_user_message(_messages)
+            if _looks_greeting(text):
+                return ConversationSupervisorDecision(intent="GREETING", confidence=0.99)
             if _looks_non_it(text):
                 return ConversationSupervisorDecision(intent="NON_IT", confidence=0.9)
             if _looks_assistant_meta(text):
@@ -100,6 +103,56 @@ class _StructuredHandle:
                     intent="ASSISTANT_META", confidence=0.9
                 )
             return ConversationSupervisorDecision(intent="IT_SUPPORT", confidence=0.85)
+        if name == "TurnPlan":
+            from agent_service.turn_planner import PlannedIssue, TurnPlan
+
+            self._model.last_component = "turn_planner"
+            text = _latest_user_message(_messages)
+            if _looks_greeting(text):
+                return TurnPlan(intent="GREETING", confidence=0.99)
+            if _looks_non_it(text):
+                return TurnPlan(intent="NON_IT", confidence=0.9)
+            if _looks_assistant_meta(text):
+                return TurnPlan(intent="ASSISTANT_META", confidence=0.9)
+            if "午餐" in text and "VPN" in text:
+                return TurnPlan(
+                    intent="IT_SUPPORT",
+                    confidence=0.95,
+                    issues=[
+                        PlannedIssue(
+                            description="VPN 無法登入",
+                            readiness="READY",
+                            route="KNOWLEDGE",
+                            retrievalIntent="VPN cannot login",
+                        ),
+                    ],
+                )
+            if "打不開" in text:
+                return TurnPlan(
+                    intent="IT_SUPPORT",
+                    confidence=0.95,
+                    issues=[
+                        PlannedIssue(
+                            description="VPN 打不開",
+                            readiness="NEED_MORE_INFO",
+                            missingInfo=["錯誤訊息或錯誤碼"],
+                            route="KNOWLEDGE",
+                            retrievalIntent="VPN cannot open",
+                        )
+                    ],
+                )
+            return TurnPlan(
+                intent="IT_SUPPORT",
+                confidence=0.95,
+                issues=[
+                    PlannedIssue(
+                        description=text or "基準測試問題",
+                        readiness="READY",
+                        route="KNOWLEDGE",
+                        retrievalIntent=text or "benchmark query",
+                    )
+                ],
+            )
         if name == "IssueExtraction":
             from agent_service.contracts import Issue, IssueExtraction
 
@@ -189,8 +242,15 @@ def _latest_user_message(messages: Any) -> str:
     return ""
 
 
+def _looks_greeting(text: str) -> bool:
+    stripped = text.strip()
+    return stripped in {"你好", "您好", "嗨", "哈囉", "hello", "hi", "謝謝"} or (
+        stripped.startswith("你好") and "VPN" not in text and len(stripped) <= 4
+    )
+
+
 def _looks_non_it(text: str) -> bool:
-    markers = ("你好", "您好", "午餐", "天氣", "谢谢", "謝謝")
+    markers = ("午餐", "天氣", "谢谢", "謝謝")
     return any(marker in text for marker in markers) and "VPN" not in text
 
 
@@ -203,8 +263,10 @@ def _install_stub(app: Any) -> CountingStubModel:
     workflow = app.state.workflow
     workflow.extractor.model = stub
     workflow.supervisor._model = stub
+    workflow.turn_planner._model = stub
     workflow.handoff_router._model = stub
-    workflow.ticket_query_router._model = stub
+    if hasattr(workflow, "ticket_query_router"):
+        workflow.ticket_query_router._model = stub
     workflow.ticket_item_selector._model = stub
     router = app.state.knowledge_router
     for service in router._services.values():
@@ -312,11 +374,42 @@ async def _run_scenario(app: Any, scenario: Scenario) -> dict[str, Any]:
     }
 
 
-async def _run_benchmark(*, output_dir: Path) -> dict[str, Any]:
+def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    latencies = [row["latency_seconds"] for row in rows]
+    llm_calls = [row["llm_calls"] for row in rows]
+    costs = [row["estimated_cost_usd"] for row in rows]
+    return {
+        "scenario_count": len(rows),
+        "latency_seconds": {
+            "mean": round(statistics.fmean(latencies), 3),
+            "p50": round(sorted(latencies)[len(latencies) // 2], 3),
+            "max": round(max(latencies), 3),
+        },
+        "avg_llm_calls_per_turn": round(statistics.fmean(llm_calls), 2),
+        "min_llm_calls_per_turn": min(llm_calls),
+        "max_llm_calls_per_turn": max(llm_calls),
+        "avg_estimated_cost_usd_per_turn": round(statistics.fmean(costs), 6),
+    }
+
+
+async def _run_benchmark(
+    *,
+    output_dir: Path,
+    turn_planner_enabled: bool = False,
+) -> dict[str, Any]:
+    from dataclasses import replace
+
+    from composition.agent_hooks import install_agent_hooks
     from agent_service.api import create_app
     from agent_service.settings import RagSettings
 
-    settings = RagSettings.from_env()
+    install_agent_hooks()
+    settings = replace(
+        RagSettings.from_env(),
+        turn_planner_enabled=turn_planner_enabled,
+        # Benchmark must not require a live governance store.
+        prompt_runtime_mode="CODE_BASELINE",
+    )
     app = create_app(settings)
     async with app.router.lifespan_context(app):
         _install_stub(app)
@@ -324,26 +417,16 @@ async def _run_benchmark(*, output_dir: Path) -> dict[str, Any]:
         for scenario in SCENARIOS:
             rows.append(await _run_scenario(app, scenario))
 
-    latencies = [row["latency_seconds"] for row in rows]
-    llm_calls = [row["llm_calls"] for row in rows]
-    costs = [row["estimated_cost_usd"] for row in rows]
+    architecture = (
+        "turn_planner_poc" if turn_planner_enabled else "supervisor_llm_every_turn"
+    )
     payload = {
         "generated_at_utc": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
-        "architecture": "supervisor_llm_every_turn",
+        "architecture": architecture,
+        "turn_planner_enabled": turn_planner_enabled,
         "model": settings.agent_model or settings.model or "stub",
         "scenarios": rows,
-        "summary": {
-            "scenario_count": len(rows),
-            "latency_seconds": {
-                "mean": round(statistics.fmean(latencies), 3),
-                "p50": round(sorted(latencies)[len(latencies) // 2], 3),
-                "max": round(max(latencies), 3),
-            },
-            "avg_llm_calls_per_turn": round(statistics.fmean(llm_calls), 2),
-            "min_llm_calls_per_turn": min(llm_calls),
-            "max_llm_calls_per_turn": max(llm_calls),
-            "avg_estimated_cost_usd_per_turn": round(statistics.fmean(costs), 6),
-        },
+        "summary": _summarize(rows),
         "supersedes": {
             "performance_report_dated": "2026-08-06",
             "previous_avg_llm_calls_per_query": 2.17,
@@ -352,7 +435,53 @@ async def _run_benchmark(*, output_dir: Path) -> dict[str, Any]:
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = payload["generated_at_utc"]
-    path = output_dir / f"agent-turn-benchmark-{stamp}" / "results.json"
+    label = "turn-planner" if turn_planner_enabled else "baseline"
+    path = output_dir / f"agent-turn-benchmark-{label}-{stamp}" / "results.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    payload["output_path"] = str(path)
+    return payload
+
+
+async def _run_compare(*, output_dir: Path) -> dict[str, Any]:
+    """A/B harness: supervisor-first (≈4-call) vs Turn Planner PoC (≈2-call)."""
+    baseline = await _run_benchmark(output_dir=output_dir, turn_planner_enabled=False)
+    planner = await _run_benchmark(output_dir=output_dir, turn_planner_enabled=True)
+    by_name_baseline = {row["name"]: row for row in baseline["scenarios"]}
+    by_name_planner = {row["name"]: row for row in planner["scenarios"]}
+    deltas = []
+    for name in by_name_baseline:
+        left = by_name_baseline[name]
+        right = by_name_planner[name]
+        deltas.append(
+            {
+                "name": name,
+                "baseline_llm_calls": left["llm_calls"],
+                "planner_llm_calls": right["llm_calls"],
+                "llm_call_delta": right["llm_calls"] - left["llm_calls"],
+                "baseline_latency_seconds": left["latency_seconds"],
+                "planner_latency_seconds": right["latency_seconds"],
+                "baseline_estimated_cost_usd": left["estimated_cost_usd"],
+                "planner_estimated_cost_usd": right["estimated_cost_usd"],
+            }
+        )
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        "comparison": "supervisor_first_vs_turn_planner_poc",
+        "baseline_summary": baseline["summary"],
+        "planner_summary": planner["summary"],
+        "scenario_deltas": deltas,
+        "baseline_path": baseline["output_path"],
+        "planner_path": planner["output_path"],
+        "review_gates": {
+            "accuracy": "Run scripts/run_golden_baseline.py against both configs before cutover",
+            "p95_latency": "Compare planner_summary.latency_seconds vs baseline",
+            "cost": "Compare avg_estimated_cost_usd_per_turn; prefer lower without accuracy loss",
+        },
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stamp = payload["generated_at_utc"]
+    path = output_dir / f"turn-planner-ab-{stamp}" / "comparison.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     payload["output_path"] = str(path)
@@ -362,13 +491,29 @@ async def _run_benchmark(*, output_dir: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="../outputs")
+    parser.add_argument(
+        "--mode",
+        choices=("baseline", "turn-planner", "compare"),
+        default="baseline",
+        help="baseline=supervisor-first; turn-planner=PoC flag on; compare=A/B both.",
+    )
     args = parser.parse_args()
 
     if not Path("src/agent_service").exists():
         print("Run from agent_service/ so imports resolve.", file=sys.stderr)
         return 1
 
-    payload = asyncio.run(_run_benchmark(output_dir=Path(args.output_dir)))
+    output_dir = Path(args.output_dir)
+    if args.mode == "compare":
+        payload = asyncio.run(_run_compare(output_dir=output_dir))
+    elif args.mode == "turn-planner":
+        payload = asyncio.run(
+            _run_benchmark(output_dir=output_dir, turn_planner_enabled=True)
+        )
+    else:
+        payload = asyncio.run(
+            _run_benchmark(output_dir=output_dir, turn_planner_enabled=False)
+        )
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     print(f"Wrote {payload['output_path']}")
     return 0

@@ -103,6 +103,7 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         "supervisor_terminal_confidence": _float_env(
             "SUPERVISOR_TERMINAL_CONFIDENCE", 0.9
         ),
+        "turn_planner_enabled": _bool_env("TURN_PLANNER_ENABLED", False),
         "max_llm_calls_per_request": _int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
         "max_retrieval_rewrites": _int_env(
             "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))

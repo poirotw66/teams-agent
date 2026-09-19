@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from .confirmation import (
     TicketIntent,
     classify_ticket_intent,
 )
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
+from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from .graph import user_context_from_identity
 from .supervisor import ConversationSupervisorDecision
+from .turn_planner import (
+    planned_issues_to_issues,
+    turn_plan_to_supervisor_decision,
+)
+from .workflow_clarification_helpers import _complete_complementary_pending_issue
 from .workflow_helpers import (
     AgentState,
     assistant_scope_issue,
@@ -110,14 +118,37 @@ class ClarificationWorkflowMixin:
             team_id=request.conversation.teamId,
             knowledge_backend=knowledge_backend,
         )
-        supervisor_decision = await self.supervisor.decide(
-            message=request.message.text,
-            pending_clarification=bool(
-                _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation)
-            ),
-            recent_turns=_conversation_turns_for_supervisor(conversation) or None,
-            execution_context=execution_context,
+        pending_clarification = bool(
+            _pending_clarifications(conversation) or _has_pending_ticket_offer(conversation)
         )
+        recent_turns = _conversation_turns_for_supervisor(conversation) or None
+        planned_issues: list = []
+        if self.settings.turn_planner_enabled:
+            turn_plan = await self.turn_planner.plan(
+                message=request.message.text,
+                pending_clarification=pending_clarification,
+                recent_turns=recent_turns,
+                execution_context=execution_context,
+            )
+            supervisor_decision = turn_plan_to_supervisor_decision(turn_plan)
+            if turn_plan.issues:
+                faq_keys = await asyncio.to_thread(
+                    self.faq_service.available_keys,
+                    tuple(request.user.groups),
+                )
+                planned_issues = planned_issues_to_issues(
+                    turn_plan.issues,
+                    raw_utterance=request.message.text,
+                    allowed_faq_keys=set(faq_keys),
+                    max_missing_info=self.settings.max_missing_info_per_issue,
+                )
+        else:
+            supervisor_decision = await self.supervisor.decide(
+                message=request.message.text,
+                pending_clarification=pending_clarification,
+                recent_turns=recent_turns,
+                execution_context=execution_context,
+            )
         routing = self._apply_supervisor_routing(conversation, request, supervisor_decision)
         return {
             "user": user,
@@ -126,6 +157,7 @@ class ClarificationWorkflowMixin:
             "execution_context": execution_context,
             "llm_call_counter": execution_context.llm_calls,
             "supervisor_decision": supervisor_decision,
+            "planned_issues": planned_issues,
             **routing,
         }
 
@@ -168,18 +200,43 @@ class ClarificationWorkflowMixin:
             decision=decision,
         )
         if issues is None:
-            issues, too_many_issues = await extract_issues_via_extractor(
-                self,
-                request=request,
-                conversation=conversation,
-                correlation_id=correlation_id,
-                ticket_intent=ticket_intent,
-                superseded_resume=superseded_resume,
-                superseded_handoff=superseded_handoff,
-                prior_pending_issues=prior_pending_issues,
-                decision=decision,
-                execution_context=state.get("execution_context"),
-            )
+            planned = state.get("planned_issues") or []
+            if planned and self.settings.turn_planner_enabled:
+                issues = list(planned)
+                too_many_issues = len(planned) > self.settings.max_issues_per_message
+                if superseded_handoff and decision.intent != "HUMAN_ESCALATION":
+                    issues = [
+                        issue
+                        for issue in issues
+                        if issue.description != HUMAN_ESCALATION_ISSUE_DESCRIPTION
+                    ] or issues
+                issues = _complete_complementary_pending_issue(
+                    issues, prior_pending_issues, request.message.text, decision=decision
+                )
+                previous_count = max(
+                    (pending.clarificationCount for pending in prior_pending_issues),
+                    default=0,
+                )
+                if previous_count >= self.settings.max_clarification_rounds:
+                    issues = [
+                        issue.model_copy(update={"readiness": "READY", "missingInfo": []})
+                        if issue.readiness == "NEED_MORE_INFO"
+                        else issue
+                        for issue in issues
+                    ]
+            else:
+                issues, too_many_issues = await extract_issues_via_extractor(
+                    self,
+                    request=request,
+                    conversation=conversation,
+                    correlation_id=correlation_id,
+                    ticket_intent=ticket_intent,
+                    superseded_resume=superseded_resume,
+                    superseded_handoff=superseded_handoff,
+                    prior_pending_issues=prior_pending_issues,
+                    decision=decision,
+                    execution_context=state.get("execution_context"),
+                )
             force_ticket_offer = False
         issues, ticket_intent, force_ticket_offer, too_many_issues = apply_ticket_create_offer(
             self,

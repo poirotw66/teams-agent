@@ -56,6 +56,7 @@ from .settings import RagSettings
 from .supervisor import ConversationSupervisor
 from .ticket import AgenticTicketItemSelector, TicketService
 from .ticket_dedupe import InMemoryTicketRequestDedupeRepository, TicketRequestDedupeRepository
+from .turn_planner import TurnPlanner
 from .workflow_clarification import ClarificationWorkflowMixin
 from .workflow_handoff_nodes import HandoffWorkflowMixin
 from .workflow_helpers import (
@@ -113,6 +114,7 @@ class AgentWorkflow(
             extractor.model
         )
         self.supervisor = ConversationSupervisor(extractor.model)
+        self.turn_planner = TurnPlanner(extractor.model)
         self.ticket_request_dedupe = (
             ticket_request_dedupe or InMemoryTicketRequestDedupeRepository()
         )
