@@ -109,3 +109,6 @@ jobs:
       - name: Console bundle size budget
         working-directory: ${{ github.workspace }}
         run: python3 scripts/check_console_bundle_budget.py
+      - name: Frontend DTO overlap with generated OpenAPI schemas
+        working-directory: ${{ github.workspace }}
+        run: python3 scripts/check_frontend_dto_overlap.py

@@ -55,18 +55,25 @@ class WorkbenchStore {
   private listeners: Set<() => void> = new Set();
   private isLoaded: boolean = false;
   private loading: boolean = false;
-
-  constructor() {
-    // Automatically trigger initial load from real backend APIs
-    this.loadAll().catch((err) => {
-      console.warn("Initial workbench data load failed:", err);
-    });
-  }
+  private loadStarted: boolean = false;
 
   public subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
+    this.ensureLoaded();
     listener();
     return () => this.listeners.delete(listener);
+  }
+
+  /** Start the first fetch when a UI surface actually subscribes. */
+  public ensureLoaded(): void {
+    if (this.isLoaded || this.loadStarted) {
+      return;
+    }
+    this.loadStarted = true;
+    this.loadAll().catch((err) => {
+      this.loadStarted = false;
+      console.warn("Workbench data load failed:", err);
+    });
   }
 
   private notify(): void {

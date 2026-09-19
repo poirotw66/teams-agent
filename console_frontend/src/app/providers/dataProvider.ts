@@ -1,8 +1,7 @@
-import { DataProvider } from '@refinedev/core';
-import { apiClient } from '../../shared/api/client';
+import type { WorkItemsResponse, WorkflowDetailResponse } from '../../shared/api/generated/backoffice-schemas';
 import { backofficeClient } from '../../shared/api/generated/backoffice-client';
-import type { WorkItemsResponse } from '../../shared/api/generated/backoffice-schemas';
-import { WorkflowDetailResponse } from '../../shared/api/types';
+import { apiClient } from '../../shared/api/client';
+import { DataProvider } from '@refinedev/core';
 
 export const dataProvider: DataProvider = {
   getList: async ({ resource, pagination, filters }) => {

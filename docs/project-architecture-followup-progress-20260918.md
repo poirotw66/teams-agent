@@ -15,8 +15,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done (workbench store + expanded private-access gate) |
-| F Canonical OpenAPI + generated TS client | Done (schemas + typed client + CI freshness); hand-written DTO migration optional residual |
-| G Independent frontend + legacy removal | Partial — image/UI-only release/bundle budget/code-split/Vitest foundation done; **legacy-js delete still waits unused release cycle** |
+| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness; **exact duplicate DTO names cleared (7 re-exports)**; 19 workbench-only handwritten DTOs remain until OpenAPI covers them |
+| G Independent frontend + legacy removal | Partial — image/UI-only release/code-split/Vitest/store lazy-load done; **legacy-js delete still waits unused release cycle** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
 ## Phase G soft deliverables (landed)
@@ -29,5 +29,5 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests
 
 ## Goal blockers (not closed)
-- **G hard exit:** `static/legacy-js` still present (~73 files). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.
-- **F residual (optional):** hand-written frontend DTOs may still parallel generated client.
+- **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.
+- **F residual:** 19 workbench-domain DTOs in `types.ts` still lack OpenAPI-generated counterparts (gated against new name collisions).
