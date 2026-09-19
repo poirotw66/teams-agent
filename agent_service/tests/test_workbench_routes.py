@@ -111,7 +111,29 @@ def test_workbench_faqs(client: TestClient) -> None:
     assert any("VPN" in f.get("category", "") or "VPN" in str(f.get("questions", [])) for f in faqs)
 
 
-def test_workbench_documents(client: TestClient) -> None:
+def test_workbench_documents(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    # portal_state.json is gitignored, so CI checkouts have an empty documents list.
+    # Seed the repository path the workbench routes read from.
+    sample_portal_state = {
+        "documents": [
+            {
+                "document_id": "doc-vpn-guide",
+                "title": "VPN 連線指南",
+                "status": "PUBLISHED",
+                "format": "md",
+                "byte_size": 128,
+                "current_published_version_id": "ver-1",
+                "updated_at": "2026-09-19T00:00:00+00:00",
+                "updated_by": "test-admin",
+                "summary": "VPN 密碼被鎖時請聯繫資訊服務窗口。",
+            }
+        ],
+        "versions": [],
+    }
+    monkeypatch.setattr(
+        "ai_ops_backoffice.adapters.workbench_repository.WorkbenchRepository.load_portal_state",
+        lambda self: sample_portal_state,
+    )
     headers = {
         "X-Backoffice-User-Id": "test-admin",
         "X-Backoffice-Role": "SYSTEM_ADMIN",

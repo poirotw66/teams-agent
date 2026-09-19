@@ -106,7 +106,8 @@ def test_evaluation_chat_requires_distinct_capability_token(tmp_path: Path) -> N
     assert body["retrievalTraces"][0]["trace"]["answerability"] == "FULL"
     assert body["retrievalTraces"][0]["trace"]["claims"][0]["chunkIds"]
     assert body["retrievalTraces"][0]["trace"]["resolvedIssueQuery"] == "VPN 密碼被鎖怎麼辦？"
-    assert body["llmCallCount"] in {1, 2}
+    # Offline / no-API-key CI builds answer without an LLM; local .env may call 1–2 times.
+    assert body["llmCallCount"] in {0, 1, 2}
 
 
 def test_evaluation_chat_is_disabled_without_capability_token(tmp_path: Path) -> None:

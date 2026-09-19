@@ -67,9 +67,14 @@ class PersistentPdfConvertJobStore:
         if existing is not None:
             if existing.payload_sha256 != payload_sha256:
                 raise ValueError("Idempotency key was reused with different PDF content.")
-            OriginalAssetStore(self.settings).discard_pending(
-                (original_asset or {}).get("original_asset_token")
-            )
+            # Reuse the injected staging store so idempotent hits do not construct a
+            # real GCS client (which requires Application Default Credentials).
+            pending_token = (original_asset or {}).get("original_asset_token")
+            if pending_token:
+                OriginalAssetStore(
+                    self.settings,
+                    staging_store=self._staging,
+                ).discard_pending(pending_token)
             return existing
         job = PdfConvertJob(
             job_id=job_id,

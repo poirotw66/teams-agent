@@ -114,6 +114,10 @@ class AgentState(TypedDict, total=False):
       Service call made while processing issues, so spec §16's
       ``MAX_LLM_CALLS_PER_REQUEST`` is enforced per-*request*, not
       per-component.
+    - ``supervisor_decision`` / ``skip_issue_pipeline``: turn-level routing
+      from ConversationSupervisor (or Turn Planner when enabled).
+    - ``planned_issues``: issues produced by the Turn Planner PoC so the
+      extractor LLM call can be skipped when the flag is on.
     - ``citations`` / ``images`` / ``feedback_enabled``: the rest of what
       the deterministic Response Builder produces (``final_response`` only
       covers the rendered text; ``AgentResponse`` needs the rest too).
@@ -141,6 +145,7 @@ class AgentState(TypedDict, total=False):
     handoff_resume_reason: str
     supervisor_decision: ConversationSupervisorDecision
     skip_issue_pipeline: bool
+    planned_issues: list[Issue]
     operational_user_message: ConversationMessage
     operational_occurred_at: datetime
     operational_conversation_started_at: datetime

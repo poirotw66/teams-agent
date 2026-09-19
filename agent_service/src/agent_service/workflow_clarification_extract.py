@@ -104,6 +104,80 @@ def issues_from_offer_contexts(
     return None, False, False
 
 
+def finalize_planned_issues(
+    *,
+    planned: list[Issue],
+    request: AgentRequest,
+    prior_pending_issues: list[PendingIssueContext],
+    decision: ConversationSupervisorDecision,
+    superseded_handoff: bool,
+    max_issues_per_message: int,
+    max_clarification_rounds: int,
+) -> tuple[list[Issue], bool]:
+    """Apply handoff/clarification rules to Turn Planner issues (skip extractor)."""
+    issues = list(planned)
+    too_many_issues = len(planned) > max_issues_per_message
+    if superseded_handoff and decision.intent != "HUMAN_ESCALATION":
+        issues = [
+            issue
+            for issue in issues
+            if issue.description != HUMAN_ESCALATION_ISSUE_DESCRIPTION
+        ] or issues
+    issues = _complete_complementary_pending_issue(
+        issues, prior_pending_issues, request.message.text, decision=decision
+    )
+    previous_count = max(
+        (pending.clarificationCount for pending in prior_pending_issues),
+        default=0,
+    )
+    if previous_count >= max_clarification_rounds:
+        issues = [
+            issue.model_copy(update={"readiness": "READY", "missingInfo": []})
+            if issue.readiness == "NEED_MORE_INFO"
+            else issue
+            for issue in issues
+        ]
+    return issues, too_many_issues
+
+
+async def resolve_issues_for_extraction(
+    workflow: Any,
+    *,
+    state: dict[str, Any],
+    request: AgentRequest,
+    conversation: ConversationContext,
+    ticket_intent: TicketIntent,
+    superseded_resume: str,
+    superseded_handoff: bool,
+    prior_pending_issues: list[PendingIssueContext],
+    decision: ConversationSupervisorDecision,
+) -> tuple[list[Issue], bool]:
+    """Prefer Turn Planner issues when enabled; otherwise run the extractor."""
+    planned = state.get("planned_issues") or []
+    if planned and workflow.settings.turn_planner_enabled:
+        return finalize_planned_issues(
+            planned=planned,
+            request=request,
+            prior_pending_issues=prior_pending_issues,
+            decision=decision,
+            superseded_handoff=superseded_handoff,
+            max_issues_per_message=workflow.settings.max_issues_per_message,
+            max_clarification_rounds=workflow.settings.max_clarification_rounds,
+        )
+    return await extract_issues_via_extractor(
+        workflow,
+        request=request,
+        conversation=conversation,
+        correlation_id=state["correlation_id"],
+        ticket_intent=ticket_intent,
+        superseded_resume=superseded_resume,
+        superseded_handoff=superseded_handoff,
+        prior_pending_issues=prior_pending_issues,
+        decision=decision,
+        execution_context=state.get("execution_context"),
+    )
+
+
 async def extract_issues_via_extractor(
     workflow: Any,
     *,

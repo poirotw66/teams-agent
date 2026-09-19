@@ -10,10 +10,10 @@ so a single uvicorn server serves both.
 These extra routes are guarded as follows:
 - `/healthz` and `/readyz` are Cloud Run probes and return no user data.
 - `/rag-assets/{path}` is guarded by its own HMAC signature + expiry
-  (`teams_agent.media`), because Teams itself fetches those image URLs
+  (`citation_asset_gateway.media`), because Teams itself fetches those image URLs
   without any bearer token.
 - `/rag-sources/`, `/rag-originals/`, and `/sources/` are guarded by enterprise SSO, viewer tokens,
-  and HMAC signatures (delegated to `teams_agent.source_routes`).
+  and HMAC signatures (delegated to `citation_asset_gateway.source_routes`).
 """
 
 from __future__ import annotations

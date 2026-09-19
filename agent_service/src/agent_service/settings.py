@@ -42,6 +42,9 @@ class RagSettings:
     conversation_timeout_hours: int = 24
     conversation_retention_days: int = 365
     supervisor_terminal_confidence: float = 0.9
+    # PoC: one structured call for route + issues (docs/0919-arch.md).
+    # Keep off until Golden Eval Accuracy / P95 / Cost comparison is reviewed.
+    turn_planner_enabled: bool = False
     max_llm_calls_per_request: int = 6
     max_retrieval_rewrites: int = 1
     skip_relevance_llm_on_high_confidence: bool = True
@@ -98,6 +101,11 @@ class RagSettings:
 
     # --- Feedback (spec §14) ---
     feedback_enabled: bool = True
+
+    # --- Observability (docs/0919-arch.md P2) ---
+    otel_enabled: bool = False
+    otel_service_name: str = "agent-runtime"
+    otel_exporter_endpoint: str | None = None
 
     # --- Cost visibility (Phase 1 observability) ---
     show_turn_cost: bool = True

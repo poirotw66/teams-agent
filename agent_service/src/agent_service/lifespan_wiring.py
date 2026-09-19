@@ -254,4 +254,11 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         hybrid_settings=hybrid_settings,
     )
     configure_pricing_and_ops(app, settings)
+    from .observability import configure_tracing
+
+    configure_tracing(
+        service_name=settings.otel_service_name,
+        enabled=settings.otel_enabled,
+        exporter_endpoint=settings.otel_exporter_endpoint,
+    )
     log_startup_ready(settings, index)

@@ -392,6 +392,10 @@ def issue(**overrides) -> Issue:
         "ticketAction": None,
     }
     base.update(overrides)
+    # Fixture issues carry an explicit retrieval query so knowledge fakes can
+    # key on description without falling back to the raw user utterance.
+    if "retrieval_query" not in base:
+        base["retrieval_query"] = base["description"]
     return Issue(**base)
 
 

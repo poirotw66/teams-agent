@@ -125,10 +125,13 @@ def _complete_complementary_pending_issue(
         )
     ):
         return issues
+    composed = _compose_pending_description(pending, latest_text)
     return [
         current.model_copy(
             update={
-                "description": _compose_pending_description(pending, latest_text),
+                "description": composed,
+                # Keep retrieval aligned with the composed user fragments.
+                "retrieval_query": composed,
                 "readiness": "READY",
                 "missingInfo": [],
                 "route": pending.route if pending.route != "NOT_IT" else "KNOWLEDGE",

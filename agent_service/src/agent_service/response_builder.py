@@ -57,7 +57,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .contracts import AgentImage, Citation, Issue, IssueResult
-from .sanitize import sanitize_description
+from .issue_trust import issue_display_text
 from .security_policies import (
     filter_display_citations,
     strip_policy_overlay_for_display,
@@ -154,16 +154,8 @@ def _dedupe_images(all_images: list[AgentImage]) -> list[AgentImage]:
 
 
 def _safe_description(issue: Issue) -> str:
-    """Spec §17 defence in depth: the last gate before ``Issue.description``
-    is rendered to the user. The primary gate is the Issue Extractor's own
-    post-processing (``extractor.py``'s ``_coerce_issue``), which already
-    runs every description through the same ``sanitize_description``. This
-    call is a no-op in the normal path and only matters if a description
-    ever reaches this module without going through the extractor (a future
-    workflow change, a test double, a bug). It is plain deterministic
-    string handling, not a model call -- it does not violate spec §5.3.
-    """
-    return sanitize_description(issue.description)
+    """Display path only — never renders ``Issue.retrieval_query``."""
+    return issue_display_text(issue)
 
 
 def _render_not_it(issue: Issue) -> str:

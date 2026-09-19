@@ -103,6 +103,7 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         "supervisor_terminal_confidence": _float_env(
             "SUPERVISOR_TERMINAL_CONFIDENCE", 0.9
         ),
+        "turn_planner_enabled": _bool_env("TURN_PLANNER_ENABLED", False),
         "max_llm_calls_per_request": _int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
         "max_retrieval_rewrites": _int_env(
             "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
@@ -217,6 +218,9 @@ def load_conversation_handoff_faq_env(
 def load_feedback_cost_env() -> dict[str, Any]:
     return {
         "feedback_enabled": _bool_env("FEEDBACK_ENABLED", True),
+        "otel_enabled": _bool_env("OTEL_ENABLED", False),
+        "otel_service_name": _str_env("OTEL_SERVICE_NAME") or "agent-runtime",
+        "otel_exporter_endpoint": _str_env("OTEL_EXPORTER_OTLP_ENDPOINT"),
         "show_turn_cost": _bool_env("SHOW_TURN_COST", True),
         "show_turn_cost_playground": _bool_env("SHOW_TURN_COST_PLAYGROUND", False),
         "usd_twd_exchange_rate": _float_env("USD_TWD_EXCHANGE_RATE", 31.70),

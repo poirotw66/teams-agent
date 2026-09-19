@@ -912,32 +912,27 @@ docker build -t teams-agent-backend .
 docker run --rm -p 8080:8080 --env-file .env teams-agent-backend
 ```
 
-Agent Service（`agent_service/Dockerfile`，build context 仍是專案根目錄，
-因為 image 需要同時複製 `agent_service/` 與根目錄的 `data/`）：
+Agent Service（`agent_service/Dockerfile`，build context 為專案根目錄，以便複製
+`agent_service/` 以及執行期自管的 `data/faq.json`、`data/ops/`）：
 
 ```bash
 docker build -f agent_service/Dockerfile -t teams-agent-rag-service .
 docker run --rm -p 8080:8080 --env-file agent_service/.env teams-agent-rag-service
 ```
 
-`data/faq.json` 會隨 `agent_service/Dockerfile` 的 `COPY data ./data` 一併
-打包進 image；這也是 `data/faq.json` 必須被 Git 追蹤的原因——否則從乾淨的
-clone `docker build` 出來的 image 裡不會有 FAQ 設定。
+`data/faq.json` 會打包進 image（Git 追蹤的 FAQ 設定）。**知識語料與檢索索引
+不會。** 正式環境 Agent 從 GCS 載入不可變的 Knowledge Release Artifact
+（`KNOWLEDGE_RELEASE_STORE_MODE=GCS`）。詳見
+[`deploy/README.md`](deploy/README.md)「Knowledge Release Artifact
+(Source of Truth)」。
 
-> **build context 必須含有語料。** `COPY data ./data` 複製的是**建置當下本機
-> 的 `data/`**。`data/sources`（含 assets）、`data/index` 都是 gitignored，
-> 因此從乾淨的 clone 建置出來的 image **沒有語料也沒有索引**。此時
-> `RAG_AUTO_BUILD_INDEX` 幫不上忙——自動建索引需要 `data/sources/` 裡的
-> Markdown 文件，沒有來源文件時 `build_index()` 會直接拋出
-> `No Markdown source documents were found.`，服務無法通過 readiness 檢查。
-> 語料交付方式與其限制詳見
-> [`deploy/README.md`](deploy/README.md) 的「Knowledge corpus and index
-> delivery」。
+> **不要把語料 bake 進 Agent image。** `data/sources/`、`data/index/` 仍為
+> gitignored。乾淨 clone / Cloud Build Git trigger 建出的 image 預期不含這些
+> 目錄；readiness 依賴已發布的 GCS release，而不是 `docker build` 時複製的檔案。
 
-> **尚未驗證。** 本節的兩個 `docker build` 指令在本階段**未實際執行過**
-> （開發環境未安裝 Docker）。Cloud Run 部署走的是 `gcloud builds submit`
-> 的遠端建置路徑，首次部署時請確認建置成功，並用 `/readyz` 回報的 chunk
-> 數確認索引確實進到 image 內。
+> **本機未必已驗證。** 本節兩個 `docker build` 指令不一定在每個環境執行過。
+> Cloud Run 部署走 `gcloud builds submit`；首次部署請確認建置成功，並用
+> `/readyz`（chunk / release 識別）確認作用中的 knowledge release 已載入。
 
 Messaging endpoint：
 

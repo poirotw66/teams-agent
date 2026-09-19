@@ -164,6 +164,9 @@ class Issue(StrictModel):
     # Optional extractor/taxonomy id. When present, ops classification prefers
     # MODEL over keyword rules (FAQ mapping still wins).
     issueTypeId: str | None = None
+    # Trust boundary (docs/0919-arch.md): model/search intent for retrieval
+    # only. Never render this field to users; display uses ``description``.
+    retrieval_query: str | None = None
 
     @field_validator("missingInfo")
     @classmethod

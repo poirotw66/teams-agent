@@ -56,6 +56,7 @@ from .settings import RagSettings
 from .supervisor import ConversationSupervisor
 from .ticket import AgenticTicketItemSelector, TicketService
 from .ticket_dedupe import InMemoryTicketRequestDedupeRepository, TicketRequestDedupeRepository
+from .turn_planner import TurnPlanner
 from .workflow_clarification import ClarificationWorkflowMixin
 from .workflow_handoff_nodes import HandoffWorkflowMixin
 from .workflow_helpers import (
@@ -113,6 +114,7 @@ class AgentWorkflow(
             extractor.model
         )
         self.supervisor = ConversationSupervisor(extractor.model)
+        self.turn_planner = TurnPlanner(extractor.model)
         self.ticket_request_dedupe = (
             ticket_request_dedupe or InMemoryTicketRequestDedupeRepository()
         )
@@ -157,10 +159,20 @@ class AgentWorkflow(
     async def run(
         self, request: AgentRequest, *, correlation_id: str | None = None
     ) -> AgentState:
-        result: AgentState = await self.graph.ainvoke(
-            self._initial_state(request, correlation_id)
-        )
-        return result
+        from .observability import start_span
+
+        with start_span(
+            "agent.workflow.run",
+            attributes={
+                "request.id": request.requestId,
+                "tenant.id": request.conversation.tenantId,
+                "channel": request.channel,
+            },
+        ):
+            result: AgentState = await self.graph.ainvoke(
+                self._initial_state(request, correlation_id)
+            )
+            return result
 
     @staticmethod
     def _to_response(state: AgentState) -> AgentResponse:
