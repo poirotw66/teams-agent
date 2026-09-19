@@ -26,13 +26,11 @@ python3 scripts/sync_console_v2.py --write
 ```
 
 This runs `npm run build` (TypeScript + Vite) and refreshes hashed assets under
-`static/console-v2/`. Commit those files with the frontend source change when
-the Backoffice image or non-Docker local serve path needs an updated bundle.
+`static/console-v2/`. Commit those files with the frontend source change.
 
-`Dockerfile.backoffice` also rebuilds from `console_frontend/` and copies the
-fresh artifacts into the image; the committed bundle keeps non-Docker runs and
-tests aligned. That path remains the default same-origin product UI
-(`/console-v2` + `/api` on one Backoffice service).
+`Dockerfile.backoffice` is Python-only and copies the committed `console-v2`
+artifact (CI enforces hash parity via `scripts/sync_console_v2.py --check`).
+Independent UI deploys use `console_frontend/Dockerfile` instead.
 
 ## Independent static image (Phase G)
 

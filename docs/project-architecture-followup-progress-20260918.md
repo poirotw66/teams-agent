@@ -22,6 +22,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 ## Phase G soft deliverables (landed)
 - Independent console Docker image + Cloud Build + UI-only release path (`BUILD_CONSOLE`)
 - Synced `static/console-v2/*` selects console image only (not Backoffice Python)
+- `Dockerfile.backoffice` is Python-only (committed console-v2 artifact; no Node stage)
 - Route-level `React.lazy` + Suspense in `App.tsx`
 - Vite `manualChunks` (antd / react / refine / markdown / vendor)
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)

@@ -172,6 +172,14 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertIn("BUILD_CONSOLE=1", console_block)
         self.assertNotIn("BUILD_BACKOFFICE=1", console_block)
 
+    def test_backoffice_dockerfile_is_python_only(self) -> None:
+        """Phase G: Backoffice image must not rebuild the React console."""
+        dockerfile = self.read("agent_service/Dockerfile.backoffice")
+        self.assertNotIn("FROM node:", dockerfile)
+        self.assertNotIn("npm ci", dockerfile)
+        self.assertNotIn("npm run build", dockerfile)
+        self.assertIn("COPY agent_service/src", dockerfile)
+
     def test_pdf_converter_release_and_cloud_run_are_private_and_pinned(self) -> None:
         dockerfile = self.read("services/pdf_converter/Dockerfile.upstream")
         cloudbuild = self.read("deploy/cloudbuild-release.yaml")
