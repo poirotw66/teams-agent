@@ -1,39 +1,31 @@
 import { closeModalDialog, openModalDialog } from "./components/modalA11y.js";
+import {
+  AUTH_STORAGE_KEY,
+  authHeaders,
+  clearAuthHeaders,
+  clearExpiryWatcher,
+  getTokenExpiryDetails,
+  isTokenExpired,
+  loadAuthHeaders,
+  logout,
+  parseJwt,
+  saveAuthHeaders,
+  scheduleExpiryWatcher,
+} from "../js/session_auth.js";
 
-const AUTH_STORAGE_KEY = "ai_ops_backoffice_auth";
-
-export function loadAuthHeaders() {
-  const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) {
-    return {};
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-export function clearAuthHeaders() {
-  sessionStorage.removeItem(AUTH_STORAGE_KEY);
-}
-
-export function saveAuthHeaders(headers) {
-  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(headers));
-}
-
-export function authHeaders() {
-  const stored = loadAuthHeaders();
-  if (stored.bearerToken) {
-    return { Authorization: `Bearer ${stored.bearerToken}` };
-  }
-  return {
-    "X-Backoffice-User-Id": stored.userId || "ops.admin",
-    "X-Backoffice-User-Name": stored.userName || "System Administrator",
-    "X-Backoffice-Role": stored.role || "SYSTEM_ADMIN",
-    "X-Backoffice-Owner-Units": stored.ownerUnits || "IT Service Desk",
-  };
-}
+export {
+  AUTH_STORAGE_KEY,
+  authHeaders,
+  clearAuthHeaders,
+  clearExpiryWatcher,
+  getTokenExpiryDetails,
+  isTokenExpired,
+  loadAuthHeaders,
+  logout,
+  parseJwt,
+  saveAuthHeaders,
+  scheduleExpiryWatcher,
+};
 
 export async function api(path, options = {}) {
   const headers = { ...authHeaders(), ...(options.headers || {}) };
@@ -126,89 +118,6 @@ export function metric(label, value) {
   wrap.append(el("div", "metric-label", label));
   wrap.append(el("div", "metric-value", String(value)));
   return wrap;
-}
-
-let expiryTimer = null;
-
-export function parseJwt(token) {
-  if (!token || typeof token !== "string") return null;
-  try {
-    const parts = token.trim().split(".");
-    if (parts.length < 2) return null;
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const decoded = new TextDecoder().decode(bytes);
-    return JSON.parse(decoded);
-  } catch {
-    return null;
-  }
-}
-
-export function isTokenExpired(token, bufferSeconds = 10) {
-  const payload = parseJwt(token);
-  if (!payload || typeof payload.exp !== "number") return false;
-  return payload.exp * 1000 <= Date.now() + bufferSeconds * 1000;
-}
-
-export function getTokenExpiryDetails(token) {
-  const payload = parseJwt(token);
-  if (!payload || typeof payload.exp !== "number") return null;
-  const expiryDate = new Date(payload.exp * 1000);
-  const remainingMs = expiryDate.getTime() - Date.now();
-  const isExpired = remainingMs <= 0;
-  return {
-    expiryDate,
-    remainingMs,
-    isExpired,
-    formatted: expiryDate.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }),
-    name: payload.name || payload.preferred_username || payload.upn || payload.sub || "Entra 使用者",
-    upn: payload.preferred_username || payload.upn || payload.email || "",
-    roles: Array.isArray(payload.roles) ? payload.roles : (payload.roles ? [payload.roles] : []),
-  };
-}
-
-export function scheduleExpiryWatcher(token, onExpiredCallback) {
-  if (expiryTimer) {
-    clearTimeout(expiryTimer);
-    expiryTimer = null;
-  }
-  const details = getTokenExpiryDetails(token);
-  if (!details) return;
-  if (details.isExpired) {
-    if (typeof onExpiredCallback === "function") {
-      onExpiredCallback();
-    } else if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("backoffice:token-expired"));
-    }
-    return;
-  }
-  expiryTimer = setTimeout(() => {
-    if (typeof onExpiredCallback === "function") {
-      onExpiredCallback();
-    } else if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("backoffice:token-expired"));
-    }
-  }, Math.max(1000, details.remainingMs));
-}
-
-export function clearExpiryWatcher() {
-  if (expiryTimer) {
-    clearTimeout(expiryTimer);
-    expiryTimer = null;
-  }
-}
-
-export function logout() {
-  clearAuthHeaders();
-  clearExpiryWatcher();
-  if (typeof window !== "undefined") {
-    window.location.reload();
-  }
 }
 
 export function showEntraLoginModal({ message, reauth = false } = {}) {

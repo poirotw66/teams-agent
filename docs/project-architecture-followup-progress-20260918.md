@@ -29,7 +29,8 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests
 - Backoffice domain `import *` wildcards cleared (explicit imports)
 - Product HTML no longer imports `/static/legacy-js/` (`knowledge-ui` uses `/static/js/session_auth.js`; CI enforces)
+- JWT/session helpers live under `/static/js/session_auth.js`; legacy `api.js` re-exports them; reliability tests no longer import legacy-js
 
 ## Goal blockers (not closed)
-- **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.
+- **G hard exit:** `static/legacy-js` still present (~73 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. Tree delete waits one unused release after quarantine ships. Product/test paths no longer require legacy-js modules.
 - **F residual:** 19 workbench-domain DTOs in `types.ts` still lack OpenAPI-generated counterparts (gated against new name collisions).

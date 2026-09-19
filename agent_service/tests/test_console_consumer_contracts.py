@@ -93,7 +93,13 @@ def test_work_hub_contracts_match_console_work_page(tmp_path: Path) -> None:
         assert "route" in sample["next_action"]
 
 
-def test_operations_health_contract_for_health_page(tmp_path: Path) -> None:
+def test_capabilities_contract_for_knowledge_ui_bootstrap(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    response = client.get("/api/capabilities", headers=_auth())
+    assert response.status_code == 200
+    body = response.json()
+    assert "knowledgeBridgeEnabled" in body or "knowledge_bridge_enabled" in body
+    assert "knowledgeCapabilities" in body or "knowledge_capabilities" in body
     client = TestClient(create_app(_settings(tmp_path)))
     response = client.get("/api/health/summary", headers=_auth())
     assert response.status_code == 200

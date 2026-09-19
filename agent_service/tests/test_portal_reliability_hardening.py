@@ -1276,7 +1276,15 @@ async def test_file_repository_idempotency_persistence_and_concurrency(tmp_path:
 # 13. BU Handoff: Entra Login UI, JWT expiry tracking and zero window.prompt
 # --------------------------------------------------------------------------
 def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
-    api_js_path = (
+    session_auth_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_ops_backoffice"
+        / "static"
+        / "js"
+        / "session_auth.js"
+    )
+    legacy_api_path = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "ai_ops_backoffice"
@@ -1284,15 +1292,17 @@ def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
         / "legacy-js"
         / "api.js"
     )
-    content = api_js_path.read_text(encoding="utf-8")
-    assert "window.prompt" not in content
-    assert "showEntraLoginModal" in content
-    assert "isTokenExpired" in content
-    assert "getTokenExpiryDetails" in content
-    assert "logout" in content
+    session_content = session_auth_path.read_text(encoding="utf-8")
+    legacy_content = legacy_api_path.read_text(encoding="utf-8")
+    assert "window.prompt" not in session_content
+    assert "window.prompt" not in legacy_content
+    assert "showEntraLoginModal" in legacy_content
+    assert "isTokenExpired" in session_content
+    assert "getTokenExpiryDetails" in session_content
+    assert "logout" in session_content
 
     node_script = """
-    import { parseJwt, isTokenExpired, getTokenExpiryDetails, authHeaders, saveAuthHeaders } from './src/ai_ops_backoffice/static/legacy-js/api.js';
+    import { parseJwt, isTokenExpired, getTokenExpiryDetails, authHeaders, saveAuthHeaders } from './src/ai_ops_backoffice/static/js/session_auth.js';
 
     const store = {};
     global.sessionStorage = {
