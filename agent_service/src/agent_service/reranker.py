@@ -366,19 +366,20 @@ def build_default_reranker(
                 wrap_listwise_title_protect,
             )
 
-            # Without Gemini credentials, keep fail-open lexical scoring so CI
-            # and local offline tests never attempt a network listwise call.
+            # Without Gemini credentials, keep title-protect + lexical scoring so
+            # CI never attempts a network listwise call but still exercises the
+            # production wrapper shape.
             if not (
                 os.environ.get("GOOGLE_API_KEY")
                 or os.environ.get("GEMINI_API_KEY")
             ):
                 logger.warning(
                     "rag_reranker_model=%s requested without Gemini API key; "
-                    "using lexical FailOpenReranker",
+                    "using lexical title-protect FailOpenReranker",
                     model_name,
                 )
                 return FailOpenReranker(
-                    ModelReranker(lexical_overlap_pair_scorer),
+                    wrap_listwise_title_protect(lexical_overlap_pair_scorer),
                     timeout_seconds=max(timeout_ms, 1) / 1000.0,
                 )
 
