@@ -176,6 +176,10 @@ select_components() {
         # the Backoffice Python image.
         BUILD_CONSOLE=1
         ;;
+      agent_service/src/ai_ops_backoffice/static/console-v2/*)
+        # Synced Vite artifact from console_frontend — same UI-only path.
+        BUILD_CONSOLE=1
+        ;;
       agent_service/src/ai_ops_backoffice/*|agent_service/Dockerfile.backoffice)
         BUILD_BACKOFFICE=1
         ;;

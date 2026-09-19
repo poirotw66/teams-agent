@@ -21,11 +21,12 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 
 ## Phase G soft deliverables (landed)
 - Independent console Docker image + Cloud Build + UI-only release path (`BUILD_CONSOLE`)
+- Synced `static/console-v2/*` selects console image only (not Backoffice Python)
 - Route-level `React.lazy` + Suspense in `App.tsx`
 - Vite `manualChunks` (antd / react / refine / markdown / vendor)
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)
 - Bundle budget gate enforces entry/feature/vendor gzip ceilings
-- Vitest + Testing Library: markdown/citation/store loading behavioral tests (12 vitest + 4 route tests)
+- Vitest + Testing Library: markdown/citation/store loading/auth session behavioral tests
 
 ## Goal blockers (not closed)
 - **G hard exit:** `static/legacy-js` still present (~73 files). Quarantine CI green; tree delete waits one unused release cycle. Goal cannot complete until legacy application LOC is zero.

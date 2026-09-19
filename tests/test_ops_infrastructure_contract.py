@@ -151,6 +151,27 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertIn('if ! wait "${pid}"; then', release_script)
         self.assertIn('[[ "${DEPLOY_FAILED}" == "0" ]]', release_script)
 
+    def test_release_console_v2_static_artifact_is_ui_only(self) -> None:
+        """Synced console-v2 assets must not force a Backoffice Python rebuild."""
+        release_script = self.read("deploy/release-gcp.sh")
+        console_v2_case = (
+            "agent_service/src/ai_ops_backoffice/static/console-v2/*)"
+        )
+        backoffice_case = (
+            "agent_service/src/ai_ops_backoffice/*|agent_service/Dockerfile.backoffice)"
+        )
+        self.assertIn(console_v2_case, release_script)
+        self.assertIn(backoffice_case, release_script)
+        self.assertLess(
+            release_script.index(console_v2_case),
+            release_script.index(backoffice_case),
+        )
+        console_block_start = release_script.index(console_v2_case)
+        console_block_end = release_script.index(backoffice_case)
+        console_block = release_script[console_block_start:console_block_end]
+        self.assertIn("BUILD_CONSOLE=1", console_block)
+        self.assertNotIn("BUILD_BACKOFFICE=1", console_block)
+
     def test_pdf_converter_release_and_cloud_run_are_private_and_pinned(self) -> None:
         dockerfile = self.read("services/pdf_converter/Dockerfile.upstream")
         cloudbuild = self.read("deploy/cloudbuild-release.yaml")
