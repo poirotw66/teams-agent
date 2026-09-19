@@ -7,7 +7,8 @@ refactor plan (`docs/project-architecture-refactor-plan-20260918.md`).
 
 | Command | Purpose |
 |---|---|
-| `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet |
+| `uv run python scripts/check_architecture.py` | Reverse-import allowlist, monotonic file/function size ratchet, ownership importer-count ratchet, allowed-edge matrix, size-waiver expiry |
+| `uv run python scripts/check_architecture.py --compare-ref origin/main` | Same checks plus growth-vs-ref baselines (CI uses PR base / `main`) |
 | `uv run python scripts/check_architecture.py --write-baselines` | Full regeneration of size/import/importer-count baselines |
 | `uv run python scripts/check_legacy_shell.py` | Defaults + deploy/env samples keep `BACKOFFICE_LEGACY_SHELL_ENABLED` off; `static/legacy-js` stays quarantine |
 | `PYTHONPATH=agent_service/src uv run --directory agent_service python ../scripts/snapshot_openapi.py --check` | Verify public route + component schema inventories and the canonical Backoffice OpenAPI document (breaking-change report on drift) |
@@ -41,7 +42,7 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    After intentional UI changes: `python3 scripts/sync_console_v2.py --write`
    and commit the refreshed hashed assets.
 8. `platform_kernel` holds shared ports only and must not import domain packages.
-9. Optional per-symbol expiry stubs live in `baselines/size_waivers.json` (`waivers: []` is a no-op).
+9. Optional per-symbol waivers live in `baselines/size_waivers.json`. Empty `waivers: []` is valid; non-empty entries require owner/reason/expiry/tracking_issue/target_size and fail when `expiry` is past.
 10. Legacy UI quarantine: `static/legacy-js/` is kill-switch only
    (`BACKOFFICE_LEGACY_SHELL_ENABLED`; default off). Product path is React
    `/console-v2`. **Deletion criteria:** after one full release cycle where

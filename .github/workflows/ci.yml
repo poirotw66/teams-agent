@@ -43,7 +43,11 @@ jobs:
       - name: Ruff
         run: uv run ruff check src tests
       - name: Architecture ratchet
-        run: uv run python ../scripts/check_architecture.py
+        # Monotonic tip baselines plus optional growth-vs-base-ref check.
+        run: |
+          COMPARE_REF="origin/${{ github.base_ref || 'main' }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref || 'main' }}" || true
+          uv run python ../scripts/check_architecture.py --compare-ref "${COMPARE_REF}"
       - name: Legacy shell quarantine
         # Defaults + deploy/env samples must keep BACKOFFICE_LEGACY_SHELL_ENABLED
         # off; static/legacy-js remains kill-switch quarantine (not product path).

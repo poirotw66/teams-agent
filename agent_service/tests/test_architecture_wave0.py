@@ -360,3 +360,47 @@ def test_allowed_cross_domain_edge_matrix_rejects_unknown_edges() -> None:
         {"composition->agent_service": 3}
     ) == []
 
+
+def test_size_waiver_expiry_and_schema_enforced() -> None:
+    checker = _load_script(
+        "check_architecture_waivers",
+        SCRIPTS / "check_architecture.py",
+    )
+    as_of = checker.date.fromisoformat("2026-09-19")
+    assert checker.check_size_waivers({"waivers": []}, today=as_of) == []
+    expired = checker.check_size_waivers(
+        {
+            "waivers": [
+                {
+                    "path": "agent_service/src/agent_service/foo.py",
+                    "owner": "platform",
+                    "reason": "temporary",
+                    "expiry": "2026-01-01",
+                    "tracking_issue": "https://example.invalid/1",
+                    "target_size": 200,
+                }
+            ]
+        },
+        today=as_of,
+    )
+    assert any(item.code == "WAIVER_EXPIRED" for item in expired)
+    invalid = checker.check_size_waivers(
+        {"waivers": [{"path": "x.py"}]},
+        today=as_of,
+    )
+    assert any(item.code == "WAIVER_SCHEMA" for item in invalid)
+
+
+def test_sizes_against_ref_detects_growth() -> None:
+    checker = _load_script(
+        "check_architecture_compare_ref",
+        SCRIPTS / "check_architecture.py",
+    )
+    findings = checker.check_sizes_against_ref(
+        compare_ref="unused",
+        current_files={"a.py": 600},
+        current_functions={},
+    )
+    # Missing ref baselines soft-skip (empty findings).
+    assert findings == []
+

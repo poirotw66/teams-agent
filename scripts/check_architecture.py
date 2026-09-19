@@ -19,10 +19,13 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
+import subprocess
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +35,7 @@ OVERSIZED_FUNCTIONS_BASELINE = BASELINE_DIR / "oversized_functions.json"
 REVERSE_IMPORTS_BASELINE = BASELINE_DIR / "reverse_imports.json"
 IMPORTER_COUNTS_BASELINE = BASELINE_DIR / "importer_counts.json"
 PRIVATE_ACCESS_BASELINE = BASELINE_DIR / "private_access.json"
+SIZE_WAIVERS_BASELINE = BASELINE_DIR / "size_waivers.json"
 
 # HTTP routers must not open files directly; I/O belongs in adapters/services.
 ROUTER_FS_IO_RE = re.compile(
@@ -438,6 +442,150 @@ def check_allowed_cross_domain_edges(
     return findings
 
 
+_REQUIRED_WAIVER_FIELDS = (
+    "path",
+    "owner",
+    "reason",
+    "expiry",
+    "tracking_issue",
+    "target_size",
+)
+
+
+def check_size_waivers(
+    payload: dict[str, object] | None = None,
+    *,
+    today: date | None = None,
+) -> list[Finding]:
+    """Validate size waiver schema and fail closed on expired entries."""
+    if payload is None:
+        if not SIZE_WAIVERS_BASELINE.is_file():
+            return [
+                Finding(
+                    "WAIVER_BASELINE_MISSING",
+                    f"missing {rel_path(SIZE_WAIVERS_BASELINE)}",
+                )
+            ]
+        payload = load_json(SIZE_WAIVERS_BASELINE)
+    findings: list[Finding] = []
+    waivers = payload.get("waivers")
+    if not isinstance(waivers, list):
+        return [
+            Finding(
+                "WAIVER_SCHEMA",
+                "size_waivers.json must contain a list field named waivers",
+            )
+        ]
+    as_of = today or datetime.now(timezone.utc).date()
+    for index, entry in enumerate(waivers):
+        if not isinstance(entry, dict):
+            findings.append(
+                Finding("WAIVER_SCHEMA", f"waivers[{index}] must be an object")
+            )
+            continue
+        missing = [field for field in _REQUIRED_WAIVER_FIELDS if field not in entry]
+        if missing:
+            findings.append(
+                Finding(
+                    "WAIVER_SCHEMA",
+                    f"waivers[{index}] missing required fields: {', '.join(missing)}",
+                )
+            )
+            continue
+        expiry_raw = entry.get("expiry")
+        try:
+            expiry = date.fromisoformat(str(expiry_raw))
+        except ValueError:
+            findings.append(
+                Finding(
+                    "WAIVER_SCHEMA",
+                    f"waivers[{index}].expiry must be YYYY-MM-DD, got {expiry_raw!r}",
+                )
+            )
+            continue
+        if expiry < as_of:
+            findings.append(
+                Finding(
+                    "WAIVER_EXPIRED",
+                    f"waivers[{index}] expired on {expiry.isoformat()} "
+                    f"(path={entry.get('path')!r}); renew or shrink the symbol",
+                )
+            )
+        target = entry.get("target_size")
+        if not isinstance(target, int) or target <= 0:
+            findings.append(
+                Finding(
+                    "WAIVER_SCHEMA",
+                    f"waivers[{index}].target_size must be a positive int",
+                )
+            )
+    return findings
+
+
+def load_json_from_git_ref(ref: str, relative_path: str) -> dict[str, object] | None:
+    """Load a JSON file from another git ref; None when the path is absent."""
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{relative_path}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    return json.loads(completed.stdout)
+
+
+def check_sizes_against_ref(
+    *,
+    compare_ref: str,
+    current_files: dict[str, int],
+    current_functions: dict[str, int],
+) -> list[Finding]:
+    """Fail when tip sizes grow past the baselines recorded on compare_ref."""
+    findings: list[Finding] = []
+    files_rel = rel_path(OVERSIZED_FILES_BASELINE)
+    funcs_rel = rel_path(OVERSIZED_FUNCTIONS_BASELINE)
+    ref_files_payload = load_json_from_git_ref(compare_ref, files_rel)
+    ref_funcs_payload = load_json_from_git_ref(compare_ref, funcs_rel)
+    if ref_files_payload is None and ref_funcs_payload is None:
+        # Older refs (or shallow clones) may predate the ratchet baselines.
+        return []
+
+    if isinstance(ref_files_payload, dict):
+        ref_files = ref_files_payload.get("files", {})
+        if isinstance(ref_files, dict):
+            for path, lines in sorted(current_files.items()):
+                baseline_lines = ref_files.get(path)
+                if not isinstance(baseline_lines, int):
+                    continue
+                if lines > baseline_lines:
+                    findings.append(
+                        Finding(
+                            "FILE_GREW_VS_REF",
+                            f"{path} grew vs {compare_ref}: "
+                            f"{baseline_lines} -> {lines} lines",
+                        )
+                    )
+
+    if isinstance(ref_funcs_payload, dict):
+        ref_funcs = ref_funcs_payload.get("functions", {})
+        if isinstance(ref_funcs, dict):
+            for key, lines in sorted(current_functions.items()):
+                baseline_lines = ref_funcs.get(key)
+                if not isinstance(baseline_lines, int):
+                    continue
+                if lines > baseline_lines:
+                    findings.append(
+                        Finding(
+                            "FUNC_GREW_VS_REF",
+                            f"{key} grew vs {compare_ref}: "
+                            f"{baseline_lines} -> {lines} lines",
+                        )
+                    )
+    return findings
+
+
 def check_importer_counts(
     current: dict[str, int],
     baseline: dict[str, int],
@@ -798,7 +946,7 @@ def _apply_private_access_tighten(
     )
 
 
-def run_checks() -> list[Finding]:
+def run_checks(*, compare_ref: str | None = None) -> list[Finding]:
     missing = [
         path
         for path in (
@@ -806,6 +954,7 @@ def run_checks() -> list[Finding]:
             OVERSIZED_FUNCTIONS_BASELINE,
             REVERSE_IMPORTS_BASELINE,
             PRIVATE_ACCESS_BASELINE,
+            SIZE_WAIVERS_BASELINE,
         )
         if not path.exists()
     ]
@@ -848,6 +997,17 @@ def run_checks() -> list[Finding]:
     findings.extend(check_cross_module_private_access(private_access_baseline))
     findings.extend(check_router_filesystem_io())
     findings.extend(check_allowed_cross_domain_edges())
+    findings.extend(check_size_waivers())
+
+    resolved_compare_ref = compare_ref or os.environ.get("ARCHITECTURE_COMPARE_REF")
+    if resolved_compare_ref:
+        findings.extend(
+            check_sizes_against_ref(
+                compare_ref=resolved_compare_ref,
+                current_files=current_files,
+                current_functions=current_functions,
+            )
+        )
 
     if IMPORTER_COUNTS_BASELINE.exists():
         importer_baseline = load_json(IMPORTER_COUNTS_BASELINE).get("edges", {})
@@ -908,13 +1068,21 @@ def main() -> int:
             "Shrinks also auto-tighten during a normal check."
         ),
     )
+    parser.add_argument(
+        "--compare-ref",
+        default=None,
+        help=(
+            "Optional git ref whose committed size baselines must not be exceeded "
+            "(baseline-from-main). Also accepted via ARCHITECTURE_COMPARE_REF."
+        ),
+    )
     args = parser.parse_args()
 
     if args.write_baselines:
         write_baselines()
         return 0
 
-    findings = run_checks()
+    findings = run_checks(compare_ref=args.compare_ref)
     if not findings:
         print("Architecture checks passed.")
         return 0

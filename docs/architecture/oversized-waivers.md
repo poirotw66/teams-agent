@@ -31,7 +31,7 @@ Baselines are the machine-checked source of truth:
 | `baselines/oversized_functions.json` | Functions still above 80 lines (monotonic upper bound) |
 | `baselines/reverse_imports.json` | Forbidden reverse-import allowlist (must stay empty) |
 | `baselines/importer_counts.json` | Ownership-edge importer file counts (must not grow) |
-| `baselines/size_waivers.json` | Optional per-symbol waiver stub (`waivers: []`; expiry no-op while empty) |
+| `baselines/size_waivers.json` | Per-symbol waiver entries (`path`, `owner`, `reason`, `expiry`, `tracking_issue`, `target_size`); CI fails on schema errors or expired `expiry` |
 
 After intentional shrinks, run check (auto-tightens) and commit the JSON, or fully regenerate:
 
