@@ -46,7 +46,29 @@ def test_search_finds_relevant_chinese_document() -> None:
     results = index.search("VPN 密碼被鎖怎麼辦", limit=2)
 
     assert results[0].chunk.chunk_id == "vpn"
-    assert results[0].score == 1.0
+    assert results[0].fusion_rank == 1
+    assert results[0].sparse_score == 1.0
+
+
+def test_search_fusion_mode_override_does_not_mutate_index() -> None:
+    chunks = [
+        DocumentChunk(
+            chunk_id="a",
+            title="A",
+            source_path="a.md",
+            content="alpha token unique",
+        ),
+        DocumentChunk(
+            chunk_id="b",
+            title="B",
+            source_path="b.md",
+            content="beta token unique",
+        ),
+    ]
+    index = HybridIndex(chunks, fusion_mode="WEIGHTED")
+    _ = index.search("alpha token", limit=2, fusion_mode="RRF")
+    # Override must not mutate the index default mode.
+    assert index.fusion_mode == "WEIGHTED"
 
 
 def test_sparse_search_indexes_title_alias_and_section_identity() -> None:

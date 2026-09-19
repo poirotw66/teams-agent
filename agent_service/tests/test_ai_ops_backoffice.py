@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from agent_service.operations.stores.file_store import FileOperationalStore
 from ai_ops_backoffice.api import create_app
 from ai_ops_backoffice.services.query_service import BackofficeQueryService
 from ai_ops_backoffice.settings import BackofficeSettings
+from operations_core.contracts import DEFAULT_TIMEZONE
 
 
 def _ops_settings(data_dir: Path, store_path: Path) -> OpsSettings:
@@ -46,6 +48,17 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
     settings = _ops_settings(data_dir, store_path)
     ingestion = EventIngestionService(FileOperationalStore(store_path), settings)
     now = utc_now()
+    local_now = now.astimezone(ZoneInfo(DEFAULT_TIMEZONE))
+    local_day_end = local_now.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
+    # DAILY budget "today" ends at local midnight; keep delayed seed events inside
+    # that window so CI near Asia/Taipei midnight does not drop usage.recorded.
+    latest_allowed = (local_day_end - timedelta(seconds=1)).astimezone(UTC)
+
+    def _at(offset: timedelta) -> datetime:
+        return min(now + offset, latest_allowed)
+
     turn_id = "turn-1"
     occurrence_id = f"{turn_id}:issue:1"
     events = [
@@ -127,7 +140,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
         OperationalEvent(
             event_id="corr-1:feedback:1:DOWN",
             event_type="feedback.recorded",
-            occurred_at=now + timedelta(minutes=1),
+            occurred_at=_at(timedelta(minutes=1)),
             conversation_id="conv-1",
             correlation_id="corr-1",
             payload={
@@ -140,7 +153,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
         OperationalEvent(
             event_id="corr-1:feedback:1:UP",
             event_type="feedback.recorded",
-            occurred_at=now + timedelta(seconds=30),
+            occurred_at=_at(timedelta(seconds=30)),
             conversation_id="conv-1",
             correlation_id="corr-1",
             payload={
@@ -153,7 +166,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
         OperationalEvent(
             event_id="case-1:handoff.offered",
             event_type="handoff.offered",
-            occurred_at=now + timedelta(minutes=2),
+            occurred_at=_at(timedelta(minutes=2)),
             conversation_id="conv-1",
             correlation_id="corr-1",
             payload={"status": "OFFERED"},
@@ -161,7 +174,7 @@ async def _seed_sample_events(store_path: Path, data_dir: Path) -> None:
         OperationalEvent(
             event_id="corr-1:usage:1",
             event_type="usage.recorded",
-            occurred_at=now + timedelta(minutes=3),
+            occurred_at=_at(timedelta(minutes=3)),
             conversation_id="conv-1",
             correlation_id="corr-1",
             issue_type_id="vpn.connection_failed",

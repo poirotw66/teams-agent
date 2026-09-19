@@ -99,6 +99,11 @@ class DocumentChunk:
     effective_at: str | None = None
     expires_at: str | None = None
     applicable_environments: list[str] = field(default_factory=list)
+    # RAG v2 contextual retrieval representation (docs/rag-v2-spec.md §16).
+    # Optional so index schema v1 remains readable.
+    retrieval_context: str | None = None
+    retrieval_text: str | None = None
+    contextualization_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

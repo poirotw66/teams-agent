@@ -112,6 +112,23 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
             "RAG_SKIP_RELEVANCE_LLM_ON_HIGH_CONFIDENCE", True
         ),
         "enable_adaptive_query_tiers": _bool_env("ENABLE_ADAPTIVE_QUERY_TIERS", True),
+        "rag_fusion_mode": (_str_env("RAG_FUSION_MODE") or "RRF").upper(),
+        "rag_rrf_k": _int_env("RAG_RRF_K", 5),
+        "rag_sparse_candidate_k": _int_env("RAG_SPARSE_CANDIDATE_K", 40),
+        "rag_dense_candidate_k": _int_env("RAG_DENSE_CANDIDATE_K", 10),
+        "rag_fusion_candidate_k": _int_env("RAG_FUSION_CANDIDATE_K", 20),
+        "rag_sparse_weight": _float_env("RAG_SPARSE_WEIGHT", 0.5),
+        "rag_dense_weight": _float_env("RAG_DENSE_WEIGHT", 1.5),
+        "rag_contextual_index": _bool_env("RAG_CONTEXTUAL_INDEX", True),
+        "rag_reranker_enabled": _bool_env("RAG_RERANKER_ENABLED", False),
+        "rag_reranker_model": (_str_env("RAG_RERANKER_MODEL") or "lexical"),
+        "rag_rerank_candidate_k": _int_env("RAG_RERANK_CANDIDATE_K", 24),
+        "rag_rerank_timeout_ms": _int_env("RAG_RERANK_TIMEOUT_MS", 700),
+        "rag_reranker_min_tier": (
+            _str_env("RAG_RERANKER_MIN_TIER") or "standard"
+        ).strip().lower(),
+        "rag_shadow_enabled": _bool_env("RAG_SHADOW_ENABLED", False),
+        "rag_canary_percent": _int_env("RAG_CANARY_PERCENT", 0),
     }
 
 

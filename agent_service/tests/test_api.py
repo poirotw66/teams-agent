@@ -28,6 +28,7 @@ def make_settings(
         min_score=0.05,
         service_token=token,
         golden_evaluation_token=evaluation_token,
+        rag_reranker_enabled=False,
     )
 
 

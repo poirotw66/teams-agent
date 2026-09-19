@@ -46,6 +46,7 @@ def make_settings(tmp_path: Path, **overrides) -> RagSettings:
         "min_score": 0.05,
         "max_retrieval_rewrites": 1,
         "enable_adaptive_query_tiers": False,
+        "rag_reranker_enabled": False,
     }
     defaults.update(overrides)
     return RagSettings(**defaults)

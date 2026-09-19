@@ -22,6 +22,12 @@ class _AgentSettingsView(Protocol):
     supervisor_terminal_confidence: float
     max_llm_calls_per_request: int
     max_retrieval_rewrites: int
+    rag_fusion_mode: str
+    rag_rrf_k: int
+    rag_sparse_candidate_k: int
+    rag_dense_candidate_k: int
+    rag_fusion_candidate_k: int
+    rag_reranker_min_tier: str
     faq_runtime_mode: str
     faq_governed_store_mode: str
     faq_firestore_collection_prefix: str
@@ -86,6 +92,22 @@ def validate_rag_and_conversation_limits(settings: _AgentSettingsView) -> None:
         raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
     if not 0 <= settings.max_retrieval_rewrites <= 3:
         raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
+    if settings.rag_fusion_mode not in {"WEIGHTED", "RRF"}:
+        raise ValueError("RAG_FUSION_MODE must be one of WEIGHTED or RRF.")
+    if not 1 <= settings.rag_rrf_k <= 200:
+        raise ValueError("RAG_RRF_K must be between 1 and 200.")
+    if not 1 <= settings.rag_sparse_candidate_k <= 200:
+        raise ValueError("RAG_SPARSE_CANDIDATE_K must be between 1 and 200.")
+    if not 1 <= settings.rag_dense_candidate_k <= 200:
+        raise ValueError("RAG_DENSE_CANDIDATE_K must be between 1 and 200.")
+    if not 1 <= settings.rag_fusion_candidate_k <= 100:
+        raise ValueError("RAG_FUSION_CANDIDATE_K must be between 1 and 100.")
+    min_tier = getattr(settings, "rag_reranker_min_tier", "standard").lower()
+    if min_tier not in {"trivial", "standard", "hard"}:
+        raise ValueError("RAG_RERANKER_MIN_TIER must be one of trivial, standard, or hard.")
+    canary = int(getattr(settings, "rag_canary_percent", 0))
+    if not 0 <= canary <= 100:
+        raise ValueError("RAG_CANARY_PERCENT must be between 0 and 100.")
 
 
 def validate_faq_and_prompt_modes(settings: _AgentSettingsView) -> None:

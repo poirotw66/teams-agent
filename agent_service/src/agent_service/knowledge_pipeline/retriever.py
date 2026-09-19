@@ -13,7 +13,7 @@ from agent_service.retrieval import SearchResult
 RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 MAX_RETRIEVAL_CACHE_SIZE = 500
 
-RetrievalCacheKey = tuple[str, frozenset[str], str, str, int, float]
+RetrievalCacheKey = tuple[str, frozenset[str], str, str, int, float, str, int, str]
 
 
 def resolve_retrieval_queries(
@@ -36,6 +36,9 @@ def make_retrieval_cache_key(
     release_id: str,
     top_k: int,
     min_score: float,
+    fusion_mode: str = "RRF",
+    rrf_k: int = 60,
+    contextualization_version: str = "",
 ) -> RetrievalCacheKey:
     return (
         query.strip().casefold(),
@@ -44,6 +47,9 @@ def make_retrieval_cache_key(
         release_id,
         top_k,
         min_score,
+        fusion_mode.upper(),
+        rrf_k,
+        contextualization_version,
     )
 
 

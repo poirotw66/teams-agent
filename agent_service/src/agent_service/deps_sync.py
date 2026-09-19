@@ -42,10 +42,12 @@ def load_validated_release_index(
             require_vectors=resolved_settings.knowledge_release_require_vectors,
         )
     from .model_control import embedding_model_for_load
+    from .retrieval import hybrid_index_fusion_kwargs
 
     new_index = HybridIndex.load(
         target_index_path,
         embedding_model_for_load(target_app, resolved_settings),
+        **hybrid_index_fusion_kwargs(resolved_settings),
     )
     hydrate_index_sources(
         new_index.chunks,

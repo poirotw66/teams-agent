@@ -1,11 +1,13 @@
 import logging
 
+from knowledge_core.contextual_representation import apply_contextual_representation
+
 from .documents import load_source_chunks
 from .file_search_slugs import (
     FileSearchSlugCollisionError,
     ensure_unique_file_search_slugs,
 )
-from .retrieval import HybridIndex
+from .retrieval import HybridIndex, hybrid_index_fusion_kwargs
 from .settings import RagSettings
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,11 @@ def build_index(settings: RagSettings) -> HybridIndex:
         logger.error("%s", exc)
         raise
 
-    index = HybridIndex(chunks, settings.embedding_model)
+    if getattr(settings, "rag_contextual_index", True):
+        for chunk in chunks:
+            apply_contextual_representation(chunk)
+
+    index = HybridIndex(chunks, settings.embedding_model, **hybrid_index_fusion_kwargs(settings))
     index.add_embeddings()
     index.save(settings.index_path)
     logger.info(

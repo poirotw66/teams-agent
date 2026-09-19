@@ -49,6 +49,28 @@ class RagSettings:
     max_retrieval_rewrites: int = 1
     skip_relevance_llm_on_high_confidence: bool = True
     enable_adaptive_query_tiers: bool = True
+    # RAG v2 fusion (docs/rag-v2-spec.md §9). M6 default = Soft-best RRF.
+    # Soft + listwise title-protect cleared §45 offline (label-free).
+    rag_fusion_mode: str = "RRF"
+    rag_rrf_k: int = 5
+    rag_sparse_candidate_k: int = 40
+    rag_dense_candidate_k: int = 10
+    rag_fusion_candidate_k: int = 20
+    rag_sparse_weight: float = 0.5
+    rag_dense_weight: float = 1.5
+    # When true, newly built indexes store contextual retrieval_text (schema v2).
+    rag_contextual_index: bool = True
+    # M6: listwise title-protect on by default; FailOpenReranker if Gemini is down.
+    # Gemini listwise is experiment-only; production default stays off until a
+    # dedicated low-latency reranker clears Evidence Recall@4 gates (RAG v2.1).
+    rag_reranker_enabled: bool = False
+    rag_reranker_model: str | None = "lexical"
+    rag_rerank_candidate_k: int = 24
+    rag_rerank_timeout_ms: int = 700
+    rag_reranker_min_tier: str = "standard"
+    # Shadow/canary rollout knobs (docs/rag-v2-spec.md §46–§48). 0 = off.
+    rag_shadow_enabled: bool = False
+    rag_canary_percent: int = 0
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"

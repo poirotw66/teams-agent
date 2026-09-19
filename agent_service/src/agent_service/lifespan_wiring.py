@@ -18,7 +18,7 @@ from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_stor
 from .knowledge_release import resolve_knowledge_index
 from .knowledge_release_control import build_firestore_release_control
 from .operations.runtime import build_ops_runtime
-from .retrieval import HybridIndex
+from .retrieval import HybridIndex, hybrid_index_fusion_kwargs
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
 from .ticket import build_ticket_service
@@ -31,12 +31,17 @@ logger = logging.getLogger(__name__)
 def load_startup_index(settings: RagSettings) -> tuple[HybridIndex, Any]:
     """Resolve and load the knowledge index for process startup."""
     resolved_index = resolve_knowledge_index(settings)
+    fusion_kwargs = hybrid_index_fusion_kwargs(settings)
     if resolved_index.source == "auto_build" and not resolved_index.index_path.exists():
         index = build_index(settings)
     elif not resolved_index.index_path.exists():
         raise FileNotFoundError(f"Knowledge index not found: {resolved_index.index_path}")
     else:
-        index = HybridIndex.load(resolved_index.index_path, settings.embedding_model)
+        index = HybridIndex.load(
+            resolved_index.index_path,
+            settings.embedding_model,
+            **fusion_kwargs,
+        )
 
     release_dir = resolved_index.release_dir or (
         settings.knowledge_release_dir or settings.data_dir / "releases"
