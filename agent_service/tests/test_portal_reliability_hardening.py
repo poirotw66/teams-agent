@@ -1284,19 +1284,8 @@ def test_entra_auth_ui_and_token_expiry_in_api_js() -> None:
         / "js"
         / "session_auth.js"
     )
-    legacy_api_path = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "ai_ops_backoffice"
-        / "static"
-        / "legacy-js"
-        / "api.js"
-    )
     session_content = session_auth_path.read_text(encoding="utf-8")
-    legacy_content = legacy_api_path.read_text(encoding="utf-8")
     assert "window.prompt" not in session_content
-    assert "window.prompt" not in legacy_content
-    assert "showEntraLoginModal" in legacy_content
     assert "isTokenExpired" in session_content
     assert "getTokenExpiryDetails" in session_content
     assert "logout" in session_content

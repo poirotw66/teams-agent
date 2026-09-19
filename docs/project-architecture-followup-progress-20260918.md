@@ -25,6 +25,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - `Dockerfile.backoffice` is Python-only (committed console-v2 artifact; no Node stage)
 - Legacy frontend characterization tests moved to `tests/legacy_frontend/` (CI skips when tree deleted)
 - Deletion readiness reporter: `scripts/check_legacy_deletion_readiness.py`
+- Legacy shell route characterization quarantined under `tests/legacy_frontend/` (skips when tree deleted)
 - Route-level `React.lazy` + Suspense in `App.tsx`
 - Vite `manualChunks` (antd / react / refine / markdown / vendor)
 - Synced `static/console-v2` artifact; entry gzip ~17 KiB (was ~633 KiB single bundle)
