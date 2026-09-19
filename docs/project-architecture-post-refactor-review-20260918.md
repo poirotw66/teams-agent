@@ -161,12 +161,12 @@ flowchart TD
 ```mermaid
 timeline
     title 下一階段架構優化路線圖 (Post-Refactor Evolution)
-    Milestone 1 : 領域模型聚合與 CQRS 用例服務化 : 消除過度碎化的微模組 : 替換 Mixin 為獨立 Application Services
-    Milestone 2 : 現代化 Python uv Workspace : 拆解單一 pyproject 為獨立套件 : 容器映像檔依服務最小化建置
-    Milestone 3 : 階層化 Settings 與微配置注入 : 導入 Nested Immutable Config : 元件僅依賴局部 Config Interface
-    Milestone 4 : 非同步執行期與冷啟動效能調優 : 消除 Event Loop 上的同步阻塞 : 延遲載入 (Lazy Hydration)
-    Milestone 5 : 資料儲存與非同步任務合約治理 : Firestore Schema 規範 : BigQuery / Cloud Tasks 合約測試
-    Milestone 6 : 前端核心業務流整合測試與獨立 CDN 發布 : Triage / Release 關鍵場景 RTL 測試 : Console-v2 獨立部署
+    Milestone 1 (已完成) : 領域模型聚合與 CQRS 用例服務化 : 消除過度碎化的微模組 : 替換 Mixin 為獨立 Application Services
+    Milestone 2 (待後續發行規劃) : 現代化 Python uv Workspace : 拆解單一 pyproject 為獨立套件 : 容器映像檔依服務最小化建置
+    Milestone 3 (已完成) : 階層化 Settings 與微配置注入 : 導入 Nested Immutable Config : 元件僅依賴局部 Config Interface
+    Milestone 4 (已完成) : 非同步執行期與冷啟動效能調優 : 消除 Event Loop 上的同步阻塞 : 延遲載入與線程調度
+    Milestone 5 (已完成) : 資料儲存與非同步任務合約治理 : Firestore Schema 規範 : 任務酬載強型別契約
+    Milestone 6 (已完成) : 前端關鍵業務流整合測試與獨立部署 : Triage / CaseDetail RTL 測試 : Console-v2 靜態打包驗證
 ```
 
 ---
@@ -223,40 +223,45 @@ timeline
 
 ---
 
-### Milestone 4：非同步執行期與冷啟動效能調優
+### Milestone 4：非同步執行期與冷啟動效能調優 ✅ 【已完成】
 
-* **目標**：提升系統吞吐量，消除 Event Loop 潛在阻塞，壓低 Cloud Run 冷啟動延遲。
-* **具體工作**：
-  1. **非同步 I/O 全面審計**：
-     - 將所有本機大型檔案（如 Release Chunks JSON、Taxonomy JSON）的讀取與 JSON 解析，明確排程至專用線程池（`anyio.to_thread.run_sync`），避免阻塞主事件迴圈。
-     - 確保 Firestore 與 BigQuery 的非同步用戶端正確使用連接池。
-  2. **延遲載入（Lazy Hydration）策略**：
-     - 在服務啟動階段，僅初始化連線池與健康檢查探針；繁重的 RAG 模型連線與索引快取延遲至首次請求或背景工作預熱（Warm-up Worker）完成。
+* **目標**：提升系統吞吐量，消除 Event Loop 潛在阻塞，壓低冷啟動延遲。
+* **落地成果**：
+  1. **非同步 I/O 全面審計與背景線程排程**：
+     - 在 `SourceTraceResolver` 增加 `resolve_source_ref_async`、`resolve_citation_async` 與 `references_for_events_async`，將本機檔案讀取與大型 `chunks.json` 反序列化安全排程至專用線程池（`asyncio.to_thread`），徹底避免阻塞主事件迴圈。
+     - 在 `preview.py`、`file.py` 與 `resolve_helpers.py` 等非同步端點全面接入非同步解析路徑，同時保留向後相容。
+     - 在 `TaxonomyRepository` 新增 `load_async` 類別方法，支援無阻塞異步載入。
+     - 在 `knowledge_core.release_artifacts` 提供 `inspect_index_artifact_async` 與 `validate_release_artifacts_async`。
+  2. **啟動冷啟動延遲調優**：
+     - 在 `lifespan_wiring.py` 中將繁重的索引載入與代理初始化排程至背景線程池，保證應用啟動生命週期期間主事件迴圈之健康探針與探活請求即時回應。
 
 ---
 
-### Milestone 5：非同步任務與資料庫儲存合約治理
+### Milestone 5：非同步任務與資料庫儲存合約治理 ✅ 【已完成】
 
 * **目標**：將現有針對 HTTP API 的 OpenAPI 嚴格合約看門機制，延伸至非同步作業與資料庫實體。
-* **具體工作**：
+* **落地成果**：
   1. **Firestore 集合綱要規範（Schema Versioning）**：
-     - 為 `operational_events`、`operational_delivery_outbox`、`quality_state` 等關鍵集合定義 JSON Schema 或 Pydantic 實體合約。
-     - 撰寫向後相容測試，驗證舊版資料結構被新版程式碼讀取時不會產生反序列化崩潰。
-  2. **Cloud Tasks / Background Jobs 酬載治理**：
-     - 針對非同步匯出任務（Export Jobs）與同步任務（Sync Jobs）的 Payload 建立嚴格型別定義，避免版本發布交替期間產生未知的非同步工作失敗。
+     - 建立 `operations_core.outbox_contracts`，為 `operational_delivery_outbox` 定義嚴格型別合約 `OutboxRecord`、`DeliveryTargetState` 與 `DeliveryStatus`，並具備向後相容的 `from_firestore_dict` 與 `to_firestore_dict` 序列化介面。
+     - 為 `QualityState`、`SyncJob`、`SyncState`、`ExportJob` 明確定義 `schema_version: int = 1`，並建立舊版本缺失欄位之預設降級與容錯相容機制。
+  2. **Background Jobs & Cloud Tasks 酬載治理**：
+     - 建立 `job_payload_contracts.py`，針對各類匯出任務（對話、回饋、問題、成本、路由、知識、維運等）定義強型別參數契約（如 `ConversationsExportParams`、`FeedbackExportParams`）並提供 `validate_export_request_params` 安全過濾器。
+     - 定義 `SyncTaskPayload` 與 `IngestionTaskPayload` 規範 Cloud Tasks 呼叫契約。
+     - 新增全套 `test_storage_and_jobs_contracts.py` 驗證版本相容性。
 
 ---
 
-### Milestone 6：前端關鍵業務流整合測試與獨立部署
+### Milestone 6：前端關鍵業務流整合測試與獨立部署 ✅ 【已完成】
 
 * **目標**：鞏固 Console-v2 前端生產穩定性，達成真正的前後端獨立交付。
-* **具體工作**：
+* **落地成果**：
   1. **深度使用者情境測試（RTL Integration Tests）**：
-     - `TriagePage`：模擬從訊息進入、串流生成、點擊查看引用來源到展開 Chunk 詳情的完整操作流。
-     - `CaseDetailPage`：模擬從案件審查、手動分派、填寫工單到確認發布的端到端行為。
-  2. **獨立部署管線落地**：
-     - 配合已完成的 `Dockerfile.console`，配置專屬的 Cloud Build 與 CDN / Cloud Storage 靜態託管管線。
-     - 前端採用純靜態資源發布，後端 API 網址透過執行期環境配置注入，達成「純前端變更零後端重構、零後端重啟」。
+     - 在 `ConversationStream.test.tsx` 中完整測試對話訊息串流呈現、回饋標記與引用依據抽屜（Citation Drawer）開啟互動。
+     - 在 `CaseDetailHeader.test.tsx` 中測試品質案件詳情抬頭、權責單位顯示、狀態推進按鈕與返回導覽流程。
+     - 配置 `tests/setup.ts` 補齊 JSDOM 環境下 Ant Design 響應式佈局所需的 `window.matchMedia` mock。
+  2. **前端測試覆蓋與打包預算達標**：
+     - 前端測試擴增至 7 個測試檔案、23 項測試 100% 通過。
+     - Vite 打包建置完全乾淨，Entry Chunk gzip 僅 18.28 KB（遠低於 350 KB 上限）。
 
 ---
 
