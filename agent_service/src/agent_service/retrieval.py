@@ -272,31 +272,25 @@ class HybridIndex:
         environment: str = "dev",
         fusion_mode: str | None = None,
     ) -> tuple[list[SearchResult], dict[str, float]]:
-        """Search and return per-call timings from locals (safe under parallel calls).
+        """Search and return per-call timings from locals (safe under parallel calls)."""
+        from .retrieval_fusion import fuse_hybrid_candidates
 
-        ``fusion_mode`` overrides the index default for this call only so canary
-        traffic can use RRF without mutating shared HybridIndex state.
-        """
         groups = groups or set()
-        # M7: production search is Soft-best RRF. LEGACY_WEIGHTED is eval/shadow only.
-        use_legacy_weighted = (
-            (fusion_mode or "").strip().upper() == "LEGACY_WEIGHTED"
-        )
+        use_legacy_weighted = (fusion_mode or "").strip().upper() == "LEGACY_WEIGHTED"
         started = time.perf_counter()
         authorized_indices = [
             index
             for index, chunk in enumerate(self.chunks)
             if is_chunk_visible_to_groups(chunk, groups)
-            and is_chunk_generation_eligible(
-                chunk,
-                environment=environment,
-            )
+            and is_chunk_generation_eligible(chunk, environment=environment)
         ]
         sparse_started = time.perf_counter()
         sparse_scores = self._bm25_scores(query, authorized_indices)
         sparse_ms = (time.perf_counter() - sparse_started) * 1000
         max_sparse = max(sparse_scores, default=0.0)
-        normalized_sparse = [score / max_sparse if max_sparse else 0.0 for score in sparse_scores]
+        normalized_sparse = [
+            score / max_sparse if max_sparse else 0.0 for score in sparse_scores
+        ]
 
         query_vector: list[float] | None = None
         embedding_ms = 0.0
@@ -305,6 +299,32 @@ class HybridIndex:
             query_vector = self.embedding_client.embed_query(query)
             embedding_ms = (time.perf_counter() - embed_started) * 1000
 
+        results = self._candidate_results(authorized_indices, normalized_sparse, query_vector)
+        filtered = fuse_hybrid_candidates(
+            results,
+            query=query,
+            limit=limit,
+            sparse_candidate_k=self.sparse_candidate_k,
+            dense_candidate_k=self.dense_candidate_k,
+            fusion_candidate_k=self.fusion_candidate_k,
+            rrf_k=self.rrf_k,
+            sparse_weight=self.sparse_weight,
+            dense_weight=self.dense_weight,
+            legacy_weighted=use_legacy_weighted,
+        )
+        timings = {
+            "embeddingMs": round(embedding_ms, 1),
+            "sparseMs": round(sparse_ms, 1),
+            "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
+        }
+        return filtered, timings
+
+    def _candidate_results(
+        self,
+        authorized_indices: list[int],
+        normalized_sparse: list[float],
+        query_vector: list[float] | None,
+    ) -> list[SearchResult]:
         results: list[SearchResult] = []
         for index in authorized_indices:
             chunk = self.chunks[index]
@@ -313,7 +333,6 @@ class HybridIndex:
             if query_vector is not None and chunk.vector:
                 dense_score = max(0.0, cosine_similarity(query_vector, chunk.vector))
                 score = dense_score
-
             results.append(
                 SearchResult(
                     chunk=chunk,
@@ -322,55 +341,4 @@ class HybridIndex:
                     dense_score=round(dense_score, 6) if dense_score is not None else None,
                 )
             )
-
-        from .reranker import apply_error_code_guard
-        from .retrieval_fusion import legacy_weighted_hybrid_rank, reciprocal_rank_fusion
-
-        if use_legacy_weighted:
-            ranked = legacy_weighted_hybrid_rank(results)
-            filtered = [result for result in ranked[:limit] if result.score > 0]
-        else:
-            sparse_ranked = sorted(
-                (
-                    SearchResult(
-                        chunk=item.chunk,
-                        score=item.sparse_score,
-                        sparse_score=item.sparse_score,
-                        dense_score=item.dense_score,
-                    )
-                    for item in results
-                    if item.sparse_score > 0
-                ),
-                key=lambda item: item.sparse_score,
-                reverse=True,
-            )[: self.sparse_candidate_k]
-            dense_ranked = sorted(
-                (
-                    SearchResult(
-                        chunk=item.chunk,
-                        score=item.dense_score or 0.0,
-                        sparse_score=item.sparse_score,
-                        dense_score=item.dense_score,
-                    )
-                    for item in results
-                    if item.dense_score is not None and item.dense_score > 0
-                ),
-                key=lambda item: item.dense_score or 0.0,
-                reverse=True,
-            )[: self.dense_candidate_k]
-            fused = reciprocal_rank_fusion(
-                sparse_results=sparse_ranked,
-                dense_results=dense_ranked,
-                k=self.rrf_k,
-                sparse_weight=self.sparse_weight,
-                dense_weight=self.dense_weight,
-            )
-            take = min(limit, self.fusion_candidate_k)
-            filtered = [result for result in fused[:take] if result.score > 0]
-            filtered = apply_error_code_guard(query, filtered)
-        timings = {
-            "embeddingMs": round(embedding_ms, 1),
-            "sparseMs": round(sparse_ms, 1),
-            "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
-        }
-        return filtered, timings
+        return results

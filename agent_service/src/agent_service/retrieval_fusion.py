@@ -120,4 +120,68 @@ def legacy_weighted_hybrid_rank(
     return ranked
 
 
-__all__ = ["legacy_weighted_hybrid_rank", "reciprocal_rank_fusion"]
+def fuse_hybrid_candidates(
+    results: list[SearchResult],
+    *,
+    query: str,
+    limit: int,
+    sparse_candidate_k: int,
+    dense_candidate_k: int,
+    fusion_candidate_k: int,
+    rrf_k: int,
+    sparse_weight: float,
+    dense_weight: float,
+    legacy_weighted: bool,
+) -> list[SearchResult]:
+    """Rank scored candidates via Soft-best RRF or legacy weighted blend."""
+    from .reranker import apply_error_code_guard
+
+    if legacy_weighted:
+        ranked = legacy_weighted_hybrid_rank(results)
+        return [result for result in ranked[:limit] if result.score > 0]
+
+    sparse_ranked = sorted(
+        (
+            SearchResult(
+                chunk=item.chunk,
+                score=item.sparse_score,
+                sparse_score=item.sparse_score,
+                dense_score=item.dense_score,
+            )
+            for item in results
+            if item.sparse_score > 0
+        ),
+        key=lambda item: item.sparse_score,
+        reverse=True,
+    )[:sparse_candidate_k]
+    dense_ranked = sorted(
+        (
+            SearchResult(
+                chunk=item.chunk,
+                score=item.dense_score or 0.0,
+                sparse_score=item.sparse_score,
+                dense_score=item.dense_score,
+            )
+            for item in results
+            if item.dense_score is not None and item.dense_score > 0
+        ),
+        key=lambda item: item.dense_score or 0.0,
+        reverse=True,
+    )[:dense_candidate_k]
+    fused = reciprocal_rank_fusion(
+        sparse_results=sparse_ranked,
+        dense_results=dense_ranked,
+        k=rrf_k,
+        sparse_weight=sparse_weight,
+        dense_weight=dense_weight,
+    )
+    take = min(limit, fusion_candidate_k)
+    filtered = [result for result in fused[:take] if result.score > 0]
+    return apply_error_code_guard(query, filtered)
+
+
+__all__ = [
+    "fuse_hybrid_candidates",
+    "legacy_weighted_hybrid_rank",
+    "reciprocal_rank_fusion",
+]

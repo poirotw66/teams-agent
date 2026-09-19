@@ -18,6 +18,7 @@ from .contracts import (
     UserContext,
 )
 from .execution_context import ExecutionContext
+from .knowledge_hybrid_serving import build_retrieval_host, resolve_serving_decision
 from .knowledge_pipeline import (
     StructuredKnowledgeAnswer,
     answer_passes_safety_checks,
@@ -55,17 +56,12 @@ from .knowledge_pipeline.relevance_stage import (
 from .knowledge_pipeline.relevance_stage import (
     rewrite_search_query,
 )
-from .knowledge_pipeline.retrieval_stage import RetrievalHost, run_retrieve
+from .knowledge_pipeline.retrieval_stage import run_retrieve
 from .knowledge_pipeline.retrieval_state import RetrievalState
 from .knowledge_pipeline.search_stage import run_search_loop
 from .knowledge_pipeline.trace import attach_retrieval_trace
 from .llm_call_counter import LlmCallCounter
-from .rag_rollout import (
-    VARIANT_A_WEIGHTED,
-    VARIANT_D_RRF_CONTEXTUAL_RERANK,
-    RagServingDecision,
-    select_rag_serving_variant,
-)
+from .rag_rollout import RagServingDecision
 from .reranker import Reranker, build_default_reranker
 from .retrieval import HybridIndex, SearchResult
 from .settings import RagSettings
@@ -103,27 +99,8 @@ class HybridKnowledgeService:
         )
 
     def _serving_decision(self, request: AgentRequest | None) -> RagServingDecision:
-        tenant = "default"
-        conversation_id = "anonymous"
-        if request is not None:
-            tenant = (request.conversation.tenantId or "default").strip() or "default"
-            conversation_id = (
-                request.conversation.conversationId or request.requestId or "anonymous"
-            ).strip() or "anonymous"
-        return select_rag_serving_variant(
-            tenant=tenant,
-            conversation_id=conversation_id,
-            canary_percent=int(getattr(self.settings, "rag_canary_percent", 0)),
-            canary_variant=VARIANT_D_RRF_CONTEXTUAL_RERANK,
-            baseline_variant=VARIANT_A_WEIGHTED,
-            shadow_enabled=bool(getattr(self.settings, "rag_shadow_enabled", False)),
-            baseline_fusion_mode=str(
-                getattr(self.index, "fusion_mode", None)
-                or getattr(self.settings, "rag_fusion_mode", "RRF")
-            ),
-            global_reranker_enabled=bool(
-                getattr(self.settings, "rag_reranker_enabled", False)
-            ),
+        return resolve_serving_decision(
+            settings=self.settings, index=self.index, request=request
         )
 
     async def search(
@@ -212,46 +189,15 @@ class HybridKnowledgeService:
         *,
         serving: RagServingDecision | None = None,
     ) -> _RetrievalState:
-        decision = serving or RagServingDecision(
-            serve_variant=VARIANT_A_WEIGHTED,
-            is_canary=False,
-            canary_percent=0,
-            shadow_enabled=False,
-            fusion_mode=str(getattr(self.index, "fusion_mode", "RRF")),
-            reranker_enabled=bool(getattr(self.settings, "rag_reranker_enabled", True)),
-        )
-        # Shadow mode still serves the baseline path; canary percent drives serve.
-        fusion_mode = decision.fusion_mode
-        reranker_enabled = decision.reranker_enabled
-        if decision.shadow_enabled and not decision.is_canary:
-            fusion_mode = str(getattr(self.index, "fusion_mode", "RRF"))
-            reranker_enabled = bool(getattr(self.settings, "rag_reranker_enabled", True))
-        host = RetrievalHost(
-            search_with_timings=self.index.search_with_timings,
-            inject_enterprise_app_evidence=self._inject_enterprise_app_evidence,
-            select_document_chunks=self._select_document_chunks,
-            top_k=self.settings.top_k,
-            min_score=self.settings.min_score,
-            deployment_environment=self.settings.deployment_environment,
+        host = build_retrieval_host(
+            settings=self.settings,
+            index=self.index,
             release_id=self.release_id or "",
             retrieval_cache=self._retrieval_cache,
             reranker=self._reranker,
-            rerank_candidate_k=int(getattr(self.settings, "rag_rerank_candidate_k", 24)),
-            reranker_enabled=reranker_enabled,
-            reranker_min_tier=str(
-                getattr(self.settings, "rag_reranker_min_tier", "standard")
-            ).lower(),
-            reranker_model=str(getattr(self.settings, "rag_reranker_model", None) or "noop"),
-            fusion_mode=fusion_mode,
-            rrf_k=int(getattr(self.index, "rrf_k", 60)),
-            contextualization_version=next(
-                (
-                    chunk.contextualization_version or ""
-                    for chunk in self.index.chunks
-                    if chunk.contextualization_version
-                ),
-                "",
-            ),
+            serving=serving,
+            inject_enterprise_app_evidence=self._inject_enterprise_app_evidence,
+            select_document_chunks=self._select_document_chunks,
         )
         return await run_retrieve(
             host,
