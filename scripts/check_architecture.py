@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -31,6 +32,12 @@ OVERSIZED_FUNCTIONS_BASELINE = BASELINE_DIR / "oversized_functions.json"
 REVERSE_IMPORTS_BASELINE = BASELINE_DIR / "reverse_imports.json"
 IMPORTER_COUNTS_BASELINE = BASELINE_DIR / "importer_counts.json"
 PRIVATE_ACCESS_BASELINE = BASELINE_DIR / "private_access.json"
+
+# HTTP routers must not open files directly; I/O belongs in adapters/services.
+ROUTER_FS_IO_RE = re.compile(
+    r"(?:\.open|\.read_text|\.write_text|\.read_bytes|\.write_bytes)\s*\("
+)
+ROUTER_DIR_NAMES = frozenset({"routers", "routes"})
 
 PACKAGE_ROOTS: dict[str, Path] = {
     "agent_service": REPO_ROOT / "agent_service" / "src" / "agent_service",
@@ -562,6 +569,32 @@ def check_cross_module_private_access(
     return findings
 
 
+def _is_router_module(path: Path) -> bool:
+    return any(part in ROUTER_DIR_NAMES for part in path.parts)
+
+
+def check_router_filesystem_io() -> list[Finding]:
+    """Fail when HTTP router modules open files directly."""
+    findings: list[Finding] = []
+    for path in iter_source_files():
+        if path.suffix != ".py" or not _is_router_module(path):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue
+            if ROUTER_FS_IO_RE.search(line):
+                findings.append(
+                    Finding(
+                        "ROUTER_FILESYSTEM_IO",
+                        f"{rel_path(path)}:{lineno}: router must not open files "
+                        f"directly ({stripped.strip()})",
+                    )
+                )
+    return findings
+
+
 def check_package_cycles(graph: dict[str, set[str]]) -> list[Finding]:
     findings: list[Finding] = []
     for scc in find_package_cycles(graph):
@@ -745,6 +778,7 @@ def run_checks() -> list[Finding]:
     )
     findings.extend(check_package_cycles(collect_package_dependency_graph()))
     findings.extend(check_cross_module_private_access(private_access_baseline))
+    findings.extend(check_router_filesystem_io())
 
     if IMPORTER_COUNTS_BASELINE.exists():
         importer_baseline = load_json(IMPORTER_COUNTS_BASELINE).get("edges", {})

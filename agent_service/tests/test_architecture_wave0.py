@@ -314,3 +314,20 @@ def test_private_access_allowlist_only_shrinks() -> None:
     # New findings are not auto-added; callers must fail via check.
     assert checker.tighten_private_access_allowlist([], current) == []
 
+
+def test_router_filesystem_io_pattern_detects_path_open() -> None:
+    checker = _load_script(
+        "check_architecture_router_fs",
+        SCRIPTS / "check_architecture.py",
+    )
+    assert checker.ROUTER_FS_IO_RE.search("with path.open('rb') as handle:")
+    assert checker.ROUTER_FS_IO_RE.search("path.read_text(encoding='utf-8')")
+    assert checker.ROUTER_FS_IO_RE.search("path.write_bytes(payload)") is not None
+    assert checker.ROUTER_FS_IO_RE.search("return FileResponse(path)") is None
+    assert checker._is_router_module(
+        Path("agent_service/src/ai_ops_backoffice/routers/sources/file.py")
+    )
+    assert not checker._is_router_module(
+        Path("agent_service/src/ai_ops_backoffice/adapters/local_source_files.py")
+    )
+

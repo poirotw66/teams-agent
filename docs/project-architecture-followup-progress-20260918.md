@@ -14,9 +14,9 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | B Composition import isolation | Done |
 | C Monotonic architecture ratchet | Done |
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
-| E HTTP/app/persistence boundaries | Done — private-access allowlist empty; local source file I/O via adapters |
-| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness + exact DTO re-exports; consumer-driven console contracts added; 19 workbench-only handwritten DTOs remain until OpenAPI covers them |
-| G Independent frontend + legacy removal | Partial — image/UI-only release/code-split/Vitest/store lazy-load done; **legacy-js delete still waits unused release cycle** |
+| E HTTP/app/persistence boundaries | Done — private-access allowlist empty; local source file I/O via adapters; **router FS I/O gate** |
+| F Canonical OpenAPI + generated TS client | Done for schemas/client/CI freshness + exact DTO re-exports + consumer contracts; **exact name duplicates = 0**; 19 workbench-only handwritten shapes remain (not yet in OpenAPI response models) |
+| G Independent frontend + legacy removal | Partial — soft deliverables landed; **legacy-js delete still waits unused release cycle** |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files, 0 oversized functions |
 
 ## Phase G soft deliverables (landed)
