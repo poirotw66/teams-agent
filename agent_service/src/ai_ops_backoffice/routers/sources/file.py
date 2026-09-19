@@ -30,9 +30,11 @@ async def _handle_source_file(
     require_capability(actor, "ops.conversations.read")
 
     tenant_id = getattr(actor, "tenant_id", None) or "default"
-    source = query_service.source_trace.resolve_source_ref(
-        source_ref_id, tenant_id=tenant_id
-    )
+    trace = query_service.source_trace
+    if hasattr(trace, "resolve_source_ref_async"):
+        source = await trace.resolve_source_ref_async(source_ref_id, tenant_id=tenant_id)
+    else:
+        source = trace.resolve_source_ref(source_ref_id, tenant_id=tenant_id)
     if source is None or not source.original_asset_available:
         raise HTTPException(
             status_code=404,

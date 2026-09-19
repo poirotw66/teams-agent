@@ -13,7 +13,9 @@ __all__ = [
     "KnowledgeIndexArtifact",
     "KnowledgeReleaseValidationError",
     "inspect_index_artifact",
+    "inspect_index_artifact_async",
     "validate_release_artifacts",
+    "validate_release_artifacts_async",
 ]
 
 
@@ -83,6 +85,13 @@ def inspect_index_artifact(index_path: Path) -> KnowledgeIndexArtifact:
         embedding_model=_optional_string(payload.get("embeddingModel")),
         embedding_dimensions=next(iter(vector_dimensions), None),
     )
+
+
+async def inspect_index_artifact_async(index_path: Path) -> KnowledgeIndexArtifact:
+    """Asynchronously inspect and validate index artifact on a background thread."""
+    import asyncio
+
+    return await asyncio.to_thread(inspect_index_artifact, index_path)
 
 
 def validate_release_artifacts(
@@ -156,6 +165,27 @@ def validate_release_artifacts(
                 "Production knowledge release must declare its embedding model and dimensions."
             )
     return actual
+
+
+async def validate_release_artifacts_async(
+    release_root: Path,
+    release_id: str,
+    *,
+    require_vectors: bool,
+    expected_tenant_id: str | None = None,
+    expected_purpose: str | None = None,
+) -> KnowledgeIndexArtifact:
+    """Asynchronously validate release artifacts on a background thread."""
+    import asyncio
+
+    return await asyncio.to_thread(
+        validate_release_artifacts,
+        release_root,
+        release_id,
+        require_vectors=require_vectors,
+        expected_tenant_id=expected_tenant_id,
+        expected_purpose=expected_purpose,
+    )
 
 
 def _validate_production_governance(

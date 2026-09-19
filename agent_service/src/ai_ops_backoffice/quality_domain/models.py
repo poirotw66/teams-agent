@@ -120,6 +120,7 @@ class QualityAuditEvent(StrictModel):
     occurred_at: datetime
 
 class QualityState(StrictModel):
+    schema_version: int = 1
     revision: int = 0
     candidates: tuple[QualityCandidate, ...] = ()
     cases: tuple[QualityCase, ...] = ()

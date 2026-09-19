@@ -47,7 +47,9 @@ from knowledge_core.release_artifacts import (
     KnowledgeIndexArtifact,
     KnowledgeReleaseValidationError,
     inspect_index_artifact,
+    inspect_index_artifact_async,
     validate_release_artifacts,
+    validate_release_artifacts_async,
 )
 from knowledge_core.release_gate import (
     ReleaseGateBlockedError,
@@ -102,6 +104,7 @@ __all__ = [
     "filter_for",
     "group_metadata_key",
     "inspect_index_artifact",
+    "inspect_index_artifact_async",
     "is_generation_metadata_eligible",
     "knowledge_release_gate_manifest",
     "knowledge_release_target_manifest_hash",
@@ -118,5 +121,6 @@ __all__ = [
     "strip_excluded_markdown",
     "upload_metadata_for",
     "validate_release_artifacts",
+    "validate_release_artifacts_async",
     "write_active_release_pointer",
 ]

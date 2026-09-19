@@ -218,8 +218,10 @@ def log_startup_ready(settings: RagSettings, index: HybridIndex) -> None:
 
 async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
     """Wire all startup collaborators onto ``app.state``."""
-    index, resolved_index = load_startup_index(settings)
-    agent = RagAgent(settings, index)
+    import asyncio
+
+    index, resolved_index = await asyncio.to_thread(load_startup_index, settings)
+    agent = await asyncio.to_thread(RagAgent, settings, index)
     rag_model = build_chat_model(settings.model, temperature=0.0)
     agent_model = build_chat_model(
         settings.agent_model or settings.model,

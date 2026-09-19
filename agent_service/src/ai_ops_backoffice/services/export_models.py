@@ -17,6 +17,8 @@ ExportJobStatus = Literal["QUEUED", "RUNNING", "COMPLETED", "FAILED", "EXPIRED"]
 LEASE_SECONDS = 120
 RECOVERY_SCAN_SECONDS = 30
 
+from .job_payload_contracts import validate_export_request_params
+
 __all__ = [
     "LEASE_SECONDS",
     "RECOVERY_SCAN_SECONDS",
@@ -25,6 +27,7 @@ __all__ = [
     "deserialize_export_job",
     "export_request_fingerprint",
     "serialize_export_job",
+    "validate_export_request_params",
 ]
 
 
@@ -40,6 +43,7 @@ class ExportJob:
     days: int
     created_at: str
     expires_at: str
+    schema_version: int = 1
     tenant_id: str = "local-development"
     requested_owner_units: tuple[str, ...] = ()
     request_params: dict[str, Any] = field(default_factory=dict)
@@ -90,6 +94,7 @@ def serialize_export_job(job: ExportJob) -> dict[str, Any]:
 
 def deserialize_export_job(item: dict[str, Any]) -> ExportJob:
     defaults = {
+        "schema_version": 1,
         "export_format": "json",
         "download_content": None,
         "download_bytes": None,

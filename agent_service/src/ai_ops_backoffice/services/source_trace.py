@@ -6,6 +6,7 @@ version matching without fallbacks, and multi-format locators (F02, F03, F08, A0
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,21 @@ class SourceTraceResolver:
             tenant_id=tenant_id,
         )
 
+    async def resolve_citation_async(
+        self,
+        citation: dict[str, Any],
+        *,
+        fallback_release_id: str | None = None,
+        tenant_id: str = "default",
+    ) -> ResolvedSource | None:
+        """Resolve citation offloading heavy I/O to background thread."""
+        return await asyncio.to_thread(
+            self.resolve_citation,
+            citation,
+            fallback_release_id=fallback_release_id,
+            tenant_id=tenant_id,
+        )
+
     def resolve_source_ref(
         self,
         source_ref_id: str,
@@ -138,11 +154,34 @@ class SourceTraceResolver:
             tenant_id=tenant_id,
         )
 
+    async def resolve_source_ref_async(
+        self,
+        source_ref_id: str,
+        *,
+        tenant_id: str = "default",
+    ) -> ResolvedSource | None:
+        """Resolve source reference offloading any file read or JSON parse to background thread."""
+        return await asyncio.to_thread(
+            self.resolve_source_ref,
+            source_ref_id,
+            tenant_id=tenant_id,
+        )
+
     def references_for_events(self, events: Iterable[Any]) -> list[dict[str, Any]]:
         return collect_references_for_events(
             releases_dir=self.releases_dir,
             release_cache=self._release_cache,
             events=events,
+        )
+
+    async def references_for_events_async(
+        self,
+        events: Iterable[Any],
+    ) -> list[dict[str, Any]]:
+        """Collect references for events offloading I/O to background thread."""
+        return await asyncio.to_thread(
+            self.references_for_events,
+            events,
         )
 
     @staticmethod

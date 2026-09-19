@@ -11,6 +11,7 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 class SyncJob(StrictModel):
+    schema_version: int = 1
     job_id: str
     scope_type: Literal["ALL", "FAQ", "DOCUMENT", "FAILED"]
     scope_ids: tuple[str, ...] = ()
@@ -57,6 +58,7 @@ class SyncIdempotency(StrictModel):
     job_id: str
 
 class SyncState(StrictModel):
+    schema_version: int = 1
     revision: int = 0
     jobs: tuple[SyncJob, ...] = ()
     audits: tuple[SyncAuditEvent, ...] = ()

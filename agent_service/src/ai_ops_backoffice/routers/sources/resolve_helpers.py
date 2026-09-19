@@ -51,9 +51,15 @@ async def resolve_authorized_preview(
             status_code=404,
             detail="Source reference not found or access denied.",
         )
-    source = query_service.source_trace.resolve_source_ref(
-        preferred.source_ref_id, tenant_id=tenant_id
-    )
+    trace = query_service.source_trace
+    if hasattr(trace, "resolve_source_ref_async"):
+        source = await trace.resolve_source_ref_async(
+            preferred.source_ref_id, tenant_id=tenant_id
+        )
+    else:
+        source = trace.resolve_source_ref(
+            preferred.source_ref_id, tenant_id=tenant_id
+        )
     if source is None:
         raise HTTPException(
             status_code=404,

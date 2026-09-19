@@ -30,6 +30,12 @@ from operations_core.document_authorization import (
 )
 from operations_core.masking import MaskingResult, mask_text, redact_secrets
 from operations_core.masking_rules import MaskingRulePack, resolve_masking_pack
+from operations_core.outbox_contracts import (
+    OUTBOX_SCHEMA_VERSION,
+    DeliveryStatus,
+    DeliveryTargetState,
+    OutboxRecord,
+)
 from operations_core.scope import (
     CROSS_OWNER_UNIT_ROLES,
     CROSS_TENANT_ROLES,
@@ -60,11 +66,14 @@ __all__ = [
     "DEFAULT_TIMEZONE",
     "LOCAL_SANDBOX_TENANTS",
     "MASKING_POLICY_VERSION",
+    "OUTBOX_SCHEMA_VERSION",
     "SECURITY_POLICIES",
     "ActorContext",
     "AuditStore",
     "AuditWriteError",
     "BackofficeRole",
+    "DeliveryStatus",
+    "DeliveryTargetState",
     "DocumentAccessDecision",
     "DocumentAccessDeniedError",
     "MaskingResult",
@@ -72,6 +81,7 @@ __all__ = [
     "OperationalEvent",
     "OperationalEventType",
     "OpsSettings",
+    "OutboxRecord",
     "SecurityPolicy",
     "TaxonomyLookup",
     "TaxonomyOwnerUnit",
