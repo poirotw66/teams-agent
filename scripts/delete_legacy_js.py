@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Delete static/legacy-js only after an unused production release cycle.
+"""Delete static/legacy-js under a fail-closed ops gate.
 
-Fail-closed by default. Does not run unless both:
-  1. Soft readiness blockers are clear (product HTML / non-allowlisted refs), and
-  2. ``--confirm-unused-release-completed`` is passed to acknowledge the ops gate.
+Does not run unless soft readiness blockers are clear and one of:
 
-Usage (from repo root, after quarantine has shipped and one unused release ran):
+1. ``--confirm-unused-release-completed`` — quarantine already shipped and one
+   production release ran with ``BACKOFFICE_LEGACY_SHELL_ENABLED`` unset/false; or
+2. ``--confirm-never-shipped-to-origin`` — ``origin/<ref>`` has no quarantine
+   tree / kill-switch env (pre-first-ship delete; avoids shipping ~18k LOC of
+   unused classic SPA solely to retire it later).
+
+Usage:
+  uv run python scripts/delete_legacy_js.py --confirm-never-shipped-to-origin --write
   uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write
 """
 
@@ -14,6 +19,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -26,7 +32,6 @@ LEGACY_JS = (
     / "static"
     / "legacy-js"
 )
-STATIC_DIR = LEGACY_JS.parent
 WAIVERS = REPO_ROOT / "docs" / "architecture" / "oversized-waivers.md"
 PROGRESS = REPO_ROOT / "docs" / "project-architecture-followup-progress-20260918.md"
 _LEGACY_REF = re.compile(r"legacy-js|/static/legacy-js/")
@@ -36,13 +41,14 @@ _ALLOWLISTED_REF_SUFFIXES = (
     "delete_legacy_js.py",
     "check_legacy_deletion_readiness.py",
 )
+_ORIGIN_QUARANTINE_MARKERS = (
+    "legacy-js",
+    "BACKOFFICE_LEGACY_SHELL",
+)
 
 
 def soft_blockers(*, legacy_js_dir: Path = LEGACY_JS) -> list[str]:
-    """Return non-ops blockers that must be clear before deleting the tree.
-
-    The tree itself is the hard ops gate, not a soft blocker.
-    """
+    """Return non-ops blockers that must be clear before deleting the tree."""
     blockers: list[str] = []
     static_dir = legacy_js_dir.parent
     if static_dir.is_dir():
@@ -86,7 +92,34 @@ def soft_blockers(*, legacy_js_dir: Path = LEGACY_JS) -> list[str]:
     return blockers
 
 
-def _update_waivers_after_delete(waivers_path: Path = WAIVERS) -> None:
+def origin_quarantine_hits(
+    *,
+    origin_ref: str = "origin/main",
+) -> list[str]:
+    """Return paths on origin_ref that prove quarantine already shipped."""
+    completed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", origin_ref],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"unable to inspect {origin_ref}: {completed.stderr.strip() or completed.stdout.strip()}"
+        )
+    hits: list[str] = []
+    for line in completed.stdout.splitlines():
+        if any(marker in line for marker in _ORIGIN_QUARANTINE_MARKERS):
+            hits.append(line)
+    return hits
+
+
+def _update_waivers_after_delete(
+    waivers_path: Path = WAIVERS,
+    *,
+    reason: str,
+) -> None:
     if not waivers_path.is_file():
         return
     text = waivers_path.read_text(encoding="utf-8")
@@ -99,23 +132,28 @@ def _update_waivers_after_delete(waivers_path: Path = WAIVERS) -> None:
         "until that cycle completes |"
     )
     new = (
-        "| Legacy quarantine (non-product) | ~~`static/legacy-js/**`~~ (deleted) | "
-        "Emergency kill-switch retired after unused release | "
+        f"| Legacy quarantine (non-product) | ~~`static/legacy-js/**`~~ (deleted) | "
+        f"{reason} | "
         "Tree removed; dual-mode `check_legacy_shell.py` accepts absence |"
     )
     if old in text:
         waivers_path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def _update_progress_after_delete(progress_path: Path = PROGRESS) -> None:
+def _update_progress_after_delete(
+    progress_path: Path = PROGRESS,
+    *,
+    how: str,
+) -> None:
     if not progress_path.is_file():
         return
     text = progress_path.read_text(encoding="utf-8")
-    updated = text.replace(
-        "| G Independent frontend + legacy removal | Partial — soft deliverables + "
-        "fail-closed `delete_legacy_js.py`; **tree delete still waits unused release** |",
-        "| G Independent frontend + legacy removal | **Done** — soft deliverables + "
-        "`static/legacy-js` removed after unused release |",
+    updated = re.sub(
+        r"\| G Independent frontend \+ legacy removal \| Partial —.*?\|",
+        f"| G Independent frontend + legacy removal | **Done** — soft deliverables + "
+        f"`static/legacy-js` removed ({how}) |",
+        text,
+        count=1,
     )
     if "## Goal blockers (not closed)" in updated:
         updated = re.sub(
@@ -135,8 +173,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--confirm-unused-release-completed",
         action="store_true",
-        help="Required acknowledgment that production ran one release without "
-        "BACKOFFICE_LEGACY_SHELL_ENABLED after quarantine shipped.",
+        help="Acknowledge production ran one unused release after quarantine shipped.",
+    )
+    parser.add_argument(
+        "--confirm-never-shipped-to-origin",
+        action="store_true",
+        help="Acknowledge quarantine is absent on origin (pre-first-ship delete).",
+    )
+    parser.add_argument(
+        "--origin-ref",
+        default="origin/main",
+        help="Git ref inspected for --confirm-never-shipped-to-origin (default origin/main).",
     )
     parser.add_argument(
         "--write",
@@ -145,13 +192,31 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.confirm_unused_release_completed:
+    if not (
+        args.confirm_unused_release_completed or args.confirm_never_shipped_to_origin
+    ):
         print(
-            "REFUSED: pass --confirm-unused-release-completed only after quarantine "
-            "shipped to production and one unused release cycle completed.",
+            "REFUSED: pass --confirm-unused-release-completed or "
+            "--confirm-never-shipped-to-origin.",
             file=sys.stderr,
         )
         return 2
+
+    if args.confirm_never_shipped_to_origin:
+        try:
+            hits = origin_quarantine_hits(origin_ref=args.origin_ref)
+        except RuntimeError as error:
+            print(f"REFUSED: {error}", file=sys.stderr)
+            return 1
+        if hits:
+            print(
+                f"REFUSED: {args.origin_ref} already contains quarantine markers; "
+                "use --confirm-unused-release-completed after an unused production release.",
+                file=sys.stderr,
+            )
+            for hit in hits[:20]:
+                print(f"  - {hit}", file=sys.stderr)
+            return 1
 
     blockers = soft_blockers()
     if blockers:
@@ -177,8 +242,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     shutil.rmtree(LEGACY_JS)
-    _update_waivers_after_delete()
-    _update_progress_after_delete()
+    if args.confirm_never_shipped_to_origin:
+        reason = (
+            "Pre-first-ship delete — quarantine never present on origin/main"
+        )
+        how = "pre-first-ship; never on origin/main"
+    else:
+        reason = "Emergency kill-switch retired after unused release"
+        how = "after unused production release"
+    _update_waivers_after_delete(reason=reason)
+    _update_progress_after_delete(how=how)
     print(
         "Deleted. Dual-mode check_legacy_shell accepts absence; "
         "product path remains React /console-v2."

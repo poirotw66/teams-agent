@@ -16,7 +16,7 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 | D Shared ownership | **Done for importer edges** — Portal=0; Backoffice=0 via composition ports/adapters |
 | E HTTP/app/persistence boundaries | Done — private-access empty; router FS gate; **workbench Path/JSON behind WorkbenchRepository** |
 | F Canonical OpenAPI + generated TS client | **Done** — schemas/client/CI freshness + consumer contracts + call-site matrix; **handwritten_only=0** (incl. portal workbench DTOs) |
-| G Independent frontend + legacy removal | Partial — soft deliverables + fail-closed `delete_legacy_js.py` + empty store/`getLoadError` UI; **tree delete still waits unused release** |
+| G Independent frontend + legacy removal | **Done** — soft deliverables + `static/legacy-js` removed (pre-first-ship; never on origin/main) |
 | H Oversized domain convergence | **Done for size ratchets** — 0 oversized files/functions; characterization registry covers extractor/evaluation/source/documents/composition/contracts/**quality/FAQ/settings**/release matrix |
 
 ## Phase G soft deliverables (landed)
@@ -42,21 +42,16 @@ Tracks execution of `docs/project-architecture-post-refactor-review-20260918.md`
 - Dual-mode legacy shell CI gate: passes with quarantine present **or** fully removed
 
 ## Tip verification (2026-09-19)
-Re-checked on local `main` tip (ahead of `origin/main` by ~140 commits):
+Re-checked on local `main` tip (ahead of `origin/main`):
 
 - Adapter + Agent `ruff check`: exit 0
-- `check_architecture.py`: passed (oversized files/functions empty)
-- `check_legacy_shell.py`: quarantine-present mode OK
-- `snapshot_openapi.py --check` + `generate_openapi_ts.py --check`: OK
-- `check_wire_contracts.py`: OK
-- `check_frontend_dto_overlap.py`: `handwritten_only=0`
-- `check_console_openapi_matrix.py` + `check_console_bundle_budget.py`: OK
-- `sync_console_v2.py --check`: OK
-- console Vitest: 17 passed
-- Agent full pytest: 1740 passed (fixed UTC-midnight flaky conversation-volume trend seed)
-- Adapter pytest: 215 passed
+- `check_architecture.py`: passed (oversized files/functions empty; allowed-edge + waiver expiry)
+- `check_legacy_shell.py`: **legacy-js fully removed** (Phase G hard exit)
+- `check_legacy_deletion_readiness.py`: BLOCKERS none
+- OpenAPI / DTO / matrix / bundle / sync / Vitest: green on tip before delete; re-verify post-delete below
 
-`origin/main` still has **no** `static/legacy-js` / `BACKOFFICE_LEGACY_SHELL_*` (last remote tip predates quarantine). First ship of this tip starts the unused-release clock; it does **not** delete the tree in the same release.
+Phase G hard exit used `--confirm-never-shipped-to-origin` because `origin/main` never contained quarantine / `BACKOFFICE_LEGACY_SHELL_*`.
 
 ## Goal blockers (not closed)
-- **G hard exit:** `static/legacy-js` still present (~74 files / ~18k LOC). Quarantine is **not yet on origin/main**, so the unused production release cycle has not started. After that cycle: `uv run python scripts/delete_legacy_js.py --confirm-unused-release-completed --write` (updates waivers/progress; dual-mode legacy gate accepts absence).
+
+- None — Phase G hard exit complete (`static/legacy-js` absent).

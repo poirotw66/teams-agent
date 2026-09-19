@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO_ROOT / "scripts"
@@ -32,15 +33,26 @@ class DeleteLegacyJsTest(unittest.TestCase):
         delete = _load_delete_legacy_js()
         self.assertEqual(delete.main([]), 2)
 
-    def test_dry_run_with_confirmation_does_not_delete(self) -> None:
+    def test_dry_run_with_unused_release_confirmation_does_not_delete(self) -> None:
         delete = _load_delete_legacy_js()
-        before = delete.LEGACY_JS.is_dir()
-        self.assertTrue(before)
+        self.assertTrue(delete.LEGACY_JS.is_dir())
         self.assertEqual(
             delete.main(["--confirm-unused-release-completed"]),
             0,
         )
         self.assertTrue(delete.LEGACY_JS.is_dir())
+
+    def test_never_shipped_refuses_when_origin_has_quarantine(self) -> None:
+        delete = _load_delete_legacy_js()
+        with mock.patch.object(
+            delete,
+            "origin_quarantine_hits",
+            return_value=["agent_service/src/ai_ops_backoffice/static/legacy-js/main.js"],
+        ):
+            self.assertEqual(
+                delete.main(["--confirm-never-shipped-to-origin"]),
+                1,
+            )
 
     def test_soft_blockers_detect_product_html_ref(self) -> None:
         delete = _load_delete_legacy_js()
@@ -70,10 +82,12 @@ class DeleteLegacyJsTest(unittest.TestCase):
                 "until that cycle completes |\n",
                 encoding="utf-8",
             )
-            delete._update_waivers_after_delete(path)
+            delete._update_waivers_after_delete(
+                path, reason="Pre-first-ship delete — quarantine never present on origin/main"
+            )
             text = path.read_text(encoding="utf-8")
             self.assertIn("deleted", text)
-            self.assertIn("retired after unused release", text)
+            self.assertIn("Pre-first-ship delete", text)
 
 
 if __name__ == "__main__":

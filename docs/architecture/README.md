@@ -43,13 +43,10 @@ Formal oversized residuals: [`oversized-waivers.md`](./oversized-waivers.md).
    and commit the refreshed hashed assets.
 8. `platform_kernel` holds shared ports only and must not import domain packages.
 9. Optional per-symbol waivers live in `baselines/size_waivers.json`. Empty `waivers: []` is valid; non-empty entries require owner/reason/expiry/tracking_issue/target_size and fail when `expiry` is past.
-10. Legacy UI quarantine: `static/legacy-js/` is kill-switch only
-   (`BACKOFFICE_LEGACY_SHELL_ENABLED`; default off). Product path is React
-   `/console-v2`. **Deletion criteria:** after one full release cycle where
-   production never enables the flag, delete the quarantine tree and `/legacy`
-   serve wiring; keep the thin `static/js/main.js` redirect stub if still linked.
-   CI enforces defaults + sample env hygiene via `scripts/check_legacy_shell.py`
-   (does not delete the tree).
+10. Legacy UI quarantine retired: `static/legacy-js/` deleted (Phase G hard exit).
+   Product path remains React `/console-v2`. Dual-mode `scripts/check_legacy_shell.py`
+   accepts absence; defaults + deploy/env samples must keep
+   `BACKOFFICE_LEGACY_SHELL_ENABLED` off.
 
 ## Characterization suites
 
@@ -69,7 +66,7 @@ UI ownership: `docs/ai-ops-route-ledger.md` (30/30 ledger routes owned by React 
 | 1 Kernel + composition | Done | `platform_kernel/ports`, `composition/` |
 | 2 HTTP / workbench application | Done | Routers under `routers/*`; use cases under `application/` |
 | 3 Knowledge + Release stages | Done | `knowledge_pipeline/*` + thin `knowledge.py`; `knowledge_portal/release/*` + thin `ReleaseService` |
-| 4 React sole product UI | Done | `/` and `/legacy` redirect to `/console-v2` unless legacy kill switch |
+| 4 React sole product UI | Done | `/` and `/legacy` redirect to `/console-v2`; legacy-js tree removed |
 | 5 Governance | Done | Required CI gates; oversized waivers; docs/topology aligned |
 
 ## Ports and composition

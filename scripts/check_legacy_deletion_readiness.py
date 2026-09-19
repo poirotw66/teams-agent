@@ -100,8 +100,10 @@ def main() -> int:
         for item in notes:
             print(f"  - {item}")
     print(
-        "OPS GATE: quarantine must ship to production and run one release "
-        "cycle with BACKOFFICE_LEGACY_SHELL_ENABLED unset/false before delete."
+        "OPS GATE: either (1) quarantine shipped + one unused production release "
+        "with BACKOFFICE_LEGACY_SHELL_ENABLED unset/false, or (2) quarantine never "
+        "present on origin/main (pre-first-ship delete via "
+        "--confirm-never-shipped-to-origin)."
     )
     return 1 if blockers else 0
 

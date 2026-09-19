@@ -51,7 +51,7 @@ uv run python scripts/check_architecture.py --write-baselines  # full refresh
 | Portal asset / PDF jobs | `draft_assets.py`, `pdf_convert_jobs.py` | I/O-heavy job orchestration; size tracks job matrix | Extract job runners behind ports |
 | Ops emitters / freshness | `operations/emitter.py`, `operations_core/freshness_store.py` | Event serialization + store shapes | Split write vs query surfaces |
 | Console React deep panels | `ChunkInspectorModal.tsx` | UI density; not a new god module | Feature-slice when panel gains second consumer |
-| Legacy quarantine (non-product) | `static/legacy-js/**` | Emergency kill-switch only; not on default product path | Delete after **one full release cycle** where production never sets `BACKOFFICE_LEGACY_SHELL_ENABLED`; gate: `scripts/check_legacy_shell.py` (defaults + deploy/env samples must stay off). Do not delete the tree until that cycle completes |
+| Legacy quarantine (non-product) | ~~`static/legacy-js/**`~~ (deleted) | Pre-first-ship delete — quarantine never present on origin/main | Tree removed; dual-mode `check_legacy_shell.py` accepts absence |
 
 > **Phase H function ratchet (2026-09-19):** `baselines/oversized_functions.json` is empty (`functions: {}`). New production functions must stay ≤80 lines; the monotonic shrink path remains active for any future regressions.
 
