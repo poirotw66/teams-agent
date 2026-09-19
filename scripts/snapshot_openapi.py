@@ -117,8 +117,8 @@ def component_schema_inventory(schema: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def build_agent_schema() -> dict[str, Any]:
-    from agent_service.api import create_app
     from agent_service.settings import RagSettings
+    from composition.agent_app import create_agent_app
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -128,7 +128,7 @@ def build_agent_schema() -> dict[str, Any]:
             auto_build_index=False,
             service_token="",
         )
-        return create_app(settings).openapi()
+        return create_agent_app(settings).openapi()
 
 
 def build_portal_schema() -> dict[str, Any]:
@@ -156,8 +156,8 @@ def build_portal_schema() -> dict[str, Any]:
 
 
 def build_backoffice_schema() -> dict[str, Any]:
-    from ai_ops_backoffice.api import create_app
     from ai_ops_backoffice.settings import BackofficeSettings
+    from composition.backoffice_app import create_backoffice_app
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -189,7 +189,7 @@ def build_backoffice_schema() -> dict[str, Any]:
             knowledge_bridge_enabled=False,
             console_v2_enabled=True,
         )
-        return create_app(settings).openapi()
+        return create_backoffice_app(settings).openapi()
 
 
 SERVICE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {

@@ -8,6 +8,12 @@ from typing import Any
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
+from ai_ops_backoffice.adapters.local_source_files import (
+    is_readable_file,
+    read_file_byte_range,
+    read_file_size,
+)
+
 from .range_parsing import parse_range_header
 
 AuditRead = Callable[..., Awaitable[Any]]
@@ -100,18 +106,17 @@ async def stream_local_file(
     audit_read: AuditRead,
 ) -> Response | None:
     """Stream from a local filesystem path when present; return None if unavailable."""
-    if not source.original_asset_path or not source.original_asset_path.is_file():
+    path = source.original_asset_path
+    if not is_readable_file(path):
         return None
 
-    file_size = source.original_asset_path.stat().st_size
+    file_size = read_file_size(path)
     if range_header:
         parsed_range = parse_range_header(range_header, file_size)
         if parsed_range is None:
             return _range_not_satisfiable(file_size)
         start, end = parsed_range
-        with source.original_asset_path.open("rb") as handle:
-            handle.seek(start)
-            data = handle.read(end - start + 1)
+        data = read_file_byte_range(path, start=start, end=end)
         await audit_read(
             actor,
             "query.source_file_range",
@@ -143,7 +148,7 @@ async def stream_local_file(
         after={"documentId": source.document_id, "versionId": source.version_id},
     )
     return FileResponse(
-        source.original_asset_path,
+        path,
         filename=safe_name,
         headers={"Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff"},
     )
