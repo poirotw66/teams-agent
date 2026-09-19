@@ -34,12 +34,18 @@ export const dataProvider: DataProvider = {
     }
 
     if (resource === 'health') {
-      const res = await apiClient<any>('/api/operations/health');
-      const componentsList = Object.entries(res.components || {}).map(([key, value]) => ({
-        id: key,
-        name: key,
-        ...(value as object),
-      }));
+      const res = await apiClient<any>('/api/health/summary');
+      const breakdown = res.components || res.probes || [];
+      const componentsList = Array.isArray(breakdown)
+        ? breakdown.map((item: Record<string, unknown>, index: number) => {
+            const id = String(item.id || item.name || index);
+            return { id, name: id, ...item };
+          })
+        : Object.entries(breakdown).map(([key, value]) => ({
+            id: key,
+            name: key,
+            ...(value as object),
+          }));
       return {
         data: componentsList,
         total: componentsList.length,

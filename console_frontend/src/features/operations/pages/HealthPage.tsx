@@ -36,18 +36,29 @@ export const HealthPage: React.FC = () => {
     fetchHealth();
   }, [fetchHealth]);
 
-  const componentsList: ComponentRow[] = data
-    ? Object.entries(data.components || data.probes || {}).map(([key, val]: [string, any]) => {
+  const componentsList: ComponentRow[] = (() => {
+    if (!data) return [];
+    const raw = data.components || data.probes;
+    if (Array.isArray(raw)) {
+      return raw.map((item: Record<string, unknown>, index: number) => {
+        const id = String(item.id || item.name || index);
+        return {
+          key: id,
+          name: id,
+          status: String(item.status || item.health || 'UNKNOWN'),
+          note: typeof item.note === 'string' ? item.note : undefined,
+        };
+      });
+    }
+    if (raw && typeof raw === 'object') {
+      return Object.entries(raw).map(([key, val]: [string, any]) => {
         const status = typeof val === 'object' && val ? val.status || 'UNKNOWN' : String(val);
         const note = typeof val === 'object' && val ? val.note || '' : '';
-        return {
-          key,
-          name: key,
-          status,
-          note,
-        };
-      })
-    : [];
+        return { key, name: key, status, note };
+      });
+    }
+    return [];
+  })();
 
   const overallStatus = data?.overallStatus || data?.status || (error ? 'DOWN' : 'READY');
 
