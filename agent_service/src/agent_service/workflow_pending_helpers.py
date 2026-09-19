@@ -107,15 +107,19 @@ def _requests_ticket_offer(text: str) -> bool:
 
 
 def _pending_context_to_ready_issue(pending: PendingIssueContext, *, issue_id: int) -> Issue:
+    description = pending.description
     return Issue(
         id=issue_id,
-        description=pending.description,
+        description=description,
         isIT=True,
         readiness="READY",
         missingInfo=[],
         route=pending.route if pending.route != "NOT_IT" else "KNOWLEDGE",
         faqKey=pending.faqKey,
         ticketAction=None,
+        # Bind retrieval to the pending issue label, not the latest utterance
+        # (e.g. 「不知道」) or an earlier short context fragment.
+        retrieval_query=description,
     )
 
 
