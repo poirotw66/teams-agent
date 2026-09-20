@@ -20,6 +20,7 @@ from .citation_assembly import (
 )
 from .document_selection import (
     canonical_version_results,
+    inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     select_document_chunks,
 )
@@ -137,6 +138,7 @@ __all__ = [
     "format_grade_prompt",
     "high_confidence_retrieval_hit",
     "infer_markers_from_claims",
+    "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
     "is_non_production_knowledge_chunk",
     "is_numbered_section",

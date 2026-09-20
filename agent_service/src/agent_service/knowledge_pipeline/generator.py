@@ -189,7 +189,7 @@ def query_anchor_tokens(query: str) -> set[str]:
             anchors.add(run)
             continue
         for size in (2, 3, 4):
-            for index in range(0, len(run) - size + 1):
+            for index in range(len(run) - size + 1):
                 piece = run[index : index + size]
                 if piece not in _QUERY_ANCHOR_STOP:
                     anchors.add(piece)

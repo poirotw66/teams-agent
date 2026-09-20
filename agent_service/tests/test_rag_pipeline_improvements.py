@@ -73,6 +73,17 @@ def test_sanitize_answer_security_replaces_placeholder_urls() -> None:
     assert "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）" in sanitized
 
 
+def test_sanitize_answer_security_keeps_placeholder_url_from_evidence() -> None:
+    from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security
+
+    url = "https://xxxxx.pages.dev/Sorry.Only.For.TEST"
+    raw = f"若您的 AD 帳號遭鎖定，請至「AD 自助解鎖專區」：\n{url}\n依照指示操作。"
+    evidence = f"AD 自助解鎖專區：`{url}`"
+    sanitized = sanitize_answer_security(raw, evidence_text=evidence)
+    assert url in sanitized
+    assert "目前無法提供正式網址" not in sanitized
+
+
 def test_sanitize_answer_security_redacts_internal_ips_and_unc() -> None:
     raw = (
         "不可使用權限包含公槽資料夾（\\\\10.93.19.22\\shared）及 http://10.93.3.80:8080/crm/ 系統。"

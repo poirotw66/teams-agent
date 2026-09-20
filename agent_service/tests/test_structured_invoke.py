@@ -45,6 +45,7 @@ async def test_ainvoke_structured_attaches_provider_usage() -> None:
         "input_tokens": 12,
         "output_tokens": 4,
         "usage_source": "PROVIDER",
+        "model": "gemini-test",
     }
 
 

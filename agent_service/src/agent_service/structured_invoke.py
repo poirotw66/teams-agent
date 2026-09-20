@@ -16,7 +16,7 @@ T = TypeVar("T")
 class StructuredOutputWithUsage:
     """Proxy around a parsed structured object that still exposes usage fields."""
 
-    __slots__ = ("_value", "usage_metadata", "response_metadata")
+    __slots__ = ("_value", "response_metadata", "usage_metadata")
 
     def __init__(
         self,

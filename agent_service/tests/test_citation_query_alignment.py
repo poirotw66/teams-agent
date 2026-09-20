@@ -47,3 +47,44 @@ def test_prefer_query_aligned_citations_keeps_single_source() -> None:
         document_key=lambda result: result.chunk.document_id or "",
     )
     assert kept == ["ad"]
+
+
+def test_drop_ad_unlock_citations_for_crm_otp_query() -> None:
+    from agent_service.knowledge_pipeline.generation_stage_result import (
+        drop_ad_unlock_citations_for_product_query,
+    )
+
+    results = [
+        _result("crm", "國金 CRM OTP 綁訂操作", "Google Authenticator OTP 綁定"),
+        _result("ext", "外網 CRM 登入連線設定方式", "FortiToken App 掃描 QR Code"),
+        _result("ad", "AD 帳號與系統解鎖 FAQ", "CRM 系統清單含國金 CRM；AD 鎖定請自助解鎖"),
+    ]
+    kept, common = drop_ad_unlock_citations_for_product_query(
+        query="CRM OTP",
+        ordered_cited_doc_keys=["crm", "ext", "ad"],
+        common_doc_keys={"crm", "ext", "ad"},
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["crm", "ext"]
+    assert common == {"crm", "ext"}
+
+
+def test_drop_ad_unlock_citations_keeps_ad_for_lock_query() -> None:
+    from agent_service.knowledge_pipeline.generation_stage_result import (
+        drop_ad_unlock_citations_for_product_query,
+    )
+
+    results = [
+        _result("ad", "AD 帳號與系統解鎖 FAQ", "AD 帳號鎖定請自助解鎖"),
+        _result("vpn", "VPN常見Q&A問答", "AD 帳號是否被鎖"),
+    ]
+    kept, common = drop_ad_unlock_citations_for_product_query(
+        query="AD 鎖定",
+        ordered_cited_doc_keys=["ad", "vpn"],
+        common_doc_keys={"ad", "vpn"},
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["ad", "vpn"]
+    assert common == {"ad", "vpn"}

@@ -44,6 +44,7 @@ from .knowledge_pipeline.citation_io import (
 from .knowledge_pipeline.claim_repair import repair_claims_with_model
 from .knowledge_pipeline.document_selection import (
     canonical_version_results,
+    inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     select_document_chunks,
 )
@@ -230,9 +231,16 @@ class HybridKnowledgeService:
         groups: set[str],
         environment: str,
     ) -> list[SearchResult]:
-        return inject_enterprise_app_evidence(
+        boosted = inject_enterprise_app_evidence(
             query,
             results,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        return inject_employee_portal_password_evidence(
+            query,
+            boosted,
             index_chunks=self.index.chunks,
             groups=groups,
             environment=environment,

@@ -1,0 +1,694 @@
+{
+  "$schema": "internal://retrieval-eval-v2/v1",
+  "description": "Hard retrieval benchmark for RAG v2 / v2.1 closeout. All answerable cases carry expectedEvidence. Document Recall/Hit and Evidence Recall are reported separately. No-answer set expanded for Confidence Contract calibration. Cases carry split=dev|test.",
+  "specRef": "docs/rag-v2-spec.md#6",
+  "minCaseCount": 120,
+  "corpusSnapshot": {
+    "sourceDir": "data/sources",
+    "note": "Titles match source markdown stems / citation titles used by Hybrid retrieval."
+  },
+  "categoryNotes": {
+    "exact_identifier": "Query includes a literal error code or identifier present in sources.",
+    "similar_identifier": "Near-miss codes or adjacent identifiers that must not collapse.",
+    "hard_negative": "Topically similar wrong document must not win Hit@1.",
+    "no_answer": "Topic absent from corpus; predicted no-answer = empty retrieval, never vacuous empty relevant lists.",
+    "acl_deny": "Documents the deny contract; current open corpus may have zero restricted docs."
+  },
+  "cases": [
+    {
+      "id": "v2-na-quantum",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "公司量子加密 VPN 金鑰輪替週期是幾天？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-salary",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "如何查詢我的薪資明細與加班費？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-leave",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "特休假剩餘天數 API 端點是什麼？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-aws",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "我們生產環境 AWS account id 是多少？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "test",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-mac-mdm",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "Mac 用 Jamf 自動註冊的 enrollment URL？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "test",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-printer",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "總公司彩色印表機預設印表佇列名稱？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-slack",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "公司 Slack workspace 邀請連結？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "test",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-na-github",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "私有 GitHub org SSO 設定步驟？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Plausible but undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "test",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-acl-deny-placeholder",
+      "categories": [
+        "acl_deny"
+      ],
+      "query": "僅限機密群組可見的假想文件查詢",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [
+        "grp_outsider"
+      ],
+      "forbiddenSourceTitles": [
+        "RESTRICTED_PLACEHOLDER"
+      ],
+      "notes": "Corpus has no restricted docs; case documents deny contract for future ACL fixtures",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [
+        "RESTRICTED_PLACEHOLDER"
+      ],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-x-na-hr",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "績效考核表單下載路徑？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Coverage expansion",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-x-na-badge",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "門禁卡遺失補發費用？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Coverage expansion",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-x-na-taxi",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "加班計程車補助申請表？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Coverage expansion",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "id": "v2-x-na-canteen",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "員工餐廳今日菜單 API？",
+      "expectedFound": false,
+      "expectedSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "forbiddenSourceTitles": [],
+      "notes": "Undocumented",
+      "expectedDocuments": [],
+      "forbiddenEvidence": [],
+      "split": "dev",
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "expectedEvidence": []
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-unrelated-crypto",
+      "categories": [
+        "no_answer",
+        "unrelated"
+      ],
+      "query": "比特幣冷錢包助記詞備份政策是什麼？",
+      "expectedFound": false,
+      "notes": "Completely unrelated finance topic"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-product-missing-feature",
+      "categories": [
+        "no_answer",
+        "same_product_missing"
+      ],
+      "query": "FortiClient 是否支援 Face ID 生物辨識登入？",
+      "expectedFound": false,
+      "notes": "Same product family but KB has no Face ID answer"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-similar-error-code",
+      "categories": [
+        "no_answer",
+        "similar_error_code"
+      ],
+      "query": "VPN Permission denied (-99999) 怎麼處理？",
+      "expectedFound": false,
+      "notes": "Similar error-code shape but undocumented code"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-cross-system-hardneg",
+      "categories": [
+        "no_answer",
+        "cross_system"
+      ],
+      "query": "Outlook 信箱額度要用 ServiceNow CMDB CI 編號哪裡查？",
+      "expectedFound": false,
+      "notes": "Cross-system hard negative mixing mailbox and CMDB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-policy-absent",
+      "categories": [
+        "no_answer",
+        "policy_absent"
+      ],
+      "query": "公司 BYOD 個人手機可安裝企業 App 的正式政策條款編號？",
+      "expectedFound": false,
+      "notes": "Policy does not exist in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-insufficient-info",
+      "categories": [
+        "no_answer",
+        "insufficient_info"
+      ],
+      "query": "那個系統昨天掛了要找誰",
+      "expectedFound": false,
+      "notes": "Insufficient information / underspecified system"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-short-xyz",
+      "categories": [
+        "no_answer",
+        "short_query"
+      ],
+      "query": "XYZ-991",
+      "expectedFound": false,
+      "notes": "Very short undocumented identifier"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-hr-stock",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "員工認股權憑證剩餘可行使數量查詢入口？",
+      "expectedFound": false,
+      "notes": "HR equity topic not in IT KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-facilities-parking",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "總公司地下停車場訪客臨停申請表下載？",
+      "expectedFound": false,
+      "notes": "Facilities topic outside KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-legal-nda",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "供應商 NDA 標準範本存放在哪個 SharePoint？",
+      "expectedFound": false,
+      "notes": "Legal template not indexed"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-security-zerotrust-sla",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "Zero Trust 閘道商用 SLA 承諾幾個九？",
+      "expectedFound": false,
+      "notes": "Plausible security question undocumented"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-dev-k8s-ns",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "正式環境 Kubernetes namespace 命名規範文件？",
+      "expectedFound": false,
+      "notes": "DevOps detail not in support KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-finance-invoice",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "供應商電子發票折讓單審核流程？",
+      "expectedFound": false,
+      "notes": "Finance process absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-marketing-brand",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "品牌色色票 Pantone 編號清單在哪？",
+      "expectedFound": false,
+      "notes": "Marketing asset absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-travel-visa",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "出差美國商務簽證代辦窗口電話？",
+      "expectedFound": false,
+      "notes": "Travel admin absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-training-lms",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "必修資安課程 LMS 課程代碼是多少？",
+      "expectedFound": false,
+      "notes": "Training LMS codes not in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-same-product-quota",
+      "categories": [
+        "no_answer",
+        "same_product_missing"
+      ],
+      "query": "CTeam 單次上傳附件大小上限是多少 MB？",
+      "expectedFound": false,
+      "notes": "Same product mentioned elsewhere but quota not documented"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-typo-unknown-system",
+      "categories": [
+        "no_answer",
+        "short_query"
+      ],
+      "query": "樹精霛錯誤碼 ZZX",
+      "expectedFound": false,
+      "notes": "Near-product typo + unknown code"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-wifi-ssid-guest",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "訪客 Wi-Fi SSID 與當日密碼產生規則？",
+      "expectedFound": false,
+      "notes": "Guest wifi details not published in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-phone-extension",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "董辦專線分機號是多少？",
+      "expectedFound": false,
+      "notes": "Sensitive/absent directory detail"
+    }
+  ]
+}

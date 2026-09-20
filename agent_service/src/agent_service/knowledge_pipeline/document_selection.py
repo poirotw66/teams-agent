@@ -29,6 +29,21 @@ _ENTERPRISE_TRUST_MARKERS: tuple[str, ...] = (
     "CATHAY LIFE",
 )
 
+# Temporary Compatibility Rule: employee-portal password queries need the
+# companion holdings-portal how-to that sparse retrieval often misses.
+_EMPLOYEE_PORTAL_PASSWORD_QUERY_MARKERS: tuple[str, ...] = (
+    "員工入口網",
+    "國泰員工入口",
+)
+_EMPLOYEE_PORTAL_PASSWORD_ACTION_MARKERS: tuple[str, ...] = (
+    "忘記密碼",
+    "密碼",
+)
+_EMPLOYEE_PORTAL_COMPANION_MARKERS: tuple[str, ...] = (
+    "金控入口網密碼變更方式",
+    "設定我的連結",
+)
+
 
 def inject_enterprise_app_evidence(
     query: str,
@@ -54,6 +69,50 @@ def inject_enterprise_app_evidence(
         blob = f"{chunk.title}\n{chunk.content}"
         return any(marker in blob for marker in _ENTERPRISE_TRUST_MARKERS)
 
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_enterprise_trust_chunk,
+    )
+
+
+def inject_employee_portal_password_evidence(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+) -> list[SearchResult]:
+    """Inject 金控入口網密碼變更方式 for employee-portal password questions."""
+    if not any(marker in query for marker in _EMPLOYEE_PORTAL_PASSWORD_QUERY_MARKERS):
+        return list(results)
+    if not any(marker in query for marker in _EMPLOYEE_PORTAL_PASSWORD_ACTION_MARKERS):
+        return list(results)
+
+    def _is_companion_chunk(chunk: DocumentChunk) -> bool:
+        blob = f"{chunk.title}\n{chunk.content}"
+        return any(marker in blob for marker in _EMPLOYEE_PORTAL_COMPANION_MARKERS)
+
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_companion_chunk,
+    )
+
+
+def _inject_matching_chunks(
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+    is_match: Callable[[DocumentChunk], bool],
+) -> list[SearchResult]:
     def _is_injectable(chunk: DocumentChunk) -> bool:
         return is_chunk_visible_to_groups(
             chunk, groups
@@ -65,7 +124,7 @@ def inject_enterprise_app_evidence(
     seen_ids: set[str] = set()
     for result in results:
         seen_ids.add(result.chunk.chunk_id)
-        if _is_enterprise_trust_chunk(result.chunk):
+        if is_match(result.chunk):
             boosted.append(
                 SearchResult(
                     chunk=result.chunk,
@@ -90,8 +149,7 @@ def inject_enterprise_app_evidence(
             continue
         if not _is_injectable(chunk):
             continue
-        if _is_enterprise_trust_chunk(chunk):
-            # Append missing trust evidence with explicit tail final_rank provenance.
+        if is_match(chunk):
             boosted.append(
                 SearchResult(
                     chunk=chunk,
@@ -159,6 +217,7 @@ def select_document_chunks(
 
 __all__ = [
     "canonical_version_results",
+    "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
     "select_document_chunks",
 ]

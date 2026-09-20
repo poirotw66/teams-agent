@@ -71,7 +71,7 @@
     "failureTaxonomy": {},
     "failureCount": 0,
     "split": "all",
-    "evalSet": "/tmp/retrieval_eval_v2_no_answer_only.json"
+    "evalSet": "data/eval/retrieval_eval_v2_no_answer_only.json"
   },
   "failures": []
 }

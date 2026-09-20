@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-09-20T12:57:59.997160+00:00",
-  "commitSha": "c41e627a98a3e75437139e7506f4089ee5ce77ab",
+  "commitSha": "bff7b2dd165716b9f15794a456c94f8ee918c643",
   "reviewDoc": "docs/project-architecture-post-refactor-review-20260918.md",
   "phase0": {
     "agentSuite": "1885 passed, 2 skipped, 0 failed",
@@ -138,5 +138,5 @@
       "usageSource": "PROVIDER"
     }
   },
-  "benchmarkProvenanceNote": "Updated from stale c3bc708 to the architecture-review closeout commit that produced the gated Layer2/Layer3 artifacts."
+  "benchmarkProvenanceNote": "Closeout SHA updated to bff7b2d (answer-safety / provider-usage / L3 live). NA-33 eval set archived at data/eval/retrieval_eval_v2_no_answer_only.json."
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_pipeline.document_selection import (
+    inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     select_document_chunks,
 )
@@ -311,6 +312,48 @@ def test_multi_doc_procedure_query_keeps_both_manuals() -> None:
     titles = {item.chunk.title for item in selected[:4]}
     assert any("iOS" in title for title in titles)
     assert any("Android" in title for title in titles)
+
+
+def test_inject_employee_portal_password_evidence_appends_companion() -> None:
+    portal = _chunk(
+        "portal",
+        title="國泰員工入口網、CTeam密碼、國泰e點名",
+        content="請至國泰員工入口網站-忘記密碼",
+        document_id="portal",
+    )
+    companion = _chunk(
+        "holdings",
+        title="金控入口網密碼變更方式",
+        content="齒輪 > 設定我的連結 > 網站管理",
+        document_id="holdings",
+    )
+    results = [_result(portal, 0.95)]
+    boosted = inject_employee_portal_password_evidence(
+        "國泰員工入口網忘記密碼",
+        results,
+        index_chunks=[portal, companion],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["portal", "holdings"]
+
+
+def test_inject_employee_portal_password_evidence_noop_without_portal_query() -> None:
+    companion = _chunk(
+        "holdings",
+        title="金控入口網密碼變更方式",
+        content="設定我的連結",
+        document_id="holdings",
+    )
+    results = [_result(companion, 0.9)]
+    boosted = inject_employee_portal_password_evidence(
+        "VPN 密碼被鎖",
+        results,
+        index_chunks=[companion],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["holdings"]
 
 
 def test_comparison_external_query_keeps_internal_sibling() -> None:

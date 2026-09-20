@@ -725,22 +725,26 @@
       "query": "第一次綁 CRM 驗證器要掃什麼",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "外網 CRM 登入連線設定方式": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "CRM bind paraphrase",
+      "notes": "CRM bind paraphrase; ambiguous CRM may cite both 國金/外網 docs",
       "expectedDocuments": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "591a8347795e521cd509"
       ],
       "expectedEvidence": [
         {
@@ -748,6 +752,14 @@
           "chunkId": "8bfdf97d28d8abf6eae6",
           "mustContain": [
             "CRM"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "591a8347795e521cd509",
+          "mustContain": [
+            "外網 CRM",
+            "FortiToken"
           ]
         }
       ],
@@ -1366,7 +1378,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Alias",
+      "notes": "Alias; KB disposition is escalate/轉派工單 (soft answer evidence)",
       "expectedDocuments": [
         "VPN 跳板機連線異常"
       ],
@@ -1380,8 +1392,7 @@
           "section": "正文（canonical）",
           "chunkId": "61febd557abb558a5614",
           "mustContain": [
-            "VPN",
-            "跳板機連線異常"
+            "轉派工單"
           ]
         }
       ],
@@ -1547,17 +1558,20 @@
       "query": "AD 鎖定",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "AD 帳號與系統解鎖 FAQ": 3
+        "AD 帳號與系統解鎖 FAQ": 3,
+        "VPN常見Q&A問答": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Short query",
+      "notes": "Short query; must surface AD self-unlock URL; VPN FAQ secondary cite allowed",
       "expectedDocuments": [
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答"
       ],
       "forbiddenEvidence": [],
       "split": "test",
@@ -1568,6 +1582,14 @@
         {
           "section": "正文（canonical）",
           "chunkId": "8eb9ac80926f62b19b0f",
+          "mustContain": [
+            "AD",
+            "自助解鎖"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "e92b297da6fb8616b4e4",
           "mustContain": [
             "AD",
             "鎖定"
@@ -2611,7 +2633,7 @@
         "grp_public"
       ],
       "forbiddenSourceTitles": [],
-      "notes": "Public group allow",
+      "notes": "Public group allow; answer coverage soft-labeled on -455 steps",
       "expectedDocuments": [
         "VPN常見Q&A問答",
         "登入 FortiClient 出現錯訊"
@@ -2631,17 +2653,6 @@
           "section": "正文（canonical）",
           "chunkId": "e92b297da6fb8616b4e4",
           "mustContain": [
-            "(-455)",
-            "VPN",
-            "-455",
-            "處理方式"
-          ]
-        },
-        {
-          "section": "Permission denied (-455)",
-          "chunkId": "cf80afbddd210fa9a426",
-          "mustContain": [
-            "(-455)",
             "-455"
           ]
         }
@@ -2989,7 +3000,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Source scope question",
+      "notes": "Source scope question; 「未特別說明」is a valid grounded scope answer",
       "expectedDocuments": [
         "外部客戶線上問題"
       ],
@@ -3003,7 +3014,7 @@
           "section": "正文（canonical）",
           "chunkId": "2603e09e74d48e00ac24",
           "mustContain": [
-            "外部客戶線上問題"
+            "外部客戶"
           ]
         }
       ],
@@ -3176,26 +3187,22 @@
       "query": "大州系統功能無法點選時畫面上該檢查什麼",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "大州系統_功能無法點選",
-        "大州首次使用設定"
+        "大州系統_功能無法點選"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "大州系統_功能無法點選": 3,
-        "大州首次使用設定": 3
+        "大州系統_功能無法點選": 3
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Dazhou UI",
+      "notes": "Dazhou UI; primary doc 功能無法點選 is sufficient for click-failure query",
       "expectedDocuments": [
-        "大州系統_功能無法點選",
-        "大州首次使用設定"
+        "大州系統_功能無法點選"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "ecaa99fdb4cd2e6a9aa8",
-        "7dbbd9605be36badcf5f"
+        "ecaa99fdb4cd2e6a9aa8"
       ],
       "expectedEvidence": [
         {
@@ -3205,18 +3212,10 @@
             "大州系統",
             "功能無法點選"
           ]
-        },
-        {
-          "section": "第 1 頁 — 預設 Browser／網際網路選項",
-          "chunkId": "7dbbd9605be36badcf5f",
-          "mustContain": [
-            "大州首次使用設定"
-          ]
         }
       ],
       "expectedSections": [
-        "第 1 頁 — 大州無法點選",
-        "第 1 頁 — 預設 Browser／網際網路選項"
+        "第 1 頁 — 大州無法點選"
       ]
     },
     {

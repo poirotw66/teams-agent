@@ -50,6 +50,24 @@ def usage_from_mapping(token_usage: Mapping[str, object]) -> dict[str, int | str
     }
 
 
+def model_name_from_response_metadata(result: object) -> str | None:
+    response_metadata = getattr(result, "response_metadata", None) or {}
+    if not isinstance(response_metadata, Mapping):
+        return None
+    model_name = response_metadata.get("model_name") or response_metadata.get("model")
+    if isinstance(model_name, str) and model_name.strip():
+        return normalize_model_name(model_name)
+    return None
+
+
+def _with_model(patch: dict[str, int | str], result: object) -> dict[str, int | str]:
+    if "model" not in patch:
+        model_name = model_name_from_response_metadata(result)
+        if model_name:
+            patch["model"] = model_name
+    return patch
+
+
 def extract_provider_usage_from_result(result: object) -> dict[str, int | str] | None:
     """Best-effort token extraction from a single LLM response object."""
     usage_metadata = getattr(result, "usage_metadata", None)
@@ -57,7 +75,7 @@ def extract_provider_usage_from_result(result: object) -> dict[str, int | str] |
         if isinstance(usage_metadata, Mapping):
             mapped = usage_from_mapping(usage_metadata)
             if mapped:
-                return mapped
+                return _with_model(mapped, result)
         input_tokens = safe_int(
             getattr(usage_metadata, "input_tokens", None)
             or getattr(usage_metadata, "prompt_token_count", None)
@@ -71,11 +89,14 @@ def extract_provider_usage_from_result(result: object) -> dict[str, int | str] |
             or getattr(usage_metadata, "total_token_count", None)
         )
         if input_tokens or output_tokens or total_tokens:
-            return {
-                "input_tokens": input_tokens or max(0, total_tokens - output_tokens),
-                "output_tokens": output_tokens,
-                "usage_source": "PROVIDER",
-            }
+            return _with_model(
+                {
+                    "input_tokens": input_tokens or max(0, total_tokens - output_tokens),
+                    "output_tokens": output_tokens,
+                    "usage_source": "PROVIDER",
+                },
+                result,
+            )
 
     response_metadata = getattr(result, "response_metadata", None) or {}
     if isinstance(response_metadata, Mapping):
@@ -87,10 +108,10 @@ def extract_provider_usage_from_result(result: object) -> dict[str, int | str] |
         if isinstance(token_usage, Mapping):
             mapped = usage_from_mapping(token_usage)
             if mapped:
-                return mapped
-        model_name = response_metadata.get("model_name") or response_metadata.get("model")
-        if isinstance(model_name, str) and model_name.strip():
-            return {"model": normalize_model_name(model_name)}
+                return _with_model(mapped, result)
+        model_name = model_name_from_response_metadata(result)
+        if model_name:
+            return {"model": model_name}
 
     return None
 

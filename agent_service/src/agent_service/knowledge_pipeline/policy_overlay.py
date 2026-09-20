@@ -79,11 +79,24 @@ def merge_policy_advisories(*groups: list[PolicyAdvisory]) -> list[PolicyAdvisor
     return merged
 
 
-def sanitize_answer_security(answer: str) -> str:
-    # 1. Replace placeholder/test URLs with safe formal portal guidance
-    sanitized = _PLACEHOLDER_URL_PATTERN.sub(
-        "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）", answer
-    )
+def sanitize_answer_security(answer: str, *, evidence_text: str = "") -> str:
+    """Redact unsafe content while preserving grounded placeholder URLs.
+
+    URLs that appear verbatim in authorized evidence may be test/placeholder
+    links (for example AD self-unlock). Those must stay so the answer can
+    still guide users to the documented self-service page. Invented or
+    ungrounded placeholder URLs continue to be replaced.
+    """
+    evidence_blob = evidence_text or ""
+
+    def _replace_placeholder_url(match: re.Match[str]) -> str:
+        url = match.group(0)
+        if url and url in evidence_blob:
+            return url
+        return "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）"
+
+    # 1. Replace ungrounded placeholder/test URLs with formal portal guidance
+    sanitized = _PLACEHOLDER_URL_PATTERN.sub(_replace_placeholder_url, answer)
     # 2. Redact internal UNC paths and internal IPs
     sanitized = _INTERNAL_UNC_PATTERN.sub("內部公槽資料夾", sanitized)
     sanitized = _INTERNAL_URL_PATTERN.sub("內部系統伺服器路徑", sanitized)
