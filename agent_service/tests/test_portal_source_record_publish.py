@@ -157,6 +157,7 @@ def test_publish_aborts_and_marks_failed_if_source_records_fail(tmp_path: Path) 
     object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     object.__setattr__(settings, "require_dual_approval", False)
     object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
     app = create_portal_app(settings)
     client = TestClient(app)
 

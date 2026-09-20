@@ -24,6 +24,7 @@ def portal_client(tmp_path: Path) -> TestClient:
     object.__setattr__(settings, "delegation_secret", "test-secret")
     object.__setattr__(settings, "require_service_token_with_delegation", False)
     object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
     app = create_portal_app(settings)
     return TestClient(app)
 

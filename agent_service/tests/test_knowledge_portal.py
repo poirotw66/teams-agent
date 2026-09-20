@@ -17,10 +17,16 @@ from knowledge_portal.settings import PortalSettings
 
 
 @pytest.fixture
-def portal_client() -> TestClient:
+def portal_client(tmp_path: Path) -> TestClient:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "data_dir", tmp_path / "data")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "drafts")
+    object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     app = create_app(settings)
     return TestClient(app)
 
@@ -716,7 +722,12 @@ def test_review_publish_workflow(portal_client: TestClient, tmp_path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
     object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "data_dir", tmp_path / "data")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "drafts")
+    object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     object.__setattr__(settings, "require_dual_approval", False)
     client = TestClient(create_app(settings))
 
@@ -922,6 +933,12 @@ def test_pending_reviews_include_review_context(tmp_path) -> None:
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
+    object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
+    object.__setattr__(settings, "data_dir", tmp_path / "data")
+    object.__setattr__(settings, "drafts_dir", tmp_path / "drafts")
+    object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     object.__setattr__(settings, "demo_mode", False)
     object.__setattr__(settings, "relaxed_workflow", True)
     client = TestClient(create_app(settings))
