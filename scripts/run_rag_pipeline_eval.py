@@ -17,6 +17,7 @@ Usage:
     ../.venv/bin/python ../scripts/run_rag_pipeline_eval.py --split test --ablation
     ../.venv/bin/python ../scripts/run_rag_pipeline_eval.py --split all --within-doc-oracle
     ../.venv/bin/python ../scripts/run_rag_pipeline_eval.py --split test --layer 3
+    ../.venv/bin/python ../scripts/run_rag_pipeline_eval.py --split test --layer 3 --live-model
 """
 
 from __future__ import annotations
@@ -41,10 +42,12 @@ from agent_service.knowledge_hybrid import HybridKnowledgeService
 from agent_service.knowledge_hybrid_serving import build_retrieval_host
 from agent_service.knowledge_pipeline.planner import bounded_facet_queries
 from agent_service.knowledge_pipeline.query_tier import classify_query_tier
-from agent_service.knowledge_pipeline.relevance import _GENERIC_LEXICAL_TOKENS
+from agent_service.knowledge_pipeline.retrieval_confidence import (
+    calibrated_predict_no_answer,
+)
 from agent_service.knowledge_pipeline.retrieval_stage import run_retrieve
 from agent_service.knowledge_pipeline.retrieval_state import RetrievalState
-from agent_service.retrieval import HybridIndex, SearchResult, tokenize
+from agent_service.retrieval import HybridIndex, SearchResult
 from agent_service.retrieval_eval_metrics import (
     NoAnswerOutcome,
     aggregate_case_scores,
@@ -61,39 +64,6 @@ from agent_service.settings import RagSettings
 def _load_cases(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return list(payload["cases"])
-
-
-def calibrated_predict_no_answer(
-    *,
-    ranked_ids: list[str],
-    scores: list[float],
-    texts: list[str],
-    query: str,
-    min_score: float = 0.45,
-) -> bool:
-    """Calibrated retrieval-level no-answer predictor.
-
-    Combines CJK tokenization, stopword filtering, and top-3 evidence overlap ratio.
-    """
-    if not ranked_ids or not scores:
-        return True
-
-    query_tokens = [
-        t for t in tokenize(query)
-        if t not in _GENERIC_LEXICAL_TOKENS and len(t) >= 2
-    ]
-    if not query_tokens:
-        query_tokens = [t for t in tokenize(query) if t not in _GENERIC_LEXICAL_TOKENS]
-    if not query_tokens:
-        return True
-
-    top_text = " ".join(texts[:3]).casefold()
-    overlap = [t for t in query_tokens if t.casefold() in top_text]
-    overlap_ratio = len(overlap) / len(query_tokens)
-
-    if len(overlap) == 0:
-        return True
-    return len(query_tokens) >= 3 and overlap_ratio < 0.20
 
 
 # --- Layer 1: Index Retrieval ---
@@ -185,14 +155,67 @@ async def run_layer3_case(
     query: str,
     *,
     token_budget: int = 1200,
+    settings: RagSettings | None = None,
+    live_model: bool = False,
+    case_id: str = "case",
 ) -> tuple[KnowledgeResult, float, dict[str, Any]]:
+    del token_budget  # reserved for future generation budget overrides
     started = time.perf_counter()
     user_context = UserContext()
-    result = await service.search(query=query, user_context=user_context)
+    execution_context = None
+    if live_model and settings is not None:
+        from agent_service.execution_context import ExecutionContext
+
+        execution_context = ExecutionContext.from_request(
+            settings=settings,
+            correlation_id=f"rag-eval-{case_id}",
+            request_id=f"rag-eval-{case_id}-{int(started * 1000)}",
+            tenant_id="rag-eval",
+            knowledge_backend="HYBRID",
+            timeout_seconds=120.0,
+        )
+    result = await service.search(
+        query=query,
+        user_context=user_context,
+        execution_context=execution_context,
+    )
     latency_ms = (time.perf_counter() - started) * 1000.0
 
     trace = getattr(result, "retrievalTrace", None)
     timings = getattr(trace, "stageTimingsMs", {}) if trace else {}
+    llm_calls = int(getattr(service, "last_llm_call_count", 0) or 0)
+    input_tokens = 0
+    output_tokens = 0
+    embedding_tokens = 0
+    cost_usd = 0.0
+    has_cost = False
+    if execution_context is not None:
+        llm_calls = max(llm_calls, execution_context.llm_calls.count)
+        for event in execution_context.usage_collector.events():
+            input_tokens += int(event.input_tokens) + int(event.tool_context_tokens)
+            output_tokens += int(event.output_tokens)
+            embedding_tokens += int(event.embedding_tokens)
+            if event.estimated_cost_usd is not None:
+                cost_usd += float(event.estimated_cost_usd)
+                has_cost = True
+
+    usage_source = "PROVIDER" if (input_tokens or output_tokens) else "MISSING"
+    if live_model and input_tokens == 0 and output_tokens == 0:
+        # Structured-output paths often omit provider usage metadata; estimate
+        # from observed text so release reports still have cost/token columns.
+        from agent_service.usage import estimate_cost_usd, estimate_text_tokens
+
+        input_tokens = estimate_text_tokens(query)
+        output_tokens = estimate_text_tokens(result.answer or "")
+        model_name = None
+        if settings is not None:
+            model_name = settings.model or settings.agent_model
+        estimated = estimate_cost_usd(model_name or "unknown", input_tokens, output_tokens)
+        if estimated is not None:
+            cost_usd = float(estimated)
+            has_cost = True
+        usage_source = "ESTIMATED"
+
     telemetry = {
         "found": result.found,
         "answerLength": len(result.answer),
@@ -201,6 +224,12 @@ async def run_layer3_case(
         "terminalReason": getattr(result, "terminalReason", None),
         "queryTier": getattr(trace, "queryTier", None),
         "timings": timings,
+        "llmCalls": llm_calls,
+        "inputTokens": input_tokens,
+        "outputTokens": output_tokens,
+        "embeddingTokens": embedding_tokens,
+        "estimatedCostUsd": cost_usd if has_cost else None,
+        "usageSource": usage_source,
     }
     return result, latency_ms, telemetry
 
@@ -213,8 +242,8 @@ class FailureAnalysis:
     case_id: str
     query: str
     failure_category: str
-    evidence_recall_4: float
-    candidate_recall_24: float
+    evidence_recall_4: float | None
+    candidate_recall_24: float | None
     expected_evidence: list[list[str]]
     expected_chunk_ids: list[str]
     retrieved_top4_titles: list[str]
@@ -224,8 +253,8 @@ class FailureAnalysis:
 def classify_retrieval_failure(
     case: EvidenceLevelCase,
     *,
-    evidence_recall_4: float,
-    candidate_recall_24: float,
+    evidence_recall_4: float | None,
+    candidate_recall_24: float | None,
     top4_chunk_ids: list[str],
     top4_titles: list[str],
     candidates_24: list[SearchResult],
@@ -237,21 +266,23 @@ def classify_retrieval_failure(
     if is_predicted_no_answer:
         return "NO_ANSWER_FALSE_POSITIVE"
 
-    if evidence_recall_4 >= 1.0:
-        return "SUCCESS"
-
     expected_doc_ids = set(case.expected_documents or ())
     expected_titles = set(case.expected_source_titles or ())
-
-    # If the case has no evidence tokens, document hit in top 4 counts as SUCCESS
-    if not case.expected_evidence and (
+    document_hit_top4 = bool(
         (expected_doc_ids and (expected_doc_ids & set(top4_chunk_ids)))
         or (expected_titles and (expected_titles & set(top4_titles)))
-    ):
+    )
+
+    # Unlabeled evidence cases are scored on Document Hit only — never mixed
+    # into Evidence Recall success/failure.
+    if not case.expected_evidence:
+        return "SUCCESS" if document_hit_top4 else "RETRIEVAL_RECALL_MISS"
+
+    if evidence_recall_4 is not None and evidence_recall_4 >= 1.0:
         return "SUCCESS"
 
     # Case failed Top 4. Did the candidates pool have it?
-    if candidate_recall_24 >= 1.0:
+    if candidate_recall_24 is not None and candidate_recall_24 >= 1.0:
         expected_version = getattr(case, "expected_version_id", None) or getattr(case, "expected_release_id", None)
         if expected_version:
             top_versions = [r.chunk.version_id for r in candidates_24[:4] if r.chunk.version_id]
@@ -321,10 +352,10 @@ def run_within_doc_oracle(
                 evidence_must_contain=evidence_must,
                 k=4,
             )
+            recalls.append(recall)
         else:
-            recall = 1.0 if any(t in exp_docs for t in top4_titles) else 0.0
+            recall = None
 
-        recalls.append(recall)
         hit_top1 = top4_titles[0] in exp_docs if top4_titles else False
         top1_hits.append(1.0 if hit_top1 else 0.0)
         hit_doc = any(t in exp_docs for t in top4_titles)
@@ -334,7 +365,8 @@ def run_within_doc_oracle(
             "caseId": case.case_id,
             "query": case.query,
             "chunksInDoc": len(doc_chunks),
-            "withinDocRecall4": recall,
+            "withinDocEvidenceRecall4": recall,
+            "withinDocRecall4": recall if recall is not None else (1.0 if hit_doc else 0.0),
             "top1Hit": hit_top1,
             "docHit4": hit_doc,
         })
@@ -385,9 +417,15 @@ async def evaluate_pipeline(
     enable_batch_embedding: bool = True,
     enable_query_rrf: bool = True,
     enable_evidence_expand: bool = True,
+    answer_model: Any | None = None,
+    live_model: bool = False,
 ) -> dict[str, Any]:
     index.enable_sparse_fast_path = enable_fast_path
-    service = HybridKnowledgeService(settings=settings, index=index)
+    service = HybridKnowledgeService(
+        settings=settings,
+        index=index,
+        model=answer_model,
+    )
     serving = service._serving_decision(None)
     host = build_retrieval_host(
         settings=settings,
@@ -408,12 +446,20 @@ async def evaluate_pipeline(
     latencies_ms: list[float] = []
     telemetries: list[dict[str, Any]] = []
     failure_reports: list[FailureAnalysis] = []
-    candidate_recalls_24: list[float] = []
+    evidence_candidate_recalls_24: list[float] = []
+    document_candidate_hits_24: list[float] = []
+    document_hits_4: list[float] = []
 
     answer_accuracies: list[float] = []
     citation_precisions: list[float] = []
     citation_recalls: list[float] = []
     groundedness_scores: list[float] = []
+    stage_latency_buckets: dict[str, list[float]] = {
+        "retrievalMs": [],
+        "relevanceMs": [],
+        "generateMs": [],
+        "totalMs": [],
+    }
 
     for raw in cases_raw:
         case = EvidenceLevelCase.from_dict(raw)
@@ -425,12 +471,22 @@ async def evaluate_pipeline(
             )
             latencies_ms.append(lat_ms)
             cand_24_results: list[SearchResult] = []
-            cand_recall_24 = evidence_recall_at_k(
-                retrieved_texts=texts,
-                evidence_must_contain=evidence_must,
-                k=min(len(texts), candidate_k),
-            ) if evidence_must else (1.0 if any(t in (case.expected_documents or case.expected_source_titles) for t in titles[:candidate_k]) else 0.0)
-            candidate_recalls_24.append(cand_recall_24)
+            expected_titles = set(case.expected_documents or case.expected_source_titles or ())
+            if case.expected_found:
+                document_candidate_hits_24.append(
+                    1.0 if any(title in expected_titles for title in titles[:candidate_k]) else 0.0
+                )
+            cand_recall_24 = (
+                evidence_recall_at_k(
+                    retrieved_texts=texts,
+                    evidence_must_contain=evidence_must,
+                    k=min(len(texts), candidate_k),
+                )
+                if evidence_must
+                else None
+            )
+            if cand_recall_24 is not None:
+                evidence_candidate_recalls_24.append(cand_recall_24)
 
         elif layer == 2:
             bundles, raw_results, lat_ms, _timings, telemetry = await run_layer2_case(
@@ -465,17 +521,28 @@ async def evaluate_pipeline(
             scores = bundle_scores
             cand_24_results = raw_results
 
-            # Candidate Recall@24: raw pool before final selection/cutoff
+            # Candidate metrics: Document Hit and Evidence Recall stay separate.
+            expected_titles = set(case.expected_documents or case.expected_source_titles or ())
+            cand_titles = [r.chunk.title for r in raw_results[:candidate_k]]
+            if case.expected_found:
+                document_candidate_hits_24.append(
+                    1.0 if any(title in expected_titles for title in cand_titles) else 0.0
+                )
             raw_cand_texts = [
                 f"{r.chunk.title}\n{r.chunk.section or ''}\n{r.chunk.content}"
                 for r in raw_results[:candidate_k]
             ]
-            cand_recall_24 = evidence_recall_at_k(
-                retrieved_texts=raw_cand_texts,
-                evidence_must_contain=evidence_must,
-                k=min(len(raw_cand_texts), candidate_k),
-            ) if evidence_must else (1.0 if any(t in (case.expected_documents or case.expected_source_titles) for t in [r.chunk.title for r in raw_results[:candidate_k]]) else 0.0)
-            candidate_recalls_24.append(cand_recall_24)
+            cand_recall_24 = (
+                evidence_recall_at_k(
+                    retrieved_texts=raw_cand_texts,
+                    evidence_must_contain=evidence_must,
+                    k=min(len(raw_cand_texts), candidate_k),
+                )
+                if evidence_must
+                else None
+            )
+            if cand_recall_24 is not None:
+                evidence_candidate_recalls_24.append(cand_recall_24)
 
         else:
             # Layer 3: True End-to-End RAG
@@ -483,17 +550,23 @@ async def evaluate_pipeline(
                 service,
                 case.query,
                 token_budget=token_budget,
+                settings=settings,
+                live_model=live_model,
+                case_id=case.case_id,
             )
             latencies_ms.append(lat_ms)
             telemetries.append(telemetry)
+            timings = telemetry.get("timings") or {}
+            for key in stage_latency_buckets:
+                if key in timings:
+                    stage_latency_buckets[key].append(float(timings[key]))
 
             ranked_ids = [s.chunkId or s.title for s in result.sources if s.chunkId or s.title]
             titles = [s.title for s in result.sources]
             texts = [result.answer]
             scores = [1.0 for _ in result.sources]
             cand_24_results = []
-            cand_recall_24 = 1.0 if result.found else 0.0
-            candidate_recalls_24.append(cand_recall_24)
+            cand_recall_24 = None
 
             # E2E Answer Accuracy
             if case.expected_found:
@@ -530,6 +603,12 @@ async def evaluate_pipeline(
             else:
                 grounded_ratio = 1.0 if result.found and result.sources else (1.0 if not result.found else 0.0)
             groundedness_scores.append(grounded_ratio)
+
+        expected_titles_for_doc = set(case.expected_documents or case.expected_source_titles or ())
+        if case.expected_found:
+            document_hits_4.append(
+                1.0 if any(title in expected_titles_for_doc for title in titles[:4]) else 0.0
+            )
 
         relevant = list(case.primary_relevant_ids())
         grades = {str(k): float(v) for k, v in (raw.get("relevanceGrades") or {}).items()}
@@ -592,7 +671,26 @@ async def evaluate_pipeline(
     summary["noAnswer"] = no_answer_confusion(no_answer_rows)
     summary["caseCount"] = float(len(cases_raw))
     summary["layer"] = layer
-    summary["candidateRecallAt24"] = float(statistics.fmean(candidate_recalls_24)) if candidate_recalls_24 else 0.0
+    summary["liveModel"] = bool(live_model and answer_model is not None)
+    summary["documentHitAt4"] = (
+        float(statistics.fmean(document_hits_4)) if document_hits_4 else 0.0
+    )
+    summary["documentCandidateHitAt24"] = (
+        float(statistics.fmean(document_candidate_hits_24))
+        if document_candidate_hits_24
+        else 0.0
+    )
+    summary["candidateEvidenceRecallAt24"] = (
+        float(statistics.fmean(evidence_candidate_recalls_24))
+        if evidence_candidate_recalls_24
+        else 0.0
+    )
+    # Backward-compatible alias: evidence-labeled candidate recall only.
+    summary["candidateRecallAt24"] = summary["candidateEvidenceRecallAt24"]
+    if evidence_candidate_recalls_24 and summary.get("evidenceRecallAt4") is not None:
+        summary["rerankerHeadroomPp"] = (
+            summary["candidateEvidenceRecallAt24"] - float(summary["evidenceRecallAt4"])
+        ) * 100.0
 
     if latencies_ms:
         summary["latencyMsP50"] = float(statistics.median(latencies_ms))
@@ -616,6 +714,46 @@ async def evaluate_pipeline(
         summary["citationPrecision"] = float(statistics.fmean(citation_precisions)) if citation_precisions else 0.0
         summary["citationRecall"] = float(statistics.fmean(citation_recalls)) if citation_recalls else 0.0
         summary["groundedness"] = float(statistics.fmean(groundedness_scores)) if groundedness_scores else 0.0
+        for key, values in stage_latency_buckets.items():
+            if not values:
+                continue
+            summary[f"{key}P50"] = float(statistics.median(values))
+            summary[f"{key}P95"] = float(
+                statistics.quantiles(values, n=20)[18] if len(values) >= 20 else max(values)
+            )
+        llm_calls = [float(t.get("llmCalls", 0) or 0) for t in telemetries]
+        input_tokens = [float(t.get("inputTokens", 0) or 0) for t in telemetries]
+        output_tokens = [float(t.get("outputTokens", 0) or 0) for t in telemetries]
+        costs = [
+            float(t["estimatedCostUsd"])
+            for t in telemetries
+            if t.get("estimatedCostUsd") is not None
+        ]
+        if llm_calls:
+            summary["llmCallsPerQuery"] = float(statistics.fmean(llm_calls))
+        if input_tokens:
+            summary["inputTokensPerQuery"] = float(statistics.fmean(input_tokens))
+        if output_tokens:
+            summary["outputTokensPerQuery"] = float(statistics.fmean(output_tokens))
+        if costs:
+            summary["costUsdPerQuery"] = float(statistics.fmean(costs))
+        usage_sources = Counter(str(t.get("usageSource") or "MISSING") for t in telemetries)
+        summary["usageSourceCounts"] = dict(usage_sources)
+        tier_counts = Counter(
+            str(t.get("queryTier") or "unknown").lower() for t in telemetries
+        )
+        summary["queryTierCounts"] = {
+            "trivial": float(tier_counts.get("trivial", 0)),
+            "standard": float(tier_counts.get("standard", 0)),
+            "hard": float(tier_counts.get("hard", 0)),
+            "unknown": float(
+                sum(
+                    count
+                    for tier, count in tier_counts.items()
+                    if tier not in {"trivial", "standard", "hard"}
+                )
+            ),
+        }
 
     taxonomy_counts = Counter(f.failure_category for f in failure_reports)
     summary["failureTaxonomy"] = dict(taxonomy_counts)
@@ -746,7 +884,11 @@ def print_failure_taxonomy_table(failures: list[FailureAnalysis]) -> None:
     if rerank_cases:
         print("\nTop Reranker Headroom Cases (Present in Top 24, Missed Top 4):")
         for f in rerank_cases[:5]:
-            print(f"  - [{f.case_id}] {f.query[:50]} (EvRecall@4={f.evidence_recall_4:.2f}, Cand@24={f.candidate_recall_24:.2f})")
+            print(
+                f"  - [{f.case_id}] {f.query[:50]} "
+                f"(EvRecall@4={f.evidence_recall_4 if f.evidence_recall_4 is not None else 'n/a'}, "
+                f"Cand@24={f.candidate_recall_24 if f.candidate_recall_24 is not None else 'n/a'})"
+            )
     print("=" * 70 + "\n")
 
 
@@ -764,6 +906,20 @@ def main() -> int:
     parser.add_argument("--ablation", action="store_true", help="Run full ablation matrix")
     parser.add_argument("--taxonomy", action="store_true", help="Print failure taxonomy breakdown")
     parser.add_argument("--within-doc-oracle", action="store_true", help="Run within-document recall oracle diagnostic")
+    parser.add_argument(
+        "--live-model",
+        action="store_true",
+        help=(
+            "Layer 3 only: wire the production chat model "
+            "(settings.model / settings.agent_model). Release benchmark; not for CI."
+        ),
+    )
+    parser.add_argument(
+        "--max-cases",
+        type=int,
+        default=None,
+        help="Optional cap on evaluated cases (useful for live-model smoke runs).",
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
@@ -779,6 +935,8 @@ def main() -> int:
     raw_cases = _load_cases(args.eval_set)
     if args.split != "all":
         raw_cases = [c for c in raw_cases if c.get("split", "dev") == args.split]
+    if args.max_cases is not None:
+        raw_cases = raw_cases[: max(0, args.max_cases)]
 
     if args.within_doc_oracle:
         oracle_res = run_within_doc_oracle(raw_cases, index)
@@ -791,6 +949,22 @@ def main() -> int:
         asyncio.run(run_ablation_matrix(raw_cases, index, settings))
         return 0
 
+    answer_model = None
+    if args.live_model:
+        if args.layer != 3:
+            parser.error("--live-model requires --layer 3")
+        from agent_service.graph import build_chat_model
+
+        model_name = settings.model or settings.agent_model
+        answer_model = build_chat_model(model_name)
+        if answer_model is None:
+            print(
+                "ERROR: --live-model requested but settings.model / settings.agent_model "
+                "is empty; configure the production chat model first.",
+                file=sys.stderr,
+            )
+            return 2
+
     result = asyncio.run(
         evaluate_pipeline(
             cases_raw=raw_cases,
@@ -799,6 +973,8 @@ def main() -> int:
             layer=args.layer,
             candidate_k=args.candidate_k,
             token_budget=args.token_budget,
+            answer_model=answer_model,
+            live_model=args.live_model,
         )
     )
 

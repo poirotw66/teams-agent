@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_pipeline.document_selection_select import (
     rank_documents_for_query,
@@ -126,3 +128,56 @@ def test_query_rewrite_rrf_incorporates_previous_and_rewrite() -> None:
     assert fused[0].final_rank == 1
     assert fused[1].final_rank == 2
     assert fused[2].final_rank == 3
+
+
+@pytest.mark.asyncio
+async def test_run_retrieve_rewrite_attempt_fuses_previous_results() -> None:
+    """Pipeline: attempt>0 with a single rewrite set must RRF previous × 1.0 + rewrite × 0.6."""
+    from agent_service.knowledge_pipeline.retrieval_stage import RetrievalHost, run_retrieve
+    from agent_service.knowledge_pipeline.retrieval_state import RetrievalState
+
+    previous = [
+        _hit("orig-top", score=0.8, fusion_score=0.10, fusion_rank=1, final_rank=1),
+        _hit("both-hit", score=0.7, fusion_score=0.08, fusion_rank=2, final_rank=2),
+    ]
+    rewrite_hits = [
+        _hit("both-hit", score=0.9, fusion_score=0.12, fusion_rank=1, final_rank=1),
+        _hit("new-hit", score=0.6, fusion_score=0.05, fusion_rank=2, final_rank=2),
+    ]
+
+    def _search_with_timings(query: str, limit: int, groups: set[str], **kwargs: object):
+        del query, limit, groups, kwargs
+        return rewrite_hits, {}
+
+    host = RetrievalHost(
+        search_with_timings=_search_with_timings,
+        inject_enterprise_app_evidence=lambda _q, results, **_kw: list(results),
+        select_document_chunks=lambda _q, results: (list(results), False),
+        top_k=4,
+        min_score=0.0,
+        deployment_environment="dev",
+        release_id="test",
+        retrieval_cache={},
+        enable_query_rrf=True,
+        rrf_k=60,
+    )
+    state = RetrievalState(
+        raw_user_utterance="vpn down",
+        resolved_issue_query="vpn down",
+        search_query="vpn connection failed rewrite",
+        facet_queries=(),
+        results=previous,
+        attempt=1,
+    )
+    next_state = await run_retrieve(
+        host,
+        state,
+        groups=set(),
+        state_factory=RetrievalState,
+    )
+    assert [item.chunk.chunk_id for item in next_state.raw_results] == [
+        "both-hit",
+        "orig-top",
+        "new-hit",
+    ]
+    assert next_state.raw_results[0].final_rank == 1

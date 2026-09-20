@@ -156,6 +156,11 @@ def test_retrieval_eval_v2_meets_spec_floor() -> None:
     assert REQUIRED_CATEGORIES <= categories
     assert sum(1 for case in cases if case.get("expectedChunkIds")) >= 50
     assert {"dev", "test"} <= {case.get("split") for case in cases}
+    answerable = [case for case in cases if case["expectedFound"]]
+    no_answer = [case for case in cases if not case["expectedFound"]]
+    assert len(answerable) >= 80
+    assert len(no_answer) >= 30
+    assert all(case.get("expectedEvidence") for case in answerable)
     for case in cases:
         assert case["query"].strip()
         assert isinstance(case["expectedFound"], bool)

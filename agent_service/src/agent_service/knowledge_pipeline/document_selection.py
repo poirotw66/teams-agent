@@ -59,6 +59,8 @@ def inject_enterprise_app_evidence(
             chunk, groups
         ) and is_chunk_generation_eligible(chunk, environment=environment)
 
+    # Preserve current ranking order. Boost evidence confidence for gates only;
+    # never re-sort by ``score`` (that washes out RRF / query-RRF / rerank).
     boosted: list[SearchResult] = []
     seen_ids: set[str] = set()
     for result in results:
@@ -70,6 +72,8 @@ def inject_enterprise_app_evidence(
                     score=max(result.score, 0.92),
                     sparse_score=result.sparse_score,
                     dense_score=result.dense_score,
+                    sparse_rank=result.sparse_rank,
+                    dense_rank=result.dense_rank,
                     fusion_score=result.fusion_score,
                     fusion_rank=result.fusion_rank,
                     rerank_score=result.rerank_score,
@@ -80,23 +84,27 @@ def inject_enterprise_app_evidence(
         else:
             boosted.append(result)
 
+    next_rank = max((item.final_rank or 0 for item in boosted), default=0) + 1
     for chunk in index_chunks:
         if chunk.chunk_id in seen_ids:
             continue
         if not _is_injectable(chunk):
             continue
         if _is_enterprise_trust_chunk(chunk):
+            # Append missing trust evidence with explicit tail final_rank provenance.
             boosted.append(
                 SearchResult(
                     chunk=chunk,
                     score=0.92,
                     sparse_score=0.92,
                     dense_score=0.0,
+                    final_rank=next_rank,
                 )
             )
             seen_ids.add(chunk.chunk_id)
+            next_rank += 1
 
-    return sorted(boosted, key=lambda item: item.score, reverse=True)
+    return boosted
 
 
 def canonical_version_results(results: Sequence[SearchResult]) -> list[SearchResult]:

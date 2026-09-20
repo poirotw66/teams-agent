@@ -148,14 +148,15 @@ class RetrievalCaseScore:
     recall_at_20: float
     recall_at_4: float
     precision_at_4: float
-    evidence_recall_at_4: float
-    evidence_precision_at_4: float
+    evidence_recall_at_4: float | None
+    evidence_precision_at_4: float | None
     mrr_at_10: float
     ndcg_at_10: float
     hit_at_1: float
     hit_at_3: float
     hard_negative_accuracy: float | None = None
     acl_leakage_count: int = 0
+    has_evidence_labels: bool = False
 
 
 def precision_at_k(
@@ -256,14 +257,17 @@ def score_retrieval_case(
     )
     rec_4 = recall_at_k(ranked_ids, relevant, k=4)
     prec_4 = precision_at_k(ranked_ids, relevant, k=4)
+    has_evidence = bool(evidence_must_contain)
+    # Document and Evidence metrics stay separate: never fall back Document Hit
+    # into Evidence Recall when labels are missing.
     ev_rec_4 = (
         evidence_recall_at_k(
             retrieved_texts=retrieved_texts,
             evidence_must_contain=evidence_must_contain,
             k=4,
         )
-        if evidence_must_contain
-        else rec_4
+        if has_evidence
+        else None
     )
     ev_prec_4 = (
         evidence_precision_at_k(
@@ -271,8 +275,8 @@ def score_retrieval_case(
             evidence_must_contain=evidence_must_contain,
             k=4,
         )
-        if evidence_must_contain
-        else prec_4
+        if has_evidence
+        else None
     )
     return RetrievalCaseScore(
         case_id=case_id,
@@ -289,14 +293,20 @@ def score_retrieval_case(
         hit_at_3=hit_at_k(ranked_ids, relevant, k=3),
         hard_negative_accuracy=hard_acc,
         acl_leakage_count=acl_leakage_count(ranked_ids, forbidden_ids),
+        has_evidence_labels=has_evidence,
     )
 
 
 def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, float]:
-    """Mean of per-case ranking metrics (ignores None hard-negative rows)."""
+    """Mean of per-case ranking metrics (ignores None hard-negative rows).
+
+    Evidence metrics average only over cases that carry evidence labels so
+    Document Recall / Hit are never silently mixed into Evidence Recall.
+    """
     if not scores:
         return {
             "caseCount": 0.0,
+            "evidenceLabeledCaseCount": 0.0,
             "recallAt4": 0.0,
             "precisionAt4": 0.0,
             "evidenceRecallAt4": 0.0,
@@ -313,21 +323,30 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
         }
 
     def _mean(values: Sequence[float]) -> float:
-        return sum(values) / len(values)
+        return sum(values) / len(values) if values else 0.0
 
     hard_values = [
         score.hard_negative_accuracy
         for score in scores
         if score.hard_negative_accuracy is not None
     ]
+    evidence_recall_values = [
+        score.evidence_recall_at_4
+        for score in scores
+        if score.evidence_recall_at_4 is not None
+    ]
+    evidence_precision_values = [
+        score.evidence_precision_at_4
+        for score in scores
+        if score.evidence_precision_at_4 is not None
+    ]
     return {
         "caseCount": float(len(scores)),
+        "evidenceLabeledCaseCount": float(len(evidence_recall_values)),
         "recallAt4": _mean([score.recall_at_4 for score in scores]),
         "precisionAt4": _mean([score.precision_at_4 for score in scores]),
-        "evidenceRecallAt4": _mean([score.evidence_recall_at_4 for score in scores]),
-        "evidencePrecisionAt4": _mean(
-            [score.evidence_precision_at_4 for score in scores]
-        ),
+        "evidenceRecallAt4": _mean(evidence_recall_values),
+        "evidencePrecisionAt4": _mean(evidence_precision_values),
         "recallAt5": _mean([score.recall_at_5 for score in scores]),
         "recallAt10": _mean([score.recall_at_10 for score in scores]),
         "recallAt20": _mean([score.recall_at_20 for score in scores]),

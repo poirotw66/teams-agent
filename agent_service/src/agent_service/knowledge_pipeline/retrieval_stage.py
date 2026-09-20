@@ -305,18 +305,24 @@ async def run_retrieve(
         limit=limit,
         stage_timings_ms=state.stage_timings_ms,
     )
-    if getattr(host, "enable_query_rrf", True) and len(result_sets) > 1:
-        previous_weight = 1.0 if (state.attempt > 0 and state.results) else None
+    # Rewrite attempts often produce a single result_set (facets skipped).
+    # Still fuse with previous original ranking: previous × 1.0 + rewrite × 0.6.
+    has_previous_ranking = bool(state.results) and state.attempt > 0
+    should_fuse_query_rrf = getattr(host, "enable_query_rrf", True) and (
+        len(result_sets) > 1 or has_previous_ranking
+    )
+    if should_fuse_query_rrf:
+        previous_weight = 1.0 if has_previous_ranking else None
         query_weights = (
             [0.6]
-            if (state.attempt > 0 and len(result_sets) == 1)
+            if (has_previous_ranking and len(result_sets) == 1)
             else _compute_query_weights(len(result_sets), state.attempt)
         )
         results = fuse_query_level_rrf(
             *result_sets,
             query_weights=query_weights,
             rrf_k=host.rrf_k,
-            previous=state.results,
+            previous=state.results if has_previous_ranking else None,
             previous_weight=previous_weight,
         )
     elif result_sets:

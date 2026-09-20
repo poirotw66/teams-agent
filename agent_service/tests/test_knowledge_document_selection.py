@@ -67,6 +67,84 @@ def test_inject_enterprise_app_evidence_appends_trust_chunk() -> None:
     assert "trust" in ids
 
 
+def test_inject_enterprise_app_evidence_preserves_ranking_order() -> None:
+    """Injection must not re-sort by evidence score and wash out final_rank."""
+    low_score_rrf_top = SearchResult(
+        chunk=_chunk("rrf-top", title="AD", content="Outlook", document_id="ad"),
+        score=0.40,
+        sparse_score=0.40,
+        dense_score=0.0,
+        fusion_score=0.09,
+        fusion_rank=1,
+        final_rank=1,
+    )
+    high_score_second = SearchResult(
+        chunk=_chunk("second", title="VPN", content="tunnel", document_id="vpn"),
+        score=0.99,
+        sparse_score=0.99,
+        dense_score=0.0,
+        fusion_score=0.05,
+        fusion_rank=2,
+        final_rank=2,
+    )
+    trust = _chunk(
+        "trust",
+        title="企業級APP",
+        content="CATHAY LIFE verification",
+        document_id="trust",
+    )
+    boosted = inject_enterprise_app_evidence(
+        "來源所述的企業 App 如何驗證？",
+        [low_score_rrf_top, high_score_second],
+        index_chunks=[trust],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["rrf-top", "second", "trust"]
+    assert boosted[0].final_rank == 1
+    assert boosted[1].final_rank == 2
+    assert boosted[2].final_rank == 3
+    assert boosted[2].score == 0.92
+
+
+def test_inject_enterprise_app_evidence_boosts_score_without_reordering() -> None:
+    """Existing trust hits may raise score for gates, but keep list order."""
+    trust_low = SearchResult(
+        chunk=_chunk(
+            "trust",
+            title="企業級APP",
+            content="CATHAY LIFE verification",
+            document_id="trust",
+        ),
+        score=0.50,
+        sparse_score=0.50,
+        dense_score=0.0,
+        fusion_score=0.04,
+        fusion_rank=2,
+        final_rank=2,
+    )
+    other_high = SearchResult(
+        chunk=_chunk("other", title="AD", content="Outlook", document_id="ad"),
+        score=0.95,
+        sparse_score=0.95,
+        dense_score=0.0,
+        fusion_score=0.10,
+        fusion_rank=1,
+        final_rank=1,
+    )
+    boosted = inject_enterprise_app_evidence(
+        "企業級APP 驗證",
+        [other_high, trust_low],
+        index_chunks=[],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["other", "trust"]
+    assert boosted[0].score == 0.95
+    assert boosted[1].score == 0.92
+    assert boosted[1].final_rank == 2
+
+
 def test_select_document_chunks_returns_empty_for_no_results() -> None:
     selected, displaced = select_document_chunks(
         "vpn",
