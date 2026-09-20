@@ -62,7 +62,7 @@ from .knowledge_pipeline.search_stage import run_search_loop
 from .knowledge_pipeline.trace import attach_retrieval_trace
 from .llm_call_counter import LlmCallCounter
 from .rag_rollout import RagServingDecision
-from .reranker import Reranker, build_default_reranker
+from .reranker import NoopReranker, Reranker, build_default_reranker
 from .retrieval import HybridIndex, SearchResult
 from .settings import RagSettings
 
@@ -92,15 +92,23 @@ class HybridKnowledgeService:
         self.release_id = release_id
         self.last_llm_call_count = 0
         self._retrieval_cache: OrderedDict[tuple[Any, ...], list[SearchResult]] = OrderedDict()
+        is_reranker_configured = bool(
+            getattr(settings, "rag_reranker_model", None)
+            and str(getattr(settings, "rag_reranker_model", "noop")).strip().lower() != "noop"
+        )
         self._reranker = reranker or build_default_reranker(
-            enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
+            enabled=is_reranker_configured or bool(getattr(settings, "rag_reranker_enabled", False)),
             timeout_ms=int(getattr(settings, "rag_rerank_timeout_ms", 700)),
             model_name=getattr(settings, "rag_reranker_model", None),
         )
+        self._reranker_available = not isinstance(self._reranker, NoopReranker)
 
     def _serving_decision(self, request: AgentRequest | None) -> RagServingDecision:
         return resolve_serving_decision(
-            settings=self.settings, index=self.index, request=request
+            settings=self.settings,
+            index=self.index,
+            request=request,
+            reranker_available=self._reranker_available,
         )
 
     async def search(

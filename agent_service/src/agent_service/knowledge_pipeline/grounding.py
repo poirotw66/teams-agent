@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from agent_service.contracts import GroundedClaim
 from agent_service.retrieval import SearchResult, tokenize
@@ -427,6 +428,8 @@ def repair_structured_answer(
 def structured_answer_is_grounded(
     answer: StructuredKnowledgeAnswer,
     results: list[SearchResult],
+    *,
+    bundles: Sequence[Any] | None = None,
 ) -> bool:
     if (
         answer.answerability == "NONE"
@@ -439,6 +442,11 @@ def structured_answer_is_grounded(
     if answer.answerability == "FULL" and answer.unknowns:
         return False
     valid_chunk_ids = {result.chunk.chunk_id for result in results}
+    if bundles:
+        for bundle in bundles:
+            valid_chunk_ids.add(bundle.seed.chunk.chunk_id)
+            for chunk in getattr(bundle, "supporting_chunks", None) or getattr(bundle, "context_chunks", None) or []:
+                valid_chunk_ids.add(chunk.chunk_id)
     valid_policy_ids = set(SECURITY_POLICIES)
     if not answer.claims:
         return False

@@ -20,12 +20,16 @@ from platform_kernel.hashing import sticky_bucket
 CANARY_LADDER_PERCENTS: tuple[int, ...] = (5, 20, 50, 100)
 
 # Runtime canary variants (fusion / reranker knobs only).
-VARIANT_A_WEIGHTED = "A_WEIGHTED"
+VARIANT_BASELINE = "BASELINE"
+VARIANT_CANDIDATE = "CANDIDATE"
 VARIANT_B_RRF = "B_RRF"
-VARIANT_C_RRF_RERANK = "C_RRF_RERANK"
-# Legacy aliases kept so older configs / dashboards keep resolving.
-VARIANT_C_RRF_CONTEXTUAL = "C_RRF_CONTEXTUAL"  # alias → B_RRF semantics
-VARIANT_D_RRF_CONTEXTUAL_RERANK = "D_RRF_CONTEXTUAL_RERANK"  # alias → C_RRF_RERANK
+# Aliases kept so older configs / dashboards keep resolving.
+VARIANT_A_BASELINE = "BASELINE"
+VARIANT_A_CURRENT = "BASELINE"
+VARIANT_A_WEIGHTED = "BASELINE"
+VARIANT_C_RRF_RERANK = "CANDIDATE"
+VARIANT_C_RRF_CONTEXTUAL = "B_RRF"  # alias → B_RRF semantics
+VARIANT_D_RRF_CONTEXTUAL_RERANK = "CANDIDATE"  # alias → CANDIDATE
 
 
 @dataclass(frozen=True)
@@ -35,23 +39,36 @@ class RagServingDecision:
     serve_variant: str
     is_canary: bool
     canary_percent: int
-    shadow_enabled: bool
     fusion_mode: str = "RRF"
     reranker_enabled: bool = False
 
 
 def _normalize_variant(variant: str) -> str:
-    normalized = (variant or VARIANT_A_WEIGHTED).strip().upper()
-    # Legacy C_RRF_CONTEXTUAL claimed a different index; runtime cannot do that.
+    normalized = (variant or VARIANT_BASELINE).strip().upper()
     if normalized in {VARIANT_C_RRF_CONTEXTUAL, "C_CONTEXTUAL"}:
         return VARIANT_B_RRF
-    if normalized in {VARIANT_D_RRF_CONTEXTUAL_RERANK, "D", VARIANT_C_RRF_RERANK}:
-        return VARIANT_C_RRF_RERANK
+    if normalized in {
+        VARIANT_CANDIDATE,
+        "CANDIDATE",
+        VARIANT_C_RRF_RERANK,
+        "C_RRF_RERANK",
+        VARIANT_D_RRF_CONTEXTUAL_RERANK,
+        "D",
+    }:
+        return VARIANT_CANDIDATE
     if normalized in {VARIANT_B_RRF, "B", "C"}:
         # Bare "C" historically meant RRF-only (with B/C in the old matrix).
         return VARIANT_B_RRF
-    if normalized in {VARIANT_A_WEIGHTED, "A"}:
-        return VARIANT_A_WEIGHTED
+    if normalized in {
+        VARIANT_BASELINE,
+        "BASELINE",
+        VARIANT_A_CURRENT,
+        "A_CURRENT",
+        VARIANT_A_WEIGHTED,
+        "A_WEIGHTED",
+        "A",
+    }:
+        return VARIANT_BASELINE
     return normalized
 
 
@@ -59,16 +76,21 @@ def retrieval_knobs_for_variant(
     variant: str,
     *,
     baseline_fusion_mode: str = "RRF",
-    global_reranker_enabled: bool = False,
+    baseline_reranker_enabled: bool = False,
+    reranker_available: bool = True,
+    global_reranker_enabled: bool | None = None,
 ) -> tuple[str, bool]:
     """Map experiment variant → (fusion_mode, reranker_enabled)."""
+    if global_reranker_enabled is not None:
+        baseline_reranker_enabled = global_reranker_enabled
+        reranker_available = global_reranker_enabled
     normalized = _normalize_variant(variant)
     if normalized == VARIANT_B_RRF:
         return "RRF", False
-    if normalized == VARIANT_C_RRF_RERANK:
-        return "RRF", bool(global_reranker_enabled)
-    # A / unknown: production knobs from settings.
-    return (baseline_fusion_mode or "RRF").strip().upper(), bool(global_reranker_enabled)
+    if normalized == VARIANT_CANDIDATE:
+        return "RRF", bool(reranker_available)
+    # BASELINE / A_CURRENT / unknown: production baseline knobs from settings.
+    return (baseline_fusion_mode or "RRF").strip().upper(), bool(baseline_reranker_enabled)
 
 
 def select_rag_serving_variant(
@@ -76,25 +98,29 @@ def select_rag_serving_variant(
     tenant: str,
     conversation_id: str,
     canary_percent: int,
-    canary_variant: str = VARIANT_C_RRF_RERANK,
-    baseline_variant: str = VARIANT_A_WEIGHTED,
-    shadow_enabled: bool = False,
+    canary_variant: str = VARIANT_CANDIDATE,
+    baseline_variant: str = VARIANT_BASELINE,
     baseline_fusion_mode: str = "RRF",
-    global_reranker_enabled: bool = False,
+    baseline_reranker_enabled: bool = False,
+    reranker_available: bool = True,
+    global_reranker_enabled: bool | None = None,
 ) -> RagServingDecision:
     """Sticky canary routing. ``canary_percent=0`` always serves baseline."""
+    if global_reranker_enabled is not None:
+        baseline_reranker_enabled = global_reranker_enabled
+        reranker_available = global_reranker_enabled
     percent = max(0, min(100, int(canary_percent)))
     if percent <= 0:
         fusion, rerank = retrieval_knobs_for_variant(
             baseline_variant,
             baseline_fusion_mode=baseline_fusion_mode,
-            global_reranker_enabled=global_reranker_enabled,
+            baseline_reranker_enabled=baseline_reranker_enabled,
+            reranker_available=reranker_available,
         )
         return RagServingDecision(
             serve_variant=baseline_variant,
             is_canary=False,
             canary_percent=0,
-            shadow_enabled=shadow_enabled,
             fusion_mode=fusion,
             reranker_enabled=rerank,
         )
@@ -104,13 +130,13 @@ def select_rag_serving_variant(
     fusion, rerank = retrieval_knobs_for_variant(
         serve_variant,
         baseline_fusion_mode=baseline_fusion_mode,
-        global_reranker_enabled=global_reranker_enabled,
+        baseline_reranker_enabled=baseline_reranker_enabled,
+        reranker_available=reranker_available,
     )
     return RagServingDecision(
         serve_variant=serve_variant,
         is_canary=on_canary,
         canary_percent=percent,
-        shadow_enabled=shadow_enabled,
         fusion_mode=fusion,
         reranker_enabled=rerank,
     )
@@ -147,8 +173,12 @@ def top1_changed(left: Sequence[str], right: Sequence[str]) -> bool:
 
 __all__ = [
     "CANARY_LADDER_PERCENTS",
+    "VARIANT_A_BASELINE",
+    "VARIANT_A_CURRENT",
     "VARIANT_A_WEIGHTED",
+    "VARIANT_BASELINE",
     "VARIANT_B_RRF",
+    "VARIANT_CANDIDATE",
     "VARIANT_C_RRF_CONTEXTUAL",
     "VARIANT_C_RRF_RERANK",
     "VARIANT_D_RRF_CONTEXTUAL_RERANK",

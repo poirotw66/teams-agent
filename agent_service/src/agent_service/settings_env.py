@@ -127,8 +127,13 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         "rag_reranker_min_tier": (
             _str_env("RAG_RERANKER_MIN_TIER") or "standard"
         ).strip().lower(),
-        "rag_shadow_enabled": _bool_env("RAG_SHADOW_ENABLED", False),
         "rag_canary_percent": _int_env("RAG_CANARY_PERCENT", 0),
+        "rag_canary_variant": (
+            _str_env("RAG_CANARY_VARIANT") or "CANDIDATE"
+        ).strip().upper(),
+        "rag_baseline_variant": (
+            _str_env("RAG_BASELINE_VARIANT") or "BASELINE"
+        ).strip().upper(),
     }
 
 

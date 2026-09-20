@@ -68,9 +68,10 @@ class RagSettings:
     rag_rerank_candidate_k: int = 24
     rag_rerank_timeout_ms: int = 700
     rag_reranker_min_tier: str = "standard"
-    # Shadow/canary rollout knobs (docs/rag-v2-spec.md §46–§48). 0 = off.
-    rag_shadow_enabled: bool = False
+    # Canary rollout knobs (docs/rag-v2-spec.md §46–§48). 0 = off.
     rag_canary_percent: int = 0
+    rag_canary_variant: str = "CANDIDATE"
+    rag_baseline_variant: str = "BASELINE"
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"

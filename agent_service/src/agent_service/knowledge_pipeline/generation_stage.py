@@ -101,7 +101,7 @@ async def generate_grounded_answer(
             include_retrieval_evidence=include_retrieval_evidence,
         )
 
-    context, marker_to_chunk_ids, chunk_content_by_id = build_context_and_markers(
+    context, marker_to_chunk_ids, chunk_content_by_id, bundles = build_context_and_markers(
         results,
         chunk_to_doc_idx,
         chunk_by_id=getattr(host, "chunk_by_id", None) or None,
@@ -124,6 +124,7 @@ async def generate_grounded_answer(
         results=results,
         unique_doc_keys=unique_doc_keys,
         chunk_to_doc_idx=chunk_to_doc_idx,
+        bundles=bundles,
     )
     if isinstance(cited, KnowledgeResult):
         return cited
@@ -138,6 +139,7 @@ async def generate_grounded_answer(
         answer_model=answer_model,
         counter=counter,
         execution_context=execution_context,
+        bundles=bundles,
     )
     if isinstance(aligned, KnowledgeResult):
         return aligned

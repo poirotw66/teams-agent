@@ -11,11 +11,12 @@ Operational checklist for [`docs/rag-v2-spec.md`](./rag-v2-spec.md) §46–§49.
 | `RAG_RRF_K` | `5` | Soft-best local tune |
 | `RAG_SPARSE_WEIGHT` / `RAG_DENSE_WEIGHT` | `0.5` / `1.5` | Overridden per-query by Adaptive Fusion |
 | `RAG_CONTEXTUAL_INDEX` | `true` | Dual-read v1/v2 |
-| `RAG_RERANKER_ENABLED` | `false` | Dedicated reranker A/B before enabling |
+| `RAG_RERANKER_ENABLED` | `false` | Baseline reranker switch; canary candidate can enable reranker independently when configured |
 | `RAG_RERANKER_MODEL` | `lexical` | Prefer `vertex-ranking` or `qwen3-reranker:0.6B` in experiments |
 | `RAG_RERANK_TIMEOUT_MS` | `700` | Interactive path budget |
-| `RAG_SHADOW_ENABLED` | `false` | Optional background compare |
 | `RAG_CANARY_PERCENT` | `0` | Sticky canary off |
+| `RAG_CANARY_VARIANT` | `CANDIDATE` | Canary variant (or `C_RRF_RERANK`, `B_RRF`) |
+| `RAG_BASELINE_VARIANT` | `BASELINE` | Baseline variant (or `A_CURRENT`, `A_BASELINE`) |
 
 ## Dedicated reranker A/B (v2.1)
 
