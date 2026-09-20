@@ -31,11 +31,48 @@ class QueryTier(StrEnum):
     HARD = "hard"
 
 
+# Default evidence token budgets when callers omit per-tier settings.
+_DEFAULT_EVIDENCE_BUDGET_BY_TIER: dict[str, int] = {
+    QueryTier.TRIVIAL.value: 500,
+    QueryTier.STANDARD.value: 800,
+    QueryTier.HARD.value: 1200,
+}
+
+
 @dataclass(frozen=True)
 class QueryTierDecision:
     tier: QueryTier
     max_retrieval_rewrites: int
     enable_generation_retries: bool
+
+
+def evidence_token_budget_for_tier(
+    query_tier: str | None,
+    *,
+    default_budget: int = 1200,
+    trivial_budget: int | None = None,
+    standard_budget: int | None = None,
+    hard_budget: int | None = None,
+) -> int:
+    """Select evidence token budget by adaptive query tier.
+
+    Hard (or unknown) tiers keep ``default_budget`` / ``hard_budget``. Trivial
+    and standard use tighter budgets so simple questions spend less prompt
+    tokens and generation latency.
+    """
+    normalized = (query_tier or "").strip().lower()
+    overrides = {
+        QueryTier.TRIVIAL.value: trivial_budget,
+        QueryTier.STANDARD.value: standard_budget,
+        QueryTier.HARD.value: hard_budget if hard_budget is not None else default_budget,
+    }
+    if normalized in overrides and overrides[normalized] is not None:
+        return max(0, int(overrides[normalized]))
+    if normalized in _DEFAULT_EVIDENCE_BUDGET_BY_TIER:
+        if normalized == QueryTier.HARD.value:
+            return max(0, int(default_budget))
+        return max(0, int(_DEFAULT_EVIDENCE_BUDGET_BY_TIER[normalized]))
+    return max(0, int(default_budget))
 
 
 def _has_close_top_gap(results: list[SearchResult]) -> bool:
@@ -125,4 +162,5 @@ __all__ = [
     "QueryTier",
     "QueryTierDecision",
     "classify_query_tier",
+    "evidence_token_budget_for_tier",
 ]

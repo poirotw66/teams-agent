@@ -231,6 +231,8 @@ class HybridKnowledgeService:
         groups: set[str],
         environment: str,
     ) -> list[SearchResult]:
+        if not getattr(self.settings, "rag_companion_inject_enabled", True):
+            return list(results)
         boosted = inject_enterprise_app_evidence(
             query,
             results,

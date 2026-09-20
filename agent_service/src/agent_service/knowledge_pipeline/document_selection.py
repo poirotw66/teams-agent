@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_eligibility import is_chunk_generation_eligible
+from agent_service.knowledge_relationships import matching_relationships
 from agent_service.retrieval import SearchResult, is_chunk_visible_to_groups
 
 from .candidate_policy import filter_cross_scenario_chunks
@@ -16,6 +17,7 @@ from .selector import top1_was_displaced
 
 # Temporary Compatibility Rule (RAG v2.1): retire once metadata/aliases/
 # contextual representation + dedicated reranker recover enterprise-app hits.
+# Prefer data/ops/knowledge_relationships.json; these remain as offline fallback.
 _ENTERPRISE_APP_QUERY_TERMS: tuple[str, ...] = (
     "企業 App",
     "企業App",
@@ -45,6 +47,48 @@ _EMPLOYEE_PORTAL_COMPANION_MARKERS: tuple[str, ...] = (
 )
 
 
+def _inject_from_relationships(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+    relationship_ids: frozenset[str],
+) -> list[SearchResult] | None:
+    """Apply catalog relationships when present; return None to use fallbacks.
+
+    When the catalog file loads successfully, matching is catalog-only for the
+    given relationship ids (no match → no inject). Hardcoded markers remain a
+    fallback only when the catalog is missing or empty.
+    """
+    from agent_service.knowledge_relationships import default_knowledge_relationships
+
+    catalog = default_knowledge_relationships()
+    if not catalog:
+        return None
+
+    matched = [
+        item
+        for item in matching_relationships(query, relationships=catalog)
+        if item.relationship_id in relationship_ids
+    ]
+    if not matched:
+        return list(results)
+
+    def _is_match(chunk: DocumentChunk) -> bool:
+        blob = f"{chunk.title}\n{chunk.content}"
+        return any(item.matches_chunk_blob(blob) for item in matched)
+
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_match,
+    )
+
+
 def inject_enterprise_app_evidence(
     query: str,
     results: Sequence[SearchResult],
@@ -62,6 +106,17 @@ def inject_enterprise_app_evidence(
     Injection must never reintroduce chunks that Hybrid search already
     excluded for ACL or generation eligibility.
     """
+    from_catalog = _inject_from_relationships(
+        query,
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        relationship_ids=frozenset({"enterprise-app-trust"}),
+    )
+    if from_catalog is not None:
+        return from_catalog
+
     if not any(term in query for term in _ENTERPRISE_APP_QUERY_TERMS):
         return list(results)
 
@@ -87,6 +142,17 @@ def inject_employee_portal_password_evidence(
     environment: str,
 ) -> list[SearchResult]:
     """Inject 金控入口網密碼變更方式 for employee-portal password questions."""
+    from_catalog = _inject_from_relationships(
+        query,
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        relationship_ids=frozenset({"employee-portal-password-companion"}),
+    )
+    if from_catalog is not None:
+        return from_catalog
+
     if not any(marker in query for marker in _EMPLOYEE_PORTAL_PASSWORD_QUERY_MARKERS):
         return list(results)
     if not any(marker in query for marker in _EMPLOYEE_PORTAL_PASSWORD_ACTION_MARKERS):

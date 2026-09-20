@@ -73,6 +73,12 @@ class RagSettings:
     rag_canary_variant: str = "CANDIDATE"
     rag_baseline_variant: str = "BASELINE"
     rag_evidence_token_budget: int = 1200
+    # Per-tier evidence budgets (Phase-2 latency). Hard uses rag_evidence_token_budget.
+    rag_evidence_token_budget_trivial: int = 500
+    rag_evidence_token_budget_standard: int = 800
+    # Temporary companion inject (enterprise-app / portal password). Disable for
+    # blind retirement gates via RAG_COMPANION_INJECT_ENABLED=false.
+    rag_companion_inject_enabled: bool = True
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"

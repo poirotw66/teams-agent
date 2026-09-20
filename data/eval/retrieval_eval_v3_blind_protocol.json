@@ -1,0 +1,56 @@
+{
+  "name": "retrieval_eval_v3_blind_protocol",
+  "generatedAt": "2026-09-20T16:22:20.697979+00:00",
+  "updatedAt": "2026-09-21T00:40:00+00:00",
+  "purpose": "Frozen holdout for release decisions; prevents label overfitting to live outputs.",
+  "roles": {
+    "author": "Writes draft cases without viewing model answers for those cases.",
+    "reviewer": "Second person (or non-implementer) verifies labels against corpus only.",
+    "operator": "Runs blind eval; may not edit labels after seeing results in the same release cycle."
+  },
+  "freezeRules": [
+    "Set frozen=true only after coverage targets are met and reviewerSignoff is present.",
+    "While frozen=true, case queries/expected* fields must not change without bumping freezeVersion and documenting why.",
+    "Bug fixes to the product may proceed; label edits require a new freezeVersion and are deferred to the next gate.",
+    "retrieval_eval_v2 remains the writable development/regression set.",
+    "Before freeze, run scripts/validate_retrieval_eval_v3_blind.py (corpus title/mustContain gate).",
+    "Holdout cases use split=test so run_rag_pipeline_eval.py --split test --eval-set data/eval/retrieval_eval_v3_blind.json works."
+  ],
+  "coverageTargets": {
+    "answerable": 50,
+    "noAnswerOrHardNegative": 50,
+    "multiTurnFollowUp": 20,
+    "typoAliasOrShortQuery": 20,
+    "acl": "required_when_corpus_has_group_gated_docs; otherwise tag acl_coverage_gap",
+    "version": "prefer superseded-vs-current; if unavailable use related_document_discrimination",
+    "sourceScope": "required",
+    "negativeConstraint": "required"
+  },
+  "coverageStatusAsOfDraftFill": {
+    "answerableTagged": 116,
+    "noAnswer": 40,
+    "hardNegative": 10,
+    "noAnswerOrHardNegative": 50,
+    "multiTurnFollowUp": 20,
+    "typoAliasOrShortQuery": 20,
+    "acl": 4,
+    "version": 4,
+    "sourceScope": 4,
+    "negativeConstraint": 4,
+    "filledSlots": 156,
+    "reviewed": 0,
+    "frozen": false,
+    "note": "Draft coverage counts met numerically; freeze still blocked until reviewerSignoff."
+  },
+  "retirementMetricForInjectionRules": {
+    "summary": "Remove hardcoded companion injection only after frozen blind Acc/CiteP/NA-F1 pass without temporary inject.",
+    "procedure": [
+      "Freeze retrieval_eval_v3_blind after second-person review.",
+      "Run Layer-3 blind eval with RAG_COMPANION_INJECT_ENABLED=false (catalog + hardcoded inject both skipped).",
+      "Require answerAccuracy, citationPrecision, and noAnswer F1 to meet the same release gate as inject-enabled.",
+      "Only then delete temporaryCompatibility relationships and hardcoded fallbacks in document_selection.py."
+    ],
+    "envFlag": "RAG_COMPANION_INJECT_ENABLED",
+    "catalogPath": "data/ops/knowledge_relationships.json"
+  }
+}

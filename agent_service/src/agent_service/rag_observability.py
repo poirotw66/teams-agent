@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from typing import Any
 
-from .observability import SLO_TARGETS, start_span
+from .observability import SLO_TARGETS, record_metric_counter, start_span
 
 # Extend shared SLO targets with RAG v2 retrieval budgets.
 SLO_TARGETS.update(
@@ -32,13 +32,18 @@ _COUNTERS: dict[str, float] = {
     "rag_query_tier_trivial": 0.0,
     "rag_query_tier_standard": 0.0,
     "rag_query_tier_hard": 0.0,
+    "rag_relevance_llm_calls": 0.0,
+    "rag_relevance_llm_flipped": 0.0,
+    "rag_relevance_llm_unchanged": 0.0,
+    "rag_relevance_deterministic_skips": 0.0,
 }
 
 
 def increment_counter(name: str, amount: float = 1.0) -> None:
     with _LOCK:
         _COUNTERS[name] = _COUNTERS.get(name, 0.0) + amount
-
+    # Dual-write: process-local snapshot for tests + OTel when configured.
+    record_metric_counter(name, amount)
 
 def snapshot_counters() -> dict[str, float]:
     with _LOCK:
@@ -61,6 +66,18 @@ def record_query_tier(tier: str | None) -> None:
 def record_cache_hit(hit: bool) -> None:
     increment_counter("rag_retrieval_cache_hits" if hit else "rag_retrieval_cache_misses")
 
+
+def record_relevance_llm_outcome(*, deterministic_relevant: bool, llm_relevant: bool) -> None:
+    """Audit whether an LLM relevance call changed the deterministic decision."""
+    increment_counter("rag_relevance_llm_calls")
+    if bool(deterministic_relevant) == bool(llm_relevant):
+        increment_counter("rag_relevance_llm_unchanged")
+    else:
+        increment_counter("rag_relevance_llm_flipped")
+
+
+def record_relevance_deterministic_skip() -> None:
+    increment_counter("rag_relevance_deterministic_skips")
 
 @contextmanager
 def rag_span(
@@ -125,6 +142,8 @@ __all__ = [
     "rag_span",
     "record_cache_hit",
     "record_query_tier",
+    "record_relevance_deterministic_skip",
+    "record_relevance_llm_outcome",
     "rerank_span",
     "reset_counters",
     "retrieval_span",

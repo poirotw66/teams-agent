@@ -1273,6 +1273,39 @@ def test_enterprise_app_inject_does_not_reintroduce_ineligible_chunks(
     assert all(item.chunk.chunk_id != "portal-placeholder" for item in injected)
 
 
+def test_companion_inject_disabled_skips_temporary_rules(tmp_path: Path) -> None:
+    public_ad = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="帳號鎖定請至 AD 自助解鎖專區。",
+        allowed_groups=[],
+    )
+    portal = DocumentChunk(
+        chunk_id="portal-1",
+        title="國泰員工入口網、CTeam密碼、國泰e點名",
+        source_path="sources/portal.md",
+        content="企業級APP內將CATHAY LIFE加入驗證。",
+        allowed_groups=[],
+    )
+    index = HybridIndex([public_ad, portal])
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, rag_companion_inject_enabled=False),
+        index,
+        model=None,
+    )
+    results = [
+        SearchResult(chunk=public_ad, score=0.8, sparse_score=0.8, dense_score=0.0),
+    ]
+    unchanged = service._inject_enterprise_app_evidence(
+        "來源所述的企業 App 無法使用應檢查什麼？",
+        results,
+        groups=set(),
+        environment="dev",
+    )
+    assert [item.chunk.chunk_id for item in unchanged] == ["ad-1"]
+
+
 def test_policy_marked_security_advisory_is_retained() -> None:
     text = (
         "申請共用公槽請填必要資料 [S1]。\n"

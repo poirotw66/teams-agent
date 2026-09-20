@@ -376,8 +376,72 @@ async def run_layer3_case(
         "embeddingTokens": embedding_tokens,
         "estimatedCostUsd": cost_usd if has_cost else None,
         "usageSource": usage_source,
+        # Flatten Layer-2-compatible pipeline keys so summary aggregations work.
+        "facetCount": len(getattr(trace, "facetQueries", None) or []) if trace else 0,
+        "fastPath": float((timings or {}).get("fastPath", 0.0) or 0.0),
+        "batchEmbeddingMs": float((timings or {}).get("batchEmbeddingMs", 0.0) or 0.0),
+        "batchEmbeddingQueryCount": float(
+            (timings or {}).get("batchEmbeddingQueryCount", 0.0) or 0.0
+        ),
+        "embeddingMs": float((timings or {}).get("embeddingMs", 0.0) or 0.0),
+        "sparseMs": float((timings or {}).get("sparseMs", 0.0) or 0.0),
+        "denseMs": float((timings or {}).get("denseMs", 0.0) or 0.0),
+        "fusionMs": float((timings or {}).get("fusionMs", 0.0) or 0.0),
+        "searchTotalMs": float((timings or {}).get("searchTotalMs", 0.0) or 0.0),
+        "evidenceExpandMs": float((timings or {}).get("evidenceExpandMs", 0.0) or 0.0),
+        "cacheMiss": (
+            0.0
+            if float((timings or {}).get("embeddingMs", 0.0) or 0.0) == 0.0
+            and float((timings or {}).get("batchEmbeddingMs", 0.0) or 0.0) == 0.0
+            else 1.0
+        ),
+        "traceAttempts": len(getattr(trace, "attempts", None) or []) if trace else 0,
     }
     return result, latency_ms, telemetry
+
+
+def _candidate_pool_from_retrieval_trace(
+    trace: object | None,
+    *,
+    chunk_by_id: dict[str, Any],
+    candidate_k: int,
+) -> list[SearchResult]:
+    """Rebuild a cand@K pool from live RetrievalTrace attempts (eval-only)."""
+    if trace is None:
+        return []
+    best: dict[str, tuple[float, Any]] = {}
+    for attempt in getattr(trace, "attempts", None) or []:
+        for candidate in getattr(attempt, "candidates", None) or []:
+            chunk_id = getattr(candidate, "chunkId", None) or ""
+            if not chunk_id:
+                continue
+            score = float(getattr(candidate, "score", None) or 0.0)
+            previous = best.get(chunk_id)
+            if previous is None or score > previous[0]:
+                best[chunk_id] = (score, candidate)
+    ordered = sorted(best.values(), key=lambda item: item[0], reverse=True)[:candidate_k]
+    results: list[SearchResult] = []
+    for score, candidate in ordered:
+        chunk_id = getattr(candidate, "chunkId", "")
+        chunk = chunk_by_id.get(chunk_id)
+        if chunk is None:
+            from agent_service.documents import DocumentChunk
+
+            chunk = DocumentChunk(
+                chunk_id=chunk_id,
+                title=str(getattr(candidate, "title", "") or chunk_id),
+                content="",
+                document_id=getattr(candidate, "documentId", None),
+            )
+        results.append(
+            SearchResult(
+                chunk=chunk,
+                score=score,
+                sparse_score=float(getattr(candidate, "sparseScore", None) or score),
+                dense_score=float(getattr(candidate, "denseScore", None) or 0.0),
+            )
+        )
+    return results
 
 
 # --- Failure Taxonomy Classifier ---
@@ -696,8 +760,33 @@ async def evaluate_pipeline(
             # Answer evidence coverage is measured on the generated answer only.
             texts = [result.answer]
             scores = [1.0 for _ in result.sources]
-            cand_24_results = []
-            cand_recall_24 = None
+            chunk_by_id = {chunk.chunk_id: chunk for chunk in index.chunks}
+            cand_24_results = _candidate_pool_from_retrieval_trace(
+                getattr(result, "retrievalTrace", None),
+                chunk_by_id=chunk_by_id,
+                candidate_k=candidate_k,
+            )
+            expected_titles = set(case.expected_documents or case.expected_source_titles or ())
+            cand_titles = [item.chunk.title for item in cand_24_results[:candidate_k]]
+            if case.expected_found:
+                document_candidate_hits_24.append(
+                    1.0 if any(title in expected_titles for title in cand_titles) else 0.0
+                )
+            raw_cand_texts = [
+                f"{item.chunk.title}\n{item.chunk.section or ''}\n{item.chunk.content}"
+                for item in cand_24_results[:candidate_k]
+            ]
+            cand_recall_24 = (
+                evidence_recall_at_k(
+                    retrieved_texts=raw_cand_texts,
+                    evidence_must_contain=evidence_must,
+                    k=min(len(raw_cand_texts), candidate_k),
+                )
+                if evidence_must
+                else None
+            )
+            if cand_recall_24 is not None:
+                evidence_candidate_recalls_24.append(cand_recall_24)
 
             answer_evidence_recall = None
             if evidence_must:
@@ -991,7 +1080,12 @@ async def evaluate_pipeline(
             p50, p95 = _percentile_pair(group_latencies)
             summary[f"{facet_name}SearchTotalMsP50"] = p50
             summary[f"{facet_name}SearchTotalMsP95"] = p95
-        cache_hits = sum(1 for t in telemetries if float(t.get("cacheMiss", 1.0) or 1.0) <= 0.0)
+        cache_hits = 0
+        for telemetry in telemetries:
+            miss_raw = telemetry.get("cacheMiss", 1.0)
+            miss_value = 1.0 if miss_raw is None else float(miss_raw)
+            if miss_value <= 0.0:
+                cache_hits += 1
         summary["approxCacheHitRate"] = float(cache_hits / len(telemetries)) if telemetries else 0.0
 
     if layer == 3:

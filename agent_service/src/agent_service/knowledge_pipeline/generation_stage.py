@@ -95,13 +95,18 @@ def _prepare_generation_context(
             else None
         )
     )
+    budget_for = getattr(host, "evidence_token_budget_for", None)
+    if callable(budget_for):
+        token_budget = budget_for(tier_val)
+    else:
+        token_budget = getattr(host, "evidence_token_budget", None)
     return build_context_and_markers(
         results,
         chunk_to_doc_idx,
         chunk_by_id=getattr(host, "chunk_by_id", None) or None,
         chunks_by_parent_id=getattr(host, "chunks_by_parent_id", None) or None,
         query_tier=tier_val,
-        token_budget=getattr(host, "evidence_token_budget", None),
+        token_budget=token_budget,
     )
 
 

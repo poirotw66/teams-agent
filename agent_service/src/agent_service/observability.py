@@ -61,9 +61,66 @@ def configure_tracing(
     else:
         provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
     trace.set_tracer_provider(provider)
+    _configure_metrics(
+        service_name=service_name,
+        exporter_endpoint=exporter_endpoint,
+    )
     logger.info("OpenTelemetry tracing configured for service=%s", service_name)
     return True
 
+
+def _configure_metrics(*, service_name: str, exporter_endpoint: str | None) -> bool:
+    """Best-effort MeterProvider so RAG counters can export beyond process memory."""
+    try:
+        from opentelemetry import metrics
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+        from opentelemetry.sdk.resources import Resource
+    except ImportError:
+        return False
+
+    reader = None
+    if exporter_endpoint:
+        try:
+            from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+                OTLPMetricExporter,
+            )
+
+            reader = PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=exporter_endpoint)
+            )
+        except ImportError:
+            logger.warning("OTLP metric exporter unavailable; metrics stay process-local.")
+            return False
+    else:
+        try:
+            from opentelemetry.sdk.metrics.export import ConsoleMetricExporter
+
+            reader = PeriodicExportingMetricReader(ConsoleMetricExporter())
+        except ImportError:
+            return False
+
+    resource = Resource.create({"service.name": service_name})
+    provider = MeterProvider(resource=resource, metric_readers=[reader])
+    metrics.set_meter_provider(provider)
+    logger.info("OpenTelemetry metrics configured for service=%s", service_name)
+    return True
+
+
+def record_metric_counter(name: str, amount: float = 1.0) -> None:
+    """Increment an OTel counter when a MeterProvider is configured; else no-op."""
+    if amount == 0:
+        return
+    try:
+        from opentelemetry import metrics
+    except ImportError:
+        return
+    try:
+        meter = metrics.get_meter("teams-agent.rag")
+        counter = meter.create_counter(name)
+        counter.add(amount)
+    except Exception:  # noqa: BLE001 - metrics must never break request path
+        logger.debug("Failed to record OTel counter %s", name, exc_info=True)
 
 def start_span(
     name: str,

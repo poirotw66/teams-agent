@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from agent_service.documents import DocumentChunk
-from agent_service.knowledge_pipeline.query_tier import QueryTier, classify_query_tier
+from agent_service.knowledge_pipeline.query_tier import (
+    QueryTier,
+    classify_query_tier,
+    evidence_token_budget_for_tier,
+)
 from agent_service.knowledge_pipeline.retrieval_state import RetrievalState
 from agent_service.retrieval import SearchResult
 
@@ -155,3 +159,18 @@ def test_low_confidence_with_candidates_stays_standard_no_rewrite() -> None:
         max_retrieval_rewrites=1,
     )
     assert decision.tier == QueryTier.HARD
+
+
+def test_evidence_token_budget_for_tier_uses_tighter_simple_budgets() -> None:
+    assert evidence_token_budget_for_tier("trivial", default_budget=1200) == 500
+    assert evidence_token_budget_for_tier("standard", default_budget=1200) == 800
+    assert evidence_token_budget_for_tier("hard", default_budget=1200) == 1200
+    assert (
+        evidence_token_budget_for_tier(
+            "trivial",
+            default_budget=1200,
+            trivial_budget=450,
+        )
+        == 450
+    )
+    assert evidence_token_budget_for_tier(None, default_budget=1200) == 1200

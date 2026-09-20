@@ -1,6 +1,6 @@
 {
   "$schema": "internal://retrieval-eval-v2/v1",
-  "description": "Hard retrieval benchmark for RAG v2 / v2.1 closeout. All answerable cases carry expectedEvidence. Document Recall/Hit and Evidence Recall are reported separately. No-answer set expanded for Confidence Contract calibration. Cases carry split=dev|test.",
+  "description": "DEVELOPMENT / REGRESSION set for RAG v2 / v2.1. Labels may be corrected after inspecting system output. Do NOT use as a frozen release gate. For release holdout scoring use data/eval/retrieval_eval_v3_blind.json.",
   "specRef": "docs/rag-v2-spec.md#6",
   "minCaseCount": 120,
   "corpusSnapshot": {
@@ -4769,5 +4769,6 @@
       "expectedFound": false,
       "notes": "Sensitive/absent directory detail"
     }
-  ]
+  ],
+  "role": "development_regression"
 }

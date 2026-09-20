@@ -1,6 +1,9 @@
 {
   "edges": {
     "ai_ops_backoffice->agent_service": 0,
-    "knowledge_portal->agent_service": 0
+    "knowledge_portal->agent_service": 0,
+    "ai_ops_backoffice->operations_core": 158,
+    "agent_service->operations_core": 17,
+    "teams_agent->citation_asset_gateway": 19
   }
 }
