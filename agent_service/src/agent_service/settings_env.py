@@ -134,6 +134,7 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         "rag_baseline_variant": (
             _str_env("RAG_BASELINE_VARIANT") or "BASELINE"
         ).strip().upper(),
+        "rag_evidence_token_budget": _int_env("RAG_EVIDENCE_TOKEN_BUDGET", 1200),
     }
 
 

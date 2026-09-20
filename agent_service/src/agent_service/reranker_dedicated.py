@@ -12,22 +12,35 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from collections.abc import Sequence
+from typing import Any
 
 from .reranker import PairScorer, build_cross_encoder_pair_scorer
 
+_cached_client: Any = None
+_cached_engine: Any = None
+_client_lock = threading.Lock()
 
-def build_vertex_ranking_pair_scorer(model_id: str = "semantic-ranker-default") -> PairScorer:
-    """Rank documents with Vertex AI Ranking API.
 
-    Model id forms:
-    - ``vertex-ranking`` / ``vertex-ranking:semantic-ranker-default@latest``
-    - ``ranking-api:semantic-ranker-default@latest``
+def _get_vertex_rank_client() -> tuple[Any, Any]:
+    global _cached_client, _cached_engine
+    if _cached_client is not None and _cached_engine is not None:
+        return _cached_client, _cached_engine
+    with _client_lock:
+        if _cached_client is None or _cached_engine is None:
+            try:
+                from google.cloud import discoveryengine_v1 as discoveryengine
+            except ImportError as error:
+                raise RuntimeError(
+                    "google-cloud-discoveryengine is required for vertex-ranking reranker"
+                ) from error
+            _cached_engine = discoveryengine
+            _cached_client = discoveryengine.RankServiceClient()
+    return _cached_client, _cached_engine
 
-    Requires ``VERTEX_RANKING_PROJECT`` (or ``GOOGLE_CLOUD_PROJECT``) and the
-    ``google-cloud-discoveryengine`` package. Optional ``VERTEX_RANKING_LOCATION``
-    (default ``global``).
-    """
+
+def _resolve_vertex_model_id(model_id: str) -> str:
     resolved = model_id.strip() or "semantic-ranker-default"
     for prefix in ("vertex-ranking:", "vertex_ranking:", "ranking-api:", "ranking_api:"):
         if resolved.lower().startswith(prefix):
@@ -37,7 +50,24 @@ def build_vertex_ranking_pair_scorer(model_id: str = "semantic-ranker-default") 
         resolved = "semantic-ranker-default"
     if "@" not in resolved:
         resolved = f"{resolved}@latest"
+    return resolved
 
+
+def _parse_vertex_rank_scores(records: Sequence[Any], count: int) -> list[float]:
+    scores = [0.0] * count
+    for record in records:
+        try:
+            index = int(record.id)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < len(scores):
+            scores[index] = float(getattr(record, "score", 0.0) or 0.0)
+    return scores
+
+
+def build_vertex_ranking_pair_scorer(model_id: str = "semantic-ranker-default") -> PairScorer:
+    """Rank documents with Vertex AI Ranking API."""
+    resolved = _resolve_vertex_model_id(model_id)
     project = (
         os.environ.get("VERTEX_RANKING_PROJECT")
         or os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -53,17 +83,9 @@ def build_vertex_ranking_pair_scorer(model_id: str = "semantic-ranker-default") 
             raise RuntimeError(
                 "Vertex Ranking API requires VERTEX_RANKING_PROJECT or GOOGLE_CLOUD_PROJECT"
             )
-        try:
-            from google.cloud import discoveryengine_v1 as discoveryengine
-        except ImportError as error:
-            raise RuntimeError(
-                "google-cloud-discoveryengine is required for vertex-ranking reranker"
-            ) from error
-
-        client = discoveryengine.RankServiceClient()
+        client, discoveryengine = _get_vertex_rank_client()
         ranking_config = (
-            f"projects/{project}/locations/{location}"
-            f"/rankingConfigs/default_ranking_config"
+            f"projects/{project}/locations/{location}/rankingConfigs/default_ranking_config"
         )
         records = [
             discoveryengine.RankingRecord(
@@ -83,15 +105,7 @@ def build_vertex_ranking_pair_scorer(model_id: str = "semantic-ranker-default") 
                     records=records,
                 )
             )
-            scores = [0.0] * len(texts)
-            for record in response.records:
-                try:
-                    index = int(record.id)
-                except (TypeError, ValueError):
-                    continue
-                if 0 <= index < len(scores):
-                    scores[index] = float(getattr(record, "score", 0.0) or 0.0)
-            return scores
+            return _parse_vertex_rank_scores(response.records, len(texts))
 
         return await asyncio.to_thread(_rank)
 

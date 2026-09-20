@@ -8,8 +8,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import threading
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from knowledge_core.contextual_representation import effective_retrieval_text
 
@@ -18,7 +19,7 @@ from .retrieval import SearchResult
 logger = logging.getLogger(__name__)
 
 # Exact technical tokens only — not general natural-language keywords (§32).
-_ERROR_CODE_RE = re.compile(r"(?<![\w-])-?\d{2,5}(?![\w-])")
+_ERROR_CODE_RE = re.compile(r"(?<![\w-])-?\d{1,5}(?![\w-])", re.ASCII)
 _TECH_TOKEN_RE = re.compile(
     r"\b(?:EMS|OTP|MFA|VPN|AD|SSLVPN|FortiToken|FortiClient|Intune|CRM)\b",
     re.IGNORECASE,
@@ -257,9 +258,7 @@ class FailOpenReranker:
                 "reranker_fail_open reason=TimeoutError type=%s",
                 type(self._inner).__name__,
             )
-            return await self._fallback.rerank(
-                query=query, candidates=candidates, limit=limit
-            )
+            return await self._fallback.rerank(query=query, candidates=candidates, limit=limit)
         except Exception as exc:  # noqa: BLE001 — fail-open boundary
             increment_counter("rag_reranker_failure_total")
             logger.warning(
@@ -267,9 +266,7 @@ class FailOpenReranker:
                 type(exc).__name__,
                 type(self._inner).__name__,
             )
-            return await self._fallback.rerank(
-                query=query, candidates=candidates, limit=limit
-            )
+            return await self._fallback.rerank(query=query, candidates=candidates, limit=limit)
 
 
 def candidate_retrieval_texts(candidates: list[SearchResult]) -> list[str]:
@@ -308,22 +305,38 @@ async def lexical_overlap_pair_scorer(query: str, texts: Sequence[str]) -> Seque
     return lexical_overlap_scores(query, texts)
 
 
-def build_cross_encoder_pair_scorer(model_name: str) -> PairScorer:
-    """Lazy CrossEncoder PairScorer (optional ``sentence_transformers`` dependency)."""
+_CROSS_ENCODER_INSTANCES: dict[str, Any] = {}
+_CROSS_ENCODER_LOCK = threading.Lock()
 
+
+def get_or_load_cross_encoder(model_name: str) -> Any:
+    """Thread-safe singleton loader for CrossEncoder models."""
     resolved = model_name.strip()
     if resolved.lower().startswith("cross-encoder:"):
         resolved = resolved.split(":", 1)[1].strip()
-
-    async def score_pairs(query: str, texts: Sequence[str]) -> Sequence[float]:
+    with _CROSS_ENCODER_LOCK:
+        if resolved in _CROSS_ENCODER_INSTANCES:
+            return _CROSS_ENCODER_INSTANCES[resolved]
         try:
             from sentence_transformers import CrossEncoder  # type: ignore[import-not-found]
         except ImportError as error:
             raise RuntimeError(
                 "sentence_transformers is required for cross-encoder reranking"
             ) from error
-
         encoder = CrossEncoder(resolved)
+        _CROSS_ENCODER_INSTANCES[resolved] = encoder
+        return encoder
+
+
+def build_cross_encoder_pair_scorer(model_name: str) -> PairScorer:
+    """Lazy CrossEncoder PairScorer reusing cached model instances."""
+
+    resolved = model_name.strip()
+    if resolved.lower().startswith("cross-encoder:"):
+        resolved = resolved.split(":", 1)[1].strip()
+
+    async def score_pairs(query: str, texts: Sequence[str]) -> Sequence[float]:
+        encoder = await asyncio.to_thread(get_or_load_cross_encoder, resolved)
         pairs = [(query, text) for text in texts]
         scores = await asyncio.to_thread(encoder.predict, pairs)
         return [float(score) for score in scores]
@@ -366,9 +379,7 @@ def _pair_scorer_for_model_name(model_name: str | None) -> PairScorer | None:
         "vertex_ranking",
         "ranking-api",
         "ranking_api",
-    } or lowered.startswith(
-        ("vertex-ranking:", "vertex_ranking:", "ranking-api:", "ranking_api:")
-    ):
+    } or lowered.startswith(("vertex-ranking:", "vertex_ranking:", "ranking-api:", "ranking_api:")):
         from .reranker_dedicated import build_vertex_ranking_pair_scorer
 
         return build_vertex_ranking_pair_scorer(resolved)

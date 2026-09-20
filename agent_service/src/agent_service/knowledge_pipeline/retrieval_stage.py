@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,11 +24,13 @@ from .retriever import (
     MAX_RETRIEVAL_CACHE_SIZE,
     RETRIEVAL_CANDIDATE_MULTIPLIER,
     accumulate_stage_timings,
+    fuse_query_level_rrf,
     make_retrieval_cache_key,
-    merge_best_chunk_results,
     resolve_retrieval_queries,
 )
 from .trace import build_retrieval_attempt
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,7 @@ class RetrievalHost:
     rrf_k: int = 60
     contextualization_version: str = ""
     chunk_by_id: Mapping[str, Any] | None = None
+    embed_queries: Callable[[Sequence[str]], Sequence[list[float]]] | None = None
 
 
 def retrieval_candidate_limit(host: RetrievalHost) -> int:
@@ -72,6 +76,7 @@ async def _cached_search(
     groups: set[str],
     frozen_groups: frozenset[str],
     environment: str,
+    query_vector: list[float] | None = None,
 ) -> tuple[list[SearchResult], dict[str, float]]:
     limit = retrieval_candidate_limit(host)
     cache_key = make_retrieval_cache_key(
@@ -94,6 +99,22 @@ async def _cached_search(
         record_cache_hit(True)
         return cache[cache_key], {}
     record_cache_hit(False)
+    search_kwargs: dict[str, Any] = {
+        "environment": environment,
+        "fusion_mode": host.fusion_mode,
+    }
+    if query_vector is not None:
+        try:
+            import inspect
+
+            sig = inspect.signature(host.search_with_timings)
+            if "query_vector" in sig.parameters or any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            ):
+                search_kwargs["query_vector"] = query_vector
+        except Exception:
+            pass
+
     with retrieval_span(
         fusion_mode=host.fusion_mode,
         release_id=host.release_id,
@@ -104,8 +125,7 @@ async def _cached_search(
             query,
             limit,
             groups,
-            environment=environment,
-            fusion_mode=host.fusion_mode,
+            **search_kwargs,
         )
     cache[cache_key] = res
     if len(cache) > MAX_RETRIEVAL_CACHE_SIZE and isinstance(cache, OrderedDict):
@@ -115,13 +135,65 @@ async def _cached_search(
     return res, timings
 
 
+async def _batch_embed_uncached_queries(
+    host: RetrievalHost,
+    retrieval_queries: Sequence[str],
+    *,
+    frozen_groups: frozenset[str],
+    environment: str,
+    limit: int,
+) -> dict[str, list[float]]:
+    """Embed uncached multi-query fanouts in a single batch when supported."""
+    if not getattr(host, "embed_queries", None) or len(retrieval_queries) <= 1:
+        return {}
+    uncached = [
+        q
+        for q in retrieval_queries
+        if make_retrieval_cache_key(
+            q,
+            groups=frozen_groups,
+            environment=environment,
+            release_id=host.release_id,
+            top_k=host.top_k,
+            min_score=host.min_score,
+            fusion_mode=host.fusion_mode,
+            rrf_k=host.rrf_k,
+            contextualization_version=host.contextualization_version,
+            candidate_limit=limit,
+            fusion_candidate_k=host.fusion_candidate_k,
+        )
+        not in host.retrieval_cache
+    ]
+    if not uncached:
+        return {}
+    query_vectors: dict[str, list[float]] = {}
+    try:
+        vectors = await asyncio.to_thread(host.embed_queries, uncached)
+        for q, v in zip(uncached, vectors):
+            if v:
+                query_vectors[q] = v
+    except Exception as exc:
+        logger.debug("batch_query_embedding_fallback: %s", exc)
+    return query_vectors
+
+
+def _compute_query_weights(num_result_sets: int, attempt: int) -> list[float]:
+    query_weights = [1.0]
+    for idx in range(1, num_result_sets):
+        query_weights.append(0.6 if attempt > 0 and idx == num_result_sets - 1 else 0.7)
+    return query_weights
+
+
 async def _maybe_rerank(
     host: RetrievalHost,
     *,
     query: str,
     results: list[SearchResult],
 ) -> list[SearchResult]:
-    if not host.reranker_enabled or host.reranker is None or not results:
+    """Apply reranking when enabled, model is valid, and query meets min tier."""
+    if not host.reranker or not host.reranker_enabled or not results:
+        return results
+    if host.reranker_model == "noop":
         return results
     provisional = classify_query_tier(
         RetrievalState(
@@ -146,6 +218,57 @@ async def _maybe_rerank(
         return await host.reranker.rerank(query=query, candidates=results, limit=limit)
 
 
+async def _execute_multi_query_search(
+    host: RetrievalHost,
+    retrieval_queries: Sequence[str],
+    groups: set[str],
+    *,
+    frozen_groups: frozenset[str],
+    environment: str,
+    limit: int,
+    stage_timings_ms: dict[str, float],
+) -> list[list[SearchResult]]:
+    query_vectors = await _batch_embed_uncached_queries(
+        host,
+        retrieval_queries,
+        frozen_groups=frozen_groups,
+        environment=environment,
+        limit=limit,
+    )
+    search_outcomes = await asyncio.gather(
+        *(
+            _cached_search(
+                host,
+                query,
+                groups=groups,
+                frozen_groups=frozen_groups,
+                environment=environment,
+                query_vector=query_vectors.get(query),
+            )
+            for query in retrieval_queries
+        )
+    )
+    for _results, timings in search_outcomes:
+        accumulate_stage_timings(stage_timings_ms, timings)
+    return [outcome[0] for outcome in search_outcomes]
+
+
+def _append_trace_attempts(
+    trace_attempts: list[Any],
+    retrieval_queries: Sequence[str],
+    result_sets: Sequence[list[SearchResult]],
+    selected_chunk_ids: set[str],
+) -> None:
+    for retrieval_query, result_set in zip(retrieval_queries, result_sets, strict=True):
+        trace_attempts.append(
+            build_retrieval_attempt(
+                retrieval_query,
+                result_set,
+                selected_chunk_ids,
+            )
+        )
+
+
 async def run_retrieve(
     host: RetrievalHost,
     state: Any,
@@ -161,24 +284,24 @@ async def run_retrieve(
     )
     frozen_groups = frozenset(groups)
     env = host.deployment_environment
-    search_outcomes = await asyncio.gather(
-        *(
-            _cached_search(
-                host,
-                query,
-                groups=groups,
-                frozen_groups=frozen_groups,
-                environment=env,
-            )
-            for query in retrieval_queries
-        )
+    limit = retrieval_candidate_limit(host)
+
+    result_sets = await _execute_multi_query_search(
+        host,
+        retrieval_queries,
+        groups,
+        frozen_groups=frozen_groups,
+        environment=env,
+        limit=limit,
+        stage_timings_ms=state.stage_timings_ms,
     )
-    result_sets = [outcome[0] for outcome in search_outcomes]
-    for _results, timings in search_outcomes:
-        accumulate_stage_timings(state.stage_timings_ms, timings)
-    results = merge_best_chunk_results(*result_sets, previous=state.results)
-    # Injection is a retriever-like signal: it must enter the pool before rerank
-    # so enterprise evidence is ranked, not force-inserted after (RAG v2.1 P2).
+    query_weights = _compute_query_weights(len(result_sets), state.attempt)
+    results = fuse_query_level_rrf(
+        *result_sets,
+        query_weights=query_weights,
+        rrf_k=host.rrf_k,
+        previous=state.results,
+    )
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
         results,
@@ -190,24 +313,15 @@ async def run_retrieve(
         query=state.resolved_issue_query or state.search_query,
         results=results,
     )
-    # Ranking ends here. Parent/neighbor expansion happens after selection
-    # via EvidenceBundle in the generation stage (does not re-order hits).
     competitive_results, displaced_top1 = host.select_document_chunks(
         state.resolved_issue_query, results
     )
-    selected_chunk_ids = {result.chunk.chunk_id for result in competitive_results}
-    for retrieval_query, result_set in zip(
+    _append_trace_attempts(
+        state.trace_attempts,
         retrieval_queries,
         result_sets,
-        strict=True,
-    ):
-        state.trace_attempts.append(
-            build_retrieval_attempt(
-                retrieval_query,
-                result_set,
-                selected_chunk_ids,
-            )
-        )
+        selected_chunk_ids={result.chunk.chunk_id for result in competitive_results},
+    )
     return state_factory(
         raw_user_utterance=state.raw_user_utterance,
         resolved_issue_query=state.resolved_issue_query,

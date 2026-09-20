@@ -39,8 +39,7 @@ def resolve_serving_decision(
         canary_variant=getattr(settings, "rag_canary_variant", VARIANT_CANDIDATE),
         baseline_variant=getattr(settings, "rag_baseline_variant", VARIANT_BASELINE),
         baseline_fusion_mode=str(
-            getattr(index, "fusion_mode", None)
-            or getattr(settings, "rag_fusion_mode", "RRF")
+            getattr(index, "fusion_mode", None) or getattr(settings, "rag_fusion_mode", "RRF")
         ),
         baseline_reranker_enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
         reranker_available=reranker_available,
@@ -79,9 +78,7 @@ def build_retrieval_host(
         reranker=reranker,
         rerank_candidate_k=int(getattr(settings, "rag_rerank_candidate_k", 24)),
         reranker_enabled=reranker_enabled,
-        reranker_min_tier=str(
-            getattr(settings, "rag_reranker_min_tier", "standard")
-        ).lower(),
+        reranker_min_tier=str(getattr(settings, "rag_reranker_min_tier", "standard")).lower(),
         reranker_model=str(getattr(settings, "rag_reranker_model", None) or "noop"),
         fusion_mode=fusion_mode,
         fusion_candidate_k=int(getattr(index, "fusion_candidate_k", 20)),
@@ -94,7 +91,24 @@ def build_retrieval_host(
             ),
             "",
         ),
-        chunk_by_id={chunk.chunk_id: chunk for chunk in index.chunks},
+        chunk_by_id=getattr(
+            index, "chunk_by_id", {chunk.chunk_id: chunk for chunk in index.chunks}
+        ),
+        embed_queries=(
+            (
+                lambda texts: (
+                    index.embedding_client.embed_documents(list(texts))  # type: ignore[union-attr]
+                    if (
+                        index.embedding_client
+                        and getattr(index, "has_vectors", False)
+                        and hasattr(index.embedding_client, "embed_documents")
+                    )
+                    else [[] for _ in texts]
+                )
+            )
+            if getattr(index, "has_vectors", False)
+            else None
+        ),
     )
 
 

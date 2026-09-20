@@ -41,11 +41,7 @@ class EvidenceBundle:
         *,
         context_chunks: Sequence[DocumentChunk] | None = None,
     ) -> None:
-        chunks = (
-            supporting_chunks
-            if supporting_chunks is not None
-            else (context_chunks or [])
-        )
+        chunks = supporting_chunks if supporting_chunks is not None else (context_chunks or [])
         object.__setattr__(self, "seed", seed)
         object.__setattr__(self, "supporting_chunks", list(chunks))
 
@@ -70,11 +66,7 @@ def materialize_parent_chunk(
     Retained for standalone callers; post-selection ``build_evidence_bundles``
     prefers discrete sibling chunks with provenance over synthetic parents.
     """
-    siblings = [
-        chunk
-        for chunk in chunk_by_id.values()
-        if chunk.parent_id == parent_id
-    ]
+    siblings = [chunk for chunk in chunk_by_id.values() if chunk.parent_id == parent_id]
     if not siblings:
         return None
     # Prefer document order via neighbor graph when present; else stable id.
@@ -110,9 +102,7 @@ def _order_siblings(siblings: Sequence[DocumentChunk]) -> list[DocumentChunk]:
     starts = [
         chunk
         for chunk in siblings
-        if not any(
-            chunk.chunk_id in (other.neighbor_ids or []) for other in siblings
-        )
+        if not any(chunk.chunk_id in (other.neighbor_ids or []) for other in siblings)
     ]
     if len(starts) == 1:
         ordered: list[DocumentChunk] = []
@@ -131,21 +121,74 @@ def _order_siblings(siblings: Sequence[DocumentChunk]) -> list[DocumentChunk]:
     return sorted(siblings, key=lambda chunk: chunk.chunk_id)
 
 
+def _calculate_tier_budget(
+    query_tier: str | None,
+    max_context: int,
+) -> tuple[int, bool]:
+    effective_max_context = max_context
+    allow_siblings = True
+    if query_tier:
+        normalized_tier = query_tier.strip().upper()
+        if normalized_tier == "TRIVIAL":
+            effective_max_context = 0
+        elif normalized_tier == "STANDARD":
+            effective_max_context = min(max_context, 2)
+            allow_siblings = False
+        elif normalized_tier == "HARD":
+            effective_max_context = min(max_context, 6)
+    return effective_max_context, allow_siblings
+
+
+def _find_seed_candidates(
+    seed: SearchResult,
+    *,
+    chunk_by_id: Mapping[str, DocumentChunk],
+    chunks_by_parent_id: Mapping[str, Sequence[DocumentChunk]] | None,
+    allow_siblings: bool,
+) -> list[DocumentChunk]:
+    candidate_chunks: list[DocumentChunk] = []
+    parent_id = seed.chunk.parent_id
+    if parent_id and allow_siblings:
+        if chunks_by_parent_id is not None:
+            raw_siblings = chunks_by_parent_id.get(parent_id, [])
+            siblings = [c for c in raw_siblings if c.chunk_id != seed.chunk.chunk_id]
+        else:
+            siblings = [
+                c
+                for c in chunk_by_id.values()
+                if c.parent_id == parent_id and c.chunk_id != seed.chunk.chunk_id
+            ]
+        if siblings:
+            candidate_chunks.extend(_order_siblings(siblings))
+    for neighbor_id in seed.chunk.neighbor_ids or []:
+        neighbor = chunk_by_id.get(neighbor_id)
+        if neighbor is not None and neighbor.chunk_id != seed.chunk.chunk_id:
+            candidate_chunks.append(neighbor)
+    return candidate_chunks
+
+
 def build_evidence_bundles(
     ranked: Sequence[SearchResult],
     *,
     chunk_by_id: Mapping[str, DocumentChunk],
+    chunks_by_parent_id: Mapping[str, Sequence[DocumentChunk]] | None = None,
     top_seeds: int = _DEFAULT_TOP_SEEDS,
     max_context: int = _DEFAULT_MAX_CONTEXT,
+    query_tier: str | None = None,
+    token_budget: int | None = None,
 ) -> list[EvidenceBundle]:
     """Attach supporting sibling/neighbor chunks without synthetic parent duplication."""
     if not ranked:
         return []
+
+    effective_max_context, allow_siblings = _calculate_tier_budget(query_tier, max_context)
     expand_limit = len(ranked) if top_seeds <= 0 else min(top_seeds, len(ranked))
-    remaining = max(max_context, 0)
+    remaining_chunks = max(effective_max_context, 0)
+    remaining_tokens = max(token_budget, 0) if token_budget is not None else None
+
     bundles: list[EvidenceBundle] = []
     global_seen_ids = {item.chunk.chunk_id for item in ranked}
-    global_seen_content_hashes = {
+    global_seen_hashes = {
         hash(item.chunk.content.strip())
         for item in ranked
         if item.chunk.content and item.chunk.content.strip()
@@ -153,37 +196,30 @@ def build_evidence_bundles(
 
     for index, seed in enumerate(ranked):
         supporting: list[DocumentChunk] = []
-        if index < expand_limit and remaining > 0 and chunk_by_id:
-            candidate_chunks: list[DocumentChunk] = []
-            parent_id = seed.chunk.parent_id
-            if parent_id:
-                siblings = [
-                    chunk
-                    for chunk in chunk_by_id.values()
-                    if chunk.parent_id == parent_id and chunk.chunk_id != seed.chunk.chunk_id
-                ]
-                if siblings:
-                    candidate_chunks.extend(_order_siblings(siblings))
-            for neighbor_id in seed.chunk.neighbor_ids or []:
-                neighbor = chunk_by_id.get(neighbor_id)
-                if neighbor is not None and neighbor.chunk_id != seed.chunk.chunk_id:
-                    candidate_chunks.append(neighbor)
-
-            for cand in candidate_chunks:
-                if remaining <= 0:
+        if index < expand_limit and remaining_chunks > 0 and chunk_by_id:
+            cands = _find_seed_candidates(
+                seed,
+                chunk_by_id=chunk_by_id,
+                chunks_by_parent_id=chunks_by_parent_id,
+                allow_siblings=allow_siblings,
+            )
+            for cand in cands:
+                if remaining_chunks <= 0:
                     break
-                if cand.chunk_id in global_seen_ids:
+                if cand.chunk_id in global_seen_ids or not (cand.content and cand.content.strip()):
                     continue
-                c_content = cand.content.strip() if cand.content else ""
-                if not c_content:
+                cand_tokens = max(1, len(cand.content.strip()) // 4)
+                if remaining_tokens is not None and cand_tokens > remaining_tokens:
                     continue
-                chash = hash(c_content)
-                if chash in global_seen_content_hashes:
+                chash = hash(cand.content.strip())
+                if chash in global_seen_hashes:
                     continue
                 supporting.append(cand)
                 global_seen_ids.add(cand.chunk_id)
-                global_seen_content_hashes.add(chash)
-                remaining -= 1
+                global_seen_hashes.add(chash)
+                remaining_chunks -= 1
+                if remaining_tokens is not None:
+                    remaining_tokens -= cand_tokens
         bundles.append(EvidenceBundle(seed=seed, supporting_chunks=supporting))
     return bundles
 

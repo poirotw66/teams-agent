@@ -2,7 +2,8 @@ import json
 import math
 import re
 import time
-from collections import Counter
+from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
@@ -28,6 +29,7 @@ def hybrid_index_fusion_kwargs(settings: object) -> dict[str, object]:
         "sparse_weight": float(getattr(settings, "rag_sparse_weight", 0.5)),
         "dense_weight": float(getattr(settings, "rag_dense_weight", 1.5)),
     }
+
 
 def tokenize(text: str) -> list[str]:
     tokens: list[str] = []
@@ -65,6 +67,47 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot_product / (left_norm * right_norm)
+
+
+def check_sparse_fast_path(
+    query: str,
+    chunks: Sequence[DocumentChunk],
+    authorized_indices: list[int],
+    sparse_scores: list[float],
+) -> bool:
+    """Check if query is an exact error code / identifier with a decisive top hit."""
+    from .reranker import extract_error_codes, extract_exact_identifiers
+
+    query_codes = extract_error_codes(query)
+    query_ids = extract_exact_identifiers(query)
+    if not query_codes and not query_ids:
+        return False
+
+    candidates = [(idx, sparse_scores[idx]) for idx in authorized_indices if sparse_scores[idx] > 0]
+    if not candidates:
+        return False
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    top1_idx, top1_score = candidates[0]
+    top1_chunk = chunks[top1_idx]
+    top1_text = f"{top1_chunk.title}\n{effective_retrieval_text(top1_chunk)}"
+
+    top1_matches_code = bool(query_codes & extract_error_codes(top1_text))
+    top1_matches_id = bool(query_ids & extract_exact_identifiers(top1_text))
+    if not top1_matches_code and not top1_matches_id:
+        return False
+
+    if len(candidates) == 1:
+        return True
+    top2_idx, top2_score = candidates[1]
+    if top2_score <= 0:
+        return True
+    top2_chunk = chunks[top2_idx]
+    top2_text = f"{top2_chunk.title}\n{effective_retrieval_text(top2_chunk)}"
+    top2_matches_code = bool(query_codes & extract_error_codes(top2_text))
+
+    if top1_matches_code and not top2_matches_code:
+        return True
+    return bool(top1_score >= 1.5 * top2_score)
 
 
 def is_chunk_visible_to_groups(
@@ -150,6 +193,16 @@ class HybridIndex:
         self.fusion_candidate_k = fusion_candidate_k
         self.sparse_weight = sparse_weight
         self.dense_weight = dense_weight
+        self.chunk_by_id: dict[str, DocumentChunk] = {chunk.chunk_id: chunk for chunk in chunks}
+        self.chunks_by_parent_id: dict[str, list[DocumentChunk]] = defaultdict(list)
+        self.chunks_by_document_id: dict[str, list[DocumentChunk]] = defaultdict(list)
+        for chunk in chunks:
+            if chunk.parent_id:
+                self.chunks_by_parent_id[chunk.parent_id].append(chunk)
+            doc_id = (chunk.document_id or "").strip() or (chunk.source_path or "").strip()
+            if doc_id:
+                self.chunks_by_document_id[doc_id].append(chunk)
+        self.has_vectors: bool = any(bool(chunk.vector) for chunk in chunks)
 
     @classmethod
     def load(
@@ -210,6 +263,7 @@ class HybridIndex:
         )
         for chunk, vector in zip(self.chunks, vectors, strict=True):
             chunk.vector = vector
+        self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
 
     def _bm25_scores(
         self,
@@ -259,6 +313,7 @@ class HybridIndex:
         *,
         environment: str = "dev",
         fusion_mode: str | None = None,
+        query_vector: list[float] | None = None,
     ) -> list[SearchResult]:
         results, timings = self.search_with_timings(
             query,
@@ -266,9 +321,54 @@ class HybridIndex:
             groups,
             environment=environment,
             fusion_mode=fusion_mode,
+            query_vector=query_vector,
         )
         self.last_search_timings_ms = timings
         return results
+
+    def _resolve_query_vector(
+        self,
+        query: str,
+        authorized_indices: list[int],
+        sparse_scores: list[float],
+        query_vector: list[float] | None,
+    ) -> tuple[list[float] | None, float, bool]:
+        if query_vector is not None or not self.embedding_client or not self.has_vectors:
+            return query_vector, 0.0, False
+        if check_sparse_fast_path(query, self.chunks, authorized_indices, sparse_scores):
+            return None, 0.0, True
+        embed_started = time.perf_counter()
+        vector = self.embedding_client.embed_query(query)
+        embedding_ms = (time.perf_counter() - embed_started) * 1000
+        return vector, embedding_ms, False
+
+    def _resolve_fusion_weights(
+        self,
+        query: str,
+        use_legacy_weighted: bool,
+    ) -> tuple[int, int, float, float]:
+        if use_legacy_weighted:
+            return (
+                self.sparse_candidate_k,
+                self.dense_candidate_k,
+                self.sparse_weight,
+                self.dense_weight,
+            )
+        from .retrieval_adaptive_fusion import adaptive_fusion_weights
+
+        weights = adaptive_fusion_weights(
+            query,
+            default_sparse_weight=self.sparse_weight,
+            default_dense_weight=self.dense_weight,
+            default_sparse_candidate_k=self.sparse_candidate_k,
+            default_dense_candidate_k=self.dense_candidate_k,
+        )
+        return (
+            weights.sparse_candidate_k,
+            weights.dense_candidate_k,
+            weights.sparse_weight,
+            weights.dense_weight,
+        )
 
     def search_with_timings(
         self,
@@ -278,6 +378,7 @@ class HybridIndex:
         *,
         environment: str = "dev",
         fusion_mode: str | None = None,
+        query_vector: list[float] | None = None,
     ) -> tuple[list[SearchResult], dict[str, float]]:
         """Search and return per-call timings from locals (safe under parallel calls)."""
         from .retrieval_fusion import fuse_hybrid_candidates
@@ -298,36 +399,19 @@ class HybridIndex:
         sparse_scores = self._bm25_scores(query, authorized_indices)
         sparse_ms = (time.perf_counter() - sparse_started) * 1000
         max_sparse = max(sparse_scores, default=0.0)
-        normalized_sparse = [
-            score / max_sparse if max_sparse else 0.0 for score in sparse_scores
-        ]
+        normalized_sparse = [score / max_sparse if max_sparse else 0.0 for score in sparse_scores]
 
-        query_vector: list[float] | None = None
-        embedding_ms = 0.0
-        if self.embedding_client and any(chunk.vector for chunk in self.chunks):
-            embed_started = time.perf_counter()
-            query_vector = self.embedding_client.embed_query(query)
-            embedding_ms = (time.perf_counter() - embed_started) * 1000
-
+        query_vector, embedding_ms, is_fast_path = self._resolve_query_vector(
+            query, authorized_indices, sparse_scores, query_vector
+        )
         results = self._candidate_results(authorized_indices, normalized_sparse, query_vector)
-        sparse_candidate_k = self.sparse_candidate_k
-        dense_candidate_k = self.dense_candidate_k
-        sparse_weight = self.sparse_weight
-        dense_weight = self.dense_weight
-        if not use_legacy_weighted:
-            from .retrieval_adaptive_fusion import adaptive_fusion_weights
+        (
+            sparse_candidate_k,
+            dense_candidate_k,
+            sparse_weight,
+            dense_weight,
+        ) = self._resolve_fusion_weights(query, use_legacy_weighted)
 
-            weights = adaptive_fusion_weights(
-                query,
-                default_sparse_weight=self.sparse_weight,
-                default_dense_weight=self.dense_weight,
-                default_sparse_candidate_k=self.sparse_candidate_k,
-                default_dense_candidate_k=self.dense_candidate_k,
-            )
-            sparse_candidate_k = weights.sparse_candidate_k
-            dense_candidate_k = weights.dense_candidate_k
-            sparse_weight = weights.sparse_weight
-            dense_weight = weights.dense_weight
         filtered = fuse_hybrid_candidates(
             results,
             query=query,
@@ -344,6 +428,7 @@ class HybridIndex:
             "embeddingMs": round(embedding_ms, 1),
             "sparseMs": round(sparse_ms, 1),
             "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
+            "fastPath": 1.0 if is_fast_path else 0.0,
         }
         return filtered, timings
 
