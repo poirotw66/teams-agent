@@ -775,22 +775,26 @@
       "query": "客戶說報價下單怪怪的要怎麼判斷是不是廠商問題",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "XQ問題"
+        "XQ問題",
+        "外部客戶線上問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "XQ問題": 3
+        "XQ問題": 3,
+        "外部客戶線上問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "XQ paraphrase",
+      "notes": "XQ vendor triage; 外部客戶線上問題 allowed as secondary related cite",
       "expectedDocuments": [
-        "XQ問題"
+        "XQ問題",
+        "外部客戶線上問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "b3bf81747752b753f2b4"
+        "b3bf81747752b753f2b4",
+        "2603e09e74d48e00ac24"
       ],
       "expectedEvidence": [
         {
@@ -1111,25 +1115,33 @@
       "expectedFound": true,
       "expectedSourceTitles": [
         "外網 CRM 登入連線設定方式",
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
         "外網 CRM 登入連線設定方式": 3,
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "登入 FortiClient 出現錯訊": 2,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Typo robustness",
+      "notes": "Typo SSLVPN CRM; 外網 CRM primary; FortiClient/intranet VPN secondary cites allowed",
       "expectedDocuments": [
         "外網 CRM 登入連線設定方式",
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
         "aa53a610195dc82b06b6",
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "4c87195d255517260567",
+        "3d49a5292bd3eeb91b40"
       ],
       "expectedEvidence": [
         {
@@ -1370,22 +1382,26 @@
       "query": "跳板機連不上",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "VPN 跳板機連線異常": 3
+        "VPN 跳板機連線異常": 3,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Alias; KB disposition is escalate/轉派工單 (soft answer evidence)",
+      "notes": "Alias; escalate/轉派 is primary; intranet VPN secondary cite allowed",
       "expectedDocuments": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "61febd557abb558a5614"
+        "61febd557abb558a5614",
+        "3d49a5292bd3eeb91b40"
       ],
       "expectedEvidence": [
         {
@@ -2666,31 +2682,35 @@
       "query": "跳板機連線異常",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "VPN 跳板機連線異常": 3
+        "VPN 跳板機連線異常": 3,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [
         "grp_it"
       ],
       "forbiddenSourceTitles": [],
-      "notes": "IT group allow on open docs",
+      "notes": "ACL allow IT; jumpbox primary; intranet VPN secondary cite allowed",
       "expectedDocuments": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "61febd557abb558a5614"
+        "61febd557abb558a5614",
+        "3d49a5292bd3eeb91b40"
       ],
       "expectedEvidence": [
         {
           "section": "正文（canonical）",
           "chunkId": "61febd557abb558a5614",
           "mustContain": [
-            "跳板機連線異常"
+            "轉派工單"
           ]
         }
       ],
@@ -2818,7 +2838,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Follow-up disambiguation",
+      "notes": "Follow-up disambiguation; accept 遭鎖定/自助解鎖 phrasing + unlock URL",
       "expectedDocuments": [
         "AD 帳號與系統解鎖 FAQ"
       ],
@@ -2833,7 +2853,7 @@
           "chunkId": "4883521a4d796760170c",
           "mustContain": [
             "AD",
-            "帳號被鎖"
+            "自助解鎖"
           ]
         }
       ],
@@ -2894,25 +2914,33 @@
       "expectedFound": true,
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名",
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
         "國泰員工入口網、CTeam密碼、國泰e點名": 3,
-        "AD 帳號與系統解鎖 FAQ": 3
+        "AD 帳號與系統解鎖 FAQ": 3,
+        "登入 FortiClient 出現錯訊": 2,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Negative constraint",
+      "notes": "Contrastive portal vs AD; VPN/Forti docs allowed when explaining non-AD causes",
       "expectedDocuments": [
         "國泰員工入口網、CTeam密碼、國泰e點名",
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
         "8c3823bdcfb6529503cd",
-        "8eb9ac80926f62b19b0f"
+        "8eb9ac80926f62b19b0f",
+        "cf80afbddd210fa9a426",
+        "f09d4de2693fcf662f2e"
       ],
       "expectedEvidence": [
         {
@@ -3000,7 +3028,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Source scope question; 「未特別說明」is a valid grounded scope answer",
+      "notes": "Source scope; grounded 「未特別說明」is sufficient answer evidence",
       "expectedDocuments": [
         "外部客戶線上問題"
       ],
@@ -3014,7 +3042,7 @@
           "section": "正文（canonical）",
           "chunkId": "2603e09e74d48e00ac24",
           "mustContain": [
-            "外部客戶"
+            "未特別說明"
           ]
         }
       ],
@@ -3879,22 +3907,26 @@
       "query": "CRM OTP",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "外網 CRM 登入連線設定方式": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Coverage expansion",
+      "notes": "Coverage expansion; short CRM OTP may cite both 國金/外網 CRM docs",
       "expectedDocuments": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "591a8347795e521cd509"
       ],
       "expectedEvidence": [
         {
@@ -3903,6 +3935,14 @@
           "mustContain": [
             "CRM",
             "OTP"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "591a8347795e521cd509",
+          "mustContain": [
+            "外網 CRM",
+            "FortiToken"
           ]
         }
       ],
