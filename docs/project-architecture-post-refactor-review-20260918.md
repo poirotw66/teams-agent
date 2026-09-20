@@ -1,311 +1,536 @@
-# 專案架構重構完成後全面評估與下一階段優化指南
+# 專案架構重構後複查與 RAG 準確率／效能下一步
 
-> 評估日期：2026-09-19  
-> Git 基準：`main@8639acc`  
-> 前次基準：`main@0b3ce32`（重構啟動基準：`main@641aaa7`）  
-> 範圍：Teams Adapter、Agent/RAG Runtime、Knowledge Portal、AI Ops Backoffice、React Console、composition、contracts、CI 與部署拓樸  
-> 目標定位：**盤點 Phase A～H 重構落地成果，深入診斷當前架構的新瓶頸與深層隱患，並提供下一階段（Post-Refactor Evolution）的架構演進藍圖。**
-
----
-
-## 1. 執行摘要與成果回顧
-
-專案在經歷 Phase A 至 Phase H 的密集重構後，已徹底解決了先前最棘手的循環依賴、架構看門機制失效、mega-files 難以維護以及 CI 紅燈等核心問題。專案已正式跨入「架構規則可自動化驗證、邊界有嚴格看門」的新階段。
-
-### 1.1 前次評估問題與現況對照
-
-| 原架構痛點 / 規劃項目 | 前次狀態 (`@0b3ce32`) | 現況 (`@8639acc`) | 判定 |
-|---|---|---|---|
-| **Required CI 狀態** | 失敗（Ruff 859 errors, test failures） | **100% 通過**（Adapter/Agent Ruff 0 errors, 全套 tests 通過） | **已解決** |
-| **Package 循環依賴** | 部分手寫規則，無 Tarjan SCC | **Tarjan SCC 0 cycles**；嚴格拓樸驗證 | **已解決** |
-| **Domain $\to$ Composition 反向依賴** | 存在反向 import | **徹底歸零**；Composition 作為唯一向外裝配根 | **已解決** |
-| **Backoffice $\to$ Agent 依賴** | 115 個檔案依賴 Agent 實作 | **0 個檔案**；所有共用合約抽至 `operations_core` / `knowledge_core` | **已解決** |
-| **Portal $\to$ Agent 依賴** | 18 個檔案依賴 Agent 實作 | **0 個檔案**；共用資料結構統一收斂至 `knowledge_core` | **已解決** |
-| **單調 Size Ratchet 門檻** | Baseline 未下修，可逆向增長 | **單調基線**；超過 500 行檔案歸零，超過 80 行函式歸零 | **已解決** |
-| **Router 層直接檔案 I/O** | Workbench router 直接讀寫 JSON | **抽離至 `WorkbenchStore` 倉儲適配器**，Router 僅負責 HTTP | **已解決** |
-| **跨模組私有成員存取** | 多處存取 `._source_trace`、`._settings` | **AST 靜態分析看門歸零**；新增專用 public API | **已解決** |
-| **前端 OpenAPI 型別飄移** | 手寫 412 行重複 DTO | **自動生成 TS schemas & client**，DTO 重複率降為 0 | **已解決** |
-| **前端打包體積 (Bundle Size)** | 單一約 2.12 MB 巨型 JS | **動態載入 + 依路由切分**，Entry gzip 僅 18 KB，符合預算門檻 | **已解決** |
-| **舊版 Legacy UI 隔離與清理** | 存在 ~18k LOC 的 legacy-js | **已徹底刪除**；正式終止雙軌維護負擔 | **已解決** |
+> 複查日期：2026-09-20
+> Git 基準：`fix/rag-ranking-contract-closeout@c3bc708`
+> 前次文件基準：`main@8639acc`
+> 範圍：Teams Adapter、Agent/RAG Runtime、Knowledge Portal、AI Ops Backoffice、React Console、composition、contracts、CI、部署與未來拆庫能力
+> 性質：依目前原始碼、測試與本機可重現評測重新判定；不是沿用舊文件的完成聲明
 
 ---
 
-## 2. 目前專案量化指標
+## 1. 結論先行
 
-統計排除 `tests`、`node_modules`、靜態構建產物（`static/console-v2`）、`data`、暫存檔與快取：
+這次重構的主要架構方向是正確的，而且多數基礎工程已穩定：跨套件循環、Backoffice／Portal 反向依賴、Legacy UI、OpenAPI 漂移、前端產物漂移等問題目前都受到自動化閘門保護。RAG 的檢索品質也已經不是「完全找不到資料」的階段。
 
-| 量化指標 | 前次基準 (`@0b3ce32`) | 現況 (`@8639acc`) | 變化詮釋 |
+但目前提交 **尚未達到可合併／可發布狀態**，原因不是抽象的技術債，而是三個可重現的 P0 失敗：
+
+1. `test_mid_band_relevance_is_standard` 失敗：shared confidence 將原本應為 `STANDARD` 的中間信心案例判成 `HARD`。
+2. `test_adaptive_tiers_skip_rewrite_on_standard_relevance_reject` 失敗：上述分類改變使一次查詢變成兩次 retrieval，直接增加延遲與 embedding 成本。
+3. `check_architecture.py` 失敗：`retrieval_stage.py::run_retrieve` 為 82 行，突破 80 行函式上限。
+
+因此下一步的順序應是：
+
+1. **先修正 confidence／query-tier 語意回歸與架構閘門。**
+2. **再改善 No-answer 校準與 7 個排序型失敗。**
+3. **先處理 embedding 延遲與變異，再考慮 dedicated reranker。**
+4. **用 production model 跑 Layer 3 release benchmark，之後才討論上線。**
+
+目前不建議更換向量資料庫、不建議導入 GraphRAG，也不建議立刻把 RAG 與前端拆成兩個 Git repository。應維持同一 repo，但繼續強化可獨立建置、測試、版本化及部署的邊界。
+
+---
+
+## 2. 本次驗證結果
+
+### 2.1 品質閘門
+
+| 驗證項目 | 結果 | 說明 |
+|---|---:|---|
+| Teams Adapter Ruff | 通過 | 0 lint error |
+| Teams Adapter tests | 通過 | `215 passed` |
+| Agent Service Ruff | 通過 | 0 lint error |
+| Agent Service tests | **失敗** | `1875 passed, 2 skipped, 3 failed` |
+| Architecture ratchet | **失敗** | `run_retrieve` 82 行，門檻 80 行 |
+| Legacy shell quarantine | 通過 | Legacy JS 已完全移除 |
+| Knowledge image Source of Truth | 通過 | Agent image 不內嵌 sources／index／releases |
+| OpenAPI snapshot | 通過 | canonical snapshot 無漂移 |
+| Generated TypeScript freshness | 通過 | schemas 與 client 皆為最新 |
+| Wire-contract compatibility | 通過 | 9 個 shared models，0 warning |
+| Script unit tests | 通過 | `18 passed`；前次 legacy deletion regression 已修正 |
+| Playground tests | 通過 | `16 passed` |
+| Console Node smoke tests | 通過 | `4 passed` |
+| Console Vitest | 通過 | 7 files、23 tests |
+| Console production bundle freshness | 通過 | committed artifact 與重建 SHA-256 一致 |
+| Console bundle budget | 通過 | 總 raw size 2,196,424 bytes |
+| Frontend DTO overlap | 通過 | checker 回報 handwritten-only 0 |
+| Console OpenAPI path matrix | 通過 | 53 call sites 對 194 paths |
+
+### 2.2 必須修正的三個失敗
+
+#### P0-1：Confidence Contract 與 Query Tier 的語意衝突
+
+`retrieval_confidence.evaluate_confidence()` 會將弱詞彙重疊直接判成 `LOW`；`query_tier.classify_query_tier()` 又將 `LOW_CONFIDENCE_FAIL` 視為 `HARD`。這使原本「交給 relevance 判斷，但不要支付 rewrite 成本」的中間區間消失。
+
+具體影響：
+
+- 既有中段案例由 `STANDARD` 變成 `HARD`。
+- relevance 拒絕後仍執行 query rewrite。
+- `index.search_calls` 從 1 增加為 2。
+- 線上會增加 embedding、搜尋與可能的 LLM rewrite 成本。
+- 準確率校準與執行速度同時受到影響。
+
+建議不要為了讓測試變綠而直接改測試期待值。應先明確定義三個概念：
+
+| 概念 | 用途 | 建議輸出 |
+|---|---|---|
+| Retrieval confidence | 判斷證據是否可直接採信 | `HIGH / UNCERTAIN / LOW` |
+| No-answer prediction | 評測與拒答校準 | `ANSWER / NO_ANSWER` + probability/reason |
+| Query cost tier | 決定是否允許 rewrite／retry | `TRIVIAL / STANDARD / HARD` |
+
+三者可以共享 features，但不應以一個 enum 直接推導所有決策。尤其 `LOW lexical overlap` 不等於「值得再查一次」；它也可能代表應直接安全拒答。
+
+#### P0-2：額外 rewrite 的效能回歸
+
+失敗測試證明目前 adaptive tier 會對部分低信心、但無重寫價值的查詢多做一次 retrieval。這與「只有 hard query 才支付 rewrite 成本」的設計目標相反。
+
+修正方向：
+
+- 將 `should_rewrite` 變成獨立決策，而不是等同於 `confidence == LOW`。
+- 至少考慮 `empty retrieval`、`identifier typo`、`candidate conflict`、`multi-aspect`、`rewrite headroom` 等訊號。
+- 對「有候選但 relevance reject，且沒有可改善訊號」維持 single pass。
+- 新增 rewrite benefit 指標：第二次 retrieval 是否改善 Evidence Recall@4、是否改變最終 found／no-answer，以及增加多少毫秒。
+
+#### P0-3：Architecture ratchet 失敗
+
+`run_retrieve` 目前 82 行。這只是輕微超標，但 CI 會因此失敗，且不能用 waiver 掩蓋。
+
+適合的最小修法是抽出一個純函式，例如 `_merge_retrieval_result_sets(...)`，集中處理：
+
+- previous ranking 是否存在；
+- query-level RRF 是否啟用；
+- rewrite weight `0.6`；
+- previous weight `1.0`；
+- 空 result set fallback。
+
+這同時會讓 ranking contract 更容易單元測試，而不是單純搬移兩行程式。
+
+---
+
+## 3. 架構現況量化
+
+統計範圍使用 `check_architecture.py` 的 production source roots，排除 tests、static、generated、node_modules 與 build artifacts。
+
+| 指標 | `@8639acc` | `@c3bc708` | 判讀 |
 |---|---:|---:|---|
-| **Production Source Files** | 561 | **887** | +326 檔；完成大模組拆分與核心共用模組抽取 |
-| **Production LOC** | 108,486 | **112,369** | +3,883 行（主要為 interface、adapters 與 typed ports） |
-| **>300 行檔案數** | 116 | **76** | 下降 34.5%，中大型檔案持續受到壓制 |
-| **>500 行檔案數** | 46 | **0** | **徹底歸零**，無任何檔案突破 500 行門檻 |
-| **>800 行檔案數** | 13 | **0** | **徹底歸零**，極端複雜熱點已全部消除 |
-| **>80 行 Python 函式** | 173 | **0** | **徹底歸零**，程序化長函式全數分解完畢 |
-| **跨套件違規邊界** | 133 處 | **0 處** | `ai_ops_backoffice` 與 `knowledge_portal` 對 `agent_service` 實作依賴為 0 |
-| **Ruff Linter 違規數** | 860 項 | **0 項** | 包含未定義名稱 (`F821`)、Wildcard imports (`F403`) 全數清除 |
-| **OpenAPI 端點覆蓋率** | 未完整驗證 | **194 端點** | 53 處前端呼叫點 100% 通過矩陣驗證 |
+| Production source files | 887 | **910** | RAG v2、observability、reranker、eval contracts 增加模組 |
+| Production LOC | 約 126.8k | **127,791** | 成長主要集中於 RAG 能力與合約 |
+| >300 行檔案 | 95 | **95** | 未惡化 |
+| >350 行檔案 | 68 | **69** | 接近門檻的檔案仍多 |
+| >400 行檔案 | 27 | **28** | 應觀察 change coupling，不宜再盲拆 |
+| >450 行檔案 | 7 | **11** | 有增加，仍未突破 500 行硬門檻 |
+| >500 行檔案 | 0 | **0** | 通過 |
+| >800 行檔案 | 0 | **0** | 通過 |
+| >60 行 Python 函式 | 228 | **217** | 改善 |
+| >70 行 Python 函式 | 96 | **89** | 改善 |
+| >75 行 Python 函式 | 48 | **41** | 改善 |
+| >80 行 Python 函式 | 0 | **1** | **回歸，CI blocker** |
+
+### 3.1 依賴方向
+
+主要跨套件 importer-file 數如下：
+
+| From | To | Importer files |
+|---|---|---:|
+| `agent_service` | `knowledge_core` | 15 |
+| `agent_service` | `operations_core` | 17 |
+| `agent_service` | `platform_kernel` | 4 |
+| `ai_ops_backoffice` | `knowledge_core` | 15 |
+| `ai_ops_backoffice` | `knowledge_portal` | 1 |
+| `ai_ops_backoffice` | `operations_core` | **158** |
+| `ai_ops_backoffice` | `platform_kernel` | 9 |
+| `knowledge_portal` | `knowledge_core` | 20 |
+| `knowledge_portal` | `platform_kernel` | 4 |
+| `composition` | application/core packages | 21 total |
+
+Backoffice 與 Portal 對 `agent_service` 的 direct importer 仍為 0，這是重構最重要的成果之一。下一個風險是 `operations_core` 逐漸變成新的 shared god package；158 個 Backoffice importer 已足以要求 public API／internal API 分界與變更影響分析。
 
 ---
 
-## 3. 現階段架構依賴拓樸圖
+## 4. RAG 準確率現況
 
-重構後之套件依賴關係已轉化為單向無環圖（DAG），清晰確立了「高階依賴低階，核心合約無反向依賴」的原則：
+### 4.1 評測資料契約
 
-```mermaid
-flowchart TD
-    subgraph Composition_Root["Composition Layer (組合層)"]
-        COMP["composition\n(agent_app, backoffice_app, portal_app)"]
-    end
+資料集：`data/eval/retrieval_eval_v2.json`
 
-    subgraph Applications["Domain Services (業務應用層)"]
-        AGENT["agent_service\n(Teams RAG Agent Runtime)"]
-        BACKOFFICE["ai_ops_backoffice\n(Governance & Analytics API)"]
-        PORTAL["knowledge_portal\n(Knowledge Authoring Portal)"]
-        TEAMS["teams_agent\n(Teams Bot Framework Adapter)"]
-    end
+| Population | 數量 |
+|---|---:|
+| 全部案例 | 121 |
+| Answerable | 88 |
+| No-answer / hard-negative | 33 |
+| 有 evidence label 的 answerable | 88 / 88 |
 
-    subgraph Core_Contracts["Shared Core (領域核心與合約層)"]
-        KCORE["knowledge_core\n(Chunk, Release, Document Models & Ports)"]
-        OCORE["operations_core\n(ActorContext, Audit, Event, Masking)"]
-    end
+這次 evidence label 已完整，Document Hit 與 Evidence Recall 也已分離，因此目前的數字比早期以 title hit 代替 evidence 的結果可信。
 
-    subgraph Platform["Infrastructure Platform (技術核心)"]
-        KERNEL["platform_kernel\n(Technical Ports, Shared Primitives)"]
-    end
+### 4.2 本次 Layer 2 全資料集重跑
 
-    COMP --> AGENT
-    COMP --> BACKOFFICE
-    COMP --> PORTAL
-    COMP --> KCORE
-    COMP --> OCORE
+命令：
 
-    AGENT --> KCORE
-    AGENT --> OCORE
-    AGENT --> KERNEL
-
-    BACKOFFICE --> KCORE
-    BACKOFFICE --> OCORE
-    BACKOFFICE --> KERNEL
-    BACKOFFICE -. in-process hook .-> PORTAL
-
-    PORTAL --> KCORE
-    PORTAL --> KERNEL
-
-    KCORE --> KERNEL
-    OCORE --> KERNEL
-
-    TEAMS --> KERNEL
+```bash
+PYTHONPATH=agent_service/src uv run python scripts/run_rag_pipeline_eval.py \
+  --split all --layer 2 --taxonomy \
+  --output /tmp/rag-l2-review-20260920.json
 ```
 
----
+| 指標 | 本次結果 | 判讀 |
+|---|---:|---|
+| Evidence Recall@4 | **93.09%** | 整體檢索證據覆蓋已高 |
+| Evidence Precision@4 | **60.61%** | Top-4 仍有約四成非標註 evidence |
+| Candidate Evidence Recall@24 | **98.86%** | 候選池幾乎完整 |
+| Document Hit@4 | **96.59%** | 文件級命中良好 |
+| Document Candidate Hit@24 | **98.86%** | 只有極少數真正 retrieval miss |
+| No-answer precision | **81.82%** | 仍有 6 個 answerable 被誤拒 |
+| No-answer recall | **81.82%** | 仍有 6 個 no-answer 被誤答 |
+| No-answer F1 | **81.82%** | 目前最值得優先改善的品質面 |
+| ACL leakage | **0** | 權限面結果正常 |
+| P50 | **641 ms** | 本機全資料集重跑 |
+| P95 | **1705 ms** | 明顯高於文件先前記載的 788 ms |
+| 平均 batch embedding | **769 ms** | 主要效能風險訊號 |
 
-## 4. 當前專案面臨的深層架構問題與潛在風險
+失敗分類共 20 件：
 
-雖然機械指標（行數、函式大小、反向 import 數）已全部合格，但依據 Clean Architecture 與 Domain-Driven Design (DDD) 標準檢視，程式碼庫出現了重構後期的典型次生結構性問題：
+| 分類 | 數量 | 優先方向 |
+|---|---:|---|
+| Ranking / reranker opportunity | 7 | 先做規則／輕量 reranking 實驗 |
+| No-answer false positive | 6 | 降低誤拒，校準 confidence |
+| No-answer false negative | 6 | 提高拒答可靠度 |
+| True retrieval recall miss | 1 | 針對單一語料／索引案例修正 |
 
-### 4.1 過度碎片化（Over-Fragmentation）與領域貧血風險
+### 4.3 Frozen test split 重跑
 
-* **問題現象**：為符合「單檔 $\le 500$ 行、單函式 $\le 80$ 行」的嚴格基線，原先的高聚合理論被拆分成大量微型模組（例如 `query_conversations_filter.py`、`query_conversations_list.py`、`query_conversations_detail.py`，以及 `extractor_invoke.py`、`extractor_fallback.py`、`extractor_normalize.py`）。
-* **架構危害**：
-  1. **認知負載（Cognitive Overhead）轉移**：開發者尋找一個商業邏輯時，必須在 5~8 個細碎模組之間來回跳轉。
-  2. **領域貧血化（Anemic Domain Model）**：許多抽出的模組僅包含單一的純函式（Pure Function）或流程輔助器，缺乏物件封裝與狀態不變性（Invariant）約束，演變為「細碎的程序導向程式碼（Procedural Code）」。
-  3. **內部合約膨脹**：微模組之間需要透過大量的內部參數物件與中繼 tuple 傳遞狀態，增加了 glue code（黏合程式碼）比例。
+| 指標 | 結果 |
+|---|---:|
+| Cases | 37（29 evidence-labeled answerable） |
+| Evidence Recall@4 | **98.28%** |
+| Candidate Evidence Recall@24 | **100%** |
+| Document Hit@4 | **100%** |
+| No-answer F1 | **80.00%** |
+| Reranker headroom | **1.72 pp** |
+| P50 / P95 | **458 / 642 ms** |
 
-### 4.2 邏輯解耦完成，但物理包裝仍為單一 Monolithic Wheel
+Test split 上只有 1 個 ranking opportunity，dedicated reranker 的可得收益很低；主要錯誤是 4 個 answerable 被錯誤判成 no-answer。因此 release gate 應優先修 confidence calibration，而不是先加入昂貴 reranker。
 
-* **問題現象**：
-  - `agent_service/src` 底下雖然邏輯上切分了 `agent_service`、`ai_ops_backoffice`、`knowledge_portal`、`knowledge_core`、`operations_core`、`platform_kernel` 與 `composition` 7 個套件，但在 `agent_service/pyproject.toml` 中，它們仍然被打包成同一個單一 Wheel (`teams-agent-rag-service`)。
-  - 三個生產環境 Dockerfile (`Dockerfile`, `Dockerfile.backoffice`, `Dockerfile.portal`) 依然採取 `COPY src/ /app/src/`，將整個原始碼目錄完整拷貝，安裝同一套所有依賴（包含 LangChain、FastAPI、PyMuPDF、Firestore、BigQuery 等）。
-* **架構危害**：
-  1. **鏡像體積虛胖與資安攻擊面未收斂**：`agent_service` 執行期並不需要 PDF 轉檔套件（PyMuPDF）；`knowledge_portal` 執行期並不需要 LangGraph 與向量檢索引擎。
-  2. **部署隔離不完整**：若 `operations_core` 有細微更動，三個服務的映像檔必須全部重新建置，無法達成個別元件獨立發布與微服務化。
+### 4.4 Layer 3 deterministic 診斷
 
-### 4.3 服務層仍依賴大量 Mixin 繼承而非組合
+本次另跑了 test split 的 deterministic Layer 3（`liveModel=false`）：
 
-* **問題現象**：
-  - `ai_ops_backoffice/services/` 雖然將大檔案拆開，但主要架構仍是 `BackofficeService(ConversationsQueryMixin, IssuesQueryMixin, HealthQueryMixin, ...)`。
-  - Mixin 之間透過隱式的 `self._runtime`、`self._settings` 與 `self._store` 互相呼叫，未形成獨立的 Application Service 或 CQRS 用例處理器。
-* **架構危害**：
-  1. **隱式狀態依賴**：型別檢查工具難以靜態推斷 Mixin 所需的內部狀態是否在主類別初始化時已完整給定。
-  2. **生命週期耦合**：任何一個 Mixin 需要特定的連線資源，整個 `BackofficeService` 的建構子就必須被擴充。
+| 指標 | 結果 | 限制 |
+|---|---:|---|
+| Answer Accuracy | 81.08% | 無 production LLM，不是最終上線數字 |
+| Citation Precision / Recall | 79.73% / 80.18% | deterministic path |
+| Groundedness | 100% | 依目前 claims contract 計算 |
+| Retrieval P50 / P95 | 469 / 671 ms | 幾乎占全部延遲 |
+| Relevance P95 | 0.62 ms | 未使用 live model |
+| Generation P95 | 0.10 ms | 未使用 live model |
+| Query tier | 12 trivial / 10 standard / 15 hard | 受目前 tier regression 影響 |
 
-### 4.4 Settings 仍然過於龐大且缺乏局部配置切片
+這組數字只適合定位 pipeline：在無 LLM 時，延遲幾乎全部來自 retrieval／embedding。它不能取代 production-model Layer 3 release benchmark。
 
-* **問題現象**：
-  - 雖然 `from_env` 的剖析邏輯已被移至 `settings_sections.py` 或獨立 helper，但資料物件本身（如 `BackofficeSettings`、`RagSettings`）仍包含 40~50 個欄位的扁平結構。
-  - 許多底層元件（如 `PricingService`、`FreshnessStore`）接收了整個 `Settings` 物件，而實際上僅使用了其中的 2~3 個配置參數。
-* **架構危害**：
-  1. **破壞最小知識原則（Law of Demeter）**：測試時為了初始化一個小型服務，需要 mock 數十個無關的環境變數。
-  2. **動態組態難以追蹤**：難以明確識別哪一個設定更動會影響哪些子系統。
+### 4.5 準確率的真正瓶頸
 
-### 4.5 非同步 Event Loop 上的同步 I/O 與冷啟動負擔
-
-* **問題現象**：
-  - 部份非同步 API 路徑上，仍存在同步的本機檔案存取（如 `Path.read_text()`）或繁重的 JSON 序列化/反序列化（例如大型審計事件日誌與 Release Manifest）。
-  - 在服務啟動（Lifespan）階段，一次性載入 Taxonomy、建立 HybridIndex、編譯 LangGraph 流程，使得 Cloud Run 冷啟動時間仍有優化空間。
-* **架構危害**：在突發流量下，若同步 I/O 阻塞了 FastAPI 的 asyncio event loop，會直接拉高其他並行連線的延遲（P99 Latency）。
-
-### 4.6 前端與後端雖然具備 OpenAPI TS Client，但元件測試深度仍偏薄
-
-* **問題現象**：
-  - 前端 Vitest 測試已提升至 18 個，覆蓋了 Store 與 Markdown 元件，但對於最核心、互動最複雜的頁面（如 `TriagePage` 的即時交談串流、`CaseDetailPage` 的真人轉接審查、`KnowledgePage` 的版本發布驗證），仍然缺乏完整的使用者行為模擬測試。
-  - 前端仍有部分業務邏輯與 Ant Design 表格強綁定，元件職責分割仍有提升空間。
-
----
-
-## 5. 下一階段持續優化路線圖 (Architecture Evolution Roadmap)
-
-針對上述深層問題，下一階段的架構演進不應再聚焦於「降低行數」，而應聚焦於**「提高領域凝聚度、隔離實體打包、強化執行期效能與用例解耦」**。
-
-```mermaid
-timeline
-    title 下一階段架構優化路線圖 (Post-Refactor Evolution)
-    Milestone 1 (已完成) : 領域模型聚合與 CQRS 用例服務化 : 消除過度碎化的微模組 : 替換 Mixin 為獨立 Application Services
-    Milestone 2 (待後續發行規劃) : 現代化 Python uv Workspace : 拆解單一 pyproject 為獨立套件 : 容器映像檔依服務最小化建置
-    Milestone 3 (已完成) : 階層化 Settings 與微配置注入 : 導入 Nested Immutable Config : 元件僅依賴局部 Config Interface
-    Milestone 4 (已完成) : 非同步執行期與冷啟動效能調優 : 消除 Event Loop 上的同步阻塞 : 延遲載入與線程調度
-    Milestone 5 (已完成) : 資料儲存與非同步任務合約治理 : Firestore Schema 規範 : 任務酬載強型別契約
-    Milestone 6 (已完成) : 前端關鍵業務流整合測試與獨立部署 : Triage / CaseDetail RTL 測試 : Console-v2 靜態打包驗證
-```
-
----
-
-### Milestone 1：領域模型聚合與 CQRS 用例服務化（消除過度拆分）✅ 【已完成】
-
-* **目標**：解決檔案碎片化問題，將過度分散的純函式重新收斂為高內聚的領域聚合（Domain Aggregates）與用例處理器（Use-Case Handlers）。
-* **落地成果**：
-  1. **重構 `BackofficeService` 為 CQRS 模式**：
-     - 將 `ConversationsQueryMixin`、`IssuesQueryMixin` 等收斂為專責的 Query Services（`ConversationQueryService`, `IssueAnalyticsQueryService`, `CostQueryService`, `HealthQueryService`, `BudgetQueryService`, `FeedbackQueryService`, `KnowledgeQueryService`, `OperationsQueryService`, `ExportQueryService`），並由 `BackofficeQueryService` 以組合模式統一對外裝配。
-     - 將 FAQ 寫入與發布操作封裝為專責的 `FaqPublishCommandHandler`，由 `FaqDomainService.publish_handler` 直接組合並提供不可變審批流程。
-  2. **Extractor 領域封裝**：
-     - 整合並消滅了碎裂的微型模組（`extractor_invoke.py`、`extractor_fallback.py`、`extractor_normalize.py`，合計清除 484 行碎片代碼），重構為職責清晰的 `IssueExtractorEngine`（負責治理模型解析、結構化調用與備援切換策略）與 `IssueNormalizer`（負責領域後處理、Qualifiers 恢復與安全過濾不變性），`IssueExtractor` 改採物件組合。
-  3. **Release 流程聚合**：
-     - 建立 `ReleaseAggregate` 領域聚合根，將 Release 狀態機的轉換驗證（`can_transition`, `ensure_can_transition`）、發布門禁、降級與步驟執行嚴格封裝於領域物件內，保證生命週期不可變原則（Invariants）。
-
----
-
-### Milestone 2：現代化 Python uv Workspace（多套件獨立打包）
-
-* **目標**：將 Monolithic Wheel 拆解為標準的 Monorepo Workspace，達成各服務最小依賴打包。
-* **具體工作**：
-  1. **建立正式的 Workspace 結構**：
-     ```text
-     teams-agent/
-     ├── pyproject.toml               # Workspace root (uv workspace)
-     ├── packages/
-     │   ├── platform-kernel/        # 技術核心 (基礎協定、通用工具)
-     │   ├── operations-core/        # 運營合約 (事件、審計、遮罩、分類)
-     │   └── knowledge-core/         # 知識合約 (Chunk、Release、文件模型)
-     ├── apps/
-     │   ├── rag-service/            # agent_service
-     │   ├── backoffice-service/     # ai_ops_backoffice
-     │   ├── knowledge-portal/       # knowledge_portal
-     │   ├── teams-adapter/          # teams_agent
-     │   └── console-frontend/       # React Console-v2
-     └── deploy/
-     ```
-  2. **精簡 Dockerfile 與建置相依**：
-     - `Dockerfile.backoffice` 僅依賴 `packages/operations-core`、`packages/knowledge-core` 與 `packages/platform-kernel`，排除 RAG 模型推論與向量檢索套件。
-     - `Dockerfile.agent` 排除 PDF 轉檔（`pypdf`, `pymupdf`）與前端靜態資源。
-     - 大幅縮減各容器映像檔大小（預期縮小 30%~50%）並加速 CI 建置。
-
----
-
-### Milestone 3：階層化 Settings 與微配置注入 ✅ 【已完成】
-
-* **目標**：打破 50 欄位的巨型扁平 Settings，改採領域切片配置。
-* **落地成果**：
-  1. **定義 Nested Immutable Configuration**：
-     - 在 `settings_slices.py` 中抽取獨立且不可變的領域配置切片：`AuthSettings`、`KnowledgeBridgeSettings`、`NotificationSettings` 與 `ExportJobSettings`。
-  2. **配置切片屬性暴露與依賴最小化**：
-     - 在 `BackofficeSettings` 上暴露各領域配置切片屬性（`settings.auth`, `settings.knowledge_bridge`, `settings.notifications`, `settings.export_jobs_config`），保證外部環境變數與舊版程式碼 100% 向後相容的同時，使底層元件可僅依賴其專屬配置切片。
-
----
-
-### Milestone 4：非同步執行期與冷啟動效能調優 ✅ 【已完成】
-
-* **目標**：提升系統吞吐量，消除 Event Loop 潛在阻塞，壓低冷啟動延遲。
-* **落地成果**：
-  1. **非同步 I/O 全面審計與背景線程排程**：
-     - 在 `SourceTraceResolver` 增加 `resolve_source_ref_async`、`resolve_citation_async` 與 `references_for_events_async`，將本機檔案讀取與大型 `chunks.json` 反序列化安全排程至專用線程池（`asyncio.to_thread`），徹底避免阻塞主事件迴圈。
-     - 在 `preview.py`、`file.py` 與 `resolve_helpers.py` 等非同步端點全面接入非同步解析路徑，同時保留向後相容。
-     - 在 `TaxonomyRepository` 新增 `load_async` 類別方法，支援無阻塞異步載入。
-     - 在 `knowledge_core.release_artifacts` 提供 `inspect_index_artifact_async` 與 `validate_release_artifacts_async`。
-  2. **啟動冷啟動延遲調優**：
-     - 在 `lifespan_wiring.py` 中將繁重的索引載入與代理初始化排程至背景線程池，保證應用啟動生命週期期間主事件迴圈之健康探針與探活請求即時回應。
-
----
-
-### Milestone 5：非同步任務與資料庫儲存合約治理 ✅ 【已完成】
-
-* **目標**：將現有針對 HTTP API 的 OpenAPI 嚴格合約看門機制，延伸至非同步作業與資料庫實體。
-* **落地成果**：
-  1. **Firestore 集合綱要規範（Schema Versioning）**：
-     - 建立 `operations_core.outbox_contracts`，為 `operational_delivery_outbox` 定義嚴格型別合約 `OutboxRecord`、`DeliveryTargetState` 與 `DeliveryStatus`，並具備向後相容的 `from_firestore_dict` 與 `to_firestore_dict` 序列化介面。
-     - 為 `QualityState`、`SyncJob`、`SyncState`、`ExportJob` 明確定義 `schema_version: int = 1`，並建立舊版本缺失欄位之預設降級與容錯相容機制。
-  2. **Background Jobs & Cloud Tasks 酬載治理**：
-     - 建立 `job_payload_contracts.py`，針對各類匯出任務（對話、回饋、問題、成本、路由、知識、維運等）定義強型別參數契約（如 `ConversationsExportParams`、`FeedbackExportParams`）並提供 `validate_export_request_params` 安全過濾器。
-     - 定義 `SyncTaskPayload` 與 `IngestionTaskPayload` 規範 Cloud Tasks 呼叫契約。
-     - 新增全套 `test_storage_and_jobs_contracts.py` 驗證版本相容性。
-
----
-
-### Milestone 6：前端關鍵業務流整合測試與獨立部署 ✅ 【已完成】
-
-* **目標**：鞏固 Console-v2 前端生產穩定性，達成真正的前後端獨立交付。
-* **落地成果**：
-  1. **深度使用者情境測試（RTL Integration Tests）**：
-     - 在 `ConversationStream.test.tsx` 中完整測試對話訊息串流呈現、回饋標記與引用依據抽屜（Citation Drawer）開啟互動。
-     - 在 `CaseDetailHeader.test.tsx` 中測試品質案件詳情抬頭、權責單位顯示、狀態推進按鈕與返回導覽流程。
-     - 配置 `tests/setup.ts` 補齊 JSDOM 環境下 Ant Design 響應式佈局所需的 `window.matchMedia` mock。
-  2. **前端測試覆蓋與打包預算達標**：
-     - 前端測試擴增至 7 個測試檔案、23 項測試 100% 通過。
-     - Vite 打包建置完全乾淨，Entry Chunk gzip 僅 18.28 KB（遠低於 350 KB 上限）。
-
----
-
-## 6. 架構健康度度量衡與防退化規則 (Architectural Governance Guardrails)
-
-為確保未來的開發不會重蹈「循環依賴復燃、檔案無限增長、合約飄移」的覆轍，專案必須永久維持以下自動化看門防線：
+目前候選證據召回率為 98.86%，表示 88 個 answerable 中，多數正確證據已在 Top-24。主要問題已從「retrieve」移到兩個後段決策：
 
 ```mermaid
 flowchart LR
-    subgraph CI_Pipeline["Required CI Quality Gates"]
-        R1["Linting Gate\nRuff check (0 errors)"]
-        R2["Architecture Gate\nTarjan SCC (0 cycles)\nMonotonic Size Ratchet"]
-        R3["Contract Gate\nOpenAPI Snapshot\nTS Client Freshness\nWire Compatibility"]
-        R4["Bundle Gate\nEntry gzip < 350KB\nFeature gzip < 200KB"]
-        R5["Test Gate\nFull Pytest (100% Pass)\nVitest RTL (100% Pass)"]
-    end
+    Q[Query] --> E[Embedding / Hybrid Retrieve]
+    E --> C[Top-24 Candidates\nEvidence Recall 98.86%]
+    C --> R[Rank / Select Top-4\nEvidence Recall 93.09%]
+    R --> G[Confidence / No-answer Gate\nF1 81.82%]
+    G --> A[Answer + Citation]
 
-    R1 --> R2 --> R3 --> R4 --> R5
+    R -. 7 cases .-> RX[Ranking opportunity]
+    G -. 12 cases .-> CX[6 false reject + 6 false answer]
 ```
 
-1. **單調基線機制（Monotonic Ratchet）**：
-   - 目前 `oversized_files.json` 與 `oversized_functions.json` 已全數清空。
-   - 任何新增檔案嚴格禁止超過 **500 行**；任何新增函式嚴格禁止超過 **80 行**。
-   - PR 審查時，禁止無理由透過新增 waiver 繞過行數限制。
-2. **零逆向邊界（Zero Reverse Edge Policy）**：
-   - 嚴格禁止任何業務套件反向依賴 `composition`。
-   - 嚴格禁止 `ai_ops_backoffice` 與 `knowledge_portal` 重新引入對 `agent_service` 的直接實作依賴；所有跨領域共用合約必須且僅能透過 `operations_core` 或 `knowledge_core`。
-3. **OpenAPI 自動化同步與零飄移**：
-   - 任何後端路由或 DTO 變更，必須同步更新 `openapi/ai_ops_backoffice.canonical.json` 並執行 `generate_openapi_ts.py --write`。
-   - CI 階段強制比對 Git 工作目錄乾淨度，徹底杜絕前後端介面型別脫節。
-4. **前端打包預算硬性限制（Bundle Budget Hard Ceiling）**：
-   - Entry Chunk Gzip 嚴格限制在 **350 KB** 以下。
-   - 任何延遲載入之 Feature Chunk Gzip 嚴格限制在 **200 KB** 以下。
-   - 禁止在全域 Store 中加入非必要的大型外部函式庫。
+因此準確率工作應分成：
+
+- **校準問題**：同時存在 false positive 與 false negative，不能只把 threshold 單向調高或調低。
+- **排序問題**：只有 7 件，且 frozen test 只有 1 件；應做 targeted reranking，不應全流量增加一次模型呼叫。
+- **真正 retrieval miss**：只有 1 件，應個案修語料、metadata 或 tokenization，不值得全面更換 retrieval architecture。
 
 ---
 
-## 7. 結論與下一步行動建議
+## 5. RAG 執行速度現況
 
-專案在本次重構中展現了極高的工程執行力：**成功拔除了所有架構循環，消滅了 859 個 Linter 錯誤，完全清除了所有大於 500 行的檔案與大於 80 行的函式，將跨領域耦合歸零，並徹底刪除了舊時代的 Legacy UI 負擔**。
+### 5.1 已完成且應保留的優化
 
-當前的系統處於**「骨架清晰、合約受控、自動化看門完備」**的最佳狀態。
+- 預先計算 index maps。
+- Sparse fast path。
+- 多 query batch embedding。
+- Query-level RRF。
+- reranker instance reuse。
+- adaptive evidence expansion 與 token budget。
+- retrieval cache key 已包含 release、ACL groups、fusion mode 與 candidate parameters。
+- OpenTelemetry／stage timing 基礎已存在。
 
-**建議下一步的立即行動方針**：
-1. **無須急於進一步物理拆分 Git Repository**：目前的 Monorepo 依賴關係已非常清晰，物理拆分只會徒增跨 Repo 發版與套件發布的行政負擔。
-2. **暫停單純為滿足「行數極限」的機械式切割**：現階段行數指標已全數合格。後續改動應以「提升業務凝聚度」與「DDD 領域聚合」為依歸，避免進一步製造微模組碎塊。
-3. **聚焦於 Milestone 1（CQRS 用例服務化）與 Milestone 2（uv Workspace 多套件打包）**：這是將專案從「程式碼結構整潔」推進到「生產級高併發與獨立雲原生發布」的關鍵路徑。
+### 5.2 尚未解決的問題
+
+#### Embedding latency 變異
+
+同一版程式在兩種 population 的結果差異明顯：
+
+| Run | P50 | P95 | Avg batch embedding |
+|---|---:|---:|---:|
+| Frozen test（37） | 458 ms | 642 ms | 524 ms |
+| All（121） | 641 ms | 1705 ms | 769 ms |
+
+這表示單次 benchmark 的 788 ms P95 不能作為穩定 SLO 證據。可能因素包含：
+
+- embedding provider 網路／配額變異；
+- facet query 數不同；
+- batch path 只在 multi-query 且 cache miss 時觸發；
+- retry/backoff 對 tail latency 的放大；
+- 本機 sequential benchmark 與實際 Cloud Run concurrency 行為不同。
+
+#### Layer 2 缺少完整 stage percentile
+
+目前 Layer 2 summary 只輸出 `avgBatchEmbeddingMs`，沒有輸出：
+
+- embed P50/P95；
+- sparse P50/P95；
+- dense P50/P95；
+- fusion P50/P95；
+- selection／evidence expansion P50/P95；
+- cache-hit 與 cache-miss 分群；
+- facet count 分群；
+- provider retry count。
+
+在缺少這些資料前，不應以平均值判定優化已完成。
+
+#### Ablation 顯示 batch／query-RRF 路徑可能反而增加延遲
+
+本次在 frozen test split 執行現有的 real-component ablation matrix：
+
+| Configuration | Evidence Recall@4 | No-answer F1 | P95 |
+|---|---:|---:|---:|
+| Vanilla Weighted | 94.83% | 57.14% | 853 ms |
+| RRF Fusion | 98.28% | 94.12% | 982 ms |
+| RRF + Sparse Fast Path | 98.28% | 94.12% | 919 ms |
+| Pipeline L2 Single-pass | 98.28% | 80.00% | **499 ms** |
+| + Batch Embed & Query RRF | 98.28% | 80.00% | **904 ms** |
+| + Adaptive EvidenceBundle | 98.28% | 80.00% | 847 ms |
+
+Config A～C 與 Config D～F 使用不同 evaluation layer，因此兩組之間的 No-answer F1 不應直接比較；可比較的是同為 Layer 2 的 D／E／F。這組結果也不能直接證明 batch embedding 本身就是原因，因為 Config E 同時打開 batch embedding 與 query-level RRF，且各 configuration 是依序執行，仍受 provider latency 變異影響。但它已經證明：目前「進階路徑」在此 test population 沒有帶來 Evidence Recall 收益，卻增加約 405 ms P95。
+
+下一個 benchmark 應將兩個開關拆開為四格：
+
+| Batch embedding | Query RRF | 目的 |
+|---:|---:|---|
+| off | off | single-pass baseline |
+| on | off | 隔離 batch provider 成本 |
+| off | on | 隔離 multi-query fusion 收益 |
+| on | on | 完整 candidate |
+
+並依 facet fan-out 分群。當只有一個 query 時不應進入 batch path；兩個 query 時也必須證明 provider batch 比並行 single-query 更快。若沒有穩定收益，應把 batch 啟用條件改成 adaptive，而不是全域預設。
+
+#### Cache 為 process-local
+
+目前 retrieval cache 是 in-memory mutable mapping。它對單一 warm instance 有效，但 Cloud Run scale-out、冷啟動或 release rollover 後命中率會重置。現在不一定需要 Redis；應先量測 production cache hit rate、instance churn 與 miss penalty，再決定是否引入共享 cache。
+
+---
+
+## 6. 建議執行順序
+
+### Phase 0：恢復可合併狀態（立即）
+
+1. 拆分 `run_retrieve` 的 ranking merge helper，使 architecture gate 回到 0 finding。
+2. 釐清 `LOW confidence`、`NO_ANSWER`、`HARD query` 的決策邊界。
+3. 修正兩個 query-tier regression tests，不接受單純改 expectation。
+4. 重跑完整 Agent suite 與所有 CI gates。
+
+完成條件：
+
+- Agent tests 0 failed。
+- Architecture checker 0 finding。
+- standard reject 維持 1 次 search；empty／明確 hard case 才允許 rewrite。
+
+### Phase 1：No-answer calibration sprint（最高品質優先級）
+
+1. 將 12 個 No-answer 錯誤輸出成固定 calibration slice。
+2. 記錄每案 features：top score、score gap、lexical overlap、sparse/dense agreement、identifier exact hit、facet count、query length。
+3. 以 dev split 校準，frozen test 只做一次最終驗證，避免 test leakage。
+4. 比較規則式 baseline 與簡單 logistic／isotonic calibration；資料量不足時保留規則式。
+5. 將 refusal threshold 與 rewrite eligibility 分離。
+
+建議 gate：
+
+- Test No-answer F1：**80% → 至少 88%**。
+- No-answer recall 不可下降超過 2 pp。
+- Answerable false reject：4 件降至 2 件以下。
+- 不新增 LLM call。
+
+### Phase 2：Targeted ranking 改善
+
+先處理 Top-24 已存在但 Top-4 遺失的 7 件：短而模糊的密碼／登入／網路 query、多文件比較、版本／平台差異、視覺證據 query。
+
+實驗順序：
+
+1. query intent／entity features 與 exact identifier boost；
+2. 多文件比較與 visual evidence 的 deterministic diversity rule；
+3. 僅對 `UNCERTAIN + candidate headroom` 啟用 lexical／small cross-encoder rerank；
+4. 最後才 A/B Vertex Ranking 或 Qwen reranker。
+
+建議 gate：
+
+- All-set Evidence Recall@4：**93.09% → 至少 95%**。
+- Frozen test 不得低於目前 **98.28%**。
+- No-answer F1 不得退化。
+- 新增 P95 不超過 100 ms；若超過，收益需明顯高於目前 5.78 pp all-set headroom。
+
+### Phase 3：Latency observability 與 embedding 優化
+
+1. 讓 Layer 2 報告完整 stage P50/P95，而非只報 batch average。
+2. 將 batch embedding 與 query RRF 拆成獨立 ablation 維度。
+3. 分開 cold／warm、cache hit／miss、single／multi-query、facet count 0/1/2+。
+4. 記錄 embedding provider request count、batch size、retry count、429/503 與 backoff time。
+5. 建立同一 commit 至少 3 次重跑的 variance 報告。
+6. 在真正 Cloud Run revision 做 concurrency 1/4/8/16 壓測。
+7. 若 embedding 仍為瓶頸，再依序評估：
+   - query embedding cache；
+   - facet query dedupe／正規化；
+   - provider deadline 與一次 bounded retry；
+   - regional endpoint／connection reuse；
+   - 才考慮替換 embedding provider。
+
+建議 gate：
+
+- Frozen test Layer 2 P95 ≤ 700 ms。
+- 三次 all-set 重跑 P95 的最大／最小差距 ≤ 25%。
+- production retrieval P95 ≤ 1 s；若現有正式 SLO 不同，以正式 SLO 為準。
+- retry rate、cache hit rate、facet fan-out 必須可觀測。
+
+### Phase 4：Production-model Layer 3 release gate
+
+在使用正式模型、正式 region、正式 embedding provider 與相同 deployment settings 的環境執行：
+
+```bash
+cd agent_service
+../.venv/bin/python ../scripts/run_rag_pipeline_eval.py \
+  --split test --layer 3 --live-model \
+  --output /tmp/rag-l3-live.json
+```
+
+必須保存：
+
+- Answer Accuracy；
+- No-answer F1；
+- Citation precision／recall；
+- Groundedness；
+- retrieval／relevance／generation／total P50-P95；
+- LLM calls、input/output tokens、cost per query；
+- query tier distribution；
+- model、region、release id、index version、commit SHA。
+
+本次複查沒有執行 `--live-model`，因為它會使用正式模型憑證並產生成本；deterministic Layer 3 不能代替這個 release gate。
+
+---
+
+## 7. 前端與 RAG 是否要拆成兩個 repository
+
+### 7.1 決策
+
+**現在維持同一個 repository，但設計成可隨時拆分。**
+
+這個決策仍然成立。前端與 RAG 的版本、API 與 release gate 尚在快速共同演進，立即拆 repo 會增加跨 repo contract PR、版本協調與部署追蹤成本，並不會自動改善準確率或速度。
+
+### 7.2 已具備的拆分能力
+
+- `console_frontend/` 有自己的 `package.json`、lockfile、測試、Vite build 與 Dockerfile。
+- 前端可以建成獨立 nginx image。
+- Cloud Build 有獨立 console image config。
+- OpenAPI canonical snapshot 與 generated TS client 已存在。
+- Frontend build freshness、bundle budget、DTO overlap、path matrix 已進 CI。
+- RAG／Backoffice／Portal 的 Python package 邊界已明顯改善。
+
+### 7.3 尚未真正完成的拆分條件
+
+- production console 仍預設由 Backoffice 同源提供。
+- 獨立 nginx image 只提供 `/console-v2`，不代理 `/api`。
+- `apiClient` 使用相對 `/api` 與 `credentials: same-origin`，獨立網域需要 gateway／BFF、CORS 與認證決策。
+- TypeScript generated client 尚未完全取代所有直接 `apiClient` call sites。
+- OpenAPI matrix 主要驗證 path 存在，尚未完整驗證 method、query、request body 與 response schema 相容性。
+- Python 仍主要是兩個 workspace members；Agent Runtime、Backoffice、Portal 仍同一 wheel。
+
+### 7.4 Repo-ready exit criteria
+
+未來若要真正拆 repo，先達成：
+
+1. Frontend build 不讀取 `agent_service/` 原始碼，只依賴發布版 OpenAPI artifact／npm client package。
+2. RAG／Backoffice image 不依賴 frontend source，只選擇是否下載已版本化的 UI artifact。
+3. `/api` 的 same-origin gateway、auth、CSRF、CORS 與 base URL 有明確部署合約。
+4. Consumer-driven contract test 驗證 method、payload 與 response，而不只驗證 path。
+5. UI 與 API 可以各自 deploy／rollback，並保留相容版本矩陣。
+6. 有實際證據顯示兩邊 release cadence、ownership、security boundary 或 failure isolation 需要不同 repo。
+
+在這些條件之前，「同 repo、獨立 artifact」是成本最低且風險較小的方案。
+
+---
+
+## 8. 其他持續優化方向
+
+### 8.1 不再以 LOC 作為主要重構 KPI
+
+硬門檻仍應保留，但 69 個 350 行以上檔案與 41 個 75 行以上函式說明大量程式貼近門檻。接下來應量測：
+
+- change coupling；
+- public API surface；
+- cyclomatic／cognitive complexity；
+- 重複邏輯；
+- 單一功能修改需要跨越的檔案數；
+- owner 與 failure domain。
+
+### 8.2 收斂 shared core
+
+`ai_ops_backoffice -> operations_core` 有 158 個 importer files。建議：
+
+- 明確定義 `operations_core.public` 或 package-level exports；
+- 禁止應用層引用 core 的 internal adapters；
+- 對 public symbols 建立 API snapshot；
+- 以領域切片組織 contract，而不是繼續堆入通用 helpers。
+
+### 8.3 前端初始載入預算仍不完整
+
+雖然 entry gzip 只有 18.28 KB，但主要 vendor gzip 約為：
+
+- general vendor：335.48 KB；
+- Ant Design：200.51 KB；
+- Refine：37.09 KB；
+- React：5.00 KB。
+
+Vite 仍警告兩個 minified chunks 超過 500 KB raw。現有 gate 偏向「每個 chunk」與 total raw size，尚未限制首頁實際 preload／download 的 aggregate gzip。下一步應增加 route-level initial transfer budget，而不是只看 entry chunk。
+
+### 8.4 測試輸出噪音
+
+Console tests 全數通過，但預期 503 情境會輸出大量 error log，JSDOM 也會輸出 `getComputedStyle` not implemented warning。這不影響正確性，但會降低 CI 訊號品質；應在測試中針對預期錯誤 mock logger／browser API，而不是全域忽略 stderr。
+
+---
+
+## 9. 建議的工作票拆分
+
+| 優先級 | 工作票 | 估計範圍 | 驗收 |
+|---|---|---|---|
+| P0 | Restore confidence/query-tier semantics | 1–2 天 | 兩個 regression tests + full suite green |
+| P0 | Extract retrieval merge helper | 0.5 天 | architecture 0 finding；ranking tests green |
+| P1 | No-answer calibration slice + report | 2–4 天 | Test F1 ≥ 88%；無新增 LLM call |
+| P1 | Layer 2 stage percentile telemetry | 1–2 天 | embed/sparse/dense/fusion/cache/facet P50-P95 |
+| P1 | Repeatable latency benchmark | 1–2 天 | 3-run variance + cold/warm + cache segmentation |
+| P2 | Targeted ambiguous-query ranking | 3–5 天 | All Evidence Recall@4 ≥ 95%；P95 delta ≤ 100 ms |
+| P2 | Live Layer 3 release benchmark | 1 天 + review | accuracy/grounding/citation/latency/cost 完整報告 |
+| P2 | Frontend initial-route budget | 1–2 天 | aggregate preload gzip gate |
+| P3 | Consumer-driven API contract gate | 3–5 天 | method/request/response compatibility |
+| P3 | uv workspace physical package split | 獨立里程碑 | 同 repo、各 service 最小依賴 wheel/image |
+
+---
+
+## 10. 最終判定
+
+目前專案的架構已經從「巨型檔案與循環依賴失控」進入「邊界大致穩定，但需要以品質與執行期數據驅動演進」的階段。整體重構不是失敗；相反地，基礎邊界與自動化看門已經足以讓新回歸被準確抓出。
+
+當前最重要的訊號是：
+
+- 正確證據在 Top-24 的比例已達 98.86%，因此不要全面重做 retrieval。
+- Evidence Recall@4 已達 93.09%，排序還有有限但明確的改善空間。
+- No-answer F1 只有 81.82%，而且 shared confidence 已造成 runtime tier regression，這是第一品質優先級。
+- test split P95 642 ms 尚可，但 all-set P95 1705 ms，embedding tail latency 尚未穩定。
+- dedicated reranker 的 all-set headroom 5.78 pp、test headroom 1.72 pp，不足以支持全流量啟用。
+- Git repo 暫時不拆；維持 monorepo，但要求獨立 artifact、contract、deploy 與 rollback。
+
+因此最合理的下一步不是再進行大型架構翻修，而是完成一個短週期的 **「P0 regression closeout → No-answer calibration → retrieval latency stabilization → live Layer 3 release gate」**。只有當這四步都有可重現證據後，才應重新評估 reranker、embedding provider、共享 cache 或物理拆 repo。

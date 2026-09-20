@@ -1,0 +1,259 @@
+{
+  "summary": {
+    "caseCount": 37.0,
+    "evidenceLabeledCaseCount": 29.0,
+    "recallAt4": 0.5855855855855856,
+    "precisionAt4": 0.47297297297297297,
+    "evidenceRecallAt4": 0.7068965517241379,
+    "evidencePrecisionAt4": 0.7586206896551724,
+    "recallAt5": 0.5855855855855856,
+    "recallAt10": 0.5855855855855856,
+    "recallAt20": 0.5855855855855856,
+    "mrrAt10": 0.6081081081081081,
+    "ndcgAt10": 0.5880274502569772,
+    "hitAt1": 0.5945945945945946,
+    "hitAt3": 0.6216216216216216,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 8.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "layer": 3,
+    "liveModel": true,
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 0.0,
+    "candidateEvidenceRecallAt24": 0.0,
+    "candidateRecallAt24": 0.0,
+    "latencyMsP50": 2738.187041999481,
+    "latencyMsP95": 5331.991863098665,
+    "latencyMsMean": 2921.9525326489756,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.0,
+    "avgBatchEmbeddingMs": 0.0,
+    "facetGroupCounts": {
+      "facet0": 37.0,
+      "facet1": 0.0,
+      "facet2plus": 0.0
+    },
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 0.7702702702702703,
+    "citationPrecision": 0.7927927927927928,
+    "citationRecall": 0.9594594594594594,
+    "groundedness": 1.0,
+    "retrievalMsP50": 486.1,
+    "retrievalMsP95": 1204.19,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 2086.7,
+    "generateMsP50": 2016.1,
+    "generateMsP95": 4058.225,
+    "totalMsP50": 2592.8,
+    "totalMsP95": 5421.32,
+    "llmCallsPerQuery": 1.4324324324324325,
+    "inputTokensPerQuery": 12.08108108108108,
+    "outputTokensPerQuery": 123.29729729729729,
+    "costUsdPerQuery": 0.0001879662162162162,
+    "usageSourceCounts": {
+      "ESTIMATED": 37
+    },
+    "queryTierCounts": {
+      "trivial": 14.0,
+      "standard": 14.0,
+      "hard": 9.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "RETRIEVAL_RECALL_MISS": 9,
+      "LEXICON_OR_CODE_MISS": 1
+    },
+    "failureCount": 10,
+    "split": "test",
+    "evalSet": "/Users/cfh00896102/Github/teams-agent/data/eval/retrieval_eval_v2.json"
+  },
+  "failures": [
+    {
+      "caseId": "v2-para-share",
+      "query": "要幫同事加共用磁碟權限要填什麼",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾"
+      ],
+      "expectedEvidence": [
+        [
+          "同仁申請共用公槽資料夾"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-alias-employee-portal",
+      "query": "國泰員工入口網忘記密碼",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "金控入口網密碼變更方式"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰員工入口網",
+          "CTeam",
+          "密碼",
+          "國泰"
+        ],
+        [
+          "金控入口網密碼變更方式"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-alias-jumpbox",
+      "query": "跳板機連不上",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "VPN",
+          "跳板機連線異常"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-acl-allow-public",
+      "query": "VPN (-455) 處理方式",
+      "failureCategory": "LEXICON_OR_CODE_MISS",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "全域資料最小化原則 (POLICY-SEC-001)",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "expectedEvidence": [
+        [
+          "(-455)",
+          "VPN",
+          "-455",
+          "處理方式"
+        ],
+        [
+          "(-455)",
+          "-455"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-acl-allow-it",
+      "query": "跳板機連線異常",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "跳板機連線異常"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-conv-product-followup",
+      "query": "不是入口網，是 AD 帳號被鎖",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "AD",
+          "帳號被鎖"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-scope-data-protect",
+      "query": "外部客戶線上問題文件有沒有寫資料保護額外限制？",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "外部客戶線上問題"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-vis-dazhou",
+      "query": "大州系統功能無法點選時畫面上該檢查什麼",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "大州系統",
+          "功能無法點選"
+        ],
+        [
+          "大州首次使用設定"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-x-mail",
+      "query": "郵件亂碼要改哪個編碼",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "郵件為亂碼"
+      ],
+      "expectedEvidence": [
+        [
+          "郵件為亂碼"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-x-cs-list",
+      "query": "CS 團隊 VPN 權限範圍",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": [
+        [
+          "CS",
+          "團隊",
+          "VPN"
+        ]
+      ]
+    }
+  ]
+}

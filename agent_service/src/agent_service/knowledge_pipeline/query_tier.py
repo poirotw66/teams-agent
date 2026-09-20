@@ -61,7 +61,17 @@ def classify_query_tier(
     min_score: float,
     max_retrieval_rewrites: int,
 ) -> QueryTierDecision:
-    """Classify after first retrieve; never adds an LLM call."""
+    """Classify after first retrieve; never adds an LLM call.
+
+    Query cost tier is independent from no-answer prediction:
+
+    - ``BELOW_MIN_SCORE`` / empty / displaced / conflict / multi-aspect → HARD
+      (rewrite allowed).
+    - ``LOW_CONFIDENCE_FAIL`` with candidates present is *not* rewrite-hard;
+      weak lexical overlap may mean refuse safely after relevance, not pay for
+      another retrieval pass.
+    - Mid-band ``LLM_RELEVANCE`` stays STANDARD (single pass).
+    """
     hard_ceiling = max(0, max_retrieval_rewrites)
     results = list(state.results)
     confidence_label, _ = evaluate_retrieval_confidence(
@@ -75,13 +85,15 @@ def classify_query_tier(
     close_gap = _has_close_top_gap(results)
     conflicting = conflicting_top_candidates(results)
 
-    if (
-        confidence_label in {"BELOW_MIN_SCORE", "LOW_CONFIDENCE_FAIL"}
+    rewrite_eligible = (
+        confidence_label == "BELOW_MIN_SCORE"
+        or not results
         or state.filter_displaced_top1
         or conflicting
         or (close_gap and not lexical)
         or multi_aspect
-    ):
+    )
+    if rewrite_eligible:
         return QueryTierDecision(
             tier=QueryTier.HARD,
             max_retrieval_rewrites=hard_ceiling,
@@ -100,7 +112,8 @@ def classify_query_tier(
             enable_generation_retries=False,
         )
 
-    # Default bias: uncertain middle band stays standard (no rewrite/retry tax).
+    # Default bias: uncertain / low-with-candidates middle band stays standard
+    # (no rewrite/retry tax).
     return QueryTierDecision(
         tier=QueryTier.STANDARD,
         max_retrieval_rewrites=0,

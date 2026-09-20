@@ -1,0 +1,306 @@
+{
+  "summary": {
+    "caseCount": 121.0,
+    "evidenceLabeledCaseCount": 88.0,
+    "recallAt4": 0.49917355371900823,
+    "precisionAt4": 0.20592286501377408,
+    "evidenceRecallAt4": 0.9763257575757575,
+    "evidencePrecisionAt4": 0.5861742424242424,
+    "recallAt5": 0.5274104683195592,
+    "recallAt10": 0.5356749311294765,
+    "recallAt20": 0.5356749311294765,
+    "mrrAt10": 0.49444444444444446,
+    "ndcgAt10": 0.4782063035540334,
+    "hitAt1": 0.4380165289256198,
+    "hitAt3": 0.5371900826446281,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 0.96,
+      "recall": 0.7272727272727273,
+      "f1": 0.8275862068965517,
+      "truePositive": 24.0,
+      "falsePositive": 1.0,
+      "falseNegative": 9.0
+    },
+    "layer": 2,
+    "liveModel": false,
+    "documentHitAt4": 0.9659090909090909,
+    "documentCandidateHitAt24": 0.9886363636363636,
+    "candidateEvidenceRecallAt24": 0.9886363636363636,
+    "candidateRecallAt24": 0.9886363636363636,
+    "rerankerHeadroomPp": 1.2310606060606188,
+    "latencyMsP50": 505.2885420009261,
+    "latencyMsP95": 824.8468291989411,
+    "latencyMsMean": 497.68622071108945,
+    "fastPathRate": 0.09917355371900827,
+    "avgFacetCount": 0.3140495867768595,
+    "avgBatchEmbeddingMs": 642.921,
+    "embeddingMsP50": 469.55,
+    "embeddingMsP95": 726.97,
+    "sparseMsP50": 2.1,
+    "sparseMsP95": 8.295,
+    "denseMsP50": 33.45,
+    "denseMsP95": 176.14,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.5999999999999999,
+    "searchTotalMsP50": 482.3,
+    "searchTotalMsP95": 723.97,
+    "batchEmbeddingMsP50": 544.94,
+    "batchEmbeddingMsP95": 973.89,
+    "evidenceExpandMsP50": 0.01,
+    "evidenceExpandMsP95": 0.019999999999999997,
+    "facetGroupCounts": {
+      "facet0": 102.0,
+      "facet1": 0.0,
+      "facet2plus": 19.0
+    },
+    "facet0SearchTotalMsP50": 499.79999999999995,
+    "facet0SearchTotalMsP95": 753.0600000000001,
+    "facet2plusSearchTotalMsP50": 186.0,
+    "facet2plusSearchTotalMsP95": 664.5,
+    "approxCacheHitRate": 0.0,
+    "failureTaxonomy": {
+      "NO_ANSWER_FALSE_POSITIVE": 1,
+      "RANKING_OR_RERANKER_OPPORTUNITY": 2,
+      "NO_ANSWER_FALSE_NEGATIVE": 9,
+      "RETRIEVAL_RECALL_MISS": 1
+    },
+    "failureCount": 13,
+    "split": "all",
+    "evalSet": "/Users/cfh00896102/Github/teams-agent/data/eval/retrieval_eval_v2.json"
+  },
+  "failures": [
+    {
+      "caseId": "v2-para-otp-mail",
+      "query": "同仁說 FortiToken 驗證碼信件一直沒來",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiToken"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-amb-password",
+      "query": "密碼不能用",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.25,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "AD",
+          "帳號與系統解鎖",
+          "FAQ"
+        ],
+        [
+          "國泰員工入口網",
+          "CTeam",
+          "密碼",
+          "國泰"
+        ],
+        [
+          "金控入口網密碼變更方式"
+        ],
+        [
+          "VPN",
+          "常見",
+          "問答"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-amb-network",
+      "query": "網路有問題",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.6666666666666666,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "樹精靈",
+          "AP",
+          "無法登入"
+        ],
+        [
+          "內網筆電",
+          "VPN",
+          "連線問題"
+        ],
+        [
+          "登入",
+          "FortiClient",
+          "出現錯訊"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-x-na-hr",
+      "query": "績效考核表單下載路徑？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "同仁申請共用公槽資料夾",
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-x-neg-ux-audit",
+      "query": "為什麼不能拿 UX-AUDIT 測試文件當正式處置",
+      "failureCategory": "RETRIEVAL_RECALL_MISS",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "expectedEvidence": [
+        [
+          "登入",
+          "FortiClient",
+          "出現錯訊"
+        ],
+        [
+          "VPN",
+          "常見",
+          "問答"
+        ]
+      ]
+    },
+    {
+      "caseId": "v2-x-na-canteen",
+      "query": "員工餐廳今日菜單 API？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "同仁申請共用公槽資料夾",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-product-missing-feature",
+      "query": "FortiClient 是否支援 Face ID 生物辨識登入？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-similar-error-code",
+      "query": "VPN Permission denied (-99999) 怎麼處理？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-policy-absent",
+      "query": "公司 BYOD 個人手機可安裝企業 App 的正式政策條款編號？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-hr-stock",
+      "query": "員工認股權憑證剩餘可行使數量查詢入口？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "金控入口網密碼變更方式"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-typo-unknown-system",
+      "query": "樹精霛錯誤碼 ZZX",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "XQ問題",
+        "資訊問題的通報格式"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-wifi-ssid-guest",
+      "query": "訪客 Wi-Fi SSID 與當日密碼產生規則？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "金控入口網密碼變更方式"
+      ],
+      "expectedEvidence": []
+    },
+    {
+      "caseId": "v2-na-phone-extension",
+      "query": "董辦專線分機號是多少？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "總公司IP話機操作",
+        "總公司IP話機操作",
+        "座位搬遷需求",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": []
+    }
+  ]
+}

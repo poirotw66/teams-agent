@@ -114,6 +114,23 @@ Gate from the closeout brief:
 
 Measured headroom is **5.78 pp** (borderline, well under 10 pp). **Decision: keep dedicated Vertex/Qwen reranker paused / off the critical path.** Optional future A/B only if ambiguous short queries (`v2-amb-*`) become a product priority.
 
+## Architecture review closeout (2026-09-20)
+
+Follow-up to [`docs/project-architecture-post-refactor-review-20260918.md`](./project-architecture-post-refactor-review-20260918.md). Artifacts under `data/eval/reports/`.
+
+| Phase | Gate | Result |
+|---|---|---|
+| 0 Mergeable | Agent suite + architecture 0 findings; mid-band STANDARD; no rewrite on standard reject | **Done** |
+| 1 No-answer | Test F1 ≥ 88%, FP ≤ 2, no new LLM | **Done** — Test F1 **94.12%**, FP **1**, recall **100%** (distinctive-title rescue) |
+| 1 Telemetry | Layer 2 stage P50/P95 + batch×query-RRF 2×2 ablation | **Done** — embed/sparse/dense/fusion/batch/expand + facet groups; ablation shows no Ev@4 gain from batch+query-RRF on frozen test |
+| 2 Ranking | All Ev@4 ≥ 95%; test ≥ 98.28%; NA F1 not down | **Done** — All **97.63%**, test **100%**, all-set NA F1 **82.76%** (was 81.82%) |
+| 3 Latency | Test P95 ≤ 700 ms; 3-run variance ≤ 25% | **Done** — test P95 **649 ms**; 3-run P95 gap **12.8%** (Cloud Run concurrency not run) |
+| 4 Live L3 | Production-model release report | **Done** — see `data/eval/reports/rag-l3-live-test-20260920.json` |
+
+Live Layer 3 (test split, `--live-model`): Answer Accuracy **77.0%**, No-answer F1 **100%**, Citation P/R **79.3% / 95.9%**, Groundedness **100%**, total P95 **~5.4 s**, retrieval P95 **~1.2 s**, ~**1.43** LLM calls/query, usage source **ESTIMATED**.
+
+Remaining ambiguity ranking cases (`v2-amb-*`, token, Forti multi-sec) stay deferred; dedicated reranker remains paused.
+
 ## Production-model Layer 3 benchmark
 
 ```bash

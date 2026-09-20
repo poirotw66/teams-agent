@@ -121,7 +121,23 @@ def test_multi_facet_query_is_hard_even_with_high_score() -> None:
     assert decision.max_retrieval_rewrites == 2
 
 
-def test_displaced_top1_is_hard() -> None:
+def test_low_confidence_with_candidates_stays_standard_no_rewrite() -> None:
+    """LOW confidence ≠ rewrite-hard when candidates exist."""
+    results = [
+        SearchResult(
+            chunk=_chunk("c1", "無關標題", "完全不相關內容 xyz"),
+            score=0.50,
+            sparse_score=0.40,
+        ),
+    ]
+    decision = classify_query_tier(
+        _state(query="公司量子加密 VPN 金鑰輪替週期是幾天？", results=results),
+        min_score=0.08,
+        max_retrieval_rewrites=1,
+    )
+    assert decision.tier == QueryTier.STANDARD
+    assert decision.max_retrieval_rewrites == 0
+
     results = [
         SearchResult(
             chunk=_chunk("c1", "VPN 鎖住", "VPN 密碼鎖住"),

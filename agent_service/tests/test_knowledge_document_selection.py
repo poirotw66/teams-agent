@@ -155,3 +155,181 @@ def test_select_document_chunks_returns_empty_for_no_results() -> None:
     )
     assert selected == []
     assert displaced is False
+
+
+def test_select_document_chunks_diversity_first_across_two_docs() -> None:
+    """Comparison queries interleave one chunk per document before filling."""
+    results = [
+        SearchResult(
+            chunk=_chunk("a1", title="Outlook iOS 手冊", document_id="ios", content="a1"),
+            score=0.95,
+            sparse_score=0.95,
+            dense_score=0.0,
+            final_rank=1,
+            fusion_rank=1,
+        ),
+        SearchResult(
+            chunk=_chunk("a2", title="Outlook iOS 手冊", document_id="ios", content="a2"),
+            score=0.94,
+            sparse_score=0.94,
+            dense_score=0.0,
+            final_rank=2,
+            fusion_rank=2,
+        ),
+        SearchResult(
+            chunk=_chunk(
+                "b1", title="Outlook Android 手冊", document_id="android", content="b1"
+            ),
+            score=0.93,
+            sparse_score=0.93,
+            dense_score=0.0,
+            final_rank=3,
+            fusion_rank=3,
+        ),
+        SearchResult(
+            chunk=_chunk(
+                "b2", title="Outlook Android 手冊", document_id="android", content="b2"
+            ),
+            score=0.92,
+            sparse_score=0.92,
+            dense_score=0.0,
+            final_rank=4,
+            fusion_rank=4,
+        ),
+    ]
+    selected, _ = select_document_chunks(
+        "Outlook iOS 與 Android 綁定步驟有何不同",
+        results,
+        document_key=lambda result: result.chunk.document_id or result.chunk.chunk_id,
+        index_chunks=[],
+        top_k=4,
+    )
+    top4_docs = [item.chunk.document_id for item in selected[:4]]
+    assert top4_docs.count("ios") >= 1
+    assert top4_docs.count("android") >= 1
+    assert top4_docs[:2] == ["ios", "android"]
+
+
+def test_select_document_chunks_keeps_contiguous_fill_for_short_queries() -> None:
+    """Non-comparison short queries keep per-doc contiguous fill for exact hits."""
+    results = [
+        SearchResult(
+            chunk=_chunk("a1", title="VPN常見Q&A問答", document_id="vpn", content="-20199"),
+            score=0.95,
+            sparse_score=0.95,
+            dense_score=0.0,
+            final_rank=1,
+        ),
+        SearchResult(
+            chunk=_chunk("a2", title="VPN常見Q&A問答", document_id="vpn", content="other"),
+            score=0.94,
+            sparse_score=0.94,
+            dense_score=0.0,
+            final_rank=2,
+        ),
+        SearchResult(
+            chunk=_chunk("b1", title="內網筆電 VPN", document_id="laptop", content="b1"),
+            score=0.93,
+            sparse_score=0.93,
+            dense_score=0.0,
+            final_rank=3,
+        ),
+    ]
+    selected, _ = select_document_chunks(
+        "Unable to establish VPN (-20199)",
+        results,
+        document_key=lambda result: result.chunk.document_id or result.chunk.chunk_id,
+        index_chunks=[],
+        top_k=4,
+    )
+    assert [item.chunk.chunk_id for item in selected[:3]] == ["a1", "a2", "b1"]
+
+
+def test_multi_doc_procedure_query_keeps_both_manuals() -> None:
+    def _manual_chunk(
+        chunk_id: str,
+        *,
+        document_id: str,
+        title: str,
+        section: str,
+    ) -> DocumentChunk:
+        return DocumentChunk(
+            chunk_id=chunk_id,
+            title=title,
+            content=section,
+            document_id=document_id,
+            source_path=f"sources/{document_id}.md",
+            section=section,
+            allowed_groups=["IT"],
+            content_state="ACTIVE",
+            applicable_environments=["prod"],
+        )
+
+    ios_title = "行動裝置 Outlook 安裝手冊（iOS）"
+    android_title = "行動裝置 Outlook 安裝手冊（Android）"
+    results = [
+        SearchResult(
+            chunk=_manual_chunk("ios-1", document_id="ios", title=ios_title, section="1. 驗證"),
+            score=0.95,
+            sparse_score=0.95,
+            dense_score=0.0,
+            final_rank=1,
+        ),
+        SearchResult(
+            chunk=_manual_chunk("ios-2", document_id="ios", title=ios_title, section="2. 綁定"),
+            score=0.94,
+            sparse_score=0.94,
+            dense_score=0.0,
+            final_rank=2,
+        ),
+        SearchResult(
+            chunk=_manual_chunk(
+                "and-1", document_id="android", title=android_title, section="1. 驗證"
+            ),
+            score=0.93,
+            sparse_score=0.93,
+            dense_score=0.0,
+            final_rank=3,
+        ),
+        SearchResult(
+            chunk=_manual_chunk(
+                "and-2", document_id="android", title=android_title, section="2. 綁定"
+            ),
+            score=0.92,
+            sparse_score=0.92,
+            dense_score=0.0,
+            final_rank=4,
+        ),
+    ]
+    selected, _ = select_document_chunks(
+        "Outlook 手冊 iOS 與 Android 綁定步驟不同之處",
+        results,
+        document_key=lambda result: result.chunk.document_id or result.chunk.chunk_id,
+        index_chunks=[item.chunk for item in results],
+        top_k=4,
+    )
+    titles = {item.chunk.title for item in selected[:4]}
+    assert any("iOS" in title for title in titles)
+    assert any("Android" in title for title in titles)
+
+
+def test_comparison_external_query_keeps_internal_sibling() -> None:
+    from agent_service.knowledge_pipeline.candidate_policy_filters import (
+        apply_audience_isolation,
+    )
+    from agent_service.knowledge_pipeline.candidate_policy_intents import (
+        detect_query_intent_flags,
+    )
+
+    internal = _result(
+        _chunk("int", title="資訊問題的通報格式", document_id="report", content="主旨"),
+        0.95,
+    )
+    external = _result(
+        _chunk("ext", title="外部客戶線上問題如何回報", document_id="ext", content="欄位"),
+        0.94,
+    )
+    intent = detect_query_intent_flags("通報主旨格式與外部客戶回報欄位有何不同")
+    kept = apply_audience_isolation([internal, external], intent)
+    ids = {item.chunk.chunk_id for item in kept}
+    assert ids == {"int", "ext"}

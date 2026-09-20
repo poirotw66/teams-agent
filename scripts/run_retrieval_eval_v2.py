@@ -159,6 +159,7 @@ def main() -> int:
             texts=texts,
             query=case.query,
             min_score=min_score,
+            titles=titles,
         )
         no_answer_rows.append(
             NoAnswerOutcome(

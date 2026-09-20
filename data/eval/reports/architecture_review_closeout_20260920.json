@@ -1,0 +1,119 @@
+{
+  "generatedAt": "2026-09-20T12:57:59.997160+00:00",
+  "commitSha": "c3bc7082bd18f2c31684f05fa996e8bc93b729f2",
+  "reviewDoc": "docs/project-architecture-post-refactor-review-20260918.md",
+  "phase0": {
+    "agentSuite": "1885 passed, 2 skipped, 0 failed",
+    "architectureFindings": 0,
+    "midBandStandardAndSkipRewrite": true
+  },
+  "phase1NoAnswer": {
+    "calibrationSlice": "data/eval/no_answer_calibration_slice_20260920.json",
+    "test": {
+      "precision": 0.8888888888888888,
+      "recall": 1.0,
+      "f1": 0.9411764705882353,
+      "truePositive": 8.0,
+      "falsePositive": 1.0,
+      "falseNegative": 0.0
+    },
+    "meetsGate": true
+  },
+  "phase1LatencyTelemetry": {
+    "stagePercentilesPresent": [
+      "latencyMsP50",
+      "latencyMsP95",
+      "embeddingMsP50",
+      "embeddingMsP95",
+      "sparseMsP50",
+      "sparseMsP95",
+      "denseMsP50",
+      "denseMsP95",
+      "fusionMsP50",
+      "fusionMsP95",
+      "searchTotalMsP50",
+      "searchTotalMsP95",
+      "batchEmbeddingMsP50",
+      "batchEmbeddingMsP95",
+      "evidenceExpandMsP50",
+      "evidenceExpandMsP95",
+      "facet0SearchTotalMsP50",
+      "facet0SearchTotalMsP95",
+      "facet2plusSearchTotalMsP50",
+      "facet2plusSearchTotalMsP95"
+    ],
+    "ablationExcerpt": [
+      "Configuration                         | EvRecall@4  | CandRecall@24 | Hit@1    | NoAns F1  | P95 (ms)",
+      "Config A (Vanilla Weighted)           |     94.83% |      100.00% |  40.54% |   66.67% |  1263.8ms",
+      "Config B (RRF Fusion)                 |     98.28% |      100.00% |  56.76% |  100.00% |  1957.0ms",
+      "Config C (RRF + Fast Path)            |     98.28% |      100.00% |  56.76% |  100.00% |   966.0ms",
+      "L2 Batch=off QueryRRF=off             |     98.28% |      100.00% |  54.05% |   94.12% |  1710.8ms",
+      "L2 Batch=on  QueryRRF=off             |     98.28% |      100.00% |  54.05% |   94.12% |  1387.5ms",
+      "L2 Batch=off QueryRRF=on              |     98.28% |      100.00% |  54.05% |   94.12% |  1012.8ms",
+      "L2 Batch=on  QueryRRF=on              |     98.28% |      100.00% |  54.05% |   94.12% |  1438.7ms",
+      "L2 Full + EvidenceBundle              |     98.28% |      100.00% |  54.05% |   94.12% |  1133.6ms"
+    ]
+  },
+  "phase2Ranking": {
+    "allEvidenceRecallAt4": 0.9763257575757575,
+    "testEvidenceRecallAt4": 1.0,
+    "allNoAnswerF1": 0.8275862068965517,
+    "meetsAllEv95": true,
+    "meetsTestEvFloor": true
+  },
+  "phase3Latency": {
+    "testLatencyMsP95": 649.1308749958989,
+    "meetsTestP95_700": true,
+    "allLatencyMsP95": 824.8468291989411,
+    "threeRunP95": [
+      774.0921454969794,
+      872.9094579997764,
+      796.8824333955126
+    ],
+    "threeRunGapPct": 12.765574883769776,
+    "meetsVariance25": true,
+    "note": "Cloud Run concurrency pressure not run in this closeout"
+  },
+  "phase4LiveLayer3": {
+    "answerAccuracy": 0.7702702702702703,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 8.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "citationPrecision": 0.7927927927927928,
+    "citationRecall": 0.9594594594594594,
+    "groundedness": 1.0,
+    "retrievalMsP50": 486.1,
+    "retrievalMsP95": 1204.19,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 2086.7,
+    "generateMsP50": 2016.1,
+    "generateMsP95": 4058.225,
+    "totalMsP50": 2592.8,
+    "totalMsP95": 5421.32,
+    "llmCallsPerQuery": 1.4324324324324325,
+    "inputTokensPerQuery": 12.08108108108108,
+    "outputTokensPerQuery": 123.29729729729729,
+    "costUsdPerQuery": 0.0001879662162162162,
+    "queryTierCounts": {
+      "trivial": 14.0,
+      "standard": 14.0,
+      "hard": 9.0,
+      "unknown": 0.0
+    },
+    "usageSourceCounts": {
+      "ESTIMATED": 37
+    },
+    "liveModel": true,
+    "artifact": "/tmp/rag-l3-live.json"
+  },
+  "remainingFollowUps": [
+    "Cloud Run concurrency 1/4/8/16 pressure on a real revision",
+    "Ambiguous short-query ranking (v2-amb-password / v2-amb-network) optional",
+    "Provider usage metadata still ESTIMATED on live Layer 3"
+  ]
+}

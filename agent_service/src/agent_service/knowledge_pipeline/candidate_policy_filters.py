@@ -6,6 +6,7 @@ from agent_service.documents import DocumentChunk
 from agent_service.retrieval import SearchResult
 
 from .candidate_policy_intents import QueryIntentFlags
+from .selector import query_asks_for_comparison
 
 
 def _chunk_scenario(chunk: DocumentChunk) -> str | None:
@@ -50,7 +51,10 @@ def apply_audience_isolation(
     if intent.is_internal_it_query and not intent.is_explicit_external_faq_query:
         internal_only = [r for r in results if not _is_external_faq_chunk(r)]
         return internal_only if internal_only else results
-    if intent.is_explicit_external_faq_query:
+    # Comparison queries that mention 外部客戶 still need the internal sibling doc.
+    if intent.is_explicit_external_faq_query and not query_asks_for_comparison(
+        intent.normalized_query
+    ):
         ext_results = [
             r
             for r in results

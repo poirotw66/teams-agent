@@ -122,6 +122,7 @@ async def run_layer2_case(
         max_retrieval_rewrites=0,
     )
     query_tier = provisional.tier.value
+    expand_started = time.perf_counter()
     if enable_evidence_expand:
         bundles = build_evidence_bundles(
             state.results,
@@ -132,6 +133,7 @@ async def run_layer2_case(
         )
     else:
         bundles = [EvidenceBundle(seed=r, supporting_chunks=[]) for r in state.results]
+    evidence_expand_ms = (time.perf_counter() - expand_started) * 1000.0
 
     telemetry = {
         "facetCount": len(facet_queries),
@@ -139,10 +141,17 @@ async def run_layer2_case(
         "fastPath": state.stage_timings_ms.get("fastPath", 0.0),
         "batchEmbeddingMs": state.stage_timings_ms.get("batchEmbeddingMs", 0.0),
         "batchEmbeddingQueryCount": state.stage_timings_ms.get("batchEmbeddingQueryCount", 0.0),
+        "embeddingMs": state.stage_timings_ms.get("embeddingMs", 0.0),
+        "sparseMs": state.stage_timings_ms.get("sparseMs", 0.0),
+        "denseMs": state.stage_timings_ms.get("denseMs", 0.0),
+        "fusionMs": state.stage_timings_ms.get("fusionMs", 0.0),
+        "searchTotalMs": state.stage_timings_ms.get("searchTotalMs", 0.0),
+        "evidenceExpandMs": round(evidence_expand_ms, 2),
         "candidateCount": len(state.raw_results),
         "selectedCount": len(state.results),
         "bundlesCount": len(bundles),
         "queryTier": query_tier,
+        "cacheMiss": 0.0 if state.stage_timings_ms.get("embeddingMs", 0.0) == 0.0 and state.stage_timings_ms.get("batchEmbeddingMs", 0.0) == 0.0 else 1.0,
     }
     return bundles, state.raw_results, latency_ms, state.stage_timings_ms, telemetry
 
@@ -634,6 +643,7 @@ async def evaluate_pipeline(
             texts=texts,
             query=case.query,
             min_score=min_score,
+            titles=titles,
         )
         no_answer_rows.append(
             NoAnswerOutcome(
@@ -708,6 +718,54 @@ async def evaluate_pipeline(
         summary["avgFacetCount"] = float(statistics.fmean(t.get("facetCount", 0) for t in telemetries))
         batch_times = [t.get("batchEmbeddingMs", 0.0) for t in telemetries if t.get("batchEmbeddingMs", 0.0) > 0]
         summary["avgBatchEmbeddingMs"] = float(statistics.fmean(batch_times)) if batch_times else 0.0
+
+        def _percentile_pair(values: list[float]) -> tuple[float, float]:
+            if not values:
+                return (0.0, 0.0)
+            p50 = float(statistics.median(values))
+            p95 = float(
+                statistics.quantiles(values, n=20)[18] if len(values) >= 20 else max(values)
+            )
+            return (p50, p95)
+
+        for stage_key in (
+            "embeddingMs",
+            "sparseMs",
+            "denseMs",
+            "fusionMs",
+            "searchTotalMs",
+            "batchEmbeddingMs",
+            "evidenceExpandMs",
+        ):
+            stage_values = [float(t.get(stage_key, 0.0) or 0.0) for t in telemetries]
+            positive = [value for value in stage_values if value > 0.0]
+            if not positive:
+                continue
+            p50, p95 = _percentile_pair(positive)
+            summary[f"{stage_key}P50"] = p50
+            summary[f"{stage_key}P95"] = p95
+
+        facet_groups = {
+            "facet0": [t for t in telemetries if int(t.get("facetCount", 0) or 0) == 0],
+            "facet1": [t for t in telemetries if int(t.get("facetCount", 0) or 0) == 1],
+            "facet2plus": [t for t in telemetries if int(t.get("facetCount", 0) or 0) >= 2],
+        }
+        summary["facetGroupCounts"] = {
+            name: float(len(group)) for name, group in facet_groups.items()
+        }
+        for facet_name, group in facet_groups.items():
+            if not group:
+                continue
+            group_latencies = [
+                float(t.get("searchTotalMs", 0.0) or 0.0) for t in group if float(t.get("searchTotalMs", 0.0) or 0.0) > 0.0
+            ]
+            if not group_latencies:
+                continue
+            p50, p95 = _percentile_pair(group_latencies)
+            summary[f"{facet_name}SearchTotalMsP50"] = p50
+            summary[f"{facet_name}SearchTotalMsP95"] = p95
+        cache_hits = sum(1 for t in telemetries if float(t.get("cacheMiss", 1.0) or 1.0) <= 0.0)
+        summary["approxCacheHitRate"] = float(cache_hits / len(telemetries)) if telemetries else 0.0
 
     if layer == 3:
         summary["answerAccuracy"] = float(statistics.fmean(answer_accuracies)) if answer_accuracies else 0.0
@@ -802,7 +860,8 @@ async def run_ablation_matrix(
             "enable_query_rrf": False,
             "enable_evidence_expand": False,
         }),
-        ("Config D (Pipeline L2: Single-pass)", {
+        # Layer-2 2x2: isolate batch embedding vs query-level RRF.
+        ("L2 Batch=off QueryRRF=off", {
             "fusion_mode": "RRF",
             "layer": 2,
             "enable_fast_path": True,
@@ -810,7 +869,23 @@ async def run_ablation_matrix(
             "enable_query_rrf": False,
             "enable_evidence_expand": False,
         }),
-        ("Config E (+ Batch Embed & Query RRF)", {
+        ("L2 Batch=on  QueryRRF=off", {
+            "fusion_mode": "RRF",
+            "layer": 2,
+            "enable_fast_path": True,
+            "enable_batch_embedding": True,
+            "enable_query_rrf": False,
+            "enable_evidence_expand": False,
+        }),
+        ("L2 Batch=off QueryRRF=on", {
+            "fusion_mode": "RRF",
+            "layer": 2,
+            "enable_fast_path": True,
+            "enable_batch_embedding": False,
+            "enable_query_rrf": True,
+            "enable_evidence_expand": False,
+        }),
+        ("L2 Batch=on  QueryRRF=on", {
             "fusion_mode": "RRF",
             "layer": 2,
             "enable_fast_path": True,
@@ -818,7 +893,7 @@ async def run_ablation_matrix(
             "enable_query_rrf": True,
             "enable_evidence_expand": False,
         }),
-        ("Config F (+ Adaptive EvidenceBundle)", {
+        ("L2 Full + EvidenceBundle", {
             "fusion_mode": "RRF",
             "layer": 2,
             "enable_fast_path": True,

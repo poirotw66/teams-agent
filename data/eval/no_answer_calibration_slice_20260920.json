@@ -1,0 +1,249 @@
+{
+  "generatedAt": "2026-09-20T12:27:06.086152+00:00",
+  "baselineCommit": "c3bc708",
+  "baselineEval": "Layer2 all-set review 2026-09-20",
+  "baselineNoAnswerF1": 0.8181818181818182,
+  "caseCount": 12,
+  "falsePositives": [
+    "v2-para-otp-mail",
+    "v2-para-share",
+    "v2-multi-sec-forti",
+    "v2-neg-why-not-ad-from-portal",
+    "v2-neg-why-not-generic-vpn",
+    "v2-scope-cs-vpn"
+  ],
+  "falseNegatives": [
+    "v2-x-na-hr",
+    "v2-na-product-missing-feature",
+    "v2-na-similar-error-code",
+    "v2-na-policy-absent",
+    "v2-na-typo-unknown-system",
+    "v2-na-phone-extension"
+  ],
+  "cases": [
+    {
+      "caseId": "v2-para-otp-mail",
+      "query": "同仁說 FortiToken 驗證碼信件一直沒來",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiToken"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-para-share",
+      "query": "要幫同事加共用磁碟權限要填什麼",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": [
+        [
+          "同仁申請共用公槽資料夾"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-multi-sec-forti",
+      "query": "收到 FortiClient 錯誤時依錯誤碼分流順序",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiClient"
+        ],
+        [
+          "收到",
+          "FortiClient"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-neg-why-not-ad-from-portal",
+      "query": "為什麼入口網失敗不能直接當成 AD 鎖定？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "AD"
+        ],
+        [
+          "AD",
+          "鎖定"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-neg-why-not-generic-vpn",
+      "query": "為什麼不能對所有 FortiClient 錯訊用同一套修復？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiClient"
+        ],
+        [
+          "FortiClient"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-scope-cs-vpn",
+      "query": "分公司 CS VPN 文件有沒有寫可存取所有內部系統？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "分公司",
+          "CS",
+          "VPN"
+        ]
+      ],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-x-na-hr",
+      "query": "績效考核表單下載路徑？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "同仁申請共用公槽資料夾",
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-na-product-missing-feature",
+      "query": "FortiClient 是否支援 Face ID 生物辨識登入？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-na-similar-error-code",
+      "query": "VPN Permission denied (-99999) 怎麼處理？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-na-policy-absent",
+      "query": "公司 BYOD 個人手機可安裝企業 App 的正式政策條款編號？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-na-typo-unknown-system",
+      "query": "樹精霛錯誤碼 ZZX",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "XQ問題",
+        "資訊問題的通報格式"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    },
+    {
+      "caseId": "v2-na-phone-extension",
+      "query": "董辦專線分機號是多少？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "retrievedTop4Titles": [
+        "總公司IP話機操作",
+        "總公司IP話機操作",
+        "座位搬遷需求",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [],
+      "baselineSource": "rag-l2-review-20260920.json"
+    }
+  ],
+  "postCalibrationTestGate": {
+    "source": "/tmp/rag-l2-test-na-after.json",
+    "noAnswerF1": 0.9411764705882353,
+    "falsePositive": 1,
+    "falseNegative": 0,
+    "recall": 1.0,
+    "meetsGate": true,
+    "notes": "Distinctive-title rescue; no new LLM call"
+  }
+}
