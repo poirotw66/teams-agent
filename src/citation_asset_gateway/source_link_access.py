@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from typing import Any
 
 from .settings_contract import CitationGatewaySettings
-
 from .source_link_signing import (
     ALLOWED_SUFFIXES,
     SAFE_RELEASE_ID,

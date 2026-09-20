@@ -10,7 +10,6 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from .settings_contract import CitationGatewaySettings
-
 from .source_api import (
     SourceApiError,
     fetch_original_source_file,

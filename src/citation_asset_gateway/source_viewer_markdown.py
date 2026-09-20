@@ -6,9 +6,8 @@ import html
 import re
 from difflib import SequenceMatcher
 
-from .settings_contract import CitationGatewaySettings
-
 from .media import build_asset_url
+from .settings_contract import CitationGatewaySettings
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")

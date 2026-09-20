@@ -22,10 +22,9 @@ import json
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -497,7 +496,7 @@ def check_size_waivers(
                 "size_waivers.json must contain a list field named waivers",
             )
         ]
-    as_of = today or datetime.now(timezone.utc).date()
+    as_of = today or datetime.now(UTC).date()
     for index, entry in enumerate(waivers):
         if not isinstance(entry, dict):
             findings.append(

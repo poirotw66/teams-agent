@@ -8,7 +8,6 @@ from pathlib import Path
 import markdown as markdown_lib
 
 from .settings_contract import CitationGatewaySettings
-
 from .source_viewer_markdown import (
     first_heading,
     mark_evidence_block,

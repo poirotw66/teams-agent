@@ -11,7 +11,6 @@ from typing import Any
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
 from .settings_contract import CitationGatewaySettings
-
 from .source_delegation import DELEGATION_HEADER, SourceDelegationError, issue_source_delegation
 
 logger = logging.getLogger(__name__)

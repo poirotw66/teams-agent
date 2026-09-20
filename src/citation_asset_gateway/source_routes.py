@@ -18,7 +18,6 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from .settings_contract import CitationGatewaySettings
-
 from .source_api import (
     fetch_original_source_file,
     fetch_source_preview,
