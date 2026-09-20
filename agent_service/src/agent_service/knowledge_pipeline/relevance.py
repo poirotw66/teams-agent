@@ -262,35 +262,19 @@ def evaluate_retrieval_confidence(
     min_score: float,
     filter_displaced_top1: bool,
 ) -> tuple[str, bool]:
-    """Return ``(decision_label, is_deterministic_pass)`` for a retrieval pool."""
-    if not results or results[0].score < min_score:
-        return ("BELOW_MIN_SCORE", False)
+    """Return ``(decision_label, is_deterministic_pass)`` for a retrieval pool.
 
-    top = results[0]
+    Delegates to the shared Confidence Contract so eval No-answer predictors and
+    production relevance routing stay aligned.
+    """
+    from .retrieval_confidence import evaluate_retrieval_confidence as _shared
 
-    # If raw top-1 was displaced or significantly degraded by filtering,
-    # never bypass LLM relevance grading!
-    if filter_displaced_top1:
-        return ("LLM_RELEVANCE", False)
-
-    # Check if top-1 and top-2 have close scores but conflicting domain/product context
-    if conflicting_top_candidates(results):
-        return ("LLM_RELEVANCE", False)
-
-    # High confidence retrieval pass when score is strong and distinctive terms overlap
-    if top.score >= HIGH_CONFIDENCE_RETRIEVAL_MIN_SCORE and (
-        high_confidence_retrieval_hit(query, top)
-        or query_lexically_matches_results(query, results)
-    ):
-        return ("HIGH_CONFIDENCE_PASS", True)
-
-    # Low confidence retrieval fail when score is poor or has no lexical match
-    if top.score < _LOW_CONFIDENCE_MAX_SCORE and not query_lexically_matches_results(
-        query, results
-    ):
-        return ("LOW_CONFIDENCE_FAIL", False)
-
-    return ("LLM_RELEVANCE", False)
+    return _shared(
+        query=query,
+        results=results,
+        min_score=min_score,
+        filter_displaced_top1=filter_displaced_top1,
+    )
 
 
 def annotate_relevance_attempts(

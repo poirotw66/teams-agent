@@ -17,6 +17,7 @@ from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import SearchResult
 from agent_service.retrieval_expand import EvidenceBundle, build_evidence_bundles
 from agent_service.security_policies import strip_unknown_policy_markers
+from agent_service.structured_invoke import ainvoke_structured
 from agent_service.temporal_claims import annotate_historical_dates_in_text
 
 from .citation_assembly import (
@@ -120,7 +121,9 @@ async def invoke_initial_grounded_answer(
     execution_context: ExecutionContext | None,
 ) -> tuple[StructuredKnowledgeAnswer, str]:
     async def _invoke_answer() -> StructuredKnowledgeAnswer:
-        return await answer_model.with_structured_output(StructuredKnowledgeAnswer).ainvoke(
+        return await ainvoke_structured(
+            answer_model,
+            StructuredKnowledgeAnswer,
             [
                 SystemMessage(
                     content=ANSWER_PROMPT.format(
@@ -134,7 +137,7 @@ async def invoke_initial_grounded_answer(
                         "請根據上述已授權知識內容直接回答。"
                     )
                 ),
-            ]
+            ],
         )
 
     response = await host.invoke_llm(
@@ -244,6 +247,7 @@ def resolve_cited_document_keys(
     unique_doc_keys: list[str],
     chunk_to_doc_idx: dict[int, int],
     bundles: Sequence[EvidenceBundle] | None = None,
+    resolved_issue_query: str = "",
 ) -> tuple[str, list[str]] | KnowledgeResult:
     """Return (answer, ordered_cited_doc_keys) or a no-answer KnowledgeResult."""
     rejected = _reject_ungrounded_answer(
@@ -289,6 +293,7 @@ def resolve_cited_document_keys(
         answer=answer,
         answerability=response.answerability,
         claims=response.claims,
+        resolved_issue_query=resolved_issue_query,
     ):
         logger.warning(
             "Knowledge answer rejected: unsupported_miss ordered_cited_doc_keys=%s",

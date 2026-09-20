@@ -8,7 +8,7 @@
 
 ```markdown
 ---
-title: VPN 登入問題
+title: 範例：共用磁碟申請流程
 owner: IT Infrastructure
 version: "1.2"
 effectiveDate: 2026-07-01
@@ -17,7 +17,7 @@ audience:
   - all-employees
 ---
 
-# VPN 登入問題
+# 範例：共用磁碟申請流程
 
 ...文件內文...
 ```

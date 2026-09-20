@@ -10,6 +10,11 @@ from langchain_core.messages import HumanMessage
 
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
+from agent_service.rag_observability import (
+    record_relevance_deterministic_skip,
+    record_relevance_llm_outcome,
+)
+from agent_service.structured_invoke import ainvoke_structured
 
 from .models import RelevanceDecision, RewrittenQuery
 from .prompts import REWRITE_PROMPT
@@ -43,6 +48,103 @@ _REWRITE_CONSTRAINT_MARKERS: tuple[str, ...] = (
 )
 
 
+def _annotate_and_skip(state: Any, *, decision: str, is_relevant: bool) -> bool:
+    annotate_relevance_attempts(
+        state.trace_attempts,
+        decision=decision,
+        is_relevant=is_relevant,
+    )
+    if is_relevant or decision == "DETERMINISTIC_RELEVANCE":
+        record_relevance_deterministic_skip()
+    return is_relevant
+
+
+def _try_deterministic_relevance_short_circuit(
+    state: Any,
+    *,
+    decision_label: str,
+    is_deterministic: bool,
+    skip_relevance_llm_on_high_confidence: bool,
+    answer_model: BaseChatModel | None,
+) -> bool | None:
+    """Return a relevance bool when LLM can be skipped; otherwise None."""
+    if decision_label in ("BELOW_MIN_SCORE", "LOW_CONFIDENCE_FAIL"):
+        annotate_relevance_attempts(
+            state.trace_attempts,
+            decision=decision_label,
+            is_relevant=False,
+        )
+        return False
+
+    if decision_label == "HIGH_CONFIDENCE_PASS" and skip_relevance_llm_on_high_confidence:
+        return _annotate_and_skip(
+            state, decision="HIGH_CONFIDENCE_PASS", is_relevant=True
+        )
+
+    query_tier = str(getattr(state, "query_tier", "") or "").strip().lower()
+    if query_tier == "trivial":
+        return _annotate_and_skip(state, decision="TRIVIAL_TIER_SKIP", is_relevant=True)
+
+    if not answer_model:
+        is_relevant = deterministic_relevance_without_model(
+            query=state.resolved_issue_query,
+            results=state.results,
+            is_deterministic=is_deterministic,
+        )
+        return _annotate_and_skip(
+            state, decision="DETERMINISTIC_RELEVANCE", is_relevant=is_relevant
+        )
+    return None
+
+
+async def _grade_relevance_with_llm(
+    state: Any,
+    *,
+    is_deterministic: bool,
+    answer_model: BaseChatModel,
+    invoke_llm: Callable[..., Awaitable[Any]],
+    counter: LlmCallCounter,
+    execution_context: ExecutionContext | None,
+) -> bool:
+    context = build_relevance_grade_context(state.results)
+    deterministic_relevant = deterministic_relevance_without_model(
+        query=state.resolved_issue_query,
+        results=state.results,
+        is_deterministic=is_deterministic,
+    )
+
+    async def _grade() -> RelevanceDecision:
+        return await ainvoke_structured(
+            answer_model,
+            RelevanceDecision,
+            [
+                HumanMessage(
+                    content=format_grade_prompt(
+                        question=state.resolved_issue_query,
+                        context=context,
+                    )
+                )
+            ],
+        )
+
+    decision = await invoke_llm(
+        _grade,
+        component="knowledge_relevance",
+        execution_context=execution_context,
+        counter=counter,
+    )
+    annotate_relevance_attempts(
+        state.trace_attempts,
+        decision="LLM_RELEVANCE",
+        is_relevant=decision.relevant,
+    )
+    record_relevance_llm_outcome(
+        deterministic_relevant=deterministic_relevant,
+        llm_relevant=bool(decision.relevant),
+    )
+    return decision.relevant
+
+
 async def documents_are_relevant(
     state: Any,
     *,
@@ -59,61 +161,25 @@ async def documents_are_relevant(
         min_score=min_score,
         filter_displaced_top1=state.filter_displaced_top1,
     )
-    if decision_label in ("BELOW_MIN_SCORE", "LOW_CONFIDENCE_FAIL"):
-        annotate_relevance_attempts(
-            state.trace_attempts,
-            decision=decision_label,
-            is_relevant=False,
-        )
+    short_circuit = _try_deterministic_relevance_short_circuit(
+        state,
+        decision_label=decision_label,
+        is_deterministic=is_deterministic,
+        skip_relevance_llm_on_high_confidence=skip_relevance_llm_on_high_confidence,
+        answer_model=answer_model,
+    )
+    if short_circuit is not None:
+        return short_circuit
+    if answer_model is None:
         return False
-
-    if decision_label == "HIGH_CONFIDENCE_PASS" and skip_relevance_llm_on_high_confidence:
-        annotate_relevance_attempts(
-            state.trace_attempts,
-            decision="HIGH_CONFIDENCE_PASS",
-            is_relevant=True,
-        )
-        return True
-
-    if not answer_model:
-        is_relevant = deterministic_relevance_without_model(
-            query=state.resolved_issue_query,
-            results=state.results,
-            is_deterministic=is_deterministic,
-        )
-        annotate_relevance_attempts(
-            state.trace_attempts,
-            decision="DETERMINISTIC_RELEVANCE",
-            is_relevant=is_relevant,
-        )
-        return is_relevant
-
-    context = build_relevance_grade_context(state.results)
-
-    async def _grade() -> RelevanceDecision:
-        return await answer_model.with_structured_output(RelevanceDecision).ainvoke(
-            [
-                HumanMessage(
-                    content=format_grade_prompt(
-                        question=state.resolved_issue_query,
-                        context=context,
-                    )
-                )
-            ]
-        )
-
-    decision = await invoke_llm(
-        _grade,
-        component="knowledge_relevance",
-        execution_context=execution_context,
+    return await _grade_relevance_with_llm(
+        state,
+        is_deterministic=is_deterministic,
+        answer_model=answer_model,
+        invoke_llm=invoke_llm,
         counter=counter,
+        execution_context=execution_context,
     )
-    annotate_relevance_attempts(
-        state.trace_attempts,
-        decision="LLM_RELEVANCE",
-        is_relevant=decision.relevant,
-    )
-    return decision.relevant
 
 
 def preserve_rewrite_constraints(
@@ -150,14 +216,16 @@ async def rewrite_search_query(
     state_factory: Callable[..., Any],
 ) -> Any:
     async def _invoke_rewrite() -> RewrittenQuery:
-        return await answer_model.with_structured_output(RewrittenQuery).ainvoke(
+        return await ainvoke_structured(
+            answer_model,
+            RewrittenQuery,
             [
                 HumanMessage(
                     content=REWRITE_PROMPT.format(
                         question=state.resolved_issue_query,
                     )
                 )
-            ]
+            ],
         )
 
     decision = await invoke_llm(

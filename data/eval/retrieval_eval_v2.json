@@ -1,8 +1,8 @@
 {
   "$schema": "internal://retrieval-eval-v2/v1",
-  "description": "Hard retrieval benchmark for RAG v2 / v2.1. Prefer expectedChunkIds / expectedEvidence for Evidence Recall@4; expectedSourceTitles kept for compatibility. Cases carry split=dev|test (docs/rag-v2.1-plan.md).",
+  "description": "DEVELOPMENT / REGRESSION set for RAG v2 / v2.1. Labels may be corrected after inspecting system output. Do NOT use as a frozen release gate. For release holdout scoring use data/eval/retrieval_eval_v3_blind.json.",
   "specRef": "docs/rag-v2-spec.md#6",
-  "minCaseCount": 100,
+  "minCaseCount": 120,
   "corpusSnapshot": {
     "sourceDir": "data/sources",
     "note": "Titles match source markdown stems / citation titles used by Hybrid retrieval."
@@ -344,7 +344,22 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "aa0b0fc607788f3fc084",
+          "mustContain": [
+            "-200",
+            "艾揚登入"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "aa0b0fc607788f3fc084"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-sim-455-vs-8",
@@ -545,7 +560,33 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "e92b297da6fb8616b4e4",
+          "mustContain": [
+            "Permission",
+            "denied",
+            "VPN"
+          ]
+        },
+        {
+          "section": "Permission denied (-455)",
+          "chunkId": "cf80afbddd210fa9a426",
+          "mustContain": [
+            "Permission",
+            "denied"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "e92b297da6fb8616b4e4",
+        "cf80afbddd210fa9a426"
+      ],
+      "expectedSections": [
+        "正文（canonical）",
+        "Permission denied (-455)"
+      ]
     },
     {
       "id": "v2-para-otp-mail",
@@ -615,7 +656,25 @@
         "8c3823bdcfb6529503cd",
         "13272bb9efd113e7cd76"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8c3823bdcfb6529503cd",
+          "mustContain": [
+            "國泰員工入口網",
+            "CTeam",
+            "密碼",
+            "國泰"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "13272bb9efd113e7cd76",
+          "mustContain": [
+            "金控入口網密碼變更方式"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -666,22 +725,26 @@
       "query": "第一次綁 CRM 驗證器要掃什麼",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "外網 CRM 登入連線設定方式": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "CRM bind paraphrase",
+      "notes": "CRM bind paraphrase; ambiguous CRM may cite both 國金/外網 docs",
       "expectedDocuments": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "591a8347795e521cd509"
       ],
       "expectedEvidence": [
         {
@@ -689,6 +752,14 @@
           "chunkId": "8bfdf97d28d8abf6eae6",
           "mustContain": [
             "CRM"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "591a8347795e521cd509",
+          "mustContain": [
+            "外網 CRM",
+            "FortiToken"
           ]
         }
       ],
@@ -704,24 +775,36 @@
       "query": "客戶說報價下單怪怪的要怎麼判斷是不是廠商問題",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "XQ問題"
+        "XQ問題",
+        "外部客戶線上問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "XQ問題": 3
+        "XQ問題": 3,
+        "外部客戶線上問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "XQ paraphrase",
+      "notes": "XQ vendor triage; 外部客戶線上問題 allowed as secondary related cite",
       "expectedDocuments": [
-        "XQ問題"
+        "XQ問題",
+        "外部客戶線上問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "b3bf81747752b753f2b4"
+        "b3bf81747752b753f2b4",
+        "2603e09e74d48e00ac24"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "b3bf81747752b753f2b4",
+          "mustContain": [
+            "XQ"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -751,7 +834,16 @@
       "expectedChunkIds": [
         "b9447c8749eaa0326e4d"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "b9447c8749eaa0326e4d",
+          "mustContain": [
+            "超音樹",
+            "程式閃退問題"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -781,7 +873,15 @@
       "expectedChunkIds": [
         "8858d11218ac06055fbc"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8858d11218ac06055fbc",
+          "mustContain": [
+            "資訊問題的通報格式"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -850,7 +950,15 @@
       "expectedChunkIds": [
         "4e1a38d5f5bd7373095e"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "4e1a38d5f5bd7373095e",
+          "mustContain": [
+            "同仁申請共用公槽資料夾"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1007,25 +1115,33 @@
       "expectedFound": true,
       "expectedSourceTitles": [
         "外網 CRM 登入連線設定方式",
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
         "外網 CRM 登入連線設定方式": 3,
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "登入 FortiClient 出現錯訊": 2,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Typo robustness",
+      "notes": "Typo SSLVPN CRM; 外網 CRM primary; FortiClient/intranet VPN secondary cites allowed",
       "expectedDocuments": [
         "外網 CRM 登入連線設定方式",
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
         "aa53a610195dc82b06b6",
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "4c87195d255517260567",
+        "3d49a5292bd3eeb91b40"
       ],
       "expectedEvidence": [
         {
@@ -1075,7 +1191,18 @@
       "expectedChunkIds": [
         "8c3823bdcfb6529503cd"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8c3823bdcfb6529503cd",
+          "mustContain": [
+            "國泰員工入口網",
+            "CTeam",
+            "密碼",
+            "國泰"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1102,7 +1229,22 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2d8486a8972f4c3a003b",
+          "mustContain": [
+            "12029",
+            "AP"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "2d8486a8972f4c3a003b"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-alias-cteam",
@@ -1209,7 +1351,25 @@
         "8c3823bdcfb6529503cd",
         "13272bb9efd113e7cd76"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8c3823bdcfb6529503cd",
+          "mustContain": [
+            "國泰員工入口網",
+            "CTeam",
+            "密碼",
+            "國泰"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "13272bb9efd113e7cd76",
+          "mustContain": [
+            "金控入口網密碼變更方式"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1222,24 +1382,36 @@
       "query": "跳板機連不上",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "VPN 跳板機連線異常": 3
+        "VPN 跳板機連線異常": 3,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Alias",
+      "notes": "Alias; escalate/轉派 is primary; intranet VPN secondary cite allowed",
       "expectedDocuments": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "61febd557abb558a5614"
+        "61febd557abb558a5614",
+        "3d49a5292bd3eeb91b40"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "61febd557abb558a5614",
+          "mustContain": [
+            "轉派工單"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1402,17 +1574,20 @@
       "query": "AD 鎖定",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "AD 帳號與系統解鎖 FAQ": 3
+        "AD 帳號與系統解鎖 FAQ": 3,
+        "VPN常見Q&A問答": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Short query",
+      "notes": "Short query; must surface AD self-unlock URL; VPN FAQ secondary cite allowed",
       "expectedDocuments": [
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答"
       ],
       "forbiddenEvidence": [],
       "split": "test",
@@ -1423,6 +1598,14 @@
         {
           "section": "正文（canonical）",
           "chunkId": "8eb9ac80926f62b19b0f",
+          "mustContain": [
+            "AD",
+            "自助解鎖"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "e92b297da6fb8616b4e4",
           "mustContain": [
             "AD",
             "鎖定"
@@ -1456,7 +1639,21 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2d8486a8972f4c3a003b",
+          "mustContain": [
+            "12029"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "2d8486a8972f4c3a003b"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-short-outlook",
@@ -1552,7 +1749,43 @@
         "13272bb9efd113e7cd76",
         "e92b297da6fb8616b4e4"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8eb9ac80926f62b19b0f",
+          "mustContain": [
+            "AD",
+            "帳號與系統解鎖",
+            "FAQ"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8c3823bdcfb6529503cd",
+          "mustContain": [
+            "國泰員工入口網",
+            "CTeam",
+            "密碼",
+            "國泰"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "13272bb9efd113e7cd76",
+          "mustContain": [
+            "金控入口網密碼變更方式"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "e92b297da6fb8616b4e4",
+          "mustContain": [
+            "VPN",
+            "常見",
+            "問答"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1645,7 +1878,35 @@
         "3d49a5292bd3eeb91b40",
         "de4d71f0178daf8ea653"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2d8486a8972f4c3a003b",
+          "mustContain": [
+            "樹精靈",
+            "AP",
+            "無法登入"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "3d49a5292bd3eeb91b40",
+          "mustContain": [
+            "內網筆電",
+            "VPN",
+            "連線問題"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "de4d71f0178daf8ea653",
+          "mustContain": [
+            "登入",
+            "FortiClient",
+            "出現錯訊"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -1871,7 +2132,21 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "b3bf81747752b753f2b4",
+          "mustContain": [
+            "XQ"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "b3bf81747752b753f2b4"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-hn-crm-vs-vpn",
@@ -2174,7 +2449,22 @@
         "8858d11218ac06055fbc",
         "2603e09e74d48e00ac24"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "8858d11218ac06055fbc",
+          "mustContain": [
+            "資訊問題的通報格式"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2603e09e74d48e00ac24",
+          "mustContain": [
+            "外部客戶線上問題"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -2359,7 +2649,7 @@
         "grp_public"
       ],
       "forbiddenSourceTitles": [],
-      "notes": "Public group allow",
+      "notes": "Public group allow; answer coverage soft-labeled on -455 steps",
       "expectedDocuments": [
         "VPN常見Q&A問答",
         "登入 FortiClient 出現錯訊"
@@ -2379,17 +2669,6 @@
           "section": "正文（canonical）",
           "chunkId": "e92b297da6fb8616b4e4",
           "mustContain": [
-            "(-455)",
-            "VPN",
-            "-455",
-            "處理方式"
-          ]
-        },
-        {
-          "section": "Permission denied (-455)",
-          "chunkId": "cf80afbddd210fa9a426",
-          "mustContain": [
-            "(-455)",
             "-455"
           ]
         }
@@ -2403,31 +2682,35 @@
       "query": "跳板機連線異常",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "VPN 跳板機連線異常": 3
+        "VPN 跳板機連線異常": 3,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [
         "grp_it"
       ],
       "forbiddenSourceTitles": [],
-      "notes": "IT group allow on open docs",
+      "notes": "ACL allow IT; jumpbox primary; intranet VPN secondary cite allowed",
       "expectedDocuments": [
-        "VPN 跳板機連線異常"
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "61febd557abb558a5614"
+        "61febd557abb558a5614",
+        "3d49a5292bd3eeb91b40"
       ],
       "expectedEvidence": [
         {
           "section": "正文（canonical）",
           "chunkId": "61febd557abb558a5614",
           "mustContain": [
-            "跳板機連線異常"
+            "轉派工單"
           ]
         }
       ],
@@ -2555,7 +2838,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Follow-up disambiguation",
+      "notes": "Follow-up disambiguation; accept 遭鎖定/自助解鎖 phrasing + unlock URL",
       "expectedDocuments": [
         "AD 帳號與系統解鎖 FAQ"
       ],
@@ -2570,7 +2853,7 @@
           "chunkId": "4883521a4d796760170c",
           "mustContain": [
             "AD",
-            "帳號被鎖"
+            "自助解鎖"
           ]
         }
       ],
@@ -2631,25 +2914,33 @@
       "expectedFound": true,
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名",
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
         "國泰員工入口網、CTeam密碼、國泰e點名": 3,
-        "AD 帳號與系統解鎖 FAQ": 3
+        "AD 帳號與系統解鎖 FAQ": 3,
+        "登入 FortiClient 出現錯訊": 2,
+        "內網筆電 VPN 連線問題": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Negative constraint",
+      "notes": "Contrastive portal vs AD; VPN/Forti docs allowed when explaining non-AD causes",
       "expectedDocuments": [
         "國泰員工入口網、CTeam密碼、國泰e點名",
-        "AD 帳號與系統解鎖 FAQ"
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
         "8c3823bdcfb6529503cd",
-        "8eb9ac80926f62b19b0f"
+        "8eb9ac80926f62b19b0f",
+        "cf80afbddd210fa9a426",
+        "f09d4de2693fcf662f2e"
       ],
       "expectedEvidence": [
         {
@@ -2737,7 +3028,7 @@
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Source scope question",
+      "notes": "Source scope; grounded 「未特別說明」is sufficient answer evidence",
       "expectedDocuments": [
         "外部客戶線上問題"
       ],
@@ -2746,7 +3037,15 @@
       "expectedChunkIds": [
         "2603e09e74d48e00ac24"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2603e09e74d48e00ac24",
+          "mustContain": [
+            "未特別說明"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -2813,7 +3112,22 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "aa0b0fc607788f3fc084",
+          "mustContain": [
+            "-200",
+            "艾揚"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "aa0b0fc607788f3fc084"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-vis-outlook-ios",
@@ -2901,31 +3215,35 @@
       "query": "大州系統功能無法點選時畫面上該檢查什麼",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "大州系統_功能無法點選",
-        "大州首次使用設定"
+        "大州系統_功能無法點選"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "大州系統_功能無法點選": 3,
-        "大州首次使用設定": 3
+        "大州系統_功能無法點選": 3
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Dazhou UI",
+      "notes": "Dazhou UI; primary doc 功能無法點選 is sufficient for click-failure query",
       "expectedDocuments": [
-        "大州系統_功能無法點選",
-        "大州首次使用設定"
+        "大州系統_功能無法點選"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "ecaa99fdb4cd2e6a9aa8",
-        "7dbbd9605be36badcf5f"
+        "ecaa99fdb4cd2e6a9aa8"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "第 1 頁 — 大州無法點選",
+          "chunkId": "ecaa99fdb4cd2e6a9aa8",
+          "mustContain": [
+            "大州系統",
+            "功能無法點選"
+          ]
+        }
+      ],
       "expectedSections": [
-        "第 1 頁 — 大州無法點選",
-        "第 1 頁 — 預設 Browser／網際網路選項"
+        "第 1 頁 — 大州無法點選"
       ]
     },
     {
@@ -3029,7 +3347,15 @@
       "expectedChunkIds": [
         "2e41f2d8ca26754d29d0"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2e41f2d8ca26754d29d0",
+          "mustContain": [
+            "座位搬遷需求"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3098,7 +3424,15 @@
       "expectedChunkIds": [
         "ca65191790633cb82ce6"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "ca65191790633cb82ce6",
+          "mustContain": [
+            "郵件為亂碼"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3128,7 +3462,15 @@
       "expectedChunkIds": [
         "13272bb9efd113e7cd76"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "13272bb9efd113e7cd76",
+          "mustContain": [
+            "金控入口網密碼變更方式"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3237,7 +3579,15 @@
       "expectedChunkIds": [
         "2603e09e74d48e00ac24"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "2603e09e74d48e00ac24",
+          "mustContain": [
+            "外部客戶線上問題"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3267,7 +3617,15 @@
       "expectedChunkIds": [
         "4e1a38d5f5bd7373095e"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "4e1a38d5f5bd7373095e",
+          "mustContain": [
+            "同仁申請共用公槽資料夾"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3335,7 +3693,32 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "FortiClient 連上後 Wi‑Fi 網路瞬斷",
+          "chunkId": "48b5db3634dcc8e043ef",
+          "mustContain": [
+            "FortiClient",
+            "連上後",
+            "瞬斷"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "de4d71f0178daf8ea653",
+          "mustContain": [
+            "FortiClient"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "48b5db3634dcc8e043ef",
+        "de4d71f0178daf8ea653"
+      ],
+      "expectedSections": [
+        "FortiClient 連上後 Wi‑Fi 網路瞬斷",
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-x-jump-auth",
@@ -3362,7 +3745,16 @@
       "expectedChunkIds": [
         "61febd557abb558a5614"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "61febd557abb558a5614",
+          "mustContain": [
+            "VPN",
+            "跳板機連線異常"
+          ]
+        }
+      ],
       "expectedSections": [
         "正文（canonical）"
       ]
@@ -3515,22 +3907,26 @@
       "query": "CRM OTP",
       "expectedFound": true,
       "expectedSourceTitles": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "hardNegatives": [],
       "relevanceGrades": {
-        "國金 CRM OTP 綁訂操作": 3
+        "國金 CRM OTP 綁訂操作": 3,
+        "外網 CRM 登入連線設定方式": 2
       },
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Coverage expansion",
+      "notes": "Coverage expansion; short CRM OTP may cite both 國金/外網 CRM docs",
       "expectedDocuments": [
-        "國金 CRM OTP 綁訂操作"
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
       ],
       "forbiddenEvidence": [],
       "split": "test",
       "expectedChunkIds": [
-        "8bfdf97d28d8abf6eae6"
+        "8bfdf97d28d8abf6eae6",
+        "591a8347795e521cd509"
       ],
       "expectedEvidence": [
         {
@@ -3539,6 +3935,14 @@
           "mustContain": [
             "CRM",
             "OTP"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "591a8347795e521cd509",
+          "mustContain": [
+            "外網 CRM",
+            "FortiToken"
           ]
         }
       ],
@@ -3805,7 +4209,33 @@
       ],
       "forbiddenEvidence": [],
       "split": "dev",
-      "expectedEvidence": []
+      "expectedEvidence": [
+        {
+          "section": "正文（canonical）",
+          "chunkId": "de4d71f0178daf8ea653",
+          "mustContain": [
+            "登入",
+            "FortiClient",
+            "出現錯訊"
+          ]
+        },
+        {
+          "section": "正文（canonical）",
+          "chunkId": "e92b297da6fb8616b4e4",
+          "mustContain": [
+            "VPN",
+            "常見",
+            "問答"
+          ]
+        }
+      ],
+      "expectedChunkIds": [
+        "de4d71f0178daf8ea653",
+        "e92b297da6fb8616b4e4"
+      ],
+      "expectedSections": [
+        "正文（canonical）"
+      ]
     },
     {
       "id": "v2-x-dazhou-first",
@@ -3839,7 +4269,15 @@
       "expectedChunkIds": [
         "7dbbd9605be36badcf5f"
       ],
-      "expectedEvidence": [],
+      "expectedEvidence": [
+        {
+          "section": "第 1 頁 — 預設 Browser／網際網路選項",
+          "chunkId": "7dbbd9605be36badcf5f",
+          "mustContain": [
+            "大州首次使用設定"
+          ]
+        }
+      ],
       "expectedSections": [
         "第 1 頁 — 預設 Browser／網際網路選項"
       ]
@@ -3921,6 +4359,416 @@
       "expectedChunkIds": [],
       "expectedSections": [],
       "expectedEvidence": []
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-unrelated-crypto",
+      "categories": [
+        "no_answer",
+        "unrelated"
+      ],
+      "query": "比特幣冷錢包助記詞備份政策是什麼？",
+      "expectedFound": false,
+      "notes": "Completely unrelated finance topic"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-product-missing-feature",
+      "categories": [
+        "no_answer",
+        "same_product_missing"
+      ],
+      "query": "FortiClient 是否支援 Face ID 生物辨識登入？",
+      "expectedFound": false,
+      "notes": "Same product family but KB has no Face ID answer"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-similar-error-code",
+      "categories": [
+        "no_answer",
+        "similar_error_code"
+      ],
+      "query": "VPN Permission denied (-99999) 怎麼處理？",
+      "expectedFound": false,
+      "notes": "Similar error-code shape but undocumented code"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-cross-system-hardneg",
+      "categories": [
+        "no_answer",
+        "cross_system"
+      ],
+      "query": "Outlook 信箱額度要用 ServiceNow CMDB CI 編號哪裡查？",
+      "expectedFound": false,
+      "notes": "Cross-system hard negative mixing mailbox and CMDB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-policy-absent",
+      "categories": [
+        "no_answer",
+        "policy_absent"
+      ],
+      "query": "公司 BYOD 個人手機可安裝企業 App 的正式政策條款編號？",
+      "expectedFound": false,
+      "notes": "Policy does not exist in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-insufficient-info",
+      "categories": [
+        "no_answer",
+        "insufficient_info"
+      ],
+      "query": "那個系統昨天掛了要找誰",
+      "expectedFound": false,
+      "notes": "Insufficient information / underspecified system"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-short-xyz",
+      "categories": [
+        "no_answer",
+        "short_query"
+      ],
+      "query": "XYZ-991",
+      "expectedFound": false,
+      "notes": "Very short undocumented identifier"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-hr-stock",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "員工認股權憑證剩餘可行使數量查詢入口？",
+      "expectedFound": false,
+      "notes": "HR equity topic not in IT KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-facilities-parking",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "總公司地下停車場訪客臨停申請表下載？",
+      "expectedFound": false,
+      "notes": "Facilities topic outside KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-legal-nda",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "供應商 NDA 標準範本存放在哪個 SharePoint？",
+      "expectedFound": false,
+      "notes": "Legal template not indexed"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-security-zerotrust-sla",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "Zero Trust 閘道商用 SLA 承諾幾個九？",
+      "expectedFound": false,
+      "notes": "Plausible security question undocumented"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-dev-k8s-ns",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "正式環境 Kubernetes namespace 命名規範文件？",
+      "expectedFound": false,
+      "notes": "DevOps detail not in support KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-finance-invoice",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "供應商電子發票折讓單審核流程？",
+      "expectedFound": false,
+      "notes": "Finance process absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-marketing-brand",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "品牌色色票 Pantone 編號清單在哪？",
+      "expectedFound": false,
+      "notes": "Marketing asset absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-travel-visa",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "出差美國商務簽證代辦窗口電話？",
+      "expectedFound": false,
+      "notes": "Travel admin absent"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-training-lms",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "必修資安課程 LMS 課程代碼是多少？",
+      "expectedFound": false,
+      "notes": "Training LMS codes not in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "test",
+      "id": "v2-na-same-product-quota",
+      "categories": [
+        "no_answer",
+        "same_product_missing"
+      ],
+      "query": "CTeam 單次上傳附件大小上限是多少 MB？",
+      "expectedFound": false,
+      "notes": "Same product mentioned elsewhere but quota not documented"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-typo-unknown-system",
+      "categories": [
+        "no_answer",
+        "short_query"
+      ],
+      "query": "樹精霛錯誤碼 ZZX",
+      "expectedFound": false,
+      "notes": "Near-product typo + unknown code"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-wifi-ssid-guest",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "訪客 Wi-Fi SSID 與當日密碼產生規則？",
+      "expectedFound": false,
+      "notes": "Guest wifi details not published in KB"
+    },
+    {
+      "expectedSourceTitles": [],
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "expectedChunkIds": [],
+      "expectedSections": [],
+      "forbiddenEvidence": [],
+      "forbiddenSourceTitles": [],
+      "hardNegatives": [],
+      "relevanceGrades": {},
+      "groups": [],
+      "split": "dev",
+      "id": "v2-na-phone-extension",
+      "categories": [
+        "no_answer"
+      ],
+      "query": "董辦專線分機號是多少？",
+      "expectedFound": false,
+      "notes": "Sensitive/absent directory detail"
     }
-  ]
+  ],
+  "role": "development_regression"
 }

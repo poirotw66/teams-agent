@@ -22,10 +22,9 @@ import json
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +51,7 @@ PACKAGE_ROOTS: dict[str, Path] = {
     "knowledge_core": REPO_ROOT / "agent_service" / "src" / "knowledge_core",
     "composition": REPO_ROOT / "agent_service" / "src" / "composition",
     "teams_agent": REPO_ROOT / "src" / "teams_agent",
+    "citation_asset_gateway": REPO_ROOT / "src" / "citation_asset_gateway",
     "console_frontend": REPO_ROOT / "console_frontend" / "src",
 }
 
@@ -65,6 +65,7 @@ DOMAIN_PACKAGES = frozenset(
         "knowledge_core",
         "composition",
         "teams_agent",
+        "citation_asset_gateway",
     }
 )
 
@@ -106,6 +107,20 @@ FORBIDDEN_EDGES = frozenset(
         ("teams_agent", "composition"),
         ("teams_agent", "operations_core"),
         ("teams_agent", "knowledge_core"),
+        ("citation_asset_gateway", "agent_service"),
+        ("citation_asset_gateway", "ai_ops_backoffice"),
+        ("citation_asset_gateway", "knowledge_portal"),
+        ("citation_asset_gateway", "composition"),
+        ("citation_asset_gateway", "operations_core"),
+        ("citation_asset_gateway", "knowledge_core"),
+        ("citation_asset_gateway", "platform_kernel"),
+        ("citation_asset_gateway", "teams_agent"),
+        ("agent_service", "citation_asset_gateway"),
+        ("ai_ops_backoffice", "citation_asset_gateway"),
+        ("knowledge_portal", "citation_asset_gateway"),
+        ("operations_core", "citation_asset_gateway"),
+        ("knowledge_core", "citation_asset_gateway"),
+        ("platform_kernel", "citation_asset_gateway"),
     }
 )
 
@@ -114,6 +129,10 @@ OWNERSHIP_IMPORT_EDGES = frozenset(
     {
         ("ai_ops_backoffice", "agent_service"),
         ("knowledge_portal", "agent_service"),
+        ("ai_ops_backoffice", "operations_core"),
+        ("agent_service", "operations_core"),
+        ("teams_agent", "citation_asset_gateway"),
+        ("citation_asset_gateway", "teams_agent"),
     }
 )
 
@@ -139,6 +158,7 @@ ALLOWED_CROSS_DOMAIN_EDGES = frozenset(
         ("knowledge_portal", "agent_service"),
         ("knowledge_portal", "knowledge_core"),
         ("knowledge_portal", "platform_kernel"),
+        ("teams_agent", "citation_asset_gateway"),
     }
 )
 
@@ -476,7 +496,7 @@ def check_size_waivers(
                 "size_waivers.json must contain a list field named waivers",
             )
         ]
-    as_of = today or datetime.now(timezone.utc).date()
+    as_of = today or datetime.now(UTC).date()
     for index, entry in enumerate(waivers):
         if not isinstance(entry, dict):
             findings.append(
@@ -811,9 +831,16 @@ def check_router_filesystem_io() -> list[Finding]:
     return findings
 
 
+# Known residual package SCCs that are tracked but not treated as blockers.
+# Prefer shrinking these via ownership ratchets rather than growing them.
+ALLOWED_PACKAGE_CYCLES = frozenset()
+
+
 def check_package_cycles(graph: dict[str, set[str]]) -> list[Finding]:
     findings: list[Finding] = []
     for scc in find_package_cycles(graph):
+        if frozenset(scc) in ALLOWED_PACKAGE_CYCLES:
+            continue
         findings.append(
             Finding(
                 "PACKAGE_CYCLE",

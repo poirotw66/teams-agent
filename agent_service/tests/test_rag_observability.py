@@ -7,6 +7,8 @@ import pytest
 from agent_service.rag_observability import (
     record_cache_hit,
     record_query_tier,
+    record_relevance_deterministic_skip,
+    record_relevance_llm_outcome,
     reset_counters,
     snapshot_counters,
 )
@@ -27,6 +29,17 @@ def test_cache_and_tier_counters() -> None:
     assert snap["rag_retrieval_cache_hits"] == 1.0
     assert snap["rag_retrieval_cache_misses"] == 1.0
     assert snap["rag_query_tier_hard"] == 1.0
+
+
+def test_relevance_llm_audit_counters() -> None:
+    record_relevance_deterministic_skip()
+    record_relevance_llm_outcome(deterministic_relevant=True, llm_relevant=True)
+    record_relevance_llm_outcome(deterministic_relevant=True, llm_relevant=False)
+    snap = snapshot_counters()
+    assert snap["rag_relevance_deterministic_skips"] == 1.0
+    assert snap["rag_relevance_llm_calls"] == 2.0
+    assert snap["rag_relevance_llm_unchanged"] == 1.0
+    assert snap["rag_relevance_llm_flipped"] == 1.0
 
 
 @pytest.mark.asyncio

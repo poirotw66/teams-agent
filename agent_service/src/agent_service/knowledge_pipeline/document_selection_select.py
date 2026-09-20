@@ -11,10 +11,12 @@ from agent_service.retrieval_ranking import (
     ranking_sort_key,
 )
 
+from .relevance import primary_distinctive_tokens
 from .selector import (
     document_has_competitive_overlap,
     is_numbered_section,
     max_chunks_for_query,
+    query_asks_for_comparison,
     query_asks_for_error_branch_selection,
     query_asks_for_procedure_selection,
     section_sort_key,
@@ -56,6 +58,40 @@ def _best_ranked_in_group(group: Sequence[SearchResult]) -> SearchResult:
     return min(group, key=ranking_sort_key)
 
 
+def _sibling_title_tokens(
+    query: str,
+    ranked_documents: Sequence[Sequence[SearchResult]],
+) -> frozenset[str]:
+    """Distinctive query tokens that appear in at least two document titles.
+
+    Used to keep sibling manuals (e.g. two 大州 docs) above the score floor
+    without promoting unrelated single-title matches.
+    """
+    tokens = primary_distinctive_tokens(query)
+    if not tokens or len(ranked_documents) < 2:
+        return frozenset()
+    titles = [
+        (_best_ranked_in_group(group).chunk.title or "").casefold()
+        for group in ranked_documents
+    ]
+    shared: set[str] = set()
+    for token in tokens:
+        needle = token.casefold()
+        if sum(1 for title in titles if needle in title) >= 2:
+            shared.add(needle)
+    return frozenset(shared)
+
+
+def _title_matches_sibling_tokens(
+    group: Sequence[SearchResult],
+    sibling_tokens: frozenset[str],
+) -> bool:
+    if not sibling_tokens:
+        return False
+    title = (_best_ranked_in_group(group).chunk.title or "").casefold()
+    return any(token in title for token in sibling_tokens)
+
+
 def rank_documents_for_query(
     query: str,
     filtered_results: Sequence[SearchResult],
@@ -75,6 +111,7 @@ def rank_documents_for_query(
     if ranked_documents:
         leader = _best_ranked_in_group(ranked_documents[0])
         score_floor = evidence_confidence(leader) * _DOCUMENT_SELECTION_SCORE_RATIO
+        sibling_tokens = _sibling_title_tokens(query, ranked_documents)
         ranked_documents = [
             group
             for group in ranked_documents
@@ -85,11 +122,32 @@ def rank_documents_for_query(
                 candidates=group,
                 overlap_ratio=_DOCUMENT_SELECTION_OVERLAP_RATIO,
             )
+            or _title_matches_sibling_tokens(group, sibling_tokens)
         ]
     max_context_documents = _MAX_CONTEXT_DOCUMENTS
-    if any(marker in query for marker in _ACCESS_SCOPE_QUERY_MARKERS):
+    if any(marker in query for marker in _ACCESS_SCOPE_QUERY_MARKERS) or query_asks_for_comparison(
+        query
+    ):
         max_context_documents = _MAX_ACCESS_SCOPE_CONTEXT_DOCUMENTS
     return ranked_documents[: min(top_k, max_context_documents)]
+
+
+def _chunk_distinctive_overlap(
+    query: str,
+    result: SearchResult,
+) -> int:
+    tokens = primary_distinctive_tokens(query)
+    if not tokens:
+        return 0
+    text = (
+        f"{result.chunk.title}\n{result.chunk.section or ''}\n{result.chunk.content}"
+    ).casefold()
+    return sum(1 for token in tokens if token.casefold() in text)
+
+
+def _within_doc_sort_key(query: str, result: SearchResult) -> tuple[int, tuple]:
+    # Prefer chunks that carry more distinctive query tokens, then ranking contract.
+    return (-_chunk_distinctive_overlap(query, result), ranking_sort_key(result))
 
 
 def select_chunks_for_documents(
@@ -113,21 +171,56 @@ def select_chunks_for_documents(
         query=query,
         default_max_chunks=default_max_chunks,
     )
-    selected: list[SearchResult] = []
+    # Error-branch / procedure monopoly is only safe for single-doc answers.
+    allow_procedure_monopoly = (is_procedure_query or is_error_branch_query) and len(
+        ranked_documents
+    ) <= 1
+    # Diversity-first Top-k for comparison and multi-doc procedure/error-branch.
+    use_diversity_first = len(ranked_documents) > 1 and (
+        query_asks_for_comparison(query)
+        or is_procedure_query
+        or is_error_branch_query
+    )
+
+    if not use_diversity_first:
+        selected: list[SearchResult] = []
+        for document_results in ranked_documents:
+            version_results = canonical_version_results(document_results)
+            if allow_procedure_monopoly and len(version_results) >= 1:
+                procedure = _procedure_numbered_chunks(
+                    version_results,
+                    index_chunks=index_chunks,
+                    max_chunks_limit=max_chunks_limit,
+                )
+                if procedure is not None:
+                    selected.extend(procedure)
+                    continue
+            selected.extend(
+                sorted(
+                    version_results,
+                    key=lambda result: _within_doc_sort_key(query, result),
+                )[:max_chunks_limit]
+            )
+        return selected
+
+    # Pass A: one best chunk per document; Pass B: fill remaining per-doc slots.
+    first_pass: list[SearchResult] = []
+    remaining_by_doc: list[list[SearchResult]] = []
     for document_results in ranked_documents:
         version_results = canonical_version_results(document_results)
-        if (is_procedure_query or is_error_branch_query) and len(version_results) >= 1:
-            procedure = _procedure_numbered_chunks(
-                version_results,
-                index_chunks=index_chunks,
-                max_chunks_limit=max_chunks_limit,
-            )
-            if procedure is not None:
-                selected.extend(procedure)
-                continue
-        selected.extend(
-            sorted(version_results, key=ranking_sort_key)[:max_chunks_limit]
+        ordered = sorted(
+            version_results,
+            key=lambda result: _within_doc_sort_key(query, result),
         )
+        if not ordered:
+            remaining_by_doc.append([])
+            continue
+        first_pass.append(ordered[0])
+        remaining_by_doc.append(ordered[1:max_chunks_limit])
+
+    selected = list(first_pass)
+    for extras in remaining_by_doc:
+        selected.extend(extras)
     return selected
 
 

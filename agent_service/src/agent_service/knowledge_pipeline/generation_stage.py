@@ -95,13 +95,18 @@ def _prepare_generation_context(
             else None
         )
     )
+    budget_for = getattr(host, "evidence_token_budget_for", None)
+    if callable(budget_for):
+        token_budget = budget_for(tier_val)
+    else:
+        token_budget = getattr(host, "evidence_token_budget", None)
     return build_context_and_markers(
         results,
         chunk_to_doc_idx,
         chunk_by_id=getattr(host, "chunk_by_id", None) or None,
         chunks_by_parent_id=getattr(host, "chunks_by_parent_id", None) or None,
         query_tier=tier_val,
-        token_budget=getattr(host, "evidence_token_budget", None),
+        token_budget=token_budget,
     )
 
 
@@ -118,6 +123,7 @@ async def _align_and_assemble(
     counter: LlmCallCounter,
     execution_context: ExecutionContext | None,
     include_retrieval_evidence: bool,
+    resolved_issue_query: str = "",
 ) -> KnowledgeResult:
     cited = resolve_cited_document_keys(
         host=host,
@@ -127,6 +133,7 @@ async def _align_and_assemble(
         unique_doc_keys=unique_doc_keys,
         chunk_to_doc_idx=chunk_to_doc_idx,
         bundles=bundles,
+        resolved_issue_query=resolved_issue_query,
     )
     if isinstance(cited, KnowledgeResult):
         return cited
@@ -157,6 +164,7 @@ async def _align_and_assemble(
         unique_doc_keys=unique_doc_keys,
         chunk_to_doc_idx=chunk_to_doc_idx,
         include_retrieval_evidence=include_retrieval_evidence,
+        resolved_issue_query=resolved_issue_query,
     )
 
 
@@ -214,6 +222,7 @@ async def generate_grounded_answer(
         counter=counter,
         execution_context=execution_context,
         include_retrieval_evidence=include_retrieval_evidence,
+        resolved_issue_query=str(getattr(state, "resolved_issue_query", "") or ""),
     )
 
 

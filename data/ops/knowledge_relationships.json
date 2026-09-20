@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "description": "Configurable companion / related-document inject rules. Prefer Portal-managed metadata over hardcoded Chinese markers in document_selection.py. temporaryCompatibility rules retire after blind Acc/CiteP/NA-F1 pass with inject disabled.",
+  "relationships": [
+    {
+      "id": "enterprise-app-trust",
+      "aliases": [
+        "企業 App",
+        "企業App",
+        "企業級APP",
+        "企業級 App",
+        "來源所述的企業"
+      ],
+      "intent": "enterprise_app_verification",
+      "requireAnyQueryMarkers": [],
+      "relatedDocumentMarkers": [
+        "企業級APP",
+        "企業級 App",
+        "CATHAY LIFE"
+      ],
+      "relationship": "COMPANION",
+      "owner": "knowledge-ops",
+      "temporaryCompatibility": true
+    },
+    {
+      "id": "employee-portal-password-companion",
+      "aliases": [
+        "員工入口網",
+        "國泰員工入口"
+      ],
+      "intent": "employee_portal_password",
+      "requireAnyQueryMarkers": [
+        "忘記密碼",
+        "密碼"
+      ],
+      "relatedDocumentMarkers": [
+        "金控入口網密碼變更方式",
+        "設定我的連結"
+      ],
+      "relationship": "COMPANION",
+      "owner": "knowledge-ops",
+      "temporaryCompatibility": true
+    }
+  ]
+}

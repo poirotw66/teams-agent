@@ -418,7 +418,9 @@ class HybridIndex:
         query_vector, embedding_ms, is_fast_path = self._resolve_query_vector(
             query, authorized_indices, sparse_scores, query_vector
         )
+        dense_started = time.perf_counter()
         results = self._candidate_results(authorized_indices, normalized_sparse, query_vector)
+        dense_ms = (time.perf_counter() - dense_started) * 1000
         (
             sparse_candidate_k,
             dense_candidate_k,
@@ -426,6 +428,7 @@ class HybridIndex:
             dense_weight,
         ) = self._resolve_fusion_weights(query, use_legacy_weighted)
 
+        fusion_started = time.perf_counter()
         filtered = fuse_hybrid_candidates(
             results,
             query=query,
@@ -438,9 +441,12 @@ class HybridIndex:
             dense_weight=dense_weight,
             legacy_weighted=use_legacy_weighted,
         )
+        fusion_ms = (time.perf_counter() - fusion_started) * 1000
         timings = {
             "embeddingMs": round(embedding_ms, 1),
             "sparseMs": round(sparse_ms, 1),
+            "denseMs": round(dense_ms, 1),
+            "fusionMs": round(fusion_ms, 1),
             "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
             "fastPath": 1.0 if is_fast_path else 0.0,
         }

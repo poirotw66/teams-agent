@@ -1,0 +1,156 @@
+{
+  "summary": {
+    "caseCount": 5.0,
+    "evidenceLabeledCaseCount": 5.0,
+    "recallAt4": 0.8,
+    "precisionAt4": 0.7,
+    "evidenceRecallAt4": 1.0,
+    "evidencePrecisionAt4": 1.0,
+    "recallAt5": 0.8,
+    "recallAt10": 0.8,
+    "recallAt20": 0.8,
+    "mrrAt10": 0.8,
+    "ndcgAt10": 0.8,
+    "hitAt1": 0.8,
+    "hitAt3": 0.8,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "truePositive": 0.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "layer": 3,
+    "liveModel": false,
+    "documentHitAt4": 0.8,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 1.0,
+    "candidateRecallAt24": 1.0,
+    "rerankerHeadroomPp": 0.0,
+    "latencyMsP50": 472.74525000102585,
+    "latencyMsP95": 582.9246249995776,
+    "latencyMsMean": 493.6808836006094,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.4,
+    "avgBatchEmbeddingMs": 507.36,
+    "embeddingMsP50": 429.65,
+    "embeddingMsP95": 471.4,
+    "sparseMsP50": 1.6,
+    "sparseMsP95": 9.0,
+    "denseMsP50": 33.4,
+    "denseMsP95": 176.8,
+    "fusionMsP50": 0.4,
+    "fusionMsP95": 0.4,
+    "searchTotalMsP50": 461.5,
+    "searchTotalMsP95": 498.2,
+    "batchEmbeddingMsP50": 507.36,
+    "batchEmbeddingMsP95": 507.36,
+    "facetGroupCounts": {
+      "facet0": 4.0,
+      "facet1": 0.0,
+      "facet2plus": 1.0
+    },
+    "facet0SearchTotalMsP50": 465.85,
+    "facet0SearchTotalMsP95": 498.2,
+    "facet2plusSearchTotalMsP50": 186.8,
+    "facet2plusSearchTotalMsP95": 186.8,
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 1.0,
+    "citationPrecision": 0.7,
+    "citationRecall": 0.8,
+    "groundedness": 1.0,
+    "answerEvidenceRecallAt4": 1.0,
+    "retrievalEvidenceRecallAt4": 1.0,
+    "retrievalMsP50": 471.1,
+    "retrievalMsP95": 582.1,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 0.5,
+    "generateMsP50": 0.1,
+    "generateMsP95": 0.1,
+    "totalMsP50": 472.7,
+    "totalMsP95": 582.9,
+    "llmCallsPerQuery": 0.0,
+    "inputTokensPerQuery": 0.0,
+    "outputTokensPerQuery": 0.0,
+    "usageSourceCounts": {
+      "MISSING": 5
+    },
+    "queryTierCounts": {
+      "trivial": 3.0,
+      "standard": 1.0,
+      "hard": 1.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "BAD_CITATION": 2
+    },
+    "failureCount": 2,
+    "split": "test",
+    "evalSet": "data/eval/retrieval_eval_v3_blind.json"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-03",
+      "query": "FortiClient 出現 Permission denied 錯誤碼 -455 怎麼辦？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "(-455)",
+          "Permission",
+          "denied"
+        ]
+      ],
+      "answer": "根據內部知識庫找到以下資訊：\n\n[S1] 登入 FortiClient 出現錯訊\n### Permission denied (-455)\n\n可能原因與處理：\n\n1. 網路訊號不穩：確認網路狀態。\n2. 密碼輸入錯誤。\n3. 密碼被上鎖：確認開機密碼是否被鎖。\n4. 三個月密碼到期：請插上實體網路線，使用 `Ctrl + Alt + Delete` 變更公司電腦開機密碼。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|cf80afbddd210fa9a426"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Corpus VPN Q&A | answer_preview='根據內部知識庫找到以下資訊：\\n\\n[S1] 登入 FortiClient 出現錯訊\\n### Permission denied (-455)\\n\\n可能原因與處理：\\n\\n1. 網路訊號不穩：確認網路狀態。\\n2. 密碼輸入錯誤。\\n3. 密碼被上鎖：確認開機密碼是否被鎖。\\n4. 三個月密碼到期：請插上實體網路線，使用 `Ctrl + Alt + Delete` 變更公司電腦開機密碼。'"
+    },
+    {
+      "caseId": "v3-blind-ans-05",
+      "query": "國泰員工入口網的密碼跟 AD 是同一組嗎？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "並非AD"
+        ]
+      ],
+      "answer": "根據內部知識庫找到以下資訊：\n\n[S1] 國泰員工入口網、CTeam密碼、國泰e點名\n## 正文（canonical）\n\n國泰員工入口網、CTeam密碼、國泰e點名\n2023年5月25日\n上午 11:11\n\n密碼連動為 - 國泰金控網站帳密 (並非AD)，請至國泰員工入口網站-忘記密碼-請點我 修改\n\n帳號為員工編號\n\n**國泰e點名 APP下載點  **\n\n**安裝完成請務必至手機一般 \\> VPN與裝置管理 \\> 企業級APP內將CATHAY LIFE加入驗證**\n\n[https://w3.cathaylife.com.tw/PHWeb/servlet/HttpDispatcher/PHAH_0500/prompt](https://w3.cathaylife.com.tw/PHWeb/servlet/HttpDispatcher/PHAH_0500/prompt)\n\nimage1\n\n[S2] AD 帳號與系統解鎖 FAQ\n### FAQ-002｜哪些系統可使用 AD 自助解鎖？\n\n**適用系統**（與 AD 帳號鎖定相關之登入問題，可優先引導自助解鎖）：\n\nAD 解鎖、開機密碼解鎖、電腦解鎖、CRM、OPWEB、密碼中心、國金 CRM、憑證中心管理系統、CTI、聯繫單系統、開戶中心、借還券轉檔模組、M365 相關、凌群無紙化電子化報表系統、國泰期貨中台、國證 STO、最高權限管理系統 EADM 申請網站、APPM、Grafana Dashboards、Graylog Dashboards、複委託中台－後台系統、RPA 後台、FortiClient VPN、外網 CRM。\n\n**建議回覆**：若因 AD 帳號遭鎖定而無法登入上述系統，請先至 AD 自助解鎖專區解鎖後再重試。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd",
+        "AD 帳號與系統解鎖 FAQ|5722f7f39f0fab6003d0"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus portal password linkage | answer_preview='根據內部知識庫找到以下資訊：\\n\\n[S1] 國泰員工入口網、CTeam密碼、國泰e點名\\n## 正文（canonical）\\n\\n國泰員工入口網、CTeam密碼、國泰e點名\\n2023年5月25日\\n上午 11:11\\n\\n密碼連動為 - 國泰金控網站帳密 (並非AD)，請至國泰員工入口網站-忘記密碼-請點我 修改\\n\\n帳號為員工編號\\n\\n**國泰e點名 APP下載點  **\\n\\n**安裝完成請務必至手機一般 \\\\> VPN與裝置管理 \\\\> 企業級APP內將CATHAY LIFE加入驗證**\\n\\n[https://w3.cathaylife.com.tw/PHWeb/servlet/HttpDispatcher/PHAH_0500/prompt](https://w3.cathaylife.com.tw/PHWeb/servlet/HttpDispatcher/PHAH_0500/prompt)\\n\\nimage1\\n\\n'"
+    }
+  ]
+}

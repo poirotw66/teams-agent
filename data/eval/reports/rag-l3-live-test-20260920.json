@@ -1,0 +1,370 @@
+{
+  "summary": {
+    "caseCount": 37.0,
+    "evidenceLabeledCaseCount": 29.0,
+    "recallAt4": 0.5315315315315315,
+    "precisionAt4": 0.5000000000000001,
+    "evidenceRecallAt4": 0.6896551724137931,
+    "evidencePrecisionAt4": 0.7241379310344828,
+    "recallAt5": 0.5315315315315315,
+    "recallAt10": 0.5315315315315315,
+    "recallAt20": 0.5315315315315315,
+    "mrrAt10": 0.581081081081081,
+    "ndcgAt10": 0.5400894606767318,
+    "hitAt1": 0.5675675675675675,
+    "hitAt3": 0.5945945945945946,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 8.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "layer": 3,
+    "liveModel": true,
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 0.0,
+    "candidateEvidenceRecallAt24": 0.0,
+    "candidateRecallAt24": 0.0,
+    "latencyMsP50": 2605.6413330006762,
+    "latencyMsP95": 4885.035508001602,
+    "latencyMsMean": 2914.9030709194376,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.0,
+    "avgBatchEmbeddingMs": 0.0,
+    "facetGroupCounts": {
+      "facet0": 37.0,
+      "facet1": 0.0,
+      "facet2plus": 0.0
+    },
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 0.8783783783783784,
+    "citationPrecision": 0.954954954954955,
+    "citationRecall": 0.9594594594594594,
+    "groundedness": 1.0,
+    "answerEvidenceRecallAt4": 0.8783783783783784,
+    "retrievalEvidenceRecallAt4": 0.9655172413793104,
+    "retrievalMsP50": 572.2,
+    "retrievalMsP95": 3697.69,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 1966.7600000000002,
+    "generateMsP50": 1976.7,
+    "generateMsP95": 3786.2,
+    "totalMsP50": 2505.0,
+    "totalMsP95": 5308.56,
+    "llmCallsPerQuery": 1.2162162162162162,
+    "inputTokensPerQuery": 3666.837837837838,
+    "outputTokensPerQuery": 299.2432432432432,
+    "costUsdPerQuery": 0.0038722905405405407,
+    "usageSourceCounts": {
+      "PROVIDER": 37
+    },
+    "queryTierCounts": {
+      "trivial": 15.0,
+      "standard": 14.0,
+      "hard": 8.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "BAD_CITATION": 3,
+      "EVIDENCE_NOT_PASSED_TO_GENERATOR": 2,
+      "ANSWER_OMISSION": 4
+    },
+    "failureCount": 9,
+    "split": "test",
+    "evalSet": "/Users/cfh00896102/Github/teams-agent/data/eval/retrieval_eval_v2.json"
+  },
+  "failures": [
+    {
+      "caseId": "v2-para-crm-bind",
+      "query": "第一次綁 CRM 驗證器要掃什麼",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "CRM"
+        ]
+      ],
+      "answer": "若您是指「國證複委託 CRM 系統」的 OTP 綁定，您可以選擇掃描系統視窗中顯示的 QR Code，或點擊右下角「複製 OTP Key」按鈕並貼上至 Google Authenticator 完成綁定 [S1]。若您是指「外網 CRM」的 FortiToken 綁定，則需使用手機 FortiToken App 掃描網頁產生之 QR Code [S2]。由於您未明確指定系統名稱，請確認您欲綁定的 CRM 系統類型。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|13509d6403631c8bf09e",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "CRM bind paraphrase | answer_preview='若您是指「國證複委託 CRM 系統」的 OTP 綁定，您可以選擇掃描系統視窗中顯示的 QR Code，或點擊右下角「複製 OTP Key」按鈕並貼上至 Google Authenticator 完成綁定 [S1]。若您是指「外網 CRM」的 FortiToken 綁定，則需使用手機 FortiToken App 掃描網頁產生之 QR Code [S2]。由於您未明確指定系統名稱，請確認您欲綁定的 CRM 系統類型。'"
+    },
+    {
+      "caseId": "v2-alias-employee-portal",
+      "query": "國泰員工入口網忘記密碼",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.5,
+      "retrievalEvidenceRecall": 0.5,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰員工入口網",
+          "CTeam",
+          "密碼",
+          "國泰"
+        ],
+        [
+          "金控入口網密碼變更方式"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與國泰金控網站帳密連動（非 AD 帳密），若忘記密碼，請至國泰員工入口網站點選「忘記密碼」進行修改 [S1]。此外，您亦可透過金控入口網進行設定：\n1. 於金控入口網畫面 UI 選單點選「齒輪」圖示。\n2. 依序點選「設定我的連結」 > 「網站管理」。\n3. 勾選「密碼變更」與「忘記密碼」後點選「儲存」。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Alias | answer_preview='國泰員工入口網的密碼與國泰金控網站帳密連動（非 AD 帳密），若忘記密碼，請至國泰員工入口網站點選「忘記密碼」進行修改 [S1]。此外，您亦可透過金控入口網進行設定：\\n1. 於金控入口網畫面 UI 選單點選「齒輪」圖示。\\n2. 依序點選「設定我的連結」 > 「網站管理」。\\n3. 勾選「密碼變更」與「忘記密碼」後點選「儲存」。'"
+    },
+    {
+      "caseId": "v2-alias-jumpbox",
+      "query": "跳板機連不上",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [
+        [
+          "VPN",
+          "跳板機連線異常"
+        ]
+      ],
+      "answer": "若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指其他類型的連線異常，因知識庫未明確說明「跳板機」的其他故障排除步驟，請補充說明具體的錯誤訊息或異常狀態，以便進一步確認。此外，若涉及安全性設定變更，",
+      "citations": [
+        "VPN 跳板機連線異常|61febd557abb558a5614"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Alias | answer_preview='若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指其他類型的連線異常，因知識庫未明確說明「跳板機」的其他故障排除步驟，請補充說明具體的錯誤訊息或異常狀態，以便進一步確認。此外，若涉及安全性設定變更，'"
+    },
+    {
+      "caseId": "v2-short-ad",
+      "query": "AD 鎖定",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答",
+        "全域資料最小化原則 (POLICY-SEC-001)",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN常見Q&A問答",
+        "全域資料最小化原則 (POLICY-SEC-001)",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "expectedEvidence": [
+        [
+          "AD",
+          "鎖定"
+        ]
+      ],
+      "answer": "若您的 AD 帳號遭鎖定，請依下列方式處理：\n1. 請透過「AD 自助解鎖專區」進行解鎖：來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口） [S1]\n2. 若您是因 VPN 連線異常（如錯誤代碼 -455）導致帳號被鎖，除自助解鎖外，亦可聯繫 123 資訊小幫手協助解鎖 [S2]。\n\n> 💡 **注意事項**：文件提供的網址為測試連結，若無法使用，請洽詢 IT 支援窗口或至公司正式入口。此外，提交畫面或附件前請避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]，且嚴禁提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|4883521a4d796760170c",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)|POLICY-SEC-002"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Short query | answer_preview='若您的 AD 帳號遭鎖定，請依下列方式處理：\\n1. 請透過「AD 自助解鎖專區」進行解鎖：來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口） [S1]\\n2. 若您是因 VPN 連線異常（如錯誤代碼 -455）導致帳號被鎖，除自助解鎖外，亦可聯繫 123 資訊小幫手協助解鎖 [S2]。\\n\\n> 💡 **注意事項**：文件提供的網址為測試連結，若無法使用，請洽詢 IT 支援窗口或至公司正式入口。此外，提交畫面或附件前請避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]，且嚴禁提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。'"
+    },
+    {
+      "caseId": "v2-acl-allow-public",
+      "query": "VPN (-455) 處理方式",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.5,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "(-455)",
+          "VPN",
+          "-455",
+          "處理方式"
+        ],
+        [
+          "(-455)",
+          "-455"
+        ]
+      ],
+      "answer": "針對內網型筆電出現 **Permission denied (-455)** 錯誤，請依下列步驟排查：\n1. 確認網路狀態：檢查網路訊號是否穩定 [S1]。\n2. 檢查密碼設定：\n - 請勿勾選保存密碼 [S1]。\n - 確認 **AD** 帳號是否被鎖定 [S1]。\n - 若密碼已到期，請直接變更密碼，請勿前往金控入口網同步開機密碼 [S1]。\n - 若上述方式皆無法排除，可聯繫 **123資訊小幫手** 進行帳號解鎖 [S1]。\n3. 檢查服務狀態：若連線讀條至接近 50% 出現訊息，請確認右下角服務 (**winmatrix**) 是否啟動。可嘗試重開機讓服務自動啟動，或請分公司 **OP** 至 **tool** 資料夾強制執行 [S1]。\n\n> 💡 **建議**：處理過程中可提供照片或截圖，以加速判斷問題 [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Public group allow | answer_preview='針對內網型筆電出現 **Permission denied (-455)** 錯誤，請依下列步驟排查：\\n1. 確認網路狀態：檢查網路訊號是否穩定 [S1]。\\n2. 檢查密碼設定：\\n - 請勿勾選保存密碼 [S1]。\\n - 確認 **AD** 帳號是否被鎖定 [S1]。\\n - 若密碼已到期，請直接變更密碼，請勿前往金控入口網同步開機密碼 [S1]。\\n - 若上述方式皆無法排除，可聯繫 **123資訊小幫手** 進行帳號解鎖 [S1]。\\n3. 檢查服務狀態：若連線讀條至接近 50% 出現訊息，請確認右下角服務 (**winmatrix**) 是否啟動。可嘗試重開機讓服務自動啟動，或請分公司 **OP** 至 **tool** 資料夾強制執行 [S1]。\\n\\n> 💡 **建議**：處理過程中可提供照片或截圖，以加速判斷問題 [S1]。'"
+    },
+    {
+      "caseId": "v2-conv-product-followup",
+      "query": "不是入口網，是 AD 帳號被鎖",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "AD",
+          "帳號被鎖"
+        ]
+      ],
+      "answer": "若您的 AD 帳號遭鎖定，請透過「AD 自助解鎖專區」進行解鎖 [S1]。由於該專區連結為測試網址，請洽詢 IT 支援窗口或至公司正式入口確認正式解鎖管道 [S1]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|4883521a4d796760170c"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Follow-up disambiguation | answer_preview='若您的 AD 帳號遭鎖定，請透過「AD 自助解鎖專區」進行解鎖 [S1]。由於該專區連結為測試網址，請洽詢 IT 支援窗口或至公司正式入口確認正式解鎖管道 [S1]。'"
+    },
+    {
+      "caseId": "v2-scope-data-protect",
+      "query": "外部客戶線上問題文件有沒有寫資料保護額外限制？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "外部客戶線上問題"
+        ]
+      ],
+      "answer": "該來源未特別說明資料保護的額外限制。但系統安全政策要求，提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。 [S1]",
+      "citations": [
+        "外部客戶線上問題|2603e09e74d48e00ac24",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Source scope question | answer_preview='該來源未特別說明資料保護的額外限制。但系統安全政策要求，提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。 [S1]'"
+    },
+    {
+      "caseId": "v2-vis-dazhou",
+      "query": "大州系統功能無法點選時畫面上該檢查什麼",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.5,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.5,
+      "retrievalEvidenceRecall": 0.5,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "selectedEvidenceTitles": [
+        "大州系統_功能無法點選",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "大州系統",
+          "功能無法點選"
+        ],
+        [
+          "大州首次使用設定"
+        ]
+      ],
+      "answer": "當大州系統功能無法點選時，請檢查以下 IE 設定：\n1. 開啟 **工具** → **網際網路選項** [S1]。\n2. 進入 **安全性** → **信任的網站** → **自訂等級** [S1]。\n3. 在「雜項」區塊中，確認「**允許以指令碼開啟沒有大小或位置限制的視窗**」設定為「**啟用**」[S1]。\n\n> 💡 **注意事項**：部分設定需重新啟動電腦後才會生效 [S1]。若涉及安全性設定變更，請務必向權責單位確認 [POLICY-SEC-003]。",
+      "citations": [
+        "大州系統_功能無法點選|ecaa99fdb4cd2e6a9aa8",
+        "安全性設定變更確認原則 (POLICY-SEC-003)|POLICY-SEC-003"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Dazhou UI | answer_preview='當大州系統功能無法點選時，請檢查以下 IE 設定：\\n1. 開啟 **工具** → **網際網路選項** [S1]。\\n2. 進入 **安全性** → **信任的網站** → **自訂等級** [S1]。\\n3. 在「雜項」區塊中，確認「**允許以指令碼開啟沒有大小或位置限制的視窗**」設定為「**啟用**」[S1]。\\n\\n> 💡 **注意事項**：部分設定需重新啟動電腦後才會生效 [S1]。若涉及安全性設定變更，請務必向權責單位確認 [POLICY-SEC-003]。'"
+    },
+    {
+      "caseId": "v2-x-short-crm",
+      "query": "CRM OTP",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "CRM",
+          "OTP"
+        ]
+      ],
+      "answer": "關於 CRM 的 OTP 設定與使用，依據您使用的系統類型說明如下：\n1. 若為「國金 CRM」：\n - 登入時需輸入身分證字號、預設密碼（西元出生年月日）及 **Google Authenticator** 產生的 6 位 OTP [S1]。\n - 若系統彈出「OTP 輸入錯誤」，請直接聯繫國證輔導經理協助處理 [S1]。\n2. 若為「外網 CRM」：\n - 需使用 **FortiToken** App 進行綁定與驗證 [S2]。\n - 綁定方式：請使用非綁定手機之設備登入自助 Token 綁定頁面，依圖示操作並使用手機 **FortiToken** App 掃描 QR Code [S2]。\n - 登入方式：開啟瀏覽器進入 VPN 網站，輸入集團員編、公司電腦登入密碼及 **FortiToken** App 的 6 位數字 [S2]。\n - 若出現逾時拒絕登入可再次連線；若超過三次仍無法登入，需重新安裝程式及重新綁定 [S2]。\n\n> 💡 **注意事項**：若因帳號遭鎖定而無法登入，請先至 AD 自助解鎖專區處理 [S3]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|8bfdf97d28d8abf6eae6",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509",
+        "AD 帳號與系統解鎖 FAQ|1976182eb1b483a43ae5"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Coverage expansion | answer_preview='關於 CRM 的 OTP 設定與使用，依據您使用的系統類型說明如下：\\n1. 若為「國金 CRM」：\\n - 登入時需輸入身分證字號、預設密碼（西元出生年月日）及 **Google Authenticator** 產生的 6 位 OTP [S1]。\\n - 若系統彈出「OTP 輸入錯誤」，請直接聯繫國證輔導經理協助處理 [S1]。\\n2. 若為「外網 CRM」：\\n - 需使用 **FortiToken** App 進行綁定與驗證 [S2]。\\n - 綁定方式：請使用非綁定手機之設備登入自助 Token 綁定頁面，依圖示操作並使用手機 **FortiToken** App 掃描 QR Code [S2]。\\n - 登入方式：開啟瀏覽器進入 VPN 網站，輸入集團員編、公司電腦登入密碼及 **FortiToken** App 的 6 位數字 [S2]。\\n - 若出現逾時拒絕登入可再次連線；若超過三次仍無法'"
+    }
+  ]
+}

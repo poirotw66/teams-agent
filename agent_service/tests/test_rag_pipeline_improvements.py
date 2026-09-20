@@ -73,6 +73,17 @@ def test_sanitize_answer_security_replaces_placeholder_urls() -> None:
     assert "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）" in sanitized
 
 
+def test_sanitize_answer_security_keeps_placeholder_url_from_evidence() -> None:
+    from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security
+
+    url = "https://xxxxx.pages.dev/Sorry.Only.For.TEST"
+    raw = f"若您的 AD 帳號遭鎖定，請至「AD 自助解鎖專區」：\n{url}\n依照指示操作。"
+    evidence = f"AD 自助解鎖專區：`{url}`"
+    sanitized = sanitize_answer_security(raw, evidence_text=evidence)
+    assert url in sanitized
+    assert "目前無法提供正式網址" not in sanitized
+
+
 def test_sanitize_answer_security_redacts_internal_ips_and_unc() -> None:
     raw = (
         "不可使用權限包含公槽資料夾（\\\\10.93.19.22\\shared）及 http://10.93.3.80:8080/crm/ 系統。"
@@ -1260,6 +1271,39 @@ def test_enterprise_app_inject_does_not_reintroduce_ineligible_chunks(
         environment="dev",
     )
     assert all(item.chunk.chunk_id != "portal-placeholder" for item in injected)
+
+
+def test_companion_inject_disabled_skips_temporary_rules(tmp_path: Path) -> None:
+    public_ad = DocumentChunk(
+        chunk_id="ad-1",
+        title="AD 帳號與系統解鎖 FAQ",
+        source_path="sources/ad.md",
+        content="帳號鎖定請至 AD 自助解鎖專區。",
+        allowed_groups=[],
+    )
+    portal = DocumentChunk(
+        chunk_id="portal-1",
+        title="國泰員工入口網、CTeam密碼、國泰e點名",
+        source_path="sources/portal.md",
+        content="企業級APP內將CATHAY LIFE加入驗證。",
+        allowed_groups=[],
+    )
+    index = HybridIndex([public_ad, portal])
+    service = HybridKnowledgeService(
+        make_settings(tmp_path, rag_companion_inject_enabled=False),
+        index,
+        model=None,
+    )
+    results = [
+        SearchResult(chunk=public_ad, score=0.8, sparse_score=0.8, dense_score=0.0),
+    ]
+    unchanged = service._inject_enterprise_app_evidence(
+        "來源所述的企業 App 無法使用應檢查什麼？",
+        results,
+        groups=set(),
+        environment="dev",
+    )
+    assert [item.chunk.chunk_id for item in unchanged] == ["ad-1"]
 
 
 def test_policy_marked_security_advisory_is_retained() -> None:

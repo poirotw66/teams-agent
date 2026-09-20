@@ -11,17 +11,34 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 
+def _unique_preserve_order(ids: Sequence[str]) -> list[str]:
+    """Deduplicate ranked ids while keeping first-seen order.
+
+    Document-level metrics must not inflate when the same document contributes
+    multiple chunks/bundles into the top-``k`` window.
+    """
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in ids:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
 def recall_at_k(
     ranked_ids: Sequence[str],
     relevant_ids: Iterable[str],
     *,
     k: int,
 ) -> float:
-    """Fraction of relevant items recovered in the top-``k`` ranks."""
+    """Fraction of relevant items recovered in the top-``k`` unique ranks."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    hit = sum(1 for item in ranked_ids[:k] if item in relevant)
+    top = _unique_preserve_order(ranked_ids)[:k]
+    hit = sum(1 for item in top if item in relevant)
     return hit / len(relevant)
 
 
@@ -31,11 +48,12 @@ def hit_at_k(
     *,
     k: int,
 ) -> float:
-    """1.0 if any relevant id appears in top-``k``, else 0.0."""
+    """1.0 if any relevant id appears in top-``k`` unique ranks, else 0.0."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    return 1.0 if any(item in relevant for item in ranked_ids[:k]) else 0.0
+    top = _unique_preserve_order(ranked_ids)[:k]
+    return 1.0 if any(item in relevant for item in top) else 0.0
 
 
 def mrr_at_k(
@@ -44,11 +62,11 @@ def mrr_at_k(
     *,
     k: int,
 ) -> float:
-    """Mean Reciprocal Rank of the first relevant hit within top-``k``."""
+    """Mean Reciprocal Rank of the first relevant hit within top-``k`` unique ranks."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    for rank, item in enumerate(ranked_ids[:k], start=1):
+    for rank, item in enumerate(_unique_preserve_order(ranked_ids)[:k], start=1):
         if item in relevant:
             return 1.0 / rank
     return 0.0
@@ -60,10 +78,15 @@ def ndcg_at_k(
     *,
     k: int,
 ) -> float:
-    """Normalized Discounted Cumulative Gain at ``k`` using graded relevance."""
+    """Normalized Discounted Cumulative Gain at ``k`` using graded relevance.
+
+    Duplicate ranked ids are collapsed before scoring so multi-chunk hits for
+    one document cannot push NDCG above 1.0.
+    """
     if k <= 0:
         return 0.0
-    gains = [float(relevance_grades.get(item, 0.0)) for item in ranked_ids[:k]]
+    top = _unique_preserve_order(ranked_ids)[:k]
+    gains = [float(relevance_grades.get(item, 0.0)) for item in top]
     dcg = sum(gain / math.log2(rank + 1) for rank, gain in enumerate(gains, start=1))
     ideal = sorted((float(v) for v in relevance_grades.values() if v > 0), reverse=True)[:k]
     idcg = sum(gain / math.log2(rank + 1) for rank, gain in enumerate(ideal, start=1))
@@ -148,14 +171,15 @@ class RetrievalCaseScore:
     recall_at_20: float
     recall_at_4: float
     precision_at_4: float
-    evidence_recall_at_4: float
-    evidence_precision_at_4: float
+    evidence_recall_at_4: float | None
+    evidence_precision_at_4: float | None
     mrr_at_10: float
     ndcg_at_10: float
     hit_at_1: float
     hit_at_3: float
     hard_negative_accuracy: float | None = None
     acl_leakage_count: int = 0
+    has_evidence_labels: bool = False
 
 
 def precision_at_k(
@@ -164,9 +188,9 @@ def precision_at_k(
     *,
     k: int,
 ) -> float:
-    """Fraction of top-``k`` ranks that are relevant (0 when top-k is empty)."""
+    """Fraction of top-``k`` unique ranks that are relevant (0 when empty)."""
     relevant = {item for item in relevant_ids if item}
-    top = list(ranked_ids[:k])
+    top = _unique_preserve_order(ranked_ids)[:k]
     if not top:
         return 0.0
     return sum(1 for item in top if item in relevant) / len(top)
@@ -256,14 +280,17 @@ def score_retrieval_case(
     )
     rec_4 = recall_at_k(ranked_ids, relevant, k=4)
     prec_4 = precision_at_k(ranked_ids, relevant, k=4)
+    has_evidence = bool(evidence_must_contain)
+    # Document and Evidence metrics stay separate: never fall back Document Hit
+    # into Evidence Recall when labels are missing.
     ev_rec_4 = (
         evidence_recall_at_k(
             retrieved_texts=retrieved_texts,
             evidence_must_contain=evidence_must_contain,
             k=4,
         )
-        if evidence_must_contain
-        else rec_4
+        if has_evidence
+        else None
     )
     ev_prec_4 = (
         evidence_precision_at_k(
@@ -271,8 +298,8 @@ def score_retrieval_case(
             evidence_must_contain=evidence_must_contain,
             k=4,
         )
-        if evidence_must_contain
-        else prec_4
+        if has_evidence
+        else None
     )
     return RetrievalCaseScore(
         case_id=case_id,
@@ -289,14 +316,20 @@ def score_retrieval_case(
         hit_at_3=hit_at_k(ranked_ids, relevant, k=3),
         hard_negative_accuracy=hard_acc,
         acl_leakage_count=acl_leakage_count(ranked_ids, forbidden_ids),
+        has_evidence_labels=has_evidence,
     )
 
 
 def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, float]:
-    """Mean of per-case ranking metrics (ignores None hard-negative rows)."""
+    """Mean of per-case ranking metrics (ignores None hard-negative rows).
+
+    Evidence metrics average only over cases that carry evidence labels so
+    Document Recall / Hit are never silently mixed into Evidence Recall.
+    """
     if not scores:
         return {
             "caseCount": 0.0,
+            "evidenceLabeledCaseCount": 0.0,
             "recallAt4": 0.0,
             "precisionAt4": 0.0,
             "evidenceRecallAt4": 0.0,
@@ -313,21 +346,30 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
         }
 
     def _mean(values: Sequence[float]) -> float:
-        return sum(values) / len(values)
+        return sum(values) / len(values) if values else 0.0
 
     hard_values = [
         score.hard_negative_accuracy
         for score in scores
         if score.hard_negative_accuracy is not None
     ]
+    evidence_recall_values = [
+        score.evidence_recall_at_4
+        for score in scores
+        if score.evidence_recall_at_4 is not None
+    ]
+    evidence_precision_values = [
+        score.evidence_precision_at_4
+        for score in scores
+        if score.evidence_precision_at_4 is not None
+    ]
     return {
         "caseCount": float(len(scores)),
+        "evidenceLabeledCaseCount": float(len(evidence_recall_values)),
         "recallAt4": _mean([score.recall_at_4 for score in scores]),
         "precisionAt4": _mean([score.precision_at_4 for score in scores]),
-        "evidenceRecallAt4": _mean([score.evidence_recall_at_4 for score in scores]),
-        "evidencePrecisionAt4": _mean(
-            [score.evidence_precision_at_4 for score in scores]
-        ),
+        "evidenceRecallAt4": _mean(evidence_recall_values),
+        "evidencePrecisionAt4": _mean(evidence_precision_values),
         "recallAt5": _mean([score.recall_at_5 for score in scores]),
         "recallAt10": _mean([score.recall_at_10 for score in scores]),
         "recallAt20": _mean([score.recall_at_20 for score in scores]),

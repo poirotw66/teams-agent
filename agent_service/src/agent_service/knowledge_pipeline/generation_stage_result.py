@@ -8,7 +8,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from agent_service.contracts import Citation, KnowledgeResult
+from agent_service.contracts import Citation, KnowledgeResult, PolicyAdvisory
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import SearchResult
@@ -32,6 +32,59 @@ from .models import StructuredKnowledgeAnswer
 from .policy_overlay import merge_policy_advisories, sanitize_answer_security
 
 logger = logging.getLogger(__name__)
+
+
+def prefer_query_aligned_citations(
+    *,
+    query: str,
+    ordered_cited_doc_keys: Sequence[str],
+    results: Sequence[SearchResult],
+    document_key: Any,
+) -> list[str]:
+    """Drop peripheral citations that do not overlap the query anchors.
+
+    Keeps every citation tied for the best overlap score so multi-doc answers
+    remain when both sources are on-query.
+    """
+    keys = [key for key in ordered_cited_doc_keys if key]
+    if len(keys) <= 1:
+        return list(keys)
+
+    from .generator import query_anchor_tokens
+
+    anchors = query_anchor_tokens(query)
+    if not anchors:
+        return list(keys)
+
+    def _overlap(doc_key: str) -> int:
+        blob_parts: list[str] = []
+        for result in results:
+            if document_key(result) != doc_key:
+                continue
+            blob_parts.append(f"{result.chunk.title}\n{result.chunk.content}")
+        blob = "\n".join(blob_parts).lower()
+        if not blob:
+            return 0
+        return sum(1 for anchor in anchors if anchor.lower() in blob)
+
+    scored = [(key, _overlap(key)) for key in keys]
+    best = max(score for _, score in scored)
+    if best <= 0:
+        return list(keys[:1])
+
+    positive = [(key, score) for key, score in scored if score > 0]
+    multi_topic = ("、" in query) or ("與" in query) or ("及" in query)
+    second = max((score for _, score in positive if score < best), default=0)
+    if (
+        not multi_topic
+        and best >= 2
+        and second > 0
+        and (best - second) >= 2
+    ):
+        keep = {key for key, score in positive if score == best}
+    else:
+        keep = {key for key, _score in positive}
+    return [key for key in keys if key in keep]
 
 
 async def align_claims_with_citations(
@@ -112,6 +165,7 @@ def _normalize_pruned_answer(
     unique_doc_keys: list[str],
     chunk_to_doc_idx: dict[int, int],
     results_len: int,
+    evidence_text: str = "",
 ) -> tuple[str, list[str]]:
     def _resolve_doc_key(marker_num: int) -> str | None:
         return resolve_doc_key_for_marker(
@@ -133,7 +187,10 @@ def _normalize_pruned_answer(
         unique_doc_keys=unique_doc_keys,
         resolve_doc_key=_resolve_doc_key,
     )
-    normalized_answer = sanitize_answer_security(normalized_answer)
+    normalized_answer = sanitize_answer_security(
+        normalized_answer,
+        evidence_text=evidence_text,
+    )
     normalized_answer = sanitize_temporal_claims(normalized_answer)
     return normalized_answer, ordered_cited_doc_keys
 
@@ -168,30 +225,103 @@ def _build_answer_sources(
     return sources
 
 
-def assemble_grounded_knowledge_result(
+def _evidence_text_for_docs(
+    host: Any,
+    *,
+    results: list[SearchResult],
+    doc_keys: set[str],
+) -> str:
+    parts: list[str] = []
+    for result in results:
+        if host.document_key(result) not in doc_keys:
+            continue
+        parts.append(f"{result.chunk.title}\n{result.chunk.content}")
+    return "\n".join(parts)
+
+
+def drop_ad_unlock_citations_for_product_query(
+    *,
+    query: str,
+    ordered_cited_doc_keys: Sequence[str],
+    common_doc_keys: set[str],
+    results: Sequence[SearchResult],
+    document_key: Any,
+) -> tuple[list[str], set[str]]:
+    """Drop AD unlock FAQ cites when the query is about another product.
+
+    Short product queries such as「CRM OTP」must not keep the AD self-unlock
+    FAQ merely because that FAQ mentions CRM in its system list. AD-oriented
+    queries keep those citations.
+    """
+    keys = [key for key in ordered_cited_doc_keys if key]
+    if len(keys) <= 1:
+        return list(keys), set(common_doc_keys)
+
+    normalized = query.casefold()
+    ad_intent = any(
+        token in normalized
+        for token in ("ad", "自助解鎖", "帳號鎖定", "網域")
+    ) or any(token in query for token in ("鎖定", "被鎖", "解鎖"))
+    if ad_intent:
+        return list(keys), set(common_doc_keys)
+
+    product_focus = ("crm" in normalized and "otp" in normalized) or (
+        "crm" in normalized and "驗證器" in query
+    )
+    if not product_focus:
+        return list(keys), set(common_doc_keys)
+
+    def _is_ad_unlock_doc(doc_key: str) -> bool:
+        for result in results:
+            if document_key(result) != doc_key:
+                continue
+            title = result.chunk.title or ""
+            if "AD 帳號與系統解鎖" in title or "AD帳號與系統解鎖" in title:
+                return True
+        return False
+
+    kept = [key for key in keys if not _is_ad_unlock_doc(key)]
+    if not kept:
+        return list(keys), set(common_doc_keys)
+    return kept, {key for key in common_doc_keys if key in kept}
+
+
+def _apply_product_citation_guards(
     host: Any,
     *,
     response: StructuredKnowledgeAnswer,
-    answer: str,
     results: list[SearchResult],
     ordered_cited_doc_keys: list[str],
     common_doc_keys: set[str],
-    unique_doc_keys: list[str],
-    chunk_to_doc_idx: dict[int, int],
-    include_retrieval_evidence: bool,
-) -> KnowledgeResult:
-    normalized_answer, ordered_cited_doc_keys = _normalize_pruned_answer(
-        answer=answer,
+    resolved_issue_query: str,
+) -> tuple[list[str], set[str]]:
+    if not resolved_issue_query or len(ordered_cited_doc_keys) <= 1:
+        return ordered_cited_doc_keys, common_doc_keys
+    pruned_keys, pruned_common = drop_ad_unlock_citations_for_product_query(
+        query=resolved_issue_query,
         ordered_cited_doc_keys=ordered_cited_doc_keys,
         common_doc_keys=common_doc_keys,
-        unique_doc_keys=unique_doc_keys,
-        chunk_to_doc_idx=chunk_to_doc_idx,
-        results_len=len(results),
+        results=results,
+        document_key=host.document_key,
     )
-    knowledge_claims, claim_policy_advisories = split_claims_by_provenance(
-        response.claims
+    if pruned_keys == list(ordered_cited_doc_keys):
+        return ordered_cited_doc_keys, common_doc_keys
+    response.claims = filter_claims_to_doc_keys(
+        response.claims,
+        allowed_doc_keys=pruned_common,
+        document_by_chunk_id={
+            result.chunk.chunk_id: host.document_key(result) for result in results
+        },
     )
-    response.claims = knowledge_claims
+    return pruned_keys, pruned_common
+
+
+def _policy_ids_for_answer(
+    *,
+    claims: Sequence[Any],
+    normalized_answer: str,
+) -> tuple[list[Any], list[PolicyAdvisory], list[str]]:
+    knowledge_claims, claim_policy_advisories = split_claims_by_provenance(claims)
     policy_advisories = merge_policy_advisories(
         claim_policy_advisories,
         advisories_from_text(normalized_answer),
@@ -205,7 +335,51 @@ def assemble_grounded_knowledge_result(
     )
     if not policy_ids:
         policy_ids = policy_ids_in_text(normalized_answer)
+    return knowledge_claims, policy_advisories, policy_ids
 
+
+def assemble_grounded_knowledge_result(
+    host: Any,
+    *,
+    response: StructuredKnowledgeAnswer,
+    answer: str,
+    results: list[SearchResult],
+    ordered_cited_doc_keys: list[str],
+    common_doc_keys: set[str],
+    unique_doc_keys: list[str],
+    chunk_to_doc_idx: dict[int, int],
+    include_retrieval_evidence: bool,
+    resolved_issue_query: str = "",
+) -> KnowledgeResult:
+    # Claim∩citation keys remain the retention basis; only drop clearly
+    # off-topic AD unlock cites for non-AD product queries (e.g. CRM OTP).
+    ordered_cited_doc_keys, common_doc_keys = _apply_product_citation_guards(
+        host,
+        response=response,
+        results=results,
+        ordered_cited_doc_keys=ordered_cited_doc_keys,
+        common_doc_keys=common_doc_keys,
+        resolved_issue_query=resolved_issue_query,
+    )
+    evidence_text = _evidence_text_for_docs(
+        host,
+        results=results,
+        doc_keys=set(ordered_cited_doc_keys) | set(common_doc_keys),
+    )
+    normalized_answer, ordered_cited_doc_keys = _normalize_pruned_answer(
+        answer=answer,
+        ordered_cited_doc_keys=ordered_cited_doc_keys,
+        common_doc_keys=common_doc_keys,
+        unique_doc_keys=unique_doc_keys,
+        chunk_to_doc_idx=chunk_to_doc_idx,
+        results_len=len(results),
+        evidence_text=evidence_text,
+    )
+    knowledge_claims, policy_advisories, policy_ids = _policy_ids_for_answer(
+        claims=response.claims,
+        normalized_answer=normalized_answer,
+    )
+    response.claims = knowledge_claims
     sources = _build_answer_sources(
         host,
         results=results,
@@ -240,4 +414,6 @@ def assemble_grounded_knowledge_result(
 __all__ = [
     "align_claims_with_citations",
     "assemble_grounded_knowledge_result",
+    "drop_ad_unlock_citations_for_product_query",
+    "prefer_query_aligned_citations",
 ]

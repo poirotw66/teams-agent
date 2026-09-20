@@ -263,7 +263,14 @@ def test_importer_count_tighten_reduces_cap() -> None:
         "knowledge_portal->agent_service": 18,
     }
     tightened = checker.tighten_importer_counts(baseline, current)
-    assert tightened == current
+    assert tightened["ai_ops_backoffice->agent_service"] == 107
+    assert tightened["knowledge_portal->agent_service"] == 18
+    # Ownership edges absent from the fixture baseline initialize to current (0).
+    for src, dst in checker.OWNERSHIP_IMPORT_EDGES:
+        key = f"{src}->{dst}"
+        assert key in tightened
+        if key not in baseline:
+            assert tightened[key] == current.get(key, 0)
 
 
 def test_cross_module_private_access_is_detected() -> None:

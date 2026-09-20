@@ -1,0 +1,337 @@
+{
+  "summary": {
+    "caseCount": 37.0,
+    "evidenceLabeledCaseCount": 29.0,
+    "recallAt4": 0.5720720720720721,
+    "precisionAt4": 0.463963963963964,
+    "evidenceRecallAt4": 0.7241379310344828,
+    "evidencePrecisionAt4": 0.7241379310344828,
+    "recallAt5": 0.5720720720720721,
+    "recallAt10": 0.5720720720720721,
+    "recallAt20": 0.5720720720720721,
+    "mrrAt10": 0.5945945945945946,
+    "ndcgAt10": 0.5714559045065595,
+    "hitAt1": 0.5675675675675675,
+    "hitAt3": 0.6216216216216216,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 8.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "layer": 3,
+    "liveModel": true,
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 0.0,
+    "candidateEvidenceRecallAt24": 0.0,
+    "candidateRecallAt24": 0.0,
+    "latencyMsP50": 2405.392208005651,
+    "latencyMsP95": 5550.794282805873,
+    "latencyMsMean": 2723.1956679191885,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.0,
+    "avgBatchEmbeddingMs": 0.0,
+    "facetGroupCounts": {
+      "facet0": 37.0,
+      "facet1": 0.0,
+      "facet2plus": 0.0
+    },
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 0.9459459459459459,
+    "citationPrecision": 0.9099099099099098,
+    "citationRecall": 0.9864864864864865,
+    "groundedness": 1.0,
+    "answerEvidenceRecallAt4": 0.9459459459459459,
+    "retrievalEvidenceRecallAt4": 0.9655172413793104,
+    "retrievalMsP50": 484.9,
+    "retrievalMsP95": 674.38,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 1977.3,
+    "generateMsP50": 1890.9,
+    "generateMsP95": 4810.04,
+    "totalMsP50": 2405.3,
+    "totalMsP95": 5380.88,
+    "llmCallsPerQuery": 1.2432432432432432,
+    "inputTokensPerQuery": 3750.5945945945946,
+    "outputTokensPerQuery": 313.5945945945946,
+    "costUsdPerQuery": 0.0014080405405405404,
+    "usageSourceCounts": {
+      "PROVIDER": 37
+    },
+    "queryTierCounts": {
+      "trivial": 14.0,
+      "standard": 15.0,
+      "hard": 8.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "BAD_CITATION": 6,
+      "ANSWER_OMISSION": 2
+    },
+    "failureCount": 8,
+    "split": "test",
+    "evalSet": "data/eval/retrieval_eval_v2.json"
+  },
+  "failures": [
+    {
+      "caseId": "v2-para-xq",
+      "query": "客戶說報價下單怪怪的要怎麼判斷是不是廠商問題",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "XQ問題",
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "XQ問題",
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "XQ"
+        ]
+      ],
+      "answer": "若客戶反映報價或下單異常，判斷是否為廠商問題的方式取決於客戶使用的系統：若客戶使用的是 **XQ 報價系統**，該系統非本公司維護，可依下列步驟判斷：\n1. 請客戶先登入國泰新樹精靈 AP 測試登入及下單是否正常。若樹精靈 AP 也有異常，請引導客戶排除（如安裝元件或使用憑證直通車檢查憑證狀態）；若樹精靈 AP 正常，則可判斷非本公司系統問題，請客戶聯絡 XQ 客服 [S1]。\n\n若客戶使用的非 XQ 系統，或無法確認具體平台名稱，目前知識庫未提供其他系統的廠商問題判斷標準。請引導客戶依據報價或交易問題的通報格式提供資訊，並寄送至 `123@cathaysec.com.tw` 以利後續查詢 [S2]。\n\n> 💡 **注意事項**：提交畫面或附件前，請務必避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。",
+      "citations": [
+        "XQ問題|b3bf81747752b753f2b4",
+        "外部客戶線上問題|2603e09e74d48e00ac24",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "XQ paraphrase | answer_preview='若客戶反映報價或下單異常，判斷是否為廠商問題的方式取決於客戶使用的系統：若客戶使用的是 **XQ 報價系統**，該系統非本公司維護，可依下列步驟判斷：\\n1. 請客戶先登入國泰新樹精靈 AP 測試登入及下單是否正常。若樹精靈 AP 也有異常，請引導客戶排除（如安裝元件或使用憑證直通車檢查憑證狀態）；若樹精靈 AP 正常，則可判斷非本公司系統問題，請客戶聯絡 XQ 客服 [S1]。\\n\\n若客戶使用的非 XQ 系統，或無法確認具體平台名稱，目前知識庫未提供其他系統的廠商問題判斷標準。請引導客戶依據報價或交易問題的通報格式提供資訊，並寄送至 `123@cathaysec.com.tw` 以利後續查詢 [S2]。\\n\\n> 💡 **注意事項**：提交畫面或附件前，請務必避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。'"
+    },
+    {
+      "caseId": "v2-typo-sslvpn",
+      "query": "SSLVPN Protcal CRM 連不上",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "SSLVPN",
+          "CRM"
+        ],
+        [
+          "CRM"
+        ]
+      ],
+      "answer": "若您是指透過手機連線外網 CRM，請依下列步驟操作：\n1. 開啟瀏覽器，輸入網址：https://sslvpn.cathaysec.com.tw:8443/CRM（注意大小寫）。若 iPhone 使用 Safari 無法連線，請改用 Google Chrome App [S1]。\n2. 於登入頁面輸入集團員編、公司電腦登入密碼，並輸入 FortiToken App 的六位數字 [S1]。\n3. 若出現逾時拒絕登入可再次嘗試；若超過三次仍無法登入，需重新安裝程式及重新綁定 [S1]。\n4. 登入後進入 SSLVPN Portal，點選書籤「CRM」，再次輸入集團員編及密碼 [S1]。\n\n若您是指使用 FortiClient 軟體連線時遇到問題，請依據錯誤訊息排查：\n- 若出現「Unable to establish the VPN connection. The VPN server may be unreachable.」：請確認網路狀態（可更換熱點或 Wi-Fi），並檢查 FortiClient 右上角齒輪設定是否正確 [S2]。\n- 若出現錯誤碼 (-20199)：請先離開並中斷 FortiClient 連線後重新登入，且不要勾選保存密碼 [S2]。\n- 若出現「URL UNBlocked by FortiClient」：代表尚未進入內網，請確認 FortiClient 是否已成功連線登入 [S3]。\n\n`",
+      "citations": [
+        "外網 CRM 登入連線設定方式|aa53a610195dc82b06b6",
+        "登入 FortiClient 出現錯訊|4c87195d255517260567",
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Typo robustness | answer_preview='若您是指透過手機連線外網 CRM，請依下列步驟操作：\\n1. 開啟瀏覽器，輸入網址：https://sslvpn.cathaysec.com.tw:8443/CRM（注意大小寫）。若 iPhone 使用 Safari 無法連線，請改用 Google Chrome App [S1]。\\n2. 於登入頁面輸入集團員編、公司電腦登入密碼，並輸入 FortiToken App 的六位數字 [S1]。\\n3. 若出現逾時拒絕登入可再次嘗試；若超過三次仍無法登入，需重新安裝程式及重新綁定 [S1]。\\n4. 登入後進入 SSLVPN Portal，點選書籤「CRM」，再次輸入集團員編及密碼 [S1]。\\n\\n若您是指使用 FortiClient 軟體連線時遇到問題，請依據錯誤訊息排查：\\n- 若出現「Unable to establish the VPN connection. The VPN server may'"
+    },
+    {
+      "caseId": "v2-alias-jumpbox",
+      "query": "跳板機連不上",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "轉派工單"
+        ]
+      ],
+      "answer": "若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指 FortiClient VPN 已顯示連線但無法進入內網，請依下列步驟排除：\n1. 點選「中斷連接」後重新開機，並重新登入 FortiClient VPN [S2]。\n2. 如仍無法排除，請請駐點工程師協助重新安裝 [S2]。\n\n若您的異常狀況並非上述情境，請補充說明具體的錯誤訊息或異常現象，以便提供正確的協助。",
+      "citations": [
+        "VPN 跳板機連線異常|61febd557abb558a5614",
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Alias; KB disposition is escalate/轉派工單 (soft answer evidence) | answer_preview='若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指 FortiClient VPN 已顯示連線但無法進入內網，請依下列步驟排除：\\n1. 點選「中斷連接」後重新開機，並重新登入 FortiClient VPN [S2]。\\n2. 如仍無法排除，請請駐點工程師協助重新安裝 [S2]。\\n\\n若您的異常狀況並非上述情境，請補充說明具體的錯誤訊息或異常現象，以便提供正確的協助。'"
+    },
+    {
+      "caseId": "v2-acl-allow-it",
+      "query": "跳板機連線異常",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "跳板機連線異常"
+        ]
+      ],
+      "answer": "若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指 FortiClient VPN 已連接但無法進入內網，請依下列步驟排除：\n1. 點選「中斷連接」後重新開機，並重新登入 FortiClient VPN。\n2. 如仍無法排除，請由駐點工程師協助重新安裝 [S2]。若非上述情境，請補充說明具體的異常症狀。",
+      "citations": [
+        "VPN 跳板機連線異常|61febd557abb558a5614",
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "IT group allow on open docs | answer_preview='若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。若您是指 FortiClient VPN 已連接但無法進入內網，請依下列步驟排除：\\n1. 點選「中斷連接」後重新開機，並重新登入 FortiClient VPN。\\n2. 如仍無法排除，請由駐點工程師協助重新安裝 [S2]。若非上述情境，請補充說明具體的異常症狀。'"
+    },
+    {
+      "caseId": "v2-conv-product-followup",
+      "query": "不是入口網，是 AD 帳號被鎖",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "AD",
+          "帳號被鎖"
+        ]
+      ],
+      "answer": "若您的 AD 帳號遭鎖定，請透過「AD 自助解鎖專區」進行解鎖：https://xxxxx.pages.dev/Sorry.Only.For.TEST [S1]。請進入該網站並依照頁面指示操作，完成後即可重新登入系統 [S1]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|4883521a4d796760170c"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Follow-up disambiguation | answer_preview='若您的 AD 帳號遭鎖定，請透過「AD 自助解鎖專區」進行解鎖：https://xxxxx.pages.dev/Sorry.Only.For.TEST [S1]。請進入該網站並依照頁面指示操作，完成後即可重新登入系統 [S1]。'"
+    },
+    {
+      "caseId": "v2-neg-why-not-ad-from-portal",
+      "query": "為什麼入口網失敗不能直接當成 AD 鎖定？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "AD"
+        ],
+        [
+          "AD",
+          "鎖定"
+        ]
+      ],
+      "answer": "若僅表示「系統無法使用」且未出現帳號鎖定相關訊息，不應直接判定一定是 AD 鎖定 [S1]。入口網無法使用可能源於多種原因，例如網路訊號不穩、密碼輸入錯誤、密碼到期或尚未成功連線至內網等，並非皆為 AD 帳號鎖定所致 [S2][S3]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|945ff1b5119b0825314c",
+        "登入 FortiClient 出現錯訊|cf80afbddd210fa9a426",
+        "內網筆電 VPN 連線問題|f09d4de2693fcf662f2e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Negative constraint | answer_preview='若僅表示「系統無法使用」且未出現帳號鎖定相關訊息，不應直接判定一定是 AD 鎖定 [S1]。入口網無法使用可能源於多種原因，例如網路訊號不穩、密碼輸入錯誤、密碼到期或尚未成功連線至內網等，並非皆為 AD 帳號鎖定所致 [S2][S3]。'"
+    },
+    {
+      "caseId": "v2-scope-data-protect",
+      "query": "外部客戶線上問題文件有沒有寫資料保護額外限制？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "外部客戶"
+        ]
+      ],
+      "answer": "該來源未特別說明資料保護的額外限制。但系統安全政策要求，提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。 [S1]",
+      "citations": [
+        "外部客戶線上問題|2603e09e74d48e00ac24",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Source scope question; 「未特別說明」is a valid grounded scope answer | answer_preview='該來源未特別說明資料保護的額外限制。但系統安全政策要求，提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。 [S1]'"
+    },
+    {
+      "caseId": "v2-x-short-crm",
+      "query": "CRM OTP",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "CRM",
+          "OTP"
+        ]
+      ],
+      "answer": "關於 CRM 的 OTP 綁定與登入，依據您使用的系統類型，操作方式如下：\n1. 若為「國金複委託 CRM」：\n- 登入時請輸入身分證字號、預設密碼（西元出生年月日）及 Google Authenticator 產生的 6 位 OTP Code [S1]。\n- 若彈出「OTP 輸入錯誤」，請直接聯繫國證輔導經理協助處理 [S1]。\n2. 若為「外網 CRM」：\n- 綁定方式：請使用非綁定手機之設備登入 `https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/`，依網頁指示使用 **FortiToken** App 掃描 QR Code 完成綁定 [S2]。\n- 登入方式：開啟瀏覽器進入 `https://sslvpn.cathaysec.com.tw:8443/CRM`，輸入集團員編、公司電腦登入密碼及 **FortiToken** 產生的 6 位數字 [S2]。\n- 若超過三次仍無法登入，需重新安裝程式及重新綁定 [S2]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|8bfdf97d28d8abf6eae6",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Coverage expansion | answer_preview='關於 CRM 的 OTP 綁定與登入，依據您使用的系統類型，操作方式如下：\\n1. 若為「國金複委託 CRM」：\\n- 登入時請輸入身分證字號、預設密碼（西元出生年月日）及 Google Authenticator 產生的 6 位 OTP Code [S1]。\\n- 若彈出「OTP 輸入錯誤」，請直接聯繫國證輔導經理協助處理 [S1]。\\n2. 若為「外網 CRM」：\\n- 綁定方式：請使用非綁定手機之設備登入 `https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/`，依網頁指示使用 **FortiToken** App 掃描 QR Code 完成綁定 [S2]。\\n- 登入方式：開啟瀏覽器進入 `https://sslvpn.cathaysec.com.tw:8443/CRM`，輸入集團員編、公司電腦登入密碼及 **Fo'"
+    }
+  ]
+}

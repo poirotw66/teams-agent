@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import statistics
 import sys
 import time
@@ -29,6 +28,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "agent_service" / "src"))
 
+from agent_service.knowledge_pipeline.retrieval_confidence import (  # noqa: E402
+    calibrated_predict_no_answer,
+)
 from agent_service.retrieval import HybridIndex  # noqa: E402
 from agent_service.retrieval_eval_metrics import (  # noqa: E402
     NoAnswerOutcome,
@@ -79,52 +81,6 @@ def _rank_results(
             seen_titles.add(title)
             titles.append(title)
     return ranked_ids, titles, texts, scores, latency_ms
-
-
-def _predict_no_answer(
-    *,
-    ranked_ids: list[str],
-    scores: list[float],
-    texts: list[str],
-    query: str,
-    min_score: float,
-) -> bool:
-    """Retrieval-level no-answer proxy for offline eval.
-
-    Empty pool or top hit below ``min_score`` counts as no-answer. A lexical
-    miss predicts no-answer only when ≥2 distinctive query tokens exist and
-    **none** appear in the top-3 texts (reduces FP on short paraphrases).
-    """
-    if not ranked_ids:
-        return True
-    if float(scores[0]) < float(min_score):
-        return True
-    tokens = [
-        match.group(0)
-        for match in re.finditer(r"[A-Za-z0-9_./:\\-]{3,}|[\u3400-\u9fff]{2,}", query or "")
-    ]
-    # Drop ultra-generic IT tokens that over-match the corpus.
-    generic = {
-        "vpn",
-        "如何",
-        "怎麼",
-        "什麼",
-        "設定",
-        "問題",
-        "公司",
-        "我們",
-        "可以",
-        "請問",
-        "處理",
-        "連線",
-        "無法",
-        "登入",
-    }
-    distinctive = [token for token in tokens if token.casefold() not in generic]
-    if len(distinctive) < 2:
-        return False
-    top_blob = "\n".join(texts[:3]).casefold()
-    return not any(token.casefold() in top_blob for token in distinctive)
 
 
 def main() -> int:
@@ -197,12 +153,13 @@ def main() -> int:
             retrieved_texts=texts,
             evidence_must_contain=evidence_must,
         )
-        predicted_no_answer = _predict_no_answer(
+        predicted_no_answer = calibrated_predict_no_answer(
             ranked_ids=ranked_ids,
             scores=scores,
             texts=texts,
             query=case.query,
             min_score=min_score,
+            titles=titles,
         )
         no_answer_rows.append(
             NoAnswerOutcome(

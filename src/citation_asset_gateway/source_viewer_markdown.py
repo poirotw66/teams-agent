@@ -6,9 +6,8 @@ import html
 import re
 from difflib import SequenceMatcher
 
-from teams_agent.settings import AgentSettings
-
 from .media import build_asset_url
+from .settings_contract import CitationGatewaySettings
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _IMAGE_MD = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
@@ -38,7 +37,7 @@ def first_heading(body: str) -> str | None:
 
 def rewrite_markdown_images(
     body: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     now: int | None,
     release_id: str | None = None,

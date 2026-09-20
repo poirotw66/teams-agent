@@ -70,6 +70,23 @@ class _HybridGenerationHost:
         settings = getattr(self._service, "settings", None)
         return int(getattr(settings, "rag_evidence_token_budget", 1200))
 
+    def evidence_token_budget_for(self, query_tier: str | None) -> int:
+        from agent_service.knowledge_pipeline.query_tier import (
+            evidence_token_budget_for_tier,
+        )
+
+        settings = getattr(self._service, "settings", None)
+        return evidence_token_budget_for_tier(
+            query_tier,
+            default_budget=int(getattr(settings, "rag_evidence_token_budget", 1200)),
+            trivial_budget=int(
+                getattr(settings, "rag_evidence_token_budget_trivial", 500)
+            ),
+            standard_budget=int(
+                getattr(settings, "rag_evidence_token_budget_standard", 800)
+            ),
+        )
+
     def deterministic_grounded_answer(
         self,
         results: list[SearchResult],

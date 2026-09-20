@@ -171,6 +171,10 @@ async def _batch_embed_uncached_queries(
     ]
     if not uncached:
         return {}
+    # Single-query leftovers should use the normal search embed path; a 1-item
+    # "batch" only adds provider overhead without parallelism benefit.
+    if len(uncached) <= 1:
+        return {}
     query_vectors: dict[str, list[float]] = {}
     try:
         vectors = await asyncio.to_thread(host.embed_queries, uncached)
@@ -279,6 +283,41 @@ def _append_trace_attempts(
         )
 
 
+def _merge_retrieval_result_sets(
+    host: RetrievalHost,
+    result_sets: Sequence[list[SearchResult]],
+    *,
+    attempt: int,
+    previous_results: Sequence[SearchResult],
+) -> list[SearchResult]:
+    """Fuse multi-query / rewrite result sets under the ranking contract.
+
+    Rewrite attempts often yield a single result_set (facets skipped). When a
+    previous original ranking exists, fuse previous × 1.0 with rewrite × 0.6.
+    """
+    has_previous_ranking = bool(previous_results) and attempt > 0
+    should_fuse_query_rrf = getattr(host, "enable_query_rrf", True) and (
+        len(result_sets) > 1 or has_previous_ranking
+    )
+    if should_fuse_query_rrf:
+        previous_weight = 1.0 if has_previous_ranking else None
+        query_weights = (
+            [0.6]
+            if (has_previous_ranking and len(result_sets) == 1)
+            else _compute_query_weights(len(result_sets), attempt)
+        )
+        return fuse_query_level_rrf(
+            *result_sets,
+            query_weights=query_weights,
+            rrf_k=host.rrf_k,
+            previous=previous_results if has_previous_ranking else None,
+            previous_weight=previous_weight,
+        )
+    if result_sets:
+        return list(result_sets[0])
+    return []
+
+
 async def run_retrieve(
     host: RetrievalHost,
     state: Any,
@@ -305,24 +344,12 @@ async def run_retrieve(
         limit=limit,
         stage_timings_ms=state.stage_timings_ms,
     )
-    if getattr(host, "enable_query_rrf", True) and len(result_sets) > 1:
-        previous_weight = 1.0 if (state.attempt > 0 and state.results) else None
-        query_weights = (
-            [0.6]
-            if (state.attempt > 0 and len(result_sets) == 1)
-            else _compute_query_weights(len(result_sets), state.attempt)
-        )
-        results = fuse_query_level_rrf(
-            *result_sets,
-            query_weights=query_weights,
-            rrf_k=host.rrf_k,
-            previous=state.results,
-            previous_weight=previous_weight,
-        )
-    elif result_sets:
-        results = result_sets[0]
-    else:
-        results = []
+    results = _merge_retrieval_result_sets(
+        host,
+        result_sets,
+        attempt=state.attempt,
+        previous_results=state.results,
+    )
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
         results,

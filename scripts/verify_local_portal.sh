@@ -134,9 +134,9 @@ CREATE="$(curl --silent -X POST "http://127.0.0.1:${PORTAL_PORT}/api/documents" 
   -H "X-Portal-Role: CONTRIBUTOR" \
   -H "X-Portal-Owner-Units: IT Service Desk" \
   -d '{
-    "title":"VPN 登入問題",
-    "summary":"本機驗證草稿",
-    "category":"VPN",
+    "title":"[LOCAL VERIFY] Draft Search Probe",
+    "summary":"本機驗證用暫時草稿，非正式知識文件",
+    "category":"VERIFY",
     "owner_unit_id":"IT Service Desk",
     "business_contact":"it-helpdesk@example.test",
     "audience_type":"ALL_EMPLOYEES",
@@ -145,7 +145,7 @@ CREATE="$(curl --silent -X POST "http://127.0.0.1:${PORTAL_PORT}/api/documents" 
     "review_due_at":"2026-12-01",
     "change_summary":"Local verify",
     "change_reason":"Local verify draft search",
-    "markdown_content":"# VPN 登入問題\n\n## 正文\n\n請確認帳號未鎖定。"
+    "markdown_content":"# [LOCAL VERIFY] Draft Search Probe\n\n## 正文\n\nlocal-verify-draft-search-token-9f3c2a"
   }')"
 DOC_ID="$(printf '%s' "${CREATE}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["document"]["document_id"])')"
 DRAFT="$(curl --silent -X POST "http://127.0.0.1:${PORTAL_PORT}/api/documents/${DOC_ID}/draft-search" \
@@ -154,7 +154,7 @@ DRAFT="$(curl --silent -X POST "http://127.0.0.1:${PORTAL_PORT}/api/documents/${
   -H "X-Portal-User-Name: Author Local" \
   -H "X-Portal-Role: CONTRIBUTOR" \
   -H "X-Portal-Owner-Units: IT Service Desk" \
-  -d '{"query":"請確認帳號未鎖定","groups":[],"limit":4}')"
+  -d '{"query":"local-verify-draft-search-token-9f3c2a","groups":[],"limit":4}')"
 printf '%s\n' "${DRAFT}" | grep -q '"matchedDraft":true' \
   || fail "Draft search did not match draft: ${DRAFT}"
 log "Portal draft-search OK."

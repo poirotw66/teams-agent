@@ -1,0 +1,1671 @@
+{
+  "summary": {
+    "caseCount": 156.0,
+    "evidenceLabeledCaseCount": 116.0,
+    "recallAt4": 0.7307692307692307,
+    "precisionAt4": 0.5267094017094016,
+    "evidenceRecallAt4": 0.7241379310344828,
+    "evidencePrecisionAt4": 0.7241379310344828,
+    "recallAt5": 0.7307692307692307,
+    "recallAt10": 0.7307692307692307,
+    "recallAt20": 0.7307692307692307,
+    "mrrAt10": 0.6912393162393162,
+    "ndcgAt10": 0.7015399185210641,
+    "hitAt1": 0.6538461538461539,
+    "hitAt3": 0.7307692307692307,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 2.0,
+    "noAnswer": {
+      "precision": 0.975609756097561,
+      "recall": 1.0,
+      "f1": 0.9876543209876543,
+      "truePositive": 40.0,
+      "falsePositive": 1.0,
+      "falseNegative": 0.0
+    },
+    "layer": 3,
+    "liveModel": true,
+    "documentHitAt4": 0.9827586206896551,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 0.9827586206896551,
+    "candidateRecallAt24": 0.9827586206896551,
+    "rerankerHeadroomPp": 25.86206896551724,
+    "latencyMsP50": 2145.9867705016222,
+    "latencyMsP95": 4008.7410597476264,
+    "latencyMsMean": 2411.6940000064624,
+    "fastPathRate": 0.01282051282051282,
+    "avgFacetCount": 0.07692307692307693,
+    "avgBatchEmbeddingMs": 543.5,
+    "embeddingMsP50": 422.7,
+    "embeddingMsP95": 910.8799999999999,
+    "sparseMsP50": 2.6,
+    "sparseMsP95": 5.6899999999999995,
+    "denseMsP50": 26.25,
+    "denseMsP95": 58.754999999999995,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.6,
+    "searchTotalMsP50": 447.9,
+    "searchTotalMsP95": 962.71,
+    "batchEmbeddingMsP50": 568.4949999999999,
+    "batchEmbeddingMsP95": 574.08,
+    "facetGroupCounts": {
+      "facet0": 150.0,
+      "facet1": 0.0,
+      "facet2plus": 6.0
+    },
+    "facet0SearchTotalMsP50": 448.45000000000005,
+    "facet0SearchTotalMsP95": 963.1299999999999,
+    "facet2plusSearchTotalMsP50": 151.95,
+    "facet2plusSearchTotalMsP95": 688.9,
+    "approxCacheHitRate": 0.01282051282051282,
+    "answerAccuracy": 0.8205128205128205,
+    "citationPrecision": 0.875,
+    "citationRecall": 0.9871794871794872,
+    "groundedness": 1.0,
+    "answerEvidenceRecallAt4": 0.8205128205128205,
+    "retrievalEvidenceRecallAt4": 0.896551724137931,
+    "retrievalMsP50": 445.75,
+    "retrievalMsP95": 602.07,
+    "relevanceMsP50": 0.3,
+    "relevanceMsP95": 1542.9850000000001,
+    "generateMsP50": 1690.1999999999998,
+    "generateMsP95": 3504.1,
+    "totalMsP50": 2154.8999999999996,
+    "totalMsP95": 4047.0399999999995,
+    "llmCallsPerQuery": 1.2820512820512822,
+    "inputTokensPerQuery": 3719.5384615384614,
+    "outputTokensPerQuery": 279.96153846153845,
+    "costUsdPerQuery": 0.0013498269230769232,
+    "usageSourceCounts": {
+      "PROVIDER": 156
+    },
+    "queryTierCounts": {
+      "trivial": 73.0,
+      "standard": 49.0,
+      "hard": 34.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "BAD_CITATION": 22,
+      "ANSWER_OMISSION": 16,
+      "EVIDENCE_NOT_PASSED_TO_GENERATOR": 11,
+      "NO_ANSWER_FALSE_POSITIVE": 1
+    },
+    "failureCount": 50,
+    "split": "test",
+    "evalSet": "../data/eval/retrieval_eval_v3_blind.json",
+    "provenance": {
+      "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+      "datasetHash": "4e071b2f4d09447765cf531f5f584c5cf065dda24752e355d676ee5e8f970f7a",
+      "commitSha": "2fb54e64e205dda5637424e3554cc3e0cbc95a2a",
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-3a95b029b8cf",
+      "region": null,
+      "knowledgeReleaseTenantId": "default"
+    }
+  },
+  "provenance": {
+    "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+    "datasetHash": "4e071b2f4d09447765cf531f5f584c5cf065dda24752e355d676ee5e8f970f7a",
+    "commitSha": "2fb54e64e205dda5637424e3554cc3e0cbc95a2a",
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-3a95b029b8cf",
+    "region": null,
+    "knowledgeReleaseTenantId": "default"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-03",
+      "query": "FortiClient 出現 Permission denied 錯誤碼 -455 怎麼辦？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "(-455)",
+          "Permission denied"
+        ]
+      ],
+      "answer": "若 **FortiClient** 出現 **Permission denied (-455)** 錯誤，請依下列步驟排查：\n1. 確認網路狀態：網路訊號不穩可能導致此錯誤 [S1][S2]。\n2. 檢查密碼輸入：請確認密碼是否正確，並建議不要勾選保存密碼 [S1][S2]。\n3. 確認帳號狀態：若密碼被鎖定或輸入錯誤多次，請確認 **AD** 帳號是否被鎖，可透過 **AD 自助解鎖專區**處理，或聯繫 **123 資訊小幫手**協助解鎖 [S1][S2][S3]。\n4. 處理密碼到期：若密碼已過三個月期限，請直接變更密碼；若為內網型筆電，請勿至金控入口網同步開機密碼 [S1][S2]。\n5. 內網型筆電特殊排解：若連線讀條接近 50% 時出現訊息，請嘗試重開機以啟動服務，或請分公司 **OP** 至 **tool** 資料夾強制執行 [S2]。\n\n> 💡 **建議**：可提供照片或截圖給資訊人員，以加速判斷問題 [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|cf80afbddd210fa9a426",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 0.6666666666666666,
+      "terminalReason": null,
+      "notes": "Both FortiClient错讯 and VPN Q&A cover (-455); accept either citation title. | answer_preview='若 **FortiClient** 出現 **Permission denied (-455)** 錯誤，請依下列步驟排查：\\n1. 確認網路狀態：網路訊號不穩可能導致此錯誤 [S1][S2]。\\n2. 檢查密碼輸入：請確認密碼是否正確，並建議不要勾選保存密碼 [S1][S2]。\\n3. 確認帳號狀態：若密碼被鎖定或輸入錯誤多次，請確認 **AD** 帳號是否被鎖，可透過 **AD 自助解鎖專區**處理，或聯繫 **123 資訊小幫手**協助解鎖 [S1][S2][S3]。\\n4. 處理密碼到期：若密碼已過三個月期限，請直接變更密碼；若為內網型筆電，請勿至金控入口網同步開機密碼 [S1][S2]。\\n5. 內網型筆電特殊排解：若連線讀條接近 50% 時出現訊息，請嘗試重開機以啟動服務，或請分公司 **OP** 至 **tool** 資料夾強制執行 [S2]。\\n\\n> 💡 **建議**：可提供照片或截圖'"
+    },
+    {
+      "caseId": "v3-blind-ans-04",
+      "query": "VPN 密碼被上鎖時要先確認什麼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼被上鎖",
+          "AD帳號"
+        ]
+      ],
+      "answer": "當 VPN 密碼被上鎖時，請先確認您的 AD 帳號是否被鎖定 [S1]。若確認為 AD 或電腦帳號鎖定，請透過 AD 自助解鎖專區進行處理，完成後再重新登入原系統確認是否恢復正常 [S2]。",
+      "citations": [
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "AD 帳號與系統解鎖 FAQ|1976182eb1b483a43ae5"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus VPN password locked | answer_preview='當 VPN 密碼被上鎖時，請先確認您的 AD 帳號是否被鎖定 [S1]。若確認為 AD 或電腦帳號鎖定，請透過 AD 自助解鎖專區進行處理，完成後再重新登入原系統確認是否恢復正常 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-05",
+      "query": "國泰員工入口網的密碼跟 AD 是同一組嗎？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "並非AD"
+        ]
+      ],
+      "answer": "不是。國泰員工入口網的密碼連動為國泰金控網站帳密，並非 AD 密碼 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus portal password linkage | answer_preview='不是。國泰員工入口網的密碼連動為國泰金控網站帳密，並非 AD 密碼 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-07",
+      "query": "VPN 密碼到期了要怎麼處理？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼到期",
+          "變更密碼"
+        ]
+      ],
+      "answer": "若您的 VPN 密碼到期，請依據您的電腦類型採取以下處理方式：\n1. 若為內網型筆電：請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。請注意，請直接變更密碼，不要前往金控入口網同步開機密碼 (AD) [S2]。\n2. 若為一般情況：請直接變更密碼 [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|cf80afbddd210fa9a426",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus VPN password expired | answer_preview='若您的 VPN 密碼到期，請依據您的電腦類型採取以下處理方式：\\n1. 若為內網型筆電：請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。請注意，請直接變更密碼，不要前往金控入口網同步開機密碼 (AD) [S2]。\\n2. 若為一般情況：請直接變更密碼 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-08",
+      "query": "電腦開機密碼被鎖了，文件說可以走哪種解鎖？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "開機密碼解鎖",
+          "AD 自助解鎖"
+        ]
+      ],
+      "answer": "若您的電腦開機密碼被鎖定，請使用 **AD 自助解鎖專區**進行處理後再重新登入 [S1]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus AD boot password | answer_preview='若您的電腦開機密碼被鎖定，請使用 **AD 自助解鎖專區**進行處理後再重新登入 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-09",
+      "query": "外網要用 CRM 該怎麼設定連線？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "外網",
+          "CRM",
+          "連線"
+        ]
+      ],
+      "answer": "若需在外網使用 **CRM**，請依照以下步驟進行 **SSLVPN** 連線設定：\n1. 開啟瀏覽器，輸入網址：`https://sslvpn.cathaysec.com.tw:8443/CRM`（注意大小寫）。若使用 iPhone 且 Safari 無法使用，請改用 **Google Chrome App** [S1]。\n2. 於登入頁面輸入集團員編、公司電腦登入密碼，並輸入 **FortiToken App** 的六位數字（首次登入需輸入）[S1]。\n3. 若出現逾時拒絕登入可再次嘗試；若超過三次仍無法登入，需重新安裝程式及重新綁定 [S1]。\n4. 下次登入時，手機將收到推播，請於 **iOS** 或 **Android** 裝置上點選「Approve／批准」[S1]。\n5. 回到瀏覽器進入 **SSLVPN Portal**，點選書籤「**CRM**」，再次輸入集團員編及密碼即可使用 [S1]。\n\n> 💡 **注意事項**：若因帳號遭鎖定而無法登入，請先至 **AD 自助解鎖專區**處理，完成後再重試 [S2]。",
+      "citations": [
+        "外網 CRM 登入連線設定方式|66f530196849a80ee998",
+        "AD 帳號與系統解鎖 FAQ|5722f7f39f0fab6003d0"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 外網 CRM 登入連線設定方式 | answer_preview='若需在外網使用 **CRM**，請依照以下步驟進行 **SSLVPN** 連線設定：\\n1. 開啟瀏覽器，輸入網址：`https://sslvpn.cathaysec.com.tw:8443/CRM`（注意大小寫）。若使用 iPhone 且 Safari 無法使用，請改用 **Google Chrome App** [S1]。\\n2. 於登入頁面輸入集團員編、公司電腦登入密碼，並輸入 **FortiToken App** 的六位數字（首次登入需輸入）[S1]。\\n3. 若出現逾時拒絕登入可再次嘗試；若超過三次仍無法登入，需重新安裝程式及重新綁定 [S1]。\\n4. 下次登入時，手機將收到推播，請於 **iOS** 或 **Android** 裝置上點選「Approve／批准」[S1]。\\n5. 回到瀏覽器進入 **SSLVPN Portal**，點選書籤「**CRM**」，再次輸入集團員編及密碼即可'"
+    },
+    {
+      "caseId": "v3-blind-ans-11",
+      "query": "登入 FortiClient 出現錯訊要看哪份說明？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiClient",
+          "錯訊"
+        ]
+      ],
+      "answer": "若您在登入 FortiClient 時遇到錯誤訊息，請參考以下說明文件：\n1. 針對特定錯誤代碼（如 -20199、-455、-14、-8）或常見異常（如授權不足、左方欄列消失、未進入內網等），請參閱「VPN常見Q&A問答」 [S1]。\n2. 若出現「Unable to establish the VPN connection… (-20199)」，請參閱「登入 FortiClient 出現錯訊」說明 [S2]。\n3. 若遇到開啟網頁出現「URL UNBlocked by FortiClient」或已顯示連線但無法進入內網等問題，請參閱「內網筆電 VPN 連線問題」 [S3]。",
+      "citations": [
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "登入 FortiClient 出現錯訊|de4d71f0178daf8ea653",
+        "內網筆電 VPN 連線問題|f09d4de2693fcf662f2e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 登入 FortiClient 出現錯訊 | answer_preview='若您在登入 FortiClient 時遇到錯誤訊息，請參考以下說明文件：\\n1. 針對特定錯誤代碼（如 -20199、-455、-14、-8）或常見異常（如授權不足、左方欄列消失、未進入內網等），請參閱「VPN常見Q&A問答」 [S1]。\\n2. 若出現「Unable to establish the VPN connection… (-20199)」，請參閱「登入 FortiClient 出現錯訊」說明 [S2]。\\n3. 若遇到開啟網頁出現「URL UNBlocked by FortiClient」或已顯示連線但無法進入內網等問題，請參閱「內網筆電 VPN 連線問題」 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-13",
+      "query": "內網筆電連 VPN 有問題怎麼辦？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "selectedEvidenceTitles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "expectedEvidence": [
+        [
+          "內網",
+          "VPN"
+        ]
+      ],
+      "answer": "針對內網筆電 VPN 連線問題，請依據您遇到的具體異常狀況進行排查：\n1. 若 **FortiClient VPN** 顯示已連接但無法進入內網：\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\n2. 若仍無法排除，請由駐點工程師協助重新安裝 [S1]。\n2. 若出現特定錯誤代碼或訊息：\n - **Permission denied (-455)**：請確認網路訊號、檢查密碼是否正確（不要保存密碼）、確認 AD 帳號是否被鎖定或密碼到期。若密碼輸入無效，可聯繫 **123 資訊小幫手**進行帳號解鎖 [S2]。\n - **Unable to establish the VPN connection (-14)**：請確認 **FortiClient** 版本是否過舊，建議至官網下載最新版本；若 AD 未鎖定，可嘗試重新安裝 [S2]。\n - **Unable to establish the VPN connection**（無錯誤碼）：表示 VPN 設定不對，請點擊右上角齒輪檢查設定 [S2]。\n - **Permission denied (-8)**：網路狀態不穩，請更換網路環境 [S2]。\n - **授權數不足訊息**：須向端末組與網路組同仁確認授權數 [S2]。\n3. 其他異常：\n - 若左方欄列消失無法登入，請輸入 Server Address: **內部伺服器位址** [S2]。\n - 若未收到 **FortiToken OTP** 信件，請聯繫 **123 資訊小幫手**協助重新寄發 [S2]。\n\n> 💡 **注意事項**：若涉及安全性設定變更，請務必向權責單位確認 。此外，請避免在回報中提供任何登入密碼或動態驗證碼 [POLICY-SEC-002]。",
+      "citations": [
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40",
+        "VPN常見Q&A問答|21ae20cc68e7e7d6264f",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)|POLICY-SEC-002"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 內網筆電 VPN 連線問題 | answer_preview='針對內網筆電 VPN 連線問題，請依據您遇到的具體異常狀況進行排查：\\n1. 若 **FortiClient VPN** 顯示已連接但無法進入內網：\\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\\n2. 若仍無法排除，請由駐點工程師協助重新安裝 [S1]。\\n2. 若出現特定錯誤代碼或訊息：\\n - **Permission denied (-455)**：請確認網路訊號、檢查密碼是否正確（不要保存密碼）、確認 AD 帳號是否被鎖定或密碼到期。若密碼輸入無效，可聯繫 **123 資訊小幫手**進行帳號解鎖 [S2]。\\n - **Unable to establish the VPN connection (-14)**：請確認 **FortiClient** 版本是否過舊，建議至官網下載最新版本；若 AD 未鎖定，可嘗試重新安裝 [S2]。\\n '"
+    },
+    {
+      "caseId": "v3-blind-ans-26",
+      "query": "大州首次使用要做哪些設定？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定"
+      ],
+      "selectedEvidenceTitles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定"
+      ],
+      "expectedEvidence": [
+        [
+          "大州",
+          "首次"
+        ]
+      ],
+      "answer": "大州系統首次使用需進行瀏覽器安全性設定，請依下列步驟操作：\n1. 開啟 IE 瀏覽器，點選 **工具** 後進入 **網際網路選項** [S1]。\n2. 點選 **安全性** 分頁，選擇 **信任的網站** 並點擊 **自訂等級** [S1]。\n3. 在「雜項」類別中，將 **允許以指令碼開啟沒有大小或位置限制的視窗** 設定為 **啟用** [S1]。\n> 💡 **注意事項**：部分設定需重新啟動電腦後才會生效 [S1]。\n\n關於「大州首次使用設定」的其他進階或高權元件設定，目前知識庫僅提供標題，未記載詳細操作步驟 [S2]。",
+      "citations": [
+        "大州系統_功能無法點選|ce6ee07f56061d6ecb50",
+        "大州首次使用設定|7dbbd9605be36badcf5f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 大州首次使用設定 | answer_preview='大州系統首次使用需進行瀏覽器安全性設定，請依下列步驟操作：\\n1. 開啟 IE 瀏覽器，點選 **工具** 後進入 **網際網路選項** [S1]。\\n2. 點選 **安全性** 分頁，選擇 **信任的網站** 並點擊 **自訂等級** [S1]。\\n3. 在「雜項」類別中，將 **允許以指令碼開啟沒有大小或位置限制的視窗** 設定為 **啟用** [S1]。\\n> 💡 **注意事項**：部分設定需重新啟動電腦後才會生效 [S1]。\\n\\n關於「大州首次使用設定」的其他進階或高權元件設定，目前知識庫僅提供標題，未記載詳細操作步驟 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-28",
+      "query": "外部客戶線上問題怎麼處理？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "問題發生日期及時間",
+          "123@cathaysec.com.tw",
+          "使用裝置"
+        ]
+      ],
+      "answer": "若外部客戶遇到線上資訊、交易、帳務或報價等問題，且無法直接判斷原因或需進一步確認系統狀況時，請引導使用者將以下資訊整理後，寄送至 123@cathaysec.com.tw 以利相關人員協助 [S1]：\n1. 問題發生時間\n2. 使用平台\n3. 異常狀況\n4. 操作步驟\n5. 相關畫面截圖 [S1]。此外，提交畫面或附件前，請務必遵守全域資料最小化原則，避免包含與問題無關的個人及敏感資訊 [POLICY-SEC-001]。",
+      "citations": [
+        "外部客戶線上問題|ae06f983ccc97bfa2536",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 外部客戶線上問題 | answer_preview='若外部客戶遇到線上資訊、交易、帳務或報價等問題，且無法直接判斷原因或需進一步確認系統狀況時，請引導使用者將以下資訊整理後，寄送至 123@cathaysec.com.tw 以利相關人員協助 [S1]：\\n1. 問題發生時間\\n2. 使用平台\\n3. 異常狀況\\n4. 操作步驟\\n5. 相關畫面截圖 [S1]。此外，提交畫面或附件前，請務必遵守全域資料最小化原則，避免包含與問題無關的個人及敏感資訊 [POLICY-SEC-001]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-33",
+      "query": "CTeam 密碼跟員工入口網有關嗎？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": [
+        [
+          "CTeam",
+          "密碼"
+        ]
+      ],
+      "answer": "有關。CTeam 密碼與國泰員工入口網的帳號密碼皆屬於國泰金控網站帳密系統，且國泰員工入口網站包含 C_Team 等相關服務 [S1][S2]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd",
+        "分公司CS團隊VPN連線可使用權限列表|03703b32f67ff9fb4cf3"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 國泰員工入口網、CTeam密碼、國泰e點名 | answer_preview='有關。CTeam 密碼與國泰員工入口網的帳號密碼皆屬於國泰金控網站帳密系統，且國泰員工入口網站包含 C_Team 等相關服務 [S1][S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-38",
+      "query": "VPN 密碼不對且不要保存密碼是什麼意思？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼不對",
+          "不要保存密碼"
+        ]
+      ],
+      "answer": "當出現「密碼不對」的錯誤時，建議採取「不要保存密碼」的操作方式，這是為了排除因系統自動帶入舊密碼或錯誤密碼導致的連線失敗 [S1]。此外，若遇到錯誤代碼 (-20199)，處理方式亦包含在重新登入時不要勾選保存密碼，以確保 FortiClient 能正確重新建立連線 [S2]。",
+      "citations": [
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "登入 FortiClient 出現錯訊|0b85189dd9cbae655b30"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for VPN常見Q&A問答 | answer_preview='當出現「密碼不對」的錯誤時，建議採取「不要保存密碼」的操作方式，這是為了排除因系統自動帶入舊密碼或錯誤密碼導致的連線失敗 [S1]。此外，若遇到錯誤代碼 (-20199)，處理方式亦包含在重新登入時不要勾選保存密碼，以確保 FortiClient 能正確重新建立連線 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-39",
+      "query": "VPN 密碼怎麼輸入都不行要聯絡誰？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "123",
+          "帳號解鎖"
+        ]
+      ],
+      "answer": "若 VPN 密碼怎麼輸入都不行，請聯繫 **123 資訊小幫手**進行帳號解鎖 [S1]。此外，若確認屬於 AD 帳號鎖定問題，亦可先透過 **AD 自助解鎖專區**處理後再重新登入 [S2]。",
+      "citations": [
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for VPN常見Q&A問答 | answer_preview='若 VPN 密碼怎麼輸入都不行，請聯繫 **123 資訊小幫手**進行帳號解鎖 [S1]。此外，若確認屬於 AD 帳號鎖定問題，亦可先透過 **AD 自助解鎖專區**處理後再重新登入 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-41",
+      "query": "外網 CRM 與內網設定差在哪裡？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "外網",
+          "CRM"
+        ]
+      ],
+      "answer": "目前知識庫未提供「外網 CRM」與「內網 CRM」設定差異的詳細比較說明。僅能確認兩者皆屬於 AD 帳號可登入之系統 [S1]，且外網 CRM 登入時若出現 401 錯誤碼，可能與使用的瀏覽器 App 有關 [S2]。若涉及內網連線設定變更，",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|5722f7f39f0fab6003d0",
+        "外網 CRM 登入連線設定方式|66f530196849a80ee998"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 外網 CRM 登入連線設定方式 | answer_preview='目前知識庫未提供「外網 CRM」與「內網 CRM」設定差異的詳細比較說明。僅能確認兩者皆屬於 AD 帳號可登入之系統 [S1]，且外網 CRM 登入時若出現 401 錯誤碼，可能與使用的瀏覽器 App 有關 [S2]。若涉及內網連線設定變更，'"
+    },
+    {
+      "caseId": "v3-blind-ans-42",
+      "query": "OTP 綁定失敗要重看哪份操作？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        [
+          "OTP",
+          "綁"
+        ]
+      ],
+      "answer": "由於您未指明是哪個系統的 OTP 綁定失敗，請依據您使用的系統參考以下對應操作說明：若為「國金 CRM 系統」，請參考「國金 CRM OTP 綁訂操作」[S1]；若為「外網 CRM」，請參考「外網 CRM 登入連線設定方式」[S2]；若為「行動裝置 Outlook」，請參考「行動裝置 Outlook 安裝手冊（Android）」[S3]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|4d236a89910222951600",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509",
+        "行動裝置 Outlook 安裝手冊（Android）|5decf998b6531a1a811e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 國金 CRM OTP 綁訂操作 | answer_preview='由於您未指明是哪個系統的 OTP 綁定失敗，請依據您使用的系統參考以下對應操作說明：若為「國金 CRM 系統」，請參考「國金 CRM OTP 綁訂操作」[S1]；若為「外網 CRM」，請參考「外網 CRM 登入連線設定方式」[S2]；若為「行動裝置 Outlook」，請參考「行動裝置 Outlook 安裝手冊（Android）」[S3]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-43",
+      "query": "跳板機連不上時優先檢查什麼？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [
+        [
+          "跳板"
+        ]
+      ],
+      "answer": "由於知識庫針對「跳板機連不上」並未提供統一的優先檢查清單，建議依據您遇到的具體異常情境進行排查：若為無法建立 VPN 連接，請確認網路狀態是否穩定，或嘗試更換熱點／Wi-Fi [S1]；若已進入跳板機但無法連回公司電腦，請確認公司桌機是否已開啟「允許遠端連線到此電腦」 [S2]。若上述方式皆無法排除，請轉派工單由同仁協助 [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|4c87195d255517260567",
+        "VPN 跳板機連線異常|61febd557abb558a5614"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for VPN 跳板機連線異常 | answer_preview='由於知識庫針對「跳板機連不上」並未提供統一的優先檢查清單，建議依據您遇到的具體異常情境進行排查：若為無法建立 VPN 連接，請確認網路狀態是否穩定，或嘗試更換熱點／Wi-Fi [S1]；若已進入跳板機但無法連回公司電腦，請確認公司桌機是否已開啟「允許遠端連線到此電腦」 [S2]。若上述方式皆無法排除，請轉派工單由同仁協助 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-44",
+      "query": "筆電在內網但 VPN 仍異常怎麼查？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "筆電",
+          "VPN"
+        ]
+      ],
+      "answer": "若您的筆電已在內網，但 **FortiClient VPN** 仍出現異常，請依據具體狀況進行排查：\n1. 若 **FortiClient VPN** 顯示已連接（有電波符號）但無法進入內網：\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\n2. 若仍無法排除，請洽詢駐點工程師協助重新安裝 [S1]。\n2. 若連線過程中出現特定錯誤代碼或訊息：\n - **Permission denied (-455)**：請確認網路狀態是否穩定、密碼是否正確（不要保存密碼）、AD 帳號是否被鎖定或密碼已到期。若為內網型筆電，請勿至金控入口網同步開機密碼，並可嘗試重開機以啟動 **winmatrix** 服務 [S2]。\n - **Unable to establish the VPN connection (-14)**：請確認 **FortiClient** 版本是否過舊，或嘗試重新安裝 [S2]。\n - **Unlicensed VPN access**：此為授權數不足，須向端末組與網路組確認授權數 [S2]。\n - **左方欄列消失**：請輸入 Server Address: 內部伺服器位址 進行連接 [S2]。\n\n> 💡 **注意事項**：若上述步驟無法解決，請聯繫 **123 資訊小幫手** 協助 [S2]。此外，",
+      "citations": [
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 內網筆電 VPN 連線問題 | answer_preview='若您的筆電已在內網，但 **FortiClient VPN** 仍出現異常，請依據具體狀況進行排查：\\n1. 若 **FortiClient VPN** 顯示已連接（有電波符號）但無法進入內網：\\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\\n2. 若仍無法排除，請洽詢駐點工程師協助重新安裝 [S1]。\\n2. 若連線過程中出現特定錯誤代碼或訊息：\\n - **Permission denied (-455)**：請確認網路狀態是否穩定、密碼是否正確（不要保存密碼）、AD 帳號是否被鎖定或密碼已到期。若為內網型筆電，請勿至金控入口網同步開機密碼，並可嘗試重開機以啟動 **winmatrix** 服務 [S2]。\\n - **Unable to establish the VPN connection (-14)**：請確認 **FortiClie'"
+    },
+    {
+      "caseId": "v3-blind-hn-02",
+      "query": "員工入口網密碼要去哪改？不要給我 AD 解鎖流程",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "並非AD",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "若要修改國泰員工入口網的密碼，請至「國泰員工入口網站」點選「忘記密碼-請點我」進行修改 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | answer_preview='若要修改國泰員工入口網的密碼，請至「國泰員工入口網站」點選「忘記密碼-請點我」進行修改 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-hn-04",
+      "query": "FortiClient 錯訊說明，不要只給一般 VPN Q&A",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiClient"
+        ]
+      ],
+      "answer": "針對 FortiClient 常見錯誤代碼與異常，請依據下列對應方式處理：\n1. 錯誤代碼 (-20199)：代表連線未完全斷開，請先離開並中斷 FortiClient 連線後重新登入（請勿勾選保存密碼）[S1]。\n2. 錯誤代碼 (-455)：通常為網路訊號不穩、密碼錯誤（請勿保存密碼）、AD 帳號被鎖或密碼到期。若密碼輸入皆無效，請聯繫 123 資訊小幫手進行帳號解鎖；內網型筆電若三個月密碼到期，請直接變更密碼，勿至金控入口網同步 [S2]。\n3. 錯誤代碼 (-14)：FortiClient 版本過舊，請至官網下載最新版本；若 AD 未被鎖定，可嘗試重新安裝 [S2]。\n4. 錯誤代碼 (-8)：網路狀態不穩，請更換網路環境 [S2]。\n5. 顯示「The VPN server may be unreachable」：VPN 設定不對，請點擊右上角齒輪檢查設定 [S2]。\n6. 顯示「Unlicensed VPN access is available until」：代表授權數不足，請向端末組與網路組確認授權數 [S2]。\n7. 左方欄列消失：請輸入 Server Address: 內部伺服器位址 連接 [S2]。\n8. 內網筆電已顯示連線但無法進入內網：請點選「中斷連接」後重新開機，再重新登入；若無效請由駐點工程師協助重新安裝 [S3]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|0b85189dd9cbae655b30",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "內網筆電 VPN 連線問題|f09d4de2693fcf662f2e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | answer_preview='針對 FortiClient 常見錯誤代碼與異常，請依據下列對應方式處理：\\n1. 錯誤代碼 (-20199)：代表連線未完全斷開，請先離開並中斷 FortiClient 連線後重新登入（請勿勾選保存密碼）[S1]。\\n2. 錯誤代碼 (-455)：通常為網路訊號不穩、密碼錯誤（請勿保存密碼）、AD 帳號被鎖或密碼到期。若密碼輸入皆無效，請聯繫 123 資訊小幫手進行帳號解鎖；內網型筆電若三個月密碼到期，請直接變更密碼，勿至金控入口網同步 [S2]。\\n3. 錯誤代碼 (-14)：FortiClient 版本過舊，請至官網下載最新版本；若 AD 未被鎖定，可嘗試重新安裝 [S2]。\\n4. 錯誤代碼 (-8)：網路狀態不穩，請更換網路環境 [S2]。\\n5. 顯示「The VPN server may be unreachable」：VPN 設定不對，請點擊右上角齒輪檢查設定 [S2]。\\n6. 顯示'"
+    },
+    {
+      "caseId": "v3-blind-hn-05",
+      "query": "大州首次設定，不是功能無法點選那篇",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "大州首次使用設定",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "selectedEvidenceTitles": [
+        "大州首次使用設定",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "預設 Browser",
+          "網際網路選項",
+          "每次造訪網頁時"
+        ]
+      ],
+      "answer": "大州系統首次使用設定包含以下步驟：\n1. 於 **網際網路選項** 中進行設定：\n - **一般**：設定檢查儲存網頁較新版本為「**每次造訪網頁時**」 [S1]。\n - **安全性**：於「自訂等級」中，將「允許以指令碼開啟沒有大小或位置限制的視窗」設定為「**啟用**」 [S1]。\n - **進階**：勾選「**即使簽章無效也允許執行或安裝軟體**」 [S1]。\n2. 關於 **Edge IE 相容性**：需設定「允許在 IE 模式重新載入」為「允許」，並確認 IE 模式頁面包含相關內部網址 [S1]。\n3. 關於 **附加元件**：需申請高權以安裝三個機碼元件，惟文件未詳述該元件名稱 [S1]。\n\n`> 💡 **注意事項**：涉及安全性設定變更前，須向權責單位確認 [POLICY-SEC-003]。此外，文件未提供申請高權的具體流程，請向權責單位確認現況 [S1]。文件畫面僅證明該控制項可見且已勾選，不得據此作為通用排障步驟或普遍啟用建議。來源若未提供元件名稱、版本、來源或適用範圍（例如記載為名稱未詳），在權責流程確認前不得自行啟用或擴大套用。",
+      "citations": [
+        "大州首次使用設定|7dbbd9605be36badcf5f",
+        "安全性設定變更確認原則 (POLICY-SEC-003)|POLICY-SEC-003"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | answer_preview='大州系統首次使用設定包含以下步驟：\\n1. 於 **網際網路選項** 中進行設定：\\n - **一般**：設定檢查儲存網頁較新版本為「**每次造訪網頁時**」 [S1]。\\n - **安全性**：於「自訂等級」中，將「允許以指令碼開啟沒有大小或位置限制的視窗」設定為「**啟用**」 [S1]。\\n - **進階**：勾選「**即使簽章無效也允許執行或安裝軟體**」 [S1]。\\n2. 關於 **Edge IE 相容性**：需設定「允許在 IE 模式重新載入」為「允許」，並確認 IE 模式頁面包含相關內部網址 [S1]。\\n3. 關於 **附加元件**：需申請高權以安裝三個機碼元件，惟文件未詳述該元件名稱 [S1]。\\n\\n`> 💡 **注意事項**：涉及安全性設定變更前，須向權責單位確認 [POLICY-SEC-003]。此外，文件未提供申請高權的具體流程，請向權責單位確認現況 [S1]。文件畫面僅證明該'"
+    },
+    {
+      "caseId": "v3-blind-hn-09",
+      "query": "OTP 綁定操作，不是外網連線設定",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "國金 CRM OTP 綁訂操作",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "國金 CRM OTP 綁訂操作",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "expectedEvidence": [
+        [
+          "Google Authenticator",
+          "首次登入需使用 OTP Key"
+        ]
+      ],
+      "answer": "由於您未指定具體系統，目前知識庫提供「外網 CRM」與「國金 CRM」兩種系統的 OTP 綁定方式，請確認您欲綁定的系統：\n\n若為「外網 CRM」：\n1. 使用非綁定手機之設備登入自助綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）並輸入 AD 帳密 [S1]。\n2. 於 FortiAuthenticator Portal 依序選取 Delivery options 為 FortiToken、FortiToken type 為 Mobile、Activation delivery method 為 Scan QR code，並點選 OK [S1]。\n3. 開啟手機 FortiToken App 掃描 QR Code 或手動輸入啟用碼，手機顯示 6 位數動態 OTP 即完成 [S1]。\n\n若為「國金 CRM」：\n1. 於登入頁面輸入身分證字號、預設密碼（西元出生年月日）及任一碼 OTP Code 後點擊「登入」 [S2]。\n2. 系統跳出「OTP Key」設定視窗後，可選擇掃描 QR Code 或點擊「複製 OPT Key」按鈕 [S2]。\n3. 開啟 Google Authenticator，點選「輸入設定金鑰」，帳戶輸入「國金CRM」，密鑰貼上剛剛複製的 OTP KEY，類型選擇「根據時間」並點擊「新增」 [S2]。\n\n`> 💡 **注意事項**：請務必遵守全域資安政策，嚴禁於任何回報中提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。`",
+      "citations": [
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509",
+        "國金 CRM OTP 綁訂操作|4d236a89910222951600",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)|POLICY-SEC-002"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | answer_preview='由於您未指定具體系統，目前知識庫提供「外網 CRM」與「國金 CRM」兩種系統的 OTP 綁定方式，請確認您欲綁定的系統：\\n\\n若為「外網 CRM」：\\n1. 使用非綁定手機之設備登入自助綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）並輸入 AD 帳密 [S1]。\\n2. 於 FortiAuthenticator Portal 依序選取 Delivery options 為 FortiToken、FortiToken type 為 Mobile、Activation delivery method 為 Scan QR code，並點選 OK [S1]。\\n3. 開啟手機 FortiToken App 掃描 QR Code 或手動輸入啟用碼，手機顯示 6 位數動態 OTP 即完成 [S1]。\\n\\n若為「國'"
+    },
+    {
+      "caseId": "v3-blind-conv-02",
+      "query": "那 OTP 要綁在哪個 App？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        [
+          "Google Authenticator",
+          "App Store",
+          "Google Play"
+        ]
+      ],
+      "answer": "OTP 綁定的 App 取決於您使用的系統：若為國金 CRM，請使用 Google Authenticator [S1]；若為外網 CRM，請使用 FortiToken [S2]；若為 Outlook 相關驗證，請使用 Microsoft Authenticator [S3]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|5cf5fcab18422d3e148b",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509",
+        "行動裝置 Outlook 安裝手冊（Android）|5decf998b6531a1a811e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=國金 CRM 登入要驗證 | answer_preview='OTP 綁定的 App 取決於您使用的系統：若為國金 CRM，請使用 Google Authenticator [S1]；若為外網 CRM，請使用 FortiToken [S2]；若為 Outlook 相關驗證，請使用 Microsoft Authenticator [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-05",
+      "query": "那密碼不是 AD 的話要去哪改？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "金控入口網密碼變更方式"
+      ],
+      "selectedEvidenceTitles": [
+        "金控入口網密碼變更方式"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "若您詢問的是「金控入口網」的密碼，請至金控入口網（https://cathayholdings365.sharepoint.com/sites/CathayPortal）進行變更 [S1]。操作步驟如下：\n1. 於畫面 UI 選單點選「齒輪」圖示。\n2. 選擇「設定我的連結」後進入「網站管理」。\n3. 勾選「密碼變更」與「忘記密碼」並儲存。\n4. 回到首頁 UI 介面，即可找到「密碼變更」與「忘記密碼」選項進行設定 [S1]。若您詢問的是其他系統的密碼，目前知識庫沒有足夠資訊說明其變更方式，請補充說明具體系統名稱以利查詢。",
+      "citations": [
+        "金控入口網密碼變更方式|13272bb9efd113e7cd76"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去 | answer_preview='若您詢問的是「金控入口網」的密碼，請至金控入口網（https://cathayholdings365.sharepoint.com/sites/CathayPortal）進行變更 [S1]。操作步驟如下：\\n1. 於畫面 UI 選單點選「齒輪」圖示。\\n2. 選擇「設定我的連結」後進入「網站管理」。\\n3. 勾選「密碼變更」與「忘記密碼」並儲存。\\n4. 回到首頁 UI 介面，即可找到「密碼變更」與「忘記密碼」選項進行設定 [S1]。若您詢問的是其他系統的密碼，目前知識庫沒有足夠資訊說明其變更方式，請補充說明具體系統名稱以利查詢。'"
+    },
+    {
+      "caseId": "v3-blind-conv-06",
+      "query": "那錯訊文件還有其他代碼嗎？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [],
+      "selectedEvidenceTitles": [],
+      "expectedEvidence": [
+        [
+          "FortiClient"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": 0.0,
+      "terminalReason": "NO_RELEVANT_EVIDENCE",
+      "notes": "Multi-turn follow-up; priorTurn=FortiClient 登入失敗 | answer_preview=''"
+    },
+    {
+      "caseId": "v3-blind-conv-07",
+      "query": "那首次設定第一步是什麼？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "大州首次使用設定",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "國金 CRM OTP 綁訂操作"
+      ],
+      "selectedEvidenceTitles": [
+        "大州首次使用設定",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "國金 CRM OTP 綁訂操作"
+      ],
+      "expectedEvidence": [
+        [
+          "首次"
+        ]
+      ],
+      "answer": "由於您未指定系統名稱，目前知識庫無法判斷您是指「大州」、「行動裝置 Outlook」還是「國金 CRM」的首次設定。請提供具體系統名稱以便為您說明。若您是指上述系統的首次設定，其第一步分別為：\n1. 大州：需設定預設瀏覽器的網際網路選項 [S1]。\n2. 行動裝置 Outlook（iOS）：需先下載 Microsoft Authenticator 應用程式 [S2]。\n3. 國金 CRM：需使用身分證字號與預設密碼登入系統 [S3]。",
+      "citations": [
+        "大州首次使用設定|68d8c2c9562f27191757",
+        "行動裝置 Outlook 安裝手冊（iOS）|5d2c4a514029d4891128",
+        "國金 CRM OTP 綁訂操作|13509d6403631c8bf09e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=大州系統不會用 | answer_preview='由於您未指定系統名稱，目前知識庫無法判斷您是指「大州」、「行動裝置 Outlook」還是「國金 CRM」的首次設定。請提供具體系統名稱以便為您說明。若您是指上述系統的首次設定，其第一步分別為：\\n1. 大州：需設定預設瀏覽器的網際網路選項 [S1]。\\n2. 行動裝置 Outlook（iOS）：需先下載 Microsoft Authenticator 應用程式 [S2]。\\n3. 國金 CRM：需使用身分證字號與預設密碼登入系統 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-09",
+      "query": "那通報要寫系統名稱嗎？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "資訊問題的通報格式",
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "資訊問題的通報格式",
+        "外部客戶線上問題",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "主旨:[有問題的平台名稱]",
+          "客戶姓名",
+          "發生異常的時間"
+        ]
+      ],
+      "answer": "是的，通報時需要提供系統或平台名稱。根據不同通報情境，說明如下：\n1. 若為資訊問題通報，信件主旨必須包含「有問題的平台名稱」，且提問資訊中需填寫「有問題之軟體名（APP/AP）」，若主旨已標註則可免填 [S1]。\n2. 若為外部客戶線上問題或帳務問題，建議回覆中皆明確要求提供「使用平台／系統名稱」或「使用平台／APP 名稱」 [S2]。此外，提交畫面或附件前，請務必遵守資料最小化原則，避免包含與問題無關的個人及敏感資訊 [POLICY-SEC-001]。",
+      "citations": [
+        "資訊問題的通報格式|8858d11218ac06055fbc",
+        "外部客戶線上問題|0afce4e860d21d66973f",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=要開資訊單 | answer_preview='是的，通報時需要提供系統或平台名稱。根據不同通報情境，說明如下：\\n1. 若為資訊問題通報，信件主旨必須包含「有問題的平台名稱」，且提問資訊中需填寫「有問題之軟體名（APP/AP）」，若主旨已標註則可免填 [S1]。\\n2. 若為外部客戶線上問題或帳務問題，建議回覆中皆明確要求提供「使用平台／系統名稱」或「使用平台／APP 名稱」 [S2]。此外，提交畫面或附件前，請務必遵守資料最小化原則，避免包含與問題無關的個人及敏感資訊 [POLICY-SEC-001]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-11",
+      "query": "那跳板機異常還要查 VPN 嗎？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "跳板"
+        ]
+      ],
+      "answer": "針對跳板機異常，若您已登入 FortiClient 但無法進入跳板機，請直接轉派工單由同仁協助 [S1]；知識庫未說明此情境是否需額外排查 VPN 連線設定。若您遇到的問題是 VPN 本身出現授權到期訊息，則建議回總公司插實體網路線並重新安裝 FortiClient [S2]。",
+      "citations": [
+        "VPN 跳板機連線異常|61febd557abb558a5614",
+        "內網筆電 VPN 連線問題|3d49a5292bd3eeb91b40"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=連不到某台主機 | answer_preview='針對跳板機異常，若您已登入 FortiClient 但無法進入跳板機，請直接轉派工單由同仁協助 [S1]；知識庫未說明此情境是否需額外排查 VPN 連線設定。若您遇到的問題是 VPN 本身出現授權到期訊息，則建議回總公司插實體網路線並重新安裝 FortiClient [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-13",
+      "query": "那公槽申請要誰核准？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾"
+      ],
+      "expectedEvidence": [
+        [
+          "聯繫單",
+          "資料夾路徑",
+          "資訊架構部"
+        ]
+      ],
+      "answer": "目前知識庫中僅說明申請共用公槽資料夾需填寫聯繫單，並由「資訊架構部」協助處理 [S1]，但文件未明確記載核准權限歸屬於哪位主管或單位。",
+      "citations": [
+        "同仁申請共用公槽資料夾|4e1a38d5f5bd7373095e"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=需要共用資料夾 | answer_preview='目前知識庫中僅說明申請共用公槽資料夾需填寫聯繫單，並由「資訊架構部」協助處理 [S1]，但文件未明確記載核准權限歸屬於哪位主管或單位。'"
+    },
+    {
+      "caseId": "v3-blind-conv-14",
+      "query": "那 IP 話機怎麼轉接分機？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "總公司IP話機操作"
+      ],
+      "selectedEvidenceTitles": [
+        "總公司IP話機操作"
+      ],
+      "expectedEvidence": [
+        [
+          "話機"
+        ]
+      ],
+      "answer": "若要進行直接轉接，請在通話中執行以下步驟：\n1. 按下 **Transfer** 鍵。\n2. 輸入欲轉接的 **分機號碼**。\n3. 掛斷電話 [S1]。",
+      "citations": [
+        "總公司IP話機操作|f8080451077f2df3a602"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=總公司電話不會轉 | answer_preview='若要進行直接轉接，請在通話中執行以下步驟：\\n1. 按下 **Transfer** 鍵。\\n2. 輸入欲轉接的 **分機號碼**。\\n3. 掛斷電話 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-17",
+      "query": "那閃退要重裝嗎？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "超音樹-程式閃退問題"
+      ],
+      "selectedEvidenceTitles": [
+        "超音樹-程式閃退問題"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "輸入帳密後按登入無畫面"
+        ]
+      ],
+      "answer": "目前知識庫針對「超音樹」程式閃退問題，僅提供安裝「新版簽章元件」的解決方式，並未提及是否需要重裝程式 [S1]。若您遇到閃退，建議先嘗試安裝新版簽章元件，若問題持續，此外，變更安全性設定或安裝元件前，",
+      "citations": [
+        "超音樹-程式閃退問題|b9447c8749eaa0326e4d"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=超音樹一直關掉 | answer_preview='目前知識庫針對「超音樹」程式閃退問題，僅提供安裝「新版簽章元件」的解決方式，並未提及是否需要重裝程式 [S1]。若您遇到閃退，建議先嘗試安裝新版簽章元件，若問題持續，此外，變更安全性設定或安裝元件前，'"
+    },
+    {
+      "caseId": "v3-blind-conv-18",
+      "query": "那 AP 登不進去找誰？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "國泰期貨艾揚登入出現-200",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入",
+        "國泰期貨艾揚登入出現-200",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "樹精靈"
+        ]
+      ],
+      "answer": "若您是指「樹精靈AP」無法登入，請先依據網路環境與系統設定進行排查 [S1]；若為「國泰期貨(艾揚)」登入出現 -200 錯誤，排除無效後可轉寄給 AP 單位 [S2]。若您詢問的是其他系統，因知識庫未明確說明該 AP 系統名稱，請補充說明您所指的系統名稱，以便確認對應的負責單位 [S3]。",
+      "citations": [
+        "樹精靈AP無法登入|2d8486a8972f4c3a003b",
+        "國泰期貨艾揚登入出現-200|aa0b0fc607788f3fc084",
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=樹精靈打不開 | answer_preview='若您是指「樹精靈AP」無法登入，請先依據網路環境與系統設定進行排查 [S1]；若為「國泰期貨(艾揚)」登入出現 -200 錯誤，排除無效後可轉寄給 AP 單位 [S2]。若您詢問的是其他系統，因知識庫未明確說明該 AP 系統名稱，請補充說明您所指的系統名稱，以便確認對應的負責單位 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-19",
+      "query": "那外網 CRM 要改什麼設定？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "外網",
+          "CRM"
+        ]
+      ],
+      "answer": "關於外網 CRM 的設定，文件僅說明若登入時出現 401 錯誤碼，代表可能使用了 Google App 而非 Google Chrome App，請確認使用的瀏覽器 [S1]。若您是指因帳號遭鎖定而無法登入，請先至 AD 自助解鎖專區處理 [S2]。若您詢問的是其他特定設定，目前知識庫沒有足夠資訊，請補充說明您欲調整的具體項目。",
+      "citations": [
+        "外網 CRM 登入連線設定方式|66f530196849a80ee998",
+        "AD 帳號與系統解鎖 FAQ|5722f7f39f0fab6003d0"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=在家連 CRM 失敗 | answer_preview='關於外網 CRM 的設定，文件僅說明若登入時出現 401 錯誤碼，代表可能使用了 Google App 而非 Google Chrome App，請確認使用的瀏覽器 [S1]。若您是指因帳號遭鎖定而無法登入，請先至 AD 自助解鎖專區處理 [S2]。若您詢問的是其他特定設定，目前知識庫沒有足夠資訊，請補充說明您欲調整的具體項目。'"
+    },
+    {
+      "caseId": "v3-blind-noise-03",
+      "query": "FotiiClient 錯訊",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiClient"
+        ]
+      ],
+      "answer": "針對 FortiClient 出現的錯誤訊息，請依據對應情境進行處理：\n1. 若出現「Unable to establish the VPN connection… (-14)」：代表 **FortiClient** 版本過舊，請至 **FortiClient** 官網下載最新版本 [S1]。\n2. 若出現「Permission denied (-8)」：代表網路狀態不穩，請更換網路環境 [S2]。\n3. 若出現「please contact your adminstrator or connect to EMS for license activation」：代表 **VPN** 連線授權數不足，須向端末組與網路組確認授權數 [S2]。\n > 💡 **注意事項**：文件記載文件曾記載該授權有效期至 2025-12-12（歷史條目，不能當作現行有效期），此為歷史記載日期，\n4. 若左方欄列消失導致無法登入：請輸入 **Server Address**: 內部伺服器位址 進行連接 [S2]。\n5. 若開啟網頁出現錯誤訊息但未進入內網：請確認 **FortiClient** 是否已成功連線登入 [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|de4d71f0178daf8ea653",
+        "VPN常見Q&A問答|21ae20cc68e7e7d6264f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | answer_preview='針對 FortiClient 出現的錯誤訊息，請依據對應情境進行處理：\\n1. 若出現「Unable to establish the VPN connection… (-14)」：代表 **FortiClient** 版本過舊，請至 **FortiClient** 官網下載最新版本 [S1]。\\n2. 若出現「Permission denied (-8)」：代表網路狀態不穩，請更換網路環境 [S2]。\\n3. 若出現「please contact your adminstrator or connect to EMS for license activation」：代表 **VPN** 連線授權數不足，須向端末組與網路組確認授權數 [S2]。\\n > 💡 **注意事項**：文件記載文件曾記載該授權有效期至 2025-12-12（歷史條目，不能當作現行有效期），此為歷史記載日期，\\n4. 若左方欄列'"
+    },
+    {
+      "caseId": "v3-blind-alias-01",
+      "query": "公司入口網站密碼不是 AD 對吧？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "是的，國泰員工入口網的密碼連動為國泰金控網站帳密，並非 AD 密碼 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Alias | answer_preview='是的，國泰員工入口網的密碼連動為國泰金控網站帳密，並非 AD 密碼 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-alias-02",
+      "query": "國泰員工入口密碼是不是 AD？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼並非 AD 密碼，而是連動國泰金控網站帳密 [S1]。若需修改密碼，請至國泰員工入口網站點選「忘記密碼」進行處理 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | answer_preview='國泰員工入口網的密碼並非 AD 密碼，而是連動國泰金控網站帳密 [S1]。若需修改密碼，請至國泰員工入口網站點選「忘記密碼」進行處理 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-alias-03",
+      "query": "跳板機 VPN 掛掉",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [
+        [
+          "已進入跳板機",
+          "未授權該使用者帳戶遠端登入"
+        ]
+      ],
+      "answer": "若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。",
+      "citations": [
+        "VPN 跳板機連線異常|61febd557abb558a5614"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | answer_preview='若您已登入 FortiClient 但無法進入跳板機（遠端桌面無法連線或顯示未授權），請轉派工單由同仁協助 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-short-02",
+      "query": "OTP綁定",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        [
+          "OTP"
+        ]
+      ],
+      "answer": "由於您未指定系統名稱，請參考以下不同系統的 OTP 綁定方式：若為「國金 CRM 系統」，請於首次登入時輸入帳號、密碼及任一碼 OTP Code，系統將跳出「OTP Key」設定視窗，您可選擇使用 Google Authenticator 掃描 QR Code 或複製金鑰代碼完成綁定 [S1]。若為「外網 CRM」，請先至自助 Token 綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）輸入 AD 帳密，並使用手機 FortiToken App 掃描網頁產生的 QR Code [S2]。若為「Outlook」，請開啟 Microsoft Authenticator App，點擊右上角「+」選擇「工作或學校帳戶」並掃描電腦畫面上的 QR Code [S3]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|4d236a89910222951600",
+        "外網 CRM 登入連線設定方式|591a8347795e521cd509",
+        "行動裝置 Outlook 安裝手冊（Android）|fa4c46babbd46c80215c"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | answer_preview='由於您未指定系統名稱，請參考以下不同系統的 OTP 綁定方式：若為「國金 CRM 系統」，請於首次登入時輸入帳號、密碼及任一碼 OTP Code，系統將跳出「OTP Key」設定視窗，您可選擇使用 Google Authenticator 掃描 QR Code 或複製金鑰代碼完成綁定 [S1]。若為「外網 CRM」，請先至自助 Token 綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）輸入 AD 帳密，並使用手機 FortiToken App 掃描網頁產生的 QR Code [S2]。若為「Outlook」，請開啟 Microsoft Authenticator App，點擊右上角「+」選擇「工作或學校帳戶」並掃描電腦畫面上的 QR Code [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-short-06",
+      "query": "VPN國外",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN國外連線短暫申請"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN國外連線短暫申請"
+      ],
+      "expectedEvidence": [
+        [
+          "海外VPN",
+          "雙方主管",
+          "網路組"
+        ]
+      ],
+      "answer": "若員工有國外連線需求，請依下列步驟申請：\n1. 員工寄信 CC 雙方主管，內容需包含姓名、員編、期間及地點，並請求協助開通海外 VPN [S1]。\n2. 123 收到信件後，會將郵件轉寄至網路組與資安窗口（資訊安全部-張翔超），並 CC 給員工，由網路組開通後回覆 [S1]。",
+      "citations": [
+        "VPN國外連線短暫申請|2a8ae186c4bf1f8db1b7"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | answer_preview='若員工有國外連線需求，請依下列步驟申請：\\n1. 員工寄信 CC 雙方主管，內容需包含姓名、員編、期間及地點，並請求協助開通海外 VPN [S1]。\\n2. 123 收到信件後，會將郵件轉寄至網路組與資安窗口（資訊安全部-張翔超），並 CC 給員工，由網路組開通後回覆 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-acl-01",
+      "query": "IT 群組可見的 AD 自助解鎖說明？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "AD 自助解鎖專區",
+          "帳號鎖定"
+        ]
+      ],
+      "answer": "若您的 AD 帳號遭鎖定，可透過「AD 自助解鎖專區」進行解鎖 [S1]。請進入網站（來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口） [S1]。此自助解鎖方式適用於包含 AD 解鎖、開機密碼解鎖、電腦解鎖、CRM、M365 相關、FortiClient VPN 等多項系統 [S1]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|5722f7f39f0fab6003d0"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus lacks group-gated ACL metadata; kept as answerable AD unlock until gated docs exist. | answer_preview='若您的 AD 帳號遭鎖定，可透過「AD 自助解鎖專區」進行解鎖 [S1]。請進入網站（來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口） [S1]。此自助解鎖方式適用於包含 AD 解鎖、開機密碼解鎖、電腦解鎖、CRM、M365 相關、FortiClient VPN 等多項系統 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-acl-02",
+      "query": "有權限時 VPN 常見錯誤碼 -455 怎麼處理？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "(-455)",
+          "Permission denied"
+        ]
+      ],
+      "answer": "當 **FortiClient** 出現 **Permission denied (-455)** 錯誤時，請依下列步驟排查與處理：\n1. 確認網路狀態是否穩定 [S1][S2]。\n2. 確認密碼輸入是否正確，並建議不要勾選保存密碼 [S1][S2]。\n3. 確認 **AD** 帳號或開機密碼是否被鎖定，若被鎖定請使用 **AD 自助解鎖專區** 進行解鎖 [S1][S2][S3]。\n4. 若為密碼到期，請插上實體網路線，使用 `Ctrl + Alt + Delete` 變更公司電腦開機密碼；若是內網型筆電，請直接變更密碼，不要透過金控入口網同步 [S1][S2]。\n5. 若上述方式皆無法排除，可聯繫 **123 資訊小幫手** 協助帳號解鎖 [S2]。\n6. 若為內網型筆電且連線讀條至接近 50% 出現錯誤，請嘗試重開機，或請分公司 **OP** 到 **tool** 資料夾強制執行服務 [S2]。\n\n> 💡 **注意事項**：處理過程中，可請員工提供照片或截圖以加速判斷問題 [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|cf80afbddd210fa9a426",
+        "VPN常見Q&A問答|e92b297da6fb8616b4e4",
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Corpus lacks ACL metadata on VPN FAQ; retagged answerable. | answer_preview='當 **FortiClient** 出現 **Permission denied (-455)** 錯誤時，請依下列步驟排查與處理：\\n1. 確認網路狀態是否穩定 [S1][S2]。\\n2. 確認密碼輸入是否正確，並建議不要勾選保存密碼 [S1][S2]。\\n3. 確認 **AD** 帳號或開機密碼是否被鎖定，若被鎖定請使用 **AD 自助解鎖專區** 進行解鎖 [S1][S2][S3]。\\n4. 若為密碼到期，請插上實體網路線，使用 `Ctrl + Alt + Delete` 變更公司電腦開機密碼；若是內網型筆電，請直接變更密碼，不要透過金控入口網同步 [S1][S2]。\\n5. 若上述方式皆無法排除，可聯繫 **123 資訊小幫手** 協助帳號解鎖 [S2]。\\n6. 若為內網型筆電且連線讀條至接近 50% 出現錯誤，請嘗試重開機，或請分公司 **OP** 到 **tool** 資料夾強制執行服務'"
+    },
+    {
+      "caseId": "v3-blind-acl-03",
+      "query": "授權使用者如何查看外網 CRM 設定？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiToken",
+          "sslvpn.cathaysec.com.tw:8443/CRM"
+        ]
+      ],
+      "answer": "知識庫中未提供統一的「外網 CRM 設定」查看方式，針對不同 CRM 系統有各自的登入與設定說明：若您是指經紀 CRM，可透過 VPN 連線至網址 http://erp.cathaysec.com.tw/sites/CRM/SitePages/Default.aspx [S1]；若為國金 CRM，請至 https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp 登入 [S2]。若您需要進行外網 CRM 的連線設定或綁定 FortiToken，請參考以下步驟：\n1. 下載並安裝 FortiToken App [S3]。\n2. 使用非綁定手機之設備登入自助 Token 綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）並輸入 AD 帳密 [S3]。\n3. 依網頁圖示操作，使用手機 FortiToken App 掃描 QR Code 完成綁定 [S3]。",
+      "citations": [
+        "分公司CS團隊VPN連線可使用權限列表|03703b32f67ff9fb4cf3",
+        "國金 CRM OTP 綁訂操作|4d236a89910222951600",
+        "外網 CRM 登入連線設定方式|3ffd90015a582484b642"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Corpus lacks ACL metadata on 外網 CRM; retagged answerable. | answer_preview='知識庫中未提供統一的「外網 CRM 設定」查看方式，針對不同 CRM 系統有各自的登入與設定說明：若您是指經紀 CRM，可透過 VPN 連線至網址 http://erp.cathaysec.com.tw/sites/CRM/SitePages/Default.aspx [S1]；若為國金 CRM，請至 https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp 登入 [S2]。若您需要進行外網 CRM 的連線設定或綁定 FortiToken，請參考以下步驟：\\n1. 下載並安裝 FortiToken App [S3]。\\n2. 使用非綁定手機之設備登入自助 Token 綁定頁面（https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/）並輸入 AD 帳密 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-01",
+      "query": "大州首次使用設定與功能無法點選是不是同一版文件？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定"
+      ],
+      "selectedEvidenceTitles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定"
+      ],
+      "expectedEvidence": [
+        [
+          "預設 Browser",
+          "網際網路選項",
+          "每次造訪網頁時"
+        ]
+      ],
+      "answer": "不是同一版文件。關於「大州系統」的說明文件，知識庫中分別有針對「首次使用設定」與「功能無法點選」的獨立文件 [S1][S2]。",
+      "citations": [
+        "大州系統_功能無法點選|ce6ee07f56061d6ecb50",
+        "大州首次使用設定|7dbbd9605be36badcf5f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Sibling docs (首次設定 vs 無法點選), not superseded version; category retagged. | answer_preview='不是同一版文件。關於「大州系統」的說明文件，知識庫中分別有針對「首次使用設定」與「功能無法點選」的獨立文件 [S1][S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-02",
+      "query": "Android 與 iOS Outlook 手冊是否為不同文件？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "expectedEvidence": [
+        [
+          "適用平台：Android",
+          "Microsoft Intune",
+          "台灣 (+886)"
+        ]
+      ],
+      "answer": "是的，Android 與 iOS 的 Outlook 手冊為不同文件。Android Outlook 手冊適用於 Android 平台 [S1]，而 iOS Outlook 手冊則適用於產險版本 [S2]。",
+      "citations": [
+        "行動裝置 Outlook 安裝手冊（Android）|338d562e0bab7cdb6b3a",
+        "行動裝置 Outlook 安裝手冊（iOS）|1d9bd1feec20026b41a0"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Platform pair discrimination, not version supersession. | answer_preview='是的，Android 與 iOS 的 Outlook 手冊為不同文件。Android Outlook 手冊適用於 Android 平台 [S1]，而 iOS Outlook 手冊則適用於產險版本 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-03",
+      "query": "VPN 常見 Q&A 與 FortiClient 錯訊文件差別？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "Unable to establish the VPN connection",
+          "(-14)"
+        ]
+      ],
+      "answer": "「VPN 常見 Q&A」與「登入 FortiClient 出現錯訊」等文件皆為針對 VPN 連線異常的處理指引，其差別在於涵蓋的錯誤情境與適用範圍不同：\n1. **VPN 常見 Q&A**：內容較為廣泛，涵蓋了特定錯誤代碼（如 -455、-14）、帳號鎖定、密碼到期、OTP 信件補發以及內網型筆電的特殊排解步驟 [S1]。\n2. **登入 FortiClient 出現錯訊**：針對「無法建立 VPN 連接」的特定訊息提供排解，包含網路狀態檢查、設定確認，並補充了實體網路線連線時的說明 [S2]。\n3. **內網筆電 VPN 連線問題**：專門針對內網型筆電在網頁存取受阻或已連線但無法進入內網的情境提供處置 [S3]。",
+      "citations": [
+        "VPN常見Q&A問答|21ae20cc68e7e7d6264f",
+        "登入 FortiClient 出現錯訊|4c87195d255517260567",
+        "內網筆電 VPN 連線問題|f09d4de2693fcf662f2e"
+      ],
+      "citationPrecision": 0.3333333333333333,
+      "terminalReason": null,
+      "notes": "Related VPN docs discrimination. | answer_preview='「VPN 常見 Q&A」與「登入 FortiClient 出現錯訊」等文件皆為針對 VPN 連線異常的處理指引，其差別在於涵蓋的錯誤情境與適用範圍不同：\\n1. **VPN 常見 Q&A**：內容較為廣泛，涵蓋了特定錯誤代碼（如 -455、-14）、帳號鎖定、密碼到期、OTP 信件補發以及內網型筆電的特殊排解步驟 [S1]。\\n2. **登入 FortiClient 出現錯訊**：針對「無法建立 VPN 連接」的特定訊息提供排解，包含網路狀態檢查、設定確認，並補充了實體網路線連線時的說明 [S2]。\\n3. **內網筆電 VPN 連線問題**：專門針對內網型筆電在網頁存取受阻或已連線但無法進入內網的情境提供處置 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-04",
+      "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "超音樹-程式閃退問題",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入",
+        "超音樹-程式閃退問題",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "國泰期貨"
+        ]
+      ],
+      "answer": "樹精靈無法登入與超音樹閃退並非同一份文件。兩者為獨立的異常情境，處理方式如下：\n1. 樹精靈無法登入：主要針對網路錯誤 12029，需檢查客戶端網路環境（重啟數據機或更換網路）及調整系統連線設定（調整 TLS 安全協定、停用 Proxy 代理伺服器）[S1]。若涉及 Proxy 或安全性設定變更，請務必向權責單位確認 [POLICY-SEC-003]。\n2. 超音樹閃退：若輸入帳密後無畫面，請至國泰期貨官網安裝新版簽章元件 [S2]。",
+      "citations": [
+        "樹精靈AP無法登入|2d8486a8972f4c3a003b",
+        "超音樹-程式閃退問題|b9447c8749eaa0326e4d",
+        "安全性設定變更確認原則 (POLICY-SEC-003)|POLICY-SEC-003"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Adjacent product docs discrimination. | answer_preview='樹精靈無法登入與超音樹閃退並非同一份文件。兩者為獨立的異常情境，處理方式如下：\\n1. 樹精靈無法登入：主要針對網路錯誤 12029，需檢查客戶端網路環境（重啟數據機或更換網路）及調整系統連線設定（調整 TLS 安全協定、停用 Proxy 代理伺服器）[S1]。若涉及 Proxy 或安全性設定變更，請務必向權責單位確認 [POLICY-SEC-003]。\\n2. 超音樹閃退：若輸入帳密後無畫面，請至國泰期貨官網安裝新版簽章元件 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-scope-02",
+      "query": "「VPN常見Q&A問答」這份文件主要涵蓋什麼？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "Permission denied",
+          "(-455)",
+          "密碼問題"
+        ]
+      ],
+      "answer": "「VPN常見Q&A問答」文件主要涵蓋 VPN 連線過程中常見的錯誤代碼排除、異常情況處理及相關操作指引，內容包含：\n1. 針對特定錯誤代碼（如 -455、-14）的排查步驟 [S1]。\n2. 網路訊號不穩、密碼問題（如到期、被鎖定）的處理方式 [S1]。\n3. FortiClient 版本更新與重新安裝建議 [S1]。\n4. 針對未收到 FortiToken OTP 信件、VPN 設定檢查及內網連線狀態確認的指引 [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|21ae20cc68e7e7d6264f"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Named-source scope question | answer_preview='「VPN常見Q&A問答」文件主要涵蓋 VPN 連線過程中常見的錯誤代碼排除、異常情況處理及相關操作指引，內容包含：\\n1. 針對特定錯誤代碼（如 -455、-14）的排查步驟 [S1]。\\n2. 網路訊號不穩、密碼問題（如到期、被鎖定）的處理方式 [S1]。\\n3. FortiClient 版本更新與重新安裝建議 [S1]。\\n4. 針對未收到 FortiToken OTP 信件、VPN 設定檢查及內網連線狀態確認的指引 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-scope-03",
+      "query": "「資訊問題的通報格式」文件是在規範什麼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "資訊問題的通報格式",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "selectedEvidenceTitles": [
+        "資訊問題的通報格式",
+        "全域資料最小化原則 (POLICY-SEC-001)"
+      ],
+      "expectedEvidence": [
+        [
+          "信件主旨格式",
+          "提問所需資訊",
+          "客戶帳號/ID"
+        ]
+      ],
+      "answer": "「資訊問題的通報格式」文件主要規範客服人員在處理資訊問題時，應遵循的信件主旨格式以及提問所需蒐集的資訊項目 [S1]。該文件明確列出了主旨的撰寫範例，以及包含客戶姓名、帳號、軟體名稱、問題說明、發生時間、載具系統、軟體版本及附圖等必要或建議提供的資訊內容 [S1]。此外，提交相關畫面或附件時，請務必遵守全域資料最小化原則，避免提供與問題無關的個人及敏感資訊 [POLICY-SEC-001]。",
+      "citations": [
+        "資訊問題的通報格式|8858d11218ac06055fbc",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Named-source scope question | answer_preview='「資訊問題的通報格式」文件主要規範客服人員在處理資訊問題時，應遵循的信件主旨格式以及提問所需蒐集的資訊項目 [S1]。該文件明確列出了主旨的撰寫範例，以及包含客戶姓名、帳號、軟體名稱、問題說明、發生時間、載具系統、軟體版本及附圖等必要或建議提供的資訊內容 [S1]。此外，提交相關畫面或附件時，請務必遵守全域資料最小化原則，避免提供與問題無關的個人及敏感資訊 [POLICY-SEC-001]。'"
+    },
+    {
+      "caseId": "v3-blind-neg-01",
+      "query": "為何不能把員工入口網密碼當成 AD 密碼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與 AD 密碼屬於不同的系統帳密機制，國泰員工入口網、CTeam 密碼及國泰 e 點名採用的是國泰金控網站帳密，並非 AD 帳號密碼 [S1]。若您遇到 AD／電腦帳號鎖定問題，請使用 AD 自助解鎖專區處理 [S2]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd",
+        "AD 帳號與系統解鎖 FAQ|96f070973b7785c9aaf5"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Why-not | answer_preview='國泰員工入口網的密碼與 AD 密碼屬於不同的系統帳密機制，國泰員工入口網、CTeam 密碼及國泰 e 點名採用的是國泰金控網站帳密，並非 AD 帳號密碼 [S1]。若您遇到 AD／電腦帳號鎖定問題，請使用 AD 自助解鎖專區處理 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-neg-02",
+      "query": "為何不能把 AD 解鎖當成員工入口網改密碼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "因為 AD 帳號與員工入口網的密碼系統並不相同。AD 帳號解鎖僅適用於 AD 帳號遭鎖定時的處理 [S1]，而國泰員工入口網、CTeam 及國泰e點名所使用的密碼為「國泰金控網站帳密」，該密碼並非 AD 密碼 [S2]。",
+      "citations": [
+        "AD 帳號與系統解鎖 FAQ|4883521a4d796760170c",
+        "國泰員工入口網、CTeam密碼、國泰e點名|8c3823bdcfb6529503cd"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Negative constraint | answer_preview='因為 AD 帳號與員工入口網的密碼系統並不相同。AD 帳號解鎖僅適用於 AD 帳號遭鎖定時的處理 [S1]，而國泰員工入口網、CTeam 及國泰e點名所使用的密碼為「國泰金控網站帳密」，該密碼並非 AD 密碼 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-neg-03",
+      "query": "iPhone 收公司信應依哪份 Outlook 手冊，為何不能直接套用 Android 步驟？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "全域資料最小化原則 (POLICY-SEC-001)",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "全域資料最小化原則 (POLICY-SEC-001)",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)"
+      ],
+      "expectedEvidence": [
+        [
+          "Microsoft Authenticator",
+          "產險版本",
+          "掃描 QR 代碼"
+        ]
+      ],
+      "answer": "iPhone 收公司信應依據「行動裝置 Outlook 安裝手冊（iOS）」進行設定 [S1]。請依下列步驟進行驗證器設定：\n1. 手機下載 Microsoft Authenticator。\n2. 使用內網電腦前往：`https://mysignins.microsoft.com/security-info`。\n3. 輸入 Email 與開機密碼（AD 密碼）登入。\n4. 點選「+ 新增登入方法」>「Authenticator 應用程式」。\n5. 確認手機已安裝後點「下一步」，並依提示在 App 內新增「公司或學校」帳戶 [S1]。\n\n> 💡 **注意事項**：\n>\n1. 提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。\n>\n2. 登入密碼、憑證密碼與動態驗證碼嚴禁於任何回報中提供 [POLICY-SEC-002]。",
+      "citations": [
+        "行動裝置 Outlook 安裝手冊（iOS）|5d2c4a514029d4891128",
+        "全域資料最小化原則 (POLICY-SEC-001)|POLICY-SEC-001",
+        "絕對機敏資訊禁令 (POLICY-SEC-002)|POLICY-SEC-002"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Negative constraint: platform-specific iOS handbook vs Android. | answer_preview='iPhone 收公司信應依據「行動裝置 Outlook 安裝手冊（iOS）」進行設定 [S1]。請依下列步驟進行驗證器設定：\\n1. 手機下載 Microsoft Authenticator。\\n2. 使用內網電腦前往：`https://mysignins.microsoft.com/security-info`。\\n3. 輸入 Email 與開機密碼（AD 密碼）登入。\\n4. 點選「+ 新增登入方法」>「Authenticator 應用程式」。\\n5. 確認手機已安裝後點「下一步」，並依提示在 App 內新增「公司或學校」帳戶 [S1]。\\n\\n> 💡 **注意事項**：\\n>\\n1. 提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。\\n>\\n2. 登入密碼、憑證密碼與動態驗證碼嚴禁於任何回報中提供 [POLICY-SEC-002]。'"
+    }
+  ]
+}

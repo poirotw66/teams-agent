@@ -9,8 +9,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from teams_agent.settings import AgentSettings
-
+from .settings_contract import CitationGatewaySettings
 from .source_api import (
     SourceApiError,
     fetch_original_source_file,
@@ -53,7 +52,7 @@ def login_redirect_if_unauthenticated(
 
 
 async def load_citation_document(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     source_ref_id: str,
     payload: dict,
@@ -100,7 +99,7 @@ def raise_original_source_api_error(error: SourceApiError) -> Response:
 async def handle_source_preview(
     source_ref_id: str,
     request: Request,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
 ) -> Response:
     auth_subject = authenticated_viewer_subject(request, settings)
     seed_gateway_membership(request, settings, subject=auth_subject)
@@ -135,7 +134,7 @@ async def handle_source_preview(
 
 async def _render_citation_preview(
     source_ref_id: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     viewer: CitationViewerContext,
     payload: dict,
 ) -> Response:
@@ -172,7 +171,7 @@ async def _render_citation_preview(
 async def handle_source_document(
     path: str,
     request: Request,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
 ) -> Response:
     auth_subject = authenticated_viewer_subject(request, settings)
     try:
@@ -216,7 +215,7 @@ async def handle_source_document(
 async def handle_original_source_document(
     source_ref_id: str,
     request: Request,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
 ) -> Response:
     auth_subject = authenticated_viewer_subject(request, settings)
     # Playground/gateway opens authenticate the subject via shared secret but
@@ -246,7 +245,7 @@ async def handle_original_source_document(
 
 
 async def _head_original_source(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     source_ref_id: str,
     viewer: CitationViewerContext,
     request: Request,
@@ -266,7 +265,7 @@ async def _head_original_source(
 
 
 async def _stream_original_source(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     source_ref_id: str,
     viewer: CitationViewerContext,
     request: Request,
@@ -289,7 +288,7 @@ async def _stream_original_source(
     )
 
 
-def register_source_delivery_routes(router: APIRouter, settings: AgentSettings) -> None:
+def register_source_delivery_routes(router: APIRouter, settings: CitationGatewaySettings) -> None:
     """Register citation, local document, and original-file delivery endpoints."""
 
     @router.get("/rag-citations/{source_ref_id}")

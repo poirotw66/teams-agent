@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 MAX_SOURCE_DOCUMENT_BYTES = 2 * 1024 * 1024
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -17,7 +17,7 @@ class SourceDocumentUnavailable(RuntimeError):
 
 
 def fetch_release_source_document(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     release_id: str,
     source_path: str,

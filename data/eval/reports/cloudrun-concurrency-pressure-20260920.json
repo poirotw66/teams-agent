@@ -1,0 +1,61 @@
+{
+  "generatedAt": "2026-09-20T13:53:09Z",
+  "service": "teams-rag-agent",
+  "revision": "teams-rag-agent-00042-npc",
+  "serviceUrl": "https://teams-rag-agent-jt7pjdeeoa-de.a.run.app",
+  "containerConcurrencySetting": "8",
+  "endpoint": "/agent/chat",
+  "tenantId": "tenant-1",
+  "query": "FortiClient VPN 連不上怎麼辦",
+  "requestsPerLevel": 8,
+  "levels": [
+    {
+      "concurrency": 1,
+      "requests": 8,
+      "ok": 8,
+      "errorCount": 0,
+      "errorSamples": [],
+      "wallMs": 44256.83054199908,
+      "latencyMsP50": 6067.00454100428,
+      "latencyMsP95": 8583.160698350184,
+      "latencyMsMean": 5531.792458125892,
+      "throughputRps": 0.18076305740891493
+    },
+    {
+      "concurrency": 4,
+      "requests": 8,
+      "ok": 8,
+      "errorCount": 0,
+      "errorSamples": [],
+      "wallMs": 9946.54362500296,
+      "latencyMsP50": 2743.9387504964543,
+      "latencyMsP95": 5991.707691452029,
+      "latencyMsMean": 3720.0262447495334,
+      "throughputRps": 0.8042994935336263
+    },
+    {
+      "concurrency": 8,
+      "requests": 8,
+      "ok": 8,
+      "errorCount": 0,
+      "errorSamples": [],
+      "wallMs": 11905.37570900051,
+      "latencyMsP50": 2935.9062085022742,
+      "latencyMsP95": 10139.260630804343,
+      "latencyMsMean": 4454.4818957519965,
+      "throughputRps": 0.6719653537646838
+    },
+    {
+      "concurrency": 16,
+      "requests": 8,
+      "ok": 8,
+      "errorCount": 0,
+      "errorSamples": [],
+      "wallMs": 5161.49674999906,
+      "latencyMsP50": 3585.811354500038,
+      "latencyMsP95": 4912.42102894721,
+      "latencyMsMean": 3709.773031374425,
+      "throughputRps": 1.5499380097452269
+    }
+  ]
+}

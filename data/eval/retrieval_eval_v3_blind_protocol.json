@@ -1,0 +1,77 @@
+{
+  "name": "retrieval_eval_v3_blind_protocol",
+  "generatedAt": "2026-09-20T16:22:20.697979+00:00",
+  "updatedAt": "2026-09-20T17:11:53.981740+00:00",
+  "purpose": "Frozen holdout for release decisions; prevents label overfitting to live outputs.",
+  "roles": {
+    "author": "Writes draft cases without viewing model answers for those cases.",
+    "reviewer": "Second person (or non-implementer) verifies labels against corpus only.",
+    "operator": "Runs blind eval; may not edit labels after seeing results in the same release cycle."
+  },
+  "freezeRules": [
+    "Set frozen=true only after coverage targets are met and reviewerSignoff is present.",
+    "While frozen=true, case queries/expected* fields must not change without bumping freezeVersion and documenting why.",
+    "Bug fixes to the product may proceed; label edits require a new freezeVersion and are deferred to the next gate.",
+    "retrieval_eval_v2 remains the writable development/regression set.",
+    "Before freeze and before release scoring, run scripts/validate_retrieval_eval_v3_blind.py --require-frozen.",
+    "Holdout cases use split=test so run_rag_pipeline_eval.py --split test --eval-set data/eval/retrieval_eval_v3_blind.json works.",
+    "Dataset JSON is authoritative for frozen/freezeVersion/reviewerSignoff; this protocol must mirror that freezeStatus."
+  ],
+  "coverageTargets": {
+    "answerable": 50,
+    "noAnswerOrHardNegative": 50,
+    "multiTurnFollowUp": 20,
+    "typoAliasOrShortQuery": 20,
+    "acl": "required_when_corpus_has_group_gated_docs; otherwise tag acl_coverage_gap",
+    "version": "prefer superseded-vs-current; if unavailable use related_document_discrimination",
+    "sourceScope": "required",
+    "negativeConstraint": "required"
+  },
+  "freezeStatus": {
+    "frozen": true,
+    "freezeVersion": 2,
+    "frozenAt": "2026-09-20T17:11:53.981740+00:00",
+    "reviewerSignoff": {
+      "reviewer": "independent-agent",
+      "agentId": "2f5844d5-ab0f-4942-8673-7a4634f8ee21",
+      "recommendation": "APPROVE_FREEZE",
+      "signedAt": "2026-09-20T16:45:15.186211+00:00",
+      "scope": "Corpus-only second-person review; no model outputs consulted.",
+      "acceptedKnownGaps": [
+        "acl_coverage_gap: corpus lacks group-gated documents"
+      ],
+      "freezeVersionAcknowledged": 2,
+      "labelContractNote": "v2 label revisions are citation-contract fixes from index/runtime titles, not model-output overfitting."
+    },
+    "filledSlots": 156,
+    "reviewed": 156,
+    "readyToFreeze": true,
+    "categoryCounts": {
+      "answerable": 116,
+      "error_code": 1,
+      "no_answer": 40,
+      "hard_negative": 10,
+      "conversational": 20,
+      "multi_turn": 20,
+      "typo": 7,
+      "alias": 7,
+      "short_query": 6,
+      "acl_coverage_gap": 4,
+      "related_document_discrimination": 4,
+      "source_scope": 4,
+      "negative_constraint": 4
+    },
+    "note": "Mirrored from retrieval_eval_v3_blind.json freezeVersion=2."
+  },
+  "retirementMetricForInjectionRules": {
+    "summary": "Remove hardcoded companion injection only after frozen blind Acc/CiteP/NA-F1 pass without temporary inject.",
+    "procedure": [
+      "Confirm dataset+protocol freezeStatus.frozen=true and validator --require-frozen passes.",
+      "Run Layer-3 blind eval with RAG_COMPANION_INJECT_ENABLED=false (catalog + hardcoded inject both skipped).",
+      "Require answerAccuracy, citationPrecision, and noAnswer F1 to meet the same release gate as inject-enabled.",
+      "Only then delete temporaryCompatibility relationships and hardcoded fallbacks in document_selection.py."
+    ],
+    "envFlag": "RAG_COMPANION_INJECT_ENABLED",
+    "catalogPath": "data/ops/knowledge_relationships.json"
+  }
+}

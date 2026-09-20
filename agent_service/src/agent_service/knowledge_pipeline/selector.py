@@ -39,6 +39,12 @@ _MULTI_SECTION_QUERY_MARKERS: tuple[str, ...] = (
     "各類型",
     "分別規定",
 )
+_COMPARISON_QUERY_MARKERS: tuple[str, ...] = (
+    "有何不同",
+    "不同之處",
+    "差異",
+    "比較",
+)
 _NUMBERED_SECTION_RE = re.compile(r"^(?:[#\s]*\d+[\.\-\s]|目錄)")
 
 
@@ -48,6 +54,11 @@ def query_asks_for_procedure_selection(query: str) -> bool:
 
 def query_asks_for_error_branch_selection(query: str) -> bool:
     return any(marker in query for marker in _ERROR_BRANCH_QUERY_MARKERS)
+
+
+def query_asks_for_comparison(query: str) -> bool:
+    """True when the query asks to compare entities/docs (needs multi-doc Top-k)."""
+    return any(marker in query for marker in _COMPARISON_QUERY_MARKERS)
 
 
 def query_asks_for_multi_section_selection(query: str) -> bool:
@@ -121,6 +132,7 @@ __all__ = [
     "document_has_competitive_overlap",
     "is_numbered_section",
     "max_chunks_for_query",
+    "query_asks_for_comparison",
     "query_asks_for_error_branch_selection",
     "query_asks_for_multi_section_selection",
     "query_asks_for_procedure_selection",

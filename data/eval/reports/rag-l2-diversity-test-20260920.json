@@ -1,0 +1,90 @@
+{
+  "summary": {
+    "caseCount": 37.0,
+    "evidenceLabeledCaseCount": 29.0,
+    "recallAt4": 0.5720720720720721,
+    "precisionAt4": 0.2027027027027027,
+    "evidenceRecallAt4": 1.0,
+    "evidencePrecisionAt4": 0.5862068965517241,
+    "recallAt5": 0.5720720720720721,
+    "recallAt10": 0.5720720720720721,
+    "recallAt20": 0.5720720720720721,
+    "mrrAt10": 0.5698198198198199,
+    "ndcgAt10": 0.5403285068003437,
+    "hitAt1": 0.5405405405405406,
+    "hitAt3": 0.5945945945945946,
+    "hardNegativeAccuracy": 0.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 0.8888888888888888,
+      "recall": 1.0,
+      "f1": 0.9411764705882353,
+      "truePositive": 8.0,
+      "falsePositive": 1.0,
+      "falseNegative": 0.0
+    },
+    "layer": 2,
+    "liveModel": false,
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 1.0,
+    "candidateRecallAt24": 1.0,
+    "rerankerHeadroomPp": 0.0,
+    "latencyMsP50": 465.2103749976959,
+    "latencyMsP95": 649.1308749958989,
+    "latencyMsMean": 464.3572488104739,
+    "fastPathRate": 0.08108108108108109,
+    "avgFacetCount": 0.10810810810810811,
+    "avgBatchEmbeddingMs": 535.2249999999999,
+    "embeddingMsP50": 428.55,
+    "embeddingMsP95": 634.575,
+    "sparseMsP50": 2.1,
+    "sparseMsP95": 6.779999999999999,
+    "denseMsP50": 33.3,
+    "denseMsP95": 105.33,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.515,
+    "searchTotalMsP50": 461.6,
+    "searchTotalMsP95": 647.53,
+    "batchEmbeddingMsP50": 535.2249999999999,
+    "batchEmbeddingMsP95": 563.18,
+    "evidenceExpandMsP50": 0.01,
+    "evidenceExpandMsP95": 0.011,
+    "facetGroupCounts": {
+      "facet0": 35.0,
+      "facet1": 0.0,
+      "facet2plus": 2.0
+    },
+    "facet0SearchTotalMsP50": 463.6,
+    "facet0SearchTotalMsP95": 655.96,
+    "facet2plusSearchTotalMsP50": 145.55,
+    "facet2plusSearchTotalMsP95": 186.2,
+    "approxCacheHitRate": 0.0,
+    "failureTaxonomy": {
+      "NO_ANSWER_FALSE_POSITIVE": 1
+    },
+    "failureCount": 1,
+    "split": "test",
+    "evalSet": "/Users/cfh00896102/Github/teams-agent/data/eval/retrieval_eval_v2.json"
+  },
+  "failures": [
+    {
+      "caseId": "v2-para-otp-mail",
+      "query": "同仁說 FortiToken 驗證碼信件一直沒來",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiToken"
+        ]
+      ]
+    }
+  ]
+}
