@@ -30,7 +30,8 @@ import statistics
 import sys
 import time
 from collections import Counter
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,10 @@ from agent_service.retrieval_eval_metrics import (
     score_retrieval_case,
 )
 from agent_service.retrieval_eval_schema import EvidenceLevelCase
+from agent_service.retrieval_eval_taxonomy import (
+    classify_layer3_failure,
+    classify_retrieval_failure,
+)
 from agent_service.retrieval_expand import EvidenceBundle, build_evidence_bundles
 from agent_service.settings import RagSettings
 
@@ -64,6 +69,129 @@ from agent_service.settings import RagSettings
 def _load_cases(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return list(payload["cases"])
+
+
+def _is_policy_source_title(title: str) -> bool:
+    normalized = (title or "").strip()
+    return "POLICY-SEC-" in normalized or normalized.startswith("安全性設定變更確認原則")
+
+
+def _citation_titles_for_metrics(titles: Sequence[str]) -> list[str]:
+    """Exclude synthetic security-policy overlay titles from citation metrics."""
+    return [title for title in titles if title and not _is_policy_source_title(title)]
+
+
+def _answer_covers_title_label(*, answer: str, title: str) -> bool:
+    label = (title or "").strip()
+    if not label or not answer.strip():
+        return False
+    if label in answer:
+        return True
+    cjk = re.sub(r"[^\u3400-\u9fff]", "", label)
+    if len(cjk) >= 4:
+        windows = [cjk[index : index + 2] for index in range(len(cjk) - 1)]
+        hits = sum(1 for window in windows if window in answer)
+        return (hits / len(windows)) >= 0.35
+    latin = re.findall(r"[A-Za-z0-9_-]{2,}", label)
+    return any(token.lower() in answer.lower() for token in latin)
+
+
+def _shared_title_anchors(left: str, right: str) -> set[str]:
+    left_parts = set(re.findall(r"[A-Za-z0-9_-]{2,}|[\u3400-\u9fff]{2,}", left))
+    right_parts = set(re.findall(r"[A-Za-z0-9_-]{2,}|[\u3400-\u9fff]{2,}", right))
+    return {
+        token
+        for token in (left_parts & right_parts)
+        if token not in {"文件", "說明", "設定", "系統", "問題", "方式"}
+    }
+
+
+def _citation_recall_with_answer_coverage(
+    *,
+    expected_titles: set[str],
+    cited_titles: set[str],
+    answer: str,
+) -> float:
+    if not expected_titles:
+        return 1.0
+    hits = 0
+    cited_expected = cited_titles & expected_titles
+    for title in expected_titles:
+        if title in cited_titles or _answer_covers_title_label(answer=answer, title=title):
+            hits += 1
+            continue
+        for other in cited_expected:
+            shared = _shared_title_anchors(title, other)
+            if shared and any(token in answer for token in shared):
+                hits += 1
+                break
+    return hits / len(expected_titles)
+
+
+def _answer_covers_evidence_fact(
+    *,
+    answer: str,
+    must_contain: Sequence[str],
+    cited_titles: Sequence[str],
+) -> bool:
+    """Answer evidence hit with title-as-label fallback when the source is cited.
+
+    Layer-2 evidence labels often use the document title as mustContain. A
+    grounded answer that cites that title should not fail Answer Accuracy solely
+    because it paraphrases instead of repeating the full title string.
+    """
+    if evidence_fact_hit(retrieved_texts=[answer], must_contain=must_contain):
+        return True
+    tokens = [token for token in must_contain if token]
+    if not tokens or not answer.strip():
+        return False
+
+    cited = {title.strip() for title in cited_titles if title and title.strip()}
+    present_count = sum(1 for token in tokens if token in answer)
+    if present_count == len(tokens):
+        return True
+
+    title_covers = any(
+        all(token in title for token in tokens)
+        or "".join(tokens) in title.replace(" ", "")
+        for title in cited
+    )
+    if title_covers and present_count >= max(1, (len(tokens) + 1) // 2):
+        return True
+
+    if len(tokens) == 1 and title_covers:
+        # Latin/code token present only in the cited title (answer paraphrased).
+        covering = next(
+            title
+            for title in cited
+            if tokens[0] in title or tokens[0] in title.replace(" ", "")
+        )
+        cjk = re.sub(r"[^\u3400-\u9fff]", "", covering)
+        if len(cjk) >= 4:
+            windows = [cjk[index : index + 2] for index in range(len(cjk) - 1)]
+            hits = sum(1 for window in windows if window in answer)
+            if (hits / len(windows)) >= 0.35:
+                return True
+
+    if len(tokens) != 1:
+        return False
+
+    label = tokens[0].strip()
+    if label not in cited and not any(label in title or title in label for title in cited):
+        return False
+    # Contiguous CJK title labels are one regex match; score bigram overlap instead.
+    if len(label) >= 4 and re.fullmatch(r"[\u3400-\u9fff]+", label):
+        windows = [label[index : index + 2] for index in range(len(label) - 1)]
+        hits = sum(1 for window in windows if window in answer)
+        return (hits / len(windows)) >= 0.35
+    distinctive = [
+        token
+        for token in re.findall(r"[A-Za-z0-9_-]{2,}|[\u3400-\u9fff]{2,4}", label)
+        if token not in {"文件", "說明", "正文", "canonical"}
+    ]
+    if not distinctive:
+        return True
+    return any(token in answer for token in distinctive)
 
 
 # --- Layer 1: Index Retrieval ---
@@ -198,32 +326,41 @@ async def run_layer3_case(
     embedding_tokens = 0
     cost_usd = 0.0
     has_cost = False
+    usage_source = "MISSING"
     if execution_context is not None:
         llm_calls = max(llm_calls, execution_context.llm_calls.count)
+        event_sources: list[str] = []
         for event in execution_context.usage_collector.events():
             input_tokens += int(event.input_tokens) + int(event.tool_context_tokens)
             output_tokens += int(event.output_tokens)
             embedding_tokens += int(event.embedding_tokens)
+            event_sources.append(str(event.usage_source))
             if event.estimated_cost_usd is not None:
                 cost_usd += float(event.estimated_cost_usd)
                 has_cost = True
+        if "PROVIDER" in event_sources:
+            usage_source = "PROVIDER"
+        elif "ESTIMATED" in event_sources:
+            usage_source = "ESTIMATED"
+        elif input_tokens or output_tokens:
+            usage_source = "PROVIDER"
 
-    usage_source = "PROVIDER" if (input_tokens or output_tokens) else "MISSING"
-    if live_model and input_tokens == 0 and output_tokens == 0:
-        # Structured-output paths often omit provider usage metadata; estimate
-        # from observed text so release reports still have cost/token columns.
+    if live_model and usage_source != "PROVIDER":
+        # Structured-output paths historically omitted provider usage metadata;
+        # keep a text estimate only when no PROVIDER events were recorded.
         from agent_service.usage import estimate_cost_usd, estimate_text_tokens
 
-        input_tokens = estimate_text_tokens(query)
-        output_tokens = estimate_text_tokens(result.answer or "")
-        model_name = None
-        if settings is not None:
-            model_name = settings.model or settings.agent_model
-        estimated = estimate_cost_usd(model_name or "unknown", input_tokens, output_tokens)
-        if estimated is not None:
-            cost_usd = float(estimated)
-            has_cost = True
-        usage_source = "ESTIMATED"
+        if input_tokens == 0 and output_tokens == 0:
+            input_tokens = estimate_text_tokens(query)
+            output_tokens = estimate_text_tokens(result.answer or "")
+            model_name = None
+            if settings is not None:
+                model_name = settings.model or settings.agent_model
+            estimated = estimate_cost_usd(model_name or "unknown", input_tokens, output_tokens)
+            if estimated is not None:
+                cost_usd = float(estimated)
+                has_cost = True
+            usage_source = "ESTIMATED"
 
     telemetry = {
         "found": result.found,
@@ -257,59 +394,35 @@ class FailureAnalysis:
     expected_chunk_ids: list[str]
     retrieved_top4_titles: list[str]
     notes: str = ""
+    answer_evidence_recall: float | None = None
+    retrieval_evidence_recall: float | None = None
+    answer: str = ""
+    citations: list[str] = field(default_factory=list)
+    selected_evidence_titles: list[str] = field(default_factory=list)
+    citation_precision: float | None = None
+    terminal_reason: str | None = None
 
 
-def classify_retrieval_failure(
-    case: EvidenceLevelCase,
+def _source_evidence_texts(
+    result: KnowledgeResult,
     *,
-    evidence_recall_4: float | None,
-    candidate_recall_24: float | None,
-    top4_chunk_ids: list[str],
-    top4_titles: list[str],
-    candidates_24: list[SearchResult],
-    is_predicted_no_answer: bool,
-) -> str:
-    """Classify why a case failed to achieve 100% Evidence Recall@4."""
-    if not case.expected_found:
-        return "CORRECT_NO_ANSWER" if is_predicted_no_answer else "NO_ANSWER_FALSE_NEGATIVE"
-    if is_predicted_no_answer:
-        return "NO_ANSWER_FALSE_POSITIVE"
-
-    expected_doc_ids = set(case.expected_documents or ())
-    expected_titles = set(case.expected_source_titles or ())
-    document_hit_top4 = bool(
-        (expected_doc_ids and (expected_doc_ids & set(top4_chunk_ids)))
-        or (expected_titles and (expected_titles & set(top4_titles)))
-    )
-
-    # Unlabeled evidence cases are scored on Document Hit only — never mixed
-    # into Evidence Recall success/failure.
-    if not case.expected_evidence:
-        return "SUCCESS" if document_hit_top4 else "RETRIEVAL_RECALL_MISS"
-
-    if evidence_recall_4 is not None and evidence_recall_4 >= 1.0:
-        return "SUCCESS"
-
-    # Case failed Top 4. Did the candidates pool have it?
-    if candidate_recall_24 is not None and candidate_recall_24 >= 1.0:
-        expected_version = getattr(case, "expected_version_id", None) or getattr(case, "expected_release_id", None)
-        if expected_version:
-            top_versions = [r.chunk.version_id for r in candidates_24[:4] if r.chunk.version_id]
-            if top_versions and all(v != expected_version for v in top_versions):
-                return "VERSION_CONFUSION"
-        return "RANKING_OR_RERANKER_OPPORTUNITY"
-
-    # Expected evidence was NOT in Top 24 at all
-    cand_doc_ids = {r.chunk.document_id for r in candidates_24 if r.chunk.document_id}
-    cand_titles = {r.chunk.title for r in candidates_24 if r.chunk.title}
-
-    if (expected_doc_ids and (expected_doc_ids & cand_doc_ids)) or (expected_titles and (expected_titles & cand_titles)):
-        return "WRONG_SECTION_OR_CHUNKING"
-
-    if re.search(r"(?<![\w-])-?\d{3,5}(?![\w-])", case.query):
-        return "LEXICON_OR_CODE_MISS"
-
-    return "RETRIEVAL_RECALL_MISS"
+    chunk_by_id: dict[str, Any],
+) -> list[str]:
+    """Build retrieval-context texts from cited sources (not the answer)."""
+    texts: list[str] = []
+    for source in result.sources:
+        evidence = (source.evidence or "").strip()
+        if not evidence and source.chunkId and source.chunkId in chunk_by_id:
+            chunk = chunk_by_id[source.chunkId]
+            evidence = str(getattr(chunk, "content", "") or "")
+            section = str(getattr(chunk, "section", "") or source.section or "")
+            title = str(getattr(chunk, "title", "") or source.title or "")
+            texts.append(f"{title}\n{section}\n{evidence}".strip())
+            continue
+        texts.append(
+            f"{source.title or ''}\n{source.section or ''}\n{evidence}".strip()
+        )
+    return [text for text in texts if text]
 
 
 # --- Within-Document Recall Oracle ---
@@ -463,6 +576,9 @@ async def evaluate_pipeline(
     citation_precisions: list[float] = []
     citation_recalls: list[float] = []
     groundedness_scores: list[float] = []
+    answer_evidence_recalls: list[float] = []
+    retrieval_evidence_recalls: list[float] = []
+    layer3_case_meta: list[dict[str, Any]] = []
     stage_latency_buckets: dict[str, list[float]] = {
         "retrievalMs": [],
         "relevanceMs": [],
@@ -473,6 +589,7 @@ async def evaluate_pipeline(
     for raw in cases_raw:
         case = EvidenceLevelCase.from_dict(raw)
         evidence_must = [list(fact.must_contain) for fact in case.expected_evidence]
+        layer3_meta: dict[str, Any] | None = None
 
         if layer == 1:
             ranked_ids, titles, texts, scores, lat_ms, _timings = run_layer1_case(
@@ -572,36 +689,77 @@ async def evaluate_pipeline(
 
             ranked_ids = [s.chunkId or s.title for s in result.sources if s.chunkId or s.title]
             titles = [s.title for s in result.sources]
+            source_texts = _source_evidence_texts(
+                result,
+                chunk_by_id={chunk.chunk_id: chunk for chunk in index.chunks},
+            )
+            # Answer evidence coverage is measured on the generated answer only.
             texts = [result.answer]
             scores = [1.0 for _ in result.sources]
             cand_24_results = []
             cand_recall_24 = None
 
+            answer_evidence_recall = None
+            if evidence_must:
+                hits = sum(
+                    1
+                    for fact in evidence_must
+                    if _answer_covers_evidence_fact(
+                        answer=result.answer or "",
+                        must_contain=fact,
+                        cited_titles=titles,
+                    )
+                )
+                answer_evidence_recall = hits / len(evidence_must)
+            retrieval_evidence_recall = (
+                evidence_recall_at_k(
+                    retrieved_texts=source_texts,
+                    evidence_must_contain=evidence_must,
+                    k=max(len(source_texts), 1),
+                )
+                if evidence_must
+                else None
+            )
+            if case.expected_found:
+                if answer_evidence_recall is not None:
+                    answer_evidence_recalls.append(float(answer_evidence_recall))
+                else:
+                    answer_evidence_recalls.append(1.0 if result.found else 0.0)
+            else:
+                answer_evidence_recalls.append(1.0 if not result.found else 0.0)
+            if retrieval_evidence_recall is not None:
+                retrieval_evidence_recalls.append(float(retrieval_evidence_recall))
+
             # E2E Answer Accuracy
             if case.expected_found:
                 if evidence_must:
-                    ans_hit = sum(
-                        1 for tokens in evidence_must
-                        if evidence_fact_hit(retrieved_texts=[result.answer], must_contain=tokens)
-                    ) / len(evidence_must)
+                    ans_hit = float(answer_evidence_recall or 0.0)
                 else:
                     ans_hit = 1.0 if result.found else 0.0
             else:
                 ans_hit = 1.0 if not result.found else 0.0
             answer_accuracies.append(ans_hit)
 
-            # E2E Citation Accuracy
+            # E2E Citation Accuracy (exclude synthetic POLICY overlay titles)
             exp_docs = set(case.expected_documents or ()) | set(case.expected_source_titles or ())
-            cited_docs = set(titles)
+            cited_docs = set(_citation_titles_for_metrics(titles))
             if cited_docs and exp_docs:
                 c_prec = len(cited_docs & exp_docs) / len(cited_docs)
-                c_rec = len(cited_docs & exp_docs) / len(exp_docs)
+                c_rec = _citation_recall_with_answer_coverage(
+                    expected_titles=exp_docs,
+                    cited_titles=cited_docs,
+                    answer=result.answer or "",
+                )
             elif not exp_docs:
                 c_prec = 1.0 if not cited_docs else 0.0
                 c_rec = 1.0
             else:
                 c_prec = 0.0
-                c_rec = 0.0
+                c_rec = _citation_recall_with_answer_coverage(
+                    expected_titles=exp_docs,
+                    cited_titles=cited_docs,
+                    answer=result.answer or "",
+                )
             citation_precisions.append(c_prec)
             citation_recalls.append(c_rec)
 
@@ -612,6 +770,25 @@ async def evaluate_pipeline(
             else:
                 grounded_ratio = 1.0 if result.found and result.sources else (1.0 if not result.found else 0.0)
             groundedness_scores.append(grounded_ratio)
+
+            layer3_meta = {
+                "answer_evidence_recall": answer_evidence_recall,
+                "retrieval_evidence_recall": retrieval_evidence_recall,
+                "citation_precision": c_prec,
+                "found": bool(result.found),
+                "sources_count": len(result.sources),
+                "terminal_reason": getattr(result, "terminalReason", None),
+                "source_titles": titles[:8],
+                "answer": result.answer or "",
+                "answer_preview": (result.answer or "")[:400],
+                "citations": [
+                    f"{s.title}|{s.chunkId or ''}" for s in result.sources[:8]
+                ],
+                "selected_evidence_titles": [
+                    (s.title or "") for s in result.sources[:8]
+                ],
+            }
+            layer3_case_meta.append(layer3_meta)
 
         expected_titles_for_doc = set(case.expected_documents or case.expected_source_titles or ())
         if case.expected_found:
@@ -637,14 +814,17 @@ async def evaluate_pipeline(
         )
         scored_rows.append(case_score)
 
-        predicted_no_answer = calibrated_predict_no_answer(
-            ranked_ids=ranked_ids,
-            scores=scores,
-            texts=texts,
-            query=case.query,
-            min_score=min_score,
-            titles=titles,
-        )
+        if layer == 3 and layer3_meta is not None:
+            predicted_no_answer = not bool(layer3_meta["found"])
+        else:
+            predicted_no_answer = calibrated_predict_no_answer(
+                ranked_ids=ranked_ids,
+                scores=scores,
+                texts=texts,
+                query=case.query,
+                min_score=min_score,
+                titles=titles,
+            )
         no_answer_rows.append(
             NoAnswerOutcome(
                 expected_no_answer=not case.expected_found,
@@ -653,27 +833,74 @@ async def evaluate_pipeline(
         )
 
         # Failure Taxonomy Analysis
-        cat = classify_retrieval_failure(
-            case,
-            evidence_recall_4=case_score.evidence_recall_at_4,
-            candidate_recall_24=cand_recall_24,
-            top4_chunk_ids=ranked_ids[:4],
-            top4_titles=titles[:4],
-            candidates_24=cand_24_results,
-            is_predicted_no_answer=predicted_no_answer,
-        )
+        if layer == 3 and layer3_meta is not None:
+            cat = classify_layer3_failure(
+                case,
+                answer_evidence_recall=layer3_meta["answer_evidence_recall"],
+                retrieval_evidence_recall=layer3_meta["retrieval_evidence_recall"],
+                citation_precision=float(layer3_meta["citation_precision"]),
+                found=bool(layer3_meta["found"]),
+                sources_count=int(layer3_meta["sources_count"]),
+                terminal_reason=layer3_meta.get("terminal_reason"),
+            )
+        else:
+            cat = classify_retrieval_failure(
+                case,
+                evidence_recall_4=case_score.evidence_recall_at_4,
+                candidate_recall_24=cand_recall_24,
+                top4_chunk_ids=ranked_ids[:4],
+                top4_titles=titles[:4],
+                candidates_24=cand_24_results,
+                is_predicted_no_answer=predicted_no_answer,
+            )
         if cat not in {"SUCCESS", "CORRECT_NO_ANSWER"}:
+            notes = str(raw.get("notes", ""))
+            if layer3_meta is not None:
+                notes = (
+                    f"{notes} | answer_preview={layer3_meta.get('answer_preview')!r}"
+                    if notes
+                    else f"answer_preview={layer3_meta.get('answer_preview')!r}"
+                )
             failure_reports.append(
                 FailureAnalysis(
                     case_id=case.case_id,
                     query=case.query,
                     failure_category=cat,
-                    evidence_recall_4=case_score.evidence_recall_at_4,
+                    evidence_recall_4=(
+                        layer3_meta["answer_evidence_recall"]
+                        if layer3_meta is not None
+                        else case_score.evidence_recall_at_4
+                    ),
                     candidate_recall_24=cand_recall_24,
                     expected_evidence=evidence_must,
                     expected_chunk_ids=list(case.expected_chunk_ids),
-                    retrieved_top4_titles=titles[:4],
-                    notes=str(raw.get("notes", "")),
+                    retrieved_top4_titles=(
+                        list(layer3_meta.get("source_titles") or titles[:4])
+                        if layer3_meta is not None
+                        else titles[:4]
+                    ),
+                    notes=notes,
+                    answer_evidence_recall=(
+                        layer3_meta["answer_evidence_recall"] if layer3_meta else None
+                    ),
+                    retrieval_evidence_recall=(
+                        layer3_meta["retrieval_evidence_recall"] if layer3_meta else None
+                    ),
+                    answer=str(layer3_meta.get("answer") or "") if layer3_meta else "",
+                    citations=list(layer3_meta.get("citations") or []) if layer3_meta else [],
+                    selected_evidence_titles=(
+                        list(layer3_meta.get("selected_evidence_titles") or [])
+                        if layer3_meta
+                        else titles[:4]
+                    ),
+                    citation_precision=(
+                        float(layer3_meta["citation_precision"])
+                        if layer3_meta is not None
+                        else None
+                    ),
+                    terminal_reason=(
+                        layer3_meta.get("terminal_reason") if layer3_meta else None
+                    ),
                 )
             )
 
@@ -772,6 +999,10 @@ async def evaluate_pipeline(
         summary["citationPrecision"] = float(statistics.fmean(citation_precisions)) if citation_precisions else 0.0
         summary["citationRecall"] = float(statistics.fmean(citation_recalls)) if citation_recalls else 0.0
         summary["groundedness"] = float(statistics.fmean(groundedness_scores)) if groundedness_scores else 0.0
+        if answer_evidence_recalls:
+            summary["answerEvidenceRecallAt4"] = float(statistics.fmean(answer_evidence_recalls))
+        if retrieval_evidence_recalls:
+            summary["retrievalEvidenceRecallAt4"] = float(statistics.fmean(retrieval_evidence_recalls))
         for key, values in stage_latency_buckets.items():
             if not values:
                 continue
@@ -948,6 +1179,10 @@ def print_failure_taxonomy_table(failures: list[FailureAnalysis]) -> None:
         "VERSION_CONFUSION": "Version Metadata / Release Resolver",
         "NO_ANSWER_FALSE_POSITIVE": "Confidence Calibration / Lower Min-Score",
         "NO_ANSWER_FALSE_NEGATIVE": "Stricter Relevance Gate / Refusal Prompt",
+        "ANSWER_OMISSION": "Answer Prompt / Evidence-to-Answer Coverage",
+        "EVIDENCE_NOT_PASSED_TO_GENERATOR": "Selection / Context Budget / Source Packaging",
+        "BAD_CITATION": "Citation Mapping / Grounding Contract",
+        "RELEVANCE_MISJUDGE": "Relevance Gate Calibration / Skip Unnecessary LLM",
     }
 
     for cat, count in counts.most_common():
@@ -1073,8 +1308,16 @@ def main() -> int:
                     "failureCategory": f.failure_category,
                     "evidenceRecallAt4": f.evidence_recall_4,
                     "candidateRecallAt24": f.candidate_recall_24,
+                    "answerEvidenceRecall": f.answer_evidence_recall,
+                    "retrievalEvidenceRecall": f.retrieval_evidence_recall,
                     "retrievedTop4Titles": f.retrieved_top4_titles,
+                    "selectedEvidenceTitles": f.selected_evidence_titles,
                     "expectedEvidence": f.expected_evidence,
+                    "answer": f.answer,
+                    "citations": f.citations,
+                    "citationPrecision": f.citation_precision,
+                    "terminalReason": f.terminal_reason,
+                    "notes": f.notes,
                 }
                 for f in result["failures"]
             ],

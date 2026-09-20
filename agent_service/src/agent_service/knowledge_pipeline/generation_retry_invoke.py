@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.security_policies import strip_unknown_policy_markers
+from agent_service.structured_invoke import ainvoke_structured
 
 from .grounding import (
     normalize_composite_citation_markers,
@@ -50,15 +51,15 @@ async def invoke_structured_retry(
     chunk_content_by_id: dict[str, str],
 ) -> tuple[StructuredKnowledgeAnswer, str]:
     async def _invoke() -> StructuredKnowledgeAnswer:
-        return await answer_model.with_structured_output(
-            StructuredKnowledgeAnswer
-        ).ainvoke(
+        return await ainvoke_structured(
+            answer_model,
+            StructuredKnowledgeAnswer,
             [
                 SystemMessage(
                     content=ANSWER_PROMPT.format(question=question, context=context)
                 ),
                 HumanMessage(content=human_content),
-            ]
+            ],
         )
 
     response = await host.invoke_llm(

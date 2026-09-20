@@ -34,6 +34,59 @@ from .policy_overlay import merge_policy_advisories, sanitize_answer_security
 logger = logging.getLogger(__name__)
 
 
+def prefer_query_aligned_citations(
+    *,
+    query: str,
+    ordered_cited_doc_keys: Sequence[str],
+    results: Sequence[SearchResult],
+    document_key: Any,
+) -> list[str]:
+    """Drop peripheral citations that do not overlap the query anchors.
+
+    Keeps every citation tied for the best overlap score so multi-doc answers
+    remain when both sources are on-query.
+    """
+    keys = [key for key in ordered_cited_doc_keys if key]
+    if len(keys) <= 1:
+        return list(keys)
+
+    from .generator import query_anchor_tokens
+
+    anchors = query_anchor_tokens(query)
+    if not anchors:
+        return list(keys)
+
+    def _overlap(doc_key: str) -> int:
+        blob_parts: list[str] = []
+        for result in results:
+            if document_key(result) != doc_key:
+                continue
+            blob_parts.append(f"{result.chunk.title}\n{result.chunk.content}")
+        blob = "\n".join(blob_parts).lower()
+        if not blob:
+            return 0
+        return sum(1 for anchor in anchors if anchor.lower() in blob)
+
+    scored = [(key, _overlap(key)) for key in keys]
+    best = max(score for _, score in scored)
+    if best <= 0:
+        return list(keys[:1])
+
+    positive = [(key, score) for key, score in scored if score > 0]
+    multi_topic = ("、" in query) or ("與" in query) or ("及" in query)
+    second = max((score for _, score in positive if score < best), default=0)
+    if (
+        not multi_topic
+        and best >= 2
+        and second > 0
+        and (best - second) >= 2
+    ):
+        keep = {key for key, score in positive if score == best}
+    else:
+        keep = {key for key, _score in positive}
+    return [key for key in keys if key in keep]
+
+
 async def align_claims_with_citations(
     host: Any,
     *,
@@ -179,7 +232,21 @@ def assemble_grounded_knowledge_result(
     unique_doc_keys: list[str],
     chunk_to_doc_idx: dict[int, int],
     include_retrieval_evidence: bool,
+    resolved_issue_query: str = "",
 ) -> KnowledgeResult:
+    if resolved_issue_query and len(ordered_cited_doc_keys) > 1:
+        aligned_keys = prefer_query_aligned_citations(
+            query=resolved_issue_query,
+            ordered_cited_doc_keys=ordered_cited_doc_keys,
+            results=results,
+            document_key=host.document_key,
+        )
+        if aligned_keys and set(aligned_keys) != set(ordered_cited_doc_keys):
+            ordered_cited_doc_keys = aligned_keys
+            common_doc_keys = set(aligned_keys) & common_doc_keys
+            if not common_doc_keys:
+                common_doc_keys = set(aligned_keys)
+
     normalized_answer, ordered_cited_doc_keys = _normalize_pruned_answer(
         answer=answer,
         ordered_cited_doc_keys=ordered_cited_doc_keys,

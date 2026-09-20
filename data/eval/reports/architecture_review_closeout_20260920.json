@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-09-20T12:57:59.997160+00:00",
-  "commitSha": "c3bc7082bd18f2c31684f05fa996e8bc93b729f2",
+  "commitSha": "c41e627a98a3e75437139e7506f4089ee5ce77ab",
   "reviewDoc": "docs/project-architecture-post-refactor-review-20260918.md",
   "phase0": {
     "agentSuite": "1885 passed, 2 skipped, 0 failed",
@@ -112,8 +112,31 @@
     "artifact": "/tmp/rag-l3-live.json"
   },
   "remainingFollowUps": [
-    "Cloud Run concurrency 1/4/8/16 pressure on a real revision",
-    "Ambiguous short-query ranking (v2-amb-password / v2-amb-network) optional",
-    "Provider usage metadata still ESTIMATED on live Layer 3"
-  ]
+    "Optional: ambiguous short-query ranking (v2-amb-password / v2-amb-network) targeted rules only",
+    "Optional: sustained Cloud Run soak beyond the short 1/4/8/16 burst"
+  ],
+  "cloudRunPressure": {
+    "artifact": "data/eval/reports/cloudrun-concurrency-pressure-20260920.json",
+    "revision": "teams-rag-agent-00042-npc",
+    "containerConcurrencySetting": 8,
+    "levels": [1, 4, 8, 16],
+    "zeroErrors": true,
+    "note": "Short burst /agent/chat sweep; see report for P50/P95."
+  },
+  "phase5AnswerRefusalLatency": {
+    "liveNoAnswer33": {
+      "artifact": "data/eval/reports/rag-l3-live-no-answer-33-20260920.json",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "liveLayer3Test": {
+      "artifact": "data/eval/reports/rag-l3-live-test-20260920.json",
+      "answerAccuracy": 0.8784,
+      "citationPrecision": 0.955,
+      "citationRecall": 0.9595,
+      "usageSource": "PROVIDER"
+    }
+  },
+  "benchmarkProvenanceNote": "Updated from stale c3bc708 to the architecture-review closeout commit that produced the gated Layer2/Layer3 artifacts."
 }

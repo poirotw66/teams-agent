@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage
 
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
+from agent_service.structured_invoke import ainvoke_structured
 
 from .models import RelevanceDecision, RewrittenQuery
 from .prompts import REWRITE_PROMPT
@@ -91,7 +92,9 @@ async def documents_are_relevant(
     context = build_relevance_grade_context(state.results)
 
     async def _grade() -> RelevanceDecision:
-        return await answer_model.with_structured_output(RelevanceDecision).ainvoke(
+        return await ainvoke_structured(
+            answer_model,
+            RelevanceDecision,
             [
                 HumanMessage(
                     content=format_grade_prompt(
@@ -99,7 +102,7 @@ async def documents_are_relevant(
                         context=context,
                     )
                 )
-            ]
+            ],
         )
 
     decision = await invoke_llm(
@@ -150,14 +153,16 @@ async def rewrite_search_query(
     state_factory: Callable[..., Any],
 ) -> Any:
     async def _invoke_rewrite() -> RewrittenQuery:
-        return await answer_model.with_structured_output(RewrittenQuery).ainvoke(
+        return await ainvoke_structured(
+            answer_model,
+            RewrittenQuery,
             [
                 HumanMessage(
                     content=REWRITE_PROMPT.format(
                         question=state.resolved_issue_query,
                     )
                 )
-            ]
+            ],
         )
 
     decision = await invoke_llm(
