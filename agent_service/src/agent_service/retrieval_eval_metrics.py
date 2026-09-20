@@ -11,17 +11,34 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 
+def _unique_preserve_order(ids: Sequence[str]) -> list[str]:
+    """Deduplicate ranked ids while keeping first-seen order.
+
+    Document-level metrics must not inflate when the same document contributes
+    multiple chunks/bundles into the top-``k`` window.
+    """
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in ids:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
 def recall_at_k(
     ranked_ids: Sequence[str],
     relevant_ids: Iterable[str],
     *,
     k: int,
 ) -> float:
-    """Fraction of relevant items recovered in the top-``k`` ranks."""
+    """Fraction of relevant items recovered in the top-``k`` unique ranks."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    hit = sum(1 for item in ranked_ids[:k] if item in relevant)
+    top = _unique_preserve_order(ranked_ids)[:k]
+    hit = sum(1 for item in top if item in relevant)
     return hit / len(relevant)
 
 
@@ -31,11 +48,12 @@ def hit_at_k(
     *,
     k: int,
 ) -> float:
-    """1.0 if any relevant id appears in top-``k``, else 0.0."""
+    """1.0 if any relevant id appears in top-``k`` unique ranks, else 0.0."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    return 1.0 if any(item in relevant for item in ranked_ids[:k]) else 0.0
+    top = _unique_preserve_order(ranked_ids)[:k]
+    return 1.0 if any(item in relevant for item in top) else 0.0
 
 
 def mrr_at_k(
@@ -44,11 +62,11 @@ def mrr_at_k(
     *,
     k: int,
 ) -> float:
-    """Mean Reciprocal Rank of the first relevant hit within top-``k``."""
+    """Mean Reciprocal Rank of the first relevant hit within top-``k`` unique ranks."""
     relevant = {item for item in relevant_ids if item}
     if not relevant:
         return 0.0
-    for rank, item in enumerate(ranked_ids[:k], start=1):
+    for rank, item in enumerate(_unique_preserve_order(ranked_ids)[:k], start=1):
         if item in relevant:
             return 1.0 / rank
     return 0.0
@@ -60,10 +78,15 @@ def ndcg_at_k(
     *,
     k: int,
 ) -> float:
-    """Normalized Discounted Cumulative Gain at ``k`` using graded relevance."""
+    """Normalized Discounted Cumulative Gain at ``k`` using graded relevance.
+
+    Duplicate ranked ids are collapsed before scoring so multi-chunk hits for
+    one document cannot push NDCG above 1.0.
+    """
     if k <= 0:
         return 0.0
-    gains = [float(relevance_grades.get(item, 0.0)) for item in ranked_ids[:k]]
+    top = _unique_preserve_order(ranked_ids)[:k]
+    gains = [float(relevance_grades.get(item, 0.0)) for item in top]
     dcg = sum(gain / math.log2(rank + 1) for rank, gain in enumerate(gains, start=1))
     ideal = sorted((float(v) for v in relevance_grades.values() if v > 0), reverse=True)[:k]
     idcg = sum(gain / math.log2(rank + 1) for rank, gain in enumerate(ideal, start=1))
@@ -165,9 +188,9 @@ def precision_at_k(
     *,
     k: int,
 ) -> float:
-    """Fraction of top-``k`` ranks that are relevant (0 when top-k is empty)."""
+    """Fraction of top-``k`` unique ranks that are relevant (0 when empty)."""
     relevant = {item for item in relevant_ids if item}
-    top = list(ranked_ids[:k])
+    top = _unique_preserve_order(ranked_ids)[:k]
     if not top:
         return 0.0
     return sum(1 for item in top if item in relevant) / len(top)

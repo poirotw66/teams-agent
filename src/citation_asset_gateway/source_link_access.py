@@ -9,7 +9,7 @@ from time import time
 from types import SimpleNamespace
 from typing import Any
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 from .source_link_signing import (
     ALLOWED_SUFFIXES,
@@ -38,7 +38,7 @@ __all__ = [
 def _parse_source_expiry(
     expires: str | None,
     *,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     now: int | None,
 ) -> tuple[int, int]:
     try:
@@ -55,7 +55,7 @@ def _bind_viewer_subject(
     *,
     subject: str | None,
     authenticated_subject: str | None,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
 ) -> tuple[str, str]:
     claimed_subject = str(subject or "").strip()
     if not claimed_subject:
@@ -78,7 +78,7 @@ def authorize_original_open(
     source_ref_id: str,
     expires: str | None,
     signature: str | None,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     now: int | None = None,
     *,
     subject: str | None = None,
@@ -135,7 +135,7 @@ def _locate_resolved_source_file(
     source_dir: Path,
     pure_path: PurePosixPath,
     delivery: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     original_path: str,
 ) -> tuple[Path, str]:
     resolved = (source_dir / pure_path).resolve()
@@ -164,7 +164,7 @@ def resolve_source_file(
     path: str,
     expires: str | None,
     signature: str | None,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     now: int | None = None,
     *,
     subject: str | None = None,
@@ -228,7 +228,7 @@ def resolve_source_file(
 
 
 def authorize_source_open(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     delivery_path: str,
     subject: str,
@@ -312,7 +312,7 @@ def _authorize_document_access(actor: Any, document: dict[str, Any]) -> dict[str
 
 
 def load_source_acl_document(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     delivery_path: str,
     *,
     source_ref_id: str | None = None,

@@ -115,6 +115,7 @@ FORBIDDEN_EDGES = frozenset(
         ("citation_asset_gateway", "operations_core"),
         ("citation_asset_gateway", "knowledge_core"),
         ("citation_asset_gateway", "platform_kernel"),
+        ("citation_asset_gateway", "teams_agent"),
         ("agent_service", "citation_asset_gateway"),
         ("ai_ops_backoffice", "citation_asset_gateway"),
         ("knowledge_portal", "citation_asset_gateway"),
@@ -132,6 +133,7 @@ OWNERSHIP_IMPORT_EDGES = frozenset(
         ("ai_ops_backoffice", "operations_core"),
         ("agent_service", "operations_core"),
         ("teams_agent", "citation_asset_gateway"),
+        ("citation_asset_gateway", "teams_agent"),
     }
 )
 
@@ -157,7 +159,6 @@ ALLOWED_CROSS_DOMAIN_EDGES = frozenset(
         ("knowledge_portal", "agent_service"),
         ("knowledge_portal", "knowledge_core"),
         ("knowledge_portal", "platform_kernel"),
-        ("citation_asset_gateway", "teams_agent"),
         ("teams_agent", "citation_asset_gateway"),
     }
 )
@@ -833,11 +834,7 @@ def check_router_filesystem_io() -> list[Finding]:
 
 # Known residual package SCCs that are tracked but not treated as blockers.
 # Prefer shrinking these via ownership ratchets rather than growing them.
-ALLOWED_PACKAGE_CYCLES = frozenset(
-    {
-        frozenset({"citation_asset_gateway", "teams_agent"}),
-    }
-)
+ALLOWED_PACKAGE_CYCLES = frozenset()
 
 
 def check_package_cycles(graph: dict[str, set[str]]) -> list[Finding]:

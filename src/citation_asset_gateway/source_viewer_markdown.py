@@ -6,7 +6,7 @@ import html
 import re
 from difflib import SequenceMatcher
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 from .media import build_asset_url
 
@@ -38,7 +38,7 @@ def first_heading(body: str) -> str | None:
 
 def rewrite_markdown_images(
     body: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     now: int | None,
     release_id: str | None = None,

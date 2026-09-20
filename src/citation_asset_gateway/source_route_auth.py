@@ -9,17 +9,36 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException, Request
 
-from teams_agent.oidc import verify_entra_id_token
-from teams_agent.settings import AgentSettings
-
+from .settings_contract import CitationGatewaySettings
 from .source_links import verify_viewer_token
 from .viewer_sessions import get_viewer_membership_store
 
 logger = logging.getLogger(__name__)
+
+IdTokenVerifier = Callable[..., dict[str, Any]]
+_id_token_verifier: IdTokenVerifier | None = None
+
+
+def set_id_token_verifier(verifier: IdTokenVerifier | None) -> None:
+    """Inject the Entra ID-token verifier at composition time."""
+
+    global _id_token_verifier
+    _id_token_verifier = verifier
+
+
+def _verify_id_token(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    if _id_token_verifier is None:
+        raise HTTPException(
+            status_code=500,
+            detail="ID token verifier is not configured for citation gateway.",
+        )
+    return _id_token_verifier(*args, **kwargs)
+
 
 _consumed_sso_states: dict[str, float] = {}
 _sso_lock = threading.Lock()
@@ -64,7 +83,7 @@ def mark_sso_state_consumed(state_id: str) -> bool:
         return True
 
 
-def is_gateway_authenticated(request: Request, settings: AgentSettings) -> bool:
+def is_gateway_authenticated(request: Request, settings: CitationGatewaySettings) -> bool:
     """True when Playground/gateway shared secret matches (trusted subject header)."""
     gateway_secret = request.headers.get("x-gateway-secret") or request.headers.get(
         "X-Gateway-Secret"
@@ -79,7 +98,7 @@ def is_gateway_authenticated(request: Request, settings: AgentSettings) -> bool:
 
 def seed_gateway_membership(
     request: Request,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     subject: str | None,
 ) -> None:
@@ -98,7 +117,7 @@ def seed_gateway_membership(
     )
 
 
-def authenticated_viewer_subject(request: Request, settings: AgentSettings) -> str | None:
+def authenticated_viewer_subject(request: Request, settings: CitationGatewaySettings) -> str | None:
     """Extract and cryptographically verify login identity.
 
     External requests cannot spoof identity:
@@ -134,7 +153,7 @@ def authenticated_viewer_subject(request: Request, settings: AgentSettings) -> s
 
 def _subject_from_viewer_token(
     raw_token: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     query_tenant: str | None = None,
 ) -> str | None:
@@ -147,7 +166,7 @@ def _subject_from_viewer_token(
     return payload["sub"].strip()
 
 
-def _subject_from_bearer_token(raw_token: str, settings: AgentSettings) -> str | None:
+def _subject_from_bearer_token(raw_token: str, settings: CitationGatewaySettings) -> str | None:
     subject = _subject_from_viewer_token(raw_token, settings)
     if subject:
         return subject
@@ -178,7 +197,7 @@ def _subject_from_bearer_token(raw_token: str, settings: AgentSettings) -> str |
     return None
 
 
-def sso_signing_secret(settings: AgentSettings) -> str:
+def sso_signing_secret(settings: CitationGatewaySettings) -> str:
     return settings.asset_signing_key or settings.api_token or "viewer-state-secret"
 
 
@@ -271,7 +290,7 @@ def _validate_exchanger_token_claims(
 
 async def resolve_sso_identity(
     request: Request,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     code: str,
     callback_url: str,
@@ -326,7 +345,7 @@ async def _identity_from_token_exchanger(
 ) -> tuple[str | None, list[str], str]:
     token_data = await token_exchanger(code, callback_url)
     if "id_token" in token_data and isinstance(token_data["id_token"], str):
-        claims = verify_entra_id_token(
+        claims = _verify_id_token(
             token_data["id_token"],
             client_id=client_id,
             tenant_id=tenant_id,
@@ -386,7 +405,7 @@ async def _identity_from_token_endpoint(
         if not id_token:
             raise HTTPException(status_code=401, detail="Missing id_token in token response.")
 
-        claims = verify_entra_id_token(
+        claims = _verify_id_token(
             id_token,
             client_id=client_id,
             tenant_id=tenant_id,

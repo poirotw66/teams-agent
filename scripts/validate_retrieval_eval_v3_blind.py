@@ -41,13 +41,31 @@ def _body_for_docs(corpus: dict[str, str], docs: list[str]) -> str:
     return "\n".join(parts)
 
 
+def _load_index_titles(index_path: Path | None) -> set[str]:
+    if index_path is None or not index_path.is_file():
+        return set()
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    chunks = payload if isinstance(payload, list) else payload.get("chunks") or []
+    titles: set[str] = set()
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        title = str(chunk.get("title") or "").strip()
+        if title:
+            titles.add(title)
+    return titles
+
+
 def validate_blind_set(
     *,
     blind_path: Path,
     sources_dir: Path,
+    require_frozen: bool = False,
+    index_path: Path | None = None,
 ) -> list[str]:
     corpus = _load_corpus(sources_dir)
     titles = set(corpus)
+    index_titles = _load_index_titles(index_path)
     blind = json.loads(blind_path.read_text(encoding="utf-8"))
     errors: list[str] = []
 
@@ -59,6 +77,33 @@ def validate_blind_set(
         errors.append(
             f"case count {len(cases)} below minCaseCount {blind.get('minCaseCount')}"
         )
+
+    frozen = bool(blind.get("frozen"))
+    if require_frozen and not frozen:
+        errors.append("frozen must be true for release-gate validation")
+    if frozen:
+        freeze_version = blind.get("freezeVersion")
+        if not isinstance(freeze_version, int) or freeze_version < 1:
+            errors.append("frozen set requires freezeVersion >= 1")
+        signoff = blind.get("reviewerSignoff")
+        if not isinstance(signoff, dict) or not signoff:
+            errors.append("frozen set requires non-empty reviewerSignoff")
+        fill = blind.get("fillProgress") or {}
+        reviewed = int(fill.get("reviewed") or 0)
+        filled = int(fill.get("filled") or 0)
+        if reviewed < filled or filled != len(cases):
+            errors.append(
+                "frozen set requires fillProgress.reviewed >= filled "
+                f"and filled == case count (reviewed={reviewed}, filled={filled}, "
+                f"cases={len(cases)})"
+            )
+        for case in cases:
+            status = str(case.get("labelStatus") or "")
+            if not status.startswith("frozen"):
+                errors.append(
+                    f"{case.get('id')}: labelStatus must start with 'frozen' "
+                    f"when dataset is frozen (got {status!r})"
+                )
 
     for case in cases:
         case_id = str(case.get("id") or "<missing-id>")
@@ -77,6 +122,16 @@ def validate_blind_set(
             if any(doc in title or title in doc for title in titles):
                 continue
             errors.append(f"{case_id}: unknown document title {doc!r}")
+            continue
+        if index_titles:
+            for doc in docs:
+                if doc in index_titles:
+                    continue
+                if any(doc in title or title in doc for title in index_titles):
+                    continue
+                errors.append(
+                    f"{case_id}: expected title {doc!r} not present in index chunk titles"
+                )
         body = _body_for_docs(corpus, docs)
         for evidence in case.get("expectedEvidence") or []:
             for marker in evidence.get("mustContain") or []:
@@ -101,8 +156,24 @@ def main() -> int:
         type=Path,
         default=Path("data/sources"),
     )
+    parser.add_argument(
+        "--index",
+        type=Path,
+        default=Path("data/index/chunks.json"),
+        help="Optional Hybrid index JSON used to verify runtime citation titles.",
+    )
+    parser.add_argument(
+        "--require-frozen",
+        action="store_true",
+        help="Fail unless the dataset is frozen with signoff and reviewed counts.",
+    )
     args = parser.parse_args()
-    errors = validate_blind_set(blind_path=args.blind_set, sources_dir=args.sources_dir)
+    errors = validate_blind_set(
+        blind_path=args.blind_set,
+        sources_dir=args.sources_dir,
+        require_frozen=args.require_frozen,
+        index_path=args.index,
+    )
     if errors:
         print(f"validation failed ({len(errors)} issue(s))", file=sys.stderr)
         for error in errors[:50]:

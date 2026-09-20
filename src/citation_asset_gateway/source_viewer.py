@@ -7,7 +7,7 @@ from pathlib import Path
 
 import markdown as markdown_lib
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 from .source_viewer_markdown import (
     first_heading,
@@ -27,7 +27,7 @@ __all__ = [
 
 def render_source_document_html(
     path: Path,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     now: int | None = None,
 ) -> bytes:
@@ -44,7 +44,7 @@ def render_source_document_html(
 
 def render_source_markdown_html(
     raw: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     now: int | None = None,
     fallback_title: str = "引用來源",

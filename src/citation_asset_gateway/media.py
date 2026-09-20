@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from PIL import Image, ImageOps
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF"}
 MAX_SOURCE_ASSET_BYTES = 20 * 1024 * 1024
@@ -46,7 +46,7 @@ def storage_relative_from_delivery(delivery_path: str) -> tuple[str, bool]:
     return pure_path.as_posix(), False
 
 
-def resolve_local_asset_path(delivery_path: str, settings: AgentSettings) -> Path:
+def resolve_local_asset_path(delivery_path: str, settings: CitationGatewaySettings) -> Path:
     """Resolve a delivery path against local source_dir (release) or asset_dir.
 
     Release-pinned URLs prefer ``releases/<id>/assets/<path>``. When that file
@@ -70,7 +70,7 @@ def resolve_local_asset_path(delivery_path: str, settings: AgentSettings) -> Pat
     return _corpus_fallback_for_release(delivery_path, settings)
 
 
-def _corpus_fallback_for_release(delivery_path: str, settings: AgentSettings) -> Path:
+def _corpus_fallback_for_release(delivery_path: str, settings: CitationGatewaySettings) -> Path:
     """Map ``releases/<id>/<rest>`` to ``asset_dir/<rest>`` when release packaging missed the file."""
     pure_path = PurePosixPath(delivery_path)
     rest = PurePosixPath(*pure_path.parts[2:]).as_posix()
@@ -87,7 +87,7 @@ def _corpus_fallback_for_release(delivery_path: str, settings: AgentSettings) ->
 
 def build_asset_url(
     path: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     now: int | None = None,
     *,
     release_id: str | None = None,
@@ -122,7 +122,7 @@ def resolve_asset(
     path: str,
     expires: str | None,
     signature: str | None,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     now: int | None = None,
 ) -> Path:
     if not settings.images_ready:
@@ -148,7 +148,7 @@ def resolve_asset(
     return resolved
 
 
-def gcs_object_name_from_delivery(delivery_path: str, settings: AgentSettings) -> str:
+def gcs_object_name_from_delivery(delivery_path: str, settings: CitationGatewaySettings) -> str:
     """Build the private GCS object name for a release delivery path."""
     storage_relative, is_release = storage_relative_from_delivery(delivery_path)
     if not is_release:
@@ -159,7 +159,7 @@ def gcs_object_name_from_delivery(delivery_path: str, settings: AgentSettings) -
     ).lstrip("/")
 
 
-def fetch_gcs_asset(path: str, settings: AgentSettings) -> bytes:
+def fetch_gcs_asset(path: str, settings: CitationGatewaySettings) -> bytes:
     """Fetch a release-pinned image from the private knowledge bucket."""
     if not settings.asset_gcs_bucket:
         raise FileNotFoundError(path)
@@ -191,13 +191,13 @@ def fetch_gcs_asset(path: str, settings: AgentSettings) -> bytes:
     return value
 
 
-def render_teams_image(path: Path, settings: AgentSettings) -> tuple[bytes, str]:
+def render_teams_image(path: Path, settings: CitationGatewaySettings) -> tuple[bytes, str]:
     return render_teams_image_bytes(path.read_bytes(), settings)
 
 
 def render_teams_image_bytes(
     value: bytes,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
 ) -> tuple[bytes, str]:
     with Image.open(BytesIO(value)) as source:
         if source.format not in SUPPORTED_IMAGE_FORMATS:

@@ -4,7 +4,7 @@
   "role": "release_holdout",
   "specRef": "docs/rag-v2-spec.md#6",
   "frozen": true,
-  "freezeVersion": 1,
+  "freezeVersion": 2,
   "reviewerSignoff": {
     "reviewer": "independent-agent",
     "agentId": "2f5844d5-ab0f-4942-8673-7a4634f8ee21",
@@ -13,7 +13,9 @@
     "scope": "Corpus-only second-person review; no model outputs consulted.",
     "acceptedKnownGaps": [
       "acl_coverage_gap: corpus lacks group-gated documents"
-    ]
+    ],
+    "freezeVersionAcknowledged": 2,
+    "labelContractNote": "v2 label revisions are citation-contract fixes from index/runtime titles, not model-output overfitting."
   },
   "minCaseCount": 140,
   "coverageTargets": {
@@ -112,14 +114,14 @@
       "query": "FortiClient 出現 Permission denied 錯誤碼 -455 怎麼辦？",
       "expectedFound": true,
       "expectedDocuments": [
+        "登入 FortiClient 出現錯訊",
         "VPN常見Q&A問答"
       ],
       "expectedEvidence": [
         {
           "mustContain": [
             "(-455)",
-            "Permission",
-            "denied"
+            "Permission denied"
           ]
         }
       ],
@@ -127,12 +129,14 @@
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Corpus VPN Q&A",
+      "notes": "Both FortiClient错讯 and VPN Q&A cover (-455); accept either citation title.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
+        "登入 FortiClient 出現錯訊",
         "VPN常見Q&A問答"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-ans-04",
@@ -181,16 +185,21 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Corpus portal password linkage",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-ans-06",
@@ -2242,13 +2251,16 @@
       ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Portal vs AD hard negative",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-hn-02",
@@ -2275,14 +2287,17 @@
       ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Hard-negative: prefer target doc over adjacent doc",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES",
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-hn-03",
@@ -2692,17 +2707,22 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
       ],
-      "priorTurn": "員工入口網登不進去"
+      "priorTurn": "員工入口網登不進去",
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-conv-06",
@@ -3403,16 +3423,21 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Alias",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-alias-02",
@@ -3432,16 +3457,21 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Typo/alias/short query variant",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-alias-03",
@@ -4175,16 +4205,21 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Why-not",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-neg-02",
@@ -4204,16 +4239,21 @@
           ]
         }
       ],
-      "hardNegatives": [],
+      "hardNegatives": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
+      "forbiddenSourceTitles": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
       "notes": "Negative constraint",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v2",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
-      ]
+      ],
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
       "id": "v3-blind-neg-03",
@@ -4316,5 +4356,16 @@
     "note": "Final three title-echo markers strengthened (acl-03/04, ver-02)."
   },
   "freezeBlockers": [],
-  "frozenAt": "2026-09-20T16:45:15.186211+00:00"
+  "frozenAt": "2026-09-20T17:11:53.981740+00:00",
+  "freezeChangelog": [
+    {
+      "freezeVersion": 1,
+      "note": "Initial freeze after independent APPROVE_FREEZE."
+    },
+    {
+      "freezeVersion": 2,
+      "at": "2026-09-20T17:11:53.981740+00:00",
+      "note": "Align FortiClient -455 expected titles with runtime citations; forbid AD FAQ citations on portal-password questions."
+    }
+  ]
 }

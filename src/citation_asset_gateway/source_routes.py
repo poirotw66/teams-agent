@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 from .source_api import (
     fetch_original_source_file,
@@ -26,6 +26,7 @@ from .source_api import (
 )
 from .source_links import create_viewer_token, verify_viewer_token
 from .source_route_auth import (
+    IdTokenVerifier,
     authenticated_viewer_subject,
     encode_signed_blob,
     is_safe_redirect_target,
@@ -33,6 +34,7 @@ from .source_route_auth import (
     parse_sso_callback_state,
     parse_sso_session_cookie,
     resolve_sso_identity,
+    set_id_token_verifier,
     sso_signing_secret,
 )
 from .source_route_payloads import build_entra_authorize_url, build_viewer_login_page_html
@@ -46,13 +48,13 @@ _is_safe_redirect_target = is_safe_redirect_target
 _mark_sso_state_consumed = mark_sso_state_consumed
 
 
-def _safe_redirect_location(redirect_url: str, settings: AgentSettings) -> str:
+def _safe_redirect_location(redirect_url: str, settings: CitationGatewaySettings) -> str:
     if is_safe_redirect_target(redirect_url, settings.public_base_url):
         return redirect_url
     return "/healthz"
 
 
-def _set_viewer_token_cookie(response: Response, token: str, settings: AgentSettings) -> None:
+def _set_viewer_token_cookie(response: Response, token: str, settings: CitationGatewaySettings) -> None:
     response.set_cookie(
         "teams_viewer_token",
         token,
@@ -83,7 +85,7 @@ async def _parse_login_form(request: Request) -> dict[str, Any]:
         return {}
 
 
-def _register_viewer_auth_routes(router: APIRouter, settings: AgentSettings) -> None:
+def _register_viewer_auth_routes(router: APIRouter, settings: CitationGatewaySettings) -> None:
     @router.get("/sources/login")
     async def viewer_login_page(request: Request) -> Response:
         redirect_url = (
@@ -140,7 +142,7 @@ def _register_viewer_auth_routes(router: APIRouter, settings: AgentSettings) -> 
         return resp
 
 
-def _start_viewer_sso_login(request: Request, settings: AgentSettings) -> Response:
+def _start_viewer_sso_login(request: Request, settings: CitationGatewaySettings) -> Response:
     redirect_url = (
         request.query_params.get("redirect_url") or request.query_params.get("redirect") or ""
     )
@@ -192,7 +194,7 @@ def _start_viewer_sso_login(request: Request, settings: AgentSettings) -> Respon
     return resp
 
 
-async def _complete_viewer_sso_login(request: Request, settings: AgentSettings) -> Response:
+async def _complete_viewer_sso_login(request: Request, settings: CitationGatewaySettings) -> Response:
     code = request.query_params.get("code")
     state_param = request.query_params.get("state") or ""
     if not code or not state_param:
@@ -236,8 +238,14 @@ async def _complete_viewer_sso_login(request: Request, settings: AgentSettings) 
     return resp
 
 
-def create_source_router(settings: AgentSettings) -> APIRouter:
+def create_source_router(
+    settings: CitationGatewaySettings,
+    *,
+    id_token_verifier: IdTokenVerifier | None = None,
+) -> APIRouter:
     """Create router with RAG source document and SSO authentication endpoints."""
+    if id_token_verifier is not None:
+        set_id_token_verifier(id_token_verifier)
     router = APIRouter()
     register_source_delivery_routes(router, settings)
     _register_viewer_auth_routes(router, settings)

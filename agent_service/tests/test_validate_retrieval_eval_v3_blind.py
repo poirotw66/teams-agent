@@ -24,5 +24,6 @@ def test_v3_blind_set_passes_corpus_validation() -> None:
     errors = validator.validate_blind_set(
         blind_path=_REPO_ROOT / "data" / "eval" / "retrieval_eval_v3_blind.json",
         sources_dir=_REPO_ROOT / "data" / "sources",
+        require_frozen=True,
     )
     assert errors == []

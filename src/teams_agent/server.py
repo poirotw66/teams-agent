@@ -204,7 +204,9 @@ def create_web_app(
         )
 
     # Mount source viewer and enterprise SSO routes
-    app.include_router(create_source_router(settings))
+    app.include_router(
+        create_source_router(settings, id_token_verifier=verify_entra_id_token)
+    )
 
     return app
 

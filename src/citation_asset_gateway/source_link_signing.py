@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from time import time
 from typing import Any
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 _SOURCE_SIGN_PREFIX = "rag-source-v3\n"
 _ALLOWED_SUFFIXES = {".md", ".markdown", ".txt", ".pdf"}
@@ -41,7 +41,7 @@ SAFE_RELEASE_ID = _SAFE_RELEASE_ID
 
 def create_viewer_token(
     subject: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     tenant_id: str | None = None,
     expires_in: int = 3600,
@@ -73,7 +73,7 @@ def create_viewer_token(
 
 def verify_viewer_token(
     token: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     now: float | None = None,
 ) -> dict[str, Any] | None:
@@ -184,7 +184,7 @@ def normalize_source_path(path: str) -> PurePosixPath | None:
     return pure_path
 
 
-def active_release_id(settings: AgentSettings) -> str | None:
+def active_release_id(settings: CitationGatewaySettings) -> str | None:
     source_dir = (settings.source_dir or Path()).resolve()
     pointer = source_dir / "releases" / "active_release.json"
     if not pointer.is_file():
@@ -201,7 +201,7 @@ def active_release_id(settings: AgentSettings) -> str | None:
 
 def citation_delivery_path(
     source_path: str,
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     release_id: str | None = None,
 ) -> str | None:

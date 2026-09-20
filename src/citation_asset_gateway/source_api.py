@@ -10,7 +10,7 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from teams_agent.settings import AgentSettings
+from .settings_contract import CitationGatewaySettings
 
 from .source_delegation import DELEGATION_HEADER, SourceDelegationError, issue_source_delegation
 
@@ -44,7 +44,7 @@ class SourceApiResponse:
     body: bytes
 
 
-def source_api_ready(settings: AgentSettings) -> bool:
+def source_api_ready(settings: CitationGatewaySettings) -> bool:
     return settings.source_api_ready
 
 
@@ -64,7 +64,7 @@ def _google_identity_token(audience: str) -> str | None:
 
 
 async def fetch_source_preview(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     source_ref_id: str,
     subject: str,
@@ -128,7 +128,7 @@ async def fetch_source_preview(
 
 
 async def fetch_original_source_file(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     source_ref_id: str,
     subject: str,
@@ -247,7 +247,7 @@ async def _close_source_session(
 
 
 def _source_request_headers(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     delegation: str,
     base: str,
@@ -269,7 +269,7 @@ def _source_request_headers(
 
 
 async def stream_original_source_file(
-    settings: AgentSettings,
+    settings: CitationGatewaySettings,
     *,
     source_ref_id: str,
     subject: str,

@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
+import os
 import re
 import statistics
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -64,6 +67,82 @@ from agent_service.retrieval_eval_taxonomy import (
 )
 from agent_service.retrieval_expand import EvidenceBundle, build_evidence_bundles
 from agent_service.settings import RagSettings
+
+
+def _file_sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_commit_sha() -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    sha = completed.stdout.strip()
+    return sha or None
+
+
+def _build_eval_provenance(
+    *,
+    eval_set: Path,
+    settings: RagSettings,
+    live_model: bool,
+    model_name: str | None,
+) -> dict[str, Any]:
+    """Record release-gate identifiers for Layer-2/3 eval reports."""
+
+    region = (
+        os.environ.get("VERTEX_LOCATION")
+        or os.environ.get("GOOGLE_CLOUD_REGION")
+        or os.environ.get("GCP_REGION")
+        or os.environ.get("CLOUD_RUN_REGION")
+    )
+    release_id = settings.knowledge_active_release_id
+    if not release_id:
+        for candidate in (
+            ROOT / "data" / "releases" / "active_release.json",
+            ROOT / "data" / "releases" / "active.json",
+        ):
+            if not candidate.is_file():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                release_id = (
+                    payload.get("releaseId")
+                    or payload.get("id")
+                    or payload.get("activeReleaseId")
+                )
+            elif isinstance(payload, str):
+                release_id = payload.strip() or None
+            if release_id:
+                break
+    return {
+        "datasetPath": str(eval_set),
+        "datasetHash": _file_sha256(eval_set),
+        "commitSha": _git_commit_sha(),
+        "model": model_name if live_model else None,
+        "embeddingModel": settings.embedding_model,
+        "liveModel": bool(live_model),
+        "releaseId": release_id,
+        "region": region,
+        "knowledgeReleaseTenantId": settings.knowledge_release_tenant_id,
+    }
 
 
 def _load_cases(path: Path) -> list[dict[str, Any]]:
@@ -1385,6 +1464,16 @@ def main() -> int:
     summary = result["summary"]
     summary["split"] = args.split
     summary["evalSet"] = str(args.eval_set)
+    model_name = None
+    if args.live_model:
+        model_name = settings.model or settings.agent_model
+    provenance = _build_eval_provenance(
+        eval_set=args.eval_set,
+        settings=settings,
+        live_model=bool(args.live_model),
+        model_name=model_name,
+    )
+    summary["provenance"] = provenance
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
@@ -1395,6 +1484,7 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "summary": summary,
+            "provenance": provenance,
             "failures": [
                 {
                     "caseId": f.case_id,

@@ -13,6 +13,7 @@ from agent_service.retrieval_eval_metrics import (
     mrr_at_k,
     ndcg_at_k,
     no_answer_confusion,
+    precision_at_k,
     recall_at_k,
     score_retrieval_case,
 )
@@ -46,6 +47,32 @@ REQUIRED_CATEGORIES = {
 def test_recall_at_k_partial_recovery() -> None:
     ranked = ["a", "x", "b", "y"]
     assert recall_at_k(ranked, ["a", "b", "c"], k=3) == 2 / 3
+
+
+def test_document_recall_does_not_inflate_on_duplicate_ids() -> None:
+    """Same document appearing twice in top-k must count as one hit."""
+    ranked = ["doc-a", "doc-a", "noise", "noise"]
+    relevant = ["doc-a"]
+    assert recall_at_k(ranked, relevant, k=4) == 1.0
+    assert precision_at_k(ranked, relevant, k=4) == 0.5
+    grades = {"doc-a": 1.0}
+    score = ndcg_at_k(ranked, grades, k=4)
+    assert 0.0 <= score <= 1.0
+    assert score == ndcg_at_k(["doc-a", "noise"], grades, k=4)
+
+
+def test_ranking_metrics_stay_within_unit_interval() -> None:
+    ranked = ["a", "a", "b", "b", "c"]
+    relevant = ["a", "b"]
+    grades = {"a": 3.0, "b": 1.0}
+    for metric in (
+        recall_at_k(ranked, relevant, k=4),
+        precision_at_k(ranked, relevant, k=4),
+        ndcg_at_k(ranked, grades, k=4),
+        hit_at_k(ranked, relevant, k=4),
+        mrr_at_k(ranked, relevant, k=4),
+    ):
+        assert 0.0 <= metric <= 1.0
 
 
 def test_hit_and_mrr() -> None:
