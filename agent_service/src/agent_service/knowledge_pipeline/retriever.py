@@ -63,10 +63,9 @@ def fuse_query_level_rrf(
     query_weights: Sequence[float] | None = None,
     rrf_k: int = 60,
     previous: Sequence[SearchResult] | None = None,
+    previous_weight: float | None = None,
 ) -> list[SearchResult]:
-    """Fuse multi-query ranked candidate lists with query-weighted RRF.
-
-    score(d) = sum_q (w_q / (k + rank_q(d)))
+    """Fuse results across multi-query fanouts using reciprocal rank fusion.
 
     Preserves the ranking contract:
     - ``fusion_score`` stores the combined multi-query RRF score.
@@ -87,8 +86,11 @@ def fuse_query_level_rrf(
 
     scores: dict[str, float] = {}
     best_by_chunk: dict[str, SearchResult] = {}
-    for prev_res in previous or ():
-        best_by_chunk[prev_res.chunk.chunk_id] = prev_res
+    for prev_rank, prev_res in enumerate(previous or (), start=1):
+        cid = prev_res.chunk.chunk_id
+        best_by_chunk[cid] = prev_res
+        if previous_weight:
+            scores[cid] = scores.get(cid, 0.0) + (previous_weight / (rrf_k + prev_rank))
 
     for q_idx, rset in enumerate(valid_sets):
         w = weights[q_idx] if q_idx < len(weights) else 0.7

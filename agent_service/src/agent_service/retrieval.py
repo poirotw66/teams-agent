@@ -204,6 +204,14 @@ class HybridIndex:
                 self.chunks_by_document_id[doc_id].append(chunk)
         self.has_vectors: bool = any(bool(chunk.vector) for chunk in chunks)
 
+    def embed_queries(self, texts: Sequence[str]) -> list[list[float]]:
+        """Batch-embed queries using RETRIEVAL_QUERY semantics across providers."""
+        from .retrieval_embeddings import embed_queries_batch
+
+        if not self.embedding_client or not self.has_vectors:
+            return [[] for _ in texts]
+        return embed_queries_batch(self.embedding_client, texts)
+
     @classmethod
     def load(
         cls,
@@ -338,7 +346,9 @@ class HybridIndex:
         if check_sparse_fast_path(query, self.chunks, authorized_indices, sparse_scores):
             return None, 0.0, True
         embed_started = time.perf_counter()
-        vector = self.embedding_client.embed_query(query)
+        from .retrieval_embeddings import embed_single_query
+
+        vector = embed_single_query(self.embedding_client, query)
         embedding_ms = (time.perf_counter() - embed_started) * 1000
         return vector, embedding_ms, False
 

@@ -295,12 +295,18 @@ async def run_retrieve(
         limit=limit,
         stage_timings_ms=state.stage_timings_ms,
     )
-    query_weights = _compute_query_weights(len(result_sets), state.attempt)
+    previous_weight = 1.0 if (state.attempt > 0 and state.results) else None
+    query_weights = (
+        [0.6]
+        if (state.attempt > 0 and len(result_sets) == 1)
+        else _compute_query_weights(len(result_sets), state.attempt)
+    )
     results = fuse_query_level_rrf(
         *result_sets,
         query_weights=query_weights,
         rrf_k=host.rrf_k,
         previous=state.results,
+        previous_weight=previous_weight,
     )
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
