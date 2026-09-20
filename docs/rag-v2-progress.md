@@ -15,8 +15,8 @@ Course correction: [`docs/rag-v2.1-plan.md`](./rag-v2.1-plan.md).
 | **v2.1 P0** | Evidence-level eval + no-answer fix + frozen split | **Done** (#10) |
 | **v2.1 P0.5** | Remove benchmark leakage from listwise prompt | **Done** |
 | **v2.1 Ranking contract** | `score`≠rank; merge/doc-select preserve RRF/rerank | **Done** |
-| **v2.1 Evidence expansion** | Real parent materialization; expand after selection | **Done** |
-| **v2.1 Canary** | A Weighted / B RRF / C RRF+Rerank; contextual=release A/B | **Done** |
+| **v2.1 Evidence expansion** | Discrete supporting chunks; dedupe; grounding contract | **Done** |
+| **v2.1 Canary & Cache** | BASELINE/CANDIDATE decoupled reranker; cache isolation | **Done** |
 | Dedicated reranker A/B | Vertex Ranking / Qwen3 | **Blocked until Evidence Recall@4 moves** |
 
 ## Current safe defaults (v2.1)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -43,10 +44,22 @@ async def align_claims_with_citations(
     answer_model: BaseChatModel | None,
     counter: LlmCallCounter,
     execution_context: ExecutionContext | None,
+    bundles: Sequence[Any] | None = None,
 ) -> tuple[StructuredKnowledgeAnswer, set[str]] | KnowledgeResult:
     document_by_chunk_id = {
         result.chunk.chunk_id: host.document_key(result) for result in results
     }
+    if bundles:
+        for bundle in bundles:
+            seed_doc_key = host.document_key(bundle.seed)
+            for chunk in getattr(bundle, "supporting_chunks", None) or getattr(bundle, "context_chunks", None) or []:
+                doc_key = (
+                    (chunk.document_id or "").strip()
+                    or (chunk.source_path or "").strip()
+                    or chunk.title.strip()
+                    or seed_doc_key
+                )
+                document_by_chunk_id.setdefault(chunk.chunk_id, doc_key)
     claimed_doc_keys = claimed_document_keys(
         response.claims,
         document_by_chunk_id=document_by_chunk_id,

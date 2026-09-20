@@ -64,13 +64,31 @@ def test_build_evidence_bundles_keeps_seed_order() -> None:
     )
     assert [b.seed.chunk.chunk_id for b in bundles] == ["seed", "other"]
     assert bundles[0].citation_chunk.chunk_id == "seed"
-    context_ids = [c.chunk_id for c in bundles[0].context_chunks]
-    assert parent_id in context_ids
+    context_ids = [c.chunk_id for c in bundles[0].supporting_chunks]
+    # Sibling and neighbor are real chunks; synthetic parent_id is not treated as a chunk
+    assert "sib" in context_ids
     assert "n1" in context_ids
-    assert bundles[1].context_chunks == []
+    assert parent_id not in context_ids
+    assert bundles[1].supporting_chunks == []
 
 
-def test_expand_retrieval_context_compat_flattens_without_requiring_parent_chunk() -> None:
+def test_build_evidence_bundles_dedupes_content_hash_and_excludes_seed() -> None:
+    parent_id = "parent-doc-1-1"
+    seed = _chunk("seed", parent_id=parent_id, content="identical-content")
+    # Sibling has identical content to seed; must be deduped
+    duplicate_sibling = _chunk("sib-dup", parent_id=parent_id, content="identical-content")
+    unique_sibling = _chunk("sib-unique", parent_id=parent_id, content="unique-sibling-content")
+    bundles = build_evidence_bundles(
+        [_hit(seed)],
+        chunk_by_id={"seed": seed, "sib-dup": duplicate_sibling, "sib-unique": unique_sibling},
+    )
+    supporting_ids = [c.chunk_id for c in bundles[0].supporting_chunks]
+    assert "seed" not in supporting_ids
+    assert "sib-dup" not in supporting_ids
+    assert "sib-unique" in supporting_ids
+
+
+def test_expand_retrieval_context_compat_flattens_real_chunks() -> None:
     parent_id = "parent-doc-1-1"
     seed = _chunk("seed", parent_id=parent_id, neighbors=["n1"])
     sibling = _chunk("sib", parent_id=parent_id, content="sib")
@@ -81,5 +99,6 @@ def test_expand_retrieval_context_compat_flattens_without_requiring_parent_chunk
     )
     assert expanded[0].chunk.chunk_id == "seed"
     ids = [item.chunk.chunk_id for item in expanded]
-    assert parent_id in ids
+    assert "sib" in ids
     assert "n1" in ids
+    assert parent_id not in ids

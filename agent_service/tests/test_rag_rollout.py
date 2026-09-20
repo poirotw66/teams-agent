@@ -33,23 +33,33 @@ def test_canary_percent_100_always_canary() -> None:
         tenant="t",
         conversation_id="any",
         canary_percent=100,
+        reranker_available=False,
     )
     assert decision.is_canary is True
     assert decision.serve_variant == VARIANT_C_RRF_RERANK
     assert decision.fusion_mode == "RRF"
     assert decision.reranker_enabled is False
 
+    decision_with_rerank = select_rag_serving_variant(
+        tenant="t",
+        conversation_id="any",
+        canary_percent=100,
+        reranker_available=True,
+    )
+    assert decision_with_rerank.is_canary is True
+    assert decision_with_rerank.reranker_enabled is True
 
-def test_variant_c_rerank_requires_global_flag() -> None:
+
+def test_variant_c_rerank_respects_reranker_available() -> None:
     fusion, rerank = retrieval_knobs_for_variant(
         VARIANT_C_RRF_RERANK,
-        global_reranker_enabled=False,
+        reranker_available=False,
     )
     assert fusion == "RRF"
     assert rerank is False
     fusion_on, rerank_on = retrieval_knobs_for_variant(
         VARIANT_C_RRF_RERANK,
-        global_reranker_enabled=True,
+        reranker_available=True,
     )
     assert fusion_on == "RRF"
     assert rerank_on is True
@@ -58,7 +68,7 @@ def test_variant_c_rerank_requires_global_flag() -> None:
 def test_legacy_d_alias_maps_to_rerank_knobs() -> None:
     fusion, rerank = retrieval_knobs_for_variant(
         VARIANT_D_RRF_CONTEXTUAL_RERANK,
-        global_reranker_enabled=True,
+        reranker_available=True,
     )
     assert fusion == "RRF"
     assert rerank is True

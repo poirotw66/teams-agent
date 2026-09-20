@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -15,7 +15,7 @@ from agent_service.documents import DocumentChunk
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import SearchResult
-from agent_service.retrieval_expand import build_evidence_bundles
+from agent_service.retrieval_expand import EvidenceBundle, build_evidence_bundles
 from agent_service.security_policies import strip_unknown_policy_markers
 from agent_service.temporal_claims import annotate_historical_dates_in_text
 
@@ -43,7 +43,7 @@ def build_context_and_markers(
     chunk_to_doc_idx: dict[int, int],
     *,
     chunk_by_id: Mapping[str, DocumentChunk] | None = None,
-) -> tuple[str, dict[str, list[str]], dict[str, str]]:
+) -> tuple[str, dict[str, list[str]], dict[str, str], list[EvidenceBundle] | None]:
     """Build generator context; optionally expand parent/neighbor per seed.
 
     Ranking order of ``results`` is preserved. Expanded context is appended
@@ -60,14 +60,16 @@ def build_context_and_markers(
             marker = f"[S{chunk_to_doc_idx[index]}]"
             seed = bundle.seed
             body = annotate_historical_dates_in_text(seed.chunk.content)
-            extra = "\n\n".join(
-                annotate_historical_dates_in_text(chunk.content)
-                for chunk in bundle.context_chunks
+            seed_block = f"{marker} {seed.chunk.title} [chunkId={seed.chunk.chunk_id}]\n{body}"
+            supporting_blocks = [
+                f"[chunkId={chunk.chunk_id}]\n{annotate_historical_dates_in_text(chunk.content)}"
+                for chunk in bundle.supporting_chunks
                 if chunk.content.strip()
-            )
-            block = f"{marker} {seed.chunk.title} [chunkId={seed.chunk.chunk_id}]\n{body}"
-            if extra:
-                block = f"{block}\n\n{extra}"
+            ]
+            if supporting_blocks:
+                block = f"{seed_block}\n\n" + "\n\n".join(supporting_blocks)
+            else:
+                block = seed_block
             context_parts.append(block)
         context = "\n\n".join(context_parts)
     else:
@@ -82,14 +84,20 @@ def build_context_and_markers(
         result.chunk.chunk_id: result.chunk.content for result in results
     }
     if bundles is not None:
-        for bundle in bundles:
-            for chunk in bundle.context_chunks:
+        for index, bundle in enumerate(bundles):
+            marker = f"S{chunk_to_doc_idx[index]}"
+            cids = [bundle.seed.chunk.chunk_id]
+            for chunk in bundle.supporting_chunks:
+                cids.append(chunk.chunk_id)
                 chunk_content_by_id.setdefault(chunk.chunk_id, chunk.content)
-    for index, result in enumerate(results):
-        marker = f"S{chunk_to_doc_idx[index]}"
-        marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)
-        marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
-    return context, marker_to_chunk_ids, chunk_content_by_id
+            marker_to_chunk_ids.setdefault(marker, []).extend(cids)
+            marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
+    else:
+        for index, result in enumerate(results):
+            marker = f"S{chunk_to_doc_idx[index]}"
+            marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)
+            marker_to_chunk_ids.setdefault(marker.lower(), marker_to_chunk_ids[marker])
+    return context, marker_to_chunk_ids, chunk_content_by_id, bundles
 
 
 async def invoke_initial_grounded_answer(
@@ -165,8 +173,9 @@ def _reject_ungrounded_answer(
     response: StructuredKnowledgeAnswer,
     answer: str,
     results: list[SearchResult],
+    bundles: Sequence[EvidenceBundle] | None = None,
 ) -> KnowledgeResult | None:
-    if structured_answer_is_grounded(response, results):
+    if structured_answer_is_grounded(response, results, bundles=bundles):
         return None
     logger.warning(
         "Knowledge answer rejected: _structured_answer_is_grounded failed. "
@@ -190,10 +199,22 @@ def _markers_from_answer_or_claims(
     answer: str,
     results: list[SearchResult],
     unique_doc_keys: list[str],
+    bundles: Sequence[EvidenceBundle] | None = None,
 ) -> tuple[str, list[int]] | KnowledgeResult:
     document_by_chunk_id = {
         result.chunk.chunk_id: host.document_key(result) for result in results
     }
+    if bundles:
+        for bundle in bundles:
+            seed_doc_key = host.document_key(bundle.seed)
+            for chunk in bundle.supporting_chunks:
+                doc_key = (
+                    (chunk.document_id or "").strip()
+                    or (chunk.source_path or "").strip()
+                    or chunk.title.strip()
+                    or seed_doc_key
+                )
+                document_by_chunk_id.setdefault(chunk.chunk_id, doc_key)
     raw_markers = [int(value) for value in re.findall(r"\[S(\d+)\]", answer)]
     if not raw_markers and response.claims:
         inferred_markers = infer_markers_from_claims(
@@ -222,10 +243,11 @@ def resolve_cited_document_keys(
     results: list[SearchResult],
     unique_doc_keys: list[str],
     chunk_to_doc_idx: dict[int, int],
+    bundles: Sequence[EvidenceBundle] | None = None,
 ) -> tuple[str, list[str]] | KnowledgeResult:
     """Return (answer, ordered_cited_doc_keys) or a no-answer KnowledgeResult."""
     rejected = _reject_ungrounded_answer(
-        host, response=response, answer=answer, results=results
+        host, response=response, answer=answer, results=results, bundles=bundles
     )
     if rejected is not None:
         return rejected
@@ -236,6 +258,7 @@ def resolve_cited_document_keys(
         answer=answer,
         results=results,
         unique_doc_keys=unique_doc_keys,
+        bundles=bundles,
     )
     if isinstance(markers, KnowledgeResult):
         return markers

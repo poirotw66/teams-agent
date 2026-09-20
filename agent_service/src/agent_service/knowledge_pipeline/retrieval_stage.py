@@ -73,6 +73,7 @@ async def _cached_search(
     frozen_groups: frozenset[str],
     environment: str,
 ) -> tuple[list[SearchResult], dict[str, float]]:
+    limit = retrieval_candidate_limit(host)
     cache_key = make_retrieval_cache_key(
         query,
         groups=frozen_groups,
@@ -83,6 +84,8 @@ async def _cached_search(
         fusion_mode=host.fusion_mode,
         rrf_k=host.rrf_k,
         contextualization_version=host.contextualization_version,
+        candidate_limit=limit,
+        fusion_candidate_k=host.fusion_candidate_k,
     )
     cache = host.retrieval_cache
     if cache_key in cache:
@@ -99,7 +102,7 @@ async def _cached_search(
         res, timings = await asyncio.to_thread(
             host.search_with_timings,
             query,
-            retrieval_candidate_limit(host),
+            limit,
             groups,
             environment=environment,
             fusion_mode=host.fusion_mode,

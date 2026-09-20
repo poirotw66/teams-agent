@@ -8,8 +8,8 @@ from typing import Any
 from .contracts import AgentRequest
 from .knowledge_pipeline.retrieval_stage import RetrievalHost
 from .rag_rollout import (
-    VARIANT_A_WEIGHTED,
-    VARIANT_C_RRF_RERANK,
+    VARIANT_BASELINE,
+    VARIANT_CANDIDATE,
     RagServingDecision,
     select_rag_serving_variant,
 )
@@ -23,6 +23,7 @@ def resolve_serving_decision(
     settings: RagSettings,
     index: HybridIndex,
     request: AgentRequest | None,
+    reranker_available: bool = True,
 ) -> RagServingDecision:
     tenant = "default"
     conversation_id = "anonymous"
@@ -35,14 +36,14 @@ def resolve_serving_decision(
         tenant=tenant,
         conversation_id=conversation_id,
         canary_percent=int(getattr(settings, "rag_canary_percent", 0)),
-        canary_variant=VARIANT_C_RRF_RERANK,
-        baseline_variant=VARIANT_A_WEIGHTED,
-        shadow_enabled=bool(getattr(settings, "rag_shadow_enabled", False)),
+        canary_variant=getattr(settings, "rag_canary_variant", VARIANT_CANDIDATE),
+        baseline_variant=getattr(settings, "rag_baseline_variant", VARIANT_BASELINE),
         baseline_fusion_mode=str(
             getattr(index, "fusion_mode", None)
             or getattr(settings, "rag_fusion_mode", "RRF")
         ),
-        global_reranker_enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
+        baseline_reranker_enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
+        reranker_available=reranker_available,
     )
 
 
@@ -58,18 +59,14 @@ def build_retrieval_host(
     select_document_chunks: Callable[[str, list[SearchResult]], tuple[list[SearchResult], bool]],
 ) -> RetrievalHost:
     decision = serving or RagServingDecision(
-        serve_variant=VARIANT_A_WEIGHTED,
+        serve_variant=VARIANT_BASELINE,
         is_canary=False,
         canary_percent=0,
-        shadow_enabled=False,
         fusion_mode=str(getattr(index, "fusion_mode", "RRF")),
-        reranker_enabled=bool(getattr(settings, "rag_reranker_enabled", True)),
+        reranker_enabled=bool(getattr(settings, "rag_reranker_enabled", False)),
     )
     fusion_mode = decision.fusion_mode
     reranker_enabled = decision.reranker_enabled
-    if decision.shadow_enabled and not decision.is_canary:
-        fusion_mode = str(getattr(index, "fusion_mode", "RRF"))
-        reranker_enabled = bool(getattr(settings, "rag_reranker_enabled", True))
     return RetrievalHost(
         search_with_timings=index.search_with_timings,
         inject_enterprise_app_evidence=inject_enterprise_app_evidence,
