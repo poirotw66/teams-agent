@@ -234,14 +234,15 @@ def current_policy_snapshot() -> PolicySnapshot | None:
 
 
 def active_retention_days(settings: OpsSettings) -> int:
+    default_days = getattr(settings, "default_retention_days", 365)
     if _RESOLVE_DEPTH.get() > 0:
-        return settings.default_retention_days
+        return default_days
     snapshot = current_policy_snapshot()
     if snapshot is not None:
         return snapshot.retention.ttl_days
     runtime = get_policy_runtime()
     if runtime is None:
-        return settings.default_retention_days
+        return default_days
     return runtime.retention().ttl_days
 
 

@@ -9,6 +9,17 @@ from agent_service.usage import (
     list_model_rates_usd,
     normalize_model_name,
 )
+from operations_core.usage import configure_pricing_provider, get_pricing_provider
+
+
+@pytest.fixture(autouse=True)
+def _reset_pricing_provider():
+    prev = get_pricing_provider()
+    configure_pricing_provider(None)
+    try:
+        yield
+    finally:
+        configure_pricing_provider(prev)
 
 
 def test_pricing_version_is_set() -> None:

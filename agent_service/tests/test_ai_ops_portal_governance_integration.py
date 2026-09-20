@@ -23,9 +23,12 @@ def _portal_settings(tmp_path: Path) -> PortalSettings:
     object.__setattr__(settings, "repository_mode", "MEMORY")
     object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
     object.__setattr__(settings, "data_dir", tmp_path)
+    object.__setattr__(settings, "drafts_dir", tmp_path / "drafts")
+    object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
     object.__setattr__(settings, "require_dual_approval", False)
     object.__setattr__(settings, "relaxed_workflow", True)
     object.__setattr__(settings, "embedding_model", None)
+    object.__setattr__(settings, "agent_api_url", None)
     return settings
 
 
