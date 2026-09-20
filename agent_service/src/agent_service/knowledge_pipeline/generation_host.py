@@ -15,6 +15,7 @@ from agent_service.retrieval import SearchResult
 if TYPE_CHECKING:
     from agent_service.knowledge_hybrid import HybridKnowledgeService, _RetrievalState
 
+
 class _HybridGenerationHost:
     """Adapts HybridKnowledgeService private helpers to GenerationHost."""
 
@@ -45,9 +46,7 @@ class _HybridGenerationHost:
         *,
         evidence_results: list[SearchResult] | None = None,
     ) -> Citation:
-        return self._service._citation_for(
-            result, evidence_results=evidence_results
-        )
+        return self._service._citation_for(result, evidence_results=evidence_results)
 
     def images_for(self, cited_results: list[SearchResult]) -> list[AgentImage]:
         return self._service._images_for(cited_results)
@@ -57,7 +56,19 @@ class _HybridGenerationHost:
         index = getattr(self._service, "index", None)
         if index is None:
             return {}
-        return {chunk.chunk_id: chunk for chunk in index.chunks}
+        return getattr(index, "chunk_by_id", {chunk.chunk_id: chunk for chunk in index.chunks})
+
+    @property
+    def chunks_by_parent_id(self) -> dict[str, list[object]]:
+        index = getattr(self._service, "index", None)
+        if index is None:
+            return {}
+        return getattr(index, "chunks_by_parent_id", {})
+
+    @property
+    def evidence_token_budget(self) -> int:
+        settings = getattr(self._service, "settings", None)
+        return int(getattr(settings, "rag_evidence_token_budget", 1200))
 
     def deterministic_grounded_answer(
         self,
@@ -73,9 +84,7 @@ class _HybridGenerationHost:
     def no_answer(self) -> KnowledgeResult:
         return self._service._no_answer()
 
-    def evaluate_retrieval_confidence(
-        self, state: _RetrievalState
-    ) -> tuple[str, object]:
+    def evaluate_retrieval_confidence(self, state: _RetrievalState) -> tuple[str, object]:
         return self._service._evaluate_retrieval_confidence(state)
 
     async def repair_claims_with_model(

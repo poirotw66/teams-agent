@@ -6,7 +6,7 @@ so this module stays free of HybridIndex / settings coupling.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
 from langchain_core.language_models import BaseChatModel
@@ -15,6 +15,7 @@ from agent_service.contracts import Citation, GroundedClaim, KnowledgeResult
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import SearchResult
+from agent_service.retrieval_expand import EvidenceBundle
 
 from .citation_assembly import build_chunk_document_maps
 from .generation_stage_invoke import (
@@ -54,6 +55,9 @@ class GenerationHost(Protocol):
     @property
     def chunk_by_id(self) -> dict[str, Any]: ...
 
+    @property
+    def chunks_by_parent_id(self) -> dict[str, list[Any]]: ...
+
     def deterministic_grounded_answer(
         self,
         results: list[SearchResult],
@@ -76,47 +80,45 @@ class GenerationHost(Protocol):
     ) -> list[GroundedClaim]: ...
 
 
-async def generate_grounded_answer(
+def _prepare_generation_context(
     host: GenerationHost,
     state: Any,
-    counter: LlmCallCounter,
-    *,
-    execution_context: ExecutionContext | None = None,
-    model: BaseChatModel | None = None,
-    include_retrieval_evidence: bool,
-) -> KnowledgeResult:
-    results = state.results
-    answer_model = model
-    if not results:
-        return host.no_answer()
-
-    unique_doc_keys, chunk_to_doc_idx, _document_by_chunk_id = build_chunk_document_maps(
-        results,
-        document_key=host.document_key,
-    )
-
-    if not answer_model:
-        return host.deterministic_grounded_answer(
-            results,
-            include_retrieval_evidence=include_retrieval_evidence,
+    results: list[SearchResult],
+    chunk_to_doc_idx: Mapping[str, int],
+) -> tuple[str, dict[str, list[str]], dict[str, str], list[EvidenceBundle]]:
+    tier_val = (
+        getattr(state, "query_tier", None)
+        or getattr(getattr(state, "provisional_tier", None), "value", None)
+        or (
+            str(getattr(state, "provisional_tier", None))
+            if getattr(state, "provisional_tier", None)
+            else None
         )
-
-    context, marker_to_chunk_ids, chunk_content_by_id, bundles = build_context_and_markers(
+    )
+    return build_context_and_markers(
         results,
         chunk_to_doc_idx,
         chunk_by_id=getattr(host, "chunk_by_id", None) or None,
+        chunks_by_parent_id=getattr(host, "chunks_by_parent_id", None) or None,
+        query_tier=tier_val,
+        token_budget=getattr(host, "evidence_token_budget", None),
     )
-    response, answer = await invoke_initial_grounded_answer(
-        host,
-        state=state,
-        results=results,
-        answer_model=answer_model,
-        context=context,
-        marker_to_chunk_ids=marker_to_chunk_ids,
-        chunk_content_by_id=chunk_content_by_id,
-        counter=counter,
-        execution_context=execution_context,
-    )
+
+
+async def _align_and_assemble(
+    host: GenerationHost,
+    *,
+    response: Any,
+    answer: str,
+    results: list[SearchResult],
+    unique_doc_keys: list[str],
+    chunk_to_doc_idx: Mapping[str, int],
+    bundles: list[EvidenceBundle],
+    answer_model: BaseChatModel,
+    counter: LlmCallCounter,
+    execution_context: ExecutionContext | None,
+    include_retrieval_evidence: bool,
+) -> KnowledgeResult:
     cited = resolve_cited_document_keys(
         host=host,
         response=response,
@@ -154,6 +156,63 @@ async def generate_grounded_answer(
         common_doc_keys=common_doc_keys,
         unique_doc_keys=unique_doc_keys,
         chunk_to_doc_idx=chunk_to_doc_idx,
+        include_retrieval_evidence=include_retrieval_evidence,
+    )
+
+
+async def generate_grounded_answer(
+    host: GenerationHost,
+    state: Any,
+    counter: LlmCallCounter,
+    *,
+    execution_context: ExecutionContext | None = None,
+    model: BaseChatModel | None = None,
+    include_retrieval_evidence: bool,
+) -> KnowledgeResult:
+    results = state.results
+    answer_model = model
+    if not results:
+        return host.no_answer()
+
+    unique_doc_keys, chunk_to_doc_idx, _document_by_chunk_id = build_chunk_document_maps(
+        results,
+        document_key=host.document_key,
+    )
+
+    if not answer_model:
+        return host.deterministic_grounded_answer(
+            results,
+            include_retrieval_evidence=include_retrieval_evidence,
+        )
+
+    context, marker_to_chunk_ids, chunk_content_by_id, bundles = _prepare_generation_context(
+        host,
+        state,
+        results,
+        chunk_to_doc_idx,
+    )
+    response, answer = await invoke_initial_grounded_answer(
+        host,
+        state=state,
+        results=results,
+        answer_model=answer_model,
+        context=context,
+        marker_to_chunk_ids=marker_to_chunk_ids,
+        chunk_content_by_id=chunk_content_by_id,
+        counter=counter,
+        execution_context=execution_context,
+    )
+    return await _align_and_assemble(
+        host,
+        response=response,
+        answer=answer,
+        results=results,
+        unique_doc_keys=unique_doc_keys,
+        chunk_to_doc_idx=chunk_to_doc_idx,
+        bundles=bundles,
+        answer_model=answer_model,
+        counter=counter,
+        execution_context=execution_context,
         include_retrieval_evidence=include_retrieval_evidence,
     )
 

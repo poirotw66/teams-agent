@@ -43,6 +43,9 @@ def build_context_and_markers(
     chunk_to_doc_idx: dict[int, int],
     *,
     chunk_by_id: Mapping[str, DocumentChunk] | None = None,
+    chunks_by_parent_id: Mapping[str, Sequence[DocumentChunk]] | None = None,
+    query_tier: str | None = None,
+    token_budget: int | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str], list[EvidenceBundle] | None]:
     """Build generator context; optionally expand parent/neighbor per seed.
 
@@ -50,7 +53,13 @@ def build_context_and_markers(
     under the same citation marker as the seed and is not treated as a hit.
     """
     bundles = (
-        build_evidence_bundles(results, chunk_by_id=chunk_by_id)
+        build_evidence_bundles(
+            results,
+            chunk_by_id=chunk_by_id,
+            chunks_by_parent_id=chunks_by_parent_id,
+            query_tier=query_tier,
+            token_budget=token_budget,
+        )
         if chunk_by_id
         else None
     )
@@ -80,9 +89,7 @@ def build_context_and_markers(
             for index, result in enumerate(results)
         )
     marker_to_chunk_ids: dict[str, list[str]] = {}
-    chunk_content_by_id = {
-        result.chunk.chunk_id: result.chunk.content for result in results
-    }
+    chunk_content_by_id = {result.chunk.chunk_id: result.chunk.content for result in results}
     if bundles is not None:
         for index, bundle in enumerate(bundles):
             marker = f"S{chunk_to_doc_idx[index]}"
@@ -183,10 +190,7 @@ def _reject_ungrounded_answer(
         response.answerability,
         len(response.claims),
         response.unknowns,
-        [
-            {"text": claim.text, "chunkIds": claim.chunkIds}
-            for claim in response.claims
-        ],
+        [{"text": claim.text, "chunkIds": claim.chunkIds} for claim in response.claims],
         answer[:240],
     )
     return host.no_answer()
@@ -201,9 +205,7 @@ def _markers_from_answer_or_claims(
     unique_doc_keys: list[str],
     bundles: Sequence[EvidenceBundle] | None = None,
 ) -> tuple[str, list[int]] | KnowledgeResult:
-    document_by_chunk_id = {
-        result.chunk.chunk_id: host.document_key(result) for result in results
-    }
+    document_by_chunk_id = {result.chunk.chunk_id: host.document_key(result) for result in results}
     if bundles:
         for bundle in bundles:
             seed_doc_key = host.document_key(bundle.seed)
@@ -228,9 +230,7 @@ def _markers_from_answer_or_claims(
             raw_markers = inferred_markers
             logger.info("Repaired missing [S#] markers from claims: %s", markers_str)
     if not raw_markers:
-        logger.warning(
-            "Knowledge answer rejected: no [S#] markers and no claim-derived markers"
-        )
+        logger.warning("Knowledge answer rejected: no [S#] markers and no claim-derived markers")
         return host.no_answer()
     return answer, raw_markers
 

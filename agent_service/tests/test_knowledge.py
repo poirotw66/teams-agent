@@ -182,6 +182,8 @@ class CountingIndex(HybridIndex):
         *,
         environment="dev",
         fusion_mode=None,
+        query_vector=None,
+        **kwargs,
     ):
         with self._search_lock:
             self.search_calls += 1
@@ -192,6 +194,8 @@ class CountingIndex(HybridIndex):
             groups,
             environment=environment,
             fusion_mode=fusion_mode,
+            query_vector=query_vector,
+            **kwargs,
         )
 
 
@@ -316,10 +320,7 @@ def test_procedure_step_coverage_detects_omitted_executable_steps() -> None:
     assert "intune_company_portal" in steps
     assert "second_device_verify" in steps
     assert "reach_inbox" in steps
-    outline = (
-        "1. 下載驗證器。2. 綁定手機。3. 安裝 Outlook。"
-        "4. 關閉焦點收件匣。"
-    )
+    outline = "1. 下載驗證器。2. 綁定手機。3. 安裝 Outlook。4. 關閉焦點收件匣。"
     assert "reach_inbox" not in procedure_steps_in_text(outline)
     assert not answer_covers_procedure_steps(outline, steps)
     assert "intune_company_portal" in missing_procedure_steps(outline, steps)

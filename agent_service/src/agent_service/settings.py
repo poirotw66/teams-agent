@@ -72,6 +72,7 @@ class RagSettings:
     rag_canary_percent: int = 0
     rag_canary_variant: str = "CANDIDATE"
     rag_baseline_variant: str = "BASELINE"
+    rag_evidence_token_budget: int = 1200
 
     # --- Knowledge Service (spec §8) ---
     knowledge_service_mode: str = "HYBRID"

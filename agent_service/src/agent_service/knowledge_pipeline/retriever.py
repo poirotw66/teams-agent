@@ -14,9 +14,7 @@ from agent_service.retrieval_ranking import is_better_ranked, sort_by_ranking
 RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 MAX_RETRIEVAL_CACHE_SIZE = 500
 
-RetrievalCacheKey = tuple[
-    str, frozenset[str], str, str, int, float, str, int, str, int, int
-]
+RetrievalCacheKey = tuple[str, frozenset[str], str, str, int, float, str, int, str, int, int]
 
 
 def resolve_retrieval_queries(
@@ -60,6 +58,73 @@ def make_retrieval_cache_key(
     )
 
 
+def fuse_query_level_rrf(
+    *result_sets: Sequence[SearchResult],
+    query_weights: Sequence[float] | None = None,
+    rrf_k: int = 60,
+    previous: Sequence[SearchResult] | None = None,
+) -> list[SearchResult]:
+    """Fuse multi-query ranked candidate lists with query-weighted RRF.
+
+    score(d) = sum_q (w_q / (k + rank_q(d)))
+
+    Preserves the ranking contract:
+    - ``fusion_score`` stores the combined multi-query RRF score.
+    - ``final_rank`` and ``fusion_rank`` follow the unified multi-query ordering.
+    - ``score`` preserves the best individual evidence confidence.
+    """
+    valid_sets = [list(rs) for rs in result_sets if rs]
+    if not valid_sets:
+        return list(previous or [])
+    if len(valid_sets) == 1 and not previous:
+        return list(valid_sets[0])
+
+    weights: list[float] = []
+    if query_weights:
+        weights = list(query_weights)
+    for index in range(len(weights), len(valid_sets)):
+        weights.append(1.0 if index == 0 else 0.7)
+
+    scores: dict[str, float] = {}
+    best_by_chunk: dict[str, SearchResult] = {}
+    for prev_res in previous or ():
+        best_by_chunk[prev_res.chunk.chunk_id] = prev_res
+
+    for q_idx, rset in enumerate(valid_sets):
+        w = weights[q_idx] if q_idx < len(weights) else 0.7
+        for rank, result in enumerate(rset, start=1):
+            cid = result.chunk.chunk_id
+            scores[cid] = scores.get(cid, 0.0) + (w / (rrf_k + rank))
+            existing = best_by_chunk.get(cid)
+            if existing is None or is_better_ranked(result, existing):
+                best_by_chunk[cid] = result
+
+    ordered_ids = sorted(
+        best_by_chunk.keys(),
+        key=lambda cid: (-scores.get(cid, 0.0), cid),
+    )
+    fused: list[SearchResult] = []
+    for rank, cid in enumerate(ordered_ids, start=1):
+        base = best_by_chunk[cid]
+        combined_score = scores.get(cid, base.fusion_score or 0.0)
+        fused.append(
+            SearchResult(
+                chunk=base.chunk,
+                score=base.score,
+                sparse_score=base.sparse_score,
+                dense_score=base.dense_score,
+                sparse_rank=base.sparse_rank,
+                dense_rank=base.dense_rank,
+                fusion_score=round(combined_score, 6),
+                fusion_rank=rank,
+                rerank_score=base.rerank_score,
+                rerank_rank=base.rerank_rank,
+                final_rank=rank,
+            )
+        )
+    return fused
+
+
 def merge_best_chunk_results(
     *result_sets: Sequence[SearchResult],
     previous: Sequence[SearchResult] | None = None,
@@ -69,6 +134,9 @@ def merge_best_chunk_results(
     Must not re-sort by evidence confidence (``score``), which would wash out
     RRF / reranker ordering after multi-query fusion.
     """
+    valid_sets = [rs for rs in result_sets if rs]
+    if len(valid_sets) > 1:
+        return fuse_query_level_rrf(*valid_sets, previous=previous)
     best_by_chunk: dict[str, SearchResult] = {}
     for prev_res in previous or ():
         best_by_chunk[prev_res.chunk.chunk_id] = prev_res
