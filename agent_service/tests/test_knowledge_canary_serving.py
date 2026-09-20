@@ -11,7 +11,7 @@ from agent_service.contracts import (
     UserIdentity,
 )
 from agent_service.knowledge_hybrid import HybridKnowledgeService
-from agent_service.rag_rollout import VARIANT_D_RRF_CONTEXTUAL_RERANK
+from agent_service.rag_rollout import VARIANT_C_RRF_RERANK
 from agent_service.retrieval import HybridIndex
 from agent_service.settings import RagSettings
 from knowledge_core.document_models import DocumentChunk
@@ -50,7 +50,7 @@ def test_serving_decision_canary_uses_rrf_when_percent_100() -> None:
     service = HybridKnowledgeService(settings, index)
     decision = service._serving_decision(_request(conversation_id="always-canary"))
     assert decision.is_canary is True
-    assert decision.serve_variant == VARIANT_D_RRF_CONTEXTUAL_RERANK
+    assert decision.serve_variant == VARIANT_C_RRF_RERANK
     assert decision.fusion_mode == "RRF"
     assert decision.reranker_enabled is False
 
@@ -75,7 +75,7 @@ def test_serving_decision_canary_enables_rerank_when_flag_on() -> None:
     )
     service = HybridKnowledgeService(settings, index)
     decision = service._serving_decision(_request(conversation_id="always-canary"))
-    assert decision.serve_variant == VARIANT_D_RRF_CONTEXTUAL_RERANK
+    assert decision.serve_variant == VARIANT_C_RRF_RERANK
     assert decision.fusion_mode == "RRF"
     assert decision.reranker_enabled is True
 

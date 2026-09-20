@@ -52,6 +52,13 @@ class _HybridGenerationHost:
     def images_for(self, cited_results: list[SearchResult]) -> list[AgentImage]:
         return self._service._images_for(cited_results)
 
+    @property
+    def chunk_by_id(self) -> dict[str, object]:
+        index = getattr(self._service, "index", None)
+        if index is None:
+            return {}
+        return {chunk.chunk_id: chunk for chunk in index.chunks}
+
     def deterministic_grounded_answer(
         self,
         results: list[SearchResult],

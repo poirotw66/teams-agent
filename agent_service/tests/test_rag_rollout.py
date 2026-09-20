@@ -5,8 +5,10 @@ from __future__ import annotations
 from agent_service.rag_rollout import (
     CANARY_LADDER_PERCENTS,
     VARIANT_A_WEIGHTED,
+    VARIANT_C_RRF_RERANK,
     VARIANT_D_RRF_CONTEXTUAL_RERANK,
     next_canary_percent,
+    retrieval_knobs_for_variant,
     select_rag_serving_variant,
     top1_changed,
     topk_overlap,
@@ -33,29 +35,33 @@ def test_canary_percent_100_always_canary() -> None:
         canary_percent=100,
     )
     assert decision.is_canary is True
-    assert decision.serve_variant == VARIANT_D_RRF_CONTEXTUAL_RERANK
+    assert decision.serve_variant == VARIANT_C_RRF_RERANK
     assert decision.fusion_mode == "RRF"
     assert decision.reranker_enabled is False
 
 
-def test_variant_d_rerank_requires_global_flag() -> None:
-    from agent_service.rag_rollout import (
-        VARIANT_D_RRF_CONTEXTUAL_RERANK,
-        retrieval_knobs_for_variant,
-    )
-
+def test_variant_c_rerank_requires_global_flag() -> None:
     fusion, rerank = retrieval_knobs_for_variant(
-        VARIANT_D_RRF_CONTEXTUAL_RERANK,
+        VARIANT_C_RRF_RERANK,
         global_reranker_enabled=False,
     )
     assert fusion == "RRF"
     assert rerank is False
     fusion_on, rerank_on = retrieval_knobs_for_variant(
-        VARIANT_D_RRF_CONTEXTUAL_RERANK,
+        VARIANT_C_RRF_RERANK,
         global_reranker_enabled=True,
     )
     assert fusion_on == "RRF"
     assert rerank_on is True
+
+
+def test_legacy_d_alias_maps_to_rerank_knobs() -> None:
+    fusion, rerank = retrieval_knobs_for_variant(
+        VARIANT_D_RRF_CONTEXTUAL_RERANK,
+        global_reranker_enabled=True,
+    )
+    assert fusion == "RRF"
+    assert rerank is True
 
 
 def test_canary_sticky_for_same_conversation() -> None:

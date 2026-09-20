@@ -84,6 +84,14 @@ def is_chunk_visible_to_groups(
 
 @dataclass(frozen=True)
 class SearchResult:
+    """One retrieval hit.
+
+    ``score`` is *evidence confidence* for min_score / relevance gates
+    (typically max(sparse, dense)). Do not use it to re-order after RRF or
+    rerank — use ``final_rank`` / ``fusion_score`` / ``rerank_score`` via
+    ``retrieval_ranking.ranking_sort_key`` instead.
+    """
+
     chunk: DocumentChunk
     score: float
     sparse_score: float

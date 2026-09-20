@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agent_service.retrieval import SearchResult
+from agent_service.retrieval_ranking import is_better_ranked, sort_by_ranking
 
 RETRIEVAL_CANDIDATE_MULTIPLIER = 3
 MAX_RETRIEVAL_CACHE_SIZE = 500
@@ -57,18 +58,19 @@ def merge_best_chunk_results(
     *result_sets: Sequence[SearchResult],
     previous: Sequence[SearchResult] | None = None,
 ) -> list[SearchResult]:
+    """Dedupe by chunk id, keeping the better-ranked hit; preserve ranking order.
+
+    Must not re-sort by evidence confidence (``score``), which would wash out
+    RRF / reranker ordering after multi-query fusion.
+    """
     best_by_chunk: dict[str, SearchResult] = {}
     for prev_res in previous or ():
         best_by_chunk[prev_res.chunk.chunk_id] = prev_res
     for result in (item for result_set in result_sets for item in result_set):
         current = best_by_chunk.get(result.chunk.chunk_id)
-        if current is None or result.score > current.score:
+        if current is None or is_better_ranked(result, current):
             best_by_chunk[result.chunk.chunk_id] = result
-    return sorted(
-        best_by_chunk.values(),
-        key=lambda item: item.score,
-        reverse=True,
-    )
+    return sort_by_ranking(best_by_chunk.values())
 
 
 def accumulate_stage_timings(

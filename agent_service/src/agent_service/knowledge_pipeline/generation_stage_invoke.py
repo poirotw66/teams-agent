@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent_service.contracts import KnowledgeResult
+from agent_service.documents import DocumentChunk
 from agent_service.execution_context import ExecutionContext
 from agent_service.llm_call_counter import LlmCallCounter
 from agent_service.retrieval import SearchResult
+from agent_service.retrieval_expand import build_evidence_bundles
 from agent_service.security_policies import strip_unknown_policy_markers
 from agent_service.temporal_claims import annotate_historical_dates_in_text
 
@@ -38,17 +41,50 @@ logger = logging.getLogger(__name__)
 def build_context_and_markers(
     results: list[SearchResult],
     chunk_to_doc_idx: dict[int, int],
+    *,
+    chunk_by_id: Mapping[str, DocumentChunk] | None = None,
 ) -> tuple[str, dict[str, list[str]], dict[str, str]]:
-    context = "\n\n".join(
-        f"[S{chunk_to_doc_idx[index]}] {result.chunk.title} "
-        f"[chunkId={result.chunk.chunk_id}]\n"
-        f"{annotate_historical_dates_in_text(result.chunk.content)}"
-        for index, result in enumerate(results)
+    """Build generator context; optionally expand parent/neighbor per seed.
+
+    Ranking order of ``results`` is preserved. Expanded context is appended
+    under the same citation marker as the seed and is not treated as a hit.
+    """
+    bundles = (
+        build_evidence_bundles(results, chunk_by_id=chunk_by_id)
+        if chunk_by_id
+        else None
     )
+    if bundles is not None:
+        context_parts: list[str] = []
+        for index, bundle in enumerate(bundles):
+            marker = f"[S{chunk_to_doc_idx[index]}]"
+            seed = bundle.seed
+            body = annotate_historical_dates_in_text(seed.chunk.content)
+            extra = "\n\n".join(
+                annotate_historical_dates_in_text(chunk.content)
+                for chunk in bundle.context_chunks
+                if chunk.content.strip()
+            )
+            block = f"{marker} {seed.chunk.title} [chunkId={seed.chunk.chunk_id}]\n{body}"
+            if extra:
+                block = f"{block}\n\n{extra}"
+            context_parts.append(block)
+        context = "\n\n".join(context_parts)
+    else:
+        context = "\n\n".join(
+            f"[S{chunk_to_doc_idx[index]}] {result.chunk.title} "
+            f"[chunkId={result.chunk.chunk_id}]\n"
+            f"{annotate_historical_dates_in_text(result.chunk.content)}"
+            for index, result in enumerate(results)
+        )
     marker_to_chunk_ids: dict[str, list[str]] = {}
     chunk_content_by_id = {
         result.chunk.chunk_id: result.chunk.content for result in results
     }
+    if bundles is not None:
+        for bundle in bundles:
+            for chunk in bundle.context_chunks:
+                chunk_content_by_id.setdefault(chunk.chunk_id, chunk.content)
     for index, result in enumerate(results):
         marker = f"S{chunk_to_doc_idx[index]}"
         marker_to_chunk_ids.setdefault(marker, []).append(result.chunk.chunk_id)

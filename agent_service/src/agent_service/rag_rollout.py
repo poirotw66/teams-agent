@@ -3,6 +3,10 @@
 Production defaults stay on the current retrieval path until canary percent
 and success gates say otherwise. Canary uses sticky buckets so a conversation
 sees a stable variant.
+
+Runtime canary varies fusion/reranker only. Contextual indexing is a
+knowledge-release A/B concern, not a per-request switch (everyone shares the
+loaded index).
 """
 
 from __future__ import annotations
@@ -15,11 +19,13 @@ from platform_kernel.hashing import sticky_bucket
 # Canary ladder from docs/rag-v2-spec.md §48.
 CANARY_LADDER_PERCENTS: tuple[int, ...] = (5, 20, 50, 100)
 
-# Variant labels for the §44 experiment matrix.
+# Runtime canary variants (fusion / reranker knobs only).
 VARIANT_A_WEIGHTED = "A_WEIGHTED"
 VARIANT_B_RRF = "B_RRF"
-VARIANT_C_RRF_CONTEXTUAL = "C_RRF_CONTEXTUAL"
-VARIANT_D_RRF_CONTEXTUAL_RERANK = "D_RRF_CONTEXTUAL_RERANK"
+VARIANT_C_RRF_RERANK = "C_RRF_RERANK"
+# Legacy aliases kept so older configs / dashboards keep resolving.
+VARIANT_C_RRF_CONTEXTUAL = "C_RRF_CONTEXTUAL"  # alias → B_RRF semantics
+VARIANT_D_RRF_CONTEXTUAL_RERANK = "D_RRF_CONTEXTUAL_RERANK"  # alias → C_RRF_RERANK
 
 
 @dataclass(frozen=True)
@@ -34,24 +40,34 @@ class RagServingDecision:
     reranker_enabled: bool = False
 
 
+def _normalize_variant(variant: str) -> str:
+    normalized = (variant or VARIANT_A_WEIGHTED).strip().upper()
+    # Legacy C_RRF_CONTEXTUAL claimed a different index; runtime cannot do that.
+    if normalized in {VARIANT_C_RRF_CONTEXTUAL, "C_CONTEXTUAL"}:
+        return VARIANT_B_RRF
+    if normalized in {VARIANT_D_RRF_CONTEXTUAL_RERANK, "D", VARIANT_C_RRF_RERANK}:
+        return VARIANT_C_RRF_RERANK
+    if normalized in {VARIANT_B_RRF, "B", "C"}:
+        # Bare "C" historically meant RRF-only (with B/C in the old matrix).
+        return VARIANT_B_RRF
+    if normalized in {VARIANT_A_WEIGHTED, "A"}:
+        return VARIANT_A_WEIGHTED
+    return normalized
+
+
 def retrieval_knobs_for_variant(
     variant: str,
     *,
     baseline_fusion_mode: str = "RRF",
     global_reranker_enabled: bool = False,
 ) -> tuple[str, bool]:
-    """Map experiment variant → (fusion_mode, reranker_enabled).
-
-    After M6, production baseline (A / default) honors configured fusion and
-    the global reranker flag. B/C stay RRF-only; D enables rerank when the
-    global flag is on.
-    """
-    normalized = (variant or VARIANT_A_WEIGHTED).strip().upper()
-    if normalized in {VARIANT_B_RRF, VARIANT_C_RRF_CONTEXTUAL, "B", "C"}:
+    """Map experiment variant → (fusion_mode, reranker_enabled)."""
+    normalized = _normalize_variant(variant)
+    if normalized == VARIANT_B_RRF:
         return "RRF", False
-    if normalized in {VARIANT_D_RRF_CONTEXTUAL_RERANK, "D"}:
+    if normalized == VARIANT_C_RRF_RERANK:
         return "RRF", bool(global_reranker_enabled)
-    # A / unknown: production knobs from settings (M6 default path).
+    # A / unknown: production knobs from settings.
     return (baseline_fusion_mode or "RRF").strip().upper(), bool(global_reranker_enabled)
 
 
@@ -60,7 +76,7 @@ def select_rag_serving_variant(
     tenant: str,
     conversation_id: str,
     canary_percent: int,
-    canary_variant: str = VARIANT_D_RRF_CONTEXTUAL_RERANK,
+    canary_variant: str = VARIANT_C_RRF_RERANK,
     baseline_variant: str = VARIANT_A_WEIGHTED,
     shadow_enabled: bool = False,
     baseline_fusion_mode: str = "RRF",
@@ -134,6 +150,7 @@ __all__ = [
     "VARIANT_A_WEIGHTED",
     "VARIANT_B_RRF",
     "VARIANT_C_RRF_CONTEXTUAL",
+    "VARIANT_C_RRF_RERANK",
     "VARIANT_D_RRF_CONTEXTUAL_RERANK",
     "RagServingDecision",
     "next_canary_percent",
