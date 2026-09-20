@@ -9,10 +9,35 @@ from __future__ import annotations
 
 import inspect
 import logging
+import time
 from collections.abc import Sequence
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _retry_on_transient(func: Any, *args: Any, max_attempts: int = 3, initial_delay: float = 0.5, **kwargs: Any) -> Any:
+    delay = initial_delay
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            msg = str(exc).lower()
+            is_transient = any(
+                code in msg
+                for code in ("503", "unavailable", "429", "resource_exhausted", "timeout", "reset", "deadline")
+            )
+            if attempt == max_attempts or not is_transient:
+                raise
+            logger.warning(
+                "Transient embedding error on attempt %d/%d: %s. Retrying in %.2fs...",
+                attempt,
+                max_attempts,
+                exc,
+                delay,
+            )
+            time.sleep(delay)
+            delay *= 2.0
 
 
 def embed_queries_batch(client: Any, texts: Sequence[str]) -> list[list[float]]:
@@ -30,7 +55,7 @@ def embed_queries_batch(client: Any, texts: Sequence[str]) -> list[list[float]]:
     # 1. If client provides a native embed_queries method
     if hasattr(client, "embed_queries") and callable(client.embed_queries):
         try:
-            return client.embed_queries(text_list)
+            return _retry_on_transient(client.embed_queries, text_list)
         except Exception as exc:
             logger.debug("embed_queries native call failed, falling back: %s", exc)
 
@@ -39,26 +64,26 @@ def embed_queries_batch(client: Any, texts: Sequence[str]) -> list[list[float]]:
         try:
             sig = inspect.signature(client.embed_documents)
             if "task_type" in sig.parameters:
-                return client.embed_documents(text_list, task_type="RETRIEVAL_QUERY")
+                return _retry_on_transient(client.embed_documents, text_list, task_type="RETRIEVAL_QUERY")
         except (ValueError, TypeError):
             pass
 
         client_cls_name = type(client).__name__
         if "Google" in client_cls_name or hasattr(client, "task_type"):
             try:
-                return client.embed_documents(text_list, task_type="RETRIEVAL_QUERY")
+                return _retry_on_transient(client.embed_documents, text_list, task_type="RETRIEVAL_QUERY")
             except TypeError:
                 pass
 
         # For symmetric embedding providers (e.g. OpenAI, HuggingFace, FakeEmbeddings)
         try:
-            return client.embed_documents(text_list)
+            return _retry_on_transient(client.embed_documents, text_list)
         except Exception as exc:
             logger.debug("embed_documents batch call failed, falling back to per-query: %s", exc)
 
     # 3. Fallback to individual embed_query calls
     if hasattr(client, "embed_query") and callable(client.embed_query):
-        return [client.embed_query(t) for t in text_list]
+        return [_retry_on_transient(client.embed_query, t) for t in text_list]
 
     return [[] for _ in text_list]
 
@@ -68,9 +93,10 @@ def embed_single_query(client: Any, text: str) -> list[float]:
     if not text or client is None:
         return []
     if hasattr(client, "embed_query") and callable(client.embed_query):
-        return client.embed_query(text)
+        return _retry_on_transient(client.embed_query, text)
     batch = embed_queries_batch(client, [text])
     return batch[0] if batch else []
 
 
 __all__ = ["embed_queries_batch", "embed_single_query"]
+

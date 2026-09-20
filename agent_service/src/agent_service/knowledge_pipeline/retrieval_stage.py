@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ class RetrievalHost:
     contextualization_version: str = ""
     chunk_by_id: Mapping[str, Any] | None = None
     embed_queries: Callable[[Sequence[str]], Sequence[list[float]]] | None = None
+    enable_batch_embedding: bool = True
+    enable_query_rrf: bool = True
 
 
 def retrieval_candidate_limit(host: RetrievalHost) -> int:
@@ -144,6 +147,8 @@ async def _batch_embed_uncached_queries(
     limit: int,
 ) -> dict[str, list[float]]:
     """Embed uncached multi-query fanouts in a single batch when supported."""
+    if not getattr(host, "enable_batch_embedding", True):
+        return {}
     if not getattr(host, "embed_queries", None) or len(retrieval_queries) <= 1:
         return {}
     uncached = [
@@ -228,6 +233,7 @@ async def _execute_multi_query_search(
     limit: int,
     stage_timings_ms: dict[str, float],
 ) -> list[list[SearchResult]]:
+    start_batch = time.perf_counter()
     query_vectors = await _batch_embed_uncached_queries(
         host,
         retrieval_queries,
@@ -235,6 +241,10 @@ async def _execute_multi_query_search(
         environment=environment,
         limit=limit,
     )
+    if query_vectors:
+        batch_ms = (time.perf_counter() - start_batch) * 1000.0
+        stage_timings_ms["batchEmbeddingMs"] = round(batch_ms, 2)
+        stage_timings_ms["batchEmbeddingQueryCount"] = float(len(query_vectors))
     search_outcomes = await asyncio.gather(
         *(
             _cached_search(
@@ -295,19 +305,24 @@ async def run_retrieve(
         limit=limit,
         stage_timings_ms=state.stage_timings_ms,
     )
-    previous_weight = 1.0 if (state.attempt > 0 and state.results) else None
-    query_weights = (
-        [0.6]
-        if (state.attempt > 0 and len(result_sets) == 1)
-        else _compute_query_weights(len(result_sets), state.attempt)
-    )
-    results = fuse_query_level_rrf(
-        *result_sets,
-        query_weights=query_weights,
-        rrf_k=host.rrf_k,
-        previous=state.results,
-        previous_weight=previous_weight,
-    )
+    if getattr(host, "enable_query_rrf", True) and len(result_sets) > 1:
+        previous_weight = 1.0 if (state.attempt > 0 and state.results) else None
+        query_weights = (
+            [0.6]
+            if (state.attempt > 0 and len(result_sets) == 1)
+            else _compute_query_weights(len(result_sets), state.attempt)
+        )
+        results = fuse_query_level_rrf(
+            *result_sets,
+            query_weights=query_weights,
+            rrf_k=host.rrf_k,
+            previous=state.results,
+            previous_weight=previous_weight,
+        )
+    elif result_sets:
+        results = result_sets[0]
+    else:
+        results = []
     results = host.inject_enterprise_app_evidence(
         state.resolved_issue_query,
         results,

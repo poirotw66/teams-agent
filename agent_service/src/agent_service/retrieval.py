@@ -178,6 +178,7 @@ class HybridIndex:
         fusion_candidate_k: int = 20,
         sparse_weight: float = 0.5,
         dense_weight: float = 1.5,
+        enable_sparse_fast_path: bool = True,
     ) -> None:
         self.chunks = chunks
         self.embedding_model_name = embedding_model
@@ -193,6 +194,7 @@ class HybridIndex:
         self.fusion_candidate_k = fusion_candidate_k
         self.sparse_weight = sparse_weight
         self.dense_weight = dense_weight
+        self.enable_sparse_fast_path = enable_sparse_fast_path
         self.chunk_by_id: dict[str, DocumentChunk] = {chunk.chunk_id: chunk for chunk in chunks}
         self.chunks_by_parent_id: dict[str, list[DocumentChunk]] = defaultdict(list)
         self.chunks_by_document_id: dict[str, list[DocumentChunk]] = defaultdict(list)
@@ -343,7 +345,9 @@ class HybridIndex:
     ) -> tuple[list[float] | None, float, bool]:
         if query_vector is not None or not self.embedding_client or not self.has_vectors:
             return query_vector, 0.0, False
-        if check_sparse_fast_path(query, self.chunks, authorized_indices, sparse_scores):
+        if getattr(self, "enable_sparse_fast_path", True) and check_sparse_fast_path(
+            query, self.chunks, authorized_indices, sparse_scores
+        ):
             return None, 0.0, True
         embed_started = time.perf_counter()
         from .retrieval_embeddings import embed_single_query

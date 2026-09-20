@@ -56,6 +56,8 @@ def build_retrieval_host(
     serving: RagServingDecision | None,
     inject_enterprise_app_evidence: Callable[..., list[SearchResult]],
     select_document_chunks: Callable[[str, list[SearchResult]], tuple[list[SearchResult], bool]],
+    enable_batch_embedding: bool = True,
+    enable_query_rrf: bool = True,
 ) -> RetrievalHost:
     decision = serving or RagServingDecision(
         serve_variant=VARIANT_BASELINE,
@@ -99,6 +101,8 @@ def build_retrieval_host(
             if (getattr(index, "has_vectors", False) and hasattr(index, "embed_queries"))
             else None
         ),
+        enable_batch_embedding=enable_batch_embedding,
+        enable_query_rrf=enable_query_rrf,
     )
 
 

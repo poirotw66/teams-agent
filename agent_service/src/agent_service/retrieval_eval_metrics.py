@@ -254,23 +254,35 @@ def score_retrieval_case(
         if hard_neg
         else None
     )
+    rec_4 = recall_at_k(ranked_ids, relevant, k=4)
+    prec_4 = precision_at_k(ranked_ids, relevant, k=4)
+    ev_rec_4 = (
+        evidence_recall_at_k(
+            retrieved_texts=retrieved_texts,
+            evidence_must_contain=evidence_must_contain,
+            k=4,
+        )
+        if evidence_must_contain
+        else rec_4
+    )
+    ev_prec_4 = (
+        evidence_precision_at_k(
+            retrieved_texts=retrieved_texts,
+            evidence_must_contain=evidence_must_contain,
+            k=4,
+        )
+        if evidence_must_contain
+        else prec_4
+    )
     return RetrievalCaseScore(
         case_id=case_id,
         recall_at_5=recall_at_k(ranked_ids, relevant, k=5),
         recall_at_10=recall_at_k(ranked_ids, relevant, k=10),
         recall_at_20=recall_at_k(ranked_ids, relevant, k=20),
-        recall_at_4=recall_at_k(ranked_ids, relevant, k=4),
-        precision_at_4=precision_at_k(ranked_ids, relevant, k=4),
-        evidence_recall_at_4=evidence_recall_at_k(
-            retrieved_texts=retrieved_texts,
-            evidence_must_contain=evidence_must_contain,
-            k=4,
-        ),
-        evidence_precision_at_4=evidence_precision_at_k(
-            retrieved_texts=retrieved_texts,
-            evidence_must_contain=evidence_must_contain,
-            k=4,
-        ),
+        recall_at_4=rec_4,
+        precision_at_4=prec_4,
+        evidence_recall_at_4=ev_rec_4,
+        evidence_precision_at_4=ev_prec_4,
         mrr_at_10=mrr_at_k(ranked_ids, relevant, k=10),
         ndcg_at_10=ndcg_at_k(ranked_ids, grades, k=10),
         hit_at_1=hit_at_k(ranked_ids, relevant, k=1),
