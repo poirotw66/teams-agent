@@ -14,6 +14,8 @@ from .document_selection_select import (
 )
 from .selector import top1_was_displaced
 
+# Temporary Compatibility Rule (RAG v2.1): retire once metadata/aliases/
+# contextual representation + dedicated reranker recover enterprise-app hits.
 _ENTERPRISE_APP_QUERY_TERMS: tuple[str, ...] = (
     "企業 App",
     "企業App",
@@ -36,10 +38,11 @@ def inject_enterprise_app_evidence(
     groups: set[str],
     environment: str,
 ) -> list[SearchResult]:
-    """Ensure enterprise-app trust docs enter and lead the candidate pool.
+    """Temporary Compatibility Rule: force enterprise-app trust docs into pool.
 
     Hybrid retrieval often ranks AD/Outlook ahead of the portal note that
-    actually describes 企業級APP / CATHAY LIFE verification.
+    actually describes 企業級APP / CATHAY LIFE verification. Prefer retiring
+    this inject once lexicon/metadata + reranker cover the gap.
 
     Injection must never reintroduce chunks that Hybrid search already
     excluded for ACL or generation eligibility.
@@ -67,6 +70,11 @@ def inject_enterprise_app_evidence(
                     score=max(result.score, 0.92),
                     sparse_score=result.sparse_score,
                     dense_score=result.dense_score,
+                    fusion_score=result.fusion_score,
+                    fusion_rank=result.fusion_rank,
+                    rerank_score=result.rerank_score,
+                    rerank_rank=result.rerank_rank,
+                    final_rank=result.final_rank,
                 )
             )
         else:

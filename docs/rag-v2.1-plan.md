@@ -1,6 +1,6 @@
 # RAG v2.1 Plan — Evidence-Level Evaluation + Proper Reranker
 
-**Do not merge PR #10 as-is.** Direction (RRF / contextual / reranker interface / shadow-canary) stays; production cutover claims and Gemini-listwise defaults do not.
+**Status (2026-09-20):** PR #10 merged to `main` as the v2.1 **course-correction** (eval gates + safe defaults). That was **not** a production cutover.
 
 ## Diagnosis (kept)
 
@@ -12,6 +12,8 @@
 | `WEIGHTED` aliased to RRF | Restore real weighted baseline path |
 | `rerank_candidate_k=24` but search limit 12 | `max(top_k×mult, rerank_k, fusion_k)` |
 | Gemini Flash + 90s timeout as default | Off by default; dedicated reranker A/B later |
+| `SearchResult.score` reused for ranking | Ranking contract: confidence ≠ rank |
+| Parent expansion vs production `parent_id` | Materialize parent from siblings; expand after selection |
 
 Ranking↑ with Recall≈ explains weak answer UX: Top-4 context often unchanged.
 
@@ -30,30 +32,38 @@ Hit@1 alone is not a ship gate.
 
 ## Work order
 
-1. **P0 Eval** — evidence schema, no-answer fix, true Weighted baseline, frozen split
-2. **P0.5** — strip exam-key rules from listwise prompts
-3. **P1** — candidate pool, Adaptive Fusion (generic signals only), Vertex Ranking API vs Qwen3-Reranker-0.6B
-4. **P2** — parent/neighbor expansion; inject enterprise evidence before rerank
+1. **P0 Eval** — evidence schema, no-answer fix, true Weighted baseline, frozen split ✅ (in #10)
+2. **P0.5** — strip exam-key rules from listwise prompts ✅
+3. **P0 Ranking contract + Evidence expansion** — stop washing RRF/rerank; EvidenceBundle after selection
+4. **P1** — canary = A Weighted / B RRF / C RRF+Rerank; contextual = release-level A/B
+5. **P1** — Vertex Ranking API vs Qwen3-Reranker-0.6B (only after ranking contract is green)
+6. **P2** — retire `inject_enterprise_app_evidence`; Knowledge Lexicon; OTel metrics
 
-## Dedicated reranker A/B (P1)
+## Runtime canary (simplified)
+
+```text
+A_WEIGHTED          = Weighted fusion
+B_RRF               = RRF
+C_RRF_RERANK        = RRF + dedicated reranker (when globally enabled)
+```
+
+Contextual embeddings are **release-level** (plain vs contextual index promotion), not a per-request variant. Legacy `C_RRF_CONTEXTUAL` / `D_RRF_CONTEXTUAL_RERANK` labels remain as aliases.
+
+## Dedicated reranker A/B (after ranking contract)
 
 Gemini listwise stays **experiment-only**. Production candidate order:
 
-1. **Vertex AI Ranking API** (`RAG_RERANKER_MODEL=vertex-ranking`) — low-latency semantic ranking on GCP
-2. **Qwen3-Reranker-0.6B** (`RAG_RERANKER_MODEL=qwen3-reranker:Qwen/Qwen3-Reranker-0.6B`) — if Ranking API is blocked
-3. **Qwen3-Reranker-4B** — only if 0.6B fails Evidence Recall@4 / answer gates
+1. **Vertex AI Ranking API** (`RAG_RERANKER_MODEL=vertex-ranking`)
+2. **Qwen3-Reranker-0.6B** (`RAG_RERANKER_MODEL=qwen3-reranker:...`)
+3. **Qwen3-Reranker-4B** — only if 0.6B fails gates
 
-Adapters live in `agent_service/reranker_dedicated.py` and are wired through `build_default_reranker`.
-
-Ship gate for any reranker: Evidence Recall@4 + No-answer F1 + P95 + cost vs Weighted/RRF baseline on the **frozen test** split. Do not tune on test.
+Ship gate: Evidence Recall@4 + No-answer F1 + P95 + cost vs Weighted/RRF on the **frozen test** split.
 
 ## Eval tooling
 
 ```bash
-# Enrich labels from index (chunk ids / evidence / split)
 uv run python scripts/enrich_retrieval_eval_v2_evidence.py
 
-# Score (chunk + evidence aware)
 cd agent_service
 uv run python ../scripts/run_retrieval_eval_v2.py --fusion-mode WEIGHTED --split test
 uv run python ../scripts/run_retrieval_eval_v2.py --fusion-mode RRF --split test

@@ -16,7 +16,6 @@ from agent_service.rag_observability import (
 )
 from agent_service.reranker import Reranker, tier_meets_minimum
 from agent_service.retrieval import SearchResult
-from agent_service.retrieval_expand import expand_retrieval_context
 
 from .query_tier import classify_query_tier
 from .retrieval_state import RetrievalState
@@ -188,8 +187,8 @@ async def run_retrieve(
         query=state.resolved_issue_query or state.search_query,
         results=results,
     )
-    if host.chunk_by_id:
-        results = expand_retrieval_context(results, chunk_by_id=host.chunk_by_id)
+    # Ranking ends here. Parent/neighbor expansion happens after selection
+    # via EvidenceBundle in the generation stage (does not re-order hits).
     competitive_results, displaced_top1 = host.select_document_chunks(
         state.resolved_issue_query, results
     )

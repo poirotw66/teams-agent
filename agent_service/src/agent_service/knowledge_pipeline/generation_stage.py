@@ -51,6 +51,9 @@ class GenerationHost(Protocol):
 
     def images_for(self, cited_results: list[SearchResult]) -> list: ...
 
+    @property
+    def chunk_by_id(self) -> dict[str, Any]: ...
+
     def deterministic_grounded_answer(
         self,
         results: list[SearchResult],
@@ -99,7 +102,9 @@ async def generate_grounded_answer(
         )
 
     context, marker_to_chunk_ids, chunk_content_by_id = build_context_and_markers(
-        results, chunk_to_doc_idx
+        results,
+        chunk_to_doc_idx,
+        chunk_by_id=getattr(host, "chunk_by_id", None) or None,
     )
     response, answer = await invoke_initial_grounded_answer(
         host,

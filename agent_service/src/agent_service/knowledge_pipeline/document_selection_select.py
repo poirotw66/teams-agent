@@ -6,6 +6,10 @@ from collections.abc import Callable, Sequence
 
 from agent_service.documents import DocumentChunk
 from agent_service.retrieval import SearchResult, tokenize
+from agent_service.retrieval_ranking import (
+    evidence_confidence,
+    ranking_sort_key,
+)
 
 from .selector import (
     document_has_competitive_overlap,
@@ -39,13 +43,17 @@ def protect_raw_top1(
     raw_top1: SearchResult,
     filtered_results: list[SearchResult],
 ) -> list[SearchResult]:
-    if raw_top1 in filtered_results or raw_top1.score < 0.70:
+    if raw_top1 in filtered_results or evidence_confidence(raw_top1) < 0.70:
         return filtered_results
     query_tokens = [token for token in tokenize(query) if len(token) > 1]
     top1_text = f"{raw_top1.chunk.title} {raw_top1.chunk.content}".lower()
     if any(token in top1_text for token in query_tokens):
         filtered_results.insert(0, raw_top1)
     return filtered_results
+
+
+def _best_ranked_in_group(group: Sequence[SearchResult]) -> SearchResult:
+    return min(group, key=ranking_sort_key)
 
 
 def rank_documents_for_query(
@@ -59,18 +67,18 @@ def rank_documents_for_query(
     for result in filtered_results:
         by_document.setdefault(document_key(result), []).append(result)
 
+    # Document order follows ranking contract, not evidence confidence.
     ranked_documents = sorted(
         by_document.values(),
-        key=lambda group: max(result.score for result in group),
-        reverse=True,
+        key=lambda group: ranking_sort_key(_best_ranked_in_group(group)),
     )
     if ranked_documents:
-        leader = max(ranked_documents[0], key=lambda result: result.score)
-        score_floor = leader.score * _DOCUMENT_SELECTION_SCORE_RATIO
+        leader = _best_ranked_in_group(ranked_documents[0])
+        score_floor = evidence_confidence(leader) * _DOCUMENT_SELECTION_SCORE_RATIO
         ranked_documents = [
             group
             for group in ranked_documents
-            if max(result.score for result in group) >= score_floor
+            if max(evidence_confidence(result) for result in group) >= score_floor
             or document_has_competitive_overlap(
                 query=query,
                 leader=leader,
@@ -118,9 +126,7 @@ def select_chunks_for_documents(
                 selected.extend(procedure)
                 continue
         selected.extend(
-            sorted(version_results, key=lambda result: result.score, reverse=True)[
-                :max_chunks_limit
-            ]
+            sorted(version_results, key=ranking_sort_key)[:max_chunks_limit]
         )
     return selected
 
@@ -144,8 +150,10 @@ def _procedure_numbered_chunks(
     ]
     if not numbered_doc_chunks:
         return None
-    existing_scores = {item.chunk.chunk_id: item.score for item in version_results}
-    leader_score = max(item.score for item in version_results)
+    existing_scores = {
+        item.chunk.chunk_id: evidence_confidence(item) for item in version_results
+    }
+    leader_score = max(evidence_confidence(item) for item in version_results)
     procedure_results: list[SearchResult] = []
     for chunk in numbered_doc_chunks:
         score = existing_scores.get(chunk.chunk_id, leader_score * 0.95)

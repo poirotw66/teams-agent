@@ -9,7 +9,7 @@ from .contracts import AgentRequest
 from .knowledge_pipeline.retrieval_stage import RetrievalHost
 from .rag_rollout import (
     VARIANT_A_WEIGHTED,
-    VARIANT_D_RRF_CONTEXTUAL_RERANK,
+    VARIANT_C_RRF_RERANK,
     RagServingDecision,
     select_rag_serving_variant,
 )
@@ -35,7 +35,7 @@ def resolve_serving_decision(
         tenant=tenant,
         conversation_id=conversation_id,
         canary_percent=int(getattr(settings, "rag_canary_percent", 0)),
-        canary_variant=VARIANT_D_RRF_CONTEXTUAL_RERANK,
+        canary_variant=VARIANT_C_RRF_RERANK,
         baseline_variant=VARIANT_A_WEIGHTED,
         shadow_enabled=bool(getattr(settings, "rag_shadow_enabled", False)),
         baseline_fusion_mode=str(
