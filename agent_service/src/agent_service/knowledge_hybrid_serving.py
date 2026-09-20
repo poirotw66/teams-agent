@@ -95,18 +95,8 @@ def build_retrieval_host(
             index, "chunk_by_id", {chunk.chunk_id: chunk for chunk in index.chunks}
         ),
         embed_queries=(
-            (
-                lambda texts: (
-                    index.embedding_client.embed_documents(list(texts))  # type: ignore[union-attr]
-                    if (
-                        index.embedding_client
-                        and getattr(index, "has_vectors", False)
-                        and hasattr(index.embedding_client, "embed_documents")
-                    )
-                    else [[] for _ in texts]
-                )
-            )
-            if getattr(index, "has_vectors", False)
+            index.embed_queries
+            if (getattr(index, "has_vectors", False) and hasattr(index, "embed_queries"))
             else None
         ),
     )

@@ -104,3 +104,25 @@ def test_multi_query_merge_preserves_fusion_ranking() -> None:
     merged = merge_best_chunk_results(query_a, query_b)
     assert merged[0].chunk.chunk_id == "keep"
     assert [item.chunk.chunk_id for item in merged] == ["keep", "other", "tail"]
+
+
+def test_query_rewrite_rrf_incorporates_previous_and_rewrite() -> None:
+    from agent_service.knowledge_pipeline.retriever import fuse_query_level_rrf
+
+    prev_top = _hit("orig-top", score=0.8, fusion_score=0.10, fusion_rank=1, final_rank=1)
+    prev_second = _hit("both-hit", score=0.7, fusion_score=0.08, fusion_rank=2, final_rank=2)
+
+    rewrite_top = _hit("both-hit", score=0.9, fusion_score=0.12, fusion_rank=1, final_rank=1)
+    rewrite_second = _hit("new-hit", score=0.6, fusion_score=0.05, fusion_rank=2, final_rank=2)
+
+    fused = fuse_query_level_rrf(
+        [rewrite_top, rewrite_second],
+        query_weights=[0.6],
+        previous=[prev_top, prev_second],
+        previous_weight=1.0,
+        rrf_k=60,
+    )
+    assert [item.chunk.chunk_id for item in fused] == ["both-hit", "orig-top", "new-hit"]
+    assert fused[0].final_rank == 1
+    assert fused[1].final_rank == 2
+    assert fused[2].final_rank == 3
