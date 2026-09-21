@@ -19,6 +19,7 @@ No retrieval/answer-generation code is duplicated between this module and
 ``knowledge.py`` any more.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
 from uuid import uuid4
@@ -28,6 +29,8 @@ from langchain_core.callbacks import get_usage_metadata_callback
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 
 from .contracts import AgentImage, AgentRequest, AgentResponse, Citation, UserContext, UserIdentity
@@ -129,6 +132,10 @@ class RagAgent:
     (default: ``HybridKnowledgeService`` wrapping ``index``), per spec §8.2.
     """
 
+    # Production usage proof for retirement (Workstream G1). Unit tests must
+    # not inflate this counter — callers in tests should reset or ignore it.
+    invocation_total: int = 0
+
     def __init__(
         self,
         settings: RagSettings,
@@ -145,6 +152,23 @@ class RagAgent:
             settings, index, self.model
         )
         self.graph = self._build_graph()
+
+    def _record_legacy_invocation(self, *, entrypoint: str) -> None:
+        type(self).invocation_total += 1
+        try:
+            from .observability import METRIC_LEGACY_RAG_AGENT, record_metric_counter
+
+            record_metric_counter(
+                METRIC_LEGACY_RAG_AGENT,
+                attributes={"component": "legacy_rag_agent", "entrypoint": entrypoint},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning(
+            "legacy_rag_agent_invocation total=%s entrypoint=%s caller_category=runtime",
+            type(self).invocation_total,
+            entrypoint,
+        )
 
     def _build_graph(self):
         builder = StateGraph(RagState)
@@ -224,6 +248,7 @@ class RagAgent:
         }
 
     async def run(self, request: AgentRequest) -> RagRunResult:
+        self._record_legacy_invocation(entrypoint="run")
         trace_id = str(uuid4())
         with get_usage_metadata_callback() as usage_callback:
             result = await self.graph.ainvoke(

@@ -112,6 +112,7 @@ async def _stream_chat_events(
     yield sse("stage", {"label": INITIAL_STAGE_LABEL})
 
     started_at = time.perf_counter()
+    first_stage_recorded = False
     state: dict | None = None
     usage_metadata: Any = None
     with policy_snapshot_scope(snapshot):
@@ -122,6 +123,18 @@ async def _stream_chat_events(
                 correlation_id=correlation_id,
             ):
                 if kind == "stage":
+                    if not first_stage_recorded:
+                        from agent_service.observability import (
+                            METRIC_FIRST_STAGE_LATENCY_MS,
+                            record_metric_histogram,
+                        )
+
+                        record_metric_histogram(
+                            METRIC_FIRST_STAGE_LATENCY_MS,
+                            (time.perf_counter() - started_at) * 1000.0,
+                            attributes={"component": "agent_workflow"},
+                        )
+                        first_stage_recorded = True
                     yield sse("stage", {"label": value})
                 elif kind == "state":
                     state = value
