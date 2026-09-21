@@ -1,8 +1,8 @@
 {
   "role": "agent_workflow_production_path",
   "version": 1,
-  "freezeVersion": 1,
-  "caseCount": 3,
+  "freezeVersion": 2,
+  "caseCount": 13,
   "cases": [
     {
       "id": "workflow-v1-001",
@@ -12,9 +12,20 @@
       "expectedRoute": "KNOWLEDGE",
       "expectedIssueCount": 1,
       "expectedFound": true,
-      "expectedDocuments": ["登入 FortiClient 出現錯訊"],
-      "expectedEvidence": [{"mustContain": ["-455"]}],
-      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+      "expectedDocuments": [
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "-455"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
     },
     {
       "id": "workflow-v1-002",
@@ -26,19 +37,244 @@
       "expectedFound": false,
       "expectedDocuments": [],
       "expectedEvidence": [],
-      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
     },
     {
       "id": "workflow-v1-003",
-      "priorTurns": ["員工入口網登不進去"],
+      "priorTurns": [
+        "員工入口網登不進去"
+      ],
       "message": "那密碼不是 AD 的話要去哪改？",
       "groups": [],
       "expectedRoute": "KNOWLEDGE",
       "expectedIssueCount": 1,
       "expectedFound": true,
-      "expectedDocuments": ["國泰員工入口網、CTeam密碼、國泰e點名"],
-      "expectedEvidence": [{"mustContain": ["密碼"]}],
-      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+      "expectedDocuments": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "密碼"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-004",
+      "priorTurns": [],
+      "message": "AD 帳號被鎖定要怎麼自助解鎖？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "解鎖"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-005",
+      "priorTurns": [],
+      "message": "VPN 連不上，常見排除步驟？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "VPN"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-006",
+      "priorTurns": [],
+      "message": "Android 手機怎麼安裝公司 Outlook？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "Outlook"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-007",
+      "priorTurns": [],
+      "message": "國金 CRM OTP 要綁哪個 App？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "國金 CRM OTP 綁訂操作"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "OTP"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-008",
+      "priorTurns": [],
+      "message": "大州系統功能無法點選怎麼辦？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "大州系統_功能無法點選"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "大州"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-009",
+      "priorTurns": [
+        "AD 帳號被鎖定了"
+      ],
+      "message": "那自助解鎖網址是什麼？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "解鎖"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-010",
+      "priorTurns": [
+        "手機收公司信"
+      ],
+      "message": "那 Android 要下載哪個商店的 Outlook？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": [
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        {
+          "mustContain": [
+            "Outlook"
+          ]
+        }
+      ],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-011",
+      "priorTurns": [],
+      "message": "早安",
+      "groups": [],
+      "expectedRoute": "GREETING",
+      "expectedIssueCount": 0,
+      "expectedFound": false,
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-012",
+      "priorTurns": [],
+      "message": "謝謝",
+      "groups": [],
+      "expectedRoute": "GREETING",
+      "expectedIssueCount": 0,
+      "expectedFound": false,
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "forbiddenActions": [
+        "CREATE_TICKET",
+        "HANDOFF"
+      ]
+    },
+    {
+      "id": "workflow-v1-013",
+      "priorTurns": [],
+      "message": "公司無人機空拍宣傳怎麼預約？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": false,
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "forbiddenActions": [
+        "CREATE_TICKET"
+      ]
     }
   ]
 }

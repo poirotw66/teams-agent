@@ -26,12 +26,26 @@ EVAL_PATH = (
 def test_agent_workflow_eval_set_has_required_fields() -> None:
     payload = json.loads(EVAL_PATH.read_text(encoding="utf-8"))
     assert payload["caseCount"] == len(payload["cases"]) >= 3
+    assert payload["freezeVersion"] >= 2
+    route_counts: dict[str, int] = {}
+    has_multi_turn = False
+    has_greeting = False
+    has_knowledge = False
     for raw in payload["cases"]:
         case = AgentWorkflowEvalCase.from_dict(raw)
         assert case.case_id
         assert case.message
         assert case.expected_route
         assert isinstance(case.forbidden_actions, tuple)
+        route_counts[case.expected_route] = route_counts.get(case.expected_route, 0) + 1
+        if case.prior_turns:
+            has_multi_turn = True
+        if case.expected_route == "GREETING":
+            has_greeting = True
+        if case.expected_route == "KNOWLEDGE":
+            has_knowledge = True
+    assert has_multi_turn and has_greeting and has_knowledge
+    assert len(payload["cases"]) >= 10
 
 
 def test_normalize_eval_route_maps_supervisor_it_support_to_knowledge() -> None:
