@@ -48,11 +48,24 @@ async def repair_claims_with_model(
         )
 
     try:
+        import time
+
+        started = time.perf_counter()
         repair_output = await invoke_llm(
             _invoke_repair,
-            component="knowledge_repair_claims",
+            component="knowledge_claim_repair",
             execution_context=execution_context,
             counter=counter,
+        )
+        from agent_service.observability import (
+            METRIC_CLAIM_REPAIR_LATENCY_MS,
+            record_metric_histogram,
+        )
+
+        record_metric_histogram(
+            METRIC_CLAIM_REPAIR_LATENCY_MS,
+            (time.perf_counter() - started) * 1000.0,
+            attributes={"component": "claim_repair"},
         )
         return repair_output.claims
     except Exception:

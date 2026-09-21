@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TypeVar
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 DEFAULT_REQUEST_DEADLINE_SECONDS = 90.0
+_LLM_SEMAPHORE_DEPTH: ContextVar[int] = ContextVar("llm_semaphore_depth", default=0)
 
 
 class RequestDeadlineExceeded(RuntimeError):
@@ -50,9 +52,52 @@ class ExecutionContext:
     selected_knowledge_backend: str | None = None
     default_model: str | None = None
     deadline: datetime | None = None
+    # Eval-harness only. Production request builders must leave this empty.
+    evaluation_overrides: Mapping[str, object] | None = None
     _llm_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, repr=False, compare=False
     )
+    _llm_semaphore: asyncio.Semaphore | None = field(
+        default=None, repr=False, compare=False
+    )
+    llm_semaphore_wait_ms_total: float = 0.0
+    budget_events: list[dict[str, object]] = field(default_factory=list)
+
+    def record_budget_event(
+        self,
+        *,
+        kind: str,
+        component: str,
+        slots: int = 1,
+        issue_id: int | None = None,
+    ) -> None:
+        """Record planned/consumed/denied/unused budget slots for this request."""
+        event: dict[str, object] = {
+            "kind": kind,
+            "component": component,
+            "slots": int(slots),
+            "issueId": issue_id,
+            "llmCalls": int(self.llm_calls.count),
+            "budgetRemaining": int(self.budget_remaining()),
+        }
+        self.budget_events.append(event)
+        from .observability import METRIC_LLM_BUDGET_EVENT, record_metric_counter
+
+        attributes: dict[str, str | int | float | bool] = {
+            "component": component,
+            "event_kind": kind,
+        }
+        record_metric_counter(METRIC_LLM_BUDGET_EVENT, attributes=attributes)
+        logger.info(
+            "llm_budget_event kind=%s component=%s slots=%s issue_id=%s "
+            "request_id=%s remaining=%s",
+            kind,
+            component,
+            slots,
+            issue_id,
+            self.request_id,
+            self.budget_remaining(),
+        )
 
     @classmethod
     def from_request(
@@ -65,6 +110,7 @@ class ExecutionContext:
         team_id: str | None = None,
         timeout_seconds: float | None = None,
         knowledge_backend: str | None = None,
+        evaluation_overrides: Mapping[str, object] | None = None,
     ) -> ExecutionContext:
         configured_deadline = getattr(
             settings, "request_deadline_seconds", DEFAULT_REQUEST_DEADLINE_SECONDS
@@ -83,6 +129,9 @@ class ExecutionContext:
             team_id=team_id,
             knowledge_backend=knowledge_backend,
         )
+        concurrency = int(
+            getattr(settings, "max_concurrent_llm_calls_per_request", 2) or 2
+        )
         return cls(
             correlation_id=correlation_id,
             request_id=request_id,
@@ -96,7 +145,13 @@ class ExecutionContext:
             selected_knowledge_backend=knowledge_backend,
             default_model=settings.agent_model or settings.model,
             deadline=datetime.now(UTC) + timedelta(seconds=timeout),
+            evaluation_overrides=dict(evaluation_overrides or {}),
+            _llm_semaphore=asyncio.Semaphore(max(1, concurrency)),
         )
+
+    def evaluation_override(self, key: str) -> object | None:
+        overrides = self.evaluation_overrides or {}
+        return overrides.get(key)
 
     def remaining_seconds(self) -> float | None:
         if self.deadline is None:
@@ -192,6 +247,41 @@ class ExecutionContext:
             usage_source=usage_source,  # type: ignore[arg-type]
         )
 
+    async def _acquire_llm_semaphore(self) -> bool:
+        """Acquire the request-local semaphore; return True when acquired."""
+        if self._llm_semaphore is None:
+            return False
+        self.ensure_deadline()
+        wait_started = time.perf_counter()
+        remaining = self.remaining_seconds()
+        try:
+            if remaining is None:
+                await self._llm_semaphore.acquire()
+            else:
+                await asyncio.wait_for(
+                    self._llm_semaphore.acquire(),
+                    timeout=max(0.0, remaining),
+                )
+            return True
+        except TimeoutError as error:
+            raise RequestDeadlineExceeded(
+                f"Request deadline exceeded while waiting for LLM semaphore "
+                f"request_id={self.request_id}"
+            ) from error
+        finally:
+            wait_ms = (time.perf_counter() - wait_started) * 1000.0
+            self.llm_semaphore_wait_ms_total += wait_ms
+            from .observability import (
+                METRIC_LLM_SEMAPHORE_WAIT_MS,
+                record_metric_histogram,
+            )
+
+            record_metric_histogram(
+                METRIC_LLM_SEMAPHORE_WAIT_MS,
+                wait_ms,
+                attributes={"component": "llm"},
+            )
+
     async def run_llm(
         self,
         operation: Callable[[], Awaitable[T]],
@@ -200,45 +290,47 @@ class ExecutionContext:
         model: str | None = None,
         usage_from_result: Callable[[object], Mapping[str, int | str] | None] | None = None,
     ) -> T:
-        async with self._llm_lock:
-            self.ensure_budget()
-            self.llm_calls.increment()
-
-        started = time.perf_counter()
+        depth = _LLM_SEMAPHORE_DEPTH.get()
+        acquired = False
+        if depth == 0:
+            acquired = await self._acquire_llm_semaphore()
+        depth_token = _LLM_SEMAPHORE_DEPTH.set(depth + 1)
         try:
-            result = await self._await_with_remaining(
-                operation,
-                remaining=self.remaining_seconds(),
-            )
-        except RequestOperationTimedOut:
-            latency_ms = (time.perf_counter() - started) * 1000
-            self._record_usage_event(
-                component=component,
-                status="TIMEOUT",
-                latency_ms=latency_ms,
-                model=model,
-            )
-            logger.warning(
-                "LLM call timed out: component=%s count=%d/%d request_id=%s "
-                "correlation_id=%s elapsed_ms=%.1f",
-                component,
-                self.llm_calls.count,
-                self.model_budget,
-                self.request_id,
-                self.correlation_id,
-                latency_ms,
-            )
-            raise
-        except Exception:
-            latency_ms = (time.perf_counter() - started) * 1000
-            self._record_usage_event(
-                component=component,
-                status="FAILED",
-                latency_ms=latency_ms,
-                model=model,
-            )
-            raise
-        else:
+            async with self._llm_lock:
+                self.ensure_budget()
+                self.llm_calls.increment()
+            self.record_budget_event(kind="consumed", component=component, slots=1)
+            started = time.perf_counter()
+            try:
+                result = await self._await_with_remaining(
+                    operation,
+                    remaining=self.remaining_seconds(),
+                )
+            except RequestOperationTimedOut:
+                self._record_usage_event(
+                    component=component,
+                    status="TIMEOUT",
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                    model=model,
+                )
+                logger.warning(
+                    "LLM call timed out: component=%s count=%d/%d request_id=%s "
+                    "correlation_id=%s",
+                    component,
+                    self.llm_calls.count,
+                    self.model_budget,
+                    self.request_id,
+                    self.correlation_id,
+                )
+                raise
+            except Exception:
+                self._record_usage_event(
+                    component=component,
+                    status="FAILED",
+                    latency_ms=(time.perf_counter() - started) * 1000,
+                    model=model,
+                )
+                raise
             latency_ms = (time.perf_counter() - started) * 1000
             self._record_usage_event(
                 component=component,
@@ -248,14 +340,8 @@ class ExecutionContext:
                 model=model,
                 usage_from_result=usage_from_result,
             )
-            logger.debug(
-                "LLM call completed: component=%s count=%d/%d request_id=%s "
-                "correlation_id=%s elapsed_ms=%.1f",
-                component,
-                self.llm_calls.count,
-                self.model_budget,
-                self.request_id,
-                self.correlation_id,
-                latency_ms,
-            )
             return result
+        finally:
+            _LLM_SEMAPHORE_DEPTH.reset(depth_token)
+            if acquired and self._llm_semaphore is not None:
+                self._llm_semaphore.release()

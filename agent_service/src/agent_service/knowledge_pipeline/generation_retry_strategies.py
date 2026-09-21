@@ -77,7 +77,7 @@ async def maybe_retry_false_none(
             "若文件仍不足以回答該問題，必須再次回傳 answerability=NONE，"
             "不得用相關但答非所問的內容硬答。"
         ),
-        component="knowledge_generate_retry",
+        component="knowledge_answer_retry",
         counter=counter,
         execution_context=execution_context,
         marker_to_chunk_ids=marker_to_chunk_ids,
@@ -132,7 +132,7 @@ async def maybe_retry_error_coverage(
             "逐項覆蓋這些分支；不得只給通用排查步驟，"
             "也不得引用 [UX-AUDIT]/[TEST] 測試文件。"
         ),
-        component="knowledge_generate_error_coverage",
+        component="knowledge_answer_error_coverage",
         counter=counter,
         execution_context=execution_context,
         marker_to_chunk_ids=marker_to_chunk_ids,
@@ -187,7 +187,7 @@ async def maybe_retry_procedure_coverage(
             "請依來源保留共同步驟與平台特有步驟、完成狀態；"
             "先保完整再精簡用字，勿合併省略。"
         ),
-        component="knowledge_generate_procedure_coverage",
+        component="knowledge_answer_procedure_coverage",
         counter=counter,
         execution_context=execution_context,
         marker_to_chunk_ids=marker_to_chunk_ids,
@@ -246,7 +246,7 @@ async def maybe_retry_visual_evidence(
             "平台特有步驟（如 Intune）須列為獨立步驟；"
             "並保留重啟、第二次驗證、進入收件匣等完成狀態，不可省略。"
         ),
-        component="knowledge_generate_visual_evidence",
+        component="knowledge_answer_visual_evidence",
         counter=counter,
         execution_context=execution_context,
         marker_to_chunk_ids=marker_to_chunk_ids,
