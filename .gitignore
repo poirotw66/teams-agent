@@ -51,10 +51,17 @@ data/ops/sources/
 data/ops/aggregates/
 data/ops/audit/
 data/ops/tickets.json
+data/ops/workbench_state.json
 data/ops/phase2/budgets.json
 data/ops/evaluations/fixtures/
 data/ops/evaluations/gates/
 data/ops/evaluations/jobs/
+
+# Evaluation run logs are transient; keep curated JSON reports trackable.
+data/eval/reports/*.log
+data/eval/reports/debug-*.json
+data/eval/reports/*-harness-smoke.json
+data/eval/reports/*-live-smoke*.json
 
 # Terraform local state and secrets (see infra/terraform/README.md)
 **/.terraform/
