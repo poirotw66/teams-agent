@@ -94,6 +94,13 @@ class RetrievalTrace(StrictModel):
     stageTimingsMs: dict[str, float] = Field(default_factory=dict)
     # Adaptive post-retrieve tier: trivial | standard | hard.
     queryTier: str | None = None
+    # Evaluation-channel evidence progression (chunk ids only; no document text).
+    evidenceProgression: dict | None = None
+    answerModel: str | None = None
+    answerEscalated: bool = False
+    answerEscalationModel: str | None = None
+    answerEscalationReason: str | None = None
+    answerAttemptCount: int = 1
 
 
 class Citation(StrictModel):

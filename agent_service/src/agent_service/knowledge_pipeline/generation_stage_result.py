@@ -309,6 +309,18 @@ def _apply_product_citation_guards(
     pruned_common = {key for key in pruned_common if key in aligned_keys}
     if not pruned_common:
         return ordered_cited_doc_keys, common_doc_keys
+    pruned_count = len(ordered_cited_doc_keys) - len(aligned_keys)
+    if pruned_count > 0:
+        from agent_service.observability import (
+            METRIC_CITATION_PRUNED,
+            record_metric_counter,
+        )
+
+        record_metric_counter(
+            METRIC_CITATION_PRUNED,
+            amount=float(pruned_count),
+            attributes={"result_type": "CITATION_GUARD"},
+        )
     response.claims = filter_claims_to_doc_keys(
         response.claims,
         allowed_doc_keys=pruned_common,
