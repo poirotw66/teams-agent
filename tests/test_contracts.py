@@ -420,3 +420,22 @@ def test_format_teams_answer_unpacks_inline_numbered_steps() -> None:
     assert "\n2. 系統跳出設定視窗" in formatted
     assert "\n3. 選擇任一方式完成綁定" in formatted
 
+
+def test_format_teams_answer_linkifies_bare_https_urls() -> None:
+    unlock_url = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    raw = (
+        "問題：AD帳號解鎖\n\n"
+        "處理方式：\n"
+        f"請至 AD 自助解鎖專區：{unlock_url} [S1]。"
+    )
+    formatted = format_teams_answer(raw)
+
+    assert f"[{unlock_url}]({unlock_url})" in formatted
+    # Already-markdown links must not be double-wrapped.
+    assert format_teams_answer(f"請點 [{unlock_url}]({unlock_url})") == (
+        f"請點 [{unlock_url}]({unlock_url})"
+    )
+

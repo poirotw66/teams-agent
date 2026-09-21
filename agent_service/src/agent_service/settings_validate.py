@@ -21,6 +21,7 @@ class _AgentSettingsView(Protocol):
     conversation_retention_days: int
     supervisor_terminal_confidence: float
     max_llm_calls_per_request: int
+    request_deadline_seconds: float
     max_retrieval_rewrites: int
     rag_fusion_mode: str
     rag_rrf_k: int
@@ -90,6 +91,10 @@ def validate_rag_and_conversation_limits(settings: _AgentSettingsView) -> None:
         raise ValueError("SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1.")
     if not 1 <= settings.max_llm_calls_per_request <= 20:
         raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
+    if not 15.0 <= float(settings.request_deadline_seconds) <= 300.0:
+        raise ValueError(
+            "AGENT_REQUEST_DEADLINE_SECONDS must be between 15 and 300."
+        )
     if not 0 <= settings.max_retrieval_rewrites <= 3:
         raise ValueError("MAX_RETRIEVAL_REWRITES must be between 0 and 3.")
     if settings.rag_fusion_mode not in {"WEIGHTED", "RRF"}:

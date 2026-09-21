@@ -109,6 +109,8 @@ def format_teams_answer(answer: str) -> str:
       Teams Adaptive Card Markdown does not collapse headings into the text.
     - Formats special notes or remarks as blockquote callouts (`> 💡 **注意事項**：...`).
     - Ensures sequential steps are numbered cleanly without citation repetition spam.
+    - Turns bare http(s) URLs into markdown links so TextBlocks can render them
+      as hyperlinks where the host supports markdown links.
     """
     if not answer or not answer.strip():
         return answer
@@ -142,9 +144,76 @@ def format_teams_answer(answer: str) -> str:
     # 5. Format step lists and clean citation repetition
     text = _format_steps_and_citations(text)
 
+    # 6. Make bare https:// URLs clickable in Adaptive Card / Teams markdown.
+    text = linkify_bare_urls(text)
+
     # Clean up any excessive newlines (more than 2 consecutive newlines)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+_BARE_URL_RE = re.compile(r"(?<![\(\[\"'<=])(https?://[^\s<>\]）】」』\"']+)")
+_TRAILING_URL_PUNCT_RE = re.compile(r"[.,;:!?，。；：！？、]+$")
+
+
+def linkify_bare_urls(text: str) -> str:
+    """Wrap bare http(s) URLs as markdown links without re-linking existing ones."""
+    if not text or "http" not in text:
+        return text
+
+    protected: list[str] = []
+
+    def _protect(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        return f"\x00MDLINK{len(protected) - 1}\x00"
+
+    staged = _MARKDOWN_LINK_RE.sub(_protect, text)
+
+    def _linkify(match: re.Match[str]) -> str:
+        raw = match.group(1)
+        trailing = ""
+        url = raw
+        punct = _TRAILING_URL_PUNCT_RE.search(url)
+        if punct:
+            trailing = punct.group(0)
+            url = url[: punct.start()]
+        if not url:
+            return raw
+        return f"[{url}]({url}){trailing}"
+
+    linked = _BARE_URL_RE.sub(_linkify, staged)
+    for index, original in enumerate(protected):
+        linked = linked.replace(f"\x00MDLINK{index}\x00", original)
+    return linked
+
+
+def extract_answer_urls(text: str) -> list[str]:
+    """Return unique bare or markdown http(s) URLs from answer text (order preserved)."""
+    if not text or "http" not in text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for match in _MARKDOWN_LINK_RE.finditer(text):
+        url = match.group(2)
+        if url not in seen:
+            seen.add(url)
+            found.append(url)
+    for match in _BARE_URL_RE.finditer(_MARKDOWN_LINK_RE.sub("", text)):
+        url = _TRAILING_URL_PUNCT_RE.sub("", match.group(1))
+        if url and url not in seen:
+            seen.add(url)
+            found.append(url)
+    return found
+
+
+def open_url_action_title(url: str) -> str:
+    """Short Adaptive Card Action.OpenUrl title for an answer-body URL."""
+    lowered = url.lower()
+    if "ad-unlock" in lowered or "sorry.only.for.test" in lowered:
+        return "開啟 AD 自助解鎖專區"
+    host = re.sub(r"^https?://", "", url).split("/", 1)[0]
+    return f"開啟連結（{host}）" if host else "開啟連結"
 
 
 _POLICY_MARKER_DISPLAY_RE = re.compile(r"\[POLICY-SEC-\d{3}\]")
@@ -206,7 +275,10 @@ def format_agent_response(response: AgentResponse) -> str:
 
 
 __all__ = [
+    "extract_answer_urls",
     "format_agent_response",
     "format_teams_answer",
     "format_turn_cost_line",
+    "linkify_bare_urls",
+    "open_url_action_title",
 ]

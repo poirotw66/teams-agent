@@ -105,6 +105,7 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
         ),
         "turn_planner_enabled": _bool_env("TURN_PLANNER_ENABLED", False),
         "max_llm_calls_per_request": _int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
+        "request_deadline_seconds": _float_env("AGENT_REQUEST_DEADLINE_SECONDS", 90.0),
         "max_retrieval_rewrites": _int_env(
             "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
         ),

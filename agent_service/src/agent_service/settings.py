@@ -46,6 +46,9 @@ class RagSettings:
     # Keep off until Golden Eval Accuracy / P95 / Cost comparison is reviewed.
     turn_planner_enabled: bool = False
     max_llm_calls_per_request: int = 6
+    # Wall-clock budget for one agent request (extractor + retrieve + generate).
+    # Keep aligned with upstream adapter / Cloud Run timeouts (typically ~90s).
+    request_deadline_seconds: float = 90.0
     max_retrieval_rewrites: int = 1
     skip_relevance_llm_on_high_confidence: bool = True
     enable_adaptive_query_tiers: bool = True

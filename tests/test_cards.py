@@ -270,3 +270,38 @@ def test_card_adds_open_url_actions_for_citation_links() -> None:
             "url": "https://bot.example.com/rag-sources/vpn.md",
         }
     ]
+
+
+def test_card_adds_open_url_action_for_answer_body_url() -> None:
+    unlock_url = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    response = AgentResponse(
+        answer=(
+            "問題：AD帳號解鎖\n\n"
+            "處理方式：\n"
+            f"請至 AD 自助解鎖專區：{unlock_url} [S1]。"
+        ),
+        traceId="trace-1",
+        correlationId="corr-1",
+        citations=[Citation(title="AD 帳號與系統解鎖 FAQ")],
+        feedbackEnabled=True,
+        issueResults=[IssueResult(issueId=1, resultType="FAQ_ANSWERED")],
+    )
+
+    activity = build_agent_activity(
+        response, AgentSettings(), conversation_id="conversation-1"
+    )
+
+    assert not isinstance(activity, str)
+    text = activity.attachments[0].content["body"][0]["text"]
+    assert f"[{unlock_url}]({unlock_url})" in text
+    actions = activity.attachments[0].content["actions"]
+    assert actions == [
+        {
+            "type": "Action.OpenUrl",
+            "title": "開啟 AD 自助解鎖專區",
+            "url": unlock_url,
+        }
+    ]
