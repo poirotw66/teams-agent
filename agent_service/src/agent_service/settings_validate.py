@@ -21,6 +21,7 @@ class _AgentSettingsView(Protocol):
     conversation_retention_days: int
     supervisor_terminal_confidence: float
     max_llm_calls_per_request: int
+    max_concurrent_llm_calls_per_request: int
     request_deadline_seconds: float
     max_retrieval_rewrites: int
     rag_fusion_mode: str
@@ -29,6 +30,8 @@ class _AgentSettingsView(Protocol):
     rag_dense_candidate_k: int
     rag_fusion_candidate_k: int
     rag_reranker_min_tier: str
+    rag_answer_escalation_policy: str
+    turn_planner_mode: str
     faq_runtime_mode: str
     faq_governed_store_mode: str
     faq_firestore_collection_prefix: str
@@ -91,6 +94,23 @@ def validate_rag_and_conversation_limits(settings: _AgentSettingsView) -> None:
         raise ValueError("SUPERVISOR_TERMINAL_CONFIDENCE must be between 0.5 and 1.")
     if not 1 <= settings.max_llm_calls_per_request <= 20:
         raise ValueError("MAX_LLM_CALLS_PER_REQUEST must be between 1 and 20.")
+    if not 1 <= settings.max_concurrent_llm_calls_per_request <= 20:
+        raise ValueError(
+            "MAX_CONCURRENT_LLM_CALLS_PER_REQUEST must be between 1 and 20."
+        )
+    if settings.turn_planner_mode not in {"OFF", "CONTEXTUAL", "ALL"}:
+        raise ValueError("TURN_PLANNER_MODE must be OFF, CONTEXTUAL, or ALL.")
+    policy = str(settings.rag_answer_escalation_policy or "OFF").strip().upper()
+    if policy not in {
+        "OFF",
+        "HARD_DIRECT",
+        "ON_GROUNDING_FAILURE",
+        "HARD_OR_GROUNDING_FAILURE",
+    }:
+        raise ValueError(
+            "RAG_ANSWER_ESCALATION_POLICY must be OFF, HARD_DIRECT, "
+            "ON_GROUNDING_FAILURE, or HARD_OR_GROUNDING_FAILURE."
+        )
     if not 15.0 <= float(settings.request_deadline_seconds) <= 300.0:
         raise ValueError(
             "AGENT_REQUEST_DEADLINE_SECONDS must be between 15 and 300."

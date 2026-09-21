@@ -61,6 +61,7 @@ def build_knowledge_router(
     *,
     release_id: str | None,
     active_file_search_store: str | None,
+    rag_models: Any | None = None,
 ) -> tuple[KnowledgeBackendRouter, Any]:
     """Build hybrid/file-search knowledge services and the backend router."""
     hybrid_settings = replace(settings, knowledge_service_mode="HYBRID")
@@ -70,6 +71,7 @@ def build_knowledge_router(
             index,
             rag_model,
             release_id=release_id,
+            models=rag_models,
         )
     }
     unavailable_backends: dict[str, str] = {}
@@ -104,6 +106,7 @@ def build_startup_workflow(
     resolved_index: Any,
     rag_model: Any,
     agent_model: Any,
+    rag_models: Any | None = None,
 ) -> tuple[AgentWorkflow, KnowledgeBackendRouter, Any, Any, Any]:
     """Construct FAQ/conversation/ticket collaborators and the agent workflow."""
     from .prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime
@@ -121,6 +124,7 @@ def build_startup_workflow(
         rag_model,
         release_id=resolved_index.release_id,
         active_file_search_store=active_file_search_store,
+        rag_models=rag_models,
     )
     governance_runtime = GovernanceRuntime.from_settings(settings)
     extractor = IssueExtractor(
@@ -225,9 +229,26 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
     """Wire all startup collaborators onto ``app.state``."""
     import asyncio
 
+    from .prompt_runtime import GovernanceRuntime
+    from .rag_models import build_rag_model_bundle, governance_overrides_from_runtime
+
     index, resolved_index = await asyncio.to_thread(load_startup_index, settings)
     agent = await asyncio.to_thread(RagAgent, settings, index)
-    rag_model = build_chat_model(settings.model, temperature=0.0)
+    governance_runtime = GovernanceRuntime.from_settings(settings)
+    rag_models = build_rag_model_bundle(
+        settings,
+        build_chat_model=build_chat_model,
+        governance_overrides=governance_overrides_from_runtime(governance_runtime),
+    )
+    if rag_models.ids is not None:
+        from .rag_models import selection_audit_event
+
+        for role in ("answer", "relevance", "rewrite", "hard_answer"):
+            logger.info(
+                "rag_model_selection %s",
+                selection_audit_event(rag_models.ids, role=role),
+            )
+    rag_model = rag_models.answer or build_chat_model(settings.model, temperature=0.0)
     agent_model = build_chat_model(
         settings.agent_model or settings.model,
         temperature=0.0,
@@ -236,7 +257,7 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         workflow,
         knowledge_router,
         hybrid_settings,
-        governance_runtime,
+        _governance_from_workflow,
         handoff_repository,
     ) = build_startup_workflow(
         settings,
@@ -244,7 +265,10 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         resolved_index=resolved_index,
         rag_model=rag_model,
         agent_model=agent_model,
+        rag_models=rag_models,
     )
+    # Prefer the pre-built runtime so peeks match the models already constructed.
+    workflow.governance_runtime = governance_runtime
     attach_app_state(
         app,
         settings,
@@ -258,6 +282,7 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         rag_model=rag_model,
         hybrid_settings=hybrid_settings,
     )
+    app.state.rag_models = rag_models
     configure_pricing_and_ops(app, settings)
     from .observability import configure_tracing
 

@@ -304,8 +304,32 @@ class GovernanceRuntime:
         spec = next((item for item in MODEL_COMPONENTS if item.config_id == config_id), None)
         role = spec.role if spec is not None else "agent"
         if role == "answer":
-            raw = self._settings.model or ""
+            raw = (
+                getattr(self._settings, "rag_answer_model", None)
+                or self._settings.model
+                or ""
+            )
             default_id = DEFAULT_RAG_MODEL_ID
+        elif role == "relevance":
+            raw = (
+                getattr(self._settings, "rag_relevance_model", None)
+                or getattr(self._settings, "rag_answer_model", None)
+                or self._settings.model
+                or ""
+            )
+            default_id = DEFAULT_RAG_MODEL_ID
+        elif role == "rewrite":
+            raw = (
+                getattr(self._settings, "rag_rewrite_model", None)
+                or getattr(self._settings, "rag_relevance_model", None)
+                or getattr(self._settings, "rag_answer_model", None)
+                or self._settings.model
+                or ""
+            )
+            default_id = DEFAULT_RAG_MODEL_ID
+        elif role == "hard_answer":
+            raw = getattr(self._settings, "rag_hard_answer_model", None) or ""
+            default_id = ""
         elif role == "embedding":
             raw = self._settings.embedding_model or ""
             default_id = raw
@@ -319,11 +343,13 @@ class GovernanceRuntime:
         if not model_id:
             provider, model_id = "google_genai", raw or default_id
         bare = model_id or default_id
-        model_name = raw or (f"google_genai:{bare}" if role in {"agent", "answer"} else bare)
+        model_name = raw or (
+            f"google_genai:{bare}" if role in {"agent", "answer"} and bare else bare
+        )
         return ResolvedModelConfig(
             provider=provider or "google_genai",
             model_id=bare,
-            model_name=model_name,
+            model_name=model_name or None,
             source="settings_baseline",
         )
 
