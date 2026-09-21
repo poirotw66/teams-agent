@@ -110,6 +110,7 @@ def _build_eval_provenance(
     freeze_version: int | None = None,
     started_at: str | None = None,
     completed_at: str | None = None,
+    release_id: str | None = None,
 ) -> dict[str, Any]:
     """Record release-gate identifiers for Layer-2/3 eval reports."""
 
@@ -119,8 +120,8 @@ def _build_eval_provenance(
         or os.environ.get("GCP_REGION")
         or os.environ.get("CLOUD_RUN_REGION")
     )
-    release_id = settings.knowledge_active_release_id
-    if not release_id:
+    resolved_release_id = release_id or settings.knowledge_active_release_id
+    if not resolved_release_id:
         for candidate in (
             ROOT / "data" / "releases" / "active_release.json",
             ROOT / "data" / "releases" / "active.json",
@@ -132,14 +133,14 @@ def _build_eval_provenance(
             except (OSError, json.JSONDecodeError):
                 continue
             if isinstance(payload, dict):
-                release_id = (
+                resolved_release_id = (
                     payload.get("releaseId")
                     or payload.get("id")
                     or payload.get("activeReleaseId")
                 )
             elif isinstance(payload, str):
-                release_id = payload.strip() or None
-            if release_id:
+                resolved_release_id = payload.strip() or None
+            if resolved_release_id:
                 break
     answer_model = settings.model
     agent_model = settings.agent_model or settings.model
@@ -155,7 +156,7 @@ def _build_eval_provenance(
         "rewriteModel": answer_model or model_name,
         "embeddingModel": settings.embedding_model,
         "liveModel": bool(live_model),
-        "releaseId": release_id,
+        "releaseId": resolved_release_id,
         "region": region,
         "knowledgeReleaseTenantId": settings.knowledge_release_tenant_id,
         "startedAt": started_at,
@@ -661,6 +662,7 @@ async def _run_layer3_case_once(
     search_query = query
     conversation_seeded = False
     history_message_count = 0
+    harness_started = time.perf_counter()
     if prior_turn:
         if settings is None:
             raise RuntimeError("multi-turn Layer-3 cases require RagSettings")
@@ -693,13 +695,16 @@ async def _run_layer3_case_once(
             raw_utterance=raw_utterance,
             groups=groups,
         )
+    harness_ms = (time.perf_counter() - harness_started) * 1000.0
+    # RAG-service latency excludes eval harness prior-turn seeding / extractor.
+    search_started = time.perf_counter()
     result = await service.search(
         query=search_query,
         user_context=user_context,
         execution_context=execution_context,
         request=agent_request,
     )
-    latency_ms = (time.perf_counter() - started) * 1000.0
+    latency_ms = (time.perf_counter() - search_started) * 1000.0
 
     trace = getattr(result, "retrievalTrace", None)
     timings = getattr(trace, "stageTimingsMs", {}) if trace else {}
@@ -796,6 +801,7 @@ async def _run_layer3_case_once(
         "multiTurn": bool(prior_turn),
         "conversationSeeded": conversation_seeded,
         "historyMessageCount": float(history_message_count),
+        "harnessMs": float(harness_ms),
         "resolvedIssueQuery": search_query,
         "configuredTokenBudget": (
             int(token_budget)
@@ -1957,17 +1963,43 @@ def main() -> int:
         default=None,
         help="Optional cap on evaluated cases (useful for live-model smoke runs).",
     )
+    parser.add_argument(
+        "--index-path",
+        type=Path,
+        default=None,
+        help=(
+            "Optional Hybrid index chunks.json. When omitted, load the same active "
+            "release index as AgentWorkflow / production startup."
+        ),
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
     settings = RagSettings.from_env()
-    index_path = ROOT / "data" / "index" / "chunks.json"
-    if not index_path.exists():
-        index_path = Path("data/index/chunks.json")
-    if not index_path.exists():
-        index_path = Path("../data/index/chunks.json")
+    resolved_release_id: str | None = settings.knowledge_active_release_id
+    if args.index_path is not None:
+        index_path = args.index_path
+        if not index_path.exists():
+            print(f"ERROR: --index-path not found: {index_path}", file=sys.stderr)
+            return 2
+        from agent_service.retrieval import hybrid_index_fusion_kwargs
 
-    index = HybridIndex.load(index_path, embedding_model=settings.embedding_model)
+        index = HybridIndex.load(
+            index_path,
+            embedding_model=settings.embedding_model,
+            **hybrid_index_fusion_kwargs(settings),
+        )
+        print(f"Loaded eval index from --index-path={index_path}")
+    else:
+        from agent_service.lifespan_wiring import load_startup_index
+
+        index, resolved_index = load_startup_index(settings)
+        resolved_release_id = resolved_index.release_id or resolved_release_id
+        print(
+            "Loaded production-aligned eval index: "
+            f"source={resolved_index.source} releaseId={resolved_release_id} "
+            f"path={resolved_index.index_path} chunks={len(index.chunks)}"
+        )
 
     raw_cases = _load_cases(args.eval_set)
     if args.split != "all":
@@ -1990,8 +2022,8 @@ def main() -> int:
     if args.live_model:
         if args.layer != 3:
             parser.error("--live-model requires --layer 3")
-        from composition.agent_hooks import install_agent_hooks
         from agent_service.graph import build_chat_model
+        from composition.agent_hooks import install_agent_hooks
 
         # GOVERNED prompt/FAQ runtime needs Backoffice builders registered.
         install_agent_hooks()
@@ -2040,6 +2072,7 @@ def main() -> int:
         model_name=model_name,
         freeze_version=freeze_version if isinstance(freeze_version, int) else None,
         completed_at=completed_at,
+        release_id=resolved_release_id,
     )
     summary["provenance"] = provenance
 
