@@ -1990,8 +1990,11 @@ def main() -> int:
     if args.live_model:
         if args.layer != 3:
             parser.error("--live-model requires --layer 3")
+        from composition.agent_hooks import install_agent_hooks
         from agent_service.graph import build_chat_model
 
+        # GOVERNED prompt/FAQ runtime needs Backoffice builders registered.
+        install_agent_hooks()
         model_name = settings.model or settings.agent_model
         answer_model = build_chat_model(model_name)
         if answer_model is None:

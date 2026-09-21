@@ -182,20 +182,29 @@ async def _run_case(
     settings: RagSettings,
 ) -> dict[str, Any]:
     handles = await create_eval_conversation(case_id=case.case_id, settings=settings)
-    for index, prior in enumerate(case.prior_turns):
-        await seed_prior_turn(
-            handles,
-            prior_turn=prior,
-            request_id=f"workflow-eval-{case.case_id}-prior-{index}",
-            correlation_id=f"workflow-eval-{case.case_id}",
+    # Seed and execute against the same ConversationService so prior turns are visible.
+    previous_conversation_service = getattr(workflow, "conversation_service", None)
+    workflow.conversation_service = handles.service
+    try:
+        for index, prior in enumerate(case.prior_turns):
+            await seed_prior_turn(
+                handles,
+                prior_turn=prior,
+                request_id=f"workflow-eval-{case.case_id}-prior-{index}",
+                correlation_id=f"workflow-eval-{case.case_id}",
+            )
+        request = _build_request(
+            case=case,
+            conversation_id=handles.teams_conversation_id,
+            teams_user_id=handles.teams_user_id,
         )
-    request = _build_request(
-        case=case,
-        conversation_id=handles.teams_conversation_id,
-        teams_user_id=handles.teams_user_id,
-    )
-    # Reuse AgentWorkflowTurnExecutor production entry (request → workflow.run/respond).
-    answer, issue_results, state, latency_ms = await run_production_turn(workflow, request)
+        # Reuse AgentWorkflowTurnExecutor production entry (request → workflow.run/respond).
+        answer, issue_results, state, latency_ms = await run_production_turn(
+            workflow, request
+        )
+    finally:
+        if previous_conversation_service is not None:
+            workflow.conversation_service = previous_conversation_service
     observed_route = None
     if isinstance(state, dict):
         decision = state.get("supervisor_decision")
