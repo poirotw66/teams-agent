@@ -2,9 +2,9 @@ from agent_service.documents import DocumentChunk
 from agent_service.retrieval import (
     HybridIndex,
     _embedding_models_compatible,
-    is_chunk_visible_to_groups,
     tokenize,
 )
+from agent_service.retrieval_acl import is_chunk_visible_to_groups
 
 
 def test_chinese_tokenizer_creates_bigrams() -> None:

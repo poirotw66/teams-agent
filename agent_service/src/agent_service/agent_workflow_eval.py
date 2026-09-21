@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
-
-from .settings import RagSettings
-
-if TYPE_CHECKING:
-    from .workflow import AgentWorkflow
+from typing import Any
 
 # Eval-set labels (expectedRoute) vs production supervisor intents / issue routes.
 _SUPERVISOR_TO_EVAL_ROUTE: dict[str, str] = {
@@ -364,95 +359,10 @@ def aggregate_agent_workflow_scores(
     }
 
 
-def build_production_eval_workflow(
-    *,
-    settings: RagSettings,
-    live_model: bool = False,
-) -> AgentWorkflow:
-    """Build a production-path ``AgentWorkflow`` for eval (Hybrid index + live models).
-
-    Uses the same startup wiring as the agent service lifespan. Requires
-    ``live_model=True`` so release reports are never scored with stubs.
-    """
-    if not live_model:
-        raise ValueError(
-            "build_production_eval_workflow requires live_model=True for release gates"
-        )
-
-    from composition.agent_hooks import install_agent_hooks
-
-    from .conversation import ConversationService
-    from .conversation.memory import InMemoryConversationRepository
-    from .extractor import IssueExtractor
-    from .faq import FaqService
-    from .graph import build_chat_model
-    from .handoff_repository import build_handoff_repository
-    from .lifespan_wiring import build_knowledge_router, load_startup_index
-    from .prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime
-    from .rag_models import (
-        build_rag_model_bundle,
-        governance_overrides_from_runtime,
-    )
-    from .ticket import build_ticket_service
-    from .ticket_dedupe import InMemoryTicketRequestDedupeRepository
-    from .workflow import AgentWorkflow
-
-    # GOVERNED prompt/FAQ runtime needs Backoffice builders registered.
-    install_agent_hooks()
-    index, resolved_index = load_startup_index(settings)
-    governance_runtime = GovernanceRuntime.from_settings(settings)
-    rag_models = build_rag_model_bundle(
-        settings,
-        build_chat_model=build_chat_model,
-        governance_overrides=governance_overrides_from_runtime(governance_runtime),
-    )
-    agent_model_name = settings.agent_model or settings.model
-    agent_model = build_chat_model(agent_model_name)
-    if agent_model is None:
-        raise RuntimeError(
-            "AgentWorkflow eval requires settings.agent_model or settings.model"
-        )
-    if rag_models.answer is None:
-        raise RuntimeError("AgentWorkflow eval requires a resolved RAG answer model")
-
-    knowledge_router, _hybrid_settings = build_knowledge_router(
-        settings,
-        index,
-        rag_models.answer,
-        release_id=resolved_index.release_id,
-        active_file_search_store=(
-            resolved_index.file_search_store or settings.gemini_file_search_store
-        ),
-        rag_models=rag_models,
-    )
-    extractor = IssueExtractor(
-        settings,
-        agent_model,
-        prompt_runtime=ExtractorPromptRuntime(governance_runtime),
-    )
-    # Isolated in-memory conversations; eval cases rebind per case as needed.
-    conversation_service = ConversationService(
-        InMemoryConversationRepository(), settings
-    )
-    workflow = AgentWorkflow(
-        settings,
-        extractor=extractor,
-        faq_service=FaqService.from_settings(settings),
-        knowledge_service=knowledge_router,
-        conversation_service=conversation_service,
-        ticket_service=build_ticket_service(settings),
-        handoff_repository=build_handoff_repository(settings),
-        ticket_request_dedupe=InMemoryTicketRequestDedupeRepository(),
-    )
-    workflow.governance_runtime = governance_runtime
-    return workflow
-
-
 __all__ = [
     "AgentWorkflowCaseScore",
     "AgentWorkflowEvalCase",
     "aggregate_agent_workflow_scores",
-    "build_production_eval_workflow",
     "issue_routes_from_state",
     "normalize_eval_route",
     "observe_answer_found",

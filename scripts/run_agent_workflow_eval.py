@@ -267,7 +267,8 @@ def main() -> int:
         workflow = factory(settings=settings, live_model=args.live_model)
     else:
         print(
-            "ERROR: pass --workflow-factory module:attr that builds AgentWorkflow. "
+            "ERROR: pass --workflow-factory module:attr that builds AgentWorkflow "
+            "(e.g. composition.agent_eval_workflow:build_production_eval_workflow). "
             "This script does not construct a second workflow harness.",
             file=sys.stderr,
         )

@@ -5,7 +5,8 @@ from collections.abc import Callable, Sequence
 from agent_service.documents import DocumentChunk
 from agent_service.knowledge_eligibility import is_chunk_generation_eligible
 from agent_service.knowledge_relationships import matching_relationships
-from agent_service.retrieval import SearchResult, is_chunk_visible_to_groups
+from agent_service.retrieval import SearchResult
+from agent_service.retrieval_acl import is_chunk_visible_to_groups
 
 from .candidate_policy import filter_cross_scenario_chunks
 from .document_selection_select import (

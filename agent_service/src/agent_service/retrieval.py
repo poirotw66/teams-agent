@@ -15,6 +15,7 @@ from knowledge_core.contextual_representation import effective_retrieval_text
 
 from .documents import DocumentChunk
 from .knowledge_eligibility import is_chunk_generation_eligible
+from .retrieval_acl import is_chunk_visible_to_groups
 
 logger = logging.getLogger(__name__)
 
@@ -111,28 +112,6 @@ def check_sparse_fast_path(
     if top1_matches_code and not top2_matches_code:
         return True
     return bool(top1_score >= 1.5 * top2_score)
-
-
-# Publisher ALL_EMPLOYEES / File Search public sentinel. Empty allowlists and
-# sole ``grp_public`` are both public; restricted docs use concrete group ids.
-PUBLIC_ACL_GROUP = "grp_public"
-
-
-def is_chunk_visible_to_groups(
-    chunk: DocumentChunk,
-    groups: set[str] | None,
-) -> bool:
-    """Return whether Hybrid ACL allows the caller to see ``chunk``.
-
-    Public documents use an empty ``allowed_groups`` list or only
-    ``grp_public`` (portal ALL_EMPLOYEES). Otherwise the caller's groups must
-    intersect the document allowlist.
-    """
-    caller_groups = groups or set()
-    allowed = {str(group) for group in (chunk.allowed_groups or []) if str(group)}
-    if not allowed or allowed == {PUBLIC_ACL_GROUP}:
-        return True
-    return bool(allowed.intersection(caller_groups))
 
 
 @dataclass(frozen=True)

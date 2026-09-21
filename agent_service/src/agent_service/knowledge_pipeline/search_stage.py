@@ -326,6 +326,27 @@ async def run_search_with_limits(
     return None
 
 
+def _terminal_no_evidence_result(
+    *,
+    state: RetrievalState,
+    execution_context: ExecutionContext | None,
+    with_trace: Callable[..., KnowledgeResult],
+    no_answer: Callable[[], KnowledgeResult],
+) -> KnowledgeResult:
+    from agent_service.provider_status import PROVIDER_BUSY
+
+    # Dense retrieval unavailable: empty sparse hits may be a false miss.
+    degraded = float(state.stage_timings_ms.get("embeddingDegraded", 0.0) or 0.0)
+    terminal_reason = PROVIDER_BUSY if degraded > 0.0 else "NO_RELEVANT_EVIDENCE"
+    return with_trace(
+        no_answer(),
+        state,
+        execution_context=execution_context,
+        fallback_path="NO_RELEVANT_EVIDENCE",
+        terminal_reason=terminal_reason,
+    )
+
+
 async def run_search_loop(
     *,
     query: str,
@@ -394,18 +415,11 @@ async def run_search_loop(
     if hit is not None:
         return hit
     set_llm_count(counter.count)
-    from agent_service.provider_status import PROVIDER_BUSY
-
-    terminal_reason = "NO_RELEVANT_EVIDENCE"
-    if float(state.stage_timings_ms.get("embeddingDegraded", 0.0) or 0.0) > 0.0:
-        # Dense retrieval was unavailable; empty sparse hits may be a false miss.
-        terminal_reason = PROVIDER_BUSY
-    return with_trace(
-        no_answer(),
-        state,
+    return _terminal_no_evidence_result(
+        state=state,
         execution_context=execution_context,
-        fallback_path="NO_RELEVANT_EVIDENCE",
-        terminal_reason=terminal_reason,
+        with_trace=with_trace,
+        no_answer=no_answer,
     )
 
 
