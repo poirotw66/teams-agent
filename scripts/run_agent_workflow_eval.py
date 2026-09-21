@@ -29,6 +29,10 @@ sys.path.insert(0, str(ROOT / "agent_service" / "src"))
 from agent_service.agent_workflow_eval import (
     AgentWorkflowEvalCase,
     aggregate_agent_workflow_scores,
+    issue_routes_from_state,
+    observe_answer_found,
+    observe_handoff_triggered,
+    observe_ticket_triggered,
     score_agent_workflow_case,
 )
 from agent_service.contracts import (
@@ -126,17 +130,6 @@ def _build_request(
     )
 
 
-def _issue_routes(issue_results: list[Any]) -> tuple[str, ...]:
-    routes: list[str] = []
-    for item in issue_results:
-        route = getattr(item, "route", None)
-        if route is None and isinstance(item, dict):
-            route = item.get("route")
-        if route:
-            routes.append(str(route).upper())
-    return tuple(routes)
-
-
 def _cited_titles(issue_results: list[Any], response: Any) -> tuple[str, ...]:
     titles: list[str] = []
     sources = getattr(response, "sources", None) or []
@@ -155,24 +148,6 @@ def _cited_titles(issue_results: list[Any], response: Any) -> tuple[str, ...]:
             if title:
                 titles.append(str(title))
     return tuple(dict.fromkeys(titles))
-
-
-def _observed_found(issue_results: list[Any], response: Any) -> bool | None:
-    result_types: list[str] = []
-    for item in issue_results:
-        result_type = getattr(item, "resultType", None)
-        if result_type is None and isinstance(item, dict):
-            result_type = item.get("resultType")
-        if result_type:
-            result_types.append(str(result_type).upper())
-    if any(item == "FOUND" for item in result_types):
-        return True
-    if any(item in {"NOT_FOUND", "NO_ANSWER"} for item in result_types):
-        return False
-    answer = str(getattr(response, "answer", "") or "")
-    if not answer:
-        return None
-    return True
 
 
 async def _run_case(
@@ -206,38 +181,36 @@ async def _run_case(
         if previous_conversation_service is not None:
             workflow.conversation_service = previous_conversation_service
     observed_route = None
-    if isinstance(state, dict):
-        decision = state.get("supervisor_decision")
+    state_dict = state if isinstance(state, dict) else None
+    if state_dict is not None:
+        decision = state_dict.get("supervisor_decision")
         observed_route = getattr(decision, "intent", None) if decision is not None else None
-        execution_context = state.get("execution_context")
+        execution_context = state_dict.get("execution_context")
         llm_calls = int(getattr(getattr(execution_context, "llm_calls", None), "count", 0) or 0)
     else:
         llm_calls = 0
-    if observed_route is None and issue_results:
-        routes = _issue_routes(issue_results)
-        observed_route = routes[0] if routes else None
+    observed_issue_routes = issue_routes_from_state(
+        state=state_dict, issue_results=issue_results
+    )
+    if observed_route is None and observed_issue_routes:
+        observed_route = observed_issue_routes[0]
 
     class _ResponseView:
         def __init__(self) -> None:
             self.answer = answer
             self.issueResults = issue_results
             self.sources = []
-            self.ticketCreated = False
-            self.handoffCreated = False
-            if isinstance(state, dict):
-                self.ticketCreated = bool(state.get("ticket_created"))
-                self.handoffCreated = bool(state.get("handoff_handled"))
 
     response = _ResponseView()
     score = score_agent_workflow_case(
         case=case,
         observed_route=str(observed_route) if observed_route else None,
         observed_issue_count=len(issue_results),
-        observed_issue_routes=_issue_routes(issue_results),
-        observed_found=_observed_found(issue_results, response),
+        observed_issue_routes=observed_issue_routes,
+        observed_found=observe_answer_found(issue_results),
         cited_titles=_cited_titles(issue_results, response),
-        ticket_triggered=bool(response.ticketCreated),
-        handoff_triggered=bool(response.handoffCreated),
+        ticket_triggered=observe_ticket_triggered(issue_results, state=state_dict),
+        handoff_triggered=observe_handoff_triggered(state=state_dict, answer=answer),
         llm_calls=llm_calls,
         latency_ms=latency_ms,
     )

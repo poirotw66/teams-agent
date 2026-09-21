@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,133 @@ from .settings import RagSettings
 
 if TYPE_CHECKING:
     from .workflow import AgentWorkflow
+
+# Eval-set labels (expectedRoute) vs production supervisor intents / issue routes.
+_SUPERVISOR_TO_EVAL_ROUTE: dict[str, str] = {
+    "IT_SUPPORT": "KNOWLEDGE",
+    "GREETING": "GREETING",
+    "NON_IT": "NOT_IT",
+    "TICKET_CREATE": "TICKET",
+    "TICKET_QUERY": "TICKET",
+    "HUMAN_ESCALATION": "HANDOFF",
+    "ASSISTANT_META": "META",
+    "UNKNOWN": "UNKNOWN",
+    "FAQ": "FAQ",
+    "KNOWLEDGE": "KNOWLEDGE",
+    "TICKET": "TICKET",
+    "NOT_IT": "NOT_IT",
+    "HANDOFF": "HANDOFF",
+    "META": "META",
+}
+
+_KNOWLEDGE_FOUND_TYPES = frozenset({"KNOWLEDGE_ANSWERED", "FAQ_ANSWERED"})
+_KNOWLEDGE_MISS_TYPES = frozenset({"NO_KNOWLEDGE", "FAILED"})
+
+
+def normalize_eval_route(route: str | None) -> str | None:
+    """Map supervisor intents and issue routes onto eval ``expectedRoute`` labels."""
+    if route is None:
+        return None
+    normalized = str(route).strip().upper()
+    if not normalized:
+        return None
+    return _SUPERVISOR_TO_EVAL_ROUTE.get(normalized, normalized)
+
+
+def routes_equivalent(expected: str | None, observed: str | None) -> bool:
+    """True when observed production route matches an eval expectedRoute label."""
+    left = normalize_eval_route(expected)
+    right = normalize_eval_route(observed)
+    if left is None or right is None:
+        return False
+    if left == right:
+        return True
+    # FAQ answers still satisfy a knowledge-path expectation.
+    return {left, right} <= {"KNOWLEDGE", "FAQ"}
+
+
+def observe_answer_found(issue_results: Sequence[Any]) -> bool | None:
+    """Derive knowledge found/miss from IssueResult types (never from answer text).
+
+    Returns:
+      True for FAQ/KNOWLEDGE answered, False for NO_KNOWLEDGE/FAILED or no issues,
+      None when the turn is still clarifying (NEED_MORE_INFO) so found is unlabeled.
+    """
+    result_types: list[str] = []
+    for item in issue_results:
+        result_type = getattr(item, "resultType", None)
+        if result_type is None and isinstance(item, dict):
+            result_type = item.get("resultType")
+        if result_type:
+            result_types.append(str(result_type).upper())
+    if any(item in _KNOWLEDGE_FOUND_TYPES for item in result_types):
+        return True
+    if any(item in _KNOWLEDGE_MISS_TYPES for item in result_types):
+        return False
+    if any(item == "NEED_MORE_INFO" for item in result_types):
+        return None
+    # Greeting / non-IT / empty issue list: not a knowledge hit.
+    return False
+
+
+def observe_ticket_triggered(
+    issue_results: Sequence[Any],
+    *,
+    state: Any | None = None,
+) -> bool:
+    """True only when a ticket was actually created (not merely offered)."""
+    for item in issue_results:
+        result_type = getattr(item, "resultType", None)
+        if result_type is None and isinstance(item, dict):
+            result_type = item.get("resultType")
+        if str(result_type or "").upper() == "TICKET_CREATED":
+            return True
+    if not isinstance(state, dict):
+        return False
+    ticket_created = state.get("ticket_created")
+    if isinstance(ticket_created, dict):
+        return bool(ticket_created.get("done"))
+    return bool(ticket_created)
+
+
+def observe_handoff_triggered(*, state: Any | None, answer: str = "") -> bool:
+    """True when a handoff case/offer was opened (not a no-op handoff route pass)."""
+    text = str(answer or "")
+    offer_copy = "聯絡線上客服" in text and (
+        "建立派工單" in text or "案件摘要" in text
+    )
+    if isinstance(state, dict):
+        if state.get("handoff_case") is not None:
+            return True
+        if state.get("handoff_handled") and offer_copy:
+            return True
+    return offer_copy
+
+
+def issue_routes_from_state(
+    *,
+    state: Any | None,
+    issue_results: Sequence[Any] = (),
+) -> tuple[str, ...]:
+    """Prefer Issue.route from workflow state; IssueResult has no route field."""
+    routes: list[str] = []
+    if isinstance(state, dict):
+        for collection_key in ("it_issues", "issues"):
+            for issue in state.get(collection_key) or []:
+                route = getattr(issue, "route", None)
+                if route is None and isinstance(issue, dict):
+                    route = issue.get("route")
+                if route:
+                    routes.append(str(route).upper())
+            if routes:
+                return tuple(dict.fromkeys(routes))
+    for item in issue_results:
+        route = getattr(item, "route", None)
+        if route is None and isinstance(item, dict):
+            route = item.get("route")
+        if route:
+            routes.append(str(route).upper())
+    return tuple(dict.fromkeys(routes))
 
 
 @dataclass(frozen=True)
@@ -108,7 +236,9 @@ def score_agent_workflow_case(
 ) -> AgentWorkflowCaseScore:
     route_match = None
     if case.expected_route is not None and observed_route is not None:
-        route_match = 1.0 if observed_route.upper() == case.expected_route else 0.0
+        route_match = (
+            1.0 if routes_equivalent(case.expected_route, observed_route) else 0.0
+        )
 
     issue_count_match = None
     if case.expected_issue_count is not None and observed_issue_count is not None:
@@ -120,7 +250,10 @@ def score_agent_workflow_case(
     if case.expected_route is not None and observed_issue_routes:
         issue_route_match = (
             1.0
-            if any(route.upper() == case.expected_route for route in observed_issue_routes)
+            if any(
+                routes_equivalent(case.expected_route, route)
+                for route in observed_issue_routes
+            )
             else 0.0
         )
 
@@ -320,5 +453,11 @@ __all__ = [
     "AgentWorkflowEvalCase",
     "aggregate_agent_workflow_scores",
     "build_production_eval_workflow",
+    "issue_routes_from_state",
+    "normalize_eval_route",
+    "observe_answer_found",
+    "observe_handoff_triggered",
+    "observe_ticket_triggered",
+    "routes_equivalent",
     "score_agent_workflow_case",
 ]
