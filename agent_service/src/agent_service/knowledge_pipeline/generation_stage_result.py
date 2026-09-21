@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -75,12 +76,10 @@ def prefer_query_aligned_citations(
     positive = [(key, score) for key, score in scored if score > 0]
     multi_topic = ("、" in query) or ("與" in query) or ("及" in query)
     second = max((score for _, score in positive if score < best), default=0)
-    if (
-        not multi_topic
-        and best >= 2
-        and second > 0
-        and (best - second) >= 2
-    ):
+    # Require a clear relative gap before dropping a positive secondary source.
+    # Absolute gaps of 2 are common with CJK bigram anchors on near-equal docs.
+    clear_gap = second > 0 and second < (best * 0.5) and (best - second) >= 2
+    if not multi_topic and best >= 2 and clear_gap:
         keep = {key for key, score in positive if score == best}
     else:
         keep = {key for key, _score in positive}
@@ -258,17 +257,10 @@ def drop_ad_unlock_citations_for_product_query(
         return list(keys), set(common_doc_keys)
 
     normalized = query.casefold()
-    ad_intent = any(
-        token in normalized
-        for token in ("ad", "自助解鎖", "帳號鎖定", "網域")
+    ad_intent = bool(re.search(r"(?<![a-z0-9])ad(?![a-z0-9])", normalized)) or any(
+        token in normalized for token in ("自助解鎖", "帳號鎖定", "網域")
     ) or any(token in query for token in ("鎖定", "被鎖", "解鎖"))
     if ad_intent:
-        return list(keys), set(common_doc_keys)
-
-    product_focus = ("crm" in normalized and "otp" in normalized) or (
-        "crm" in normalized and "驗證器" in query
-    )
-    if not product_focus:
         return list(keys), set(common_doc_keys)
 
     def _is_ad_unlock_doc(doc_key: str) -> bool:
@@ -280,6 +272,8 @@ def drop_ad_unlock_citations_for_product_query(
                 return True
         return False
 
+    # Non-AD queries that already cite a product/process doc should not keep the
+    # AD self-unlock FAQ as a secondary citation (common precision leak).
     kept = [key for key in keys if not _is_ad_unlock_doc(key)]
     if not kept:
         return list(keys), set(common_doc_keys)
@@ -304,7 +298,16 @@ def _apply_product_citation_guards(
         results=results,
         document_key=host.document_key,
     )
-    if pruned_keys == list(ordered_cited_doc_keys):
+    aligned_keys = prefer_query_aligned_citations(
+        query=resolved_issue_query,
+        ordered_cited_doc_keys=pruned_keys,
+        results=results,
+        document_key=host.document_key,
+    )
+    if aligned_keys == list(ordered_cited_doc_keys):
+        return ordered_cited_doc_keys, common_doc_keys
+    pruned_common = {key for key in pruned_common if key in aligned_keys}
+    if not pruned_common:
         return ordered_cited_doc_keys, common_doc_keys
     response.claims = filter_claims_to_doc_keys(
         response.claims,
@@ -313,7 +316,7 @@ def _apply_product_citation_guards(
             result.chunk.chunk_id: host.document_key(result) for result in results
         },
     )
-    return pruned_keys, pruned_common
+    return aligned_keys, pruned_common
 
 
 def _policy_ids_for_answer(

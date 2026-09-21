@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "offline-judge-projection.v1",
+  "sourceReport": "data/eval/reports/rag-l3-v3-blind-full-live-b7f3b61-harness.json",
+  "note": "Projection only. Does not measure citation-role production changes; those require a completed live L3 re-run.",
+  "oldAnswerAccuracy": 0.8397435897435898,
+  "omissionCount": 14,
+  "rescuedByJudgeFlex": [
+    "v3-blind-ans-04",
+    "v3-blind-ans-05",
+    "v3-blind-conv-05",
+    "v3-blind-alias-01",
+    "v3-blind-alias-02",
+    "v3-blind-short-06",
+    "v3-blind-acl-01",
+    "v3-blind-scope-03",
+    "v3-blind-neg-01",
+    "v3-blind-neg-02"
+  ],
+  "residualGenerationOmissions": [
+    "v3-blind-hn-02",
+    "v3-blind-hn-09",
+    "v3-blind-conv-09",
+    "v3-blind-conv-13"
+  ],
+  "estimatedAnswerAccuracyIfJudgeOnly": 0.9038461538461539
+}

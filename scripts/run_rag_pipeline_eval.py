@@ -45,7 +45,10 @@ from agent_service.contracts import KnowledgeResult, UserContext
 from agent_service.knowledge_hybrid import HybridKnowledgeService
 from agent_service.knowledge_hybrid_serving import build_retrieval_host
 from agent_service.knowledge_pipeline.planner import bounded_facet_queries
-from agent_service.knowledge_pipeline.query_tier import classify_query_tier
+from agent_service.knowledge_pipeline.query_tier import (
+    classify_query_tier,
+    evidence_token_budget_for_tier,
+)
 from agent_service.knowledge_pipeline.retrieval_confidence import (
     calibrated_predict_no_answer,
 )
@@ -57,10 +60,14 @@ from agent_service.retrieval_eval_metrics import (
     aggregate_case_scores,
     evidence_fact_hit,
     evidence_recall_at_k,
+    evidence_token_in_text,
     no_answer_confusion,
     score_retrieval_case,
 )
-from agent_service.retrieval_eval_schema import EvidenceLevelCase
+from agent_service.retrieval_eval_schema import (
+    EvidenceLevelCase,
+    compose_follow_up_retrieval_query,
+)
 from agent_service.retrieval_eval_taxonomy import (
     classify_layer3_failure,
     classify_retrieval_failure,
@@ -207,6 +214,31 @@ def _citation_recall_with_answer_coverage(
     return hits / len(expected_titles)
 
 
+def _soft_evidence_token_in_answer(token: str, answer: str) -> bool:
+    """Answer-only paraphrase match; does not relax retrieval evidence labels."""
+    if evidence_token_in_text(token, answer):
+        return True
+    if "/" in token:
+        parts = [part.strip() for part in token.split("/") if part.strip()]
+        if parts and any(evidence_token_in_text(part, answer) for part in parts):
+            return True
+    stripped = re.sub(r"^主旨\s*[:：]?\s*", "", token.strip())
+    stripped = stripped.strip("[]「」『』:：")
+    if stripped and stripped != token and evidence_token_in_text(stripped, answer):
+        return True
+    # Drop optional qualifier chars then retry (發生異常的時間 ≈ 發生時間).
+    compact = re.sub(r"[的之與和]", "", "".join(token.split()))
+    if compact and compact != "".join(token.split()) and evidence_token_in_text(compact, answer):
+        return True
+    cjk = re.sub(r"[^\u3400-\u9fff]", "", "".join(token.split()))
+    if len(cjk) >= 4:
+        windows = [cjk[index : index + 2] for index in range(len(cjk) - 1)]
+        hits = sum(1 for window in windows if window in answer)
+        if (hits / len(windows)) >= 0.6:
+            return True
+    return False
+
+
 def _answer_covers_evidence_fact(
     *,
     answer: str,
@@ -225,8 +257,13 @@ def _answer_covers_evidence_fact(
     if not tokens or not answer.strip():
         return False
 
+    if all(_soft_evidence_token_in_answer(token, answer) for token in tokens):
+        return True
+
     cited = {title.strip() for title in cited_titles if title and title.strip()}
-    present_count = sum(1 for token in tokens if token in answer)
+    present_count = sum(
+        1 for token in tokens if _soft_evidence_token_in_answer(token, answer)
+    )
     if present_count == len(tokens):
         return True
 
@@ -270,7 +307,7 @@ def _answer_covers_evidence_fact(
     ]
     if not distinctive:
         return True
-    return any(token in answer for token in distinctive)
+    return any(_soft_evidence_token_in_answer(token, answer) for token in distinctive)
 
 
 # --- Layer 1: Index Retrieval ---
@@ -308,13 +345,18 @@ async def run_layer2_case(
     host: Any,
     query: str,
     *,
-    token_budget: int = 1200,
+    token_budget: int | None = None,
     limit: int = 24,
     enable_evidence_expand: bool = True,
+    raw_user_utterance: str | None = None,
+    settings: RagSettings | None = None,
 ) -> tuple[list[EvidenceBundle], list[SearchResult], float, dict[str, float], dict[str, Any]]:
+    raw_utterance = raw_user_utterance or query
     facet_queries = bounded_facet_queries(query)
+    if not facet_queries and raw_utterance != query:
+        facet_queries = bounded_facet_queries(raw_utterance)
     state = RetrievalState(
-        raw_user_utterance=query,
+        raw_user_utterance=raw_utterance,
         resolved_issue_query=query,
         search_query=query,
         facet_queries=facet_queries,
@@ -329,6 +371,26 @@ async def run_layer2_case(
         max_retrieval_rewrites=0,
     )
     query_tier = provisional.tier.value
+    default_budget = int(
+        getattr(settings, "rag_evidence_token_budget", None)
+        or getattr(host, "evidence_token_budget", 1200)
+        or 1200
+    )
+    effective_budget = (
+        int(token_budget)
+        if token_budget is not None
+        else evidence_token_budget_for_tier(
+            query_tier,
+            default_budget=default_budget,
+            trivial_budget=(
+                int(settings.rag_evidence_token_budget_trivial) if settings else None
+            ),
+            standard_budget=(
+                int(settings.rag_evidence_token_budget_standard) if settings else None
+            ),
+            hard_budget=default_budget,
+        )
+    )
     expand_started = time.perf_counter()
     if enable_evidence_expand:
         bundles = build_evidence_bundles(
@@ -336,7 +398,7 @@ async def run_layer2_case(
             chunk_by_id=host.chunk_by_id,
             chunks_by_parent_id=getattr(host, "chunks_by_parent_id", None),
             query_tier=query_tier,
-            token_budget=token_budget,
+            token_budget=effective_budget,
         )
     else:
         bundles = [EvidenceBundle(seed=r, supporting_chunks=[]) for r in state.results]
@@ -358,6 +420,7 @@ async def run_layer2_case(
         "selectedCount": len(state.results),
         "bundlesCount": len(bundles),
         "queryTier": query_tier,
+        "evidenceTokenBudget": float(effective_budget),
         "cacheMiss": 0.0 if state.stage_timings_ms.get("embeddingMs", 0.0) == 0.0 and state.stage_timings_ms.get("batchEmbeddingMs", 0.0) == 0.0 else 1.0,
     }
     return bundles, state.raw_results, latency_ms, state.stage_timings_ms, telemetry
@@ -366,16 +429,116 @@ async def run_layer2_case(
 # --- Layer 3: End-to-End RAG ---
 
 
+def _build_eval_agent_request(*, case_id: str, raw_utterance: str) -> Any:
+    from agent_service.contracts import (
+        AgentRequest,
+        ConversationIdentity,
+        MessageContent,
+        UserIdentity,
+    )
+
+    return AgentRequest(
+        requestId=f"rag-eval-{case_id}",
+        channel="rag-eval",
+        conversation=ConversationIdentity(
+            tenantId="rag-eval",
+            conversationId=f"rag-eval-{case_id}",
+        ),
+        user=UserIdentity(displayName="rag-eval"),
+        message=MessageContent(text=raw_utterance),
+    )
+
+
+def _settings_with_token_budget_override(
+    settings: RagSettings,
+    token_budget: int | None,
+) -> RagSettings:
+    """When CLI sets --token-budget, force that budget for every query tier."""
+    if token_budget is None:
+        return settings
+    from dataclasses import replace as dataclass_replace
+
+    return dataclass_replace(
+        settings,
+        rag_evidence_token_budget=int(token_budget),
+        rag_evidence_token_budget_trivial=int(token_budget),
+        rag_evidence_token_budget_standard=int(token_budget),
+    )
+
+
+def _evidence_budget_report(settings: RagSettings, *, cli_override: int | None) -> dict[str, Any]:
+    return {
+        "cliOverride": cli_override,
+        "trivial": int(settings.rag_evidence_token_budget_trivial),
+        "standard": int(settings.rag_evidence_token_budget_standard),
+        "hard": int(settings.rag_evidence_token_budget),
+        "usesQueryTier": cli_override is None,
+    }
+
+
+def _is_transient_provider_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        marker in msg
+        for marker in (
+            "429",
+            "resource_exhausted",
+            "503",
+            "unavailable",
+            "timeout",
+            "timed out",
+            "disconnected",
+            "remote protocol",
+            "connection reset",
+            "connection aborted",
+            "internal error",
+            "500",
+        )
+    )
+
+
 async def run_layer3_case(
     service: HybridKnowledgeService,
     query: str,
     *,
-    token_budget: int = 1200,
     settings: RagSettings | None = None,
     live_model: bool = False,
     case_id: str = "case",
+    prior_turn: str | None = None,
+    max_attempts: int = 4,
 ) -> tuple[KnowledgeResult, float, dict[str, Any]]:
-    del token_budget  # reserved for future generation budget overrides
+    """Run one Layer-3 case, retrying transient provider disconnects/rate limits."""
+    delay = 2.0
+    last_error: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await _run_layer3_case_once(
+                service,
+                query,
+                settings=settings,
+                live_model=live_model,
+                case_id=case_id,
+                prior_turn=prior_turn,
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt >= max_attempts or not _is_transient_provider_error(exc):
+                raise
+            await asyncio.sleep(delay)
+            delay = min(delay * 2.0, 45.0)
+    assert last_error is not None
+    raise last_error
+
+
+async def _run_layer3_case_once(
+    service: HybridKnowledgeService,
+    query: str,
+    *,
+    settings: RagSettings | None = None,
+    live_model: bool = False,
+    case_id: str = "case",
+    prior_turn: str | None = None,
+) -> tuple[KnowledgeResult, float, dict[str, Any]]:
     started = time.perf_counter()
     user_context = UserContext()
     execution_context = None
@@ -390,10 +553,19 @@ async def run_layer3_case(
             knowledge_backend="HYBRID",
             timeout_seconds=120.0,
         )
+    raw_utterance = query
+    search_query = query
+    if prior_turn:
+        search_query = compose_follow_up_retrieval_query(prior_turn, query)
+    agent_request = _build_eval_agent_request(
+        case_id=case_id,
+        raw_utterance=raw_utterance,
+    )
     result = await service.search(
-        query=query,
+        query=search_query,
         user_context=user_context,
         execution_context=execution_context,
+        request=agent_request,
     )
     latency_ms = (time.perf_counter() - started) * 1000.0
 
@@ -479,6 +651,81 @@ async def run_layer3_case(
     return result, latency_ms, telemetry
 
 
+def _evidence_fact_present(texts: Sequence[str], must_contain: Sequence[str]) -> bool:
+    return evidence_fact_hit(
+        retrieved_texts=list(texts),
+        must_contain=list(must_contain),
+    )
+
+
+def classify_evidence_drop_stage(
+    *,
+    evidence_must: Sequence[Sequence[str]],
+    candidate_texts: Sequence[str],
+    selected_source_texts: Sequence[str],
+    answer: str,
+    answer_evidence_recall: float | None,
+    retrieval_evidence_recall: float | None,
+) -> dict[str, Any]:
+    """Locate where expected evidence was lost between candidate pool and answer.
+
+    Stages (first failing fact wins the primary label):
+    - CANDIDATE_MISS: not in Top-24 candidate pool
+    - SELECTION_OR_PACKING_DROP: in candidates but not in final cited/source pack
+    - GENERATION_IGNORED: in source pack but answer did not cover the fact
+    - NONE: no drop detected for labeled evidence
+    """
+    if not evidence_must:
+        return {"primaryStage": "NONE", "factStages": [], "droppedFactCount": 0}
+
+    fact_stages: list[str] = []
+    for fact in evidence_must:
+        in_candidates = _evidence_fact_present(candidate_texts, fact)
+        in_selected = _evidence_fact_present(selected_source_texts, fact)
+        in_answer = _evidence_fact_present([answer or ""], fact)
+        if not in_candidates:
+            stage = "CANDIDATE_MISS"
+        elif not in_selected:
+            stage = "SELECTION_OR_PACKING_DROP"
+        elif not in_answer:
+            stage = "GENERATION_IGNORED"
+        else:
+            stage = "NONE"
+        fact_stages.append(stage)
+
+    dropped = [stage for stage in fact_stages if stage != "NONE"]
+    primary = dropped[0] if dropped else "NONE"
+    # Prefer selection drop when any fact was packed out, matching taxonomy focus.
+    if "SELECTION_OR_PACKING_DROP" in dropped:
+        primary = "SELECTION_OR_PACKING_DROP"
+    elif "GENERATION_IGNORED" in dropped and "CANDIDATE_MISS" not in dropped:
+        primary = "GENERATION_IGNORED"
+    return {
+        "primaryStage": primary,
+        "factStages": fact_stages,
+        "droppedFactCount": len(dropped),
+        "candidateEvidenceRecall": (
+            float(
+                evidence_recall_at_k(
+                    retrieved_texts=list(candidate_texts),
+                    evidence_must_contain=[list(fact) for fact in evidence_must],
+                    k=len(candidate_texts),
+                )
+            )
+            if candidate_texts
+            else 0.0
+        ),
+        "selectedEvidenceRecall": (
+            float(retrieval_evidence_recall)
+            if retrieval_evidence_recall is not None
+            else 0.0
+        ),
+        "answerEvidenceRecall": (
+            float(answer_evidence_recall) if answer_evidence_recall is not None else 0.0
+        ),
+    }
+
+
 def _candidate_pool_from_retrieval_trace(
     trace: object | None,
     *,
@@ -551,17 +798,49 @@ def _source_evidence_texts(
     *,
     chunk_by_id: dict[str, Any],
 ) -> list[str]:
-    """Build retrieval-context texts from cited sources (not the answer)."""
+    """Build retrieval-context texts from cited sources (not the answer).
+
+    Prefer full indexed chunks for the cited document when ``chunkId`` is known.
+    Display ``evidence`` snippets are often truncated and would falsely mark
+    packing as a selection miss.
+    """
     texts: list[str] = []
+    seen_chunk_ids: set[str] = set()
+
+    def _append_chunk(chunk: Any, *, fallback_title: str = "", fallback_section: str = "") -> None:
+        chunk_id = str(getattr(chunk, "chunk_id", "") or "")
+        if chunk_id and chunk_id in seen_chunk_ids:
+            return
+        if chunk_id:
+            seen_chunk_ids.add(chunk_id)
+        evidence = str(getattr(chunk, "content", "") or "")
+        section = str(getattr(chunk, "section", "") or fallback_section or "")
+        title = str(getattr(chunk, "title", "") or fallback_title or "")
+        text = f"{title}\n{section}\n{evidence}".strip()
+        if text:
+            texts.append(text)
+
     for source in result.sources:
-        evidence = (source.evidence or "").strip()
-        if not evidence and source.chunkId and source.chunkId in chunk_by_id:
-            chunk = chunk_by_id[source.chunkId]
-            evidence = str(getattr(chunk, "content", "") or "")
-            section = str(getattr(chunk, "section", "") or source.section or "")
-            title = str(getattr(chunk, "title", "") or source.title or "")
-            texts.append(f"{title}\n{section}\n{evidence}".strip())
+        if source.chunkId and source.chunkId in chunk_by_id:
+            seed = chunk_by_id[source.chunkId]
+            doc_id = str(getattr(seed, "document_id", "") or "").strip()
+            title = str(getattr(seed, "title", "") or source.title or "").strip()
+            related = [
+                chunk
+                for chunk in chunk_by_id.values()
+                if (doc_id and str(getattr(chunk, "document_id", "") or "").strip() == doc_id)
+                or (not doc_id and title and str(getattr(chunk, "title", "") or "").strip() == title)
+            ]
+            if not related:
+                related = [seed]
+            for chunk in related:
+                _append_chunk(
+                    chunk,
+                    fallback_title=source.title or "",
+                    fallback_section=source.section or "",
+                )
             continue
+        evidence = (source.evidence or "").strip()
         texts.append(
             f"{source.title or ''}\n{source.section or ''}\n{evidence}".strip()
         )
@@ -677,7 +956,7 @@ async def evaluate_pipeline(
     settings: RagSettings,
     layer: int = 2,
     candidate_k: int = 24,
-    token_budget: int = 1200,
+    token_budget: int | None = None,
     enable_fast_path: bool = True,
     enable_batch_embedding: bool = True,
     enable_query_rrf: bool = True,
@@ -686,14 +965,15 @@ async def evaluate_pipeline(
     live_model: bool = False,
 ) -> dict[str, Any]:
     index.enable_sparse_fast_path = enable_fast_path
+    effective_settings = _settings_with_token_budget_override(settings, token_budget)
     service = HybridKnowledgeService(
-        settings=settings,
+        settings=effective_settings,
         index=index,
         model=answer_model,
     )
     serving = service._serving_decision(None)
     host = build_retrieval_host(
-        settings=settings,
+        settings=effective_settings,
         index=index,
         release_id="",
         retrieval_cache={},
@@ -704,7 +984,7 @@ async def evaluate_pipeline(
         enable_batch_embedding=enable_batch_embedding,
         enable_query_rrf=enable_query_rrf,
     )
-    min_score = float(settings.min_score)
+    min_score = float(effective_settings.min_score)
 
     scored_rows = []
     no_answer_rows: list[NoAnswerOutcome] = []
@@ -721,6 +1001,8 @@ async def evaluate_pipeline(
     groundedness_scores: list[float] = []
     answer_evidence_recalls: list[float] = []
     retrieval_evidence_recalls: list[float] = []
+    single_turn_answer_accuracies: list[float] = []
+    multi_turn_answer_accuracies: list[float] = []
     layer3_case_meta: list[dict[str, Any]] = []
     stage_latency_buckets: dict[str, list[float]] = {
         "retrievalMs": [],
@@ -733,10 +1015,16 @@ async def evaluate_pipeline(
         case = EvidenceLevelCase.from_dict(raw)
         evidence_must = [list(fact.must_contain) for fact in case.expected_evidence]
         layer3_meta: dict[str, Any] | None = None
+        raw_utterance = case.query
+        search_query = (
+            compose_follow_up_retrieval_query(case.prior_turn, case.query)
+            if case.prior_turn
+            else case.query
+        )
 
         if layer == 1:
             ranked_ids, titles, texts, scores, lat_ms, _timings = run_layer1_case(
-                index, case.query, limit=20
+                index, search_query, limit=20
             )
             latencies_ms.append(lat_ms)
             cand_24_results: list[SearchResult] = []
@@ -760,11 +1048,15 @@ async def evaluate_pipeline(
         elif layer == 2:
             bundles, raw_results, lat_ms, _timings, telemetry = await run_layer2_case(
                 host,
-                case.query,
+                search_query,
                 token_budget=token_budget,
                 limit=candidate_k,
                 enable_evidence_expand=enable_evidence_expand,
+                raw_user_utterance=raw_utterance,
+                settings=effective_settings,
             )
+            telemetry["multiTurn"] = bool(case.prior_turn)
+            telemetry["resolvedIssueQuery"] = search_query
             latencies_ms.append(lat_ms)
             telemetries.append(telemetry)
 
@@ -818,17 +1110,24 @@ async def evaluate_pipeline(
             result, lat_ms, telemetry = await run_layer3_case(
                 service,
                 case.query,
-                token_budget=token_budget,
-                settings=settings,
+                settings=effective_settings,
                 live_model=live_model,
                 case_id=case.case_id,
+                prior_turn=case.prior_turn,
             )
+            telemetry["multiTurn"] = bool(case.prior_turn)
+            telemetry["resolvedIssueQuery"] = search_query
+            if effective_settings is not None:
+                telemetry["evidenceTokenBudgets"] = _evidence_budget_report(
+                    effective_settings,
+                    cli_override=token_budget,
+                )
             latencies_ms.append(lat_ms)
             telemetries.append(telemetry)
             timings = telemetry.get("timings") or {}
-            for key in stage_latency_buckets:
+            for key, bucket in stage_latency_buckets.items():
                 if key in timings:
-                    stage_latency_buckets[key].append(float(timings[key]))
+                    bucket.append(float(timings[key]))
 
             ranked_ids = [s.chunkId or s.title for s in result.sources if s.chunkId or s.title]
             titles = [s.title for s in result.sources]
@@ -898,6 +1197,16 @@ async def evaluate_pipeline(
             if retrieval_evidence_recall is not None:
                 retrieval_evidence_recalls.append(float(retrieval_evidence_recall))
 
+            evidence_drop = classify_evidence_drop_stage(
+                evidence_must=evidence_must,
+                candidate_texts=raw_cand_texts,
+                selected_source_texts=source_texts,
+                answer=result.answer or "",
+                answer_evidence_recall=answer_evidence_recall,
+                retrieval_evidence_recall=retrieval_evidence_recall,
+            )
+            telemetry["evidenceDrop"] = evidence_drop
+
             # E2E Answer Accuracy
             if case.expected_found:
                 if evidence_must:
@@ -907,6 +1216,10 @@ async def evaluate_pipeline(
             else:
                 ans_hit = 1.0 if not result.found else 0.0
             answer_accuracies.append(ans_hit)
+            if case.is_multi_turn:
+                multi_turn_answer_accuracies.append(ans_hit)
+            else:
+                single_turn_answer_accuracies.append(ans_hit)
 
             # E2E Citation Accuracy (exclude synthetic POLICY overlay titles)
             exp_docs = set(case.expected_documents or ()) | set(case.expected_source_titles or ())
@@ -955,6 +1268,8 @@ async def evaluate_pipeline(
                 "selected_evidence_titles": [
                     (s.title or "") for s in result.sources[:8]
                 ],
+                "evidence_drop": evidence_drop,
+                "multi_turn": bool(case.prior_turn),
             }
             layer3_case_meta.append(layer3_meta)
 
@@ -975,7 +1290,7 @@ async def evaluate_pipeline(
             ranked_ids=ranked_ids if case.expected_chunk_ids else titles,
             relevant_ids=relevant,
             relevance_grades=grades,
-            hard_negative_ids=[],
+            hard_negative_ids=list(case.hard_negative_ids),
             forbidden_ids=forbidden,
             retrieved_texts=texts,
             evidence_must_contain=evidence_must,
@@ -1023,6 +1338,16 @@ async def evaluate_pipeline(
             )
         if cat not in {"SUCCESS", "CORRECT_NO_ANSWER"}:
             notes = str(raw.get("notes", ""))
+            if case.prior_turn:
+                prior_note = f"multiTurn priorTurn={case.prior_turn!r}"
+                notes = f"{notes} | {prior_note}" if notes else prior_note
+            if layer3_meta is not None and layer3_meta.get("evidence_drop"):
+                drop = layer3_meta["evidence_drop"]
+                drop_note = (
+                    f"evidenceDrop={drop.get('primaryStage')}"
+                    f" facts={drop.get('factStages')}"
+                )
+                notes = f"{notes} | {drop_note}" if notes else drop_note
             if layer3_meta is not None:
                 notes = (
                     f"{notes} | answer_preview={layer3_meta.get('answer_preview')!r}"
@@ -1073,10 +1398,23 @@ async def evaluate_pipeline(
             )
 
     summary = aggregate_case_scores(scored_rows)
-    summary["noAnswer"] = no_answer_confusion(no_answer_rows)
+    no_answer_stats = no_answer_confusion(no_answer_rows)
+    if layer == 3:
+        summary["noAnswer"] = no_answer_stats
+    else:
+        # Layer-2 predictor is a retrieval diagnostic, not the production decision path.
+        summary["retrievalOnlyNoAnswerProxy"] = no_answer_stats
+        summary["noAnswer"] = no_answer_stats
     summary["caseCount"] = float(len(cases_raw))
+    summary["multiTurnCaseCount"] = float(
+        sum(1 for raw in cases_raw if EvidenceLevelCase.from_dict(raw).is_multi_turn)
+    )
     summary["layer"] = layer
     summary["liveModel"] = bool(live_model and answer_model is not None)
+    summary["evidenceTokenBudgets"] = _evidence_budget_report(
+        effective_settings,
+        cli_override=token_budget,
+    )
     summary["documentHitAt4"] = (
         float(statistics.fmean(document_hits_4)) if document_hits_4 else 0.0
     )
@@ -1169,9 +1507,30 @@ async def evaluate_pipeline(
 
     if layer == 3:
         summary["answerAccuracy"] = float(statistics.fmean(answer_accuracies)) if answer_accuracies else 0.0
+        summary["singleTurnAnswerAccuracy"] = (
+            float(statistics.fmean(single_turn_answer_accuracies))
+            if single_turn_answer_accuracies
+            else 0.0
+        )
+        summary["multiTurnAnswerAccuracy"] = (
+            float(statistics.fmean(multi_turn_answer_accuracies))
+            if multi_turn_answer_accuracies
+            else 0.0
+        )
+        summary["singleTurnCaseCount"] = float(len(single_turn_answer_accuracies))
+        summary["multiTurnScoredCaseCount"] = float(len(multi_turn_answer_accuracies))
         summary["citationPrecision"] = float(statistics.fmean(citation_precisions)) if citation_precisions else 0.0
         summary["citationRecall"] = float(statistics.fmean(citation_recalls)) if citation_recalls else 0.0
         summary["groundedness"] = float(statistics.fmean(groundedness_scores)) if groundedness_scores else 0.0
+        drop_counts: Counter[str] = Counter()
+        for meta in layer3_case_meta:
+            drop = meta.get("evidence_drop") or {}
+            stage = str(drop.get("primaryStage") or "NONE")
+            if stage != "NONE":
+                drop_counts[stage] += 1
+        summary["evidenceDropStages"] = {
+            stage: float(count) for stage, count in drop_counts.most_common()
+        }
         if answer_evidence_recalls:
             summary["answerEvidenceRecallAt4"] = float(statistics.fmean(answer_evidence_recalls))
         if retrieval_evidence_recalls:
@@ -1385,7 +1744,15 @@ def main() -> int:
     parser.add_argument("--split", choices=("all", "dev", "test"), default="test")
     parser.add_argument("--layer", type=int, choices=(1, 2, 3), default=2)
     parser.add_argument("--candidate-k", type=int, default=24)
-    parser.add_argument("--token-budget", type=int, default=1200)
+    parser.add_argument(
+        "--token-budget",
+        type=int,
+        default=None,
+        help=(
+            "Optional fixed evidence token budget for Layer 2 expand and Layer 3 "
+            "generation. When omitted, query-tier budgets from settings are used."
+        ),
+    )
     parser.add_argument("--ablation", action="store_true", help="Run full ablation matrix")
     parser.add_argument("--taxonomy", action="store_true", help="Print failure taxonomy breakdown")
     parser.add_argument("--within-doc-oracle", action="store_true", help="Run within-document recall oracle diagnostic")

@@ -1,0 +1,162 @@
+{
+  "summary": {
+    "caseCount": 4.0,
+    "evidenceLabeledCaseCount": 4.0,
+    "recallAt4": 1.0,
+    "precisionAt4": 0.875,
+    "evidenceRecallAt4": 0.75,
+    "evidencePrecisionAt4": 0.75,
+    "recallAt5": 1.0,
+    "recallAt10": 1.0,
+    "recallAt20": 1.0,
+    "mrrAt10": 1.0,
+    "ndcgAt10": 1.0,
+    "hitAt1": 1.0,
+    "hitAt3": 1.0,
+    "hardNegativeAccuracy": 1.0,
+    "aclLeakageCount": 0.0,
+    "noAnswer": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "truePositive": 0.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "multiTurnCaseCount": 0.0,
+    "layer": 3,
+    "liveModel": true,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 1.0,
+    "candidateRecallAt24": 1.0,
+    "rerankerHeadroomPp": 25.0,
+    "latencyMsP50": 2143.7116665038047,
+    "latencyMsP95": 3288.830167002743,
+    "latencyMsMean": 2394.0409165043093,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.0,
+    "avgBatchEmbeddingMs": 0.0,
+    "embeddingMsP50": 481.25,
+    "embeddingMsP95": 502.8,
+    "sparseMsP50": 2.55,
+    "sparseMsP95": 3.4,
+    "denseMsP50": 28.85,
+    "denseMsP95": 45.0,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.4,
+    "searchTotalMsP50": 514.05,
+    "searchTotalMsP95": 528.4,
+    "facetGroupCounts": {
+      "facet0": 4.0,
+      "facet1": 0.0,
+      "facet2plus": 0.0
+    },
+    "facet0SearchTotalMsP50": 514.05,
+    "facet0SearchTotalMsP95": 528.4,
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 0.75,
+    "singleTurnAnswerAccuracy": 0.75,
+    "multiTurnAnswerAccuracy": 0.0,
+    "singleTurnCaseCount": 4.0,
+    "multiTurnScoredCaseCount": 0.0,
+    "citationPrecision": 1.0,
+    "citationRecall": 1.0,
+    "groundedness": 1.0,
+    "evidenceDropStages": {
+      "SELECTION_OR_PACKING_DROP": 1.0
+    },
+    "answerEvidenceRecallAt4": 0.75,
+    "retrievalEvidenceRecallAt4": 0.75,
+    "retrievalMsP50": 515.85,
+    "retrievalMsP95": 529.1,
+    "relevanceMsP50": 0.45,
+    "relevanceMsP95": 737.6,
+    "generateMsP50": 1622.45,
+    "generateMsP95": 2037.0,
+    "totalMsP50": 2143.6000000000004,
+    "totalMsP95": 3288.7,
+    "llmCallsPerQuery": 1.25,
+    "inputTokensPerQuery": 4051.25,
+    "outputTokensPerQuery": 285.5,
+    "costUsdPerQuery": 0.0014410625,
+    "usageSourceCounts": {
+      "PROVIDER": 4
+    },
+    "queryTierCounts": {
+      "trivial": 2.0,
+      "standard": 1.0,
+      "hard": 1.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "EVIDENCE_NOT_PASSED_TO_GENERATOR": 1
+    },
+    "failureCount": 1,
+    "split": "all",
+    "evalSet": "../data/eval/reports/_fp4_subset.json",
+    "provenance": {
+      "datasetPath": "../data/eval/reports/_fp4_subset.json",
+      "datasetHash": "15c2f0b267859dd0e1e19f5e2cbf2b16200faf31fc7d951c71835d470cef71ff",
+      "commitSha": "b7f3b61e575b120e69267090983c36cd127587ca",
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-abad12da4a25",
+      "region": null,
+      "knowledgeReleaseTenantId": "default"
+    }
+  },
+  "provenance": {
+    "datasetPath": "../data/eval/reports/_fp4_subset.json",
+    "datasetHash": "15c2f0b267859dd0e1e19f5e2cbf2b16200faf31fc7d951c71835d470cef71ff",
+    "commitSha": "b7f3b61e575b120e69267090983c36cd127587ca",
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-abad12da4a25",
+    "region": null,
+    "knowledgeReleaseTenantId": "default"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-hn-05",
+      "query": "大州首次設定，不是功能無法點選那篇",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "大州首次使用設定",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "selectedEvidenceTitles": [
+        "大州首次使用設定",
+        "安全性設定變更確認原則 (POLICY-SEC-003)"
+      ],
+      "expectedEvidence": [
+        [
+          "預設 Browser",
+          "網際網路選項",
+          "每次造訪網頁時"
+        ]
+      ],
+      "answer": "大州首次使用設定包含以下網際網路選項設定與高權申請步驟：\n1. 於「一般」頁籤中，將設定調整為「每次造訪網頁時」 [S1]。\n2. 於「安全性」頁籤的「自訂等級」中，勾選「允許以指令碼開啟沒有大小或位置限制的視窗」 [S1]。\n3. 於「進階」頁籤中，勾選「即使簽章無效也允許執行或安裝軟體」 [S1, POLICY-SEC-003]。\n4. 若需安裝附加元件，請申請高權，該流程涉及三個機碼元件 [S1]。關於機碼元件的具體名稱，文件未詳，\n\n> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：此操作涉及安全性、Proxy 或憑證設定變更。若該裝置是否受企業政策管轄狀態未明，執行前應先向權責單位或 IT 支援窗口確認，切勿擅自變更或停用安全防護設定。文件畫面僅證明該控制項可見且已勾選，不得據此作為通用排障步驟或普遍啟用建議。來源若未提供元件名稱、版本、來源或適用範圍（例如記載為名稱未詳），在權責流程確認前不得自行啟用或擴大套用。",
+      "citations": [
+        "大州首次使用設定|7dbbd9605be36badcf5f",
+        "安全性設定變更確認原則 (POLICY-SEC-003)|POLICY-SEC-003"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview='大州首次使用設定包含以下網際網路選項設定與高權申請步驟：\\n1. 於「一般」頁籤中，將設定調整為「每次造訪網頁時」 [S1]。\\n2. 於「安全性」頁籤的「自訂等級」中，勾選「允許以指令碼開啟沒有大小或位置限制的視窗」 [S1]。\\n3. 於「進階」頁籤中，勾選「即使簽章無效也允許執行或安裝軟體」 [S1, POLICY-SEC-003]。\\n4. 若需安裝附加元件，請申請高權，該流程涉及三個機碼元件 [S1]。關於機碼元件的具體名稱，文件未詳，\\n\\n> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：此操作涉及安全性、Proxy 或憑證設定變更。若該裝置是否受企業政策管轄狀態未明，執行前應先向權責單位或 IT 支援窗口確認，切勿擅自變更或停用安全防護設定。文件畫面僅證明該控制項可見且已勾選，不得據此作為通用排障步驟或普遍啟用建議。來源若未提供元件名稱、版本、來源或適用範圍（例如記'"
+    }
+  ]
+}

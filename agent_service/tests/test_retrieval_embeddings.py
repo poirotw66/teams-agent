@@ -120,6 +120,21 @@ def test_embed_queries_empty_inputs() -> None:
     assert embed_single_query(MockGoogleEmbeddings(), "") == []
 
 
+def test_retry_on_transient_recovers_from_disconnect() -> None:
+    from agent_service.retrieval_embeddings import _retry_on_transient
+
+    calls = {"n": 0}
+
+    def flaky() -> str:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("Server disconnected without sending a response.")
+        return "ok"
+
+    assert _retry_on_transient(flaky, initial_delay=0.01) == "ok"
+    assert calls["n"] == 3
+
+
 def test_hybrid_index_embed_queries_delegation() -> None:
     client = MockGoogleEmbeddings()
     chunk = DocumentChunk(

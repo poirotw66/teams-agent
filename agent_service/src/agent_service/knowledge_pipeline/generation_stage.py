@@ -177,7 +177,14 @@ async def generate_grounded_answer(
     model: BaseChatModel | None = None,
     include_retrieval_evidence: bool,
 ) -> KnowledgeResult:
-    results = state.results
+    from .source_roles import filter_results_for_generation
+
+    query = str(getattr(state, "resolved_issue_query", "") or "")
+    results = filter_results_for_generation(
+        query=query,
+        results=list(state.results or []),
+        document_key=host.document_key,
+    )
     answer_model = model
     if not results:
         return host.no_answer()
@@ -222,7 +229,7 @@ async def generate_grounded_answer(
         counter=counter,
         execution_context=execution_context,
         include_retrieval_evidence=include_retrieval_evidence,
-        resolved_issue_query=str(getattr(state, "resolved_issue_query", "") or ""),
+        resolved_issue_query=query,
     )
 
 

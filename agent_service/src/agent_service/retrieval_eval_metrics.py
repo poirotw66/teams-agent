@@ -7,6 +7,7 @@ relevance judgments; this module only scores.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -196,6 +197,35 @@ def precision_at_k(
     return sum(1 for item in top if item in relevant) / len(top)
 
 
+def _collapse_whitespace(value: str) -> str:
+    return "".join(value.split())
+
+
+def evidence_token_in_text(token: str, text: str) -> bool:
+    """Substring match that ignores whitespace differences (e.g. 並非AD vs 並非 AD)."""
+    if not token:
+        return True
+    haystack = text or ""
+    if token in haystack:
+        return True
+    collapsed_token = _collapse_whitespace(token)
+    collapsed_haystack = _collapse_whitespace(haystack)
+    if collapsed_token and collapsed_token in collapsed_haystack:
+        return True
+    # Allow common intervening particles inside CJK compounds (帳號遭鎖定 ≈ 帳號鎖定).
+    if len(collapsed_token) >= 4 and re.fullmatch(
+        r"[\u3400-\u9fffA-Za-z0-9_./:-]+",
+        collapsed_token,
+    ):
+        pattern = "".join(
+            re.escape(char) + r"[遭被已了的之與和]{0,2}"
+            for char in collapsed_token[:-1]
+        ) + re.escape(collapsed_token[-1])
+        if re.search(pattern, collapsed_haystack):
+            return True
+    return False
+
+
 def evidence_fact_hit(
     *,
     retrieved_texts: Sequence[str],
@@ -207,7 +237,7 @@ def evidence_fact_hit(
         return False
     for text in retrieved_texts:
         haystack = text or ""
-        if all(token in haystack for token in required):
+        if all(evidence_token_in_text(token, haystack) for token in required):
             return True
     return False
 
@@ -390,6 +420,7 @@ __all__ = [
     "evidence_fact_hit",
     "evidence_precision_at_k",
     "evidence_recall_at_k",
+    "evidence_token_in_text",
     "hard_negative_accuracy",
     "hit_at_k",
     "mrr_at_k",

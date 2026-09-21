@@ -38,6 +38,28 @@ def test_prefer_query_aligned_citations_drops_peripheral_source() -> None:
     assert kept == ["jump"]
 
 
+def test_prefer_query_aligned_citations_keeps_near_equal_supporting_docs() -> None:
+    results = [
+        _result(
+            "shared",
+            "公槽申請手冊",
+            "提出共用公槽人員新增或移除申請時，聯繫單應填寫必要資料。",
+        ),
+        _result(
+            "security",
+            "共用公槽資安手冊",
+            "提出共用公槽人員新增申請時不可將個人機敏資訊填入聯繫單。",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="提出共用公槽人員新增申請時應填寫哪些資料",
+        ordered_cited_doc_keys=["shared", "security"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["shared", "security"]
+
+
 def test_prefer_query_aligned_citations_keeps_single_source() -> None:
     results = [_result("ad", "AD 帳號與系統解鎖 FAQ", "AD 帳號鎖定請自助解鎖")]
     kept = prefer_query_aligned_citations(
@@ -68,6 +90,27 @@ def test_drop_ad_unlock_citations_for_crm_otp_query() -> None:
     )
     assert kept == ["crm", "ext"]
     assert common == {"crm", "ext"}
+
+
+def test_drop_ad_unlock_citations_for_non_ad_vpn_query() -> None:
+    from agent_service.knowledge_pipeline.generation_stage_result import (
+        drop_ad_unlock_citations_for_product_query,
+    )
+
+    results = [
+        _result("forti", "登入 FortiClient 出現錯訊", "錯誤碼 -455 Permission denied"),
+        _result("vpn", "VPN常見Q&A問答", "VPN 密碼輸入錯誤請重試"),
+        _result("ad", "AD 帳號與系統解鎖 FAQ", "AD 帳號鎖定請自助解鎖"),
+    ]
+    kept, common = drop_ad_unlock_citations_for_product_query(
+        query="FortiClient Permission denied 錯誤碼 -455",
+        ordered_cited_doc_keys=["forti", "vpn", "ad"],
+        common_doc_keys={"forti", "vpn", "ad"},
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["forti", "vpn"]
+    assert common == {"forti", "vpn"}
 
 
 def test_drop_ad_unlock_citations_keeps_ad_for_lock_query() -> None:

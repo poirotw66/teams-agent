@@ -16,18 +16,41 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def _retry_on_transient(func: Any, *args: Any, max_attempts: int = 3, initial_delay: float = 0.5, **kwargs: Any) -> Any:
+def _is_transient_embedding_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    markers = (
+        "503",
+        "unavailable",
+        "429",
+        "resource_exhausted",
+        "timeout",
+        "timed out",
+        "reset",
+        "deadline",
+        "disconnected",
+        "remote protocol",
+        "connection reset",
+        "connection aborted",
+        "temporarily unavailable",
+        "internal error",
+        "500",
+    )
+    return any(marker in msg for marker in markers)
+
+
+def _retry_on_transient(
+    func: Any,
+    *args: Any,
+    max_attempts: int = 5,
+    initial_delay: float = 1.0,
+    **kwargs: Any,
+) -> Any:
     delay = initial_delay
     for attempt in range(1, max_attempts + 1):
         try:
             return func(*args, **kwargs)
         except Exception as exc:
-            msg = str(exc).lower()
-            is_transient = any(
-                code in msg
-                for code in ("503", "unavailable", "429", "resource_exhausted", "timeout", "reset", "deadline")
-            )
-            if attempt == max_attempts or not is_transient:
+            if attempt == max_attempts or not _is_transient_embedding_error(exc):
                 raise
             logger.warning(
                 "Transient embedding error on attempt %d/%d: %s. Retrying in %.2fs...",
@@ -37,7 +60,7 @@ def _retry_on_transient(func: Any, *args: Any, max_attempts: int = 3, initial_de
                 delay,
             )
             time.sleep(delay)
-            delay *= 2.0
+            delay = min(delay * 2.0, 30.0)
 
 
 def embed_queries_batch(client: Any, texts: Sequence[str]) -> list[list[float]]:

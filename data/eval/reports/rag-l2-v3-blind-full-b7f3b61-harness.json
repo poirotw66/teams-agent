@@ -1,0 +1,1019 @@
+{
+  "summary": {
+    "caseCount": 156.0,
+    "evidenceLabeledCaseCount": 116.0,
+    "recallAt4": 0.7435897435897436,
+    "precisionAt4": 0.31196581196581225,
+    "evidenceRecallAt4": 0.9224137931034483,
+    "evidencePrecisionAt4": 0.4547413793103448,
+    "recallAt5": 0.7435897435897436,
+    "recallAt10": 0.7435897435897436,
+    "recallAt20": 0.7435897435897436,
+    "mrrAt10": 0.7126068376068376,
+    "ndcgAt10": 0.7206186427884627,
+    "hitAt1": 0.6858974358974359,
+    "hitAt3": 0.7435897435897436,
+    "hardNegativeAccuracy": 0.6190476190476191,
+    "aclLeakageCount": 18.0,
+    "retrievalOnlyNoAnswerProxy": {
+      "precision": 1.0,
+      "recall": 0.425,
+      "f1": 0.5964912280701754,
+      "truePositive": 17.0,
+      "falsePositive": 0.0,
+      "falseNegative": 23.0
+    },
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 0.425,
+      "f1": 0.5964912280701754,
+      "truePositive": 17.0,
+      "falsePositive": 0.0,
+      "falseNegative": 23.0
+    },
+    "multiTurnCaseCount": 20.0,
+    "layer": 2,
+    "liveModel": false,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 0.9827586206896551,
+    "candidateRecallAt24": 0.9827586206896551,
+    "rerankerHeadroomPp": 6.034482758620685,
+    "latencyMsP50": 709.6514789955108,
+    "latencyMsP95": 947.4784963924321,
+    "latencyMsMean": 712.5678966469236,
+    "fastPathRate": 0.01282051282051282,
+    "avgFacetCount": 0.07692307692307693,
+    "avgBatchEmbeddingMs": 1061.6275,
+    "embeddingMsP50": 681.45,
+    "embeddingMsP95": 896.915,
+    "sparseMsP50": 1.9,
+    "sparseMsP95": 2.4,
+    "denseMsP50": 26.35,
+    "denseMsP95": 35.215,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.6,
+    "searchTotalMsP50": 700.45,
+    "searchTotalMsP95": 926.95,
+    "batchEmbeddingMsP50": 1040.6599999999999,
+    "batchEmbeddingMsP95": 1350.71,
+    "evidenceExpandMsP50": 0.01,
+    "evidenceExpandMsP95": 0.0155,
+    "facetGroupCounts": {
+      "facet0": 150.0,
+      "facet1": 0.0,
+      "facet2plus": 6.0
+    },
+    "facet0SearchTotalMsP50": 706.7,
+    "facet0SearchTotalMsP95": 930.25,
+    "facet2plusSearchTotalMsP50": 113.6,
+    "facet2plusSearchTotalMsP95": 191.6,
+    "approxCacheHitRate": 0.01282051282051282,
+    "failureTaxonomy": {
+      "RANKING_OR_RERANKER_OPPORTUNITY": 7,
+      "NO_ANSWER_FALSE_NEGATIVE": 23,
+      "WRONG_SECTION_OR_CHUNKING": 2
+    },
+    "failureCount": 32,
+    "split": "test",
+    "evalSet": "../data/eval/retrieval_eval_v3_blind.json",
+    "provenance": {
+      "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+      "datasetHash": "4e071b2f4d09447765cf531f5f584c5cf065dda24752e355d676ee5e8f970f7a",
+      "commitSha": "b7f3b61e575b120e69267090983c36cd127587ca",
+      "model": null,
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": false,
+      "releaseId": "release-961089aacf8b",
+      "region": null,
+      "knowledgeReleaseTenantId": "default"
+    }
+  },
+  "provenance": {
+    "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+    "datasetHash": "4e071b2f4d09447765cf531f5f584c5cf065dda24752e355d676ee5e8f970f7a",
+    "commitSha": "b7f3b61e575b120e69267090983c36cd127587ca",
+    "model": null,
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": false,
+    "releaseId": "release-961089aacf8b",
+    "region": null,
+    "knowledgeReleaseTenantId": "default"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-28",
+      "query": "外部客戶線上問題怎麼處理？",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "expectedEvidence": [
+        [
+          "問題發生日期及時間",
+          "123@cathaysec.com.tw",
+          "使用裝置"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 外部客戶線上問題"
+    },
+    {
+      "caseId": "v3-blind-na-01",
+      "query": "公司內部有沒有提供免費 Slack 企業版帳號申請？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "座位搬遷需求"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "座位搬遷需求"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent topic"
+    },
+    {
+      "caseId": "v3-blind-na-04",
+      "query": "錯誤碼 XYZ-99999 的官方修復步驟？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "外網 CRM 登入連線設定方式",
+        "郵件為亂碼",
+        "外部客戶線上問題"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "外網 CRM 登入連線設定方式",
+        "郵件為亂碼",
+        "外部客戶線上問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Fabricated error code"
+    },
+    {
+      "caseId": "v3-blind-na-05",
+      "query": "請提供資安長私人手機以便緊急通報",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "資訊問題的通報格式",
+        "外部客戶線上問題",
+        "外部客戶線上問題",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "資訊問題的通報格式",
+        "外部客戶線上問題",
+        "外部客戶線上問題",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "PII request absent"
+    },
+    {
+      "caseId": "v3-blind-na-06",
+      "query": "公司有沒有提供 ChatGPT Team 付費帳號？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-07",
+      "query": "如何申請個人 AWS root 帳號？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "Webex會議借用-可錄影",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "Webex會議借用-可錄影",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-09",
+      "query": "錯誤碼 FOO-424242 官方修補步驟？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "AD 帳號與系統解鎖 FAQ",
+        "外部客戶線上問題",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "AD 帳號與系統解鎖 FAQ",
+        "外部客戶線上問題",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-12",
+      "query": "如何把公司筆電刷成 Ubuntu 桌面版？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題",
+        "VPN 跳板機連線異常",
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題",
+        "VPN 跳板機連線異常",
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-15",
+      "query": "公司提供免費 Spotify 家庭方案嗎？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-18",
+      "query": "內部 NFT 發幣申請窗口？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-19",
+      "query": "量子電腦租用申請表在哪？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "Webex會議借用-可錄影"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "Webex會議借用-可錄影"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-21",
+      "query": "申請個人域名綁到公司 DNS？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式",
+        "同仁申請共用公槽資料夾",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式",
+        "同仁申請共用公槽資料夾",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-23",
+      "query": "錯誤碼 ZZZ-000 的中文說明？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "總公司IP話機操作",
+        "郵件為亂碼",
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "selectedEvidenceTitles": [
+        "總公司IP話機操作",
+        "郵件為亂碼",
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-24",
+      "query": "請寄送完整員工個資匯出檔",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "VPN國外連線短暫申請"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "VPN國外連線短暫申請"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-27",
+      "query": "申請私人 VPN 繞過公司防火牆？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "VPN國外連線短暫申請",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN國外連線短暫申請",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-29",
+      "query": "公司寵物上班日規範？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-30",
+      "query": "請提供測試環境的正式客戶交易資料",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外部客戶線上問題",
+        "外部客戶線上問題",
+        "XQ問題",
+        "資訊問題的通報格式"
+      ],
+      "selectedEvidenceTitles": [
+        "外部客戶線上問題",
+        "外部客戶線上問題",
+        "XQ問題",
+        "資訊問題的通報格式"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-31",
+      "query": "如何申請個人 GitHub Copilot Business？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "selectedEvidenceTitles": [
+        "同仁申請共用公槽資料夾",
+        "座位搬遷需求",
+        "外部客戶線上問題",
+        "外部客戶線上問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-34",
+      "query": "申請公司信用卡給外包商？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "VPN國外連線短暫申請",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "VPN國外連線短暫申請",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-35",
+      "query": "如何關閉所有同事的 Teams 通知？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "總公司IP話機操作",
+        "總公司IP話機操作"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "總公司IP話機操作",
+        "總公司IP話機操作"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-36",
+      "query": "內部有沒有提供 Netflix 共用帳號？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "同仁申請共用公槽資料夾",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "同仁申請共用公槽資料夾",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-37",
+      "query": "申請把筆電改成雙開 Android？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-38",
+      "query": "請提供防火牆 bypass 白名單申請給個人網站",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN國外連線短暫申請",
+        "同仁申請共用公槽資料夾"
+      ],
+      "selectedEvidenceTitles": [
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ",
+        "VPN國外連線短暫申請",
+        "同仁申請共用公槽資料夾"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-na-40",
+      "query": "如何取得已刪除郵件伺服器的根密碼？",
+      "failureCategory": "NO_ANSWER_FALSE_NEGATIVE",
+      "evidenceRecallAt4": null,
+      "candidateRecallAt24": null,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "郵件為亂碼",
+        "金控入口網密碼變更方式",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "郵件為亂碼",
+        "金控入口網密碼變更方式",
+        "AD 帳號與系統解鎖 FAQ",
+        "AD 帳號與系統解鎖 FAQ"
+      ],
+      "expectedEvidence": [],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Absent / unsafe / out-of-corpus topic"
+    },
+    {
+      "caseId": "v3-blind-hn-05",
+      "query": "大州首次設定，不是功能無法點選那篇",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定",
+        "外網 CRM 登入連線設定方式",
+        "大州系統_功能無法點選"
+      ],
+      "selectedEvidenceTitles": [
+        "大州系統_功能無法點選",
+        "大州首次使用設定",
+        "外網 CRM 登入連線設定方式",
+        "大州系統_功能無法點選"
+      ],
+      "expectedEvidence": [
+        [
+          "預設 Browser",
+          "網際網路選項",
+          "每次造訪網頁時"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc"
+    },
+    {
+      "caseId": "v3-blind-conv-02",
+      "query": "那 OTP 要綁在哪個 App？",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "Google Authenticator",
+          "App Store",
+          "Google Play"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=國金 CRM 登入要驗證 | multiTurn priorTurn='國金 CRM 登入要驗證'"
+    },
+    {
+      "caseId": "v3-blind-alias-03",
+      "query": "跳板機 VPN 掛掉",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常",
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常",
+        "VPN 跳板機連線異常",
+        "內網筆電 VPN 連線問題",
+        "內網筆電 VPN 連線問題"
+      ],
+      "expectedEvidence": [
+        [
+          "已進入跳板機",
+          "未授權該使用者帳戶遠端登入"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant"
+    },
+    {
+      "caseId": "v3-blind-acl-03",
+      "query": "授權使用者如何查看外網 CRM 設定？",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "selectedEvidenceTitles": [
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM 登入連線設定方式",
+        "分公司CS團隊VPN連線可使用權限列表",
+        "分公司CS團隊VPN連線可使用權限列表"
+      ],
+      "expectedEvidence": [
+        [
+          "FortiToken",
+          "sslvpn.cathaysec.com.tw:8443/CRM"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Corpus lacks ACL metadata on 外網 CRM; retagged answerable."
+    },
+    {
+      "caseId": "v3-blind-ver-01",
+      "query": "大州首次使用設定與功能無法點選是不是同一版文件？",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "大州系統_功能無法點選",
+        "大州系統_功能無法點選",
+        "大州首次使用設定",
+        "大州首次使用設定"
+      ],
+      "selectedEvidenceTitles": [
+        "大州系統_功能無法點選",
+        "大州系統_功能無法點選",
+        "大州首次使用設定",
+        "大州首次使用設定"
+      ],
+      "expectedEvidence": [
+        [
+          "預設 Browser",
+          "網際網路選項",
+          "每次造訪網頁時"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Sibling docs (首次設定 vs 無法點選), not superseded version; category retagged."
+    },
+    {
+      "caseId": "v3-blind-ver-02",
+      "query": "Android 與 iOS Outlook 手冊是否為不同文件？",
+      "failureCategory": "WRONG_SECTION_OR_CHUNKING",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
+      ],
+      "expectedEvidence": [
+        [
+          "適用平台：Android",
+          "Microsoft Intune",
+          "台灣 (+886)"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Platform pair discrimination, not version supersession."
+    },
+    {
+      "caseId": "v3-blind-ver-03",
+      "query": "VPN 常見 Q&A 與 FortiClient 錯訊文件差別？",
+      "failureCategory": "RANKING_OR_RERANKER_OPPORTUNITY",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答",
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊",
+        "登入 FortiClient 出現錯訊"
+      ],
+      "expectedEvidence": [
+        [
+          "Unable to establish the VPN connection",
+          "(-14)"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Related VPN docs discrimination."
+    },
+    {
+      "caseId": "v3-blind-neg-03",
+      "query": "iPhone 收公司信應依哪份 Outlook 手冊，為何不能直接套用 Android 步驟？",
+      "failureCategory": "WRONG_SECTION_OR_CHUNKING",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": null,
+      "retrievalEvidenceRecall": null,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（iOS）",
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "外網 CRM 登入連線設定方式",
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        [
+          "Microsoft Authenticator",
+          "產險版本",
+          "掃描 QR 代碼"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": null,
+      "terminalReason": null,
+      "notes": "Negative constraint: platform-specific iOS handbook vs Android."
+    }
+  ]
+}
