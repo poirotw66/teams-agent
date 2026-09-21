@@ -23,13 +23,17 @@ Verification evidence (local, non-live):
 
 Invariants preserved: `AgentWorkflow` + `KnowledgeService` / `HYBRID`; frozen eval labels untouched; `TURN_PLANNER_MODE=OFF`; `RAG_ANSWER_ESCALATION_POLICY=OFF`; global neural reranker off (`rag_reranker_enabled=False`); embedding remains `gemini-embedding-2` when configured via `RAG_EMBEDDING_MODEL`.
 
-External gates that must not be fabricated (out of code scope; track operationally):
+Follow-up gates in progress (this goal):
 
-1. Corrected full live Layer-2 / Layer-3 reports at HEAD.
-2. AgentWorkflow live baseline report.
-3. 14-day production observation before `RagAgent` removal (G2/G3).
-4. Promotion-gate metric attainment.
-5. Cloud Run concurrency load test.
+1. Align L3/L2 eval index loading with production active release (same corpus as AgentWorkflow).
+2. Expand `agent_workflow_eval_v1` beyond 3 smoke cases (knowledge / multi-turn / greeting) as a formal gate set.
+3. Bring Layer-3 live Total/wall P95 to <= 4.5s (exclude harness extractor overhead from RAG latency; profile generate/relevance tails).
+
+Still external / operational:
+
+1. 14-day production observation before `RagAgent` removal (G2/G3).
+2. Cloud Run concurrency load test.
+3. Final promotion-gate attestation after the aligned live re-runs above.
 
 > Date: 2026-09-21  
 > Baseline: `main@b7f3b61`  
