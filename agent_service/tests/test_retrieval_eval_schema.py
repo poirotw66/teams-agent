@@ -49,6 +49,8 @@ def test_evidence_case_parses_prior_turn_and_hard_negatives() -> None:
             "expectedFound": True,
             "expectedDocuments": ["國泰員工入口網、CTeam密碼、國泰e點名"],
             "hardNegatives": ["AD 帳號與系統解鎖 FAQ", {"title": "VPN常見Q&A問答"}],
+            "groups": ["grp_it"],
+            "categories": ["conversational", "answerable"],
         }
     )
     assert case.prior_turn == "員工入口網登不進去"
@@ -57,6 +59,8 @@ def test_evidence_case_parses_prior_turn_and_hard_negatives() -> None:
         "AD 帳號與系統解鎖 FAQ",
         "VPN常見Q&A問答",
     )
+    assert case.groups == ("grp_it",)
+    assert case.categories == ("conversational", "answerable")
 
 
 def test_compose_follow_up_retrieval_query_matches_clarification_merge() -> None:

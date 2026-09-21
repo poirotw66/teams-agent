@@ -66,7 +66,6 @@ from agent_service.retrieval_eval_metrics import (
 )
 from agent_service.retrieval_eval_schema import (
     EvidenceLevelCase,
-    compose_follow_up_retrieval_query,
 )
 from agent_service.retrieval_eval_taxonomy import (
     classify_layer3_failure,
@@ -108,6 +107,9 @@ def _build_eval_provenance(
     settings: RagSettings,
     live_model: bool,
     model_name: str | None,
+    freeze_version: int | None = None,
+    started_at: str | None = None,
+    completed_at: str | None = None,
 ) -> dict[str, Any]:
     """Record release-gate identifiers for Layer-2/3 eval reports."""
 
@@ -139,17 +141,63 @@ def _build_eval_provenance(
                 release_id = payload.strip() or None
             if release_id:
                 break
+    answer_model = settings.model
+    agent_model = settings.agent_model or settings.model
     return {
         "datasetPath": str(eval_set),
         "datasetHash": _file_sha256(eval_set),
         "commitSha": _git_commit_sha(),
+        "freezeVersion": freeze_version,
         "model": model_name if live_model else None,
+        "agentModel": agent_model,
+        "answerModel": answer_model or model_name,
+        "relevanceModel": answer_model or model_name,
+        "rewriteModel": answer_model or model_name,
         "embeddingModel": settings.embedding_model,
         "liveModel": bool(live_model),
         "releaseId": release_id,
         "region": region,
         "knowledgeReleaseTenantId": settings.knowledge_release_tenant_id,
+        "startedAt": started_at,
+        "completedAt": completed_at,
     }
+
+
+def _acl_coverage_mode(index: HybridIndex) -> str:
+    """Report whether the loaded corpus contains group-gated documents."""
+    for chunk in getattr(index, "chunks", []) or []:
+        allowed = getattr(chunk, "allowed_groups", None) or []
+        normalized = {str(item).strip() for item in allowed if str(item).strip()}
+        if not normalized:
+            continue
+        open_groups = {"ALL_EMPLOYEES", "grp_public", "*"}
+        if not normalized.issubset(open_groups):
+            return "CORPUS_HAS_GROUP_GATED_DOCUMENTS"
+    return "CORPUS_HAS_NO_GROUP_GATED_DOCUMENTS"
+
+
+def _split_forbidden_ids(case: EvidenceLevelCase, raw: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Separate ACL forbid labels from semantic/scenario forbid titles."""
+    acl_ids = [
+        str(item)
+        for item in (
+            case.forbidden_evidence
+            or raw.get("forbiddenEvidence")
+            or raw.get("aclForbiddenTitles")
+            or ()
+        )
+        if item
+    ]
+    semantic_ids = [
+        str(item)
+        for item in (raw.get("forbiddenSourceTitles") or ())
+        if item and str(item) not in acl_ids
+    ]
+    # Categories marked acl_deny use forbiddenEvidence as ACL leakage labels.
+    if "acl_deny" in case.categories and not acl_ids and semantic_ids:
+        acl_ids = list(semantic_ids)
+        semantic_ids = []
+    return acl_ids, semantic_ids
 
 
 def _load_cases(path: Path) -> list[dict[str, Any]]:
@@ -319,12 +367,13 @@ def run_layer1_case(
     *,
     limit: int = 20,
     fusion_mode: str | None = None,
+    groups: set[str] | None = None,
 ) -> tuple[list[str], list[str], list[str], list[float], float, dict[str, float]]:
     started = time.perf_counter()
     results, timings = index.search_with_timings(
         query,
         limit=limit,
-        groups=set(),
+        groups=set(groups or ()),
         fusion_mode=fusion_mode,
     )
     latency_ms = (time.perf_counter() - started) * 1000.0
@@ -350,6 +399,7 @@ async def run_layer2_case(
     enable_evidence_expand: bool = True,
     raw_user_utterance: str | None = None,
     settings: RagSettings | None = None,
+    groups: set[str] | None = None,
 ) -> tuple[list[EvidenceBundle], list[SearchResult], float, dict[str, float], dict[str, Any]]:
     raw_utterance = raw_user_utterance or query
     facet_queries = bounded_facet_queries(query)
@@ -362,7 +412,9 @@ async def run_layer2_case(
         facet_queries=facet_queries,
     )
     started = time.perf_counter()
-    state = await run_retrieve(host, state, groups=set(), state_factory=RetrievalState)
+    state = await run_retrieve(
+        host, state, groups=set(groups or ()), state_factory=RetrievalState
+    )
     latency_ms = (time.perf_counter() - started) * 1000.0
 
     provisional = classify_query_tier(
@@ -429,7 +481,14 @@ async def run_layer2_case(
 # --- Layer 3: End-to-End RAG ---
 
 
-def _build_eval_agent_request(*, case_id: str, raw_utterance: str) -> Any:
+def _build_eval_agent_request(
+    *,
+    case_id: str,
+    raw_utterance: str,
+    groups: Sequence[str] = (),
+    conversation_id: str | None = None,
+    teams_user_id: str | None = None,
+) -> Any:
     from agent_service.contracts import (
         AgentRequest,
         ConversationIdentity,
@@ -442,9 +501,13 @@ def _build_eval_agent_request(*, case_id: str, raw_utterance: str) -> Any:
         channel="rag-eval",
         conversation=ConversationIdentity(
             tenantId="rag-eval",
-            conversationId=f"rag-eval-{case_id}",
+            conversationId=conversation_id or f"rag-eval-{case_id}",
         ),
-        user=UserIdentity(displayName="rag-eval"),
+        user=UserIdentity(
+            displayName="rag-eval",
+            teamsUserId=teams_user_id or "rag-eval-user",
+            groups=list(groups),
+        ),
         message=MessageContent(text=raw_utterance),
     )
 
@@ -466,9 +529,30 @@ def _settings_with_token_budget_override(
     )
 
 
-def _evidence_budget_report(settings: RagSettings, *, cli_override: int | None) -> dict[str, Any]:
+def _evidence_budget_report(
+    settings: RagSettings,
+    *,
+    cli_override: int | None,
+    query_tier: str | None = None,
+    effective_budget: int | None = None,
+) -> dict[str, Any]:
+    configured = (
+        int(cli_override)
+        if cli_override is not None
+        else evidence_token_budget_for_tier(
+            query_tier,
+            default_budget=int(settings.rag_evidence_token_budget),
+            trivial_budget=int(settings.rag_evidence_token_budget_trivial),
+            standard_budget=int(settings.rag_evidence_token_budget_standard),
+        )
+    )
     return {
         "cliOverride": cli_override,
+        "configuredTokenBudget": configured,
+        "effectiveTokenBudget": (
+            int(effective_budget) if effective_budget is not None else configured
+        ),
+        "queryTier": query_tier,
         "trivial": int(settings.rag_evidence_token_budget_trivial),
         "standard": int(settings.rag_evidence_token_budget_standard),
         "hard": int(settings.rag_evidence_token_budget),
@@ -505,6 +589,9 @@ async def run_layer3_case(
     live_model: bool = False,
     case_id: str = "case",
     prior_turn: str | None = None,
+    groups: Sequence[str] = (),
+    token_budget: int | None = None,
+    extractor: Any | None = None,
     max_attempts: int = 4,
 ) -> tuple[KnowledgeResult, float, dict[str, Any]]:
     """Run one Layer-3 case, retrying transient provider disconnects/rate limits."""
@@ -519,6 +606,9 @@ async def run_layer3_case(
                 live_model=live_model,
                 case_id=case_id,
                 prior_turn=prior_turn,
+                groups=groups,
+                token_budget=token_budget,
+                extractor=extractor,
             )
         except Exception as exc:
             last_error = exc
@@ -538,11 +628,24 @@ async def _run_layer3_case_once(
     live_model: bool = False,
     case_id: str = "case",
     prior_turn: str | None = None,
+    groups: Sequence[str] = (),
+    token_budget: int | None = None,
+    extractor: Any | None = None,
 ) -> tuple[KnowledgeResult, float, dict[str, Any]]:
+    from agent_service.eval_conversation import (
+        create_eval_conversation,
+        resolve_follow_up_retrieval_query,
+        seed_prior_turn,
+    )
+
     started = time.perf_counter()
-    user_context = UserContext()
+    user_context = UserContext(groups=list(groups))
+    evaluation_overrides: dict[str, object] = {}
+    if token_budget is not None:
+        evaluation_overrides["evidence_token_budget"] = int(token_budget)
+    evaluation_overrides["record_evidence_progression"] = True
     execution_context = None
-    if live_model and settings is not None:
+    if settings is not None and (live_model or evaluation_overrides or prior_turn):
         from agent_service.execution_context import ExecutionContext
 
         execution_context = ExecutionContext.from_request(
@@ -552,15 +655,44 @@ async def _run_layer3_case_once(
             tenant_id="rag-eval",
             knowledge_backend="HYBRID",
             timeout_seconds=120.0,
+            evaluation_overrides=evaluation_overrides or None,
         )
     raw_utterance = query
     search_query = query
+    conversation_seeded = False
+    history_message_count = 0
     if prior_turn:
-        search_query = compose_follow_up_retrieval_query(prior_turn, query)
-    agent_request = _build_eval_agent_request(
-        case_id=case_id,
-        raw_utterance=raw_utterance,
-    )
+        if settings is None:
+            raise RuntimeError("multi-turn Layer-3 cases require RagSettings")
+        handles = await create_eval_conversation(case_id=case_id, settings=settings)
+        await seed_prior_turn(
+            handles,
+            prior_turn=prior_turn,
+            request_id=f"rag-eval-{case_id}",
+            correlation_id=f"rag-eval-{case_id}",
+        )
+        conversation_seeded = True
+        history = await handles.service.get_history(handles.conversation.conversationId)
+        history_message_count = len(history)
+        search_query = await resolve_follow_up_retrieval_query(
+            handles=handles,
+            query=query,
+            extractor=extractor,
+            execution_context=execution_context,
+        )
+        agent_request = _build_eval_agent_request(
+            case_id=case_id,
+            raw_utterance=raw_utterance,
+            groups=groups,
+            conversation_id=handles.teams_conversation_id,
+            teams_user_id=handles.teams_user_id,
+        )
+    else:
+        agent_request = _build_eval_agent_request(
+            case_id=case_id,
+            raw_utterance=raw_utterance,
+            groups=groups,
+        )
     result = await service.search(
         query=search_query,
         user_context=user_context,
@@ -613,13 +745,27 @@ async def _run_layer3_case_once(
                 has_cost = True
             usage_source = "ESTIMATED"
 
+    query_tier = getattr(trace, "queryTier", None) if trace else None
+    effective_budget = None
+    if execution_context is not None:
+        override = execution_context.evaluation_override("evidence_token_budget")
+        if override is not None:
+            effective_budget = int(override)
+    if effective_budget is None and settings is not None:
+        effective_budget = evidence_token_budget_for_tier(
+            query_tier,
+            default_budget=int(settings.rag_evidence_token_budget),
+            trivial_budget=int(settings.rag_evidence_token_budget_trivial),
+            standard_budget=int(settings.rag_evidence_token_budget_standard),
+        )
+
     telemetry = {
         "found": result.found,
         "answerLength": len(result.answer),
         "sourcesCount": len(result.sources),
         "claimsCount": len(getattr(result, "claims", [])),
         "terminalReason": getattr(result, "terminalReason", None),
-        "queryTier": getattr(trace, "queryTier", None),
+        "queryTier": query_tier,
         "timings": timings,
         "llmCalls": llm_calls,
         "inputTokens": input_tokens,
@@ -647,6 +793,17 @@ async def _run_layer3_case_once(
             else 1.0
         ),
         "traceAttempts": len(getattr(trace, "attempts", None) or []) if trace else 0,
+        "multiTurn": bool(prior_turn),
+        "conversationSeeded": conversation_seeded,
+        "historyMessageCount": float(history_message_count),
+        "resolvedIssueQuery": search_query,
+        "configuredTokenBudget": (
+            int(token_budget)
+            if token_budget is not None
+            else (int(effective_budget) if effective_budget is not None else None)
+        ),
+        "effectiveTokenBudget": effective_budget,
+        "groups": list(groups),
     }
     return result, latency_ms, telemetry
 
@@ -1010,21 +1167,35 @@ async def evaluate_pipeline(
         "generateMs": [],
         "totalMs": [],
     }
+    excluded_multi_turn_case_count = 0
+
+    extractor = None
+    if live_model and answer_model is not None:
+        from agent_service.extractor import IssueExtractor
+        from agent_service.graph import build_chat_model
+
+        agent_model = build_chat_model(settings.agent_model or settings.model) or answer_model
+        extractor = IssueExtractor(settings, agent_model)
 
     for raw in cases_raw:
         case = EvidenceLevelCase.from_dict(raw)
         evidence_must = [list(fact.must_contain) for fact in case.expected_evidence]
         layer3_meta: dict[str, Any] | None = None
         raw_utterance = case.query
-        search_query = (
-            compose_follow_up_retrieval_query(case.prior_turn, case.query)
-            if case.prior_turn
-            else case.query
-        )
+        case_groups = set(case.groups)
+        if case.prior_turn and layer in {1, 2}:
+            # Retrieval-only layers exclude multi-turn unless resolved via the
+            # production conversation path (Layer 3 / AgentWorkflow eval).
+            excluded_multi_turn_case_count += 1
+            continue
+        if case.prior_turn and layer == 3 and extractor is None:
+            excluded_multi_turn_case_count += 1
+            continue
+        search_query = case.query
 
         if layer == 1:
             ranked_ids, titles, texts, scores, lat_ms, _timings = run_layer1_case(
-                index, search_query, limit=20
+                index, search_query, limit=20, groups=case_groups
             )
             latencies_ms.append(lat_ms)
             cand_24_results: list[SearchResult] = []
@@ -1054,9 +1225,11 @@ async def evaluate_pipeline(
                 enable_evidence_expand=enable_evidence_expand,
                 raw_user_utterance=raw_utterance,
                 settings=effective_settings,
+                groups=case_groups,
             )
             telemetry["multiTurn"] = bool(case.prior_turn)
             telemetry["resolvedIssueQuery"] = search_query
+            telemetry["groups"] = list(case.groups)
             latencies_ms.append(lat_ms)
             telemetries.append(telemetry)
 
@@ -1114,13 +1287,19 @@ async def evaluate_pipeline(
                 live_model=live_model,
                 case_id=case.case_id,
                 prior_turn=case.prior_turn,
+                groups=case.groups,
+                token_budget=token_budget,
+                extractor=extractor,
             )
             telemetry["multiTurn"] = bool(case.prior_turn)
+            search_query = str(telemetry.get("resolvedIssueQuery") or case.query)
             telemetry["resolvedIssueQuery"] = search_query
             if effective_settings is not None:
                 telemetry["evidenceTokenBudgets"] = _evidence_budget_report(
                     effective_settings,
                     cli_override=token_budget,
+                    query_tier=telemetry.get("queryTier"),
+                    effective_budget=telemetry.get("effectiveTokenBudget"),
                 )
             latencies_ms.append(lat_ms)
             telemetries.append(telemetry)
@@ -1283,7 +1462,7 @@ async def evaluate_pipeline(
         grades = {str(k): float(v) for k, v in (raw.get("relevanceGrades") or {}).items()}
         if case.expected_chunk_ids and not any(cid in grades for cid in relevant):
             grades = {cid: 1.0 for cid in relevant}
-        forbidden = list(case.forbidden_evidence or raw.get("forbiddenSourceTitles") or [])
+        acl_forbidden, semantic_forbidden = _split_forbidden_ids(case, raw)
 
         case_score = score_retrieval_case(
             case_id=case.case_id,
@@ -1291,7 +1470,8 @@ async def evaluate_pipeline(
             relevant_ids=relevant,
             relevance_grades=grades,
             hard_negative_ids=list(case.hard_negative_ids),
-            forbidden_ids=forbidden,
+            acl_forbidden_ids=acl_forbidden,
+            semantic_forbidden_ids=semantic_forbidden,
             retrieved_texts=texts,
             evidence_must_contain=evidence_must,
         )
@@ -1405,10 +1585,17 @@ async def evaluate_pipeline(
         # Layer-2 predictor is a retrieval diagnostic, not the production decision path.
         summary["retrievalOnlyNoAnswerProxy"] = no_answer_stats
         summary["noAnswer"] = no_answer_stats
-    summary["caseCount"] = float(len(cases_raw))
+    summary["caseCount"] = float(len(scored_rows))
+    summary["inputCaseCount"] = float(len(cases_raw))
+    summary["excludedMultiTurnCaseCount"] = float(excluded_multi_turn_case_count)
     summary["multiTurnCaseCount"] = float(
-        sum(1 for raw in cases_raw if EvidenceLevelCase.from_dict(raw).is_multi_turn)
+        sum(
+            1
+            for raw in cases_raw
+            if EvidenceLevelCase.from_dict(raw).is_multi_turn
+        )
     )
+    summary["aclCoverageMode"] = _acl_coverage_mode(index)
     summary["layer"] = layer
     summary["liveModel"] = bool(live_model and answer_model is not None)
     summary["evidenceTokenBudgets"] = _evidence_budget_report(
@@ -1834,11 +2021,22 @@ def main() -> int:
     model_name = None
     if args.live_model:
         model_name = settings.model or settings.agent_model
+    freeze_version = None
+    try:
+        dataset_payload = json.loads(args.eval_set.read_text(encoding="utf-8"))
+        freeze_version = dataset_payload.get("freezeVersion")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        freeze_version = None
+    from datetime import UTC, datetime
+
+    completed_at = datetime.now(UTC).isoformat()
     provenance = _build_eval_provenance(
         eval_set=args.eval_set,
         settings=settings,
         live_model=bool(args.live_model),
         model_name=model_name,
+        freeze_version=freeze_version if isinstance(freeze_version, int) else None,
+        completed_at=completed_at,
     )
     summary["provenance"] = provenance
 

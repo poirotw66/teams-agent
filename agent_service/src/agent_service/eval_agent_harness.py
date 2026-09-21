@@ -65,6 +65,21 @@ async def _read_workflow_answer(
     return answer, issue_results, None
 
 
+async def run_production_turn(
+    workflow: SupportsAgentRespond,
+    request: Any,
+) -> tuple[str, list[Any], Mapping[str, Any] | None, float]:
+    """Execute one AgentRequest through AgentWorkflow without governance binding.
+
+    Shared by AgentWorkflowTurnExecutor and the production AgentWorkflow eval
+    script so both reuse the same request→answer entry path.
+    """
+    started_at = perf_counter()
+    answer, issue_results, state = await _read_workflow_answer(workflow, request)
+    latency_ms = (perf_counter() - started_at) * 1000
+    return answer, issue_results, state, latency_ms
+
+
 class AgentWorkflowTurnExecutor:
     """Execute candidate-bound turns through ``AgentWorkflow.respond``.
 
@@ -110,9 +125,9 @@ class AgentWorkflowTurnExecutor:
         if self._prepare_case is not None:
             await self._prepare_case(history, setup=setup)
         request = self._request_factory(text, history)
-        started_at = perf_counter()
-        answer, issue_results, state = await _read_workflow_answer(self._workflow, request)
-        latency_ms = (perf_counter() - started_at) * 1000
+        answer, issue_results, state, latency_ms = await run_production_turn(
+            self._workflow, request
+        )
         if self._note_turn_result is not None:
             self._note_turn_result(text=text, answer=answer, issue_results=issue_results)
         result_types = _issue_result_types(issue_results)
@@ -192,4 +207,5 @@ __all__ = [
     "_issue_has_sources",
     "_issue_result_types",
     "_looks_like_no_knowledge_answer",
+    "run_production_turn",
 ]

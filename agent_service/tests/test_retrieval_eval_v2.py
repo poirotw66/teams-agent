@@ -110,6 +110,57 @@ def test_hard_negative_accuracy() -> None:
     )
 
 
+def test_score_retrieval_case_hard_negative_none_when_unlabeled() -> None:
+    scored = score_retrieval_case(
+        case_id="unlabeled",
+        ranked_ids=["doc-a"],
+        relevant_ids=["doc-a"],
+        hard_negative_ids=(),
+    )
+    assert scored.hard_negative_accuracy is None
+
+
+def test_aggregate_hard_negative_accuracy_averages_labeled_cases_only() -> None:
+    labeled_pass = score_retrieval_case(
+        case_id="hn-pass",
+        ranked_ids=["right", "noise"],
+        relevant_ids=["right"],
+        hard_negative_ids=["noise"],
+    )
+    labeled_fail = score_retrieval_case(
+        case_id="hn-fail",
+        ranked_ids=["noise", "right"],
+        relevant_ids=["right"],
+        hard_negative_ids=["noise"],
+    )
+    unlabeled = score_retrieval_case(
+        case_id="plain",
+        ranked_ids=["doc-a"],
+        relevant_ids=["doc-a"],
+    )
+    summary = aggregate_case_scores([labeled_pass, labeled_fail, unlabeled])
+    assert labeled_pass.hard_negative_accuracy == 1.0
+    assert labeled_fail.hard_negative_accuracy == 0.0
+    assert unlabeled.hard_negative_accuracy is None
+    assert summary["hardNegativeLabeledCaseCount"] == 2.0
+    assert summary["hardNegativeAccuracy"] == 0.5
+
+
+def test_score_retrieval_case_separates_acl_and_forbidden_document_hits() -> None:
+    scored = score_retrieval_case(
+        case_id="acl-vs-semantic",
+        ranked_ids=["secret-doc", "wrong-topic", "good"],
+        relevant_ids=["good"],
+        acl_forbidden_ids=["secret-doc"],
+        semantic_forbidden_ids=["wrong-topic"],
+    )
+    assert scored.acl_leakage_count == 1
+    assert scored.forbidden_document_hit_count == 1
+    summary = aggregate_case_scores([scored])
+    assert summary["aclLeakageCount"] == 1.0
+    assert summary["forbiddenDocumentHitCount"] == 1.0
+
+
 def test_no_answer_confusion() -> None:
     stats = no_answer_confusion(
         [

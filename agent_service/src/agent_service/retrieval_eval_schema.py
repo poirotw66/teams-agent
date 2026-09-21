@@ -35,6 +35,8 @@ class EvidenceLevelCase:
     expected_source_titles: tuple[str, ...] = ()
     prior_turn: str | None = None
     hard_negative_ids: tuple[str, ...] = ()
+    groups: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> EvidenceLevelCase:
@@ -71,6 +73,16 @@ class EvidenceLevelCase:
                 hard_ids.append(str(item))
         prior = value.get("priorTurn") or value.get("prior_turn")
         prior_turn = str(prior).strip() if prior else None
+        groups = tuple(
+            str(item).strip()
+            for item in (value.get("groups") or ())
+            if str(item).strip()
+        )
+        categories = tuple(
+            str(item).strip()
+            for item in (value.get("categories") or ())
+            if str(item).strip()
+        )
         return cls(
             case_id=str(value.get("id") or value.get("caseId") or ""),
             query=str(value.get("query") or ""),
@@ -100,6 +112,8 @@ class EvidenceLevelCase:
             ),
             prior_turn=prior_turn or None,
             hard_negative_ids=tuple(hard_ids),
+            groups=groups,
+            categories=categories,
         )
 
     def primary_relevant_ids(self) -> tuple[str, ...]:

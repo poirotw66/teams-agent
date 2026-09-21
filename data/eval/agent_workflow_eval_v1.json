@@ -1,0 +1,44 @@
+{
+  "role": "agent_workflow_production_path",
+  "version": 1,
+  "freezeVersion": 1,
+  "caseCount": 3,
+  "cases": [
+    {
+      "id": "workflow-v1-001",
+      "priorTurns": [],
+      "message": "FortiClient 出現 -455 怎麼辦？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": ["登入 FortiClient 出現錯訊"],
+      "expectedEvidence": [{"mustContain": ["-455"]}],
+      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+    },
+    {
+      "id": "workflow-v1-002",
+      "priorTurns": [],
+      "message": "你好",
+      "groups": [],
+      "expectedRoute": "GREETING",
+      "expectedIssueCount": 0,
+      "expectedFound": false,
+      "expectedDocuments": [],
+      "expectedEvidence": [],
+      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+    },
+    {
+      "id": "workflow-v1-003",
+      "priorTurns": ["員工入口網登不進去"],
+      "message": "那密碼不是 AD 的話要去哪改？",
+      "groups": [],
+      "expectedRoute": "KNOWLEDGE",
+      "expectedIssueCount": 1,
+      "expectedFound": true,
+      "expectedDocuments": ["國泰員工入口網、CTeam密碼、國泰e點名"],
+      "expectedEvidence": [{"mustContain": ["密碼"]}],
+      "forbiddenActions": ["CREATE_TICKET", "HANDOFF"]
+    }
+  ]
+}

@@ -164,6 +164,14 @@ def acl_leakage_count(
     return sum(1 for item in ranked_ids if item in forbidden)
 
 
+def forbidden_document_hit_count(
+    ranked_ids: Sequence[str],
+    forbidden_ids: Iterable[str],
+) -> int:
+    """Count semantic/scenario-forbidden document hits (not ACL exposure)."""
+    return acl_leakage_count(ranked_ids, forbidden_ids)
+
+
 @dataclass(frozen=True)
 class RetrievalCaseScore:
     case_id: str
@@ -180,6 +188,7 @@ class RetrievalCaseScore:
     hit_at_3: float
     hard_negative_accuracy: float | None = None
     acl_leakage_count: int = 0
+    forbidden_document_hit_count: int = 0
     has_evidence_labels: bool = False
 
 
@@ -290,6 +299,8 @@ def score_retrieval_case(
     relevance_grades: Mapping[str, float] | None = None,
     hard_negative_ids: Iterable[str] = (),
     forbidden_ids: Iterable[str] = (),
+    acl_forbidden_ids: Iterable[str] = (),
+    semantic_forbidden_ids: Iterable[str] = (),
     retrieved_texts: Sequence[str] = (),
     evidence_must_contain: Sequence[Sequence[str]] = (),
 ) -> RetrievalCaseScore:
@@ -308,6 +319,12 @@ def score_retrieval_case(
         if hard_neg
         else None
     )
+    acl_ids = tuple(item for item in acl_forbidden_ids if item)
+    semantic_ids = tuple(item for item in semantic_forbidden_ids if item)
+    # Backward-compatible callers that only pass forbidden_ids treat them as
+    # semantic/scenario forbids unless acl_forbidden_ids is also provided.
+    if not acl_ids and not semantic_ids and forbidden_ids:
+        semantic_ids = tuple(item for item in forbidden_ids if item)
     rec_4 = recall_at_k(ranked_ids, relevant, k=4)
     prec_4 = precision_at_k(ranked_ids, relevant, k=4)
     has_evidence = bool(evidence_must_contain)
@@ -345,7 +362,10 @@ def score_retrieval_case(
         hit_at_1=hit_at_k(ranked_ids, relevant, k=1),
         hit_at_3=hit_at_k(ranked_ids, relevant, k=3),
         hard_negative_accuracy=hard_acc,
-        acl_leakage_count=acl_leakage_count(ranked_ids, forbidden_ids),
+        acl_leakage_count=acl_leakage_count(ranked_ids, acl_ids),
+        forbidden_document_hit_count=forbidden_document_hit_count(
+            ranked_ids, semantic_ids
+        ),
         has_evidence_labels=has_evidence,
     )
 
@@ -372,7 +392,9 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
             "hitAt1": 0.0,
             "hitAt3": 0.0,
             "hardNegativeAccuracy": 0.0,
+            "hardNegativeLabeledCaseCount": 0.0,
             "aclLeakageCount": 0.0,
+            "forbiddenDocumentHitCount": 0.0,
         }
 
     def _mean(values: Sequence[float]) -> float:
@@ -408,7 +430,11 @@ def aggregate_case_scores(scores: Sequence[RetrievalCaseScore]) -> dict[str, flo
         "hitAt1": _mean([score.hit_at_1 for score in scores]),
         "hitAt3": _mean([score.hit_at_3 for score in scores]),
         "hardNegativeAccuracy": _mean(hard_values) if hard_values else 0.0,
+        "hardNegativeLabeledCaseCount": float(len(hard_values)),
         "aclLeakageCount": float(sum(score.acl_leakage_count for score in scores)),
+        "forbiddenDocumentHitCount": float(
+            sum(score.forbidden_document_hit_count for score in scores)
+        ),
     }
 
 
@@ -421,6 +447,7 @@ __all__ = [
     "evidence_precision_at_k",
     "evidence_recall_at_k",
     "evidence_token_in_text",
+    "forbidden_document_hit_count",
     "hard_negative_accuracy",
     "hit_at_k",
     "mrr_at_k",
